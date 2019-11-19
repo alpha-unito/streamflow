@@ -7,12 +7,12 @@ import cwltool
 from cwltool.argparser import arg_parser
 from cwltool.command_line_tool import ExpressionTool
 from cwltool.errors import WorkflowException
-from cwltool.executors import MultithreadedJobExecutor
 # noinspection PyProtectedMember
 from cwltool.main import _terminate_processes, _signal_handler
 from cwltool.process import Process
 
 from streamflow.cwl.context import SfLoadingContext, SfRuntimeContext
+from streamflow.cwl.executor import StreamflowJobExecutor
 from streamflow.cwl.process import SfCommandLineTool, SfWorkflow
 from streamflow.cwl.remote_fs_access import RemoteFsAccess
 
@@ -56,7 +56,7 @@ def main(streamflow_config):
             argsl=args,
             loadingContext=loading_context,
             runtimeContext=runtime_context,
-            executor=MultithreadedJobExecutor()
+            executor=StreamflowJobExecutor()
         )
     finally:
         runtime_context.deployment_manager.undeploy_all()
