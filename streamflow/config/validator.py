@@ -9,6 +9,7 @@ from ruamel.yaml import YAML
 def load_jsonschema(config_file):
     filename = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
+        'schemas',
         config_file['version'], "config_schema.json")
     if not os.path.exists(filename):
         raise Exception(
