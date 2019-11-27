@@ -14,5 +14,9 @@ def main(args):
             cwl_main(workflow_config)
 
 
+def run():
+    main(sys.argv[1:])
+
+
 if __name__ == "__main__":
     main(sys.argv[1:])
