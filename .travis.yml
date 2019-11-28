@@ -1,0 +1,21 @@
+dist: bionic
+language: python
+python: 3.7
+install:
+- pip install pipenv
+- pipenv --python 3.7
+- pipenv install --dev
+script: pipenv run pytest
+before_deploy:
+- pipenv lock -r > $TRAVIS_BUILD_DIR/requirements.txt
+deploy:
+  provider: pypi
+  user: __token__
+  password:
+    secure: Nb2j+yB7IO2MwU12DuVh416ECBWw01EnvEWrknBSlHQ92EFMIYbD4ADa4qqsBQoHiwBeSNAhc4GbcJEl/c5bh8NzHEFY/eKzE8XuNnarSROhaJ+1DgdTmMX9MV9euNLjd+2SZbABzog4JP6jxxuEH1xLrPRaLZn59bVPfGIRys6xb4z+H7v3oA0dgxmFsMdMfGLhAe+6poEd8u5goruPuohjvG4x9KCmbi2CAXqwHp/s8n6Ea/EHHrg2Rc5MhLqPOxEMovdV+qh1bQhsieb7WyX2E9FEMwxMWGVDQfYEEZJvhCQCUl3V1lr7G8dqDOkaJONRN9H1pvzC58D2Q4u/RniHKn97HK5LOjp/0Ug4cLWw/Fa00hl36DplkBQwIWZCA+pXrBkNjAB7q/O/pqe2mkR8uVKdwLtt1+zKN7NtDQwnmYH2iSwgflbeHR3DykbXiEbB8e5AU62drbmMntXFXXtNHvPQ74+GKZXZsL44QpIGEa65en+pMXbKsrrjvv3q0ipc0vRCkf0Kt0161Q4ibdxoIyUz2y5NC5vM8xepX2DYQ2yO1dFcI4y3VsZjm8jtae+fjVxUETZQmbj1b1DhnMQhuDXxh8l7U+pWP1OVhocrTH+i6d8qk/RaVYQxjQeOafsOVsxFjYTm6syX7hn3+CKWKGZW59WbVRc+f58G4x8=
+  distributions: sdist bdist_wheel
+  on:
+    branch: master
+    condition: $(cat setup.py | grep -oP "(?<=version = \")(.*)(?=\")") != $(pip search
+      streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
+  edge: true

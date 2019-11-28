@@ -1,5 +1,7 @@
 # StreamFlow
 
+[![Build Status](https://travis-ci.com/alpha-unito/streamflow.svg?branch=master)](https://travis-ci.com/alpha-unito/streamflow)
+
 The StreamFlow framework is a container-native *Workflow Management System (WMS)* written in Python 3.
 It has been designed around two main principles:
 * Allow the execution of tasks in **multi-container environments**, in order to support concurrent execution
@@ -42,6 +44,9 @@ Finally, you can run StreamFlow in the generated virtual environment
 ```bash
 pipenv run python -m streamflow
 ```
+
+StreamFlow relies on [Travis CI](https://travis-ci.com/) for PyPI distribution. Therefore, in order to publish a
+new version of the package on PyPI, you only have to augment the version number in `setup.py` file.
 
 ## StreamFlow Team
 
