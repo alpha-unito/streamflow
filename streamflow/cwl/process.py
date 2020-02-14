@@ -87,21 +87,22 @@ class SfCommandLineTool(CommandLineTool):
                   joborder: Mapping[str, str],
                   runtime_context: SfRuntimeContext):
         builder = super()._init_job(joborder, runtime_context)
-        builder.deployment_target = runtime_context.streamflow_config.propagate(self.step_path, 'target')
-        deployments = runtime_context.streamflow_config.propagate(self.step_path, 'deployments')
-        if 'model' in builder.deployment_target:
-            model = deployments[builder.deployment_target['model']]
-        elif len(deployments) == 1:
-            model = next(iter(deployments.values()))
-        else:
-            raise Exception("Must specify model when there are multiple choices")
-        builder.deployment_model = model
-        builder.deployment_model['config']['config_file'] = runtime_context.streamflow_config.config_file
-        if builder.deployment_target is not None:
-            deployment_dir_prefix = "/tmp/streamflow"
-            builder.outdir = deployment_dir_prefix + random_outdir()
-            builder.tmpdir = deployment_dir_prefix + os.path.sep + "tmp"
-            builder.stagedir = deployment_dir_prefix + os.path.sep + "stage"
+        if self.deployment_helper is not None:
+            builder.deployment_target = runtime_context.streamflow_config.propagate(self.step_path, 'target')
+            deployments = runtime_context.streamflow_config.propagate(self.step_path, 'deployments')
+            if 'model' in builder.deployment_target:
+                model = deployments[builder.deployment_target['model']]
+            elif len(deployments) == 1:
+                model = next(iter(deployments.values()))
+            else:
+                raise Exception("Must specify model when there are multiple choices")
+            builder.deployment_model = model
+            builder.deployment_model['config']['config_file'] = runtime_context.streamflow_config.config_file
+            if builder.deployment_target is not None:
+                deployment_dir_prefix = "/tmp/streamflow"
+                builder.outdir = deployment_dir_prefix + random_outdir()
+                builder.tmpdir = deployment_dir_prefix + os.path.sep + "tmp"
+                builder.stagedir = deployment_dir_prefix + os.path.sep + "stage"
         return builder
 
     def job(self,
