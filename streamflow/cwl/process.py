@@ -131,30 +131,33 @@ class SfWorkflowStep(WorkflowStep):
                        jobout: Dict[Text, Any],
                        processStatus: Text):
         job_context = SfJobContext.current_context()
-        task_description = job_context.scheduler.jobs[job_context.name].description
-        for output in jobout.values():
-            if not isinstance(output, list):
-                output = [output]
-            for element in output:
-                if hasattr(element, 'get') and (element.get('class') == 'File' or element.get('class') == 'Directory'):
-                    abs_path = urllib.parse.urlparse(element['location']).path
-                    task_description.add_output(abs_path)
-                    remote_path = job_context.get_remote_path(abs_path)
-                    if remote_fs.exists(job_context.connector, job_context.target_resource, remote_path):
-                        job_context.data_manager.add_remote_path_mapping(
-                            job_context.target_resource,
-                            abs_path,
-                            job_context.get_remote_path(abs_path))
-                    if not os.path.exists(abs_path):
-                        if element.get('class') == 'Directory':
-                            os.makedirs(abs_path, exist_ok=True)
-                        else:
-                            open(abs_path, 'a').close()
+        if job_context is not None:
+            task_description = job_context.scheduler.jobs[job_context.name].description
+            for output in jobout.values():
+                if not isinstance(output, list):
+                    output = [output]
+                for element in output:
+                    if hasattr(element, 'get') and (
+                            element.get('class') == 'File' or element.get('class') == 'Directory'):
+                        abs_path = urllib.parse.urlparse(element['location']).path
+                        task_description.add_output(abs_path)
+                        remote_path = job_context.get_remote_path(abs_path)
+                        if remote_fs.exists(job_context.connector, job_context.target_resource, remote_path):
+                            job_context.data_manager.add_remote_path_mapping(
+                                job_context.target_resource,
+                                abs_path,
+                                job_context.get_remote_path(abs_path))
+                        if not os.path.exists(abs_path):
+                            if element.get('class') == 'Directory':
+                                os.makedirs(abs_path, exist_ok=True)
+                            else:
+                                open(abs_path, 'a').close()
         super().receive_output(output_callback, jobout, processStatus)
-        if processStatus == 'success':
-            job_context.scheduler.notify_status(job_context.name, JobStatus.completed)
-        else:
-            job_context.scheduler.notify_status(job_context.name, JobStatus.failed)
+        if job_context is not None:
+            if processStatus == 'success':
+                job_context.scheduler.notify_status(job_context.name, JobStatus.completed)
+            else:
+                job_context.scheduler.notify_status(job_context.name, JobStatus.failed)
 
 
 class SfWorkflow(Workflow):
