@@ -196,6 +196,7 @@ class OccamConnector(Connector):
                     image=service['image'],
                     command=" ".join(service.get('command')) if 'command' in service else ""
                 )
+                _logger.debug("Executing {command}".format(command=deploy_command))
                 stdin_, stdout_, stderr_ = self.ssh_client.exec_command(deploy_command)
                 stdout_.channel.recv_exit_status()
                 output = stdout_.read().decode('utf-8')
@@ -222,6 +223,7 @@ class OccamConnector(Connector):
                 ]).format(
                     job_id=job_id
                 )
+                _logger.debug("Executing {command}".format(command=undeploy_command))
                 stdin_, stdout_, stderr_ = self.ssh_client.exec_command(undeploy_command)
                 stdout_.channel.recv_exit_status()
                 _logger.info("Killed {resource}".format(resource=job_id))
@@ -248,6 +250,7 @@ class OccamConnector(Connector):
             resource=resource,
             command=base64.b64encode(exec_command.encode('utf-8')).decode('utf-8')
         )
+        _logger.debug("Executing {command}".format(command=occam_command))
         stdin_, stdout_, stderr_ = self.ssh_client.exec_command(occam_command)
         stdout_.channel.recv_exit_status()
         if capture_output:

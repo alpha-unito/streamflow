@@ -25,7 +25,7 @@ class RemoteFsAccess(StdFsAccess):
         return os.path.join(self.remotedir, relative_path)
 
     def glob(self, pattern):
-        if not self.exists(pattern):
+        if hasattr(self, 'connector') and not self.exists(pattern):
             matches = remote_fs.glob(self.connector, self.target, self._remote_abs(pattern))
             return [Path(os.path.join(self.basedir, os.path.relpath(l, self.remotedir))).as_uri()
                     for l in matches]
@@ -33,12 +33,12 @@ class RemoteFsAccess(StdFsAccess):
             return super().glob(pattern)
 
     def open(self, fn, mode):  # type: (Text, str) -> IO[Any]
-        if not self.exists(self._abs(fn)):
+        if hasattr(self, 'connector') and not self.exists(self._abs(fn)):
             self.connector.copy(self._remote_abs(fn), self._abs(fn), self.target, ConnectorCopyKind.remoteToLocal)
         return open(self._abs(fn), mode)
 
     def size(self, fn):
-        if not self.exists(self._abs(fn)):
+        if hasattr(self, 'connector') and not self.exists(self._abs(fn)):
             return int(self.connector.run(resource=self.target,
                                           command=["stat", "-c \"%s\"", self._remote_abs(fn)],
                                           capture_output=True
@@ -47,19 +47,19 @@ class RemoteFsAccess(StdFsAccess):
             return super().size(fn)
 
     def isfile(self, fn):
-        if not self.exists(self._abs(fn)):
+        if hasattr(self, 'connector') and not self.exists(self._abs(fn)):
             return remote_fs.isfile(self.connector, self.target, self._remote_abs(fn))
         else:
             return super().isfile(fn)
 
     def isdir(self, fn):
-        if not self.exists(self._abs(fn)):
+        if hasattr(self, 'connector') and not self.exists(self._abs(fn)):
             return remote_fs.isdir(self.connector, self.target, self._remote_abs(fn))
         else:
             return super().isdir(fn)
 
     def listdir(self, fn):
-        if not self.exists(self._abs(fn)):
+        if hasattr(self, 'connector') and not self.exists(self._abs(fn)):
             dirs = self.connector.run(
                 resource=self.target,
                 command=["find", self._remote_abs(fn), "-maxdepth", "1", "-mindepth", "1", "-type", "d",
