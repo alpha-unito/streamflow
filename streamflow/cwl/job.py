@@ -25,7 +25,12 @@ def _transfer_inputs(job_context: SfJobContext,
         "Input data transfer for job {name} started at {time}".format(name=job_context.name, time=datetime.now()))
     for key, vol in (itm for itm in pathmapper.items() if itm[1].staged):
         if vol.type in ("File", "Directory", "WritableFile", "WritableDirectory"):
-            job_context.data_manager.transfer_data(vol.resolved, vol.target, target)
+            if vol.resolved.startswith("_:"):
+                temp_dir = os.path.join(tempfile.mkdtemp(), os.path.basename(vol.target))
+                os.mkdir(temp_dir)
+                job_context.data_manager.transfer_data(temp_dir, vol.target, target)
+            else:
+                job_context.data_manager.transfer_data(vol.resolved, vol.target, target)
     _logger.info(
         "Input data transfer for job {name} terminated at {time}".format(name=job_context.name, time=datetime.now()))
 
