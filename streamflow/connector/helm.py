@@ -1,6 +1,8 @@
 import base64
+import io
 import os
 import posixpath
+import select
 import shutil
 import stat
 import subprocess
@@ -12,7 +14,10 @@ import uuid
 from pathlib import Path
 from typing import MutableMapping, List, Optional, Any
 
+import six
 from kubernetes import client, config, stream
+from kubernetes.stream.ws_client import STDOUT_CHANNEL, STDERR_CHANNEL
+from websocket import ABNF
 
 from streamflow.connector import connector
 from streamflow.connector.connector import Connector
@@ -21,7 +26,77 @@ from streamflow.log_handler import _logger
 
 def patched_write_channel(self, channel, data):
     """Write data to a channel."""
-    self.sock.send(bytes(chr(channel), 'utf-8') + data)
+    # check if we're writing binary data or not
+    binary = six.PY3 and type(data) == six.binary_type
+    opcode = ABNF.OPCODE_BINARY if binary else ABNF.OPCODE_TEXT
+
+    channel_prefix = chr(channel)
+    if binary:
+        channel_prefix = six.binary_type(channel_prefix, "ascii")
+
+    payload = channel_prefix + data
+    self.sock.send(payload, opcode=opcode)
+
+
+def patched_update(self, timeout=0):
+    """Update channel buffers with at most one complete frame of input."""
+    if not self.is_open():
+        return
+    if not self.sock.connected:
+        self._connected = False
+        return
+    r, _, _ = select.select(
+        (self.sock.sock,), (), (), timeout)
+    if r:
+        op_code, frame = self.sock.recv_data_frame(True)
+        if op_code == ABNF.OPCODE_CLOSE:
+            self._connected = False
+            return
+        elif op_code == ABNF.OPCODE_BINARY or op_code == ABNF.OPCODE_TEXT:
+            data = frame.data
+            if six.PY3 and op_code == ABNF.OPCODE_TEXT:
+                data = data.decode("utf-8", "replace")
+                if len(data) > 1:
+                    channel = ord(data[0])
+                    data = data[1:]
+                    if data:
+                        if channel in [STDOUT_CHANNEL, STDERR_CHANNEL]:
+                            self._all.write(data)
+                        if channel not in self._channels:
+                            self._channels[channel] = data
+                        else:
+                            self._channels[channel] += data
+            elif op_code == ABNF.OPCODE_BINARY:
+                if len(data) > 1:
+                    channel = data[0]
+                    data = data[1:]
+                    if len(data) > 0:
+                        if channel in [STDOUT_CHANNEL, STDERR_CHANNEL]:
+                            self._all.write(data)
+                        if channel not in self._channels:
+                            self._channels[channel] = data
+                        else:
+                            self._channels[channel] += data
+
+
+def patched_read_all(self):
+    """Return buffered data received on stdout and stderr channels.
+    This is useful for non-interactive call where a set of command passed
+    to the API call and their result is needed after the call is concluded.
+    Should be called after run_forever() or update()
+    """
+    out = self._all.getvalue()
+    self._all = self._all.__class__()
+    self._channels = {}
+    return out
+
+
+def patch_response(response):
+    response._all = six.BytesIO()
+    response.write_channel = types.MethodType(patched_write_channel, response)
+    response.update = types.MethodType(patched_update, response)
+    response.read_all = types.MethodType(patched_read_all, response)
+    return response
 
 
 class HelmConnector(Connector):
@@ -219,7 +294,7 @@ class HelmConnector(Connector):
                 content = tar_buffer.read(self.transferBufferSize)
                 response.update(timeout=1)
                 if content:
-                    response.write_channel = types.MethodType(patched_write_channel, response)
+                    response = patch_response(response)
                     response.write_stdin(content)
                 else:
                     break
@@ -238,16 +313,17 @@ class HelmConnector(Connector):
                                  stdout=True,
                                  tty=False,
                                  _preload_content=False)
-        with tempfile.TemporaryFile() as tar_buffer:
+        with io.BytesIO() as byte_buffer:
             while response.is_open():
+                response = patch_response(response)
                 response.update(timeout=1)
                 if response.peek_stdout():
                     out = response.read_stdout()
-                    tar_buffer.write(out.encode('utf-8'))
+                    byte_buffer.write(out)
             response.close()
-            tar_buffer.flush()
-            tar_buffer.seek(0)
-            with tarfile.open(fileobj=tar_buffer, mode='r:') as tar:
+            byte_buffer.flush()
+            byte_buffer.seek(0)
+            with tarfile.open(fileobj=byte_buffer, mode='r:') as tar:
                 for member in tar.getmembers():
                     if os.path.isdir(dst):
                         if member.path == src:
