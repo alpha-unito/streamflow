@@ -264,13 +264,15 @@ class HelmConnector(Connector):
     def _copy_remote_to_remote(self, src: str, dst: str, resource: str, source_remote: str) -> None:
         source_remote = source_remote or resource
         if source_remote == resource:
-            command = ['/bin/cp', "-rf", src, dst]
-            self.run(resource, command)
-            return
+            if src != dst:
+                command = ['/bin/cp', "-rf", src, dst]
+                self.run(resource, command)
+                return
         else:
             temp_dir = tempfile.mkdtemp()
             self._copy_remote_to_local(src, temp_dir, source_remote)
-            self._copy_local_to_remote(temp_dir, dst, resource)
+            for element in os.listdir(temp_dir):
+                self._copy_local_to_remote(os.path.join(temp_dir, element), dst, resource)
             shutil.rmtree(temp_dir)
 
     def _copy_local_to_remote(self, src: str, dst: str, resource: str):
