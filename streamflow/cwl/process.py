@@ -17,6 +17,14 @@ from streamflow.log_handler import _logger
 from streamflow.scheduling.scheduler import JobStatus
 
 
+def _flatten_list(hierarchical_list):
+    if not hierarchical_list:
+        return hierarchical_list
+    if isinstance(hierarchical_list[0], list):
+        return _flatten_list(hierarchical_list[0]) + _flatten_list(hierarchical_list[1:])
+    return hierarchical_list[:1] + _flatten_list(hierarchical_list[1:])
+
+
 class DeploymentHelper(object):
 
     def __init__(self, deployment_names: List[str]) -> None:
@@ -36,6 +44,7 @@ class DeploymentHelper(object):
                 for output in outputs.values():
                     if not isinstance(output, list):
                         output = [output]
+                    output = _flatten_list(output)
                     for element in output:
                         if hasattr(element, 'get') and (
                                 element.get('class') == 'File' or element.get('class') == 'Directory'):
