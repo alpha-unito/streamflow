@@ -1,4 +1,5 @@
 import os
+import stat
 import urllib.parse
 from pathlib import Path
 from typing import Text, IO, Any
@@ -69,3 +70,20 @@ class RemoteFsAccess(StdFsAccess):
             return [abspath(urllib.parse.quote(str(l)), fn) for l in dirs]
         else:
             return super().listdir(fn)
+
+    def readlink(self, fn):
+        if hasattr(self, 'connector') and not self.exists(self._abs(fn)):
+            fn = self.connector.run(
+                resource=self.target,
+                command=["readlink", "-f", fn],
+                capture_output=True
+            ).strip()
+            return fn
+        else:
+            st = os.lstat(fn)
+            while stat.S_ISLNK(st.st_mode):
+                rl = os.readlink(fn)
+                fn = rl if os.path.isabs(rl) else os.path.join(
+                    os.path.dirname(fn), rl)
+                st = os.lstat(fn)
+            return fn

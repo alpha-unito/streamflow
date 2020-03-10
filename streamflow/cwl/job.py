@@ -1,12 +1,15 @@
 import functools
+import logging
 import os
 import tempfile
 import threading
 from datetime import datetime
-from typing import cast, MutableMapping, List
+from typing import cast, MutableMapping, List, Any
 
+from cwltool.errors import WorkflowException
 from cwltool.job import JobBase
 from cwltool.pathmapper import PathMapper
+from schema_salad.utils import json_dumps
 
 from streamflow.connector.connector import Connector
 from streamflow.cwl.context import SfRuntimeContext
@@ -62,6 +65,31 @@ class SfCommandLineJob(JobBase):
         )
         SfJobContext.register_context(job_context)
         return job_context
+
+    def _setup(self, runtimeContext):  # type: (SfRuntimeContext) -> None
+        if not os.path.exists(self.outdir):
+            os.makedirs(self.outdir)
+
+        for knownfile in self.pathmapper.files():
+            if knownfile in self.pathmapper.remote_files():
+                continue
+            p = self.pathmapper.mapper(knownfile)
+            if p.type == "File" and not os.path.isfile(p[0]) and p.staged:
+                raise WorkflowException(
+                    u"Input file %s (at %s) not found or is not a regular "
+                    "file." % (knownfile, self.pathmapper.mapper(knownfile)[0]))
+
+        if 'listing' in self.generatefiles:
+            runtimeContext = runtimeContext.copy()
+            runtimeContext.outdir = self.outdir
+            self.generatemapper = self.make_path_mapper(
+                cast(List[Any], self.generatefiles["listing"]),
+                self.builder.outdir, runtimeContext, False)
+            if _logger.isEnabledFor(logging.DEBUG):
+                _logger.debug(
+                    u"[job %s] initial work dir %s", self.name,
+                    json_dumps({p: self.generatemapper.mapper(p)
+                                for p in self.generatemapper.files()}, indent=4))
 
     def _setup_files(self,
                      runtime_context: SfRuntimeContext,

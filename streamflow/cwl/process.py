@@ -4,7 +4,9 @@ from datetime import datetime
 from typing import Type, Any, MutableMapping, Mapping, Callable, Generator, Union, Optional, Dict, Text, List
 
 from cwltool.command_line_tool import CommandLineTool, CallbackJob
+from cwltool.context import RuntimeContext
 from cwltool.job import JobBase
+from cwltool.pathmapper import PathMapper
 from cwltool.provenance import ProvenanceProfile
 from cwltool.utils import random_outdir
 from cwltool.workflow import Workflow, WorkflowStep
@@ -12,6 +14,7 @@ from cwltool.workflow import Workflow, WorkflowStep
 from streamflow.cwl.context import SfRuntimeContext, SfLoadingContext
 from streamflow.cwl.job import SfCommandLineJob
 from streamflow.cwl.job_context import SfJobContext
+from streamflow.cwl.remote_path_mapper import RemotePathMapper
 from streamflow.data import remote_fs
 from streamflow.log_handler import _logger
 from streamflow.scheduling.scheduler import JobStatus
@@ -91,6 +94,10 @@ class SfCommandLineTool(CommandLineTool):
             return SfCommandLineJob
         else:
             return super().make_job_runner(runtime_context)
+
+    def make_path_mapper(self, reffiles, stagedir, runtimeContext,
+                         separateDirs):  # type: (List[Any], Text, RuntimeContext, bool) -> PathMapper
+        return RemotePathMapper(reffiles, runtimeContext.basedir, stagedir, separateDirs)
 
     def _init_job(self,
                   joborder: Mapping[str, str],
