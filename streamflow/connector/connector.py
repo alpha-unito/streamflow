@@ -33,7 +33,7 @@ class Connector(object, metaclass=ABCMeta):
                    value: Any,
                    ) -> str:
         if len(name) > 1:
-            name = "-{name}".format(name=name)
+            name = "-{name} ".format(name=name)
         if isinstance(value, bool):
             return "-{name} ".format(name=name) if value else ""
         elif isinstance(value, str):

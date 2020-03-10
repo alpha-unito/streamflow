@@ -3,12 +3,14 @@ from typing import MutableMapping, Any
 
 from streamflow.connector.connector import Connector
 from streamflow.connector.docker_compose import DockerComposeConnector
-from streamflow.connector.helm import HelmConnector
+from streamflow.connector.helm import Helm2Connector, Helm3Connector
 from streamflow.connector.occam import OccamConnector
 
 connector_classes = {
     'docker-compose': DockerComposeConnector,
-    'helm': HelmConnector,
+    'helm': Helm3Connector,
+    'helm2': Helm2Connector,
+    'helm3': Helm3Connector,
     'occam': OccamConnector
 }
 
