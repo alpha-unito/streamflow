@@ -10,7 +10,6 @@ from schema_salad.sourceline import SourceLine
 from six.moves import urllib
 from typing_extensions import Text
 
-from streamflow.cwl.remote_fs_access import RemoteFsAccess
 from streamflow.log_handler import _logger
 
 

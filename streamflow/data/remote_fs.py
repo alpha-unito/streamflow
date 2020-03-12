@@ -38,3 +38,7 @@ def isfile(connector: Connector, target: str, path: str):
 
 def mkdir(connector: Connector, target: str, path: str) -> None:
     connector.run(resource=target, command=["mkdir", "-p", path])
+
+
+def symlink(connector: Connector, target: str, src: str, path: str) -> None:
+    connector.run(resource=target, command=["ln", "-s", src, path])

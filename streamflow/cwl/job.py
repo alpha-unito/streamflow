@@ -4,6 +4,7 @@ import os
 import tempfile
 import threading
 from datetime import datetime
+from pathlib import Path
 from typing import cast, MutableMapping, List, Any
 
 from cwltool.errors import WorkflowException
@@ -14,6 +15,7 @@ from schema_salad.utils import json_dumps
 from streamflow.connector.connector import Connector
 from streamflow.cwl.context import SfRuntimeContext
 from streamflow.cwl.job_context import SfJobContext
+from streamflow.cwl.remote_fs_access import RemoteFsAccess
 from streamflow.data import remote_fs
 from streamflow.data.data_manager import DataManager
 from streamflow.log_handler import _logger
@@ -33,7 +35,13 @@ def _transfer_inputs(job_context: SfJobContext,
                 os.mkdir(temp_dir)
                 job_context.data_manager.transfer_data(temp_dir, vol.target, target)
             else:
-                job_context.data_manager.transfer_data(vol.resolved, vol.target, target)
+                if vol.type in ("File", "Directory") and remote_fs.exists(job_context.connector, target, vol.resolved):
+                    if not remote_fs.exists(job_context.connector, target, vol.target):
+                        parent_dir = str(Path(vol.target).parent)
+                        remote_fs.mkdir(job_context.connector, target, parent_dir)
+                        remote_fs.symlink(job_context.connector, target, vol.resolved, vol.target)
+                else:
+                    job_context.data_manager.transfer_data(vol.resolved, vol.target, target)
     _logger.info(
         "Input data transfer for job {name} terminated at {time}".format(name=job_context.name, time=datetime.now()))
 
