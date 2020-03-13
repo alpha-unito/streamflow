@@ -1,0 +1,18 @@
+#!/bin/sh
+VERSION=$1
+SCRIPT_DIRECTORY="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+# Build base image
+docker build \
+    --build-arg HELM_VERSION=v3.1.2 \
+    -t alphaunito/streamflow:${VERSION}-base \
+    ${SCRIPT_DIRECTORY}
+docker push alphaunito/streamflow:${VERSION}-base
+
+# Build Helm 2 image
+docker build \
+    --build-arg BASE_IMAGE=alphaunito/streamflow:${VERSION}-base \
+    --build-arg HELM_VERSION=v2.16.3 \
+    -t alphaunito/streamflow:${VERSION}-helm2 \
+    ${SCRIPT_DIRECTORY}/helm/docker/helm2
+docker push alphaunito/streamflow:${VERSION}-helm2
