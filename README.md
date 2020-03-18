@@ -79,4 +79,6 @@ new version of the package on PyPI, you only have to augment the version number 
 
 Iacopo Colonnelli <iacopo.colonnelli@unito.it> (creator and maintainer)  
 Barbara Cantalupo <barbara.cantalupo@unito.it> (maintainer)  
-Marco Aldinucci <aldinuc@di.unito.it> (maintainer)  
+Marco Aldinucci <aldinuc@di.unito.it> (maintainer)
+
+Gaetano Saitta <gaetano.saitta@edu.unito.it> (contributor)

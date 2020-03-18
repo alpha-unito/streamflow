@@ -126,5 +126,5 @@ dmypy.json
 # IDE
 .idea
 
-# Streamflow
-examples/
+# Mac OS X
+.DS_Store 

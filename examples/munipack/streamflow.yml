@@ -1,0 +1,35 @@
+#!/usr/bin/env streamflow
+version: v1.0
+workflows:
+  master:
+    type: cwl
+    config:
+      file: cwl/main.cwl
+      settings: cwl/config.yml
+    bindings:   
+      - step: /
+        deployments: 
+          - helm-mf
+
+      - step: /pre_correction
+        target:
+          model: helm-mf
+          service: debian
+
+      - step: /photo_correction
+        target:
+          model: helm-mf
+          service: debian
+
+      - step: /stacking
+        target:
+          model: helm-mf
+          service: debian
+
+
+models:
+  helm-mf:
+    type: helm2
+    config:
+      chart: environment/helm/stacking
+      releaseName: munipack-rel

@@ -1,0 +1,26 @@
+main_d: 
+  class: Directory
+  path: data/main
+
+worker_n: 3
+
+dark_file_n: averageDark120.fits
+dark_flat_n: averageDark10.fits
+flat_file_n: masterFlat.fits
+
+dark_frames_d: 
+  class: Directory
+  path: data/dark120
+
+dark_flat_frames_d: 
+  class: Directory
+  path: data/dark10
+
+flat_frames_d: 
+  class: Directory
+  path: data/flat
+
+fwmh_par: 7
+right_ascension: 111.205
+declination: 71.238
+degree: 0.3
