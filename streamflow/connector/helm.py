@@ -17,6 +17,8 @@ from typing import MutableMapping, List, Optional, Any
 
 import six
 from kubernetes import client, config, stream
+from kubernetes.client import Configuration, ApiClient
+from kubernetes.config import incluster_config, ConfigException
 from kubernetes.stream.ws_client import STDOUT_CHANNEL, STDERR_CHANNEL
 from websocket import ABNF
 
@@ -24,6 +26,7 @@ from streamflow.connector import connector
 from streamflow.connector.connector import Connector
 from streamflow.log_handler import _logger
 
+SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
 def patched_write_channel(self, channel, data):
     """Write data to a channel."""
@@ -103,16 +106,18 @@ def patch_response(response):
 class BaseHelmConnector(Connector, ABC):
 
     def __init__(self,
-                 kubeconfig: Optional[str] = None,
+                 inCluster: Optional[bool] = False,
+                 kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
                  namespace: Optional[str] = None,
                  releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
                  transferBufferSize: Optional[int] = (32 << 20) - 1):
         super().__init__()
+        self.inCluster = inCluster
         self.kubeconfig = kubeconfig
         self.namespace = namespace
         self.releaseName = releaseName
         self.transferBufferSize = transferBufferSize
-        self.kubectl = client.CoreV1Api(api_client=config.new_client_from_config(config_file=self.kubeconfig))
+        self._create_client()
 
     def __getstate__(self):
         keys_blacklist = ['kubectl']
@@ -120,7 +125,32 @@ class BaseHelmConnector(Connector, ABC):
 
     def __setstate__(self, state):
         self.__dict__ = state
-        self.kubectl = client.CoreV1Api(api_client=config.new_client_from_config(config_file=self.kubeconfig))
+        self._create_client()
+
+    def _create_client(self):
+        if self.inCluster:
+            loader = incluster_config.InClusterConfigLoader(token_filename=incluster_config.SERVICE_TOKEN_FILENAME,
+                                                            cert_filename=incluster_config.SERVICE_CERT_FILENAME)
+            loader._load_config()
+            configuration = Configuration()
+            configuration.host = loader.host
+            configuration.ssl_ca_cert = loader.ssl_ca_cert
+            configuration.api_key['authorization'] = "bearer " + loader.token
+            self.kubectl = client.CoreV1Api(api_client=ApiClient(configuration=configuration))
+            self._configure_incluster_namespace()
+        else:
+            self.kubectl = client.CoreV1Api(api_client=config.new_client_from_config(config_file=self.kubeconfig))
+
+    def _configure_incluster_namespace(self):
+        if self.namespace is None:
+            if not os.path.isfile(SERVICE_NAMESPACE_FILENAME):
+                raise ConfigException(
+                    "Service namespace file does not exists.")
+
+            with open(SERVICE_NAMESPACE_FILENAME) as f:
+                self.namespace = f.read()
+                if not self.namespace:
+                    raise ConfigException("Namespace file exists but empty.")
 
     def _build_helper_file(self,
                            target: str,
@@ -301,6 +331,7 @@ class Helm2Connector(BaseHelmConnector):
                  depUp: Optional[bool] = False,
                  description: Optional[str] = None,
                  devel: Optional[bool] = False,
+                 inCluster: Optional[bool] = False,
                  init: Optional[bool] = False,
                  keyFile: Optional[str] = None,
                  keyring: Optional[str] = None,
@@ -331,6 +362,7 @@ class Helm2Connector(BaseHelmConnector):
                  transferBufferSize: Optional[int] = None
                  ):
         super().__init__(
+            inCluster=inCluster,
             kubeconfig=kubeconfig,
             namespace=namespace,
             releaseName=releaseName,
@@ -520,6 +552,7 @@ class Helm3Connector(BaseHelmConnector):
                  certFile: Optional[str] = None,
                  depUp: Optional[bool] = False,
                  devel: Optional[bool] = False,
+                 inCluster: Optional[bool] = False,
                  keepHistory: Optional[bool] = False,
                  keyFile: Optional[str] = None,
                  keyring: Optional[str] = None,
@@ -546,6 +579,7 @@ class Helm3Connector(BaseHelmConnector):
                  transferBufferSize: Optional[int] = None
                  ):
         super().__init__(
+            inCluster=inCluster,
             kubeconfig=kubeconfig,
             namespace=namespace,
             releaseName=releaseName,
@@ -593,7 +627,7 @@ class Helm3Connector(BaseHelmConnector):
             "{repositoryCache}"
             "{repositoryConfig}"
         ).format(
-            debug=self.get_option("debug", self.debug),\
+            debug=self.get_option("debug", self.debug), \
             kubeContext=self.get_option("kube-context", self.kubeContext),
             kubeconfig=self.get_option("kubeconfig", self.kubeconfig),
             namespace=self.get_option("namespace", self.namespace),

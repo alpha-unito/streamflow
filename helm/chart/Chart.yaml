@@ -1,0 +1,6 @@
+apiVersion: v2
+name: streamflow
+description: A Helm chart for StreamFlow
+type: application
+version: 0.1.0
+appVersion: latest

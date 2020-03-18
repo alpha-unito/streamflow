@@ -50,6 +50,28 @@ docker run -d \
     /streamflow/project/streamflow.yml
 ```
 
+#### Kubernetes
+
+It is also possible to execute the StreamFlow container as a `Job` in [Kubernetes](https://kubernetes.io/).
+In this case, StreamFlow is able to deploy `Helm` models directly on the parent cluster through the
+`ServiceAccount` credentials. In order to do that, the `inCluster` option must be set to `true` for each
+involved module on the `streamflow.yml` file
+
+```yaml
+models:
+  helm-model:
+    type: helm
+    config:
+      inCluster: true
+      ...
+```
+
+A `Helm` template of a StreamFlow `Job` can be found in the `helm/chart` folder.
+
+Please note that, in case [RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) is active on the
+Kubernetes cluster, a proper `RoleBinding` must be attached to the `ServiceAccount` object, in order to give
+StreamFlow the permissions to manage deployments of pods and executions of tasks.
+
 ## Contribute to StreamFlow
 
 StreamFlow uses [pipenv](https://pipenv.kennethreitz.org/en/latest/) to guarantee deterministic builds.

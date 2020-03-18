@@ -223,7 +223,7 @@
           "additionalProperties": false
         },
         "helm2": {
-          "$id": "#/definitions/model/definitions/helm",
+          "$id": "#/definitions/model/definitions/helm2",
           "type": "object",
           "properties": {
             "atomic": {
@@ -270,6 +270,11 @@
             "fileValues": {
               "type": "string",
               "description": "Set values from respective files. Can separate values with commas: key1=path1,key2=path2"
+            },
+            "inCluster": {
+              "type": "boolean",
+              "description": "If true, the Helm connector will use a ServiceAccount to connect to the Kubernetes cluster. This is useful when StreamFlow runs directly inside a Kubernetes Pod",
+              "default": false
             },
             "home": {
               "type": "string",
@@ -456,6 +461,11 @@
             "fileValues": {
               "type": "string",
               "description": "Set values from respective files. Can separate values with commas: key1=path1,key2=path2"
+            },
+            "inCluster": {
+              "type": "boolean",
+              "description": "If true, the Helm connector will use a ServiceAccount to connect to the Kubernetes cluster. This is useful when StreamFlow runs directly inside a Kubernetes Pod",
+              "default": false
             },
             "keepHistory": {
               "type": "boolean",
