@@ -37,9 +37,9 @@ class Connector(object, metaclass=ABCMeta):
         if isinstance(value, bool):
             return "-{name} ".format(name=name) if value else ""
         elif isinstance(value, str):
-            return "-{name} {value} ".format(name=name, value=value)
+            return "-{name} \"{value}\" ".format(name=name, value=value)
         elif isinstance(value, List):
-            return "".join(["-{name} {value} ".format(name=name, value=item) for item in value])
+            return "".join(["-{name} \"{value}\" ".format(name=name, value=item) for item in value])
         elif value is None:
             return ""
         else:

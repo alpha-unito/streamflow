@@ -1,4 +1,5 @@
 import os
+import shlex
 import subprocess
 from typing import List, Optional, MutableMapping, Any
 
@@ -106,7 +107,7 @@ class DockerComposeConnector(Connector):
              source_remote: str = None
              ) -> None:
         resource_id = \
-            subprocess.run(self.base_command().split() + ["ps", "-q", resource],
+            subprocess.run(shlex.split(self.base_command()) + ["ps", "-q", resource],
                            check=True,
                            capture_output=True,
                            text=True
@@ -128,7 +129,7 @@ class DockerComposeConnector(Connector):
             src=src,
             dst=dst
         )
-        subprocess.run(copy_command.split(), check=True)
+        subprocess.run(shlex.split(copy_command), check=True)
 
     def deploy(self) -> None:
         deploy_command = self.base_command() + "".join([
@@ -148,7 +149,7 @@ class DockerComposeConnector(Connector):
             noBuild=self.get_option("no-build", self.noBuild),
             noStart=self.get_option("no-start", self.noStart)
         )
-        subprocess.run(deploy_command.split(), check=True)
+        subprocess.run(shlex.split(deploy_command), check=True)
 
     def get_available_resources(self, service: str) -> List[str]:
         return [service]
@@ -178,7 +179,7 @@ class DockerComposeConnector(Connector):
         ]).format(
             removeVolumes=self.get_option("volumes", self.removeVolumes)
         )
-        subprocess.run(undeploy_command.split(), check=True)
+        subprocess.run(shlex.split(undeploy_command), check=True)
 
     def run(self,
             resource: str,
@@ -186,10 +187,10 @@ class DockerComposeConnector(Connector):
             environment: MutableMapping[str, str] = None,
             workdir: str = None,
             capture_output: bool = False) -> Optional[Any]:
-        run_command = self.get_runtime(resource=resource,
-                                       environment=environment,
-                                       workdir=workdir
-                                       ).split() + command
+        run_command = shlex.split(self.get_runtime(resource=resource,
+                                                   environment=environment,
+                                                   workdir=workdir
+                                                   )) + command
         _logger.debug("Executing {command}".format(command=run_command, resource=resource))
         process = subprocess.run(
             run_command,

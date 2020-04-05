@@ -1,6 +1,6 @@
 cwlVersion: v1.1
 class: CommandLineTool
-baseCommand: ["ls", "--la"]
+baseCommand: ["ls", "-la"]
 
 inputs:
   main_directory:

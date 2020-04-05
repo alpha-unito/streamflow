@@ -29,7 +29,7 @@ workflows:
 
 models:
   helm-mf:
-    type: helm2
+    type: helm
     config:
       chart: environment/helm/stacking
       releaseName: munipack-rel

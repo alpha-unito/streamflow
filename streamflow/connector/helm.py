@@ -3,6 +3,7 @@ import io
 import os
 import posixpath
 import select
+import shlex
 import shutil
 import stat
 import subprocess
@@ -417,7 +418,7 @@ class Helm2Connector(BaseHelmConnector):
             wait=self.get_option("wait", self.wait)
         )
         _logger.debug("Executing {command}".format(command=init_command))
-        return subprocess.run(init_command.split(), check=True)
+        return subprocess.run(shlex.split(init_command), check=True)
 
     def base_command(self):
         return (
@@ -504,10 +505,10 @@ class Helm2Connector(BaseHelmConnector):
             verify=self.get_option("verify", self.verify),
             chartVersion=self.get_option("version", self.chartVersion),
             wait=self.get_option("wait", self.wait),
-            chart=self.chart
+            chart="\"{chart}\"".format(chart=self.chart)
         )
         _logger.debug("Executing {command}".format(command=deploy_command))
-        return subprocess.run(deploy_command.split(), check=True)
+        return subprocess.run(shlex.split(deploy_command), check=True)
 
     def undeploy(self) -> subprocess.CompletedProcess:
         undeploy_command = self.base_command() + (
@@ -537,7 +538,7 @@ class Helm2Connector(BaseHelmConnector):
             releaseName=self.releaseName
         )
         _logger.debug("Executing {command}".format(command=undeploy_command))
-        return subprocess.run(undeploy_command.split(), check=True)
+        return subprocess.run(shlex.split(undeploy_command), check=True)
 
 
 class Helm3Connector(BaseHelmConnector):
@@ -688,10 +689,10 @@ class Helm3Connector(BaseHelmConnector):
             chartVersion=self.get_option("version", self.chartVersion),
             wait=self.get_option("wait", self.wait),
             releaseName="{releaseName} ".format(releaseName=self.releaseName),
-            chart=self.chart
+            chart="\"{chart}\"".format(chart=self.chart)
         )
         _logger.debug("Executing {command}".format(command=deploy_command))
-        return subprocess.run(deploy_command.split(), check=True)
+        return subprocess.run(shlex.split(deploy_command), check=True)
 
     def undeploy(self) -> subprocess.CompletedProcess:
         undeploy_command = self.base_command() + (
@@ -707,7 +708,7 @@ class Helm3Connector(BaseHelmConnector):
             releaseName=self.releaseName
         )
         _logger.debug("Executing {command}".format(command=undeploy_command))
-        return subprocess.run(undeploy_command.split(), check=True)
+        return subprocess.run(shlex.split(undeploy_command), check=True)
 
 
 if __name__ == "__main__":
