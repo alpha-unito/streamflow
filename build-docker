@@ -2,6 +2,9 @@
 VERSION=$1
 SCRIPT_DIRECTORY="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+# Docker login
+echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+
 # Build base image
 docker build \
     --build-arg HELM_VERSION=v3.1.2 \
