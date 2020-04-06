@@ -17,7 +17,7 @@ before_deploy:
       git config --local user.name "alpha-unito-bot"
       git config --local user.email "alpha@di.unito.it"
       export TRAVIS_TAG="${STREAMFLOW_VERSION}"
-      git tag ${TRAVIS_TAG}
+      git tag -a ${TRAVIS_TAG} -m "StreamFlow Release ${STREAMFLOW_VERSION}"
       # Prepare pipenv
       pipenv lock -r > ${TRAVIS_BUILD_DIR}/requirements.txt
     fi
