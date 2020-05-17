@@ -12,7 +12,7 @@ multi-cloud or hybrid cloud/HPC infrastructures.
 ## Use StreamFlow
 
 #### PyPI
-
+ 
 The StreamFlow module is available on [PyPI](https://pypi.org/project/streamflow/), so you can install it using pip.
 
 ```bash
