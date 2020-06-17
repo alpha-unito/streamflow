@@ -1,6 +1,7 @@
 import os
 import urllib.parse
 from datetime import datetime
+from pathlib import Path
 from typing import Type, Any, MutableMapping, Mapping, Callable, Generator, Union, Optional, Dict, Text, List
 
 from cwltool.command_line_tool import CommandLineTool, CallbackJob
@@ -167,6 +168,8 @@ class SfWorkflowStep(WorkflowStep):
                             if element.get('class') == 'Directory':
                                 os.makedirs(abs_path, exist_ok=True)
                             else:
+                                parent_dir = str(Path(abs_path).parent)
+                                os.makedirs(parent_dir, exist_ok=True)
                                 open(abs_path, 'a').close()
         super().receive_output(output_callback, jobout, processStatus)
         if job_context is not None:
