@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docker-compose.json",
+  "type": "object",
+  "properties": {
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "The files containing the architecture specification"
+    },
+    "projectName": {
+      "type": "string",
+      "description": "Specify an alternate project name",
+      "default": "The name of the project directory"
+    },
+    "verbose": {
+      "type": "boolean",
+      "description": "Show more output"
+    },
+    "logLevel": {
+      "type": "string",
+      "enum": [
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL"
+      ],
+      "description": "Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+    },
+    "noAnsi": {
+      "type": "boolean",
+      "description": "Do not print ANSI control characters"
+    },
+    "host": {
+      "type": "string",
+      "description": "Daemon socket to connect to"
+    },
+    "skipHostnameCheck": {
+      "type": "boolean",
+      "description": "Don't check the daemon's hostname against the name specified in the client certificate"
+    },
+    "projectDirectory": {
+      "type": "string",
+      "description": "Specify an alternate working directory",
+      "default": "The path of the Compose file"
+    },
+    "compatibility": {
+      "type": "boolean",
+      "description": "If set, Compose will attempt to convert deploy keys in v3 files to their non-Swarm equivalent"
+    },
+    "noDeps": {
+      "type": "boolean",
+      "description": "Don't start linked services"
+    },
+    "forceRecreate": {
+      "type": "boolean",
+      "description": "Recreate containers even if their configuration and image haven't changed"
+    },
+    "alwaysRecreateDeps": {
+      "type": "boolean",
+      "description": "Recreate dependent containers (incompatible with noRecreate)"
+    },
+    "noRecreate": {
+      "type": "boolean",
+      "description": "If containers already exist, don't recreate them (incompatible with forceRecreate and renewAnonVolumes)"
+    },
+    "noBuild": {
+      "type": "boolean",
+      "description": "Don't build an image, even if it's missing"
+    },
+    "noStart": {
+      "type": "boolean",
+      "description": "Don't start the services after creating them"
+    },
+    "build": {
+      "type": "boolean",
+      "description": "Build images before starting containers"
+    },
+    "renewAnonVolumes": {
+      "type": "boolean",
+      "description": "Recreate anonymous volumes instead of retrieving data from the previous containers"
+    },
+    "removeOrphans": {
+      "type": "boolean",
+      "description": "Remove containers for services not defined in the Compose file"
+    },
+    "removeVolumes": {
+      "type": "boolean",
+      "description": "Remove named volumes declared in the `volumes` section of the Compose file and anonymous volumes attached to containers"
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "Timeout in seconds for container shutdown when attached or when containers are already running",
+      "default": 10
+    },
+    "tls": {
+      "type": "boolean",
+      "description": "Use TLS (implied by --tlsverify)"
+    },
+    "tlscacert": {
+      "type": "string",
+      "description": "Trust certs signed only by this CA"
+    },
+    "tlscert": {
+      "type": "string",
+      "description": "Path to TLS certificate file"
+    },
+    "tlskey": {
+      "type": "string",
+      "description": "Path to TLS key file"
+    },
+    "tlsverify": {
+      "type": "boolean",
+      "description": "Use TLS and verify the remote"
+    }
+  },
+  "required": [
+    "files"
+  ],
+  "additionalProperties": false
+}

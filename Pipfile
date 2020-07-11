@@ -9,9 +9,11 @@ pytest = "*"
 [packages]
 cwltool = "*"
 kubernetes = "*"
+jsonref = "*"
 jsonschema = "*"
 paramiko = "*"
 scp = "*"
+six = "*"
 
 [requires]
 python_version = "3.7"

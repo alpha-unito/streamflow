@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "occam.json",
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "description": "Path to the file describing Occam environment"
+    },
+    "hostname": {
+      "type": "string",
+      "description": "Hostname of Occam facility",
+      "default": "occam.c3s.unito.it"
+    },
+    "sshKey": {
+      "type": "string",
+      "description": "Path to the SSH key needed to connect with Occam environment"
+    },
+    "sshKeyPassphrase": {
+      "type": "string",
+      "description": "Passphrase protecting Occam SSH key"
+    },
+    "socketTimeout": {
+      "type": "number",
+      "description": "Timeout for file transfer socket",
+      "default": "60.0 seconds"
+    },
+    "username": {
+      "type": "string",
+      "description": "Username needed to connect with Occam environment"
+    }
+  },
+  "required": [
+    "file",
+    "sshKey",
+    "username"
+  ],
+  "additionalProperties": false
+}

@@ -1,21 +1,21 @@
-import json
 import os
 from typing import Any, MutableMapping
 
+from jsonref import loads
 from jsonschema import Draft7Validator
 from ruamel.yaml import YAML
 
 
 def load_jsonschema(config_file):
-    filename = os.path.join(
+    base_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        'schemas',
-        config_file['version'], "config_schema.json")
+        'schemas', config_file['version'])
+    filename = os.path.join(base_path, "config_schema.json")
     if not os.path.exists(filename):
         raise Exception(
             'Version in "{}" is unsupported'.format(config_file.filename))
     with open(filename, "r") as f:
-        return json.load(f)
+        return loads(f.read(), base_uri='file://{}/'.format(base_path), jsonschema=True)
 
 
 def handle_errors(errors, filename):

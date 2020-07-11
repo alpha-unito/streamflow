@@ -29,6 +29,7 @@ from streamflow.log_handler import _logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
+
 def patched_write_channel(self, channel, data):
     """Write data to a channel."""
     # check if we're writing binary data or not
@@ -628,7 +629,7 @@ class Helm3Connector(BaseHelmConnector):
             "{repositoryCache}"
             "{repositoryConfig}"
         ).format(
-            debug=self.get_option("debug", self.debug), \
+            debug=self.get_option("debug", self.debug),
             kubeContext=self.get_option("kube-context", self.kubeContext),
             kubeconfig=self.get_option("kubeconfig", self.kubeconfig),
             namespace=self.get_option("namespace", self.namespace),
