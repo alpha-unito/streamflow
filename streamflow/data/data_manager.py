@@ -1,94 +1,74 @@
+from __future__ import annotations
+
 import os
 import shutil
 import tempfile
 from pathlib import Path
-from threading import RLock
-from typing import Optional, MutableMapping, List
+from typing import TYPE_CHECKING
 
-from streamflow.connector.connector import ConnectorCopyKind
-from streamflow.connector.deployment_manager import DeploymentManager
-from streamflow.data import remote_fs
-from streamflow.data.utils import RemotePath
-from streamflow.log_handler import _logger
-from streamflow.scheduling.scheduler import Scheduler
+from streamflow.deployment.base import ConnectorCopyKind
+from streamflow.core.data import DataManager
+from streamflow.data import remotepath
+
+if TYPE_CHECKING:
+    from streamflow.core.context import StreamflowContext
+    from streamflow.core.workflow import Job
+    from typing import Optional
+    from typing_extensions import Text
 
 
-class DataManager(object):
+class DefaultDataManager(DataManager):
 
-    def __init__(self,
-                 scheduler: Scheduler,
-                 deployment_manager: DeploymentManager) -> None:
+    def __init__(self, context: StreamflowContext) -> None:
         super().__init__()
-        self.lock = RLock()
-        self.scheduler = scheduler
-        self.deployment_manager: DeploymentManager = deployment_manager
-        self.remote_paths: MutableMapping[str, List[RemotePath]] = {}
+        self.context = context
 
-    def add_remote_path_mapping(self,
-                                resource: str,
-                                local_path: str,
-                                remote_path: str) -> None:
-        with self.lock:
-            if local_path not in self.remote_paths:
-                self.remote_paths[local_path] = []
-            self.remote_paths[local_path].append(RemotePath(resource, remote_path))
-
-    def _find_remote_path(self, local_path: str) -> Optional[RemotePath]:
-        with self.lock:
-            mappings = []
-            if local_path in self.remote_paths:
-                for remote_path in self.remote_paths[local_path]:
-                    model = self.scheduler.get_resource(remote_path.resource).model
-                    if self.deployment_manager.is_deployed(model):
-                        mappings.append(remote_path)
-                # TODO: select best resource
-                return mappings[0]
-            else:
-                return None
-
-    def collect_output(self, path: str):
-        remote_path = self._find_remote_path(path)
-        remote_resource = self.scheduler.get_resource(remote_path.resource)
-        connector = self.deployment_manager.get_connector(remote_resource.model)
-        connector.copy(remote_path.path, path, remote_path.resource,
-                       ConnectorCopyKind.remoteToLocal)
-
-    def transfer_data(self,
-                      src: str,
-                      dst: str,
-                      target: str):
-        target_resource = self.scheduler.get_resource(target)
-        connector = self.deployment_manager.get_connector(target_resource.model)
-        remote_fs.mkdir(connector, target, str(Path(dst).parent))
-        if remote_fs.exists(connector, target, src):
-            _logger.info("Path {resolved} found on {resource}".format(resolved=src, resource=target))
+    async def transfer_data(self,
+                            src: Text,
+                            src_job: Optional[Job],
+                            dst: Text,
+                            dst_job: Optional[Job],
+                            symlink_if_possible: bool = False):
+        # Get connectors and resources from tasks
+        src_connector = src_job.task.get_connector() if src_job is not None else None
+        src_resource = src_job.get_resource() if src_job is not None else None
+        dst_connector = dst_job.task.get_connector() if dst_job is not None else None
+        dst_resource = dst_job.get_resource() if dst_job is not None else None
+        # Create destination folder
+        await remotepath.mkdir(dst_connector, dst_resource, str(Path(dst).parent))
+        # Follow symlink for source path
+        src = await remotepath.follow_symlink(src_connector, src_resource, src)
+        # If tasks are scheduled on the same resource, only perform a local copy
+        if src_connector == dst_connector and src_resource == dst_resource:
             if src != dst:
-                connector.copy(src, dst, target, ConnectorCopyKind.remoteToRemote)
-        else:
-            remote_path = self._find_remote_path(src)
-            if remote_path is not None:
-                src_resource = self.scheduler.get_resource(remote_path.resource)
-                if src_resource.model == target_resource.model:
-                    _logger.info(
-                        "Path {resolved} found on {resource}".format(resolved=src,
-                                                                     resource=remote_path.resource))
-                    connector.copy(remote_path.path, dst, target,
-                                   ConnectorCopyKind.remoteToRemote, remote_path.resource)
-                    return
+                if symlink_if_possible:
+                    await remotepath.symlink(dst_connector, dst_resource, src, dst)
                 else:
-                    source_connector = self.deployment_manager.get_connector(src_resource.model)
-                    _logger.info(
-                        "Path {resolved} found on {model}:{resource}".format(resolved=src,
-                                                                             model=src_resource.model,
-                                                                             resource=remote_path.resource))
-                    temp_dir = tempfile.mkdtemp()
-                    source_connector.copy(remote_path.path, temp_dir, remote_path.resource,
-                                          ConnectorCopyKind.remoteToLocal)
-                    for element in os.listdir(temp_dir):
-                        connector.copy(os.path.join(temp_dir, element), dst, target,
-                                       ConnectorCopyKind.localToRemote)
-                    shutil.rmtree(temp_dir)
-                    return
-            _logger.info(
-                "Path {resolved} not found on {resource}".format(resolved=src, resource=target))
-            connector.copy(src, dst, target, ConnectorCopyKind.localToRemote)
+                    if dst_connector is not None:
+                        await dst_connector.copy(src, dst, dst_resource, ConnectorCopyKind.REMOTE_TO_REMOTE)
+                    else:
+                        if os.path.isdir(src):
+                            os.makedirs(dst, exist_ok=True)
+                            shutil.copytree(src, dst, dirs_exist_ok=True)
+                        else:
+                            shutil.copy(src, dst)
+        # If tasks are scheduled on the same model, only perform a remote copy managed by the deployment
+        elif src_connector == dst_connector:
+            await dst_connector.copy(src, dst, dst_resource, ConnectorCopyKind.REMOTE_TO_REMOTE, src_resource)
+        # If source task is local, copy files to the remote resource
+        elif src_connector is None:
+            await dst_connector.copy(src, dst, dst_resource, ConnectorCopyKind.LOCAL_TO_REMOTE)
+        # If destination task is local, copy files from the remote resource
+        elif dst_connector is None:
+            await src_connector.copy(src, dst, src_resource, ConnectorCopyKind.REMOTE_TO_LOCAL)
+        # If tasks are both remote and scheduled on different models, perform an intermediate local copy
+        else:
+            temp_dir = tempfile.mkdtemp()
+            await src_connector.copy(src, temp_dir, src_resource, ConnectorCopyKind.REMOTE_TO_LOCAL)
+            for element in os.listdir(temp_dir):
+                await dst_connector.copy(
+                    os.path.join(temp_dir, element),
+                    dst,
+                    dst_resource,
+                    ConnectorCopyKind.LOCAL_TO_REMOTE)
+            shutil.rmtree(temp_dir)

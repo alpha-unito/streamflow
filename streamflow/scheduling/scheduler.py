@@ -1,63 +1,54 @@
-from threading import RLock, Condition
-from typing import List, MutableMapping
+from __future__ import annotations
 
-from streamflow.data.data_manager import RemotePath
-from streamflow.log_handler import _logger
-from streamflow.scheduling.policy import Policy, DataLocalityPolicy
-from streamflow.scheduling.utils import ResourceAllocation, JobAllocation, JobStatus, TaskDescription
+from asyncio import Condition
+from typing import TYPE_CHECKING
+
+from streamflow.core.scheduling import ResourceAllocation, JobAllocation, Scheduler, JobStatus
+from streamflow.log_handler import logger
+
+if TYPE_CHECKING:
+    from streamflow.core.context import StreamflowContext
+    from streamflow.core.workflow import Job
+    from streamflow.scheduling.policy import Policy
 
 
-class Scheduler(object):
+class DefaultScheduler(Scheduler):
 
-    def __init__(self) -> None:
+    def __init__(self,
+                 context: StreamflowContext,
+                 default_policy: Policy) -> None:
         super().__init__()
-        self.resources: MutableMapping[str, ResourceAllocation] = {}
-        self.jobs: MutableMapping[str, JobAllocation] = {}
-        self.remote_paths: MutableMapping[str, List[RemotePath]] = {}
-        self.default_policy: Policy = DataLocalityPolicy()
-        self.lock: RLock = RLock()
-        self.wait_queue: Condition = Condition(self.lock)
+        self.context: StreamflowContext = context
+        self.default_policy: Policy = default_policy
+        self.wait_queue: Condition = Condition()
 
-    def get_resource(self,
-                     resource_name: str) -> ResourceAllocation:
-        return self.resources[resource_name]
-
-    def get_service(self,
-                    job_name: str) -> str:
-        return self.jobs[job_name].service
-
-    def notify_status(self,
-                      job_name: str,
-                      status: JobStatus) -> None:
-        with self.wait_queue:
+    async def notify_status(self, job_name: str, status: JobStatus) -> None:
+        async with self.wait_queue:
             self.jobs[job_name].status = status
-            self.wait_queue.notify_all()
+            logger.info(
+                "Job {name} changed status to {status}".format(name=job_name, status=status.name))
+            if status in [JobStatus.COMPLETED, JobStatus.FAILED]:
+                self.wait_queue.notify_all()
 
-    def schedule(self,
-                 task_description: TaskDescription,
-                 model_name: str,
-                 target_service: str,
-                 available_resources: List[str],
-                 remote_paths: MutableMapping[str, List[RemotePath]],
-                 scheduling_policy: Policy = None) -> str:
-        with self.wait_queue:
-            job_name = task_description.name
+    async def schedule(self,
+                       job: Job,
+                       scheduling_policy: Policy = None) -> None:
+        async with self.wait_queue:
+            model_name = job.task.target.model.name
+            connector = self.context.deployment_manager.get_connector(model_name)
+            available_resources = await connector.get_available_resources(job.task.target.service)
             while True:
                 selected_resource = \
-                    (scheduling_policy or self.default_policy).get_resource(task_description,
+                    (scheduling_policy or self.default_policy).get_resource(job,
                                                                             available_resources,
-                                                                            remote_paths,
                                                                             self.jobs,
                                                                             self.resources)
                 if selected_resource is not None:
                     break
-                self.wait_queue.wait()
-            _logger.info(
-                "Task {name} allocated on resource {resource}".format(name=job_name, resource=selected_resource))
-            self.jobs[job_name] = JobAllocation(job_name, task_description, target_service, selected_resource,
-                                                JobStatus.running)
-            if selected_resource not in self.resources:
-                self.resources[selected_resource] = ResourceAllocation(selected_resource, model_name)
-            self.resources[selected_resource].jobs.append(job_name)
-            self.resources[selected_resource].services.add(target_service)
-            return selected_resource
+                await self.wait_queue.wait()
+        logger.info(
+            "Job {name} allocated on resource {resource}".format(name=job.name, resource=selected_resource))
+        self.jobs[job.name] = JobAllocation(job, selected_resource, JobStatus.RUNNING)
+        if selected_resource not in self.resources:
+            self.resources[selected_resource] = ResourceAllocation(selected_resource, model_name)
+        self.resources[selected_resource].jobs.append(job.name)

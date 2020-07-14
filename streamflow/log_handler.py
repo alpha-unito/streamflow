@@ -1,6 +1,7 @@
 import logging
 
-_logger = logging.getLogger("streamflow")
+logger = logging.getLogger("streamflow")
 defaultStreamHandler = logging.StreamHandler()
-_logger.addHandler(defaultStreamHandler)
-_logger.setLevel(logging.INFO)
+logger.addHandler(defaultStreamHandler)
+logger.setLevel(logging.INFO)
+logger.propagate = False

@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import os
-from typing import Any, MutableMapping
+from typing import TYPE_CHECKING
 
 from jsonref import loads
 from jsonschema import Draft7Validator
 from ruamel.yaml import YAML
+
+if TYPE_CHECKING:
+    from typing import Any, MutableMapping
+    from typing_extensions import Text
 
 
 def load_jsonschema(config_file):
@@ -34,17 +40,11 @@ class SfValidator(object):
         super().__init__()
         self.yaml = YAML(typ='safe')
 
-    def validate(self, streamflow_file: str) -> MutableMapping[str, Any]:
+    def validate(self, streamflow_file: Text) -> MutableMapping[Text, Any]:
         with open(streamflow_file) as f:
             streamflow_config = self.yaml.load(f)
         schema = load_jsonschema(streamflow_config)
         validator = Draft7Validator(schema)
         handle_errors(
             validator.iter_errors(streamflow_config), streamflow_file)
-        config_file_path = os.path.abspath(streamflow_file)
-        streamflow_config['config_file'] = {
-            'path': config_file_path,
-            'basename': os.path.basename(config_file_path),
-            'dirname': os.path.dirname(config_file_path)
-        }
         return streamflow_config

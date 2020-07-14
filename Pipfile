@@ -7,13 +7,13 @@ verify_ssl = true
 pytest = "*"
 
 [packages]
+aiohttp = "*"
+asyncssh = "*"
 cwltool = "*"
-kubernetes = "*"
 jsonref = "*"
 jsonschema = "*"
-paramiko = "*"
-scp = "*"
-six = "*"
+kubernetes_asyncio = "*"
+uvloop = "*"
 
 [requires]
 python_version = "3.7"

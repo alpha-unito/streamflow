@@ -16,7 +16,7 @@ outputs:
 steps:
   find_files:
     run: clt/find.cwl
-    in: 
+    in:
       main_directory: main_dir
     out: [files_array]
 

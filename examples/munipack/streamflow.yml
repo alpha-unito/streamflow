@@ -6,30 +6,23 @@ workflows:
     config:
       file: cwl/main.cwl
       settings: cwl/config.yml
-    bindings:   
-      - step: /
-        deployments: 
-          - helm-mf
-
+    bindings:
       - step: /pre_correction
         target:
           model: helm-mf
           service: debian
-
       - step: /photo_correction
         target:
           model: helm-mf
           service: debian
-
       - step: /stacking
         target:
           model: helm-mf
           service: debian
-
-
 models:
   helm-mf:
     type: helm
     config:
       chart: environment/helm/stacking
+      kubeconfig: /home/glassofwhiskey/.kube/config-streamflow
       releaseName: munipack-rel

@@ -1,164 +1,72 @@
+import asyncio
 import base64
 import io
 import os
 import posixpath
-import select
 import shlex
 import shutil
 import stat
 import subprocess
-import sys
 import tarfile
 import tempfile
-import types
 import uuid
 from abc import ABC
 from pathlib import Path
-from typing import MutableMapping, List, Optional, Any
+from typing import MutableMapping, List, Optional, Any, Tuple
 
-import six
-from kubernetes import client, config, stream
-from kubernetes.client import Configuration, ApiClient
-from kubernetes.config import incluster_config, ConfigException
-from kubernetes.stream.ws_client import STDOUT_CHANNEL, STDERR_CHANNEL
-from websocket import ABNF
+import yaml
+from kubernetes_asyncio import client
+from kubernetes_asyncio.client import Configuration, ApiClient
+from kubernetes_asyncio.config import incluster_config, ConfigException, load_kube_config
+from kubernetes_asyncio.stream import WsApiClient, ws_client
+from typing_extensions import Text
 
-from streamflow.connector import connector
-from streamflow.connector.connector import Connector
-from streamflow.log_handler import _logger
+from streamflow.deployment.base import BaseConnector
+from streamflow.core.scheduling import Resource
+from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
 
-def patched_write_channel(self, channel, data):
-    """Write data to a channel."""
-    # check if we're writing binary data or not
-    binary = six.PY3 and type(data) == six.binary_type
-    opcode = ABNF.OPCODE_BINARY if binary else ABNF.OPCODE_TEXT
+class PatchedInClusterConfigLoader(incluster_config.InClusterConfigLoader):
 
-    channel_prefix = chr(channel)
-    if binary:
-        channel_prefix = six.binary_type(channel_prefix, "ascii")
+    def load_and_set(self, configuration: Optional[Configuration] = None):
+        self._load_config()
+        self._set_config(configuration)
 
-    payload = channel_prefix + data
-    self.sock.send(payload, opcode=opcode)
-
-
-def patched_update(self, timeout=0):
-    """Update channel buffers with at most one complete frame of input."""
-    if not self.is_open():
-        return
-    if not self.sock.connected:
-        self._connected = False
-        return
-    r, _, _ = select.select(
-        (self.sock.sock,), (), (), timeout)
-    if r:
-        op_code, frame = self.sock.recv_data_frame(True)
-        if op_code == ABNF.OPCODE_CLOSE:
-            self._connected = False
-            return
-        elif op_code == ABNF.OPCODE_BINARY or op_code == ABNF.OPCODE_TEXT:
-            data = frame.data
-            if six.PY3 and op_code == ABNF.OPCODE_TEXT:
-                data = data.decode("utf-8", "replace")
-                if len(data) > 1:
-                    channel = ord(data[0])
-                    data = data[1:]
-                    if data:
-                        if channel in [STDOUT_CHANNEL, STDERR_CHANNEL]:
-                            self._all.write(data)
-                        if channel not in self._channels:
-                            self._channels[channel] = data
-                        else:
-                            self._channels[channel] += data
-            elif op_code == ABNF.OPCODE_BINARY:
-                if len(data) > 1:
-                    channel = data[0]
-                    data = data[1:]
-                    if len(data) > 0:
-                        if channel in [STDOUT_CHANNEL, STDERR_CHANNEL]:
-                            self._all.write(data)
-                        if channel not in self._channels:
-                            self._channels[channel] = data
-                        else:
-                            self._channels[channel] += data
+    def _set_config(self, configuration: Optional[Configuration] = None):
+        if configuration is None:
+            super()._set_config()
+        configuration.host = self.host
+        configuration.ssl_ca_cert = self.ssl_ca_cert
+        configuration.api_key['authorization'] = "bearer " + self.token
 
 
-def patched_read_all(self):
-    """Return buffered data received on stdout and stderr channels.
-    This is useful for non-interactive call where a set of command passed
-    to the API call and their result is needed after the call is concluded.
-    Should be called after run_forever() or update()
-    """
-    out = self._all.getvalue()
-    self._all = self._all.__class__()
-    self._channels = {}
-    return out
-
-
-def patch_response(response):
-    response._all = six.BytesIO()
-    response.write_channel = types.MethodType(patched_write_channel, response)
-    response.update = types.MethodType(patched_update, response)
-    response.read_all = types.MethodType(patched_read_all, response)
-    return response
-
-
-class BaseHelmConnector(Connector, ABC):
+class BaseHelmConnector(BaseConnector, ABC):
 
     def __init__(self,
+                 streamflow_config_dir: Text,
                  inCluster: Optional[bool] = False,
-                 kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
-                 namespace: Optional[str] = None,
-                 releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
+                 kubeconfig: Optional[Text] = os.path.join(os.environ['HOME'], ".kube", "config"),
+                 namespace: Optional[Text] = None,
+                 releaseName: Optional[Text] = "release-%s" % str(uuid.uuid1()),
                  transferBufferSize: Optional[int] = (32 << 20) - 1):
-        super().__init__()
+        super().__init__(streamflow_config_dir)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
         self.namespace = namespace
         self.releaseName = releaseName
         self.transferBufferSize = transferBufferSize
-        self._create_client()
+        self.configuration: Optional[Configuration] = None
+        self.client: Optional[client.CoreV1Api] = None
+        self.client_ws: Optional[client.CoreV1Api] = None
 
-    def __getstate__(self):
-        keys_blacklist = ['kubectl']
-        return dict((k, v) for (k, v) in self.__dict__.items() if k not in keys_blacklist)
-
-    def __setstate__(self, state):
-        self.__dict__ = state
-        self._create_client()
-
-    def _create_client(self):
-        if self.inCluster:
-            loader = incluster_config.InClusterConfigLoader(token_filename=incluster_config.SERVICE_TOKEN_FILENAME,
-                                                            cert_filename=incluster_config.SERVICE_CERT_FILENAME)
-            loader._load_config()
-            configuration = Configuration()
-            configuration.host = loader.host
-            configuration.ssl_ca_cert = loader.ssl_ca_cert
-            configuration.api_key['authorization'] = "bearer " + loader.token
-            self.kubectl = client.CoreV1Api(api_client=ApiClient(configuration=configuration))
-            self._configure_incluster_namespace()
-        else:
-            self.kubectl = client.CoreV1Api(api_client=config.new_client_from_config(config_file=self.kubeconfig))
-
-    def _configure_incluster_namespace(self):
-        if self.namespace is None:
-            if not os.path.isfile(SERVICE_NAMESPACE_FILENAME):
-                raise ConfigException(
-                    "Service namespace file does not exists.")
-
-            with open(SERVICE_NAMESPACE_FILENAME) as f:
-                self.namespace = f.read()
-                if not self.namespace:
-                    raise ConfigException("Namespace file exists but empty.")
-
-    def _build_helper_file(self,
-                           target: str,
-                           environment: MutableMapping[str, str] = None,
-                           workdir: str = None
-                           ) -> str:
+    async def _build_helper_file(self,
+                                 kube_client_ws: client.CoreV1Api,
+                                 target: str,
+                                 environment: MutableMapping[str, str] = None,
+                                 workdir: str = None
+                                 ) -> str:
         file_contents = "".join([
             '#!/bin/sh\n',
             '{environment}',
@@ -175,80 +83,98 @@ class BaseHelmConnector(Connector, ABC):
         os.chmod(file_name, os.stat(file_name).st_mode | stat.S_IEXEC)
         parent_directory = str(Path(file_name).parent)
         pod, container = target.split(':')
-        stream.stream(self.kubectl.connect_get_namespaced_pod_exec,
-                      name=pod,
-                      namespace=self.namespace or 'default',
-                      container=container,
-                      command=["mkdir", "-p", parent_directory],
-                      stderr=True,
-                      stdin=False,
-                      stdout=True,
-                      tty=False)
-        self._copy_local_to_remote(file_name, file_name, target)
+        await kube_client_ws.connect_get_namespaced_pod_exec(
+            name=pod,
+            namespace=self.namespace or 'default',
+            container=container,
+            command=["mkdir", "-p", parent_directory],
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False)
+        await self._copy_local_to_remote(file_name, file_name, target)
         return file_name
 
-    def _copy_remote_to_remote(self, src: str, dst: str, resource: str, source_remote: str) -> None:
+    def _configure_incluster_namespace(self):
+        if self.namespace is None:
+            if not os.path.isfile(SERVICE_NAMESPACE_FILENAME):
+                raise ConfigException(
+                    "Service namespace file does not exists.")
+
+            with open(SERVICE_NAMESPACE_FILENAME) as f:
+                self.namespace = f.read()
+                if not self.namespace:
+                    raise ConfigException("Namespace file exists but empty.")
+
+    async def _copy_remote_to_remote(self, src: Text, dst: Text, resource: Text, source_remote: Text) -> None:
         source_remote = source_remote or resource
         if source_remote == resource:
             if src != dst:
                 command = ['/bin/cp', "-rf", src, dst]
-                self.run(resource, command)
+                await self.run(resource, command)
                 return
         else:
             temp_dir = tempfile.mkdtemp()
-            self._copy_remote_to_local(src, temp_dir, source_remote)
+            await self._copy_remote_to_local(src, temp_dir, source_remote)
+            copy_tasks = []
             for element in os.listdir(temp_dir):
-                self._copy_local_to_remote(os.path.join(temp_dir, element), dst, resource)
+                copy_tasks.append(asyncio.create_task(
+                    self._copy_local_to_remote(os.path.join(temp_dir, element), dst, resource)))
+            await asyncio.gather(*copy_tasks)
             shutil.rmtree(temp_dir)
 
-    def _copy_local_to_remote(self, src: str, dst: str, resource: str):
-        pod, container = resource.split(':')
-        command = ['tar', 'xf', '-', '-C', '/']
-        response = stream.stream(self.kubectl.connect_get_namespaced_pod_exec,
-                                 name=pod,
-                                 namespace=self.namespace or 'default',
-                                 container=container,
-                                 command=command,
-                                 stderr=True,
-                                 stdin=True,
-                                 stdout=True,
-                                 tty=False,
-                                 _preload_content=False)
+    async def _copy_local_to_remote(self, src: Text, dst: Text, resource: Text):
         with tempfile.TemporaryFile() as tar_buffer:
             with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
                 tar.add(src, arcname=dst)
             tar_buffer.seek(0)
-            while response.is_open():
+            kube_client_ws = await self._get_client_ws()
+            pod, container = resource.split(':')
+            command = ['tar', 'xf', '-', '-C', '/']
+            response = await kube_client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or 'default',
+                container=container,
+                command=command,
+                stderr=True,
+                stdin=True,
+                stdout=True,
+                tty=False,
+                _preload_content=False)
+            while not response.closed:
                 content = tar_buffer.read(self.transferBufferSize)
-                response.update(timeout=1)
                 if content:
-                    response = patch_response(response)
-                    response.write_stdin(content)
+                    channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
+                    payload = channel_prefix + content
+                    await response.send_bytes(payload)
                 else:
                     break
-            response.close()
+                async for _ in response:
+                    pass
+            await response.close()
 
-    def _copy_remote_to_local(self, src: str, dst: str, resource: str):
+    async def _copy_remote_to_local(self, src: Text, dst: Text, resource: Text):
+        kube_client_ws = await self._get_client_ws()
         pod, container = resource.split(':')
         command = ['tar', 'cPf', '-', src]
-        response = stream.stream(self.kubectl.connect_get_namespaced_pod_exec,
-                                 name=pod,
-                                 namespace=self.namespace or 'default',
-                                 container=container,
-                                 command=command,
-                                 stderr=True,
-                                 stdin=True,
-                                 stdout=True,
-                                 tty=False,
-                                 _preload_content=False)
+        response = await kube_client_ws.connect_get_namespaced_pod_exec(
+            name=pod,
+            namespace=self.namespace or 'default',
+            container=container,
+            command=command,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=False,
+            _preload_content=False)
         with io.BytesIO() as byte_buffer:
-            while response.is_open():
-                response = patch_response(response)
-                response.update(timeout=1)
-                if response.peek_stdout():
-                    out = response.read_stdout()
-                    byte_buffer.write(out)
-            response.close()
+            while not response.closed:
+                async for msg in response:
+                    channel = msg.data[0]
+                    data = msg.data[1:]
+                    if data and channel == ws_client.STDOUT_CHANNEL:
+                        byte_buffer.write(data)
+            await response.close()
             byte_buffer.flush()
             byte_buffer.seek(0)
             with tarfile.open(fileobj=byte_buffer, mode='r:') as tar:
@@ -268,110 +194,141 @@ class BaseHelmConnector(Connector, ABC):
                         member.path = posixpath.relpath(member.path, src)
                         tar.extract(member, parent_dir)
 
-    def get_available_resources(self, service):
-        pods = self.kubectl.list_namespaced_pod(
+    async def _get_client(self) -> client.CoreV1Api:
+        if self.client is None:
+            configuration = await self._get_configuration()
+            self.client = client.CoreV1Api(api_client=ApiClient(configuration=configuration))
+        return self.client
+
+    async def _get_client_ws(self) -> client.CoreV1Api:
+        if self.client_ws is None:
+            configuration = await self._get_configuration()
+            self.client_ws = client.CoreV1Api(api_client=WsApiClient(configuration=configuration))
+        return self.client_ws
+
+    async def _get_configuration(self) -> Configuration:
+        if self.configuration is None:
+            self.configuration = Configuration()
+            if self.inCluster:
+                loader = PatchedInClusterConfigLoader(token_filename=incluster_config.SERVICE_TOKEN_FILENAME,
+                                                      cert_filename=incluster_config.SERVICE_CERT_FILENAME)
+                loader.load_and_set(configuration=self.configuration)
+                self._configure_incluster_namespace()
+            else:
+                await load_kube_config(config_file=self.kubeconfig, client_configuration=self.configuration)
+        return self.configuration
+
+    async def get_available_resources(self, service):
+        kube_client = await self._get_client()
+        pods = await kube_client.list_namespaced_pod(
             namespace=self.namespace or 'default',
             label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
             field_selector="status.phase=Running"
         )
-        valid_targets = []
+        valid_targets = {}
         for pod in pods.items:
-            if pod.metadata.deletion_timestamp is not None:
-                continue
             for container in pod.spec.containers:
                 if service == container.name:
-                    valid_targets.append(pod.metadata.name + ':' + service)
+                    resource_name = pod.metadata.name + ':' + service
+                    valid_targets[resource_name] = Resource(name=resource_name, hostname=pod.status.pod_ip)
                     break
         return valid_targets
 
-    def get_runtime(self,
-                    resource: str,
-                    environment: MutableMapping[str, str] = None,
-                    workdir: str = None
-                    ) -> str:
-        args = {'resource': resource, 'environment': environment, 'workdir': workdir}
-        return self._run_current_file(self, __file__, args)
-
-    def run(self,
-            resource: str,
-            command: List[str],
-            environment: MutableMapping[str, str] = None,
-            workdir: str = None,
-            capture_output: bool = False) -> Optional[Any]:
-        helper_file_name = \
-            self._build_helper_file(resource, environment, workdir)
-        _logger.debug("Executing {command}".format(command=command, resource=resource))
+    async def run(self,
+                  resource: str,
+                  command: List[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: str = None,
+                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+        kube_client_ws = await self._get_client_ws()
+        helper_file_name = await self._build_helper_file(kube_client_ws, resource, environment, workdir)
+        logger.debug("Executing {command}".format(command=command, resource=resource))
         command = [helper_file_name, base64.b64encode(" ".join(command).encode('utf-8')).decode('utf-8')]
         pod, container = resource.split(':')
-        response = stream.stream(self.kubectl.connect_get_namespaced_pod_exec,
-                                 name=pod,
-                                 namespace=self.namespace or 'default',
-                                 container=container,
-                                 command=command,
-                                 stderr=True,
-                                 stdin=False,
-                                 stdout=True,
-                                 tty=False)
+        response = await kube_client_ws.connect_get_namespaced_pod_exec(
+            name=pod,
+            namespace=self.namespace or 'default',
+            container=container,
+            command=command,
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False,
+            _preload_content=not capture_output)
         if capture_output:
-            return response
+            with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
+                while not response.closed:
+                    async for msg in response:
+                        data = msg.data.decode('utf-8', 'replace')
+                        channel = ord(data[0])
+                        data = data[1:]
+                        if data and channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
+                            out_buffer.write(data)
+                        elif data and channel == ws_client.ERROR_CHANNEL:
+                            err_buffer.write(data)
+                err = yaml.safe_load(err_buffer.getvalue())
+                if err['status'] == "Success":
+                    return out_buffer.getvalue(), 0
+                else:
+                    return out_buffer.getvalue(), int(err['details']['causes'][0]['message'])
 
 
 class Helm2Connector(BaseHelmConnector):
 
     def __init__(self,
-                 config_file: MutableMapping[str, str],
-                 chart: str,
+                 streamflow_config_dir: Text,
+                 chart: Text,
                  debug: Optional[bool] = False,
-                 home: Optional[str] = os.path.join(os.environ['HOME'], ".helm"),
-                 kubeContext: Optional[str] = None,
-                 kubeconfig: Optional[str] = None,
+                 home: Optional[Text] = os.path.join(os.environ['HOME'], ".helm"),
+                 kubeContext: Optional[Text] = None,
+                 kubeconfig: Optional[Text] = None,
                  tillerConnectionTimeout: Optional[int] = None,
-                 tillerNamespace: Optional[str] = None,
+                 tillerNamespace: Optional[Text] = None,
                  atomic: Optional[bool] = False,
-                 caFile: Optional[str] = None,
-                 certFile: Optional[str] = None,
+                 caFile: Optional[Text] = None,
+                 certFile: Optional[Text] = None,
                  depUp: Optional[bool] = False,
-                 description: Optional[str] = None,
+                 description: Optional[Text] = None,
                  devel: Optional[bool] = False,
                  inCluster: Optional[bool] = False,
                  init: Optional[bool] = False,
-                 keyFile: Optional[str] = None,
-                 keyring: Optional[str] = None,
-                 releaseName: Optional[str] = None,
-                 nameTemplate: Optional[str] = None,
-                 namespace: Optional[str] = None,
+                 keyFile: Optional[Text] = None,
+                 keyring: Optional[Text] = None,
+                 releaseName: Optional[Text] = None,
+                 nameTemplate: Optional[Text] = None,
+                 namespace: Optional[Text] = None,
                  noCrdHook: Optional[bool] = False,
                  noHooks: Optional[bool] = False,
-                 password: Optional[str] = None,
+                 password: Optional[Text] = None,
                  renderSubchartNotes: Optional[bool] = False,
-                 repo: Optional[str] = None,
-                 commandLineValues: Optional[List[str]] = None,
-                 fileValues: Optional[List[str]] = None,
-                 stringValues: Optional[List[str]] = None,
+                 repo: Optional[Text] = None,
+                 commandLineValues: Optional[List[Text]] = None,
+                 fileValues: Optional[List[Text]] = None,
+                 stringValues: Optional[List[Text]] = None,
                  timeout: Optional[int] = str(60000),
                  tls: Optional[bool] = False,
-                 tlscacert: Optional[str] = None,
-                 tlscert: Optional[str] = None,
-                 tlshostname: Optional[str] = None,
-                 tlskey: Optional[str] = None,
+                 tlscacert: Optional[Text] = None,
+                 tlscert: Optional[Text] = None,
+                 tlshostname: Optional[Text] = None,
+                 tlskey: Optional[Text] = None,
                  tlsverify: Optional[bool] = False,
-                 username: Optional[str] = None,
-                 yamlValues: Optional[List[str]] = None,
+                 username: Optional[Text] = None,
+                 yamlValues: Optional[List[Text]] = None,
                  verify: Optional[bool] = False,
-                 chartVersion: Optional[str] = None,
+                 chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,
                  purge: Optional[bool] = True,
                  transferBufferSize: Optional[int] = None
                  ):
         super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
             inCluster=inCluster,
             kubeconfig=kubeconfig,
             namespace=namespace,
             releaseName=releaseName,
             transferBufferSize=transferBufferSize
         )
-        config_dir = config_file['dirname']
-        self.chart = os.path.join(config_dir, chart)
+        self.chart = os.path.join(streamflow_config_dir, chart)
         self.debug = debug
         self.home = home
         self.kubeContext = kubeContext
@@ -418,8 +375,8 @@ class Helm2Connector(BaseHelmConnector):
         ]).format(
             wait=self.get_option("wait", self.wait)
         )
-        _logger.debug("Executing {command}".format(command=init_command))
-        return subprocess.run(shlex.split(init_command), check=True)
+        logger.debug("Executing {command}".format(command=init_command))
+        return subprocess.run(shlex.split(init_command))
 
     def base_command(self):
         return (
@@ -439,7 +396,7 @@ class Helm2Connector(BaseHelmConnector):
             tillerNamespace=self.get_option("tiller-namespace", self.tillerNamespace)
         )
 
-    def deploy(self) -> subprocess.CompletedProcess:
+    async def deploy(self) -> None:
         deploy_command = self.base_command() + "".join([
             "install "
             "{atomic}"
@@ -508,10 +465,11 @@ class Helm2Connector(BaseHelmConnector):
             wait=self.get_option("wait", self.wait),
             chart="\"{chart}\"".format(chart=self.chart)
         )
-        _logger.debug("Executing {command}".format(command=deploy_command))
-        return subprocess.run(shlex.split(deploy_command), check=True)
+        logger.debug("Executing {command}".format(command=deploy_command))
+        proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
+        await proc.wait()
 
-    def undeploy(self) -> subprocess.CompletedProcess:
+    async def undeploy(self) -> None:
         undeploy_command = self.base_command() + (
             "delete "
             "{description}"
@@ -538,57 +496,58 @@ class Helm2Connector(BaseHelmConnector):
             tlsverify=self.get_option("tls-verify", self.tlsverify),
             releaseName=self.releaseName
         )
-        _logger.debug("Executing {command}".format(command=undeploy_command))
-        return subprocess.run(shlex.split(undeploy_command), check=True)
+        logger.debug("Executing {command}".format(command=undeploy_command))
+        proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
+        await proc.wait()
 
 
 class Helm3Connector(BaseHelmConnector):
     def __init__(self,
-                 config_file: MutableMapping[str, str],
-                 chart: str,
+                 streamflow_config_dir: Text,
+                 chart: Text,
                  debug: Optional[bool] = False,
-                 kubeContext: Optional[str] = None,
-                 kubeconfig: Optional[str] = None,
+                 kubeContext: Optional[Text] = None,
+                 kubeconfig: Optional[Text] = None,
                  atomic: Optional[bool] = False,
-                 caFile: Optional[str] = None,
-                 certFile: Optional[str] = None,
+                 caFile: Optional[Text] = None,
+                 certFile: Optional[Text] = None,
                  depUp: Optional[bool] = False,
                  devel: Optional[bool] = False,
                  inCluster: Optional[bool] = False,
                  keepHistory: Optional[bool] = False,
-                 keyFile: Optional[str] = None,
-                 keyring: Optional[str] = None,
-                 releaseName: Optional[str] = None,
-                 nameTemplate: Optional[str] = None,
-                 namespace: Optional[str] = None,
+                 keyFile: Optional[Text] = None,
+                 keyring: Optional[Text] = None,
+                 releaseName: Optional[Text] = None,
+                 nameTemplate: Optional[Text] = None,
+                 namespace: Optional[Text] = None,
                  noHooks: Optional[bool] = False,
-                 password: Optional[str] = None,
+                 password: Optional[Text] = None,
                  renderSubchartNotes: Optional[bool] = False,
-                 repo: Optional[str] = None,
-                 commandLineValues: Optional[List[str]] = None,
-                 fileValues: Optional[List[str]] = None,
-                 registryConfig: Optional[str] = os.path.join(os.environ['HOME'], ".config/helm/registry.json"),
-                 repositoryCache: Optional[str] = os.path.join(os.environ['HOME'], ".cache/helm/repository"),
-                 repositoryConfig: Optional[str] = os.path.join(os.environ['HOME'], ".config/helm/repositories.yaml"),
-                 stringValues: Optional[List[str]] = None,
+                 repo: Optional[Text] = None,
+                 commandLineValues: Optional[List[Text]] = None,
+                 fileValues: Optional[List[Text]] = None,
+                 registryConfig: Optional[Text] = os.path.join(os.environ['HOME'], ".config/helm/registry.json"),
+                 repositoryCache: Optional[Text] = os.path.join(os.environ['HOME'], ".cache/helm/repository"),
+                 repositoryConfig: Optional[Text] = os.path.join(os.environ['HOME'], ".config/helm/repositories.yaml"),
+                 stringValues: Optional[List[Text]] = None,
                  skipCrds: Optional[bool] = False,
-                 timeout: Optional[str] = "1000m",
-                 username: Optional[str] = None,
-                 yamlValues: Optional[List[str]] = None,
+                 timeout: Optional[Text] = "1000m",
+                 username: Optional[Text] = None,
+                 yamlValues: Optional[List[Text]] = None,
                  verify: Optional[bool] = False,
-                 chartVersion: Optional[str] = None,
+                 chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,
                  transferBufferSize: Optional[int] = None
                  ):
         super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
             inCluster=inCluster,
             kubeconfig=kubeconfig,
             namespace=namespace,
             releaseName=releaseName,
             transferBufferSize=transferBufferSize
         )
-        config_dir = config_file['dirname']
-        self.chart = os.path.join(config_dir, chart)
+        self.chart = os.path.join(streamflow_config_dir, chart)
         self.debug = debug
         self.kubeContext = kubeContext
         self.atomic = atomic
@@ -638,7 +597,7 @@ class Helm3Connector(BaseHelmConnector):
             repositoryConfig=self.get_option("repository-config", self.repositoryConfig),
         )
 
-    def deploy(self) -> subprocess.CompletedProcess:
+    async def deploy(self) -> None:
         deploy_command = self.base_command() + "".join([
             "install "
             "{atomic}"
@@ -692,10 +651,12 @@ class Helm3Connector(BaseHelmConnector):
             releaseName="{releaseName} ".format(releaseName=self.releaseName),
             chart="\"{chart}\"".format(chart=self.chart)
         )
-        _logger.debug("Executing {command}".format(command=deploy_command))
-        return subprocess.run(shlex.split(deploy_command), check=True)
+        logger.debug("Executing {command}".format(command=deploy_command))
+        proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
+        await proc.wait()
 
-    def undeploy(self) -> subprocess.CompletedProcess:
+    async def undeploy(self) -> None:
+        # Undeploy model
         undeploy_command = self.base_command() + (
             "uninstall "
             "{keepHistory}"
@@ -708,9 +669,14 @@ class Helm3Connector(BaseHelmConnector):
             timeout=self.get_option("timeout", self.timeout),
             releaseName=self.releaseName
         )
-        _logger.debug("Executing {command}".format(command=undeploy_command))
-        return subprocess.run(shlex.split(undeploy_command), check=True)
-
-
-if __name__ == "__main__":
-    connector.run_script(sys.argv[1:])
+        logger.debug("Executing {command}".format(command=undeploy_command))
+        proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
+        await proc.wait()
+        # Close connections
+        if self.client is not None:
+            await self.client.api_client.close()
+            self.client = None
+        if self.client_ws is not None:
+            await self.client_ws.api_client.close()
+            self.client_ws = None
+        self.configuration = None

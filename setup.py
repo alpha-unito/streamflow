@@ -15,7 +15,7 @@ setup(
         "streamflow.cwl",
         "streamflow.data",
         "streamflow.config",
-        "streamflow.connector",
+        "streamflow.deployment",
         "streamflow.scheduling",
     ],
     package_data={"streamflow.config": ["schemas/v1.0/*.json"]},

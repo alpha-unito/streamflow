@@ -39,12 +39,6 @@
               "step": {
                 "type": "string"
               },
-              "deployments": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
               "target": {
                 "$id": "#/definitions/workflow/properties/bindings/",
                 "type": "object",
@@ -60,6 +54,7 @@
                   }
                 },
                 "required": [
+                  "model",
                   "service"
                 ],
                 "additionalProperties": false

@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 from pathlib import PurePosixPath
-from typing import MutableMapping, Any, Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import MutableMapping, Any, Optional
 
 
 def set_targets(current_node, target):
@@ -15,19 +20,14 @@ class WorkflowConfig(object):
                  streamflow_config: MutableMapping[str, Any]) -> None:
         super().__init__()
         workflow_config = streamflow_config['workflows'][workflow_name]
-        self.config_file = streamflow_config['config_file']
         self.type = workflow_config['type']
         self.config = workflow_config['config']
+        self.models = streamflow_config.get('models', {})
+        for model in self.models:
+            self.models[model]['name'] = model
         self.filesystem = {'nodes': {}}
-        models = streamflow_config.get('models', {})
         for binding in workflow_config.get('bindings', []):
             current_config = self._build_config(PurePosixPath(binding['step']))
-            if 'deployments' in binding:
-                expanded_models = {}
-                for model_name in binding['deployments']:
-                    expanded_models[model_name] = models[model_name]
-                    expanded_models[model_name]['name'] = model_name
-                current_config['deployments'] = expanded_models
             if 'target' in binding:
                 current_config['target'] = binding['target']
         set_targets(self.filesystem, None)
