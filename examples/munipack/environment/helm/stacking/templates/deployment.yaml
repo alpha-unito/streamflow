@@ -21,7 +21,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           stdin: true
-          {{ if .Values.command }}
+          {{ if .Values.image.command }}
           command:
           {{- range .Values.image.command }}
           - {{ . }}

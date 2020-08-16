@@ -1,0 +1,25 @@
+#!/usr/bin/env streamflow
+version: v1.0
+workflows:
+  master:
+    type: cwl
+    config:
+      file: cwl/main.cwl
+      settings: cwl/config.yml
+    bindings:
+      - step: /compile
+        target:
+          model: helm-mpi
+          service: openmpi
+      - step: /execute
+        target:
+          model: helm-mpi
+          resources: 2
+          service: openmpi
+models:
+  helm-mpi:
+    type: helm
+    config:
+      chart: environment/helm/openmpi
+      kubeconfig: /home/glassofwhiskey/.kube/config-streamflow
+      releaseName: openmpi-rel

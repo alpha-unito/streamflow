@@ -287,6 +287,13 @@ class CWLCommand(CWLBaseCommand):
                 outdir=job.output_directory,
                 command=' \\\n\t'.join(cmd),
             ))
+            # If task is assigned to multiple resources, add the STREAMFLOW_HOSTS environment variable
+            resources = job.get_resources()
+            if len(resources) > 1:
+                available_resources = await connector.get_available_resources(self.task.target.service)
+                hosts = {k: v.hostname for k, v in available_resources.items() if k in resources}
+                parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
+            # Execute remote command
             result, exit_code = await asyncio.wait_for(
                 connector.run(
                     resource,
@@ -322,10 +329,6 @@ class CWLExpressionCommand(CWLBaseCommand):
         context = utils.build_context(job)
         if self.initial_work_dir is not None:
             await self._prepare_work_dir(job, context, self.initial_work_dir)
-        resource = job.get_resource()
-        logger.info('Evaluating expression for job {job} {resource}'.format(
-            job=job.name,
-            resource="on resource {resource}".format(resource=resource) if resource is not None else "locally",
-        ))
+        logger.info('Evaluating expression for job {job}'.format(job=job.name))
         timeout = self._get_timeout(job)
         return self._eval_expression(self.expression, context, timeout), JobStatus.COMPLETED

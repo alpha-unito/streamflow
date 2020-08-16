@@ -40,11 +40,11 @@ class WorkflowConfig(object):
             current_node = current_node['nodes'][part]
         return current_node
 
-    def get(self, path: PurePosixPath, name: str) -> Optional[Any]:
+    def get(self, path: PurePosixPath, name: str, default: Optional[Any] = None) -> Optional[Any]:
         current_node = self.filesystem
         for part in path.parts:
             if part not in current_node['nodes']:
-                return None
+                return default
             current_node = current_node['nodes'][part]
         return current_node.get(name)
 

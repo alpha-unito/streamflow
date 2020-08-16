@@ -12,17 +12,17 @@ import tempfile
 import uuid
 from abc import ABC
 from pathlib import Path
-from typing import MutableMapping, List, Optional, Any, Tuple
+from typing import MutableMapping, List, Optional, Any, Tuple, cast
 
 import yaml
 from kubernetes_asyncio import client
-from kubernetes_asyncio.client import Configuration, ApiClient
+from kubernetes_asyncio.client import Configuration, ApiClient, V1Container
 from kubernetes_asyncio.config import incluster_config, ConfigException, load_kube_config
 from kubernetes_asyncio.stream import WsApiClient, ws_client
 from typing_extensions import Text
 
-from streamflow.deployment.base import BaseConnector
 from streamflow.core.scheduling import Resource
+from streamflow.deployment.base import BaseConnector
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -62,16 +62,15 @@ class BaseHelmConnector(BaseConnector, ABC):
         self.client_ws: Optional[client.CoreV1Api] = None
 
     async def _build_helper_file(self,
-                                 kube_client_ws: client.CoreV1Api,
-                                 target: str,
-                                 environment: MutableMapping[str, str] = None,
-                                 workdir: str = None
-                                 ) -> str:
+                                 target: Text,
+                                 environment: MutableMapping[Text, Text] = None,
+                                 workdir: Text = None
+                                 ) -> Text:
         file_contents = "".join([
             '#!/bin/sh\n',
             '{environment}',
             '{workdir}',
-            'sh -c "$(echo $@ | base64 --decode)"\n'
+            'sh -c "$(echo $@ | base64 -d)"\n'
         ]).format(
             environment="".join(["export %s=\"%s\"\n" % (key, value) for (key, value) in
                                  environment.items()]) if environment is not None else "",
@@ -83,6 +82,7 @@ class BaseHelmConnector(BaseConnector, ABC):
         os.chmod(file_name, os.stat(file_name).st_mode | stat.S_IEXEC)
         parent_directory = str(Path(file_name).parent)
         pod, container = target.split(':')
+        kube_client_ws = await self._get_client_ws()
         await kube_client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -92,7 +92,7 @@ class BaseHelmConnector(BaseConnector, ABC):
             stdin=False,
             stdout=True,
             tty=False)
-        await self._copy_local_to_remote(file_name, file_name, target)
+        await self._copy_local_to_remote(file_name, file_name, [target])
         return file_name
 
     def _configure_incluster_namespace(self):
@@ -106,52 +106,82 @@ class BaseHelmConnector(BaseConnector, ABC):
                 if not self.namespace:
                     raise ConfigException("Namespace file exists but empty.")
 
-    async def _copy_remote_to_remote(self, src: Text, dst: Text, resource: Text, source_remote: Text) -> None:
-        source_remote = source_remote or resource
+    async def _copy_remote_to_remote(self, src: Text, dst: Text, resources: List[Text], source_remote: Text) -> None:
+        effective_resources = await self._get_effective_resources(resources, dst)
+        # Check for the need of a temporary copy
+        temp_dir = None
+        for resource in effective_resources:
+            if source_remote != resource:
+                temp_dir = tempfile.mkdtemp()
+                await self._copy_remote_to_local(src, temp_dir, source_remote)
+                break
+        # Perform the actual copies
+        copy_tasks = []
+        for resource in effective_resources:
+            copy_tasks.append(asyncio.create_task(
+                self._copy_remote_to_remote_single(src, dst, resource, source_remote, temp_dir)))
+        await asyncio.gather(*copy_tasks)
+        # If a temporary location was created, delete it
+        if temp_dir is not None:
+            shutil.rmtree(temp_dir)
+
+    async def _copy_remote_to_remote_single(self,
+                                            src: Text,
+                                            dst: Text,
+                                            resource: Text,
+                                            source_remote: Text,
+                                            temp_dir: Optional[Text]) -> None:
         if source_remote == resource:
             if src != dst:
                 command = ['/bin/cp', "-rf", src, dst]
                 await self.run(resource, command)
-                return
         else:
-            temp_dir = tempfile.mkdtemp()
-            await self._copy_remote_to_local(src, temp_dir, source_remote)
             copy_tasks = []
             for element in os.listdir(temp_dir):
                 copy_tasks.append(asyncio.create_task(
-                    self._copy_local_to_remote(os.path.join(temp_dir, element), dst, resource)))
+                    self._copy_local_to_remote(os.path.join(temp_dir, element), dst, [resource])))
             await asyncio.gather(*copy_tasks)
-            shutil.rmtree(temp_dir)
 
-    async def _copy_local_to_remote(self, src: Text, dst: Text, resource: Text):
+    async def _copy_local_to_remote(self, src: Text, dst: Text, resources: List[Text]):
+        effective_resources = await self._get_effective_resources(resources, dst)
         with tempfile.TemporaryFile() as tar_buffer:
             with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
                 tar.add(src, arcname=dst)
             tar_buffer.seek(0)
-            kube_client_ws = await self._get_client_ws()
-            pod, container = resource.split(':')
-            command = ['tar', 'xf', '-', '-C', '/']
-            response = await kube_client_ws.connect_get_namespaced_pod_exec(
-                name=pod,
-                namespace=self.namespace or 'default',
-                container=container,
-                command=command,
-                stderr=True,
-                stdin=True,
-                stdout=True,
-                tty=False,
-                _preload_content=False)
-            while not response.closed:
-                content = tar_buffer.read(self.transferBufferSize)
-                if content:
-                    channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
-                    payload = channel_prefix + content
-                    await response.send_bytes(payload)
-                else:
-                    break
-                async for _ in response:
-                    pass
-            await response.close()
+            copy_tasks = []
+            for resource in effective_resources:
+                copy_tasks.append(asyncio.create_task(
+                    self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))))
+            await asyncio.gather(*copy_tasks)
+
+    async def _copy_local_to_remote_single(self,
+                                           resource: Text,
+                                           tar_buffer: io.BufferedRandom) -> None:
+        resource_buffer = io.BufferedReader(tar_buffer.raw)
+        kube_client_ws = await self._get_client_ws()
+        pod, container = resource.split(':')
+        command = ['tar', 'xf', '-', '-C', '/']
+        response = await kube_client_ws.connect_get_namespaced_pod_exec(
+            name=pod,
+            namespace=self.namespace or 'default',
+            container=container,
+            command=command,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=False,
+            _preload_content=False)
+        while not response.closed:
+            content = resource_buffer.read(self.transferBufferSize)
+            if content:
+                channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
+                payload = channel_prefix + content
+                await response.send_bytes(payload)
+            else:
+                break
+            async for _ in response:
+                pass
+        await response.close()
 
     async def _copy_remote_to_local(self, src: Text, dst: Text, resource: Text):
         kube_client_ws = await self._get_client_ws()
@@ -206,6 +236,14 @@ class BaseHelmConnector(BaseConnector, ABC):
             self.client_ws = client.CoreV1Api(api_client=WsApiClient(configuration=configuration))
         return self.client_ws
 
+    async def _get_container(self, resource: Text) -> Tuple[Text, V1Container]:
+        kube_client = await self._get_client()
+        pod_name, container_name = resource.split(':')
+        pod = await kube_client.read_namespaced_pod(name=pod_name, namespace=self.namespace or 'default')
+        for container in pod.spec.containers:
+            if container.name == container_name:
+                return container.name, container
+
     async def _get_configuration(self) -> Configuration:
         if self.configuration is None:
             self.configuration = Configuration()
@@ -217,6 +255,35 @@ class BaseHelmConnector(BaseConnector, ABC):
             else:
                 await load_kube_config(config_file=self.kubeconfig, client_configuration=self.configuration)
         return self.configuration
+
+    async def _get_effective_resources(self,
+                                       resources: List[Text],
+                                       dest_path: Text,
+                                       source_remote: Optional[Text] = None) -> List[Text]:
+        kube_client = await self._get_client()
+        # Get containers
+        container_tasks = []
+        for resource in resources:
+            container_tasks.append(asyncio.create_task(self._get_container(resource)))
+        containers = {k: v for (k, v) in await asyncio.gather(*container_tasks)}
+        # Check if some resources share volume mounts to the same path
+        common_paths = {}
+        effective_resources = []
+        for resource in resources:
+            container = containers[resource.split(':')[1]]
+            for volume in container.volume_mounts:
+                if dest_path.startswith(volume.mount_path):
+                    path = ':'.join([volume.name, dest_path])
+                    if path not in common_paths:
+                        common_paths[path] = resource
+                        effective_resources.append(resource)
+                    elif resource == source_remote:
+                        effective_resources.remove(common_paths[path])
+                        common_paths[path] = resource
+                        effective_resources.append(resource)
+                    break
+            effective_resources.append(resource)
+        return effective_resources
 
     async def get_available_resources(self, service):
         kube_client = await self._get_client()
@@ -240,11 +307,11 @@ class BaseHelmConnector(BaseConnector, ABC):
                   environment: MutableMapping[str, str] = None,
                   workdir: str = None,
                   capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
-        kube_client_ws = await self._get_client_ws()
-        helper_file_name = await self._build_helper_file(kube_client_ws, resource, environment, workdir)
+        helper_file_name = await self._build_helper_file(resource, environment, workdir)
         logger.debug("Executing {command}".format(command=command, resource=resource))
         command = [helper_file_name, base64.b64encode(" ".join(command).encode('utf-8')).decode('utf-8')]
         pod, container = resource.split(':')
+        kube_client_ws = await self._get_client_ws()
         response = await kube_client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',

@@ -39,7 +39,7 @@ class BaseTask(Task):
             path_processor = os.path
             tempdir = tempfile.gettempdir()
         dir_path = path_processor.join(tempdir, 'streamflow', utils.random_name())
-        await remotepath.mkdir(self.get_connector(), job.get_resource(), dir_path)
+        await remotepath.mkdir(self.get_connector(), job.get_resources(), dir_path)
         return dir_path
 
     async def _run_job(self, inputs: List[Token]) -> None:
@@ -74,6 +74,9 @@ class BaseTask(Task):
             # Notify completion to scheduler
             if self.target is not None:
                 await self.context.scheduler.notify_status(job.name, status)
+            if status == JobStatus.FAILED:
+                # TODO: implement fault tolerance here
+                raise WorkflowExecutionException("Failure detected during execution of job {job}".format(job=job.name))
         else:
             # Execution skipped
             result = None

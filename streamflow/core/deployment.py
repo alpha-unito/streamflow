@@ -19,9 +19,9 @@ class Connector(ABC):
     async def copy(self,
                    src: Text,
                    dst: Text,
-                   resource: Text,
+                   resources: List[Text],
                    kind: ConnectorCopyKind,
-                   source_remote: Text = None) -> None:
+                   source_remote: Optional[Text] = None) -> None:
         pass
 
     @abstractmethod

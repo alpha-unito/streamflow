@@ -75,8 +75,12 @@ class Job(object):
         self.input_directory: Optional[Text] = None
         self.output_directory: Optional[Text] = None
 
-    def get_resource(self) -> Text:
-        return self.task.context.scheduler.get_resource(self.name)
+    def get_resource(self) -> Optional[Text]:
+        resources = self.get_resources()
+        return resources[0] if resources else None
+
+    def get_resources(self) -> List[Text]:
+        return self.task.context.scheduler.get_resources(self.name)
 
 
 class Port(ABC):
@@ -171,8 +175,10 @@ class Target(object):
 
     def __init__(self,
                  model: ModelConfig,
+                 resources: int,
                  service: Text):
         self.model: ModelConfig = model
+        self.resources: int = resources
         self.service: Text = service
 
 

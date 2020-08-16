@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import cgi
 import glob
 import os
@@ -17,22 +18,24 @@ if TYPE_CHECKING:
     from typing_extensions import Text
 
 
-async def download(connector: Optional[Connector], target: Optional[Text], url: Text, parent_dir: Text) -> Text:
-    await mkdir(connector, target, parent_dir)
+async def download(connector: Optional[Connector], targets: Optional[List[Text]], url: Text, parent_dir: Text) -> Text:
+    await mkdir(connector, targets, parent_dir)
     if connector is not None:
         async with aiohttp.ClientSession() as session:
             async with session.head(url, allow_redirects=True) as response:
                 if response.status == 200:
                     _, params = cgi.parse_header(response.headers.get('Content-Disposition', ''))
                     filepath = posixpath.join(parent_dir, params['filename'])
-        await connector.run(
-            resource=target,
-            command=["if [ command -v curl ]; curl -L -o \"{path}\"; else wget -P \"{dir}\" {url}; fi".format(
-                dir=parent_dir,
-                path=filepath,
-                url=url
-            )]
-        )
+        download_tasks = []
+        for target in targets:
+            download_tasks.append(asyncio.create_task(connector.run(
+                resource=target,
+                command=["if [ command -v curl ]; curl -L -o \"{path}\"; else wget -P \"{dir}\" {url}; fi".format(
+                    dir=parent_dir,
+                    path=filepath,
+                    url=url
+                )])))
+        await asyncio.gather(*download_tasks)
     else:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
@@ -138,9 +141,12 @@ async def listdir(connector: Optional[Connector],
         return content
 
 
-async def mkdir(connector: Optional[Connector], target: Optional[Text], path: Text) -> None:
+async def mkdir(connector: Optional[Connector], targets: Optional[List[Text]], path: Text) -> None:
     if connector is not None:
-        await connector.run(resource=target, command=["mkdir", "-p", path])
+        mkdir_tasks = []
+        for target in targets:
+            mkdir_tasks.append(asyncio.create_task(connector.run(resource=target, command=["mkdir", "-p", path])))
+        await asyncio.gather(*mkdir_tasks)
     else:
         os.makedirs(path, exist_ok=True)
 

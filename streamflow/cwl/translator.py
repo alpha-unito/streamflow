@@ -310,6 +310,7 @@ class CWLTranslator(object):
                         config=target_model['config'],
                         external=target_model.get('external', False)
                     ),
+                    resources=task_target['resources'] if 'resources' in task_target else 1,
                     service=task_target['service']
                 )
 

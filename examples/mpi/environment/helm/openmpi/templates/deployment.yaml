@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openmpi.fullname" . }}
+  labels:
+{{ include "openmpi.labels" . | indent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "openmpi.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "openmpi.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: openmpi
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 2022
+          command:
+            {{- range .Values.image.command }}
+            - {{ . }}
+            {{- end }}
+          volumeMounts:
+            - name: ssh-key
+              mountPath: /ssh-key/openmpi
+      volumes:
+        - name: ssh-key
+          secret:
+            secretName: {{ .Release.Name }}-ssh-key
+            defaultMode: 256

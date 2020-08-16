@@ -46,6 +46,11 @@
                   "model": {
                     "type": "string"
                   },
+                  "resources": {
+                    "type": "integer",
+                    "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
+                    "default": 1
+                  },
                   "service": {
                     "type": "string"
                   },

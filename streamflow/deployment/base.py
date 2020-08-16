@@ -7,7 +7,7 @@ from streamflow.core.deployment import Connector, ConnectorCopyKind
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
-    from typing import Any
+    from typing import Any, Optional
     from typing_extensions import Text
 
 
@@ -34,7 +34,7 @@ class BaseConnector(Connector, ABC):
     async def _copy_remote_to_remote(self,
                                      src: Text,
                                      dst: Text,
-                                     resource: Text,
+                                     resources: List[Text],
                                      source_remote: Text) -> None:
         ...
 
@@ -49,34 +49,58 @@ class BaseConnector(Connector, ABC):
     async def _copy_local_to_remote(self,
                                     src: Text,
                                     dst: Text,
-                                    resource: Text) -> None:
+                                    resources: List[Text]) -> None:
         ...
 
     async def copy(self,
                    src: Text,
                    dst: Text,
-                   resource: Text,
+                   resources: List[Text],
                    kind: ConnectorCopyKind,
-                   source_remote: Text = None) -> None:
-        source_remote = source_remote or resource
+                   source_remote: Optional[Text] = None) -> None:
         if kind == ConnectorCopyKind.REMOTE_TO_REMOTE:
-            if source_remote == resource:
-                logger.info("Copying {src} to {dst} on {resource}".format(src=src, dst=dst, resource=resource))
-            else:
-                logger.info("Copying {source_remote}:{src} to {resource}:{dst}".format(
+            if source_remote is None:
+                raise Exception("Source resource is mandatory for remote to remote copy")
+            if len(resources) > 1:
+                logger.info("Copying {src} on resource {source_remote} to {dst} on resources:\n\t{resources}".format(
                     source_remote=source_remote,
                     src=src,
-                    resource=resource,
-                    dst=dst
+                    dst=dst,
+                    resources='\n\t'.join(resources)
                 ))
-            await self._copy_remote_to_remote(src, dst, resource, source_remote or resource)
+            else:
+                logger.info("Copying {src} on resource {source_remote} to {dst} on resource {resource}".format(
+                    source_remote=source_remote,
+                    src=src,
+                    dst=dst,
+                    resource=resources[0]
+                ))
+            await self._copy_remote_to_remote(src, dst, resources, source_remote)
         elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
-            logger.info(
-                "Copying {src} to {dst}".format(src=src, dst="{resource}:{file}".format(resource=resource, file=dst)))
-            await self._copy_local_to_remote(src, dst, resource)
+            if len(resources) > 1:
+                logger.info("Copying {src} on local file-system to {dst} on resources:\n\t{resources}".format(
+                    source_remote=source_remote,
+                    src=src,
+                    dst=dst,
+                    resources='\n\t'.join(resources)
+                ))
+            else:
+                logger.info("Copying {src} on local file-system to {dst} on resource {resource}".format(
+                    source_remote=source_remote,
+                    src=src,
+                    dst=dst,
+                    resource=resources[0]
+                ))
+            await self._copy_local_to_remote(src, dst, resources)
         elif kind == ConnectorCopyKind.REMOTE_TO_LOCAL:
-            logger.info(
-                "Copying {src} to {dst}".format(src="{resource}:{file}".format(resource=resource, file=src), dst=dst))
-            await self._copy_remote_to_local(src, dst, resource)
+            if len(resources) > 1:
+                raise Exception("Copy from multiple resources is not supported")
+            logger.info("Copying {src} on resource {resource} to {dst} on local file-system".format(
+                source_remote=source_remote,
+                src=src,
+                dst=dst,
+                resource=resources[0]
+            ))
+            await self._copy_remote_to_local(src, dst, resources[0])
         else:
             raise NotImplementedError

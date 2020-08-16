@@ -22,9 +22,9 @@ from streamflow.workflow.port import DefaultTokenProcessor
 
 async def _download_file(job: Job, url: Text) -> Text:
     connector = job.task.get_connector()
-    resource = job.get_resource()
+    resources = job.get_resources()
     try:
-        filepath = await remotepath.download(connector, resource, url, job.input_directory)
+        filepath = await remotepath.download(connector, resources, url, job.input_directory)
     except Exception:
         raise WorkflowExecutionException("Error downloading file from " + url)
     return ''.join(['file://', filepath])

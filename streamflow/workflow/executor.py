@@ -25,7 +25,6 @@ class StreamFlowExecutor(Executor):
                  context: StreamflowContext,
                  workflow: Workflow):
         super().__init__(workflow)
-        self.executions: List[asyncio.Task] = []
         self.received: List[Text] = []
         self.context: StreamflowContext = context
 
@@ -37,11 +36,12 @@ class StreamFlowExecutor(Executor):
             raise WorkflowExecutionException("An error occurred while executing task " + task) from e
 
     async def run(self, output_dir: Optional[Text] = os.getcwd()):
+        executions = []
         try:
             # Execute workflow
             for task in self.workflow.tasks:
                 execution = asyncio.create_task(self._execute(task), name=task)
-                self.executions.append(execution)
+                executions.append(execution)
             # If workflow has output ports
             if self.workflow.output_ports:
                 # Retreive output tokens
@@ -70,10 +70,10 @@ class StreamFlowExecutor(Executor):
                                 self.workflow.output_ports[task_name].get(output_retriever), name=task_name))
             # Otherwise simply wait for all tasks to finish
             else:
-                await asyncio.gather(*self.executions)
+                await asyncio.gather(*executions)
         except BaseException as e:
             logging.exception(e)
-            for task in self.executions:
+            for task in executions:
                 if not task.done():
                     task.cancel()
         finally:

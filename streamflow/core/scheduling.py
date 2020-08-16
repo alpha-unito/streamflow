@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod, ABC
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job
@@ -11,14 +11,14 @@ if TYPE_CHECKING:
 
 
 class JobAllocation(object):
-    __slots__ = ('job', 'resource', 'status')
+    __slots__ = ('job', 'resources', 'status')
 
     def __init__(self,
                  job: Job,
-                 resource: Text,
+                 resources: List[Text],
                  status: JobStatus):
         self.job: Job = job
-        self.resource: Text = resource
+        self.resources: List[Text] = resources
         self.status: JobStatus = status
 
 
@@ -34,7 +34,7 @@ class Policy(ABC):
     @abstractmethod
     def get_resource(self,
                      job: Job,
-                     available_resources: List[Text],
+                     available_resources: MutableMapping[Text, Resource],
                      jobs: MutableMapping[Text, JobAllocation],
                      resources: MutableMapping[Text, ResourceAllocation]) -> Optional[Text]: ...
 
@@ -62,22 +62,16 @@ class ResourceAllocation(object):
 class Scheduler(ABC):
 
     def __init__(self):
-        self.jobs: MutableMapping[Text, JobAllocation] = {}
-        self.resources: MutableMapping[Text, ResourceAllocation] = {}
+        self.job_allocations: MutableMapping[Text, JobAllocation] = {}
+        self.resource_allocations: MutableMapping[Text, ResourceAllocation] = {}
 
     def get_job(self, job_name: Text) -> Optional[Job]:
-        job = self.jobs.get(job_name, None)
-        if job is not None:
-            return job.job
-        else:
-            return None
+        job = self.job_allocations.get(job_name, None)
+        return job.job if job is not None else None
 
-    def get_resource(self, job_name: Text) -> Optional[Text]:
-        job = self.jobs.get(job_name, None)
-        if job is not None:
-            return job.resource
-        else:
-            return None
+    def get_resources(self, job_name: Text) -> List[Text]:
+        job = self.job_allocations.get(job_name, None)
+        return job.resources if job is not None else []
 
     @abstractmethod
     async def notify_status(self,
