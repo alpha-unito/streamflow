@@ -70,6 +70,8 @@ class CartesianProductInputCombinator(InputCombinator):
                     # Put all combinations in the queue
                     for element in cartesian_product:
                         self.queue.put_nowait(list(element))
+                    # Put the new token in the related list
+                    self.token_lists[task_name].append(token)
                     # Create a new task in place of the completed one
                     input_tasks.append(asyncio.create_task(self.ports[task_name].get(), name=task_name))
 

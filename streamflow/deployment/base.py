@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import base64
+import os
+import shutil
+import tempfile
 from abc import abstractmethod, ABC
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, MutableMapping
 
 from streamflow.core.deployment import Connector, ConnectorCopyKind
 from streamflow.log_handler import logger
@@ -12,6 +17,29 @@ if TYPE_CHECKING:
 
 
 class BaseConnector(Connector, ABC):
+
+    @staticmethod
+    def create_encoded_command(command: List[Text],
+                               resource: Text,
+                               environment: MutableMapping[Text, Text] = None,
+                               workdir: Optional[Text] = None):
+        decoded_command = "".join(
+            "{workdir}"
+            "{environment}"
+            "{command}"
+        ).format(
+            workdir="cd {workdir} && ".format(workdir=workdir) if workdir is not None else "",
+            environment="".join(["export %s=%s && " % (key, value) for (key, value) in
+                                 environment.items()]) if environment is not None else "",
+            command=" ".join(command)
+        )
+        logger.debug("Executing {command} on {resource}".format(command=decoded_command, resource=resource))
+        return "".join(
+            "sh -c "
+            "\"$(echo {command} | base64 -d)\""
+        ).format(
+            command=base64.b64encode(decoded_command.encode('utf-8')).decode('utf-8')
+        )
 
     @staticmethod
     def get_option(name: Text,
@@ -30,13 +58,44 @@ class BaseConnector(Connector, ABC):
         else:
             raise TypeError("Unsupported value type")
 
-    @abstractmethod
     async def _copy_remote_to_remote(self,
                                      src: Text,
                                      dst: Text,
                                      resources: List[Text],
                                      source_remote: Text) -> None:
-        ...
+        # Check for the need of a temporary copy
+        temp_dir = None
+        for resource in resources:
+            if source_remote != resource:
+                temp_dir = tempfile.mkdtemp()
+                await self._copy_remote_to_local(src, temp_dir, source_remote)
+                break
+        # Perform the actual copies
+        copy_tasks = []
+        for resource in resources:
+            copy_tasks.append(asyncio.create_task(
+                self._copy_remote_to_remote_single(src, dst, resource, source_remote, temp_dir)))
+        await asyncio.gather(*copy_tasks)
+        # If a temporary location was created, delete it
+        if temp_dir is not None:
+            shutil.rmtree(temp_dir)
+
+    async def _copy_remote_to_remote_single(self,
+                                            src: Text,
+                                            dst: Text,
+                                            resource: Text,
+                                            source_remote: Text,
+                                            temp_dir: Optional[Text]) -> None:
+        if source_remote == resource:
+            if src != dst:
+                command = ['/bin/cp', "-rf", src, dst]
+                await self.run(resource, command)
+        else:
+            copy_tasks = []
+            for element in os.listdir(temp_dir):
+                copy_tasks.append(asyncio.create_task(
+                    self._copy_local_to_remote(os.path.join(temp_dir, element), dst, [resource])))
+            await asyncio.gather(*copy_tasks)
 
     @abstractmethod
     async def _copy_remote_to_local(self,

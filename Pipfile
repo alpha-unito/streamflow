@@ -10,10 +10,11 @@ pytest = "*"
 aiohttp = "*"
 asyncssh = "*"
 cwltool = "*"
+Jinja2 = "*"
 jsonref = "*"
 jsonschema = "*"
 kubernetes_asyncio = "*"
 uvloop = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "3.8"

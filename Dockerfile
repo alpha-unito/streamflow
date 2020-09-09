@@ -1,4 +1,4 @@
-FROM python:3.7-alpine AS builder
+FROM python:3.8-alpine AS builder
 ARG HELM_VERSION
 
 ENV PIPENV_VENV_IN_PROJECT=1
@@ -24,7 +24,7 @@ RUN apk --no-cache add \
     && pipenv install \
     && rm -f Pipfile*
 
-FROM python:3.7-alpine
+FROM python:3.8-alpine
 LABEL maintainer="iacopo.colonnelli@unito.it"
 
 ENV PYTHONPATH="${PYTHONPATH}:/"
@@ -36,6 +36,7 @@ RUN apk --no-cache add \
         libressl \
         libxml2 \
         libxslt \
+        nodejs \
     && mkdir -p /streamflow/results
 
 WORKDIR /streamflow/results

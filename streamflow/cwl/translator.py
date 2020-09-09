@@ -79,7 +79,6 @@ def _build_condition(context: MutableMapping[Text, Any], task: Task):
         # Process InlineJavascriptRequirement
         expression_lib, full_js = _process_javascript_requirement(requirements)
         return CWLCondition(
-            task=task,
             when_expression=when_expression,
             expression_lib=expression_lib,
             full_js=full_js)
@@ -115,6 +114,7 @@ def _create_output_port(
         context: MutableMapping[Text, Any],
         gather: bool) -> OutputPort:
     if gather:
+        # TODO: manage nested crossproduct strategies
         port = GatherOutputPort(name)
     else:
         port = DefaultOutputPort(name)
@@ -201,24 +201,32 @@ def _get_input_combinator(task: Task, scatter_context: MutableMapping[Text, Any]
         for port in task.input_ports.values():
             input_combinator.ports[port.name] = port
         return input_combinator
+    # If there are scatter ports
     else:
-        # If there is a single scatter port, create a CartesianProduct
-        # between the scatter port and the DotProduct of the others
-        if 'method' not in scatter_context:
-            cartesian_combinator = CartesianProductInputCombinator(utils.random_name())
+        # Separate scatter ports from the other ones
+        scatter_ports, other_ports = {}, {}
+        for port_name, port in task.input_ports.items():
+            name = posixpath.join(task.name, port_name)
+            if name in scatter_context['inputs']:
+                scatter_ports[port.name] = port
+            else:
+                other_ports[port.name] = port
+        # Create a CartesianProduct combinator between the scatter ports and the DotProduct of the others
+        cartesian_combinator = CartesianProductInputCombinator(utils.random_name())
+        if other_ports:
             dotproduct_name = utils.random_name()
             dotproduct_combinator = DotProductInputCombinator(dotproduct_name)
-            for port_name, port in task.input_ports.items():
-                name = posixpath.join(task.name, port_name)
-                if name in scatter_context['inputs']:
-                    cartesian_combinator.ports[port.name] = port
-                else:
-                    dotproduct_combinator.ports[port.name] = port
+            dotproduct_combinator.ports = other_ports
             cartesian_combinator.ports[dotproduct_name] = dotproduct_combinator
-            return cartesian_combinator
+        # Choose the right combinator for the scatter ports, based on the `scatterMethod` property
+        if 'method' == 'dotproduct':
+            scatter_name = utils.random_name()
+            scatter_combinator = DotProductInputCombinator(scatter_name)
+            scatter_combinator.ports = scatter_ports
+            cartesian_combinator.ports[scatter_name] = scatter_combinator
         else:
-            pass
-            # TODO: manage scatterMethod with port combinators
+            cartesian_combinator.ports = {**cartesian_combinator.ports, **scatter_ports}
+        return cartesian_combinator
 
 
 def _get_name(name_prefix: Text, element_id: Text, last_element_only: bool = False) -> Text:
@@ -311,30 +319,35 @@ class CWLTranslator(object):
                         external=target_model.get('external', False)
                     ),
                     resources=task_target['resources'] if 'resources' in task_target else 1,
-                    service=task_target['service']
+                    service=task_target['service'] if 'service' in task_target else None
                 )
+            task_workdir = self.workflow_config.propagate(task_path, 'workdir')
+            if task_workdir is not None:
+                task.workdir = task_workdir
 
     def _inject_inputs(self):
         for key, value in self.cwl_inputs.items():
             port_name = posixpath.join('/', key)
-            port = self.input_ports[port_name]
-            processor = port.token_processor
-            # If value is a dictionary, extract the actual value
-            if isinstance(value, dict):
-                if 'class' not in value:
-                    raise WorkflowDefinitionException(
-                        "Dictionaries without explicit class declaration are not supported")
-                if value['class'] in ['File', 'Directory'] and isinstance(processor, CWLFileProcessor):
-                    weight = utils.get_size(value['path']) if os.path.exists(value['path']) else 0
-                    port.put(Token(name=port.name, value=value['path'], weight=weight))
+            if port_name in self.input_ports:
+                port = self.input_ports[port_name]
+                processor = port.token_processor
+                # If value is a dictionary, extract the actual value
+                if isinstance(value, dict):
+                    if 'class' not in value:
+                        raise WorkflowDefinitionException(
+                            "Dictionaries without explicit class declaration are not supported")
+                    if value['class'] in ['File', 'Directory'] and isinstance(processor, CWLFileProcessor):
+                        path = value['path'] if 'path' in value else value['location']
+                        weight = utils.get_size(path) if os.path.exists(path) else 0
+                        port.put(Token(name=port.name, value=path, weight=weight))
+                        port.put(TerminationToken(name=port.name))
+                    else:
+                        raise WorkflowDefinitionException("Inputs of type " + value['class'] + " are not supported")
+                elif isinstance(processor, CWLValueProcessor):
+                    port.put(Token(name=port.name, value=value, weight=0))
                     port.put(TerminationToken(name=port.name))
                 else:
-                    raise WorkflowDefinitionException("Inputs of type " + value['class'] + " are not supported")
-            elif isinstance(processor, CWLValueProcessor):
-                port.put(Token(name=port.name, value=value, weight=0))
-                port.put(TerminationToken(name=port.name))
-            else:
-                raise WorkflowDefinitionException("Incorrect value specification for " + key)
+                    raise WorkflowDefinitionException("Incorrect value specification for " + key)
 
     async def _percolate_inputs(self, workflow: Workflow):
         for task in workflow.tasks.values():

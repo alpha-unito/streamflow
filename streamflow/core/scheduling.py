@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod, ABC
 from enum import Enum
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job
@@ -27,6 +27,7 @@ class JobStatus(Enum):
     SKIPPED = 2
     COMPLETED = 3
     FAILED = 4
+    CANCELLED = 5
 
 
 class Policy(ABC):
@@ -77,10 +78,10 @@ class Scheduler(ABC):
     async def notify_status(self,
                             job_name: Text,
                             status: JobStatus):
-        pass
+        ...
 
     @abstractmethod
     async def schedule(self,
                        job: Job,
                        scheduling_policy: Policy = None):
-        pass
+        ...

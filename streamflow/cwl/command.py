@@ -9,6 +9,7 @@ import cwltool.expression
 import shellescape
 from typing_extensions import Text
 
+import streamflow.core.utils
 from streamflow.core.scheduling import JobStatus
 from streamflow.core.workflow import Task, Command, Job
 from streamflow.cwl import utils
@@ -126,7 +127,7 @@ class CWLBaseCommand(Command, ABC):
                         dest_path = self._eval_expression(listing['entryname'], context)
                     else:
                         dest_path = listing['entryname']
-                    path_processor = utils.get_path_processor(self.task)
+                    path_processor = streamflow.core.utils.get_path_processor(self.task)
                     if not path_processor.isabs(dest_path):
                         dest_path = path_processor.join(job.output_directory, dest_path)
                 writable = listing['writable'] if 'writable' in listing else False
@@ -280,15 +281,14 @@ class CWLCommand(CWLBaseCommand):
                 stderr.close()
         else:
             connector = self.task.get_connector()
-            resource = job.get_resource()
+            resources = job.get_resources()
             logger.info('Executing job {job} on resource {resource} into directory {outdir}:\n{command}'.format(
                 job=job.name,
-                resource=resource,
+                resource=resources[0] if resources else None,
                 outdir=job.output_directory,
                 command=' \\\n\t'.join(cmd),
             ))
             # If task is assigned to multiple resources, add the STREAMFLOW_HOSTS environment variable
-            resources = job.get_resources()
             if len(resources) > 1:
                 available_resources = await connector.get_available_resources(self.task.target.service)
                 hosts = {k: v.hostname for k, v in available_resources.items() if k in resources}
@@ -296,18 +296,19 @@ class CWLCommand(CWLBaseCommand):
             # Execute remote command
             result, exit_code = await asyncio.wait_for(
                 connector.run(
-                    resource,
+                    resources[0] if resources else None,
                     cmd,
                     environment=parsed_env,
                     workdir=job.output_directory,
-                    capture_output=True),
+                    capture_output=True,
+                    task_command=True),
                 self._get_timeout(job))
             # TODO: manage streams
-            if result:
-                print(result)
         # Handle exit codes
         if (self.success_codes is not None and exit_code in self.success_codes) or exit_code == 0:
             status = JobStatus.COMPLETED
+            if result:
+                print(result)
         else:
             status = JobStatus.FAILED
         return result, status

@@ -12,11 +12,13 @@ setup(
     version=VERSION,
     packages=[
         "streamflow",
+        "streamflow.config",
+        "streamflow.core",
         "streamflow.cwl",
         "streamflow.data",
-        "streamflow.config",
         "streamflow.deployment",
         "streamflow.scheduling",
+        "streamflow.workflow"
     ],
     package_data={"streamflow.config": ["schemas/v1.0/*.json"]},
     include_package_data=True,
@@ -28,11 +30,14 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     install_requires=[
+        "aiohttp",
+        "asyncssh",
         "cwltool",
-        "kubernetes",
+        "Jinja2",
+        "jsonref",
         "jsonschema",
-        "paramiko",
-        "scp"
+        "kubernetes_asyncio",
+        "uvloop"
     ],
     python_requires=">=3.7, <4",
     entry_points={"console_scripts": ["streamflow=streamflow.main:run"]},

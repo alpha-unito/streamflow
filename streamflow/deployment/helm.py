@@ -1,10 +1,8 @@
 import asyncio
-import base64
 import io
 import os
 import posixpath
 import shlex
-import shutil
 import stat
 import subprocess
 import tarfile
@@ -62,37 +60,20 @@ class BaseHelmConnector(BaseConnector, ABC):
         self.client_ws: Optional[client.CoreV1Api] = None
 
     async def _build_helper_file(self,
-                                 target: Text,
+                                 command: List[Text],
+                                 resource: Text,
                                  environment: MutableMapping[Text, Text] = None,
                                  workdir: Text = None
                                  ) -> Text:
-        file_contents = "".join([
-            '#!/bin/sh\n',
-            '{environment}',
-            '{workdir}',
-            'sh -c "$(echo $@ | base64 -d)"\n'
-        ]).format(
-            environment="".join(["export %s=\"%s\"\n" % (key, value) for (key, value) in
-                                 environment.items()]) if environment is not None else "",
-            workdir="cd {workdir}\n".format(workdir=workdir) if workdir is not None else ""
-        )
+        file_contents = '\n'.join([
+            '#!/bin/sh',
+            self.create_encoded_command(command, resource, environment, workdir)
+        ])
         file_name = tempfile.mktemp()
         with open(file_name, mode='w') as file:
             file.write(file_contents)
         os.chmod(file_name, os.stat(file_name).st_mode | stat.S_IEXEC)
-        parent_directory = str(Path(file_name).parent)
-        pod, container = target.split(':')
-        kube_client_ws = await self._get_client_ws()
-        await kube_client_ws.connect_get_namespaced_pod_exec(
-            name=pod,
-            namespace=self.namespace or 'default',
-            container=container,
-            command=["mkdir", "-p", parent_directory],
-            stderr=True,
-            stdin=False,
-            stdout=True,
-            tty=False)
-        await self._copy_local_to_remote(file_name, file_name, [target])
+        await self._copy_local_to_remote(file_name, '/tmp', [resource])
         return file_name
 
     def _configure_incluster_namespace(self):
@@ -108,39 +89,7 @@ class BaseHelmConnector(BaseConnector, ABC):
 
     async def _copy_remote_to_remote(self, src: Text, dst: Text, resources: List[Text], source_remote: Text) -> None:
         effective_resources = await self._get_effective_resources(resources, dst)
-        # Check for the need of a temporary copy
-        temp_dir = None
-        for resource in effective_resources:
-            if source_remote != resource:
-                temp_dir = tempfile.mkdtemp()
-                await self._copy_remote_to_local(src, temp_dir, source_remote)
-                break
-        # Perform the actual copies
-        copy_tasks = []
-        for resource in effective_resources:
-            copy_tasks.append(asyncio.create_task(
-                self._copy_remote_to_remote_single(src, dst, resource, source_remote, temp_dir)))
-        await asyncio.gather(*copy_tasks)
-        # If a temporary location was created, delete it
-        if temp_dir is not None:
-            shutil.rmtree(temp_dir)
-
-    async def _copy_remote_to_remote_single(self,
-                                            src: Text,
-                                            dst: Text,
-                                            resource: Text,
-                                            source_remote: Text,
-                                            temp_dir: Optional[Text]) -> None:
-        if source_remote == resource:
-            if src != dst:
-                command = ['/bin/cp', "-rf", src, dst]
-                await self.run(resource, command)
-        else:
-            copy_tasks = []
-            for element in os.listdir(temp_dir):
-                copy_tasks.append(asyncio.create_task(
-                    self._copy_local_to_remote(os.path.join(temp_dir, element), dst, [resource])))
-            await asyncio.gather(*copy_tasks)
+        await super()._copy_remote_to_remote(src, dst, effective_resources, source_remote)
 
     async def _copy_local_to_remote(self, src: Text, dst: Text, resources: List[Text]):
         effective_resources = await self._get_effective_resources(resources, dst)
@@ -158,10 +107,9 @@ class BaseHelmConnector(BaseConnector, ABC):
                                            resource: Text,
                                            tar_buffer: io.BufferedRandom) -> None:
         resource_buffer = io.BufferedReader(tar_buffer.raw)
-        kube_client_ws = await self._get_client_ws()
         pod, container = resource.split(':')
         command = ['tar', 'xf', '-', '-C', '/']
-        response = await kube_client_ws.connect_get_namespaced_pod_exec(
+        response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
             container=container,
@@ -179,15 +127,12 @@ class BaseHelmConnector(BaseConnector, ABC):
                 await response.send_bytes(payload)
             else:
                 break
-            async for _ in response:
-                pass
         await response.close()
 
     async def _copy_remote_to_local(self, src: Text, dst: Text, resource: Text):
-        kube_client_ws = await self._get_client_ws()
         pod, container = resource.split(':')
         command = ['tar', 'cPf', '-', src]
-        response = await kube_client_ws.connect_get_namespaced_pod_exec(
+        response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
             container=container,
@@ -221,25 +166,12 @@ class BaseHelmConnector(BaseConnector, ABC):
                                 outputfile.write(inputfile.read())
                     else:
                         parent_dir = str(Path(dst).parent)
-                        member.path = posixpath.relpath(member.path, src)
+                        member.path = posixpath.basename(member.path)
                         tar.extract(member, parent_dir)
 
-    async def _get_client(self) -> client.CoreV1Api:
-        if self.client is None:
-            configuration = await self._get_configuration()
-            self.client = client.CoreV1Api(api_client=ApiClient(configuration=configuration))
-        return self.client
-
-    async def _get_client_ws(self) -> client.CoreV1Api:
-        if self.client_ws is None:
-            configuration = await self._get_configuration()
-            self.client_ws = client.CoreV1Api(api_client=WsApiClient(configuration=configuration))
-        return self.client_ws
-
     async def _get_container(self, resource: Text) -> Tuple[Text, V1Container]:
-        kube_client = await self._get_client()
         pod_name, container_name = resource.split(':')
-        pod = await kube_client.read_namespaced_pod(name=pod_name, namespace=self.namespace or 'default')
+        pod = await self.client.read_namespaced_pod(name=pod_name, namespace=self.namespace or 'default')
         for container in pod.spec.containers:
             if container.name == container_name:
                 return container.name, container
@@ -260,7 +192,6 @@ class BaseHelmConnector(BaseConnector, ABC):
                                        resources: List[Text],
                                        dest_path: Text,
                                        source_remote: Optional[Text] = None) -> List[Text]:
-        kube_client = await self._get_client()
         # Get containers
         container_tasks = []
         for resource in resources:
@@ -271,23 +202,32 @@ class BaseHelmConnector(BaseConnector, ABC):
         effective_resources = []
         for resource in resources:
             container = containers[resource.split(':')[1]]
+            add_resource = True
             for volume in container.volume_mounts:
                 if dest_path.startswith(volume.mount_path):
                     path = ':'.join([volume.name, dest_path])
                     if path not in common_paths:
                         common_paths[path] = resource
-                        effective_resources.append(resource)
                     elif resource == source_remote:
                         effective_resources.remove(common_paths[path])
                         common_paths[path] = resource
-                        effective_resources.append(resource)
+                    else:
+                        add_resource = False
                     break
-            effective_resources.append(resource)
+            if add_resource:
+                effective_resources.append(resource)
         return effective_resources
 
+    async def deploy(self):
+        # Init standard client
+        configuration = await self._get_configuration()
+        self.client = client.CoreV1Api(api_client=ApiClient(configuration=configuration))
+        # Init WebSocket client
+        configuration = await self._get_configuration()
+        self.client_ws = client.CoreV1Api(api_client=WsApiClient(configuration=configuration))
+
     async def get_available_resources(self, service):
-        kube_client = await self._get_client()
-        pods = await kube_client.list_namespaced_pod(
+        pods = await self.client.list_namespaced_pod(
             namespace=self.namespace or 'default',
             label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
             field_selector="status.phase=Running"
@@ -302,21 +242,19 @@ class BaseHelmConnector(BaseConnector, ABC):
         return valid_targets
 
     async def run(self,
-                  resource: str,
-                  command: List[str],
-                  environment: MutableMapping[str, str] = None,
-                  workdir: str = None,
-                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
-        helper_file_name = await self._build_helper_file(resource, environment, workdir)
-        logger.debug("Executing {command}".format(command=command, resource=resource))
-        command = [helper_file_name, base64.b64encode(" ".join(command).encode('utf-8')).decode('utf-8')]
+                  resource: Text,
+                  command: List[Text],
+                  environment: MutableMapping[Text, Text] = None,
+                  workdir: Optional[Text] = None,
+                  capture_output: bool = False,
+                  task_command: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+        helper_file_name = await self._build_helper_file(command, resource, environment, workdir)
         pod, container = resource.split(':')
-        kube_client_ws = await self._get_client_ws()
-        response = await kube_client_ws.connect_get_namespaced_pod_exec(
+        response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
             container=container,
-            command=command,
+            command=[helper_file_name],
             stderr=True,
             stdin=False,
             stdout=True,
@@ -337,7 +275,16 @@ class BaseHelmConnector(BaseConnector, ABC):
                 if err['status'] == "Success":
                     return out_buffer.getvalue(), 0
                 else:
-                    return out_buffer.getvalue(), int(err['details']['causes'][0]['message'])
+                    return out_buffer.getvalue(), int(err['details']['causes'][0]['code'])
+
+    async def undeploy(self):
+        if self.client is not None:
+            await self.client.api_client.close()
+            self.client = None
+        if self.client_ws is not None:
+            await self.client_ws.api_client.close()
+            self.client_ws = None
+        self.configuration = None
 
 
 class Helm2Connector(BaseHelmConnector):
@@ -385,7 +332,7 @@ class Helm2Connector(BaseHelmConnector):
                  chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,
                  purge: Optional[bool] = True,
-                 transferBufferSize: Optional[int] = None
+                 transferBufferSize: Optional[int] = (32 << 20) - 1
                  ):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
@@ -464,6 +411,9 @@ class Helm2Connector(BaseHelmConnector):
         )
 
     async def deploy(self) -> None:
+        # Create clients
+        await super().deploy()
+        # Deploy Helm charts
         deploy_command = self.base_command() + "".join([
             "install "
             "{atomic}"
@@ -566,6 +516,8 @@ class Helm2Connector(BaseHelmConnector):
         logger.debug("Executing {command}".format(command=undeploy_command))
         proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
         await proc.wait()
+        # Close connections
+        await super().undeploy()
 
 
 class Helm3Connector(BaseHelmConnector):
@@ -604,7 +556,7 @@ class Helm3Connector(BaseHelmConnector):
                  verify: Optional[bool] = False,
                  chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,
-                 transferBufferSize: Optional[int] = None
+                 transferBufferSize: Optional[int] = (32 << 20) - 1
                  ):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
@@ -665,6 +617,9 @@ class Helm3Connector(BaseHelmConnector):
         )
 
     async def deploy(self) -> None:
+        # Create clients
+        await super().deploy()
+        # Deploy Helm charts
         deploy_command = self.base_command() + "".join([
             "install "
             "{atomic}"
@@ -740,10 +695,4 @@ class Helm3Connector(BaseHelmConnector):
         proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
         await proc.wait()
         # Close connections
-        if self.client is not None:
-            await self.client.api_client.close()
-            self.client = None
-        if self.client_ws is not None:
-            await self.client_ws.api_client.close()
-            self.client_ws = None
-        self.configuration = None
+        await super().undeploy()

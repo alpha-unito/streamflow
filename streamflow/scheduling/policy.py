@@ -33,8 +33,15 @@ class DataLocalityPolicy(Policy):
             # Skip the input if the related job was executed locally
             if token.job not in jobs:
                 continue
-            # If related job was executed on a remote resource, check if it's free
-            for current_resource in jobs[token.job].resources:
+            # Get related resources
+            related_resources = set(jobs[token.job].resources)
+            if token.name in job.task.input_ports:
+                token_processor = job.task.input_ports[token.name].token_processor
+            else:
+                token_processor = jobs[token.job].job.task.output_ports[token.name].token_processor
+            related_resources.update(token_processor.get_related_resources(token))
+            # Check if one of the related resources is free
+            for current_resource in related_resources:
                 if current_resource in valid_resources:
                     running_jobs = list(
                         filter(lambda x: jobs[x].status == JobStatus.RUNNING, resources[current_resource].jobs))

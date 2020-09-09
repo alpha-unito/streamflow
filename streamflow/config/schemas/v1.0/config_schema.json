@@ -59,10 +59,14 @@
                   }
                 },
                 "required": [
-                  "model",
-                  "service"
+                  "model"
                 ],
                 "additionalProperties": false
+              },
+              "workdir": {
+                "type": "string",
+                "description": "Path to the working directory",
+                "default": "${TMPDIR}/streamflow"
               }
             }
           },
@@ -117,6 +121,16 @@
           "$id": "#/definitions/model/definitions/occam",
           "type": "object",
           "$ref": "occam.json#"
+        },
+        "slurm": {
+          "$id": "#/definitions/model/definitions/slurm",
+          "type": "object",
+          "$ref": "slurm.json#"
+        },
+        "ssh": {
+          "$id": "#/definitions/model/definitions/ssh",
+          "type": "object",
+          "$ref": "ssh.json#"
         }
       },
       "properties": {
@@ -127,13 +141,19 @@
             "helm",
             "helm2",
             "helm3",
-            "occam"
+            "occam",
+            "slurm",
+            "ssh"
           ]
         },
         "external": {
           "type": "boolean",
-          "description": "If set, Streamflow does not manage the lifecycle of the execution environment. This means that all required services must be up and running when the workflow starts",
+          "description": "If set, StreamFlow does not manage the lifecycle of the execution environment. This means that all required services must be up and running when the workflow starts",
           "default": false
+        },
+        "from": {
+          "type": "string",
+          "description": "If set, the config field of the current model will inherit from the one specified in this property"
         }
       },
       "allOf": [

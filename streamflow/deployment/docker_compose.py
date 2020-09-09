@@ -6,8 +6,8 @@ import shlex
 import subprocess
 from typing import TYPE_CHECKING
 
-from streamflow.deployment.base import BaseConnector
 from streamflow.core.scheduling import Resource
+from streamflow.deployment.base import BaseConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
@@ -149,9 +149,6 @@ class DockerComposeConnector(BaseConnector):
             compatibility=self.get_option("compatibility", self.compatibility)
         )
 
-    async def close(self):
-        pass
-
     async def deploy(self) -> None:
         deploy_command = self.base_command() + "".join([
             "up ",
@@ -190,8 +187,9 @@ class DockerComposeConnector(BaseConnector):
                   resource: Text,
                   command: List[Text],
                   environment: MutableMapping[Text, Text] = None,
-                  workdir: Text = None,
-                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+                  workdir: Optional[Text] = None,
+                  capture_output: bool = False,
+                  task_command: bool = False) -> Optional[Tuple[Optional[Any], int]]:
         run_command = self.base_command() + "".join([
             "exec ",
             "-T ",

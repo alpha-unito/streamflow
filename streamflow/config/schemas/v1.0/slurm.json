@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "slurm.json",
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+    },
+    "hostname": {
+      "type": "string",
+      "description": "Hostname of the HPC facility"
+    },
+    "sharedPaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Paths shared among all the nodes in the HPC center. Only data transfers involving these locations are allowed"
+    },
+    "sshKey": {
+      "type": "string",
+      "description": "Path to the SSH key needed to connect with Slurm environment"
+    },
+    "sshKeyPassphrase": {
+      "type": "string",
+      "description": "Passphrase protecting the SSH key"
+    },
+    "username": {
+      "type": "string",
+      "description": "Username needed to connect with Occam environment"
+    }
+  },
+  "required": [
+    "hostname",
+    "username",
+    "sshKey"
+  ],
+  "additionalProperties": false
+}

@@ -4,6 +4,7 @@ import asyncio
 import os
 import posixpath
 import tempfile
+from asyncio import CancelledError
 from typing import TYPE_CHECKING
 
 from streamflow.core import utils
@@ -20,6 +21,21 @@ if TYPE_CHECKING:
     from typing_extensions import Text
 
 
+def _get_task_status(statuses: List[JobStatus]):
+    num_skipped = 0
+    for status in statuses:
+        if status == JobStatus.FAILED:
+            return JobStatus.FAILED
+        elif status == JobStatus.CANCELLED:
+            return JobStatus.CANCELLED
+        elif status == JobStatus.SKIPPED:
+            num_skipped += 1
+    if num_skipped == len(statuses):
+        return JobStatus.SKIPPED
+    else:
+        return JobStatus.COMPLETED
+
+
 async def _retrieve_output(
         job: Job,
         output_port: OutputPort,
@@ -34,15 +50,17 @@ class BaseTask(Task):
     async def _init_dir(self, job: Job) -> Text:
         if self.target is not None:
             path_processor = posixpath
-            tempdir = '/tmp'
+            workdir = self.workdir if self.workdir is not None else path_processor.join(
+                '/tmp', 'streamflow')
         else:
             path_processor = os.path
-            tempdir = tempfile.gettempdir()
-        dir_path = path_processor.join(tempdir, 'streamflow', utils.random_name())
+            workdir = self.workdir if self.workdir is not None else path_processor.join(
+                tempfile.gettempdir(), 'streamflow')
+        dir_path = path_processor.join(workdir, utils.random_name())
         await remotepath.mkdir(self.get_connector(), job.get_resources(), dir_path)
         return dir_path
 
-    async def _run_job(self, inputs: List[Token]) -> None:
+    async def _run_job(self, inputs: List[Token]) -> JobStatus:
         # Create job
         job = Job(
             name=posixpath.join(self.name, asyncio.current_task().get_name()),
@@ -50,42 +68,57 @@ class BaseTask(Task):
             inputs=inputs)
         logger.info("Job {name} created".format(name=job.name))
         # Evaluate condition
-        if self.condition is None or self.condition.evaluate():
-            # Setup runtime environment
-            if self.target is not None:
-                await self.context.deployment_manager.deploy(self.target.model)
-                await self.context.scheduler.schedule(job)
-            # Initialize directories
-            input_directory_task = asyncio.create_task(self._init_dir(job))
-            output_directory_task = asyncio.create_task(self._init_dir(job))
-            await asyncio.gather(input_directory_task, output_directory_task)
-            job.input_directory = input_directory_task.result()
-            job.output_directory = output_directory_task.result()
-            # Update tokens after target assignment
-            update_tasks = []
-            for token in inputs:
-                token_processor = self.input_ports[token.name].token_processor
-                update_tasks.append(asyncio.create_task(token_processor.update_token(job, token)))
-            job.inputs = await asyncio.gather(*update_tasks)
-            # Execute task
-            if self.target is not None:
-                await self.context.scheduler.notify_status(job.name, JobStatus.RUNNING)
-            result, status = await self.command.execute(job)
-            # Notify completion to scheduler
-            if self.target is not None:
-                await self.context.scheduler.notify_status(job.name, status)
-            if status == JobStatus.FAILED:
+        if self.condition is None or self.condition.evaluate(job):
+            # Initialise result and status to defualt values
+            result, status = None, JobStatus.FAILED
+            try:
+                # Setup runtime environment
+                if self.target is not None:
+                    await self.context.deployment_manager.deploy(self.target.model)
+                    await self.context.scheduler.schedule(job)
+                # Initialize directories
+                input_directory_task = asyncio.create_task(self._init_dir(job))
+                output_directory_task = asyncio.create_task(self._init_dir(job))
+                await asyncio.gather(input_directory_task, output_directory_task)
+                job.input_directory = input_directory_task.result()
+                job.output_directory = output_directory_task.result()
+                # Update tokens after target assignment
+                update_tasks = []
+                for token in inputs:
+                    token_processor = self.input_ports[token.name].token_processor
+                    update_tasks.append(asyncio.create_task(token_processor.update_token(job, token)))
+                job.inputs = await asyncio.gather(*update_tasks)
+                # Execute task
+                if self.target is not None:
+                    await self.context.scheduler.notify_status(job.name, JobStatus.RUNNING)
+                result, status = await self.command.execute(job)
+                if status == JobStatus.FAILED:
+                    logger.error(result)
+                    # TODO: implement fault tolerance here
+                    self.terminate(status)
+            except CancelledError:
+                status = JobStatus.CANCELLED
+                self.terminate(status)
+            except BaseException as e:
+                logger.exception(e)
                 # TODO: implement fault tolerance here
-                raise WorkflowExecutionException("Failure detected during execution of job {job}".format(job=job.name))
+                self.terminate(status)
+            finally:
+                # Notify completion to scheduler
+                if self.target is not None:
+                    await self.context.scheduler.notify_status(job.name, status)
         else:
             # Execution skipped
             result = None
             status = JobStatus.SKIPPED
         # Retrieve output tokens
-        output_tasks = []
-        for output_port in self.output_ports.values():
-            output_tasks.append(asyncio.create_task(_retrieve_output(job, output_port, result, status)))
-        await asyncio.gather(*output_tasks)
+        if not self.terminated:
+            output_tasks = []
+            for output_port in self.output_ports.values():
+                output_tasks.append(asyncio.create_task(_retrieve_output(job, output_port, result, status)))
+            await asyncio.gather(*output_tasks)
+        # Return job status
+        return status
 
     def get_connector(self) -> Optional[Connector]:
         if self.target is not None:
@@ -115,8 +148,18 @@ class BaseTask(Task):
                 self._run_job([]),
                 name=utils.random_name()))
         # Wait for jobs termination
-        await asyncio.gather(*jobs)
-        # Add a TerminationToken to each output port
-        for port in self.output_ports.values():
-            port.put(TerminationToken(name=port.name))
-        logger.info("Task {name} completed".format(name=self.name))
+        statuses = await asyncio.gather(*jobs)
+        # Terminate task
+        self.terminate(_get_task_status(statuses))
+
+    def terminate(self, status: JobStatus):
+        if not self.terminated:
+            # Add a TerminationToken to each output port
+            for port in self.output_ports.values():
+                port.put(TerminationToken(name=port.name))
+            self.terminated = True
+            if status == JobStatus.FAILED:
+                raise WorkflowExecutionException(
+                    "Unrecoverable failure detected during execution of task {task}".format(task=self.name))
+            else:
+                logger.info("Task {name} completed with status {status}".format(name=self.name, status=status.name))

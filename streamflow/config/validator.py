@@ -19,7 +19,7 @@ def load_jsonschema(config_file):
     filename = os.path.join(base_path, "config_schema.json")
     if not os.path.exists(filename):
         raise Exception(
-            'Version in "{}" is unsupported'.format(config_file.filename))
+            'Version in "{}" is unsupported'.format(filename))
     with open(filename, "r") as f:
         return loads(f.read(), base_uri='file://{}/'.format(base_path), jsonschema=True)
 

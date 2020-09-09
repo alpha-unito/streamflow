@@ -42,11 +42,12 @@ class DefaultScheduler(Scheduler):
 
     async def notify_status(self, job_name: str, status: JobStatus) -> None:
         async with self.wait_queue:
-            self.job_allocations[job_name].status = status
-            logger.info(
-                "Job {name} changed status to {status}".format(name=job_name, status=status.name))
-            if status in [JobStatus.COMPLETED, JobStatus.FAILED]:
-                self.wait_queue.notify_all()
+            if job_name in self.job_allocations:
+                self.job_allocations[job_name].status = status
+                logger.info(
+                    "Job {name} changed status to {status}".format(name=job_name, status=status.name))
+                if status in [JobStatus.COMPLETED, JobStatus.FAILED]:
+                    self.wait_queue.notify_all()
 
     async def schedule(self,
                        job: Job,

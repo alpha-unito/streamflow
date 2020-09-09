@@ -22,7 +22,7 @@ class Connector(ABC):
                    resources: List[Text],
                    kind: ConnectorCopyKind,
                    source_remote: Optional[Text] = None) -> None:
-        pass
+        ...
 
     @abstractmethod
     async def deploy(self) -> None:
@@ -37,8 +37,9 @@ class Connector(ABC):
                   resource: Text,
                   command: List[Text],
                   environment: MutableMapping[Text, Text] = None,
-                  workdir: Text = None,
-                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+                  workdir: Optional[Text] = None,
+                  capture_output: bool = False,
+                  task_command: bool = False) -> Optional[Tuple[Optional[Any], int]]:
         ...
 
     @abstractmethod
@@ -60,23 +61,23 @@ class DeploymentManager(ABC):
 
     @abstractmethod
     async def deploy(self, model_config: ModelConfig):
-        pass
+        ...
 
     @abstractmethod
     def get_connector(self, model_name: Text) -> Optional[Connector]:
-        pass
+        ...
 
     @abstractmethod
     def is_deployed(self, model_name: Text):
-        pass
+        ...
 
     @abstractmethod
     async def undeploy(self, model_name: Text):
-        pass
+        ...
 
     @abstractmethod
     async def undeploy_all(self):
-        pass
+        ...
 
 
 class ModelConfig(object):

@@ -12,7 +12,7 @@ from streamflow.workflow.exception import WorkflowDefinitionException
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Task, Job
-    from typing import Any, MutableMapping
+    from typing import Any, MutableMapping, Set
     from typing_extensions import Text
 
 
@@ -31,6 +31,9 @@ class DefaultTokenProcessor(TokenProcessor):
 
     async def compute_token(self, job: Job, result: Any, status: JobStatus) -> Token:
         return Token(name=self.port.name, value=result, job=job.name, weight=0)
+
+    def get_related_resources(self, token: Token) -> Set[Text]:
+        return set()
 
     async def update_token(self, job: Job, token: Token) -> Token:
         if isinstance(token.job, List):
@@ -118,8 +121,11 @@ class GatherOutputPort(DefaultOutputPort):
     def put(self, token: Token):
         if isinstance(token, TerminationToken):
             token_list = self.token
-            self.token = [Token(name=self.name, job=[t.job for t in token_list], value=token_list, weight=0)]
-            self.token.append(token)
+            if token_list:
+                self.token = [Token(name=self.name, job=[t.job for t in token_list], value=token_list, weight=0)]
+                self.token.append(token)
+            else:
+                self.token = [token]
             self.fireable.set()
         else:
             self.token.append(token)

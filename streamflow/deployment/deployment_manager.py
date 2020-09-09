@@ -4,10 +4,12 @@ import asyncio
 from asyncio import Event
 from typing import TYPE_CHECKING
 
+from streamflow.core.deployment import DeploymentManager
 from streamflow.deployment.docker_compose import DockerComposeConnector
 from streamflow.deployment.helm import Helm2Connector, Helm3Connector
 from streamflow.deployment.occam import OccamConnector
-from streamflow.core.deployment import DeploymentManager
+from streamflow.deployment.slurm import SlurmConnector
+from streamflow.deployment.ssh import SSHConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
@@ -20,7 +22,9 @@ connector_classes = {
     'helm': Helm3Connector,
     'helm2': Helm2Connector,
     'helm3': Helm3Connector,
-    'occam': OccamConnector
+    'occam': OccamConnector,
+    'ssh': SSHConnector,
+    'slurm': SlurmConnector
 }
 
 
@@ -45,8 +49,8 @@ class DefaultDeploymentManager(DeploymentManager):
                 if not model_config.external:
                     logger.info("Deploying model {model}".format(model=model_name))
                     await connector.deploy()
-                    self.events_map[model_name].set()
-                    break
+                self.events_map[model_name].set()
+                break
             else:
                 await self.events_map[model_name].wait()
                 if model_name in self.config_map:

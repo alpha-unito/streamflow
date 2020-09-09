@@ -5,12 +5,13 @@ import os
 import urllib.parse
 from abc import abstractmethod
 from enum import Enum
-from typing import Optional, Any, List, Union, MutableMapping, Iterable
+from typing import Optional, Any, List, Union, MutableMapping, Set
 
 import cwltool.expression
 from cwltool.utils import CONTENT_LIMIT
 from typing_extensions import Text
 
+import streamflow.core.utils
 from streamflow.core.data import FileType
 from streamflow.core.scheduling import JobStatus
 from streamflow.core.workflow import Task, Port, InputPort, Job, Token
@@ -31,23 +32,26 @@ async def _download_file(job: Job, url: Text) -> Text:
 
 
 async def _get_listing(job: Job, dirpath: Text, recursive: bool) -> List[MutableMapping[Text, Any]]:
-    connector = job.task.get_connector()
-    resource = job.get_resource()
-    listing_tokens = []
+    listing_tokens = {}
     if job.task.target is not None:
-        directories = await remotepath.listdir(connector, resource, dirpath, recursive, FileType.DIRECTORY)
-        for directory in directories:
-            listing_tokens.append(_get_token(job.task, 'Directory', directory))
-        files = await remotepath.listdir(connector, resource, dirpath, recursive, FileType.FILE)
-        for file in files:
-            listing_tokens.append(_get_token(job.task, 'File', file))
+        connector = job.task.get_connector()
+        resources = job.get_resources()
+        for resource in resources:
+            directories = await remotepath.listdir(connector, resource, dirpath, recursive, FileType.DIRECTORY)
+            for directory in directories:
+                if directory not in listing_tokens:
+                    listing_tokens[directory] = _get_token(job.task, 'Directory', directory)
+            files = await remotepath.listdir(connector, resource, dirpath, recursive, FileType.FILE)
+            for file in files:
+                if file not in listing_tokens:
+                    listing_tokens[file] = _get_token(job.task, 'File', file)
     else:
-        content = await remotepath.listdir(connector, resource, dirpath, recursive, FileType.DIRECTORY)
+        content = await remotepath.listdir(None, None, dirpath, recursive, FileType.DIRECTORY)
         for element in content:
-            is_directory = await remotepath.isdir(connector, resource, element)
+            is_directory = os.path.isdir(element)
             token_class = 'Directory' if is_directory else 'File'
-            listing_tokens.append(_get_token(job.task, token_class, element))
-    return listing_tokens
+            listing_tokens[element] = _get_token(job.task, token_class, element)
+    return list(listing_tokens.values())
 
 
 def _get_paths(token_value: Any) -> List[Text]:
@@ -69,7 +73,7 @@ def _get_paths(token_value: Any) -> List[Text]:
 
 
 def _get_token(task: Task, token_class: Text, filepath: Text) -> MutableMapping[Text, Any]:
-    path_processor = utils.get_path_processor(task)
+    path_processor = streamflow.core.utils.get_path_processor(task)
     location = ''.join(['file://', filepath])
     basename = path_processor.basename(filepath)
     token = {
@@ -117,13 +121,41 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     @abstractmethod
     async def _build_token_value(self, job: Job, token_value: Any) -> Any:
-        pass
+        ...
 
     async def _get_tokens_from_paths(self, job: Job, paths: List[Text]) -> List[Any]:
         tasks_list = []
         for path in paths:
             tasks_list.append(asyncio.create_task(self._build_token_value(job, path)))
         return await asyncio.gather(*tasks_list)
+
+    async def _register_data(self,
+                             job: Job,
+                             token_value: Union[List[MutableMapping[Text, Any]], MutableMapping[Text, Any]]):
+        if isinstance(token_value, list):
+            register_path_tasks = []
+            for t in token_value:
+                register_path_tasks.append(asyncio.create_task(self._register_data(job, t)))
+                await asyncio.gather(*register_path_tasks)
+        else:
+            paths = []
+            if 'path' in token_value:
+                paths.append(token_value['path'])
+            elif 'location' in token_value:
+                paths.append(token_value['location'])
+            elif 'listing' in token_value:
+                paths.extend([t['path'] if 'path' in t else t['location'] for t in token_value['listing']])
+            connector = job.task.get_connector()
+            resources = job.get_resources()
+            for path in paths:
+                if resources:
+                    register_path_tasks = []
+                    for resource in resources:
+                        register_path_tasks.append(asyncio.create_task(
+                            self.port.task.context.data_manager.register_path(connector, resource, path)))
+                    await asyncio.gather(*register_path_tasks)
+                else:
+                    await self.port.task.context.data_manager.register_path(connector, None, path)
 
     async def compute_token(self, job: Job, result: Any, status: JobStatus) -> Any:
         if status == JobStatus.SKIPPED:
@@ -134,7 +166,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             context['runtime']['exitCode'] = result
         if self.glob is not None:
             # Adjust glob path
-            path_processor = utils.get_path_processor(self.port.task)
+            path_processor = streamflow.core.utils.get_path_processor(self.port.task)
             if '$(' in self.glob or '${' in self.glob:
                 context = utils.build_context(job)
                 globpath = cwltool.expression.interpolate(
@@ -149,21 +181,24 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 globpath = path_processor.join(job.output_directory, globpath)
             # Resolve glob
             connector = self.port.task.get_connector()
-            resource = job.get_resource()
-            if isinstance(globpath, List):
-                paths = []
-                for path in globpath:
-                    paths.extend((await remotepath.resolve(connector, resource, path)) or [])
-            else:
-                paths = (await remotepath.resolve(connector, resource, globpath)) or []
+            resources = job.get_resources()
+            paths = []
+            for resource in resources:
+                if isinstance(globpath, List):
+                    for path in globpath:
+                        paths.extend((await remotepath.resolve(connector, resource, path)) or [])
+                else:
+                    paths.extend((await remotepath.resolve(connector, resource, globpath)) or [])
             if self.output_eval is None:
                 # Build token
                 token_list = await self._get_tokens_from_paths(job, paths)
                 if self.is_array:
                     weight = await self.weight_token(job, token_list)
+                    await self._register_data(job, token_list)
                     return Token(name=self.port.name, value=token_list, job=job.name, weight=weight)
                 else:
                     weight = await self.weight_token(job, token_list[0])
+                    await self._register_data(job, token_list[0])
                     return Token(name=self.port.name, value=token_list[0], job=job.name, weight=weight)
             else:
                 # Fill context['self'] with glob data
@@ -184,10 +219,12 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     paths.append(element['path'])
                 token_value = await self._get_tokens_from_paths(job, paths)
                 weight = await self.weight_token(job, token_value)
+                await self._register_data(job, token_value)
                 return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
             else:
                 token_value = await self._build_token_value(job, token['path'])
                 weight = await self.weight_token(job, token_value)
+                await self._register_data(job, token_value)
                 return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
         if isinstance(result, MutableMapping):
             # Extract output directly from command result
@@ -196,10 +233,12 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             if isinstance(token, List):
                 token_value = await self._get_tokens_from_paths(job, token)
                 weight = await self.weight_token(job, token_value)
+                await self._register_data(job, token_value)
                 return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
             else:
                 token_value = await self._build_token_value(job, result[self.port.name])
                 weight = await self.weight_token(job, token_value)
+                await self._register_data(job, token_value)
                 return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
 
 
@@ -239,7 +278,6 @@ class CWLFileProcessor(CWLTokenProcessor):
     async def _build_token_value(self, job: Job, token_value: Any) -> Any:
         # TODO: manage secondary files
         connector = self.port.task.get_connector()
-        resource = job.get_resource()
         if isinstance(token_value, Text):
             if token_value == 'null' and self.default_path is not None:
                 token_value = self.default_path
@@ -249,8 +287,11 @@ class CWLFileProcessor(CWLTokenProcessor):
             if token_value['location'].startswith('file://'):
                 token_value['path'] = token_value['location'][7:]
         if self.load_contents and 'contents' not in token_value:
-            token_value['contents'] = await remotepath.head(
-                connector, resource, token_value['path'], CONTENT_LIMIT)
+            for resource in job.get_resources():
+                if await remotepath.exists(connector, resource, token_value['path']):
+                    token_value['contents'] = await remotepath.head(
+                        connector, resource, token_value['path'], CONTENT_LIMIT)
+                    break
         if self.load_listing != LoadListing.no_listing and 'listing' not in token_value:
             token_value['listing'] = await _get_listing(
                 job, token_value['path'], self.load_listing == LoadListing.deep_listing)
@@ -279,7 +320,7 @@ class CWLFileProcessor(CWLTokenProcessor):
                 if 'path' in token_value:
                     dest_path = token_value['path']
                 elif 'basename' in token_value:
-                    path_processor = utils.get_path_processor(self.port.task)
+                    path_processor = streamflow.core.utils.get_path_processor(self.port.task)
                     dest_path = path_processor.join(job.input_directory, token_value['basename'])
                 else:
                     dest_path = None
@@ -288,9 +329,10 @@ class CWLFileProcessor(CWLTokenProcessor):
                 classes = []
                 for element in token_value['listing']:
                     if dest_path is not None:
-                        path_processor = utils.get_path_processor(src_job.task) if src_job is not None else os.path
+                        path_processor = streamflow.core.utils.get_path_processor(
+                            src_job.task) if src_job is not None else os.path
                         basename = path_processor.basename(element['path'])
-                        path_processor = utils.get_path_processor(self.port.task)
+                        path_processor = streamflow.core.utils.get_path_processor(self.port.task)
                         current_dest_path = path_processor.join(dest_path, basename)
                     else:
                         current_dest_path = None
@@ -310,24 +352,24 @@ class CWLFileProcessor(CWLTokenProcessor):
         if dest_path is None:
             if isinstance(self.port, InputPort) and src_job is not None:
                 if filepath.startswith(src_job.output_directory):
-                    path_processor = utils.get_path_processor(self.port.dependee.task)
+                    path_processor = streamflow.core.utils.get_path_processor(self.port.dependee.task)
                     relpath = path_processor.relpath(filepath, src_job.output_directory)
-                    path_processor = utils.get_path_processor(self.port.task)
+                    path_processor = streamflow.core.utils.get_path_processor(self.port.task)
                     dest_path = path_processor.join(dest_job.input_directory, relpath)
                 else:
-                    path_processor = utils.get_path_processor(self.port.dependee.task)
+                    path_processor = streamflow.core.utils.get_path_processor(self.port.dependee.task)
                     basename = path_processor.basename(filepath)
-                    path_processor = utils.get_path_processor(self.port.task)
+                    path_processor = streamflow.core.utils.get_path_processor(self.port.task)
                     dest_path = path_processor.join(dest_job.input_directory, basename)
             else:
-                path_processor = utils.get_path_processor(self.port.task)
+                path_processor = streamflow.core.utils.get_path_processor(self.port.task)
                 dest_path = path_processor.join(dest_job.input_directory, os.path.basename(filepath))
         await self.port.task.context.data_manager.transfer_data(
             src=filepath,
             src_job=src_job,
             dst=dest_path,
             dst_job=dest_job,
-            symlink_if_possible=not self.writable)
+            writable=self.writable)
         return dest_path
 
     async def collect_output(self, token: Token, output_dir: Text) -> None:
@@ -339,7 +381,23 @@ class CWLFileProcessor(CWLTokenProcessor):
             src_job=src_job,
             dst=dest_path,
             dst_job=None,
-            symlink_if_possible=not self.writable)
+            writable=self.writable)
+
+    def get_related_resources(self, token: Token) -> Set[Text]:
+        related_resources = set()
+        context = self.port.task.context
+        # If the token is actually an aggregate of multiple tokens, consider each token separately
+        paths = []
+        if isinstance(token.value, list):
+            for value in token.value:
+                paths.append(value['path'] if 'path' in token.value else value['location'])
+        else:
+            paths.append(token.value['path'] if 'path' in token.value else token.value['location'])
+        resources = context.scheduler.get_job(token.job).get_resources()
+        for resource in resources:
+            for path in paths:
+                related_resources.update(context.data_manager.get_related_resources(resource, path))
+        return related_resources
 
     async def update_token(self, job: Job, token: Token) -> Token:
         # If value is a list of tokens, process each token separately
@@ -359,9 +417,14 @@ class CWLFileProcessor(CWLTokenProcessor):
                 return Token(name=token.name, value=token_value, job=token.job, weight=token.weight)
 
     async def weight_token(self, job: Job, token_value: Any) -> int:
-        connector = job.task.get_connector() if job is not None else None
-        resource = job.get_resource() if job is not None else None
-        return await remotepath.size(connector, resource, _get_paths(token_value))
+        if job is not None and job.get_resources():
+            connector = job.task.get_connector()
+            for resource in job.get_resources():
+                if await remotepath.exists(connector, resource, token_value):
+                    return await remotepath.size(connector, resource, _get_paths(token_value))
+            return 0
+        else:
+            return await remotepath.size(None, None, _get_paths(token_value))
 
 
 class CWLValueProcessor(CWLTokenProcessor):

@@ -10,6 +10,7 @@ import cwltool.workflow
 import yaml
 # noinspection PyProtectedMember
 from cwltool.main import _terminate_processes, _signal_handler
+from typing_extensions import Text
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamflowContext
@@ -25,11 +26,10 @@ def _parse_args(workflow_config: WorkflowConfig, context: StreamflowContext):
     return args
 
 
-async def main(workflow_config: WorkflowConfig, context: StreamflowContext):
+async def main(workflow_config: WorkflowConfig, context: StreamflowContext, outdir: Text):
     # Parse input arguments
     args = _parse_args(workflow_config, context)
     # Change current directory to CWL descriptors' parent dir
-    current_dir = os.getcwd()
     os.chdir(os.path.dirname(args[0]))
     # Load CWL workflow definition
     loading_context = cwltool.context.LoadingContext()
@@ -46,7 +46,7 @@ async def main(workflow_config: WorkflowConfig, context: StreamflowContext):
     workflow = await translator.translate()
     # Execute workflow
     executor = StreamFlowExecutor(context, workflow)
-    await executor.run(output_dir=current_dir)
+    await executor.run(output_dir=outdir)
 
 
 def run(*args, **kwargs):

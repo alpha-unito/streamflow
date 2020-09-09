@@ -30,7 +30,7 @@ before_deploy:
       echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
       # Build base image
       docker build \
-          --build-arg HELM_VERSION=v3.1.2 \
+          --build-arg HELM_VERSION=v3.3.0 \
           -t "alphaunito/streamflow:${STREAMFLOW_VERSION}-base" \
           .
       docker push "alphaunito/streamflow:${STREAMFLOW_VERSION}-base"

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import random
 import string
 from typing import List, TYPE_CHECKING
 
-from streamflow.core.workflow import TerminationToken
+from streamflow.core.workflow import TerminationToken, Task
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Token
@@ -21,6 +22,13 @@ def check_termination(inputs: Iterable[Token]) -> bool:
         elif isinstance(token, TerminationToken):
             return True
     return False
+
+
+def get_path_processor(task: Task):
+    if task.target is not None:
+        return posixpath
+    else:
+        return os.path
 
 
 def get_size(path):

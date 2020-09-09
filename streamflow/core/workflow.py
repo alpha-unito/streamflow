@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamflowContext
     from streamflow.core.deployment import Connector
     from streamflow.core.scheduling import JobStatus
-    from typing import Optional, MutableMapping, Any, List, Tuple
+    from typing import Optional, MutableMapping, Any, List, Tuple, Set
     from typing_extensions import Text
 
 
@@ -19,17 +19,14 @@ class Command(ABC):
 
     @abstractmethod
     async def execute(self, job: Job) -> Tuple[Any, JobStatus]:
-        pass
+        ...
 
 
 class Condition(ABC):
 
-    def __init__(self, task: Task):
-        self.task: Task = task
-
     @abstractmethod
-    async def evaluate(self) -> bool:
-        pass
+    async def evaluate(self, job: Job) -> bool:
+        ...
 
 
 class Token(object):
@@ -59,7 +56,7 @@ class Executor(ABC):
 
     @abstractmethod
     async def run(self):
-        pass
+        ...
 
 
 class Job(object):
@@ -74,10 +71,6 @@ class Job(object):
         self.inputs: List[Token] = inputs
         self.input_directory: Optional[Text] = None
         self.output_directory: Optional[Text] = None
-
-    def get_resource(self) -> Optional[Text]:
-        resources = self.get_resources()
-        return resources[0] if resources else None
 
     def get_resources(self) -> List[Text]:
         return self.task.context.scheduler.get_resources(self.name)
@@ -99,7 +92,7 @@ class InputPort(Port, ABC):
 
     @abstractmethod
     async def get(self) -> Token:
-        pass
+        ...
 
 
 class InputCombinator(ABC):
@@ -111,18 +104,18 @@ class InputCombinator(ABC):
 
     @abstractmethod
     async def get(self) -> List[Token]:
-        pass
+        ...
 
 
 class OutputPort(Port, ABC):
 
     @abstractmethod
     async def get(self, task: Task) -> Token:
-        pass
+        ...
 
     @abstractmethod
     def put(self, token: Token):
-        pass
+        ...
 
 
 class TokenProcessor(ABC):
@@ -132,19 +125,23 @@ class TokenProcessor(ABC):
 
     @abstractmethod
     async def collect_output(self, token: Token, output_dir: Text) -> None:
-        pass
+        ...
 
     @abstractmethod
     async def compute_token(self, job: Job, result: Any, status: JobStatus) -> Token:
-        pass
+        ...
+
+    @abstractmethod
+    def get_related_resources(self, token: Token) -> Set[Text]:
+        ...
 
     @abstractmethod
     async def update_token(self, job: Job, token: Token) -> Token:
-        pass
+        ...
 
     @abstractmethod
     async def weight_token(self, job: Job, token_value: Any) -> int:
-        pass
+        ...
 
 
 class Task(ABC):
@@ -161,25 +158,32 @@ class Task(ABC):
         self.name: Text = name
         self.output_ports: MutableMapping[Text, OutputPort] = {}
         self.target: Optional[Target] = None
+        self.terminated: bool = False
+        self.workdir: Optional[Text] = None
 
     @abstractmethod
     def get_connector(self) -> Optional[Connector]:
-        pass
+        ...
 
     @abstractmethod
     async def run(self):
-        pass
+        ...
+
+    @abstractmethod
+    def terminate(self, status: JobStatus):
+        ...
 
 
 class Target(object):
+    __slots__ = ('model', 'resources', 'service')
 
     def __init__(self,
                  model: ModelConfig,
                  resources: int,
-                 service: Text):
+                 service: Optional[Text] = None):
         self.model: ModelConfig = model
         self.resources: int = resources
-        self.service: Text = service
+        self.service: Optional[Text] = service
 
 
 class Workflow(object):
