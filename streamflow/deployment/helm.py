@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import io
 import os
@@ -19,6 +21,7 @@ from kubernetes_asyncio.config import incluster_config, ConfigException, load_ku
 from kubernetes_asyncio.stream import WsApiClient, ws_client
 from typing_extensions import Text
 
+from streamflow.core import utils
 from streamflow.core.scheduling import Resource
 from streamflow.deployment.base import BaseConnector
 from streamflow.log_handler import logger
@@ -60,11 +63,12 @@ class BaseHelmConnector(BaseConnector, ABC):
         self.client_ws: Optional[client.CoreV1Api] = None
 
     async def _build_helper_file(self,
-                                 command: List[Text],
-                                 resource: Text,
-                                 environment: MutableMapping[Text, Text] = None,
-                                 workdir: Text = None
-                                 ) -> Text:
+                           command: List[Text],
+                           resource: Text,
+                           environment: MutableMapping[Text, Text] = None,
+                           workdir: Optional[Text] = None
+                           ) -> Text:
+        temp_file = posixpath.join('/tmp', utils.random_name())
         file_contents = '\n'.join([
             '#!/bin/sh',
             self.create_encoded_command(command, resource, environment, workdir)
@@ -73,8 +77,9 @@ class BaseHelmConnector(BaseConnector, ABC):
         with open(file_name, mode='w') as file:
             file.write(file_contents)
         os.chmod(file_name, os.stat(file_name).st_mode | stat.S_IEXEC)
-        await self._copy_local_to_remote(file_name, '/tmp', [resource])
-        return file_name
+        # noinspection PyProtectedMember
+        await self._copy_local_to_remote(file_name, temp_file, [resource])
+        return temp_file
 
     def _configure_incluster_namespace(self):
         if self.namespace is None:
@@ -247,35 +252,52 @@ class BaseHelmConnector(BaseConnector, ABC):
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   capture_output: bool = False,
-                  task_command: bool = False) -> Optional[Tuple[Optional[Any], int]]:
-        helper_file_name = await self._build_helper_file(command, resource, environment, workdir)
+                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         pod, container = resource.split(':')
-        response = await self.client_ws.connect_get_namespaced_pod_exec(
-            name=pod,
-            namespace=self.namespace or 'default',
-            container=container,
-            command=[helper_file_name],
-            stderr=True,
-            stdin=False,
-            stdout=True,
-            tty=False,
-            _preload_content=not capture_output)
-        if capture_output:
-            with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
-                while not response.closed:
-                    async for msg in response:
-                        data = msg.data.decode('utf-8', 'replace')
-                        channel = ord(data[0])
-                        data = data[1:]
-                        if data and channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
-                            out_buffer.write(data)
-                        elif data and channel == ws_client.ERROR_CHANNEL:
-                            err_buffer.write(data)
-                err = yaml.safe_load(err_buffer.getvalue())
-                if err['status'] == "Success":
-                    return out_buffer.getvalue(), 0
-                else:
-                    return out_buffer.getvalue(), int(err['details']['causes'][0]['code'])
+        helper_file = await self._build_helper_file(command, resource, environment, workdir)
+        try:
+            response = await self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or 'default',
+                container=container,
+                command=[helper_file],
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _preload_content=not capture_output)
+            if capture_output:
+                with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
+                    while not response.closed:
+                        async for msg in response:
+                            data = msg.data.decode('utf-8', 'replace')
+                            channel = ord(data[0])
+                            data = data[1:]
+                            if data and channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
+                                out_buffer.write(data)
+                            elif data and channel == ws_client.ERROR_CHANNEL:
+                                err_buffer.write(data)
+                    err = yaml.safe_load(err_buffer.getvalue())
+                    if err['status'] == "Success":
+                        return out_buffer.getvalue(), 0
+                    else:
+                        if 'code' in err:
+                            return err['message'], int(err['code'])
+                        else:
+                            return err['message'], int(err['details']['causes'][0]['message'])
+        finally:
+            command = ['rm', '-rf', helper_file]
+            pod, container = resource.split(':')
+            await self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or 'default',
+                container=container,
+                command=command,
+                stderr=True,
+                stdin=True,
+                stdout=True,
+                tty=False,
+                _preload_content=False)
 
     async def undeploy(self):
         if self.client is not None:

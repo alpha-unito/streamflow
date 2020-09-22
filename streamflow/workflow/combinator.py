@@ -84,15 +84,15 @@ class CartesianProductInputCombinator(InputCombinator):
         for port in self.ports.values():
             input_tasks.append(asyncio.create_task(port.get()))
         inputs = {k: v for (k, v) in zip(self.ports.keys(), await asyncio.gather(*input_tasks))}
-        # Check for early termination and return a TerminationToken
-        if utils.check_termination(inputs.values()):
-            return [TerminationToken(self.name)]
-        # Put initial inputs in token lists and in queue
-        for name, token in inputs.items():
-            self.token_lists[name].append(token)
-        self.queue.put_nowait(list(inputs.values()))
-        # Start cartesian mulitplier task
-        asyncio.create_task(self._cartesian_multiplier())
+        # Check for early termination and put a TerminationToken
+        if utils.check_termination(list(inputs.values())):
+            self.queue.put_nowait([TerminationToken(self.name)])
+        # Otherwise put initial inputs in token lists and in queue and start cartesian multiplier
+        else:
+            for name, token in inputs.items():
+                self.token_lists[name].append(token)
+            self.queue.put_nowait(list(inputs.values()))
+            asyncio.create_task(self._cartesian_multiplier())
 
     async def get(self) -> List[Token]:
         # If lists are empty it means that this is the first call to the get() function

@@ -11,11 +11,17 @@ import aiohttp
 
 from streamflow.core import utils
 from streamflow.core.data import FileType
+from streamflow.workflow.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
     from typing import Union, Optional
     from typing_extensions import Text
+
+
+def _check_status(result: Text, status: int):
+    if status != 0:
+        raise WorkflowExecutionException(result)
 
 
 async def download(connector: Optional[Connector], targets: Optional[List[Text]], url: Text, parent_dir: Text) -> Text:
@@ -52,11 +58,12 @@ async def download(connector: Optional[Connector], targets: Optional[List[Text]]
 
 async def exists(connector: Optional[Connector], target: Optional[Text], path: Text) -> bool:
     if connector is not None:
-        result, _ = await connector.run(
+        result, status = await connector.run(
             resource=target,
             command=["if [ -e \"{path}\" ]; then echo \"{path}\"; fi".format(path=path)],
             capture_output=True
         )
+        _check_status(result, status)
         return result.strip()
     else:
         return os.path.exists(path)
@@ -64,11 +71,12 @@ async def exists(connector: Optional[Connector], target: Optional[Text], path: T
 
 async def follow_symlink(connector: Optional[Connector], target: Optional[Text], path: Text) -> Text:
     if connector is not None:
-        result, _ = await connector.run(
+        result, status = await connector.run(
             resource=target,
             command=["readlink -f \"{path}\"".format(path=path)],
             capture_output=True
         )
+        _check_status(result, status)
         return result.strip()
     else:
         return os.path.realpath(path)
@@ -76,11 +84,12 @@ async def follow_symlink(connector: Optional[Connector], target: Optional[Text],
 
 async def head(connector: Optional[Connector], target: Optional[Text], path: Text, num_bytes: int) -> Text:
     if connector is not None:
-        result, _ = await connector.run(
+        result, status = await connector.run(
             resource=target,
             command=["head", "-c", num_bytes, path],
             capture_output=True
         )
+        _check_status(result, status)
         return result.strip()
     else:
         with open(path, "rb") as f:
@@ -89,11 +98,12 @@ async def head(connector: Optional[Connector], target: Optional[Text], path: Tex
 
 async def isdir(connector: Optional[Connector], target: Optional[Text], path: Text):
     if connector is not None:
-        result, _ = await connector.run(
+        result, status = await connector.run(
             resource=target,
             command=["if [ -d \"{path}\" ]; then echo \"{path}\"; fi".format(path=path)],
             capture_output=True
         )
+        _check_status(result, status)
         return result.strip()
     else:
         return os.path.isdir(path)
@@ -101,11 +111,12 @@ async def isdir(connector: Optional[Connector], target: Optional[Text], path: Te
 
 async def isfile(connector: Optional[Connector], target: Optional[Text], path: Text):
     if connector is not None:
-        result, _ = await connector.run(
+        result, status = await connector.run(
             resource=target,
             command=["if [ -f \"{path}\" ]; then echo \"{path}\"; fi".format(path=path)],
             capture_output=True
         )
+        _check_status(result, status)
         return result.strip()
     else:
         os.path.isfile(path)
@@ -123,11 +134,12 @@ async def listdir(connector: Optional[Connector],
             type="-type {type}".format(
                 type="d" if file_type == FileType.DIRECTORY else "f") if file_type is not None else ""
         ).split()
-        content, _ = await connector.run(
+        content, status = await connector.run(
             resource=target,
             command=command,
             capture_output=True
         )
+        _check_status(content, status)
         content = content.strip(' \n')
         return content.split('\n') if content else []
     else:
@@ -153,12 +165,13 @@ async def mkdir(connector: Optional[Connector], targets: Optional[List[Text]], p
 
 async def resolve(connector: Optional[Connector], target: Optional[Text], pattern: Text) -> Optional[List[Text]]:
     if connector is not None:
-        result, _ = await connector.run(
+        result, status = await connector.run(
             resource=target,
             command=["printf", "\"%s\\n\"", pattern, "|", "xargs", "-d", "'\\n'", "-n1", "-I{}",
                      "sh", "-c", "\"if [ -e \\\"{}\\\" ]; then echo \\\"{}\\\"; fi\""],
             capture_output=True
         )
+        _check_status(result, status)
         return result.split()
     else:
         return glob.glob(pattern)
@@ -172,13 +185,14 @@ async def size(connector: Optional[Connector], target: Optional[Text], path: Uni
             path = ' '.join(["\"{path}\"".format(path=p) for p in path])
         else:
             path = "\"{path}\"".format(path=path)
-        result, _ = await connector.run(
+        result, status = await connector.run(
             resource=target,
             command=[''.join([
                 "find -L ", path, " -type f -exec ls -ln {} \\+ | ",
                 "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; "])],
             capture_output=True
         )
+        _check_status(result, status)
         result = result.strip().strip("'\"")
         return int(result) if result.isdigit() else 0
     else:

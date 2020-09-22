@@ -420,8 +420,7 @@ class CWLFileProcessor(CWLTokenProcessor):
         if job is not None and job.get_resources():
             connector = job.task.get_connector()
             for resource in job.get_resources():
-                if await remotepath.exists(connector, resource, token_value):
-                    return await remotepath.size(connector, resource, _get_paths(token_value))
+                return await remotepath.size(connector, resource, _get_paths(token_value))
             return 0
         else:
             return await remotepath.size(None, None, _get_paths(token_value))

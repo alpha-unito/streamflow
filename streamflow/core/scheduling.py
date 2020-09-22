@@ -27,7 +27,6 @@ class JobStatus(Enum):
     SKIPPED = 2
     COMPLETED = 3
     FAILED = 4
-    CANCELLED = 5
 
 
 class Policy(ABC):

@@ -26,8 +26,6 @@ def _get_task_status(statuses: List[JobStatus]):
     for status in statuses:
         if status == JobStatus.FAILED:
             return JobStatus.FAILED
-        elif status == JobStatus.CANCELLED:
-            return JobStatus.CANCELLED
         elif status == JobStatus.SKIPPED:
             num_skipped += 1
     if num_skipped == len(statuses):
@@ -93,11 +91,14 @@ class BaseTask(Task):
                     await self.context.scheduler.notify_status(job.name, JobStatus.RUNNING)
                 result, status = await self.command.execute(job)
                 if status == JobStatus.FAILED:
-                    logger.error(result)
+                    if result:
+                        logger.error("Job {name} failed with error:\n\t{error}".format(
+                            name=job.name,
+                            error=result))
                     # TODO: implement fault tolerance here
                     self.terminate(status)
             except CancelledError:
-                status = JobStatus.CANCELLED
+                status = JobStatus.SKIPPED
                 self.terminate(status)
             except BaseException as e:
                 logger.exception(e)
@@ -128,6 +129,7 @@ class BaseTask(Task):
 
     async def run(self) -> None:
         jobs = []
+        inputs = []
         # If there are input ports create jobs until termination token are received
         if self.input_ports:
             if self.input_combinator is None:
@@ -158,8 +160,4 @@ class BaseTask(Task):
             for port in self.output_ports.values():
                 port.put(TerminationToken(name=port.name))
             self.terminated = True
-            if status == JobStatus.FAILED:
-                raise WorkflowExecutionException(
-                    "Unrecoverable failure detected during execution of task {task}".format(task=self.name))
-            else:
-                logger.info("Task {name} completed with status {status}".format(name=self.name, status=status.name))
+            logger.info("Task {name} completed with status {status}".format(name=self.name, status=status.name))

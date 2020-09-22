@@ -4,7 +4,7 @@ import os
 import posixpath
 import random
 import string
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Type
 
 from streamflow.core.workflow import TerminationToken, Task
 

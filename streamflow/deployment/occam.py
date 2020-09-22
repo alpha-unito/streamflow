@@ -264,7 +264,7 @@ class OccamConnector(SSHConnector):
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   capture_output: bool = False,
-                  task_command: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         occam_command = "".join(
             "occam-exec "
             "{resource} "

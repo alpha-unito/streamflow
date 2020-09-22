@@ -68,8 +68,8 @@ class SlurmConnector(SSHConnector):
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   capture_output: bool = False,
-                  task_command: bool = False) -> Optional[Tuple[Optional[Any], int]]:
-        if not task_command:
-            return await super().run(resource, command, environment, workdir, capture_output, task_command)
+                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
+        if job_name is None:
+            return await super().run(resource, command, environment, workdir, capture_output, job_name)
         else:
             return await self._run_sbatch(resource, command, environment, workdir, capture_output)

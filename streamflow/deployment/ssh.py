@@ -95,10 +95,9 @@ class SSHConnector(BaseConnector):
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   capture_output: bool = False,
-                  task_command: bool = False
-                  ) -> Optional[Tuple[Optional[Any], int]]:
+                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         encoded_command = self.create_encoded_command(command, resource, environment, workdir)
-        if task_command and self.template is not None:
+        if job_name is not None and self.template is not None:
             helper_file = await self._build_helper_file(encoded_command, resource, environment, workdir)
             result = await self.ssh_client.run(helper_file, stderr=STDOUT)
         else:

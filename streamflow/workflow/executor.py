@@ -40,7 +40,7 @@ class StreamFlowExecutor(Executor):
     def _shutdown(self):
         # Terminate all tasks
         for task in self.workflow.tasks.values():
-            task.terminate(JobStatus.CANCELLED)
+            task.terminate(JobStatus.SKIPPED)
         # Mark the executor as closed
         self.closed = True
 

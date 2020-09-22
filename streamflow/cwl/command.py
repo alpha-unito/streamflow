@@ -301,7 +301,7 @@ class CWLCommand(CWLBaseCommand):
                     environment=parsed_env,
                     workdir=job.output_directory,
                     capture_output=True,
-                    task_command=True),
+                    job_name=job.name),
                 self._get_timeout(job))
             # TODO: manage streams
         # Handle exit codes
