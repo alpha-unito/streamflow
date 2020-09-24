@@ -4,7 +4,7 @@ import posixpath
 import stat
 import tempfile
 from asyncio.subprocess import STDOUT
-from typing import List, Optional, MutableMapping, Tuple, Any
+from typing import List, Optional, MutableMapping, Tuple, Any, Union
 
 import asyncssh
 from jinja2 import Template
@@ -46,11 +46,13 @@ class SSHConnector(BaseConnector):
         self.ssh_client = None
 
     async def _build_helper_file(self,
-                                 command: List[Text],
+                                 command: Text,
                                  resource: Text,
                                  environment: MutableMapping[Text, Text] = None,
-                                 workdir: Text = None
-                                 ) -> Text:
+                                 workdir: Text = None,
+                                 stdin: Optional[Union[int, Text]] = None,
+                                 stdout: Union[int, Text] = STDOUT,
+                                 stderr: Union[int, Text] = STDOUT) -> Text:
         helper_file = tempfile.mktemp()
         with open(helper_file, mode='w') as f:
             f.write(self.template.render(
@@ -76,7 +78,7 @@ class SSHConnector(BaseConnector):
     async def _copy_remote_to_local(self, src: Text, dst: Text, resource: Text) -> None:
         await asyncssh.scp((self.ssh_client, src), dst, preserve=True, recurse=True)
 
-    async def deploy(self) -> None:
+    async def deploy(self, external: bool) -> None:
         (hostname, port) = _parse_hostname(self.hostname)
         self.ssh_client = await asyncssh.connect(
             host=hostname,
@@ -94,9 +96,19 @@ class SSHConnector(BaseConnector):
                   command: List[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
+                  stdin: Optional[Union[int, Text]] = None,
+                  stdout: Union[int, Text] = STDOUT,
+                  stderr: Union[int, Text] = STDOUT,
                   capture_output: bool = False,
                   job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
-        encoded_command = self.create_encoded_command(command, resource, environment, workdir)
+        encoded_command = self.create_encoded_command(
+            command=command,
+            resource=resource,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr)
         if job_name is not None and self.template is not None:
             helper_file = await self._build_helper_file(encoded_command, resource, environment, workdir)
             result = await self.ssh_client.run(helper_file, stderr=STDOUT)
@@ -105,7 +117,7 @@ class SSHConnector(BaseConnector):
         if capture_output:
             return result.stdout.strip(), result.returncode
 
-    async def undeploy(self) -> None:
+    async def undeploy(self, external: bool) -> None:
         if self.ssh_client is not None:
             self.ssh_client.close()
             self.ssh_client = None

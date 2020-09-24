@@ -1,0 +1,6 @@
+debian:
+  image: icolonne/streamflow-tests:munipack
+  command: ["tail", "-f", "/dev/null"]
+  nodes:
+    - node22
+  workdir: /archive/home/icolonne/munipack

@@ -7,7 +7,7 @@ arguments:
     prefix: '--host'
   - position: 3
     valueFrom: '--allow-run-as-root'
-
+stdout: mpi_output.log
 inputs:
   num_processes:
     type: int
@@ -19,4 +19,6 @@ inputs:
     inputBinding:
       position: 4
 
-outputs: []
+outputs:
+  mpi_output:
+    type: stdout

@@ -8,7 +8,10 @@ inputs:
   num_processes: int
   source_file: File
 
-outputs: []
+outputs:
+  result:
+    type: File
+    outputSource: execute/mpi_output
 
 steps:
   compile:
@@ -30,4 +33,4 @@ steps:
     in:
       executable_file: compile/executable_file
       num_processes: num_processes
-    out: []
+    out: [mpi_output]

@@ -9,14 +9,21 @@ workflows:
     bindings:
       - step: /compile
         target:
-          model: helm-mpi
+          model: dc-mpi
           service: openmpi
       - step: /execute
         target:
-          model: helm-mpi
+          model: dc-mpi
           resources: 2
           service: openmpi
 models:
+  dc-mpi:
+    type: docker-compose
+    config:
+      files:
+        - environment/docker-compose/docker-compose.yml
+      compatibility: true
+      projectName: openmpi
   helm-mpi:
     type: helm
     config:

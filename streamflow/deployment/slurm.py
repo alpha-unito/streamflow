@@ -1,6 +1,6 @@
 import os
 from asyncio.subprocess import STDOUT
-from typing import Optional, List, MutableMapping, Tuple, Any
+from typing import Optional, List, MutableMapping, Tuple, Any, Union
 
 from ruamel.yaml import YAML
 from typing_extensions import Text
@@ -42,11 +42,21 @@ class SlurmConnector(SSHConnector):
                           command: List[Text],
                           environment: MutableMapping[Text, Text] = None,
                           workdir: Optional[Text] = None,
+                          stdin: Optional[Union[int, Text]] = None,
+                          stdout: Union[int, Text] = STDOUT,
+                          stderr: Union[int, Text] = STDOUT,
                           capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
-        encoded_command = self.create_encoded_command(command, resource, environment, workdir)
+        encoded_command = self.create_encoded_command(
+            command=command,
+            resource=resource,
+            environment=environment,
+            workdir=workdir)
         helper_file = await self._build_helper_file(encoded_command, resource, environment, workdir)
-        sbatch_command = "sbatch --wait {workdir} {helper_file}".format(
+        sbatch_command = "sbatch --wait {workdir} {stdin} {stdout} {stderr} {helper_file}".format(
             workdir="-D {workdir}".format(workdir=workdir) if workdir is not None else "",
+            stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",
+            stdout="-o \"{stdout}\"".format(stdout=stdout) if stdout != STDOUT else "",
+            stderr="-e \"{stderr}\"".format(stderr=stderr) if stderr != STDOUT and stderr != stdout else "",
             helper_file=helper_file
         )
         result = await self.ssh_client.run(sbatch_command, stderr=STDOUT)
@@ -67,9 +77,29 @@ class SlurmConnector(SSHConnector):
                   command: List[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
+                  stdin: Optional[Union[int, Text]] = None,
+                  stdout: Union[int, Text] = STDOUT,
+                  stderr: Union[int, Text] = STDOUT,
                   capture_output: bool = False,
                   job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         if job_name is None:
-            return await super().run(resource, command, environment, workdir, capture_output, job_name)
+            return await super().run(
+                resource,
+                command,
+                environment,
+                workdir,
+                stdin,
+                stdout,
+                stderr,
+                capture_output,
+                job_name)
         else:
-            return await self._run_sbatch(resource, command, environment, workdir, capture_output)
+            return await self._run_sbatch(
+                resource,
+                command,
+                environment,
+                workdir,
+                stdin,
+                stdout,
+                stderr,
+                capture_output)

@@ -48,7 +48,7 @@ class DefaultDeploymentManager(DeploymentManager):
                 self.deployments_map[model_name] = connector
                 if not model_config.external:
                     logger.info("Deploying model {model}".format(model=model_name))
-                    await connector.deploy()
+                await connector.deploy(model_config.external)
                 self.events_map[model_name].set()
                 break
             else:
@@ -70,7 +70,7 @@ class DefaultDeploymentManager(DeploymentManager):
             config = self.config_map[model_name]
             if not config.external:
                 logger.info("Undeploying model {model}".format(model=model_name))
-                await connector.undeploy()
+            await connector.undeploy(config.external)
             del self.deployments_map[model_name]
             del self.config_map[model_name]
             self.events_map[model_name].set()

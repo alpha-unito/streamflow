@@ -30,8 +30,19 @@ from streamflow.workflow.task import BaseTask
 if TYPE_CHECKING:
     from streamflow.core.workflow import Task, TokenProcessor
     from streamflow.cwl.command import CWLBaseCommand
-    from typing import Union, Any
+    from typing import Union, Any, Set
     from typing_extensions import Text
+
+
+class ScatterElement(object):
+
+    def __init__(self,
+                 inputs: Set[Text],
+                 outputs: Set[Text],
+                 method: Optional[Text] = None):
+        self.inputs: Set[Text] = inputs
+        self.outputs: Set[Text] = outputs
+        self.method: Text = method
 
 
 def _build_command(
@@ -72,7 +83,7 @@ def _build_command(
     return command
 
 
-def _build_condition(context: MutableMapping[Text, Any], task: Task):
+def _build_condition(context: MutableMapping[Text, Any]):
     requirements = context['requirements']
     when_expression = context['condition']
     if when_expression is not None:
@@ -194,9 +205,13 @@ def _create_token_processor(
             full_js=full_js)
 
 
-def _get_input_combinator(task: Task, scatter_context: MutableMapping[Text, Any]) -> InputCombinator:
+def _get_input_combinator(task: Task, scatter_elements: List[ScatterElement]) -> InputCombinator:
+    # Extract all scatter inputs
+    scatter_inputs = set()
+    for element in scatter_elements:
+        scatter_inputs.update(element.inputs)
     # If there are no scatter ports in this task, create a single DotProduct combinator
-    if 'inputs' not in scatter_context or not [n for n in scatter_context['inputs'] if n.startswith(task.name)]:
+    if not [n for n in scatter_inputs if n.startswith(task.name)]:
         input_combinator = DotProductInputCombinator(utils.random_name())
         for port in task.input_ports.values():
             input_combinator.ports[port.name] = port
@@ -207,7 +222,7 @@ def _get_input_combinator(task: Task, scatter_context: MutableMapping[Text, Any]
         scatter_ports, other_ports = {}, {}
         for port_name, port in task.input_ports.items():
             name = posixpath.join(task.name, port_name)
-            if name in scatter_context['inputs']:
+            if name in scatter_inputs:
                 scatter_ports[port.name] = port
             else:
                 other_ports[port.name] = port
@@ -287,6 +302,20 @@ def _process_requirements(command: CWLBaseCommand,
     if 'ToolTimeLimit' in requirements:
         command.time_limit = requirements['ToolTimeLimit']['timelimit']
     return command
+
+
+def _replace_in_scatter_element(scatter_elements: List[ScatterElement],
+                                to_remove: Any,
+                                to_add: Any,
+                                field: Text):
+    for i, scatter_element in enumerate(scatter_elements):
+        for set_element in scatter_element.__dict__[field]:
+            if set_element == to_remove:
+                scatter_element.__dict__[field].remove(to_remove)
+                scatter_element.__dict__[field].add(to_add)
+                scatter_elements[i] = scatter_element
+                return scatter_elements
+    return scatter_elements
 
 
 class CWLTranslator(object):
@@ -409,18 +438,24 @@ class CWLTranslator(object):
                                      ):
         task = BaseTask(name_prefix, self.context)
         # Process input
+        scatter_inputs = set()
+        for element in context['scatter']:
+            scatter_inputs.update(element.inputs)
         for element_input in cwl_element.tool['inputs']:
             name = _get_name(name_prefix, element_input['id'], last_element_only=True)
-            scatter = 'inputs' in context['scatter'] and name in context['scatter']['inputs']
+            scatter = name in scatter_inputs
             port = _create_input_port(posixpath.relpath(name, name_prefix), element_input, context, scatter)
             port.task = task
             task.input_ports[posixpath.relpath(name, name_prefix)] = port
         # Add input combinator
         task.input_combinator = _get_input_combinator(task, context['scatter'])
         # Process outputs
+        scatter_outputs = set()
+        for element in context['scatter']:
+            scatter_outputs.update(element.outputs)
         for element_output in cwl_element.tool['outputs']:
             name = _get_name(name_prefix, element_output['id'], last_element_only=True)
-            gather = 'outputs' in context['scatter'] and name in context['scatter']['outputs']
+            gather = name in scatter_outputs
             port = _create_output_port(posixpath.relpath(name, name_prefix), element_output, context, gather)
             port.task = task
             self.output_ports[name] = port
@@ -437,7 +472,7 @@ class CWLTranslator(object):
         task.command = _process_requirements(task.command, context['requirements'])
         task.command.task = task
         # Process condition
-        task.condition = _build_condition(context, task)
+        task.condition = _build_condition(context)
         # Process streams
         if 'stdin' in cwl_element.tool:
             task.command.task_stdin = cwl_element.tool['stdin']
@@ -476,14 +511,27 @@ class CWLTranslator(object):
         # Check for condition
         if 'when' in cwl_element.tool:
             context['condition'] = cwl_element.tool['when']
-        # Check for scatter
+        # Check for new scatter ports
         if 'scatter' in cwl_element.tool:
             if isinstance(cwl_element.tool['scatter'], List):
-                context['scatter']['inputs'] = [_get_name(name_prefix, n) for n in cwl_element.tool['scatter']]
-                context['scatter']['method'] = cwl_element.tool['scatterMethod']
+                context['scatter'].append(ScatterElement(
+                    inputs={_get_name(name_prefix, n) for n in cwl_element.tool['scatter']},
+                    method=cwl_element.tool['scatterMethod'],
+                    outputs={_get_name(name_prefix, out['id']) for out in cwl_element.tool['outputs']}))
             else:
-                context['scatter']['inputs'] = [_get_name(name_prefix, cwl_element.tool['scatter'])]
-            context['scatter']['outputs'] = [_get_name(name_prefix, out['id']) for out in cwl_element.tool['outputs']]
+                context['scatter'].append(ScatterElement(
+                    inputs={_get_name(name_prefix, cwl_element.tool['scatter'])},
+                    outputs={_get_name(name_prefix, out['id']) for out in cwl_element.tool['outputs']}))
+        # Propagate scatter ports if needed
+        for step_input in cwl_element.tool['inputs']:
+            source_name = _get_name(name_prefix, step_input['source'])
+            dest_name = _get_name(name_prefix, step_input['id'])
+            context['scatter'] = _replace_in_scatter_element(context['scatter'], source_name, dest_name, 'inputs')
+        for step_output in cwl_element.tool['outputs']:
+            if 'outputSource' in step_output:
+                source_name = _get_name(name_prefix, step_output['id'])
+                dest_name = _get_name(step_name, step_output['outputSource'])
+                context['scatter'] = _replace_in_scatter_element(context['scatter'], source_name, dest_name, 'outputs')
         # Process content
         step_command = cwl_element.tool['run']
         if isinstance(step_command, MutableMapping):
@@ -502,7 +550,7 @@ class CWLTranslator(object):
         context = {
             'requirements': {},
             'condition': None,
-            'scatter': {}
+            'scatter': []
         }
         self._recursive_translate(workflow, self.cwl_definition, context)
         self._inject_inputs()

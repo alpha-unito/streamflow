@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 from abc import ABC
+from asyncio.subprocess import STDOUT
 from typing import Union, Optional, List, Any, IO, MutableMapping, MutableSequence, Tuple
 
 import cwltool.expression
@@ -70,23 +71,23 @@ class CWLBaseCommand(Command, ABC):
                          expression: Text,
                          context: MutableMapping[Text, Any],
                          timeout: Optional[int] = None):
-        return cwltool.expression.interpolate(
-            expression,
-            context,
-            fullJS=self.full_js,
-            jslib=cwltool.expression.jshead(
-                self.expression_lib or [], context) if self.full_js else "",
-            timeout=timeout if timeout is not None else cwltool.expression.default_timeout)
+        if isinstance(expression, str) and ('$(' in expression or '${' in expression):
+            return cwltool.expression.interpolate(
+                expression,
+                context,
+                fullJS=self.full_js,
+                jslib=cwltool.expression.jshead(
+                    self.expression_lib or [], context) if self.full_js else "",
+                timeout=timeout if timeout is not None else cwltool.expression.default_timeout)
+        else:
+            return expression
 
     def _get_timeout(self, job: Job) -> Optional[int]:
         if isinstance(self.time_limit, int):
             timeout = self.time_limit
         elif isinstance(self.time_limit, Text):
-            if '$(' in self.time_limit or '${' in self.time_limit:
-                context = utils.build_context(job)
-                timeout = self._eval_expression(self.time_limit, context)
-            else:
-                timeout = int(self.time_limit)
+            context = utils.build_context(job)
+            timeout = int(self._eval_expression(self.time_limit, context))
         else:
             timeout = 0
         return timeout if timeout > 0 else None
@@ -118,15 +119,9 @@ class CWLBaseCommand(Command, ABC):
                 await self.task.context.data_manager.transfer_data(src_path, job, dest_path, job, not writable)
             # If it is a Dirent element, put or create the corresponding file according to the entryname field
             elif 'entry' in listing:
-                if '$(' in listing['entry'] or '${' in listing['entry']:
-                    entry = self._eval_expression(listing['entry'], context)
-                else:
-                    entry = listing['entry']
+                entry = self._eval_expression(listing['entry'], context)
                 if 'entryname' in listing:
-                    if '$(' in listing['entryname'] or '${' in listing['entryname']:
-                        dest_path = self._eval_expression(listing['entryname'], context)
-                    else:
-                        dest_path = listing['entryname']
+                    dest_path = self._eval_expression(listing['entryname'], context)
                     path_processor = streamflow.core.utils.get_path_processor(self.task)
                     if not path_processor.isabs(dest_path):
                         dest_path = path_processor.join(job.output_directory, dest_path)
@@ -195,7 +190,7 @@ class CWLCommand(CWLBaseCommand):
         # Process tokens
         for command_token in self.command_tokens:
             # Obtain token value
-            if isinstance(command_token.value, str) and ("$(" in command_token.value or "${" in command_token.value):
+            if isinstance(command_token.value, str):
                 processed_token = self._eval_expression(command_token.value, context)
             else:
                 processed_token = command_token.value
@@ -237,8 +232,7 @@ class CWLCommand(CWLBaseCommand):
                     default_stream: IO,
                     is_input: bool = False) -> IO:
         if isinstance(stream, str):
-            if "$(" in stream or "${" in stream:
-                stream = self._eval_expression(stream, context)
+            stream = self._eval_expression(stream, context)
             return open(stream, "rb" if is_input else "wb")
         else:
             return default_stream
@@ -254,7 +248,7 @@ class CWLCommand(CWLBaseCommand):
         if self.task.target is None:
             # Open streams
             stderr = self._get_stream(context, self.task_stderr, sys.stderr)
-            stdin = self._get_stream(context, self.task_stdout, sys.stdin, is_input=True)
+            stdin = self._get_stream(context, self.task_stdin, sys.stdin, is_input=True)
             stdout = self._get_stream(context, self.task_stdout, sys.stdout)
             # Execute command
             logger.info('Executing job {job} into directory {outdir}: \n{command}'.format(
@@ -293,6 +287,10 @@ class CWLCommand(CWLBaseCommand):
                 available_resources = await connector.get_available_resources(self.task.target.service)
                 hosts = {k: v.hostname for k, v in available_resources.items() if k in resources}
                 parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
+            # Process streams
+            stdin = self._eval_expression(self.task_stdin, context)
+            stdout = self._eval_expression(self.task_stdout, context) if self.task_stdout is not None else STDOUT
+            stderr = self._eval_expression(self.task_stderr, context) if self.task_stderr is not None else stdout
             # Execute remote command
             result, exit_code = await asyncio.wait_for(
                 connector.run(
@@ -300,10 +298,12 @@ class CWLCommand(CWLBaseCommand):
                     cmd,
                     environment=parsed_env,
                     workdir=job.output_directory,
+                    stdin=stdin,
+                    stdout=stdout,
+                    stderr=stderr,
                     capture_output=True,
                     job_name=job.name),
                 self._get_timeout(job))
-            # TODO: manage streams
         # Handle exit codes
         if (self.success_codes is not None and exit_code in self.success_codes) or exit_code == 0:
             status = JobStatus.COMPLETED

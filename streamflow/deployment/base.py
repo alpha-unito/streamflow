@@ -3,16 +3,20 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+import posixpath
 import shutil
+import stat
 import tempfile
 from abc import abstractmethod, ABC
-from typing import List, TYPE_CHECKING, MutableMapping
+from asyncio.subprocess import STDOUT
+from typing import List, TYPE_CHECKING
 
+from streamflow.core import utils
 from streamflow.core.deployment import Connector, ConnectorCopyKind
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
-    from typing import Any, Optional
+    from typing import Any, Optional, MutableMapping, Union
     from typing_extensions import Text
 
 
@@ -22,23 +26,28 @@ class BaseConnector(Connector, ABC):
     def create_encoded_command(command: List[Text],
                                resource: Text,
                                environment: MutableMapping[Text, Text] = None,
-                               workdir: Optional[Text] = None):
+                               workdir: Optional[Text] = None,
+                               stdin: Optional[Union[int, Text]] = None,
+                               stdout: Union[int, Text] = STDOUT,
+                               stderr: Union[int, Text] = STDOUT) -> Text:
         decoded_command = "".join(
             "{workdir}"
             "{environment}"
             "{command}"
+            "{stdout}"
+            "{stderr}"
         ).format(
             workdir="cd {workdir} && ".format(workdir=workdir) if workdir is not None else "",
             environment="".join(["export %s=%s && " % (key, value) for (key, value) in
                                  environment.items()]) if environment is not None else "",
-            command=" ".join(command)
+            command=" ".join(command),
+            stdin=" < {stdin}".format(stdin=stdin) if stdin is not None else "",
+            stdout=" > {stdout}".format(stdout=stdout) if stdout != STDOUT else "",
+            stderr=" 2>&1" if stderr == stdout else (" 2>{stderr}".format(stderr=stderr) if stderr != STDOUT else "")
         )
-        logger.debug("Executing {command} on {resource}".format(command=decoded_command, resource=resource))
-        return "".join(
-            "sh -c "
-            "\"$(echo {command} | base64 -d)\""
-        ).format(
-            command=base64.b64encode(decoded_command.encode('utf-8')).decode('utf-8')
+        logger.debug("Executing command {command} on {resource}".format(command=decoded_command, resource=resource))
+        return "sh -c \"$(echo {command} | base64 -d)\"".format(
+            command=base64.b64encode(decoded_command.encode('utf-8')).decode('utf-8'),
         )
 
     @staticmethod
@@ -57,6 +66,34 @@ class BaseConnector(Connector, ABC):
             return ""
         else:
             raise TypeError("Unsupported value type")
+
+    async def _build_helper_file(self,
+                                 command: List[Text],
+                                 resource: Text,
+                                 environment: MutableMapping[Text, Text] = None,
+                                 workdir: Optional[Text] = None,
+                                 stdin: Optional[Union[int, Text]] = None,
+                                 stdout: Union[int, Text] = STDOUT,
+                                 stderr: Union[int, Text] = STDOUT) -> Text:
+        temp_file = posixpath.join('/tmp', utils.random_name())
+        file_contents = '\n'.join([
+            '#!/bin/sh',
+            self.create_encoded_command(
+                command=command,
+                resource=resource,
+                environment=environment,
+                workdir=workdir,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr)
+        ])
+        file_name = tempfile.mktemp()
+        with open(file_name, mode='w') as file:
+            file.write(file_contents)
+        os.chmod(file_name, os.stat(file_name).st_mode | stat.S_IEXEC)
+        # noinspection PyProtectedMember
+        await self._copy_local_to_remote(file_name, temp_file, [resource])
+        return temp_file
 
     async def _copy_remote_to_remote(self,
                                      src: Text,

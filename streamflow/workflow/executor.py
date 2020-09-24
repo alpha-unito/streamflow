@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from asyncio import FIRST_COMPLETED, Task
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Optional, cast, List
 
 from streamflow.core import utils
 from streamflow.core.scheduling import JobStatus
@@ -14,7 +14,6 @@ from streamflow.workflow.task import BaseTask
 if TYPE_CHECKING:
     from streamflow.core.context import StreamflowContext
     from streamflow.core.workflow import Workflow
-    from typing import List
     from typing_extensions import Text
 
 
@@ -72,7 +71,14 @@ class StreamFlowExecutor(Executor):
                     else:
                         # Collect outputs
                         token_processor = self.workflow.output_ports[token.name].token_processor
-                        await token_processor.collect_output(token, output_dir)
+                        if isinstance(token.job, List):
+                            collect_tasks = []
+                            for t in token.value:
+                                collect_tasks.append(asyncio.create_task(
+                                    token_processor.collect_output(t, output_dir)))
+                            await asyncio.gather(*collect_tasks)
+                        else:
+                            await token_processor.collect_output(token, output_dir)
                         # Create a new task in place of the completed one
                         self.output_tasks.append(asyncio.create_task(
                             self.workflow.output_ports[task_name].get(output_retriever), name=task_name))

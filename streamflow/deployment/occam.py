@@ -2,7 +2,8 @@ import asyncio
 import os
 import posixpath
 import re
-from typing import List, MutableMapping, Optional, Any, Tuple
+from asyncio.subprocess import STDOUT
+from typing import List, MutableMapping, Optional, Any, Tuple, Union
 
 import asyncssh
 from ruamel.yaml import YAML
@@ -233,14 +234,15 @@ class OccamConnector(SSHConnector):
         await self.ssh_client.run(undeploy_command)
         logger.info("Killed {resource}".format(resource=job_id))
 
-    async def deploy(self) -> None:
-        await super().deploy()
-        deploy_tasks = []
-        for (name, service) in self.env_description.items():
-            nodes = service.get('nodes', ['node22'])
-            for node in nodes:
-                deploy_tasks.append(asyncio.create_task(self._deploy_node(name, service, node)))
-        await asyncio.gather(*deploy_tasks)
+    async def deploy(self, external: bool) -> None:
+        await super().deploy(external)
+        if not external:
+            deploy_tasks = []
+            for (name, service) in self.env_description.items():
+                nodes = service.get('nodes', ['node22'])
+                for node in nodes:
+                    deploy_tasks.append(asyncio.create_task(self._deploy_node(name, service, node)))
+            await asyncio.gather(*deploy_tasks)
 
     async def get_available_resources(self, service: str) -> MutableMapping[Text, Resource]:
         resources = {}
@@ -248,21 +250,25 @@ class OccamConnector(SSHConnector):
             resources[node] = Resource(name=node, hostname=node.split('-')[0])
         return resources
 
-    async def undeploy(self) -> None:
-        # Undeploy models
-        undeploy_tasks = []
-        for name in self.jobs_table:
-            for job_id in self.jobs_table[name]:
-                undeploy_tasks.append(asyncio.create_task(self._undeploy_node(job_id)))
-        await asyncio.gather(*undeploy_tasks)
+    async def undeploy(self, external: bool) -> None:
+        if not external:
+            # Undeploy models
+            undeploy_tasks = []
+            for name in self.jobs_table:
+                for job_id in self.jobs_table[name]:
+                    undeploy_tasks.append(asyncio.create_task(self._undeploy_node(job_id)))
+            await asyncio.gather(*undeploy_tasks)
         # Close connection
-        await super().undeploy()
+        await super().undeploy(external)
 
     async def run(self,
                   resource: Text,
                   command: List[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
+                  stdin: Optional[Union[int, Text]] = None,
+                  stdout: Union[int, Text] = STDOUT,
+                  stderr: Union[int, Text] = STDOUT,
                   capture_output: bool = False,
                   job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         occam_command = "".join(
@@ -271,7 +277,14 @@ class OccamConnector(SSHConnector):
             "{command}"
         ).format(
             resource=resource,
-            command=self.create_encoded_command(command, resource, environment, workdir)
+            command=self.create_encoded_command(
+                command=command,
+                resource=resource,
+                environment=environment,
+                workdir=workdir,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr)
         )
         result = await self.ssh_client.run(occam_command)
         if capture_output:

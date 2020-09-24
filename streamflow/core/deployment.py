@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from abc import abstractmethod, ABC
+from asyncio.subprocess import STDOUT
 from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from streamflow.core.scheduling import Resource
-    from typing import List, MutableMapping, Optional, Any, Tuple
+    from typing import List, MutableMapping, Optional, Any, Tuple, Union
     from typing_extensions import Text
 
 
@@ -25,7 +26,7 @@ class Connector(ABC):
         ...
 
     @abstractmethod
-    async def deploy(self) -> None:
+    async def deploy(self, external: bool) -> None:
         ...
 
     @abstractmethod
@@ -38,12 +39,15 @@ class Connector(ABC):
                   command: List[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
+                  stdin: Optional[Union[int, Text]] = None,
+                  stdout: Union[int, Text] = STDOUT,
+                  stderr: Union[int, Text] = STDOUT,
                   capture_output: bool = False,
                   job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         ...
 
     @abstractmethod
-    async def undeploy(self) -> None:
+    async def undeploy(self, external: bool) -> None:
         ...
 
 

@@ -26,3 +26,9 @@ models:
       chart: environment/helm/stacking
       kubeconfig: /home/glassofwhiskey/.kube/config-streamflow
       releaseName: munipack-rel
+  occam-mf:
+    type: occam
+    config:
+      file: environment/occam/occamfile.yml
+      sshKey: /home/glassofwhiskey/.ssh/keys/occam_rsa
+      username: icolonne
