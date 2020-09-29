@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from abc import abstractmethod, ABC
-from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from streamflow.core.workflow import Job
-    from typing import List, MutableMapping, Optional
+    from streamflow.core.workflow import Job, Status
+    from typing import MutableSequence, MutableMapping, Optional
     from typing_extensions import Text
 
 
@@ -15,18 +14,11 @@ class JobAllocation(object):
 
     def __init__(self,
                  job: Job,
-                 resources: List[Text],
-                 status: JobStatus):
+                 resources: MutableSequence[Text],
+                 status: Status):
         self.job: Job = job
-        self.resources: List[Text] = resources
-        self.status: JobStatus = status
-
-
-class JobStatus(Enum):
-    RUNNING = 1
-    SKIPPED = 2
-    COMPLETED = 3
-    FAILED = 4
+        self.resources: MutableSequence[Text] = resources
+        self.status: Status = status
 
 
 class Policy(ABC):
@@ -56,7 +48,7 @@ class ResourceAllocation(object):
                  model: Text):
         self.name: Text = name
         self.model: Text = model
-        self.jobs: List[Text] = []
+        self.jobs: MutableSequence[Text] = []
 
 
 class Scheduler(ABC):
@@ -69,14 +61,16 @@ class Scheduler(ABC):
         job = self.job_allocations.get(job_name, None)
         return job.job if job is not None else None
 
-    def get_resources(self, job_name: Text) -> List[Text]:
+    def get_resources(self,
+                      job_name: Text,
+                      statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[Text]:
         job = self.job_allocations.get(job_name, None)
-        return job.resources if job is not None else []
+        return job.resources if job is not None and (statuses is None or job.status in statuses) else []
 
     @abstractmethod
     async def notify_status(self,
                             job_name: Text,
-                            status: JobStatus):
+                            status: Status):
         ...
 
     @abstractmethod

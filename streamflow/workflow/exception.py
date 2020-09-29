@@ -1,6 +1,0 @@
-class WorkflowDefinitionException(Exception):
-    ...
-
-
-class WorkflowExecutionException(Exception):
-    ...

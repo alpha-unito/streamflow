@@ -1,4 +1,5 @@
 from os import path
+
 from setuptools import setup
 
 from streamflow.version import VERSION
@@ -17,6 +18,7 @@ setup(
         "streamflow.cwl",
         "streamflow.data",
         "streamflow.deployment",
+        "streamflow.recovery",
         "streamflow.scheduling",
         "streamflow.workflow"
     ],

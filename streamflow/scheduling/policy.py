@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, MutableSequence
 
-from streamflow.core.scheduling import Policy, JobStatus
+from streamflow.core.scheduling import Policy
+from streamflow.core.workflow import Status
 
 if TYPE_CHECKING:
     from streamflow.core.scheduling import JobAllocation, Resource, ResourceAllocation
@@ -22,7 +23,7 @@ class DataLocalityPolicy(Policy):
         inputs = []
         for token in job.inputs:
             # If the token is actually an aggregate of multiple tokens, consider each token separately
-            if isinstance(token.job, list):
+            if isinstance(token.job, MutableSequence):
                 inputs.extend(token.value)
             else:
                 inputs.append(token)
@@ -35,16 +36,16 @@ class DataLocalityPolicy(Policy):
                 continue
             # Get related resources
             related_resources = set(jobs[token.job].resources)
-            if token.name in job.task.input_ports:
-                token_processor = job.task.input_ports[token.name].token_processor
+            if token.name in job.step.input_ports:
+                token_processor = job.step.input_ports[token.name].token_processor
             else:
-                token_processor = jobs[token.job].job.task.output_ports[token.name].token_processor
+                token_processor = jobs[token.job].job.step.output_ports[token.name].token_processor
             related_resources.update(token_processor.get_related_resources(token))
             # Check if one of the related resources is free
             for current_resource in related_resources:
                 if current_resource in valid_resources:
                     running_jobs = list(
-                        filter(lambda x: jobs[x].status == JobStatus.RUNNING, resources[current_resource].jobs))
+                        filter(lambda x: jobs[x].status == Status.RUNNING, resources[current_resource].jobs))
                     # If the resource is free use it for the current job, otherwise discard it
                     if len(running_jobs) == 0:
                         return current_resource
@@ -55,7 +56,7 @@ class DataLocalityPolicy(Policy):
             if resource not in resources:
                 return resource
             running_jobs = list(
-                filter(lambda x: jobs[x].status == JobStatus.RUNNING, resources[resource].jobs))
+                filter(lambda x: jobs[x].status == Status.RUNNING, resources[resource].jobs))
             if len(running_jobs) == 0:
                 return resource
         # If there are no available resources, return None

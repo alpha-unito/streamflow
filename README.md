@@ -105,4 +105,5 @@ Iacopo Colonnelli <iacopo.colonnelli@unito.it> (creator and maintainer)
 Barbara Cantalupo <barbara.cantalupo@unito.it> (maintainer)  
 Marco Aldinucci <aldinuc@di.unito.it> (maintainer)
 
-Gaetano Saitta <gaetano.saitta@edu.unito.it> (contributor)
+Gaetano Saitta <gaetano.saitta@edu.unito.it> (contributor)  
+Alberto Mulone <alberto.mulone@edu.unito.it> (contributor)

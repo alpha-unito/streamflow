@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from streamflow.core.scheduling import Resource
-    from typing import List, MutableMapping, Optional, Any, Tuple, Union
+    from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
     from typing_extensions import Text
 
 
@@ -20,7 +20,7 @@ class Connector(ABC):
     async def copy(self,
                    src: Text,
                    dst: Text,
-                   resources: List[Text],
+                   resources: MutableSequence[Text],
                    kind: ConnectorCopyKind,
                    source_remote: Optional[Text] = None) -> None:
         ...
@@ -36,7 +36,7 @@ class Connector(ABC):
     @abstractmethod
     async def run(self,
                   resource: Text,
-                  command: List[Text],
+                  command: MutableSequence[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   stdin: Optional[Union[int, Text]] = None,

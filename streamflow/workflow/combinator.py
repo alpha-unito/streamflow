@@ -1,42 +1,35 @@
 import asyncio
 import itertools
 from asyncio import Queue, Task, FIRST_COMPLETED
-from typing import List, MutableMapping, Text, Any, cast
+from typing import List, MutableMapping, Text, Any, cast, MutableSequence, Optional
 
 from streamflow.core import utils
-from streamflow.core.workflow import InputCombinator, Token, TerminationToken
-
-
-def _flatten_list(hierarchical_list):
-    if not hierarchical_list:
-        return hierarchical_list
-    if isinstance(hierarchical_list[0], list):
-        return _flatten_list(hierarchical_list[0]) + _flatten_list(hierarchical_list[1:])
-    return hierarchical_list[:1] + _flatten_list(hierarchical_list[1:])
+from streamflow.core.utils import flatten_list
+from streamflow.core.workflow import InputCombinator, Token, TerminationToken, InputPort, Step, OutputCombinator
 
 
 class DotProductInputCombinator(InputCombinator):
 
-    async def get(self) -> List[Token]:
+    async def get(self) -> MutableSequence[Token]:
         while True:
             # Retrieve input tokens
-            get_tasks = []
-            for port in self.ports.values():
-                get_tasks.append(asyncio.create_task(port.get()))
-            inputs = await asyncio.gather(*get_tasks)
+            inputs = await asyncio.gather(*[asyncio.create_task(p.get()) for p in self.ports.values()])
             # Check for termination
             if utils.check_termination(inputs):
                 break
             # Return input tokens
-            return _flatten_list(inputs)
+            return flatten_list(inputs)
         # When terminated, return a TerminationToken
         return [TerminationToken(self.name)]
 
 
 class CartesianProductInputCombinator(InputCombinator):
 
-    def __init__(self, name: Text):
-        super().__init__(name)
+    def __init__(self,
+                 name: Text,
+                 step: Optional[Step] = None,
+                 ports: Optional[MutableMapping[Text, InputPort]] = None):
+        super().__init__(name, step, ports)
         self.queue: Queue = Queue()
         self.terminated: List[Text] = []
         self.token_lists: MutableMapping[Text, List[Any]] = {}
@@ -52,7 +45,8 @@ class CartesianProductInputCombinator(InputCombinator):
                 task_name = cast(Task, task).get_name()
                 token = task.result()
                 # If a TerminationToken is received, the corresponding port terminated its outputs
-                if isinstance(token, TerminationToken) or (isinstance(token, List) and utils.check_termination(token)):
+                if (isinstance(token, TerminationToken) or
+                        (isinstance(token, MutableSequence) and utils.check_termination(token))):
                     self.terminated.append(task_name)
                     # When the last port terminates, the entire combinator terminates
                     if len(self.terminated) == len(self.ports):
@@ -94,10 +88,36 @@ class CartesianProductInputCombinator(InputCombinator):
             self.queue.put_nowait(list(inputs.values()))
             asyncio.create_task(self._cartesian_multiplier())
 
-    async def get(self) -> List[Token]:
+    async def get(self) -> MutableSequence[Token]:
         # If lists are empty it means that this is the first call to the get() function
         if not self.token_lists:
             await self._initialize()
         # Otherwise simply wait for new input tokens
         inputs = await self.queue.get()
-        return _flatten_list(inputs)
+        return flatten_list(inputs)
+
+
+class DotProductOutputCombinator(OutputCombinator):
+
+    def empty(self) -> bool:
+        return all([p.empty() for p in self.ports.values()])
+
+    async def get(self, consumer: Text) -> Token:
+        while True:
+            # Retrieve input tokens
+            outputs = await asyncio.gather(*[asyncio.create_task(p.get(consumer)) for p in self.ports.values()])
+            # Check for termination
+            if utils.check_termination(outputs):
+                break
+            # Return token
+            outputs = flatten_list(outputs)
+            return Token(
+                name=self.name,
+                job=[t.job for t in outputs],
+                value=outputs,
+                weight=sum([t.weight for t in outputs]))
+        # When terminated, return a TerminationToken
+        return TerminationToken(self.name)
+
+    def put(self, token: Token):
+        raise NotImplementedError()

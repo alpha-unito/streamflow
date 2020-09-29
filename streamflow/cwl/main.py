@@ -1,24 +1,22 @@
+import argparse
+import logging
 import os
-import signal
-import sys
 
 import cwltool.context
 import cwltool.load_tool
+import cwltool.loghandler
 import cwltool.process
 import cwltool.process
 import cwltool.workflow
-import yaml
-# noinspection PyProtectedMember
-from cwltool.main import _terminate_processes, _signal_handler
-from typing_extensions import Text
+from cwltool.resolver import tool_resolver
 
 from streamflow.config.config import WorkflowConfig
-from streamflow.core.context import StreamflowContext
+from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.translator import CWLTranslator
 from streamflow.workflow.executor import StreamFlowExecutor
 
 
-def _parse_args(workflow_config: WorkflowConfig, context: StreamflowContext):
+def _parse_args(workflow_config: WorkflowConfig, context: StreamFlowContext):
     cwl_config = workflow_config.config
     args = [os.path.join(context.config_dir, cwl_config['file'])]
     if 'settings' in cwl_config:
@@ -26,16 +24,24 @@ def _parse_args(workflow_config: WorkflowConfig, context: StreamflowContext):
     return args
 
 
-async def main(workflow_config: WorkflowConfig, context: StreamflowContext, outdir: Text):
+async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args: argparse.Namespace):
     # Parse input arguments
-    args = _parse_args(workflow_config, context)
-    # Change current directory to CWL descriptors' parent dir
-    os.chdir(os.path.dirname(args[0]))
+    cwl_args = _parse_args(workflow_config, context)
+    # Configure log level
+    if args.quiet:
+        # noinspection PyProtectedMember
+        cwltool.loghandler._logger.setLevel(logging.WARN)
     # Load CWL workflow definition
     loading_context = cwltool.context.LoadingContext()
-    cwl_definition = cwltool.load_tool.load_tool(args[0], loading_context)
-    with open(args[1], 'r') as stream:
-        cwl_inputs = yaml.safe_load(stream)
+    loading_context.resolver = tool_resolver
+    loading_context.loader = cwltool.load_tool.default_loader(
+        loading_context.fetcher_constructor
+    )
+    cwl_definition = cwltool.load_tool.load_tool(cwl_args[0], loading_context)
+    if len(cwl_args) == 2:
+        cwl_inputs, _ = loading_context.loader.resolve_ref(cwl_args[1], checklinks=False)
+    else:
+        cwl_inputs = {}
     # Transpile CWL workflow to the StreamFlow representation
     translator = CWLTranslator(
         context=context,
@@ -46,14 +52,4 @@ async def main(workflow_config: WorkflowConfig, context: StreamflowContext, outd
     workflow = await translator.translate()
     # Execute workflow
     executor = StreamFlowExecutor(context, workflow)
-    await executor.run(output_dir=outdir)
-
-
-def run(*args, **kwargs):
-    # type: (...) -> None
-    """Run cwltool."""
-    signal.signal(signal.SIGTERM, _signal_handler)
-    try:
-        sys.exit(main(*args, **kwargs))
-    finally:
-        _terminate_processes()
+    await executor.run(output_dir=args.outdir)

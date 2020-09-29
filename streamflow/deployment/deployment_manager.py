@@ -5,7 +5,7 @@ from asyncio import Event
 from typing import TYPE_CHECKING
 
 from streamflow.core.deployment import DeploymentManager
-from streamflow.deployment.docker_compose import DockerComposeConnector
+from streamflow.deployment.docker import DockerConnector, DockerComposeConnector
 from streamflow.deployment.helm import Helm2Connector, Helm3Connector
 from streamflow.deployment.occam import OccamConnector
 from streamflow.deployment.slurm import SlurmConnector
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from typing_extensions import Text
 
 connector_classes = {
+    'docker': DockerConnector,
     'docker-compose': DockerComposeConnector,
     'helm': Helm3Connector,
     'helm2': Helm2Connector,
