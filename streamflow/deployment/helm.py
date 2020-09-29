@@ -12,7 +12,7 @@ import uuid
 from abc import ABC
 from asyncio.subprocess import STDOUT
 from pathlib import Path
-from typing import MutableMapping, List, Optional, Any, Tuple, cast, Union
+from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, cast, Union
 
 import yaml
 from kubernetes_asyncio import client
@@ -21,9 +21,10 @@ from kubernetes_asyncio.config import incluster_config, ConfigException, load_ku
 from kubernetes_asyncio.stream import WsApiClient, ws_client
 from typing_extensions import Text
 
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
 from streamflow.deployment.base import BaseConnector
-from streamflow.log_handler import logger
+from streamflow.log_handler import logger, profile
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
@@ -72,11 +73,15 @@ class BaseHelmConnector(BaseConnector, ABC):
                 if not self.namespace:
                     raise ConfigException("Namespace file exists but empty.")
 
-    async def _copy_remote_to_remote(self, src: Text, dst: Text, resources: List[Text], source_remote: Text) -> None:
+    async def _copy_remote_to_remote(self,
+                                     src: Text,
+                                     dst: Text,
+                                     resources: MutableSequence[Text],
+                                     source_remote: Text) -> None:
         effective_resources = await self._get_effective_resources(resources, dst)
         await super()._copy_remote_to_remote(src, dst, effective_resources, source_remote)
 
-    async def _copy_local_to_remote(self, src: Text, dst: Text, resources: List[Text]):
+    async def _copy_local_to_remote(self, src: Text, dst: Text, resources: MutableSequence[Text]):
         effective_resources = await self._get_effective_resources(resources, dst)
         with tempfile.TemporaryFile() as tar_buffer:
             with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
@@ -88,6 +93,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                     self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))))
             await asyncio.gather(*copy_tasks)
 
+    @profile
     async def _copy_local_to_remote_single(self,
                                            resource: Text,
                                            tar_buffer: io.BufferedRandom) -> None:
@@ -105,14 +111,24 @@ class BaseHelmConnector(BaseConnector, ABC):
             tty=False,
             _preload_content=False)
         while not response.closed:
-            content = resource_buffer.read(self.transferBufferSize)
-            if content:
+            if content := resource_buffer.read(self.transferBufferSize):
                 channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
                 payload = channel_prefix + content
                 await response.send_bytes(payload)
             else:
                 break
-        await response.close()
+        with io.StringIO() as err_buffer:
+            while not response.closed:
+                async for msg in response:
+                    data = msg.data.decode('utf-8', 'replace')
+                    channel = msg.data[0]
+                    data = data[1:]
+                    if data and channel == ws_client.ERROR_CHANNEL:
+                        err_buffer.write(data)
+            await response.close()
+            err = yaml.safe_load(err_buffer.getvalue())
+            if err['status'] != "Success":
+                raise WorkflowExecutionException(err['message'])
 
     async def _copy_remote_to_local(self, src: Text, dst: Text, resource: Text):
         pod, container = resource.split(':')
@@ -123,7 +139,7 @@ class BaseHelmConnector(BaseConnector, ABC):
             container=container,
             command=command,
             stderr=True,
-            stdin=True,
+            stdin=False,
             stdout=True,
             tty=False,
             _preload_content=False)
@@ -174,9 +190,9 @@ class BaseHelmConnector(BaseConnector, ABC):
         return self.configuration
 
     async def _get_effective_resources(self,
-                                       resources: List[Text],
+                                       resources: MutableSequence[Text],
                                        dest_path: Text,
-                                       source_remote: Optional[Text] = None) -> List[Text]:
+                                       source_remote: Optional[Text] = None) -> MutableSequence[Text]:
         # Get containers
         container_tasks = []
         for resource in resources:
@@ -236,7 +252,7 @@ class BaseHelmConnector(BaseConnector, ABC):
 
     async def run(self,
                   resource: Text,
-                  command: List[Text],
+                  command: MutableSequence[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   stdin: Optional[Union[int, Text]] = None,
@@ -269,6 +285,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                                 out_buffer.write(data)
                             elif data and channel == ws_client.ERROR_CHANNEL:
                                 err_buffer.write(data)
+                    await response.close()
                     err = yaml.safe_load(err_buffer.getvalue())
                     if err['status'] == "Success":
                         return out_buffer.getvalue(), 0
@@ -278,18 +295,18 @@ class BaseHelmConnector(BaseConnector, ABC):
                         else:
                             return err['message'], int(err['details']['causes'][0]['message'])
         finally:
-            command = ['rm', '-rf', helper_file]
-            pod, container = resource.split(':')
-            await self.client_ws.connect_get_namespaced_pod_exec(
+            command = ['rm', '-f', helper_file]
+            response = await self.client_ws.connect_get_namespaced_pod_exec(
                 name=pod,
                 namespace=self.namespace or 'default',
                 container=container,
                 command=command,
                 stderr=True,
-                stdin=True,
+                stdin=False,
                 stdout=True,
                 tty=False,
                 _preload_content=False)
+            await response.close()
 
     async def undeploy(self, external: bool):
         if self.client is not None:
@@ -330,9 +347,9 @@ class Helm2Connector(BaseHelmConnector):
                  password: Optional[Text] = None,
                  renderSubchartNotes: Optional[bool] = False,
                  repo: Optional[Text] = None,
-                 commandLineValues: Optional[List[Text]] = None,
-                 fileValues: Optional[List[Text]] = None,
-                 stringValues: Optional[List[Text]] = None,
+                 commandLineValues: Optional[MutableSequence[Text]] = None,
+                 fileValues: Optional[MutableSequence[Text]] = None,
+                 stringValues: Optional[MutableSequence[Text]] = None,
                  timeout: Optional[int] = str(60000),
                  tls: Optional[bool] = False,
                  tlscacert: Optional[Text] = None,
@@ -341,7 +358,7 @@ class Helm2Connector(BaseHelmConnector):
                  tlskey: Optional[Text] = None,
                  tlsverify: Optional[bool] = False,
                  username: Optional[Text] = None,
-                 yamlValues: Optional[List[Text]] = None,
+                 yamlValues: Optional[MutableSequence[Text]] = None,
                  verify: Optional[bool] = False,
                  chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,
@@ -559,16 +576,16 @@ class Helm3Connector(BaseHelmConnector):
                  password: Optional[Text] = None,
                  renderSubchartNotes: Optional[bool] = False,
                  repo: Optional[Text] = None,
-                 commandLineValues: Optional[List[Text]] = None,
-                 fileValues: Optional[List[Text]] = None,
+                 commandLineValues: Optional[MutableSequence[Text]] = None,
+                 fileValues: Optional[MutableSequence[Text]] = None,
                  registryConfig: Optional[Text] = os.path.join(os.environ['HOME'], ".config/helm/registry.json"),
                  repositoryCache: Optional[Text] = os.path.join(os.environ['HOME'], ".cache/helm/repository"),
                  repositoryConfig: Optional[Text] = os.path.join(os.environ['HOME'], ".config/helm/repositories.yaml"),
-                 stringValues: Optional[List[Text]] = None,
+                 stringValues: Optional[MutableSequence[Text]] = None,
                  skipCrds: Optional[bool] = False,
                  timeout: Optional[Text] = "1000m",
                  username: Optional[Text] = None,
-                 yamlValues: Optional[List[Text]] = None,
+                 yamlValues: Optional[MutableSequence[Text]] = None,
                  verify: Optional[bool] = False,
                  chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,

@@ -1,0 +1,9 @@
+num_file:
+  class: File
+  path: data/num_file.txt
+
+main_d:
+  class: Directory
+  path: data/extra_nums
+
+worker_n: 3

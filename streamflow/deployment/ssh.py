@@ -4,7 +4,7 @@ import posixpath
 import stat
 import tempfile
 from asyncio.subprocess import STDOUT
-from typing import List, Optional, MutableMapping, Tuple, Any, Union
+from typing import MutableSequence, Optional, MutableMapping, Tuple, Any, Union
 
 import asyncssh
 from jinja2 import Template
@@ -42,7 +42,7 @@ class SSHConnector(BaseConnector):
         self.sshKey: Text = sshKey
         self.sshKeyPassphrase: Optional[Text] = sshKeyPassphrase
         self.username: Text = username
-        self.jobs_table: MutableMapping[Text, List[Text]] = {}
+        self.jobs_table: MutableMapping[Text, MutableSequence[Text]] = {}
         self.ssh_client = None
 
     async def _build_helper_file(self,
@@ -61,16 +61,14 @@ class SSHConnector(BaseConnector):
                 streamflow_workdir=workdir
             ))
         os.chmod(helper_file, os.stat(helper_file).st_mode | stat.S_IEXEC)
-        remote_path = posixpath.join(workdir if workdir is not None else '/tmp', os.path.basename(helper_file))
+        remote_path = posixpath.join(workdir or '/tmp', os.path.basename(helper_file))
         await self._copy_local_to_remote(helper_file, remote_path, [resource])
         return remote_path
 
-    async def _copy_local_to_remote(self, src: Text, dst: Text, resources: List[Text]):
-        copy_tasks = []
-        for resource in resources:
-            copy_tasks.append(asyncio.create_task(
-                self._copy_local_to_remote_single(src, dst, resource, None)))
-        await asyncio.gather(*copy_tasks)
+    async def _copy_local_to_remote(self, src: Text, dst: Text, resources: MutableSequence[Text]):
+        await asyncio.gather(*[asyncio.create_task(
+            self._copy_local_to_remote_single(src, dst, resource, None)
+        ) for resource in resources])
 
     async def _copy_local_to_remote_single(self, src: Text, dst: Text, resource: Text, temp_dir: Optional[Text]):
         await asyncssh.scp(src, (self.ssh_client, dst), preserve=True, recurse=True)
@@ -93,7 +91,7 @@ class SSHConnector(BaseConnector):
 
     async def run(self,
                   resource: Text,
-                  command: List[Text],
+                  command: MutableSequence[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   stdin: Optional[Union[int, Text]] = None,

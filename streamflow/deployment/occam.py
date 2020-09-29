@@ -3,7 +3,7 @@ import os
 import posixpath
 import re
 from asyncio.subprocess import STDOUT
-from typing import List, MutableMapping, Optional, Any, Tuple, Union
+from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
 
 import asyncssh
 from ruamel.yaml import YAML
@@ -40,9 +40,9 @@ class OccamConnector(SSHConnector):
         ]
 
     def _get_effective_resources(self,
-                                 resources: List[Text],
+                                 resources: MutableSequence[Text],
                                  dest_path: Text,
-                                 source_remote: Optional[Text] = None) -> List[Text]:
+                                 source_remote: Optional[Text] = None) -> MutableSequence[Text]:
         # If destination path is in a shared location, transfer only on the first resource
         for shared_path in self.sharedPaths:
             if dest_path.startswith(shared_path):
@@ -85,7 +85,7 @@ class OccamConnector(SSHConnector):
         await self.ssh_client.run('mkdir -p {dir}'.format(dir=temp_dir))
         return temp_dir
 
-    def _get_volumes(self, resource: Text) -> List[Text]:
+    def _get_volumes(self, resource: Text) -> MutableSequence[Text]:
         for name in self.jobs_table:
             if resource in self.jobs_table[name]:
                 service = name
@@ -94,7 +94,7 @@ class OccamConnector(SSHConnector):
     async def _copy_remote_to_remote(self,
                                      src: Text,
                                      dst: Text,
-                                     resources: List[Text],
+                                     resources: MutableSequence[Text],
                                      source_remote: Text) -> None:
         effective_resources = self._get_effective_resources(resources, dst, source_remote)
         # Check for the need of a temporary copy
@@ -106,11 +106,9 @@ class OccamConnector(SSHConnector):
                 await self.run(source_remote, copy1_command)
                 break
         # Perform the actual copies
-        copy_tasks = []
-        for resource in effective_resources:
-            copy_tasks.append(asyncio.create_task(
-                self._copy_remote_to_remote_single(src, dst, resource, source_remote, temp_dir)))
-        await asyncio.gather(*copy_tasks)
+        await asyncio.gather(*[asyncio.create_task(
+            self._copy_remote_to_remote_single(src, dst, resource, source_remote, temp_dir)
+        ) for resource in effective_resources])
         # If a temporary location was created, delete it
         if temp_dir is not None:
             await self.ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
@@ -131,7 +129,7 @@ class OccamConnector(SSHConnector):
     async def _copy_local_to_remote(self,
                                     src: Text,
                                     dst: Text,
-                                    resources: List[Text]) -> None:
+                                    resources: MutableSequence[Text]) -> None:
         effective_resources = self._get_effective_resources(resources, dst)
         # Check for the need of a temporary copy
         temp_dir = None
@@ -209,7 +207,7 @@ class OccamConnector(SSHConnector):
             shmSize=self.get_option("s", service.get('shmSize')),
             volumes=self.get_option("v", service.get('volumes')),
             image=service['image'],
-            command=" ".join(service.get('command')) if 'command' in service else ""
+            command=" ".join(service.get('command', ""))
         )
         logger.debug("Executing {command}".format(command=deploy_command))
         result = await self.ssh_client.run(deploy_command)
@@ -263,7 +261,7 @@ class OccamConnector(SSHConnector):
 
     async def run(self,
                   resource: Text,
-                  command: List[Text],
+                  command: MutableSequence[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   stdin: Optional[Union[int, Text]] = None,

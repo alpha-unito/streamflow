@@ -11,13 +11,6 @@
       "type": "string",
       "description": "Hostname of the HPC facility"
     },
-    "sharedPaths": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Paths shared among all the nodes in the HPC center. Only data transfers involving these locations are allowed"
-    },
     "sshKey": {
       "type": "string",
       "description": "Path to the SSH key needed to connect with Slurm environment"

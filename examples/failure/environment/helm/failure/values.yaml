@@ -1,0 +1,11 @@
+# Declare variables to be passed into your templates.
+
+replicaCount: 2
+
+image:
+  repository: mul8/sf-failure
+  tag: latest
+  pullPolicy: Always
+
+nameOverride: ""
+fullnameOverride: ""

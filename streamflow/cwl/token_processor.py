@@ -1,81 +1,89 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import urllib.parse
-from abc import abstractmethod
-from enum import Enum
-from typing import Optional, Any, List, Union, MutableMapping, Set
+from enum import Enum, auto
+from typing import Optional, Any, List, Union, MutableMapping, Set, cast, MutableSequence
 
-import cwltool.expression
 from cwltool.utils import CONTENT_LIMIT
 from typing_extensions import Text
 
-import streamflow.core.utils
-from streamflow.core.data import FileType
-from streamflow.core.scheduling import JobStatus
-from streamflow.core.workflow import Task, Port, InputPort, Job, Token
+from streamflow.core.data import FileType, LOCAL_RESOURCE
+from streamflow.core.deployment import Connector
+from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException, \
+    UnrecoverableTokenException
+from streamflow.core.utils import get_path_processor, random_name, flatten_list
+from streamflow.core.workflow import Step, Port, InputPort, Job, Token, Status, TokenProcessor
 from streamflow.cwl import utils
+from streamflow.cwl.command import CWLCommandOutput
+from streamflow.cwl.utils import get_path_from_token
 from streamflow.data import remotepath
-from streamflow.workflow.exception import WorkflowExecutionException
-from streamflow.workflow.port import DefaultTokenProcessor
+from streamflow.log_handler import logger
+from streamflow.workflow.port import DefaultTokenProcessor, UnionTokenProcessor, MapTokenProcessor, ObjectTokenProcessor
+from streamflow.workflow.step import BaseStep, BaseJob
+
+
+def _check_processor(processor: TokenProcessor, token_value: Any) -> bool:
+    # MapTokenProcessors are suitable for token lists
+    if isinstance(processor, MapTokenProcessor):
+        if isinstance(token_value, MutableSequence):
+            return _check_processor(processor.processor, token_value[0])
+        else:
+            return False
+    # At least one processor in a UnionTokenProcessor must be suitable for the token value
+    elif isinstance(processor, UnionTokenProcessor):
+        for p in processor.processors:
+            if _check_processor(p, token_value):
+                return True
+        return False
+    # An ObjectTokenProcessor must match the token value structure to be suitable
+    elif isinstance(processor, ObjectTokenProcessor):
+        if isinstance(token_value, MutableMapping):
+            for k, v in token_value.items():
+                if not (k in processor.processors and _check_processor(processor.processors[k], v)):
+                    return False
+            return True
+        else:
+            return False
+    # A default token processor must match its type with the token value type
+    elif isinstance(processor, CWLTokenProcessor):
+        return processor.port_type == utils.infer_type_from_token(token_value)
+    # Other types of TokenProcessor are not supported
+    else:
+        raise WorkflowDefinitionException("A TokenProcessor of type {type} is not supported".format(
+            type=processor.__class__.__name__))
 
 
 async def _download_file(job: Job, url: Text) -> Text:
-    connector = job.task.get_connector()
+    connector = job.step.get_connector()
     resources = job.get_resources()
     try:
-        filepath = await remotepath.download(connector, resources, url, job.input_directory)
+        return await remotepath.download(connector, resources, url, job.input_directory)
     except Exception:
         raise WorkflowExecutionException("Error downloading file from " + url)
-    return ''.join(['file://', filepath])
 
 
-async def _get_listing(job: Job, dirpath: Text, recursive: bool) -> List[MutableMapping[Text, Any]]:
-    listing_tokens = {}
-    if job.task.target is not None:
-        connector = job.task.get_connector()
-        resources = job.get_resources()
-        for resource in resources:
-            directories = await remotepath.listdir(connector, resource, dirpath, recursive, FileType.DIRECTORY)
-            for directory in directories:
-                if directory not in listing_tokens:
-                    listing_tokens[directory] = _get_token(job.task, 'Directory', directory)
-            files = await remotepath.listdir(connector, resource, dirpath, recursive, FileType.FILE)
-            for file in files:
-                if file not in listing_tokens:
-                    listing_tokens[file] = _get_token(job.task, 'File', file)
-    else:
-        content = await remotepath.listdir(None, None, dirpath, recursive, FileType.DIRECTORY)
-        for element in content:
-            is_directory = os.path.isdir(element)
-            token_class = 'Directory' if is_directory else 'File'
-            listing_tokens[element] = _get_token(job.task, token_class, element)
-    return list(listing_tokens.values())
+async def _get_class_from_path(path: Text, job: Job) -> Text:
+    connector = job.step.get_connector()
+    for resource in (job.get_resources() or [None]) if job is not None else [None]:
+        t_path = await remotepath.follow_symlink(connector, resource, path)
+        return 'File' if await remotepath.isfile(connector, resource, t_path) else 'Directory'
 
 
-def _get_paths(token_value: Any) -> List[Text]:
-    if isinstance(token_value, List):
-        paths = []
-        for t in token_value:
-            paths.extend(_get_paths(t))
-        return paths
-    else:
-        if 'path' in token_value:
-            return [token_value['path']]
-        elif 'listing' in token_value:
-            paths = []
-            for listing in token_value['listing']:
-                paths.extend(_get_paths(listing))
-            return paths
-        else:
-            return []
-
-
-def _get_token(task: Task, token_class: Text, filepath: Text) -> MutableMapping[Text, Any]:
-    path_processor = streamflow.core.utils.get_path_processor(task)
+async def _get_file_token(step: Step,
+                          job: Job,
+                          token_class: Text,
+                          filepath: Text,
+                          basename: Optional[Text] = None,
+                          load_contents: bool = False,
+                          load_listing: Optional[LoadListing] = None) -> MutableMapping[Text, Any]:
+    connector = step.get_connector()
+    resources = job.get_resources() or [None] if job is not None else [None]
+    path_processor = get_path_processor(step)
+    basename = basename or path_processor.basename(filepath)
     location = ''.join(['file://', filepath])
-    basename = path_processor.basename(filepath)
     token = {
         'class': token_class,
         'location': location,
@@ -85,13 +93,87 @@ def _get_token(task: Task, token_class: Text, filepath: Text) -> MutableMapping[
     }
     if token_class == 'File':
         token['nameroot'], token['nameext'] = path_processor.splitext(basename)
+        for resource in resources:
+            if await remotepath.exists(connector, resource, filepath):
+                token['size'] = await remotepath.size(connector, resource, filepath)
+                if load_contents:
+                    if token['size'] > CONTENT_LIMIT:
+                        raise WorkflowExecutionException(
+                            "Cannot read contents from files larger than {limit}kB".format(limit=CONTENT_LIMIT / 1024))
+                    token['contents'] = await remotepath.head(
+                        connector, resource, filepath, CONTENT_LIMIT)
+                filepath = await remotepath.follow_symlink(connector, resource, filepath)
+                token['checksum'] = 'sha1${checksum}'.format(
+                    checksum=await remotepath.checksum(connector, resource, filepath))
+                break
+    elif token_class == 'Directory' and load_listing != LoadListing.no_listing:
+        for resource in resources:
+            if await remotepath.exists(connector, resource, filepath):
+                token['listing'] = await _get_listing(
+                    step, job, filepath, load_contents, load_listing == LoadListing.deep_listing)
+                break
     return token
 
 
+async def _get_listing(
+        step: Step,
+        job: Job,
+        dirpath: Text,
+        load_contents: bool,
+        recursive: bool) -> MutableSequence[MutableMapping[Text, Any]]:
+    listing_tokens = {}
+    connector = step.get_connector()
+    resources = job.get_resources() or [None]
+    for resource in resources:
+        directories = await remotepath.listdir(connector, resource, dirpath, FileType.DIRECTORY)
+        for directory in directories:
+            if directory not in listing_tokens:
+                load_listing = LoadListing.deep_listing if recursive else LoadListing.no_listing
+                listing_tokens[directory] = asyncio.create_task(_get_file_token(
+                    step=step,
+                    job=job,
+                    token_class='Directory',
+                    filepath=directory,
+                    load_contents=load_contents,
+                    load_listing=load_listing))
+        files = await remotepath.listdir(connector, resource, dirpath, FileType.FILE)
+        for file in files:
+            if file not in listing_tokens:
+                listing_tokens[file] = asyncio.create_task(_get_file_token(
+                    step=step,
+                    job=job,
+                    token_class='File',
+                    filepath=file,
+                    load_contents=load_contents))
+    return cast(MutableSequence[MutableMapping[Text, Any]], await asyncio.gather(*listing_tokens.values()))
+
+
+def _get_paths(token_value: Any) -> MutableSequence[Text]:
+    path = get_path_from_token(token_value)
+    if path is not None:
+        return [path]
+    elif 'listing' in token_value:
+        paths = []
+        for listing in token_value['listing']:
+            paths.extend(_get_paths(listing))
+        return paths
+    else:
+        return []
+
+
+async def _expand_glob(connector: Optional[Connector], resource: Optional[Text], path: Text) -> MutableSequence[Text]:
+    return await remotepath.resolve(connector, resource, path) or []
+    # paths = await remotepath.resolve(connector, resource, path) or []
+    # follow_tasks = []
+    # for path in paths:
+    #    follow_tasks.append(remotepath.follow_symlink(connector, resource, path))
+    # return await asyncio.gather(*follow_tasks)
+
+
 class LoadListing(Enum):
-    no_listing = 1
-    shallow_listing = 2
-    deep_listing = 3
+    no_listing = auto()
+    shallow_listing = auto()
+    deep_listing = auto()
 
 
 class SecondaryFile(object):
@@ -107,348 +189,641 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     def __init__(self,
                  port: Port,
-                 expression_lib: Optional[List[Text]] = None,
-                 full_js: bool = False,
-                 glob: Optional[Text] = None,
-                 is_array: bool = False,
-                 output_eval: Optional[Text] = None):
-        super().__init__(port)
-        self.expression_lib: Optional[List[Text]] = expression_lib
-        self.full_js: bool = full_js
-        self.glob: Optional[Text] = glob
-        self.is_array: bool = is_array
-        self.output_eval: Optional[Text] = output_eval
-
-    @abstractmethod
-    async def _build_token_value(self, job: Job, token_value: Any) -> Any:
-        ...
-
-    async def _get_tokens_from_paths(self, job: Job, paths: List[Text]) -> List[Any]:
-        tasks_list = []
-        for path in paths:
-            tasks_list.append(asyncio.create_task(self._build_token_value(job, path)))
-        return await asyncio.gather(*tasks_list)
-
-    async def _register_data(self,
-                             job: Job,
-                             token_value: Union[List[MutableMapping[Text, Any]], MutableMapping[Text, Any]]):
-        if isinstance(token_value, list):
-            register_path_tasks = []
-            for t in token_value:
-                register_path_tasks.append(asyncio.create_task(self._register_data(job, t)))
-                await asyncio.gather(*register_path_tasks)
-        else:
-            paths = []
-            if 'path' in token_value:
-                paths.append(token_value['path'])
-            elif 'location' in token_value:
-                paths.append(token_value['location'])
-            elif 'listing' in token_value:
-                paths.extend([t['path'] if 'path' in t else t['location'] for t in token_value['listing']])
-            connector = job.task.get_connector()
-            resources = job.get_resources()
-            for path in paths:
-                if resources:
-                    register_path_tasks = []
-                    for resource in resources:
-                        register_path_tasks.append(asyncio.create_task(
-                            self.port.task.context.data_manager.register_path(connector, resource, path)))
-                    await asyncio.gather(*register_path_tasks)
-                else:
-                    await self.port.task.context.data_manager.register_path(connector, None, path)
-
-    async def compute_token(self, job: Job, result: Any, status: JobStatus) -> Any:
-        if status == JobStatus.SKIPPED:
-            return Token(name=self.port.name, value='null', job=job.name, weight=0)
-        context = None
-        if self.output_eval is not None:
-            context = utils.build_context(job)
-            context['runtime']['exitCode'] = result
-        if self.glob is not None:
-            # Adjust glob path
-            path_processor = streamflow.core.utils.get_path_processor(self.port.task)
-            if '$(' in self.glob or '${' in self.glob:
-                context = utils.build_context(job)
-                globpath = cwltool.expression.interpolate(
-                    self.glob,
-                    context,
-                    jslib=cwltool.expression.jshead(
-                        self.expression_lib or [], context) if self.full_js else "",
-                    fullJS=self.full_js)
-            else:
-                globpath = self.glob
-            if not path_processor.isabs(globpath):
-                globpath = path_processor.join(job.output_directory, globpath)
-            # Resolve glob
-            connector = self.port.task.get_connector()
-            resources = job.get_resources()
-            paths = []
-            for resource in resources:
-                if isinstance(globpath, List):
-                    for path in globpath:
-                        paths.extend((await remotepath.resolve(connector, resource, path)) or [])
-                else:
-                    paths.extend((await remotepath.resolve(connector, resource, globpath)) or [])
-            if self.output_eval is None:
-                # Build token
-                token_list = await self._get_tokens_from_paths(job, paths)
-                if self.is_array:
-                    weight = await self.weight_token(job, token_list)
-                    await self._register_data(job, token_list)
-                    return Token(name=self.port.name, value=token_list, job=job.name, weight=weight)
-                else:
-                    weight = await self.weight_token(job, token_list[0])
-                    await self._register_data(job, token_list[0])
-                    return Token(name=self.port.name, value=token_list[0], job=job.name, weight=weight)
-            else:
-                # Fill context['self'] with glob data
-                token_list = await self._get_tokens_from_paths(job, paths)
-                context['self'] = token_list
-        if self.output_eval is not None:
-            # Evaluate output
-            token = cwltool.expression.interpolate(
-                self.output_eval,
-                context,
-                jslib=cwltool.expression.jshead(
-                    self.expression_lib or [], context) if self.full_js else "",
-                fullJS=self.full_js)
-            # Build token
-            if isinstance(token, List):
-                paths = []
-                for element in token:
-                    paths.append(element['path'])
-                token_value = await self._get_tokens_from_paths(job, paths)
-                weight = await self.weight_token(job, token_value)
-                await self._register_data(job, token_value)
-                return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
-            else:
-                token_value = await self._build_token_value(job, token['path'])
-                weight = await self.weight_token(job, token_value)
-                await self._register_data(job, token_value)
-                return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
-        if isinstance(result, MutableMapping):
-            # Extract output directly from command result
-            token = result[self.port.name]
-            # Build token
-            if isinstance(token, List):
-                token_value = await self._get_tokens_from_paths(job, token)
-                weight = await self.weight_token(job, token_value)
-                await self._register_data(job, token_value)
-                return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
-            else:
-                token_value = await self._build_token_value(job, result[self.port.name])
-                weight = await self.weight_token(job, token_value)
-                await self._register_data(job, token_value)
-                return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
-
-
-class CWLFileProcessor(CWLTokenProcessor):
-
-    def __init__(self,
-                 port: Port,
-                 file_type: FileType,
-                 is_array: bool = False,
-                 default_path: Optional[Union[Text, List[Text]]] = None,
-                 expression_lib: Optional[List[Text]] = None,
+                 port_type: Text,
+                 default_value: Optional[Any] = None,
+                 expression_lib: Optional[MutableSequence[Text]] = None,
                  file_format: Optional[Text] = None,
                  full_js: bool = False,
                  glob: Optional[Text] = None,
                  load_contents: bool = False,
                  load_listing: LoadListing = LoadListing.no_listing,
+                 optional: bool = False,
                  output_eval: Optional[Text] = None,
-                 secondary_files: Optional[List[SecondaryFile]] = None,
+                 secondary_files: Optional[MutableSequence[SecondaryFile]] = None,
                  streamable: bool = False,
                  writable: bool = False):
-        super().__init__(
-            port=port,
-            expression_lib=expression_lib,
-            full_js=full_js,
-            glob=glob,
-            is_array=is_array,
-            output_eval=output_eval)
-        self.file_type: FileType = file_type
-        self.default_path: Optional[Union[Text, List[Text]]] = default_path
+        super().__init__(port)
+        self.expression_lib: Optional[MutableSequence[Text]] = expression_lib
+        self.full_js: bool = full_js
+        self.glob: Optional[Text] = glob
+        self.optional: bool = optional
+        self.output_eval: Optional[Text] = output_eval
+        self.port_type: Text = port_type
+        self.default_value: Optional[Any] = default_value
         self.file_format: Optional[Text] = file_format
         self.load_contents: bool = load_contents
         self.load_listing: LoadListing = load_listing
-        self.secondary_files: Optional[List[SecondaryFile]] = secondary_files
+        self.secondary_files: Optional[MutableSequence[SecondaryFile]] = secondary_files
         self.streamable: bool = streamable
         self.writable: bool = writable
 
-    async def _build_token_value(self, job: Job, token_value: Any) -> Any:
-        # TODO: manage secondary files
-        connector = self.port.task.get_connector()
-        if isinstance(token_value, Text):
-            if token_value == 'null' and self.default_path is not None:
-                token_value = self.default_path
-            token_class = 'File' if self.file_type == FileType.FILE else 'Directory'
-            token_value = _get_token(self.port.task, token_class, token_value)
-        if 'path' not in token_value and 'location' in token_value:
-            if token_value['location'].startswith('file://'):
-                token_value['path'] = token_value['location'][7:]
-        if self.load_contents and 'contents' not in token_value:
-            for resource in job.get_resources():
-                if await remotepath.exists(connector, resource, token_value['path']):
-                    token_value['contents'] = await remotepath.head(
-                        connector, resource, token_value['path'], CONTENT_LIMIT)
-                    break
-        if self.load_listing != LoadListing.no_listing and 'listing' not in token_value:
-            token_value['listing'] = await _get_listing(
-                job, token_value['path'], self.load_listing == LoadListing.deep_listing)
+    async def _build_token_value(self,
+                                 job: Job,
+                                 token_value: Any,
+                                 load_contents: Optional[bool] = None,
+                                 load_listing: Optional[LoadListing] = None) -> Any:
+        if load_contents is None:
+            load_contents = self.load_contents
+        if token_value is None:
+            return self.default_value
+        elif isinstance(token_value, MutableSequence):
+            value_tasks = []
+            for t in token_value:
+                value_tasks.append(asyncio.create_task(self._build_token_value(job, t, load_listing)))
+            return await asyncio.gather(*value_tasks)
+        elif isinstance(token_value, MutableMapping) and token_value.get('class') in ['File', 'Directory']:
+            step = job.step if job is not None else self.port.step
+            # Get filepath
+            filepath = get_path_from_token(token_value)
+            if filepath is not None:
+                # Process secondary files in token value
+                sf_map = {}
+                if 'secondaryFiles' in token_value:
+                    sf_tasks = []
+                    for sf in token_value.get('secondaryFiles', []):
+                        sf_path = get_path_from_token(sf)
+                        path_processor = get_path_processor(step)
+                        if not path_processor.isabs(sf_path):
+                            path_processor.join(path_processor.dirname(filepath), sf_path)
+                        sf_tasks.append(asyncio.create_task(_get_file_token(
+                            step=step,
+                            job=job,
+                            token_class=sf['class'],
+                            filepath=sf_path,
+                            basename=sf.get('basename'),
+                            load_contents=load_contents,
+                            load_listing=load_listing or self.load_listing)))
+                    sf_map = {get_path_from_token(sf): sf for sf in await asyncio.gather(*sf_tasks)}
+                # Compute the new token value
+                token_value = await _get_file_token(
+                    step=step,
+                    job=job,
+                    token_class=token_value.get('class'),
+                    filepath=filepath,
+                    basename=token_value.get('basename'),
+                    load_contents=load_contents,
+                    load_listing=load_listing or self.load_listing)
+                # Compute new secondary files from port specification
+                if self.secondary_files:
+                    context = utils.build_context(job)
+                    context['self'] = token_value
+                    sf_tasks, sf_specs = [], []
+                    for secondary_file in self.secondary_files:
+                        # If pattern is an expression, evaluate it and process result
+                        if '$(' in secondary_file.pattern or '${' in secondary_file.pattern:
+                            sf_value = utils.eval_expression(
+                                expression=secondary_file.pattern,
+                                context=context,
+                                full_js=self.full_js,
+                                expression_lib=self.expression_lib)
+                            if isinstance(sf_value, MutableSequence):
+                                for sf in sf_value:
+                                    sf_tasks.append(asyncio.create_task(self._process_secondary_file(
+                                        job=job,
+                                        secondary_file=sf,
+                                        token_value=token_value,
+                                        from_expression=True,
+                                        existing_sf=sf_map)))
+                                    sf_specs.append(secondary_file)
+                            else:
+                                sf_tasks.append(asyncio.create_task(self._process_secondary_file(
+                                    job=job,
+                                    secondary_file=sf_value,
+                                    token_value=token_value,
+                                    from_expression=True,
+                                    existing_sf=sf_map)))
+                                sf_specs.append(secondary_file)
+                        # Otherwise, simply process the pattern string
+                        else:
+                            sf_tasks.append(asyncio.create_task(self._process_secondary_file(
+                                job=job,
+                                secondary_file=secondary_file.pattern,
+                                token_value=token_value,
+                                from_expression=False,
+                                existing_sf=sf_map)))
+                            sf_specs.append(secondary_file)
+                    for sf_value, sf_spec in zip(await asyncio.gather(*sf_tasks), sf_specs):
+                        if sf_value is not None:
+                            sf_map[get_path_from_token(sf_value)] = sf_value
+                        elif sf_spec.required:
+                            raise WorkflowExecutionException(
+                                "Required secondary file {sf} not found".format(sf=sf_spec.pattern))
+                # Add all secondary files to the token
+                if sf_map:
+                    token_value['secondaryFiles'] = list(sf_map.values())
+            # If there is only a 'contents' field, create a file on the step's resource and build the token
+            elif 'contents' in token_value:
+                path_processor = get_path_processor(self.port.step)
+                filepath = path_processor.join(job.output_directory, token_value.get('basename', random_name()))
+                connector = job.step.get_connector()
+                resources = job.get_resources() or [None] if job is not None else [None]
+                await asyncio.gather(*[asyncio.create_task(
+                    remotepath.write(connector, res, filepath, token_value['contents'])) for res in resources])
+                token_value = await _get_file_token(
+                    step=step,
+                    job=job,
+                    token_class=token_value.get('class'),
+                    filepath=filepath,
+                    basename=token_value.get('basename'),
+                    load_contents=load_contents,
+                    load_listing=load_listing or self.load_listing)
         return token_value
+
+    async def _get_value_from_command(self, job: Job, command_output: CWLCommandOutput):
+        context = utils.build_context(job)
+        path_processor = get_path_processor(self.port.step)
+        connector = job.step.get_connector()
+        resources = job.get_resources() or [None]
+        token_value = command_output.value if command_output.value is not None else self.default_value
+        # Check if file `cwl.output.json` exists either locally on at least one resource
+        cwl_output_path = path_processor.join(job.output_directory, 'cwl.output.json')
+        for resource in resources:
+            if await remotepath.exists(connector, resource, cwl_output_path):
+                # If file exists, use its contents as token value
+                token_value = json.loads(await remotepath.read(connector, resource, cwl_output_path))
+                break
+        # If `token_value` is a dictionary, directly extract the token value from it
+        if isinstance(token_value, MutableMapping) and self.port.name in token_value:
+            token = token_value[self.port.name]
+            return await self._build_token_value(job, token)
+        # Otherwise, generate the output object as described in `outputs` field
+        if self.glob is not None:
+            # Adjust glob path
+            if '$(' in self.glob or '${' in self.glob:
+                globpath = utils.eval_expression(
+                    expression=self.glob,
+                    context=context,
+                    full_js=self.full_js,
+                    expression_lib=self.expression_lib)
+            else:
+                globpath = self.glob
+            # Resolve glob
+            resolve_tasks = []
+            for resource in resources:
+                if isinstance(globpath, MutableSequence):
+                    for path in globpath:
+                        if not path_processor.isabs(path):
+                            path = path_processor.join(job.output_directory, path)
+                        resolve_tasks.append(_expand_glob(connector, resource, path))
+                else:
+                    if not path_processor.isabs(globpath):
+                        globpath = path_processor.join(job.output_directory, globpath)
+                    resolve_tasks.append(_expand_glob(connector, resource, globpath))
+            paths = flatten_list(await asyncio.gather(*resolve_tasks))
+            # Cannot glob outside the job output folder
+            for path in paths:
+                if not path.startswith(job.output_directory):
+                    raise WorkflowDefinitionException("Globs outside the job's output folder are not allowed")
+            # Get token class from paths
+            class_tasks = [asyncio.create_task(_get_class_from_path(p, job)) for p in paths]
+            paths = [{'path': p, 'class': c} for p, c in zip(paths, await asyncio.gather(*class_tasks))]
+            # If evaluation is not needed, simply return paths as token value
+            if self.output_eval is None:
+                token_list = await self._build_token_value(job, paths)
+                return token_list if len(token_list) > 1 else token_list[0] if len(token_list) == 1 else None
+            # Otherwise, fill context['self'] with glob data and proceed
+            else:
+                context['self'] = await self._build_token_value(job, paths)
+        if self.output_eval is not None:
+            # Fill context with exit code
+            context['runtime']['exitCode'] = command_output.exit_code
+            # Evaluate output
+            token = utils.eval_expression(
+                expression=self.output_eval,
+                context=context,
+                full_js=self.full_js,
+                expression_lib=self.expression_lib
+            )
+            # Build token
+            if isinstance(token, MutableSequence):
+                paths = [{'path': el['path'], 'class': el['class']} for el in token]
+                return await self._build_token_value(job, paths)
+            else:
+                return await self._build_token_value(job, token)
+        # As the default value (no return path is met in previous code), simply process the command output
+        return await self._build_token_value(job, token_value)
+
+    async def _process_secondary_file(self,
+                                      job: Job,
+                                      secondary_file: Any,
+                                      token_value: MutableMapping[Text, Any],
+                                      from_expression: bool,
+                                      existing_sf: MutableMapping[Text, Any]) -> Optional[MutableMapping[Text, Any]]:
+        step = job.step if job is not None else self.port.step
+        # If value is None, simply return None
+        if secondary_file is None:
+            return None
+        # If value is a dictionary, simply append it to the list
+        elif isinstance(secondary_file, MutableMapping):
+            connector = job.step.get_connector()
+            filepath = utils.get_path_from_token(secondary_file)
+            for resource in job.get_resources() or [None]:
+                if await remotepath.exists(connector, resource, filepath):
+                    return await _get_file_token(
+                        step=step,
+                        job=job,
+                        token_class=secondary_file['class'],
+                        filepath=filepath,
+                        basename=secondary_file.get('basename'))
+        # If value is a string
+        else:
+            # If value doesn't come from an expression, apply it to the primary path
+            filepath = (secondary_file if from_expression else
+                        self._process_sf_path(secondary_file, utils.get_path_from_token(token_value)))
+            path_processor = get_path_processor(step)
+            if not path_processor.isabs(filepath):
+                filepath = path_processor.join(path_processor.dirname(get_path_from_token(token_value)), filepath)
+            if filepath not in existing_sf:
+                # Search file in job resources and build token value
+                connector = job.step.get_connector()
+                for resource in job.get_resources() or [None]:
+                    if await remotepath.exists(connector, resource, filepath):
+                        token_class = 'File' if await remotepath.isfile(connector, resource, filepath) else 'Directory'
+                        return await _get_file_token(
+                            step=step,
+                            job=job,
+                            token_class=token_class,
+                            filepath=filepath)
+            else:
+                return existing_sf[filepath]
+
+    def _process_sf_path(self,
+                         pattern: Text,
+                         primary_path: Text) -> Text:
+        if pattern.startswith('^'):
+            path_processor = get_path_processor(self.port.step)
+            return self._process_sf_path(pattern[1:], path_processor.splitext(primary_path)[0])
+        else:
+            return primary_path + pattern
+
+    async def _recover_path(self,
+                            job: Job,
+                            resources: MutableSequence[Text],
+                            token: Token,
+                            path: Text) -> Optional[Text]:
+        context = self.get_context()
+        connector = self.port.step.get_connector()
+        job_resources = job.get_resources() or [None]
+        # Check if path is already present in actual job's resources
+        for resource in job_resources:
+            if await remotepath.exists(connector, resource, path):
+                return path
+        # Otherwise, get the list of other file locations from DataManager
+        data_locations = set()
+        for resource in resources:
+            data_locations.update(context.data_manager.get_data_locations(resource, path))
+        # Check if path is still present in original resources
+        for location in data_locations:
+            if location.resource in job_resources and location.valid:
+                if await remotepath.exists(connector, location.resource, path):
+                    return path
+                else:
+                    context.data_manager.invalidate_location(location.resource, path)
+        # Check if files are saved locally
+        for location in data_locations:
+            if location.resource == LOCAL_RESOURCE:
+                return await self._transfer_file(None, job, location.path)
+        # If not, check if files are stored elsewhere
+        for location in data_locations:
+            if location.resource not in job_resources and location.resource != LOCAL_RESOURCE:
+                location_job = context.scheduler.get_job(location.job)
+                location_connector = location_job.step.get_connector()
+                available_resources = await location_connector.get_available_resources(
+                    location_job.step.target.service)
+                if (location.resource in available_resources and
+                        await remotepath.exists(location_connector, location.resource, location.path)):
+                    return await self._transfer_file(location_job, job, location.path)
+                else:
+                    context.data_manager.invalidate_location(location.resource, location.path)
+        # If file has been lost, raise an exception
+        message = "Failed to recover path {path} for token {token} from job {job}".format(
+            path=path, token=token.name, job=token.job)
+        logger.info(message)
+        raise UnrecoverableTokenException(message, token)
+
+    async def _recover_token(self,
+                             job: Job,
+                             resources: MutableSequence[Text],
+                             token: Token) -> Token:
+        if isinstance(token.value, MutableSequence):
+            elements = []
+            for t in token.value:
+                elements.append(await self._recover_token_value(job, resources, token, t))
+            return token.update(elements)
+        else:
+            return token.update(await self._recover_token_value(job, resources, token, token.value))
+
+    async def _recover_token_value(self,
+                                   job: Job,
+                                   resources: MutableSequence[Text],
+                                   token: Token,
+                                   token_value: Any) -> Any:
+        new_token_value = {'class': token_value['class']}
+        if 'path' in token_value and token_value['path'] is not None:
+            path = await self._recover_path(job, resources, token, token_value['path'])
+            new_token_value['path'] = path[7:] if path.startswith('file://') else path
+        elif 'location' in token_value and token_value['location'] is not None:
+            path = await self._recover_path(job, resources, token, token_value['location'])
+            new_token_value['location'] = path[7:] if path.startswith('file://') else path
+        elif 'listing' in token_value:
+            if 'basename' in token_value:
+                new_token_value['basename'] = token_value['basename']
+            new_token_value['listing'] = []
+            for listing in token_value['listing']:
+                path = listing['path'] if 'path' in listing else listing['location']
+                path = path[7:] if path.startswith('file://') else path
+                recovered_path = await self._recover_path(job, resources, token, path)
+                new_token_value['listing'].append(await _get_file_token(
+                    step=job.step,
+                    job=job,
+                    token_class=listing['class'],
+                    filepath=recovered_path))
+        secondary_files = []
+        if 'secondaryFiles' in token_value:
+            sf_tasks = [asyncio.create_task(self._recover_path(job, resources, token, get_path_from_token(sf))) for sf
+                        in token_value['secondaryFiles']]
+            secondary_files = [{'class': sf['class'], 'path': p}
+                               for p, sf in zip(await asyncio.gather(*sf_tasks), token_value['secondaryFiles'])]
+        token = await self._update_file_token(job, job, new_token_value)
+        if secondary_files:
+            token['secondaryFiles'] = secondary_files
+        return token
+
+    async def _register_data(self,
+                             job: Job,
+                             token_value: Union[MutableSequence[MutableMapping[Text, Any]], MutableMapping[Text, Any]]):
+        context = self.get_context()
+        # If `token_value` is a list, process every item independently
+        if isinstance(token_value, MutableSequence):
+            register_path_tasks = []
+            for t in token_value:
+                register_path_tasks.append(asyncio.create_task(self._register_data(job, t)))
+                await asyncio.gather(*register_path_tasks)
+        # Otherwise, if token value is a dictionary and it refers to a File or a Directory, register the path
+        elif (isinstance(token_value, MutableMapping)
+              and 'class' in token_value
+              and token_value['class'] in ['File', 'Directory']):
+            # Extract paths from token
+            paths = []
+            if 'path' in token_value and token_value['path'] is not None:
+                paths.append(token_value['path'])
+            elif 'location' in token_value and token_value['location'] is not None:
+                paths.append(token_value['location'])
+            elif 'listing' in token_value:
+                paths.extend([t['path'] if 'path' in t else t['location'] for t in token_value['listing']])
+            if 'secondaryFiles' in token_value:
+                for sf in token_value['secondaryFiles']:
+                    paths.append(get_path_from_token(sf))
+            # Remove `file` protocol if present
+            paths = [p[7:] if p.startswith('file://') else p for p in paths]
+            # Register paths to the `DataManager`
+            resources = job.get_resources() or [None]
+            for path in paths:
+                if resources:
+                    await asyncio.gather(*[asyncio.create_task(
+                            context.data_manager.register_path(job, resource, path)
+                    ) for resource in resources])
+                else:
+                    await context.data_manager.register_path(job, None, path)
+
+    async def _transfer_file(self,
+                             src_job: Optional[Job],
+                             dest_job: Optional[Job],
+                             src_path: Text,
+                             dest_path: Optional[Text] = None,
+                             writable: Optional[bool] = None) -> Text:
+        if dest_path is None:
+            if isinstance(self.port, InputPort) and src_job is not None:
+                if src_path.startswith(src_job.output_directory):
+                    path_processor = get_path_processor(self.port.dependee.step)
+                    relpath = path_processor.relpath(path_processor.normpath(src_path), src_job.output_directory)
+                    path_processor = get_path_processor(self.port.step)
+                    dest_path = path_processor.join(dest_job.input_directory, relpath)
+                else:
+                    path_processor = get_path_processor(self.port.dependee.step)
+                    basename = path_processor.basename(path_processor.normpath(src_path))
+                    path_processor = get_path_processor(self.port.step)
+                    dest_path = path_processor.join(dest_job.input_directory, basename)
+            else:
+                path_processor = get_path_processor(self.port.step)
+                dest_path = path_processor.join(
+                    dest_job.input_directory,
+                    os.path.basename(os.path.normpath(src_path)))
+        await self.get_context().data_manager.transfer_data(
+            src=src_path,
+            src_job=src_job,
+            dst=dest_path,
+            dst_job=dest_job,
+            writable=writable if writable is not None else self.writable)
+        return dest_path
 
     async def _update_file_token(self,
                                  job: Job,
                                  src_job: Job,
-                                 token_value: MutableMapping[Text, Any]) -> MutableMapping[Text, Any]:
-        if isinstance(token_value, Text):
-            token_value = {'location': ''.join(['file://', token_value])}
-        if 'location' in token_value:
+                                 token_value: Any,
+                                 load_listing: Optional[LoadListing] = None,
+                                 writable: Optional[bool] = None) -> MutableMapping[Text, Any]:
+        path_processor = get_path_processor(src_job.step) if src_job is not None else os.path
+        if 'location' not in token_value and 'path' in token_value:
+            token_value['location'] = token_value['path']
+        if 'location' in token_value and token_value['location'] is not None:
             location = token_value['location']
             # Manage remote files
             scheme = urllib.parse.urlsplit(location).scheme
             if scheme in ['http', 'https']:
                 location = await _download_file(job, location)
+            elif scheme == 'file':
+                location = location[7:]
+            # If basename is explicitly stated in the token, use it as destination path
+            dest_path = None
+            if 'basename' in token_value:
+                path_processor = get_path_processor(self.port.step)
+                dest_path = path_processor.join(job.input_directory, token_value['basename'])
             # Transfer file in task's input folder
-            filepath = await self._transfer_file(src_job, job, location[7:])
-            # Build token
-            return await self._build_token_value(job, filepath)
-        else:
-            # If there is only a 'listing' field, transfer all the listed files to the remote resource
-            if 'listing' in token_value:
-                # Compute destination path
-                if 'path' in token_value:
-                    dest_path = token_value['path']
-                elif 'basename' in token_value:
-                    path_processor = streamflow.core.utils.get_path_processor(self.port.task)
-                    dest_path = path_processor.join(job.input_directory, token_value['basename'])
-                else:
+            filepath = await self._transfer_file(
+                src_job=src_job,
+                dest_job=job,
+                src_path=location,
+                dest_path=dest_path,
+                writable=writable)
+            new_token_value = {'class': token_value['class'], 'path': filepath}
+            # If token contains secondary files, transfer them, too
+            if 'secondaryFiles' in token_value:
+                sf_tasks = []
+                for sf in token_value['secondaryFiles']:
+                    path = get_path_from_token(sf)
+                    # If basename is explicitly stated in the token, use it as destination path
                     dest_path = None
-                # Copy each element of the listing into the destination folder
-                tasks = []
-                classes = []
-                for element in token_value['listing']:
-                    if dest_path is not None:
-                        path_processor = streamflow.core.utils.get_path_processor(
-                            src_job.task) if src_job is not None else os.path
-                        basename = path_processor.basename(element['path'])
-                        path_processor = streamflow.core.utils.get_path_processor(self.port.task)
-                        current_dest_path = path_processor.join(dest_path, basename)
-                    else:
-                        current_dest_path = None
-                    tasks.append(asyncio.create_task(
-                        self._transfer_file(src_job, job, element['path'], current_dest_path)))
-                    classes.append(element['class'])
-                dest_paths = await asyncio.gather(*tasks)
-                token_value['listing'] = [
-                    _get_token(self.port.task, token_class, path) for token_class, path in zip(classes, dest_paths)]
+                    if 'basename' in sf:
+                        path_processor = get_path_processor(self.port.step)
+                        dest_path = path_processor.join(job.input_directory, sf['basename'])
+                    sf_tasks.append(asyncio.create_task(self._transfer_file(
+                        src_job=src_job,
+                        dest_job=job,
+                        src_path=path,
+                        dest_path=dest_path)))
+                sf_paths = await asyncio.gather(*sf_tasks)
+                new_token_value['secondaryFiles'] = [{'class': sf['class'], 'path': sf_path}
+                                                     for sf, sf_path in zip(token_value['secondaryFiles'], sf_paths)]
+            # Build token
+            token_value = await self._build_token_value(
+                job=job,
+                token_value=new_token_value,
+                load_contents=self.load_contents or 'contents' in token_value,
+                load_listing=load_listing)
             return token_value
-
-    async def _transfer_file(self,
-                             src_job: Job,
-                             dest_job: Job,
-                             filepath: Text,
-                             dest_path: Optional[Text] = None) -> Text:
-        if dest_path is None:
-            if isinstance(self.port, InputPort) and src_job is not None:
-                if filepath.startswith(src_job.output_directory):
-                    path_processor = streamflow.core.utils.get_path_processor(self.port.dependee.task)
-                    relpath = path_processor.relpath(filepath, src_job.output_directory)
-                    path_processor = streamflow.core.utils.get_path_processor(self.port.task)
-                    dest_path = path_processor.join(dest_job.input_directory, relpath)
+        # If there is only a 'contents' field, simply build the token value
+        elif 'contents' in token_value:
+            return await self._build_token_value(job, token_value, load_listing)
+        # If there is only a 'listing' field, transfer all the listed files to the remote resource
+        elif 'listing' in token_value:
+            # Compute destination path
+            dest_path = get_path_from_token(token_value)
+            if dest_path is None and 'basename' in token_value:
+                dest_path = path_processor.join(job.input_directory, token_value['basename'])
+            # Copy each element of the listing into the destination folder
+            tasks = []
+            classes = []
+            for element in cast(List, token_value['listing']):
+                # Compute destination path
+                if dest_path is not None:
+                    basename = path_processor.basename(element['path'])
+                    current_dest_path = path_processor.join(dest_path, basename)
                 else:
-                    path_processor = streamflow.core.utils.get_path_processor(self.port.dependee.task)
-                    basename = path_processor.basename(filepath)
-                    path_processor = streamflow.core.utils.get_path_processor(self.port.task)
-                    dest_path = path_processor.join(dest_job.input_directory, basename)
-            else:
-                path_processor = streamflow.core.utils.get_path_processor(self.port.task)
-                dest_path = path_processor.join(dest_job.input_directory, os.path.basename(filepath))
-        await self.port.task.context.data_manager.transfer_data(
-            src=filepath,
-            src_job=src_job,
-            dst=dest_path,
-            dst_job=dest_job,
-            writable=self.writable)
-        return dest_path
+                    current_dest_path = None
+                # Transfer element to the remote resource
+                tasks.append(asyncio.create_task(
+                    self._transfer_file(
+                        src_job=src_job,
+                        dest_job=job,
+                        src_path=element['path'],
+                        dest_path=current_dest_path,
+                        writable=writable)))
+                classes.append(element['class'])
+            dest_paths = await asyncio.gather(*tasks)
+            # Compute listing on remote resource
+            listing_tasks = []
+            for token_class, path in zip(classes, dest_paths):
+                listing_tasks.append(asyncio.create_task(_get_file_token(
+                    step=self.port.step,
+                    job=job,
+                    token_class=token_class,
+                    filepath=path)))
+            token_value['listing'] = await asyncio.gather(*listing_tasks)
+        return token_value
 
-    async def collect_output(self, token: Token, output_dir: Text) -> None:
-        context = self.port.task.context
-        src_job = context.scheduler.get_job(token.job)
-        dest_path = os.path.join(output_dir, token.value['basename'])
-        await self.port.task.context.data_manager.transfer_data(
-            src=token.value['path'],
-            src_job=src_job,
-            dst=dest_path,
-            dst_job=None,
-            writable=self.writable)
+    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+        if token.value is not None and self.port_type in ['File', 'Directory']:
+            context = self.get_context()
+            output_collector = BaseJob(
+                name=random_name(),
+                step=BaseStep(name=random_name(), context=context),
+                inputs=[],
+                input_directory=output_dir)
+            return token.update(await self._update_file_token(
+                job=output_collector,
+                src_job=context.scheduler.get_job(token.job),
+                token_value=token.value,
+                load_listing=LoadListing.deep_listing,
+                writable=True))
+        else:
+            return token
+
+    async def compute_token(self, job: Job, command_output: CWLCommandOutput) -> Any:
+        if command_output.status == Status.SKIPPED:
+            return Token(name=self.port.name, value=None, job=job.name)
+        token_value = await self._get_value_from_command(job, command_output)
+        await self._register_data(job, token_value)
+        weight = await self.weight_token(job, token_value)
+        return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
 
     def get_related_resources(self, token: Token) -> Set[Text]:
-        related_resources = set()
-        context = self.port.task.context
-        # If the token is actually an aggregate of multiple tokens, consider each token separately
-        paths = []
-        if isinstance(token.value, list):
-            for value in token.value:
-                paths.append(value['path'] if 'path' in token.value else value['location'])
+        if self.port_type in ['File', 'Directory']:
+            context = self.get_context()
+            # If the token is actually an aggregate of multiple tokens, consider each token separately
+            paths = []
+            if isinstance(token.value, MutableSequence):
+                for value in token.value:
+                    if path := get_path_from_token(value) is not None:
+                        paths.append(path)
+            else:
+                if path := get_path_from_token(token.value):
+                    paths.append(path)
+            resources = context.scheduler.get_job(token.job).get_resources()
+            data_locations = set()
+            for resource in resources:
+                for path in paths:
+                    data_locations.update(context.data_manager.get_data_locations(resource, path))
+            return set(loc.resource for loc in filter(lambda l: l.resource not in resources, data_locations))
         else:
-            paths.append(token.value['path'] if 'path' in token.value else token.value['location'])
-        resources = context.scheduler.get_job(token.job).get_resources()
-        for resource in resources:
-            for path in paths:
-                related_resources.update(context.data_manager.get_related_resources(resource, path))
-        return related_resources
+            return set()
+
+    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+        if isinstance(token.job, MutableSequence) or self.port_type not in ['File', 'Directory']:
+            return await super().recover_token(job, resources, token)
+        else:
+            return await self._recover_token(job, resources, token)
 
     async def update_token(self, job: Job, token: Token) -> Token:
-        # If value is a list of tokens, process each token separately
-        if isinstance(token.job, List):
+        if isinstance(token.job, MutableSequence):
             return await super().update_token(job, token)
-        # Otherwise simply process token
-        else:
-            context = self.port.task.context
+        if token.value is None and self.default_value is not None:
+            token = token.update(await self._build_token_value(job, self.default_value))
+        if self.port_type == 'Any' or self.port_type is None:
+            self.port_type = utils.infer_type_from_token(token.value)
+        if isinstance(token.value, MutableMapping) and token.value.get('class') in ['File', 'Directory']:
+            context = self.get_context()
             src_job = context.scheduler.get_job(token.job)
-            if self.is_array and isinstance(token.value, List):
+            if isinstance(token.value, MutableSequence):
                 elements = []
                 for element in token.value:
                     elements.append(await self._update_file_token(job, src_job, element))
-                return Token(name=token.name, value=elements, job=token.job, weight=token.weight)
+                return token.update(elements)
+            elif token.value is not None:
+                return token.update(await self._update_file_token(job, src_job, token.value))
             else:
-                token_value = await self._update_file_token(job, src_job, token.value)
-                return Token(name=token.name, value=token_value, job=token.job, weight=token.weight)
+                return token
+        else:
+            return token.update(await self._build_token_value(job, token.value))
 
     async def weight_token(self, job: Job, token_value: Any) -> int:
-        if job is not None and job.get_resources():
-            connector = job.task.get_connector()
-            for resource in job.get_resources():
-                return await remotepath.size(connector, resource, _get_paths(token_value))
+        if token_value is None or self.port_type not in ['File', 'Directory']:
             return 0
+        elif isinstance(token_value, MutableSequence):
+            return sum(await asyncio.gather(*[asyncio.create_task(self.weight_token(job, t)) for t in token_value]))
+        elif 'size' in token_value:
+            weight = token_value['size']
+            if 'secondaryFiles' in token_value:
+                sf_tasks = []
+                for sf in token_value['secondaryFiles']:
+                    sf_tasks.append(asyncio.create_task(self.weight_token(job, sf)))
+                weight += sum(await asyncio.gather(*sf_tasks))
+            return weight
         else:
-            return await remotepath.size(None, None, _get_paths(token_value))
+            if job is not None and job.get_resources():
+                connector = job.step.get_connector()
+                for resource in job.get_resources():
+                    return await remotepath.size(connector, resource, _get_paths(token_value))
+                return 0
+            else:
+                return await remotepath.size(None, None, _get_paths(token_value)) if token_value is not None else 0
 
 
-class CWLValueProcessor(CWLTokenProcessor):
+class CWLUnionTokenProcessor(UnionTokenProcessor):
 
     def __init__(self,
                  port: Port,
-                 is_array: bool,
-                 port_type: Text,
+                 processors: MutableSequence[TokenProcessor],
                  default_value: Optional[Any] = None,
-                 expression_lib: Optional[List[Text]] = None,
-                 full_js: bool = False,
-                 glob: Optional[Text] = None,
-                 output_eval: Optional[Text] = None):
-        super().__init__(
-            port=port,
-            expression_lib=expression_lib,
-            full_js=full_js,
-            glob=glob,
-            is_array=is_array,
-            output_eval=output_eval)
-        self.port_type: Text = port_type
+                 optional: bool = False):
+        super().__init__(port, processors)
         self.default_value: Optional[Any] = default_value
+        self.optional: bool = optional
 
-    async def _build_token_value(self, job: Job, token_value: Any) -> Any:
-        if token_value == 'null' and self.default_value is not None:
-            return self.default_value
-        else:
-            return token_value
+    def get_processor(self, token_value: Any) -> TokenProcessor:
+        if token_value is None:
+            token_value = self.default_value
+        for processor in self.processors:
+            if _check_processor(processor, token_value):
+                return processor
+        raise WorkflowDefinitionException("No suitable processors for token value " + str(token_value))

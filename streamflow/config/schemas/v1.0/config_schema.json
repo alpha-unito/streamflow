@@ -102,6 +102,11 @@
       "$id": "#/definitions/model",
       "type": "object",
       "definitions": {
+        "docker": {
+          "$id": "#/definitions/model/definitions/docker",
+          "type": "object",
+          "$ref": "docker.json"
+        },
         "docker-compose": {
           "$id": "#/definitions/model/definitions/docker-compose",
           "type": "object",
@@ -137,6 +142,7 @@
         "type": {
           "type": "string",
           "enum": [
+            "docker",
             "docker-compose",
             "helm",
             "helm2",
@@ -157,6 +163,24 @@
         }
       },
       "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "docker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$id": "#/definitions/model/properties/config",
+                "type": "object",
+                "$ref": "#/definitions/model/definitions/docker"
+              }
+            }
+          }
+        },
         {
           "if": {
             "properties": {
@@ -225,6 +249,42 @@
                 "$id": "#/definitions/model/properties/config",
                 "type": "object",
                 "$ref": "#/definitions/model/definitions/occam"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "slurm"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$id": "#/definitions/model/properties/config",
+                "type": "object",
+                "$ref": "#/definitions/model/definitions/slurm"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ssh"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$id": "#/definitions/model/properties/config",
+                "type": "object",
+                "$ref": "#/definitions/model/definitions/ssh"
               }
             }
           }

@@ -9,7 +9,7 @@ import stat
 import tempfile
 from abc import abstractmethod, ABC
 from asyncio.subprocess import STDOUT
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING, MutableSequence
 
 from streamflow.core import utils
 from streamflow.core.deployment import Connector, ConnectorCopyKind
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class BaseConnector(Connector, ABC):
 
     @staticmethod
-    def create_encoded_command(command: List[Text],
+    def create_encoded_command(command: MutableSequence[Text],
                                resource: Text,
                                environment: MutableMapping[Text, Text] = None,
                                workdir: Optional[Text] = None,
@@ -34,6 +34,7 @@ class BaseConnector(Connector, ABC):
             "{workdir}"
             "{environment}"
             "{command}"
+            "{stdin}"
             "{stdout}"
             "{stderr}"
         ).format(
@@ -60,7 +61,7 @@ class BaseConnector(Connector, ABC):
             return "-{name} ".format(name=name) if value else ""
         elif isinstance(value, str):
             return "-{name} \"{value}\" ".format(name=name, value=value)
-        elif isinstance(value, List):
+        elif isinstance(value, MutableSequence):
             return "".join(["-{name} \"{value}\" ".format(name=name, value=item) for item in value])
         elif value is None:
             return ""
@@ -68,7 +69,7 @@ class BaseConnector(Connector, ABC):
             raise TypeError("Unsupported value type")
 
     async def _build_helper_file(self,
-                                 command: List[Text],
+                                 command: MutableSequence[Text],
                                  resource: Text,
                                  environment: MutableMapping[Text, Text] = None,
                                  workdir: Optional[Text] = None,
@@ -98,7 +99,7 @@ class BaseConnector(Connector, ABC):
     async def _copy_remote_to_remote(self,
                                      src: Text,
                                      dst: Text,
-                                     resources: List[Text],
+                                     resources: MutableSequence[Text],
                                      source_remote: Text) -> None:
         # Check for the need of a temporary copy
         temp_dir = None
@@ -145,13 +146,13 @@ class BaseConnector(Connector, ABC):
     async def _copy_local_to_remote(self,
                                     src: Text,
                                     dst: Text,
-                                    resources: List[Text]) -> None:
+                                    resources: MutableSequence[Text]) -> None:
         ...
 
     async def copy(self,
                    src: Text,
                    dst: Text,
-                   resources: List[Text],
+                   resources: MutableSequence[Text],
                    kind: ConnectorCopyKind,
                    source_remote: Optional[Text] = None) -> None:
         if kind == ConnectorCopyKind.REMOTE_TO_REMOTE:

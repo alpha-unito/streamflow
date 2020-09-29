@@ -1,6 +1,6 @@
 import os
 from asyncio.subprocess import STDOUT
-from typing import Optional, List, MutableMapping, Tuple, Any, Union
+from typing import Optional, MutableSequence, MutableMapping, Tuple, Any, Union
 
 from ruamel.yaml import YAML
 from typing_extensions import Text
@@ -14,7 +14,6 @@ class SlurmConnector(SSHConnector):
                  streamflow_config_dir: Text,
                  file: Text,
                  hostname: Text,
-                 sharedPaths: List[Text],
                  sshKey: Text,
                  username: Text,
                  sshKeyPassphrase: Optional[Text] = None
@@ -29,17 +28,10 @@ class SlurmConnector(SSHConnector):
         with open(os.path.join(streamflow_config_dir, file)) as f:
             yaml = YAML(typ='safe')
             self.env_description = yaml.load(f)
-        self.sharedPaths: List[Text] = sharedPaths
-
-    def _is_shared(self, path: Text) -> bool:
-        for shared_path in self.sharedPaths:
-            if path.startswith(shared_path):
-                return True
-        return False
 
     async def _run_sbatch(self,
                           resource: Text,
-                          command: List[Text],
+                          command: MutableSequence[Text],
                           environment: MutableMapping[Text, Text] = None,
                           workdir: Optional[Text] = None,
                           stdin: Optional[Union[int, Text]] = None,
@@ -74,7 +66,7 @@ class SlurmConnector(SSHConnector):
 
     async def run(self,
                   resource: Text,
-                  command: List[Text],
+                  command: MutableSequence[Text],
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   stdin: Optional[Union[int, Text]] = None,
