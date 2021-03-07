@@ -23,7 +23,7 @@ from typing_extensions import Text
 
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
-from streamflow.deployment.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger, profile
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -51,7 +51,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                  kubeconfig: Optional[Text] = os.path.join(os.environ['HOME'], ".kube", "config"),
                  namespace: Optional[Text] = None,
                  releaseName: Optional[Text] = "release-%s" % str(uuid.uuid1()),
-                 transferBufferSize: Optional[int] = (32 << 20) - 1):
+                 transferBufferSize: int = (32 << 20) - 1):
         super().__init__(streamflow_config_dir)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
@@ -87,11 +87,9 @@ class BaseHelmConnector(BaseConnector, ABC):
             with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
                 tar.add(src, arcname=dst)
             tar_buffer.seek(0)
-            copy_tasks = []
-            for resource in effective_resources:
-                copy_tasks.append(asyncio.create_task(
-                    self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))))
-            await asyncio.gather(*copy_tasks)
+            await asyncio.gather(*[asyncio.create_task(
+                self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))
+            ) for resource in effective_resources])
 
     @profile
     async def _copy_local_to_remote_single(self,

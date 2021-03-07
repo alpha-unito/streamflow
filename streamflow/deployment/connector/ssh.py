@@ -11,7 +11,7 @@ from jinja2 import Template
 from typing_extensions import Text
 
 from streamflow.core.scheduling import Resource
-from streamflow.deployment.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector
 
 
 def _parse_hostname(hostname):

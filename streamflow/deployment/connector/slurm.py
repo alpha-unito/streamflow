@@ -5,7 +5,7 @@ from typing import Optional, MutableSequence, MutableMapping, Tuple, Any, Union
 from ruamel.yaml import YAML
 from typing_extensions import Text
 
-from streamflow.deployment.ssh import SSHConnector
+from streamflow.deployment.connector.ssh import SSHConnector
 
 
 class SlurmConnector(SSHConnector):

@@ -3,9 +3,8 @@ from __future__ import annotations
 import asyncio
 import copy
 import posixpath
-from abc import ABC, abstractmethod
 from asyncio import Event, Queue
-from typing import TYPE_CHECKING, List, MutableMapping, MutableSequence, Optional, cast
+from typing import TYPE_CHECKING, List, MutableMapping, MutableSequence, Optional, cast, Type, Callable
 
 from typing_extensions import Text
 
@@ -135,10 +134,7 @@ class MapTokenProcessor(DefaultTokenProcessor):
 
     async def collect_output(self, token: Token, output_dir: Text) -> Token:
         if isinstance(token.job, MutableSequence):
-            recover_tasks = []
-            for t in token.value:
-                recover_tasks.append(asyncio.create_task(self.processor.collect_output(t, output_dir)))
-            return token.update(await asyncio.gather(*recover_tasks))
+            return await super().collect_output(token, output_dir)
         self._check_list(token.value)
         token_tasks = []
         for i, v in enumerate(token.value):
@@ -146,7 +142,13 @@ class MapTokenProcessor(DefaultTokenProcessor):
         return token.update([t.value for t in await asyncio.gather(*token_tasks)])
 
     async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
-        token = await self.processor.compute_token(job, command_output)
+        if isinstance(command_output.value, MutableSequence):
+            token_list = await asyncio.gather(*[asyncio.create_task(
+                self.processor.compute_token(job, command_output.update(value))
+            ) for value in command_output.value])
+            token = Token(name=self.port.name, value=[t.value for t in token_list], job=job.name)
+        else:
+            token = await self.processor.compute_token(job, command_output)
         token.value = [] if token.value is None else list(token.value)
         return token
 
@@ -282,17 +284,55 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
         return weight
 
 
-class UnionTokenProcessor(DefaultTokenProcessor, ABC):
+class UnionTokenProcessor(DefaultTokenProcessor):
 
     def __init__(self,
                  port: Port,
                  processors: MutableSequence[TokenProcessor]):
         super().__init__(port)
         self.processors: MutableSequence[TokenProcessor] = processors
+        self.check_processor: MutableMapping[Type[TokenProcessor], Callable] = {
+            DefaultTokenProcessor: self._check_default_token_processor,
+            MapTokenProcessor: self._check_map_processor,
+            ObjectTokenProcessor: self._check_object_processor,
+            UnionTokenProcessor: self._check_union_processor,
+        }
 
-    @abstractmethod
+    # noinspection PyMethodMayBeStatic
+    def _check_default_token_processor(self, processor: MapTokenProcessor, token_value: Any):
+        return True
+
+    def _check_map_processor(self, processor: MapTokenProcessor, token_value: Any):
+        if isinstance(token_value, MutableSequence):
+            return self.check_processor[type(processor.processor)](processor.processor, token_value[0])
+        else:
+            return False
+
+    def _check_object_processor(self, processor: ObjectTokenProcessor, token_value: Any):
+        if isinstance(token_value, MutableMapping):
+            for k, v in token_value.items():
+                if not (k in processor.processors
+                        and self.check_processor[type(processor.processors[k])](processor.processors[k], v)):
+                    return False
+            return True
+        else:
+            return False
+
+    def _check_union_processor(self, processor: UnionTokenProcessor, token_value: Any):
+        for p in processor.processors:
+            if self.check_processor[type(p)](p, token_value):
+                return True
+        return False
+
     def get_processor(self, token_value: Any) -> TokenProcessor:
-        ...
+        for processor in self.processors:
+            if self.check_processor[type(processor)](processor, token_value):
+                return processor
+        raise WorkflowDefinitionException("No suitable processors for token value " + str(token_value))
+
+    async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
+        processor = self.get_processor(command_output.value)
+        return await processor.compute_token(job, command_output)
 
     async def collect_output(self, token: Token, output_dir: Text) -> Token:
         if isinstance(token.job, MutableSequence):

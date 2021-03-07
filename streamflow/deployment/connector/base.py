@@ -149,6 +149,7 @@ class BaseConnector(Connector, ABC):
                                     resources: MutableSequence[Text]) -> None:
         ...
 
+
     async def copy(self,
                    src: Text,
                    dst: Text,
@@ -201,3 +202,4 @@ class BaseConnector(Connector, ABC):
             await self._copy_remote_to_local(src, dst, resources[0])
         else:
             raise NotImplementedError
+

@@ -9,7 +9,7 @@ from typing_extensions import Text
 
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
-from streamflow.deployment.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
@@ -150,10 +150,9 @@ class DockerBaseConnector(BaseConnector, ABC):
                                     dst: Text,
                                     resources: MutableSequence[Text]) -> None:
         effective_resources = await _get_effective_resources(resources, dst)
-        copy_tasks = []
-        for resource in effective_resources:
-            copy_tasks.append(asyncio.create_task(_copy_local_to_remote_single(src, dst, resource)))
-        await asyncio.gather(*copy_tasks)
+        await asyncio.gather(*[asyncio.create_task(
+            _copy_local_to_remote_single(src, dst, resource)
+        ) for resource in effective_resources])
 
     async def _copy_remote_to_local(self,
                                     src: Text,
@@ -188,12 +187,9 @@ class DockerBaseConnector(BaseConnector, ABC):
                 "docker "
                 "exec ",
                 "-t ",
-                "{service} "
+                "{service} ",
                 "{command}"
             ]).format(
-                environment="".join(["--env-command %s=%s " % (key, value) for (key, value) in
-                                     environment.items()]) if environment is not None else "",
-                workdir=self.get_option("workdir", workdir) if workdir is not None else "",
                 service=resource,
                 command=helper_file
             )
@@ -233,6 +229,7 @@ class DockerConnector(DockerBaseConnector):
                  capDrop: Optional[MutableSequence[Text]] = None,
                  cgroupParent: Optional[Text] = None,
                  cidfile: Optional[Text] = None,
+                 containerIds: Optional[MutableSequence] = None,
                  cpuPeriod: Optional[int] = None,
                  cpuQuota: Optional[int] = None,
                  cpuRTPeriod: Optional[int] = None,
@@ -294,6 +291,7 @@ class DockerConnector(DockerBaseConnector):
                  publish: Optional[MutableSequence[Text]] = None,
                  publishAll: bool = False,
                  readOnly: bool = False,
+                 replicas: int = 1,
                  restart: Optional[Text] = None,
                  rm: bool = True,
                  runtime: Optional[Text] = None,
@@ -322,6 +320,7 @@ class DockerConnector(DockerBaseConnector):
         self.capDrop: Optional[MutableSequence[Text]] = capDrop
         self.cgroupParent: Optional[Text] = cgroupParent
         self.cidfile: Optional[Text] = cidfile
+        self.containerIds: MutableSequence[Text] = containerIds or []
         self.cpuPeriod: Optional[int] = cpuPeriod
         self.cpuQuota: Optional[int] = cpuQuota
         self.cpuRTPeriod: Optional[int] = cpuRTPeriod
@@ -383,6 +382,7 @@ class DockerConnector(DockerBaseConnector):
         self.publish: Optional[MutableSequence[Text]] = publish
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
+        self.replicas: int = replicas
         self.restart: Optional[Text] = restart
         self.rm: bool = rm
         self.runtime: Optional[Text] = runtime
@@ -402,7 +402,6 @@ class DockerConnector(DockerBaseConnector):
         self.volumeDriver: Optional[Text] = volumeDriver
         self.volumesFrom: Optional[MutableSequence[Text]] = volumesFrom
         self.workdir: Optional[Text] = workdir
-        self.container_id = None
 
     async def deploy(self, external: bool) -> None:
         if not external:
@@ -410,222 +409,222 @@ class DockerConnector(DockerBaseConnector):
             if not await _exists_image(self.image):
                 await _pull_image(self.image)
             # Deploy the Docker container
-            deploy_command = "".join([
-                "docker ",
-                "run "
-                "--detach "
-                "--interactive "
-                "{addHost}"
-                "{blkioWeight}"
-                "{blkioWeightDevice}"
-                "{capAdd}"
-                "{capDrop}"
-                "{cgroupParent}"
-                "{cidfile}"
-                "{cpuPeriod}"
-                "{cpuQuota}"
-                "{cpuRTPeriod}"
-                "{cpuRTRuntime}"
-                "{cpuShares}"
-                "{cpus}"
-                "{cpusetCpus}"
-                "{cpusetMems}"
-                "{detachKeys}"
-                "{device}"
-                "{deviceCgroupRule}"
-                "{deviceReadBps}"
-                "{deviceReadIops}"
-                "{deviceWriteBps}"
-                "{deviceWriteIops}"
-                "{disableContentTrust}"
-                "{dns}"
-                "{dnsOptions}"
-                "{dnsSearch}"
-                "{domainname}"
-                "{entrypoint}"
-                "{env}"
-                "{envFile}"
-                "{expose}"
-                "{gpus}"
-                "{groupAdd}"
-                "{healthCmd}"
-                "{healthInterval}"
-                "{healthRetries}"
-                "{healthStartPeriod}"
-                "{healthTimeout}"
-                "{hostname}"
-                "{init}"
-                "{ip}"
-                "{ip6}"
-                "{ipc}"
-                "{isolation}"
-                "{kernelMemory}"
-                "{label}"
-                "{labelFile}"
-                "{link}"
-                "{linkLocalIP}"
-                "{logDriver}"
-                "{logOpts}"
-                "{macAddress}"
-                "{memory}"
-                "{memoryReservation}"
-                "{memorySwap}"
-                "{memorySwappiness}"
-                "{mount}"
-                "{network}"
-                "{networkAlias}"
-                "{noHealthcheck}"
-                "{oomKillDisable}"
-                "{oomScoreAdj}"
-                "{pid}"
-                "{pidsLimit}"
-                "{privileged}"
-                "{publish}"
-                "{publishAll}"
-                "{readOnly}"
-                "{restart}"
-                "{rm}"
-                "{runtime}"
-                "{securityOpts}"
-                "{shmSize}"
-                "{sigProxy}"
-                "{stopSignal}"
-                "{stopTimeout}"
-                "{storageOpts}"
-                "{sysctl}"
-                "{tmpfs}"
-                "{ulimit}"
-                "{user}"
-                "{userns}"
-                "{uts}"
-                "{volume}"
-                "{volumeDriver}"
-                "{volumesFrom}"
-                "{workdir}"
-                "{image}"
-            ]).format(
-                addHost=self.get_option("add-host", self.addHost),
-                blkioWeight=self.get_option("blkio-weight", self.addHost),
-                blkioWeightDevice=self.get_option("blkio-weight-device", self.blkioWeightDevice),
-                capAdd=self.get_option("cap-add", self.capAdd),
-                capDrop=self.get_option("cap-drop", self.capDrop),
-                cgroupParent=self.get_option("cgroup-parent", self.cgroupParent),
-                cidfile=self.get_option("cidfile", self.cidfile),
-                cpuPeriod=self.get_option("cpu-period", self.cpuPeriod),
-                cpuQuota=self.get_option("cpu-quota", self.cpuQuota),
-                cpuRTPeriod=self.get_option("cpu-rt-period", self.cpuRTPeriod),
-                cpuRTRuntime=self.get_option("cpu-rt-runtime", self.cpuRTRuntime),
-                cpuShares=self.get_option("cpu-shares", self.cpuShares),
-                cpus=self.get_option("cpus", self.cpus),
-                cpusetCpus=self.get_option("cpuset-cpus", self.cpusetCpus),
-                cpusetMems=self.get_option("cpuset-mems", self.cpusetMems),
-                detachKeys=self.get_option("detach-keys", self.detachKeys),
-                device=self.get_option("device", self.device),
-                deviceCgroupRule=self.get_option("device-cgroup-rule", self.deviceCgroupRule),
-                deviceReadBps=self.get_option("device-read-bps", self.deviceReadBps),
-                deviceReadIops=self.get_option("device-read-iops", self.deviceReadIops),
-                deviceWriteBps=self.get_option("device-write-bps", self.deviceWriteBps),
-                deviceWriteIops=self.get_option("device-write-iops", self.deviceWriteIops),
-                disableContentTrust="--disable-content-trust={disableContentTrust} ".format(
-                    disableContentTrust="true" if self.disableContentTrust else "false"),
-                dns=self.get_option("dns", self.dns),
-                dnsOptions=self.get_option("dns-option", self.dnsOptions),
-                dnsSearch=self.get_option("dns-search", self.dnsSearch),
-                domainname=self.get_option("domainname", self.domainname),
-                entrypoint=self.get_option("entrypoint", self.entrypoint),
-                env=self.get_option("env", self.env),
-                envFile=self.get_option("env-file", self.envFile),
-                expose=self.get_option("expose", self.expose),
-                gpus=self.get_option("gpus", self.gpus),
-                groupAdd=self.get_option("group-add", self.groupAdd),
-                healthCmd=self.get_option("health-cmd", self.healthCmd),
-                healthInterval=self.get_option("health-interval", self.healthInterval),
-                healthRetries=self.get_option("health-retries", self.healthRetries),
-                healthStartPeriod=self.get_option("health-start-period", self.healthStartPeriod),
-                healthTimeout=self.get_option("health-timeout", self.healthTimeout),
-                hostname=self.get_option("hostname", self.hostname),
-                init=self.get_option("init", self.init),
-                ip=self.get_option("ip", self.ip),
-                ip6=self.get_option("ip6", self.ip6),
-                ipc=self.get_option("ipc", self.ipc),
-                isolation=self.get_option("isolation", self.isolation),
-                kernelMemory=self.get_option("kernel-memory", self.kernelMemory),
-                label=self.get_option("label", self.label),
-                labelFile=self.get_option("label-file", self.labelFile),
-                link=self.get_option("link", self.link),
-                linkLocalIP=self.get_option("link-local-ip", self.linkLocalIP),
-                logDriver=self.get_option("log-driver", self.logDriver),
-                logOpts=self.get_option("log-opt", self.logOpts),
-                macAddress=self.get_option("mac-address", self.macAddress),
-                memory=self.get_option("memory", self.memory),
-                memoryReservation=self.get_option("memory-reservation", self.memoryReservation),
-                memorySwap=self.get_option("memory-swap", self.memorySwap),
-                memorySwappiness=self.get_option("memory-swappiness", self.memorySwappiness),
-                mount=self.get_option("mount", self.mount),
-                network=self.get_option("network", self.network),
-                networkAlias=self.get_option("network-alias", self.networkAlias),
-                noHealthcheck=self.get_option("no-healthcheck", self.noHealthcheck),
-                oomKillDisable=self.get_option("oom-kill-disable", self.oomKillDisable),
-                oomScoreAdj=self.get_option("oom-score-adj", self.oomScoreAdj),
-                pid=self.get_option("pid", self.pid),
-                pidsLimit=self.get_option("pids-limit", self.pidsLimit),
-                privileged=self.get_option("privileged", self.privileged),
-                publish=self.get_option("publish", self.publish),
-                publishAll=self.get_option("publish-all", self.publishAll),
-                readOnly=self.get_option("read-only", self.readOnly),
-                restart=self.get_option("restart", self.restart),
-                rm=self.get_option("rm", self.rm),
-                runtime=self.get_option("runtime", self.runtime),
-                securityOpts=self.get_option("security-opt", self.securityOpts),
-                shmSize=self.get_option("shm-size", self.shmSize),
-                sigProxy="--sig-proxy={sigProxy} ".format(sigProxy="true" if self.sigProxy else "false"),
-                stopSignal=self.get_option("stop-signal", self.stopSignal),
-                stopTimeout=self.get_option("stop-timeout", self.stopTimeout),
-                storageOpts=self.get_option("storage-opt", self.storageOpts),
-                sysctl=self.get_option("sysctl", self.sysctl),
-                tmpfs=self.get_option("tmpfs", self.tmpfs),
-                ulimit=self.get_option("ulimit", self.ulimit),
-                user=self.get_option("user", self.user),
-                userns=self.get_option("userns", self.userns),
-                uts=self.get_option("uts", self.uts),
-                volume=self.get_option("volume", self.volume),
-                volumeDriver=self.get_option("volume-driver", self.volumeDriver),
-                volumesFrom=self.get_option("volumes-from", self.volumesFrom),
-                workdir=self.get_option("workdir", self.workdir),
-                image=self.image
-            )
-            logger.debug("Executing command {command}".format(command=deploy_command))
-            proc = await asyncio.create_subprocess_exec(
-                *shlex.split(deploy_command),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE)
-            stdout, stderr = await proc.communicate()
-            if proc.returncode == 0:
-                self.container_id = stdout.decode().strip()
-            else:
-                raise WorkflowExecutionException(stderr.decode().strip())
+            for _ in range(0, self.replicas):
+                deploy_command = "".join([
+                    "docker ",
+                    "run "
+                    "--detach "
+                    "--interactive "
+                    "{addHost}"
+                    "{blkioWeight}"
+                    "{blkioWeightDevice}"
+                    "{capAdd}"
+                    "{capDrop}"
+                    "{cgroupParent}"
+                    "{cidfile}"
+                    "{cpuPeriod}"
+                    "{cpuQuota}"
+                    "{cpuRTPeriod}"
+                    "{cpuRTRuntime}"
+                    "{cpuShares}"
+                    "{cpus}"
+                    "{cpusetCpus}"
+                    "{cpusetMems}"
+                    "{detachKeys}"
+                    "{device}"
+                    "{deviceCgroupRule}"
+                    "{deviceReadBps}"
+                    "{deviceReadIops}"
+                    "{deviceWriteBps}"
+                    "{deviceWriteIops}"
+                    "{disableContentTrust}"
+                    "{dns}"
+                    "{dnsOptions}"
+                    "{dnsSearch}"
+                    "{domainname}"
+                    "{entrypoint}"
+                    "{env}"
+                    "{envFile}"
+                    "{expose}"
+                    "{gpus}"
+                    "{groupAdd}"
+                    "{healthCmd}"
+                    "{healthInterval}"
+                    "{healthRetries}"
+                    "{healthStartPeriod}"
+                    "{healthTimeout}"
+                    "{hostname}"
+                    "{init}"
+                    "{ip}"
+                    "{ip6}"
+                    "{ipc}"
+                    "{isolation}"
+                    "{kernelMemory}"
+                    "{label}"
+                    "{labelFile}"
+                    "{link}"
+                    "{linkLocalIP}"
+                    "{logDriver}"
+                    "{logOpts}"
+                    "{macAddress}"
+                    "{memory}"
+                    "{memoryReservation}"
+                    "{memorySwap}"
+                    "{memorySwappiness}"
+                    "{mount}"
+                    "{network}"
+                    "{networkAlias}"
+                    "{noHealthcheck}"
+                    "{oomKillDisable}"
+                    "{oomScoreAdj}"
+                    "{pid}"
+                    "{pidsLimit}"
+                    "{privileged}"
+                    "{publish}"
+                    "{publishAll}"
+                    "{readOnly}"
+                    "{restart}"
+                    "{rm}"
+                    "{runtime}"
+                    "{securityOpts}"
+                    "{shmSize}"
+                    "{sigProxy}"
+                    "{stopSignal}"
+                    "{stopTimeout}"
+                    "{storageOpts}"
+                    "{sysctl}"
+                    "{tmpfs}"
+                    "{ulimit}"
+                    "{user}"
+                    "{userns}"
+                    "{uts}"
+                    "{volume}"
+                    "{volumeDriver}"
+                    "{volumesFrom}"
+                    "{workdir}"
+                    "{image}"
+                ]).format(
+                    addHost=self.get_option("add-host", self.addHost),
+                    blkioWeight=self.get_option("blkio-weight", self.addHost),
+                    blkioWeightDevice=self.get_option("blkio-weight-device", self.blkioWeightDevice),
+                    capAdd=self.get_option("cap-add", self.capAdd),
+                    capDrop=self.get_option("cap-drop", self.capDrop),
+                    cgroupParent=self.get_option("cgroup-parent", self.cgroupParent),
+                    cidfile=self.get_option("cidfile", self.cidfile),
+                    cpuPeriod=self.get_option("cpu-period", self.cpuPeriod),
+                    cpuQuota=self.get_option("cpu-quota", self.cpuQuota),
+                    cpuRTPeriod=self.get_option("cpu-rt-period", self.cpuRTPeriod),
+                    cpuRTRuntime=self.get_option("cpu-rt-runtime", self.cpuRTRuntime),
+                    cpuShares=self.get_option("cpu-shares", self.cpuShares),
+                    cpus=self.get_option("cpus", self.cpus),
+                    cpusetCpus=self.get_option("cpuset-cpus", self.cpusetCpus),
+                    cpusetMems=self.get_option("cpuset-mems", self.cpusetMems),
+                    detachKeys=self.get_option("detach-keys", self.detachKeys),
+                    device=self.get_option("device", self.device),
+                    deviceCgroupRule=self.get_option("device-cgroup-rule", self.deviceCgroupRule),
+                    deviceReadBps=self.get_option("device-read-bps", self.deviceReadBps),
+                    deviceReadIops=self.get_option("device-read-iops", self.deviceReadIops),
+                    deviceWriteBps=self.get_option("device-write-bps", self.deviceWriteBps),
+                    deviceWriteIops=self.get_option("device-write-iops", self.deviceWriteIops),
+                    disableContentTrust="--disable-content-trust={disableContentTrust} ".format(
+                        disableContentTrust="true" if self.disableContentTrust else "false"),
+                    dns=self.get_option("dns", self.dns),
+                    dnsOptions=self.get_option("dns-option", self.dnsOptions),
+                    dnsSearch=self.get_option("dns-search", self.dnsSearch),
+                    domainname=self.get_option("domainname", self.domainname),
+                    entrypoint=self.get_option("entrypoint", self.entrypoint),
+                    env=self.get_option("env", self.env),
+                    envFile=self.get_option("env-file", self.envFile),
+                    expose=self.get_option("expose", self.expose),
+                    gpus=self.get_option("gpus", self.gpus),
+                    groupAdd=self.get_option("group-add", self.groupAdd),
+                    healthCmd=self.get_option("health-cmd", self.healthCmd),
+                    healthInterval=self.get_option("health-interval", self.healthInterval),
+                    healthRetries=self.get_option("health-retries", self.healthRetries),
+                    healthStartPeriod=self.get_option("health-start-period", self.healthStartPeriod),
+                    healthTimeout=self.get_option("health-timeout", self.healthTimeout),
+                    hostname=self.get_option("hostname", self.hostname),
+                    init=self.get_option("init", self.init),
+                    ip=self.get_option("ip", self.ip),
+                    ip6=self.get_option("ip6", self.ip6),
+                    ipc=self.get_option("ipc", self.ipc),
+                    isolation=self.get_option("isolation", self.isolation),
+                    kernelMemory=self.get_option("kernel-memory", self.kernelMemory),
+                    label=self.get_option("label", self.label),
+                    labelFile=self.get_option("label-file", self.labelFile),
+                    link=self.get_option("link", self.link),
+                    linkLocalIP=self.get_option("link-local-ip", self.linkLocalIP),
+                    logDriver=self.get_option("log-driver", self.logDriver),
+                    logOpts=self.get_option("log-opt", self.logOpts),
+                    macAddress=self.get_option("mac-address", self.macAddress),
+                    memory=self.get_option("memory", self.memory),
+                    memoryReservation=self.get_option("memory-reservation", self.memoryReservation),
+                    memorySwap=self.get_option("memory-swap", self.memorySwap),
+                    memorySwappiness=self.get_option("memory-swappiness", self.memorySwappiness),
+                    mount=self.get_option("mount", self.mount),
+                    network=self.get_option("network", self.network),
+                    networkAlias=self.get_option("network-alias", self.networkAlias),
+                    noHealthcheck=self.get_option("no-healthcheck", self.noHealthcheck),
+                    oomKillDisable=self.get_option("oom-kill-disable", self.oomKillDisable),
+                    oomScoreAdj=self.get_option("oom-score-adj", self.oomScoreAdj),
+                    pid=self.get_option("pid", self.pid),
+                    pidsLimit=self.get_option("pids-limit", self.pidsLimit),
+                    privileged=self.get_option("privileged", self.privileged),
+                    publish=self.get_option("publish", self.publish),
+                    publishAll=self.get_option("publish-all", self.publishAll),
+                    readOnly=self.get_option("read-only", self.readOnly),
+                    restart=self.get_option("restart", self.restart),
+                    rm=self.get_option("rm", self.rm),
+                    runtime=self.get_option("runtime", self.runtime),
+                    securityOpts=self.get_option("security-opt", self.securityOpts),
+                    shmSize=self.get_option("shm-size", self.shmSize),
+                    sigProxy="--sig-proxy={sigProxy} ".format(sigProxy="true" if self.sigProxy else "false"),
+                    stopSignal=self.get_option("stop-signal", self.stopSignal),
+                    stopTimeout=self.get_option("stop-timeout", self.stopTimeout),
+                    storageOpts=self.get_option("storage-opt", self.storageOpts),
+                    sysctl=self.get_option("sysctl", self.sysctl),
+                    tmpfs=self.get_option("tmpfs", self.tmpfs),
+                    ulimit=self.get_option("ulimit", self.ulimit),
+                    user=self.get_option("user", self.user),
+                    userns=self.get_option("userns", self.userns),
+                    uts=self.get_option("uts", self.uts),
+                    volume=self.get_option("volume", self.volume),
+                    volumeDriver=self.get_option("volume-driver", self.volumeDriver),
+                    volumesFrom=self.get_option("volumes-from", self.volumesFrom),
+                    workdir=self.get_option("workdir", self.workdir),
+                    image=self.image
+                )
+                logger.debug("Executing command {command}".format(command=deploy_command))
+                proc = await asyncio.create_subprocess_exec(
+                    *shlex.split(deploy_command),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE)
+                stdout, stderr = await proc.communicate()
+                if proc.returncode == 0:
+                    self.containerIds.append(stdout.decode().strip())
+                else:
+                    raise WorkflowExecutionException(stderr.decode().strip())
 
     async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
-        return {
-            self.container_id: await _get_resource(self.container_id)
-        }
+        return {container_id: await _get_resource(container_id) for container_id in self.containerIds}
 
     async def undeploy(self, external: bool) -> None:
-        if not external and self.container_id is not None:
-            undeploy_command = "".join([
-                "docker ",
-                "stop "
-                "{containerId}"
-            ]).format(
-                containerId=self.container_id
-            )
-            logger.debug("Executing command {command}".format(command=undeploy_command))
-            proc = await asyncio.create_subprocess_exec(
-                *shlex.split(undeploy_command),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE)
-            await proc.wait()
-            self.container_id = None
+        if not external and self.containerIds:
+            for container_id in self.containerIds:
+                undeploy_command = "".join([
+                    "docker ",
+                    "stop "
+                    "{containerId}"
+                ]).format(
+                    containerId=container_id
+                )
+                logger.debug("Executing command {command}".format(command=undeploy_command))
+                proc = await asyncio.create_subprocess_exec(
+                    *shlex.split(undeploy_command),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE)
+                await proc.wait()
+            self.containerIds = []
 
 
 class DockerComposeConnector(DockerBaseConnector):

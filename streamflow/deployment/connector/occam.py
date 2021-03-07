@@ -11,7 +11,7 @@ from typing_extensions import Text
 
 from streamflow.core import utils
 from streamflow.core.scheduling import Resource
-from streamflow.deployment.ssh import SSHConnector
+from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
 
 

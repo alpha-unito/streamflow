@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core.data import DataManager, DataLocation, LOCAL_RESOURCE
 from streamflow.data import remotepath
-from streamflow.deployment.base import ConnectorCopyKind
+from streamflow.deployment.connector.base import ConnectorCopyKind
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
