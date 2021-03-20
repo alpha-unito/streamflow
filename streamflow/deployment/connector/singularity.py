@@ -103,31 +103,7 @@ class SingularityBaseConnector(BaseConnector, ABC):
             while data := await proc.stdout.read(self.transferBufferSize):
                 byte_buffer.write(data)
             await proc.wait()
-            byte_buffer.flush()
-            byte_buffer.seek(0)
-            with tarfile.open(fileobj=byte_buffer, mode='r:') as tar:
-                for member in tar.getmembers():
-                    if os.path.isdir(dst):
-                        if member.path == src:
-                            member.path = posixpath.basename(member.path)
-                        else:
-                            member.path = posixpath.relpath(member.path, src)
-                        tar.extract(member, dst)
-                    elif member.isfile():
-                        with tar.extractfile(member) as inputfile:
-                            with open(dst, 'wb') as outputfile:
-                                outputfile.write(inputfile.read())
-                    else:
-                        parent_dir = str(Path(dst).parent)
-                        member.path = posixpath.basename(member.path)
-                        tar.extract(member, parent_dir)
-
-    async def _copy_remote_to_remote(self,
-                                     src: Text,
-                                     dst: Text,
-                                     resources: MutableSequence[Text],
-                                     source_remote: Text) -> None:
-        await super()._copy_remote_to_remote(src, dst, resources, source_remote)
+            utils.create_tar_from_byte_stream(byte_buffer, src, dst)
 
     async def run(self,
                   resource: Text,
@@ -139,37 +115,24 @@ class SingularityBaseConnector(BaseConnector, ABC):
                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
                   job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
-        helper_file = await self._build_helper_file(
+        encoded_command = self.create_encoded_command(
             command, resource, environment, workdir, stdin, stdout, stderr)
-        try:
-            run_command = "".join([
-                "singularity "
-                "exec ",
-                "instance://{service} "
-                "{command}"
-            ]).format(
-                service=resource,
-                command=helper_file
-            )
-            proc = await asyncio.create_subprocess_exec(
-                *shlex.split(run_command),
-                stdout=asyncio.subprocess.PIPE if capture_output else None,
-                stderr=asyncio.subprocess.PIPE if capture_output else None)
-            stdout, stderr = await proc.communicate()
-            if capture_output:
-                return stdout.decode().strip(), proc.returncode
-        finally:
-            rm_command = "".join([
-                "singularity "
-                "exec ",
-                "instance://{service} ",
-                "{command}",
-            ]).format(
-                service=resource,
-                command="rm -rf {file}".format(file=helper_file)
-            )
-            proc = await asyncio.create_subprocess_exec(*shlex.split(rm_command))
-            await proc.wait()
+        run_command = "".join([
+            "singularity "
+            "exec ",
+            "instance://{service} "
+            "sh -c '{command}'"
+        ]).format(
+            service=resource,
+            command=encoded_command
+        )
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split(run_command),
+            stdout=asyncio.subprocess.PIPE if capture_output else None,
+            stderr=asyncio.subprocess.PIPE if capture_output else None)
+        stdout, stderr = await proc.communicate()
+        if capture_output:
+            return stdout.decode().strip(), proc.returncode
 
 
 class SingularityConnector(SingularityBaseConnector):

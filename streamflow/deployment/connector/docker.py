@@ -180,42 +180,27 @@ class DockerBaseConnector(BaseConnector, ABC):
                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
                   job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
-        helper_file = await self._build_helper_file(
+        encoded_command = self.create_encoded_command(
             command, resource, environment, workdir, stdin, stdout, stderr)
-        try:
-            run_command = "".join([
-                "docker "
-                "exec ",
-                "-t ",
-                "{service} ",
-                "{command}"
-            ]).format(
-                service=resource,
-                command=helper_file
-            )
-            proc = await asyncio.create_subprocess_exec(
-                *shlex.split(run_command),
-                stdout=asyncio.subprocess.PIPE if capture_output else None,
-                stderr=asyncio.subprocess.PIPE if capture_output else None)
-            if capture_output:
-                stdout, _ = await proc.communicate()
-                return stdout.decode().strip(), proc.returncode
-            else:
-                await proc.wait()
-        finally:
-            rm_command = "".join([
-                "docker "
-                "exec ",
-                "-t ",
-                "{service} ",
-                "{command}",
-            ]).format(
-                service=resource,
-                command="rm -rf {file}".format(file=helper_file)
-            )
-            proc = await asyncio.create_subprocess_exec(*shlex.split(rm_command))
+        run_command = "".join([
+            "docker "
+            "exec ",
+            "-t ",
+            "{service} ",
+            "sh -c '{command}'"
+        ]).format(
+            service=resource,
+            command=encoded_command
+        )
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split(run_command),
+            stdout=asyncio.subprocess.PIPE if capture_output else None,
+            stderr=asyncio.subprocess.PIPE if capture_output else None)
+        if capture_output:
+            stdout, _ = await proc.communicate()
+            return stdout.decode().strip(), proc.returncode
+        else:
             await proc.wait()
-
 
 class DockerConnector(DockerBaseConnector):
 

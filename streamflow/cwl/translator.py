@@ -30,7 +30,7 @@ from streamflow.cwl.token_processor import LoadListing, SecondaryFile, CWLTokenP
 from streamflow.workflow.combinator import DotProductInputCombinator, CartesianProductInputCombinator, \
     DotProductOutputCombinator
 from streamflow.workflow.port import DefaultInputPort, DefaultOutputPort, ScatterInputPort, GatherOutputPort, \
-    ObjectTokenProcessor, DefaultTokenProcessor
+    ObjectTokenProcessor
 from streamflow.workflow.step import BaseStep, BaseJob
 
 if TYPE_CHECKING:
@@ -842,9 +842,10 @@ class CWLTranslator(object):
         # Find scatter elements
         scatter_method = cwl_element.tool.get('scatterMethod')
         if isinstance(cwl_element.tool.get('scatter'), Text):
-            scatter_inputs = {_get_name(step_name, cwl_element.tool.get('scatter'))}
+            scatter_inputs = {_get_name(step_name, cwl_element.tool.get('scatter'), last_element_only=True)}
         else:
-            scatter_inputs = {_get_name(step_name, n) for n in cwl_element.tool.get('scatter', [])}
+            scatter_inputs = {_get_name(step_name, n, last_element_only=True)
+                              for n in cwl_element.tool.get('scatter', [])}
         # Process inputs
         for element_input in cwl_element.tool['inputs']:
             global_name = _get_name(step_name, element_input['id'], last_element_only=True)

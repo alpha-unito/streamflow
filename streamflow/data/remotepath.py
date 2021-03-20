@@ -104,11 +104,13 @@ async def exists(connector: Optional[Connector], target: Optional[Text], path: T
     if connector is not None:
         result, status = await connector.run(
             resource=target,
-            command=["if [ -e \"{path}\" ]; then echo \"{path}\"; fi".format(path=path)],
+            command=["test -e \"{path}\"".format(path=path)],
             capture_output=True
         )
-        _check_status(result, status)
-        return result.strip()
+        if status > 1:
+            raise WorkflowExecutionException(result)
+        else:
+            return not status
     else:
         return os.path.exists(path)
 
@@ -147,11 +149,13 @@ async def isdir(connector: Optional[Connector], target: Optional[Text], path: Te
     if connector is not None:
         result, status = await connector.run(
             resource=target,
-            command=["if [ -d \"{path}\" ]; then echo \"{path}\"; fi".format(path=path)],
+            command=["test -d \"{path}\"".format(path=path)],
             capture_output=True
         )
-        _check_status(result, status)
-        return result.strip()
+        if status > 1:
+            raise WorkflowExecutionException(result)
+        else:
+            return not status
     else:
         return os.path.isdir(path)
 
@@ -161,11 +165,13 @@ async def isfile(connector: Optional[Connector], target: Optional[Text], path: T
     if connector is not None:
         result, status = await connector.run(
             resource=target,
-            command=["if [ -f \"{path}\" ]; then echo \"{path}\"; fi".format(path=path)],
+            command=["test -f \"{path}\"".format(path=path)],
             capture_output=True
         )
-        _check_status(result, status)
-        return result.strip()
+        if status > 1:
+            raise WorkflowExecutionException(result)
+        else:
+            return not status
     else:
         return os.path.isfile(path)
 
@@ -207,7 +213,6 @@ async def mkdirs(
         targets: Optional[MutableSequence[Text]],
         paths: MutableSequence[Text]) -> None:
     if connector is not None:
-        mkdir_tasks = []
         command = ["mkdir", "-p"]
         command.extend(paths)
         await asyncio.gather(*[asyncio.create_task(

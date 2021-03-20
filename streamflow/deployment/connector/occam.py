@@ -272,7 +272,7 @@ class OccamConnector(SSHConnector):
         occam_command = "".join(
             "occam-exec "
             "{resource} "
-            "{command}"
+            "sh -c '{command}'"
         ).format(
             resource=resource,
             command=self.create_encoded_command(

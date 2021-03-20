@@ -789,7 +789,7 @@ class CWLMapTokenProcessor(MapTokenProcessor):
 
     async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
         if isinstance(command_output.value, MutableMapping) and self.port.name in command_output.value:
-            command_output = command_output.update(command_output.value[self.port.name])
+            command_output = command_output.update([{self.port.name: v} for v in command_output.value[self.port.name]])
         return await super().compute_token(job, command_output)
 
 

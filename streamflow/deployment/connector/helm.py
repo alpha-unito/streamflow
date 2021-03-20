@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import io
 import os
-import posixpath
 import shlex
 import subprocess
 import tarfile
@@ -11,7 +10,6 @@ import tempfile
 import uuid
 from abc import ABC
 from asyncio.subprocess import STDOUT
-from pathlib import Path
 from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, cast, Union
 
 import yaml
@@ -21,6 +19,7 @@ from kubernetes_asyncio.config import incluster_config, ConfigException, load_ku
 from kubernetes_asyncio.stream import WsApiClient, ws_client
 from typing_extensions import Text
 
+from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
 from streamflow.deployment.connector.base import BaseConnector
@@ -149,24 +148,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                     if data and channel == ws_client.STDOUT_CHANNEL:
                         byte_buffer.write(data)
             await response.close()
-            byte_buffer.flush()
-            byte_buffer.seek(0)
-            with tarfile.open(fileobj=byte_buffer, mode='r:') as tar:
-                for member in tar.getmembers():
-                    if os.path.isdir(dst):
-                        if member.path == src:
-                            member.path = posixpath.basename(member.path)
-                        else:
-                            member.path = posixpath.relpath(member.path, src)
-                        tar.extract(member, dst)
-                    elif member.isfile():
-                        with tar.extractfile(member) as inputfile:
-                            with open(dst, 'wb') as outputfile:
-                                outputfile.write(inputfile.read())
-                    else:
-                        parent_dir = str(Path(dst).parent)
-                        member.path = posixpath.basename(member.path)
-                        tar.extract(member, parent_dir)
+            utils.create_tar_from_byte_stream(byte_buffer, src, dst)
 
     async def _get_container(self, resource: Text) -> Tuple[Text, V1Container]:
         pod_name, container_name = resource.split(':')
@@ -223,7 +205,9 @@ class BaseHelmConnector(BaseConnector, ABC):
         self.client = client.CoreV1Api(api_client=ApiClient(configuration=configuration))
         # Init WebSocket client
         configuration = await self._get_configuration()
-        self.client_ws = client.CoreV1Api(api_client=WsApiClient(configuration=configuration))
+        ws_api_client = WsApiClient(configuration=configuration)
+        ws_api_client.set_default_header('Connection', 'upgrade,keep-alive')
+        self.client_ws = client.CoreV1Api(api_client=ws_api_client)
 
     async def get_available_resources(self, service):
         pods = await self.client.list_namespaced_pod(
@@ -259,52 +243,38 @@ class BaseHelmConnector(BaseConnector, ABC):
                   capture_output: bool = False,
                   job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         pod, container = resource.split(':')
-        helper_file = await self._build_helper_file(
+        encoded_command = self.create_encoded_command(
             command, resource, environment, workdir, stdin, stdout, stderr)
-        try:
-            response = await self.client_ws.connect_get_namespaced_pod_exec(
-                name=pod,
-                namespace=self.namespace or 'default',
-                container=container,
-                command=[helper_file],
-                stderr=True,
-                stdin=False,
-                stdout=True,
-                tty=False,
-                _preload_content=not capture_output)
-            if capture_output:
-                with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
-                    while not response.closed:
-                        async for msg in response:
-                            data = msg.data.decode('utf-8', 'replace')
-                            channel = ord(data[0])
-                            data = data[1:]
-                            if data and channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
-                                out_buffer.write(data)
-                            elif data and channel == ws_client.ERROR_CHANNEL:
-                                err_buffer.write(data)
-                    await response.close()
-                    err = yaml.safe_load(err_buffer.getvalue())
-                    if err['status'] == "Success":
-                        return out_buffer.getvalue(), 0
+        response = await self.client_ws.connect_get_namespaced_pod_exec(
+            name=pod,
+            namespace=self.namespace or 'default',
+            container=container,
+            command=["sh", "-c", "{command}".format(command=encoded_command)],
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False,
+            _preload_content=not capture_output)
+        if capture_output:
+            with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
+                while not response.closed:
+                    async for msg in response:
+                        data = msg.data.decode('utf-8', 'replace')
+                        channel = ord(data[0])
+                        data = data[1:]
+                        if data and channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
+                            out_buffer.write(data)
+                        elif data and channel == ws_client.ERROR_CHANNEL:
+                            err_buffer.write(data)
+                await response.close()
+                err = yaml.safe_load(err_buffer.getvalue())
+                if err['status'] == "Success":
+                    return out_buffer.getvalue(), 0
+                else:
+                    if 'code' in err:
+                        return err['message'], int(err['code'])
                     else:
-                        if 'code' in err:
-                            return err['message'], int(err['code'])
-                        else:
-                            return err['message'], int(err['details']['causes'][0]['message'])
-        finally:
-            command = ['rm', '-f', helper_file]
-            response = await self.client_ws.connect_get_namespaced_pod_exec(
-                name=pod,
-                namespace=self.namespace or 'default',
-                container=container,
-                command=command,
-                stderr=True,
-                stdin=False,
-                stdout=True,
-                tty=False,
-                _preload_content=False)
-            await response.close()
+                        return err['message'], int(err['details']['causes'][0]['message'])
 
     async def undeploy(self, external: bool):
         if self.client is not None:
