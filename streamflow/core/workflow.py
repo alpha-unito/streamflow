@@ -138,6 +138,10 @@ class InputCombinator(InputPort, ABC):
         super().__init__(name, step)
         self.ports: MutableMapping[Text, InputPort] = ports or {}
 
+    @abstractmethod
+    async def get(self) -> MutableSequence[Token]:
+        ...
+
 
 class OutputPort(Port, ABC):
 

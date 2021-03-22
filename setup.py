@@ -18,6 +18,7 @@ setup(
         "streamflow.cwl",
         "streamflow.data",
         "streamflow.deployment",
+        "streamflow.deployment.connector",
         "streamflow.recovery",
         "streamflow.scheduling",
         "streamflow.workflow"

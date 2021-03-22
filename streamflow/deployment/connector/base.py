@@ -47,7 +47,7 @@ class BaseConnector(Connector, ABC):
             stderr=" 2>&1" if stderr == stdout else (" 2>{stderr}".format(stderr=stderr) if stderr != STDOUT else "")
         )
         logger.debug("Executing command {command} on {resource}".format(command=decoded_command, resource=resource))
-        return "sh -c \"$(echo {command} | base64 -d)\"".format(
+        return "echo {command} | base64 -d | sh".format(
             command=base64.b64encode(decoded_command.encode('utf-8')).decode('utf-8'),
         )
 
@@ -67,34 +67,6 @@ class BaseConnector(Connector, ABC):
             return ""
         else:
             raise TypeError("Unsupported value type")
-
-    async def _build_helper_file(self,
-                                 command: MutableSequence[Text],
-                                 resource: Text,
-                                 environment: MutableMapping[Text, Text] = None,
-                                 workdir: Optional[Text] = None,
-                                 stdin: Optional[Union[int, Text]] = None,
-                                 stdout: Union[int, Text] = STDOUT,
-                                 stderr: Union[int, Text] = STDOUT) -> Text:
-        temp_file = posixpath.join('/tmp', utils.random_name())
-        file_contents = '\n'.join([
-            '#!/bin/sh',
-            self.create_encoded_command(
-                command=command,
-                resource=resource,
-                environment=environment,
-                workdir=workdir,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr)
-        ])
-        file_name = tempfile.mktemp()
-        with open(file_name, mode='w') as file:
-            file.write(file_contents)
-        os.chmod(file_name, os.stat(file_name).st_mode | stat.S_IEXEC)
-        # noinspection PyProtectedMember
-        await self._copy_local_to_remote(file_name, temp_file, [resource])
-        return temp_file
 
     async def _copy_remote_to_remote(self,
                                      src: Text,
@@ -149,6 +121,7 @@ class BaseConnector(Connector, ABC):
                                     resources: MutableSequence[Text]) -> None:
         ...
 
+
     async def copy(self,
                    src: Text,
                    dst: Text,
@@ -201,3 +174,4 @@ class BaseConnector(Connector, ABC):
             await self._copy_remote_to_local(src, dst, resources[0])
         else:
             raise NotImplementedError
+

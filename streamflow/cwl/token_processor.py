@@ -15,45 +15,14 @@ from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException, \
     UnrecoverableTokenException
 from streamflow.core.utils import get_path_processor, random_name, flatten_list
-from streamflow.core.workflow import Step, Port, InputPort, Job, Token, Status, TokenProcessor
+from streamflow.core.workflow import Step, Port, InputPort, Job, Token, Status, TokenProcessor, CommandOutput
 from streamflow.cwl import utils
 from streamflow.cwl.command import CWLCommandOutput
 from streamflow.cwl.utils import get_path_from_token
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
-from streamflow.workflow.port import DefaultTokenProcessor, UnionTokenProcessor, MapTokenProcessor, ObjectTokenProcessor
+from streamflow.workflow.port import DefaultTokenProcessor, UnionTokenProcessor, MapTokenProcessor
 from streamflow.workflow.step import BaseStep, BaseJob
-
-
-def _check_processor(processor: TokenProcessor, token_value: Any) -> bool:
-    # MapTokenProcessors are suitable for token lists
-    if isinstance(processor, MapTokenProcessor):
-        if isinstance(token_value, MutableSequence):
-            return _check_processor(processor.processor, token_value[0])
-        else:
-            return False
-    # At least one processor in a UnionTokenProcessor must be suitable for the token value
-    elif isinstance(processor, UnionTokenProcessor):
-        for p in processor.processors:
-            if _check_processor(p, token_value):
-                return True
-        return False
-    # An ObjectTokenProcessor must match the token value structure to be suitable
-    elif isinstance(processor, ObjectTokenProcessor):
-        if isinstance(token_value, MutableMapping):
-            for k, v in token_value.items():
-                if not (k in processor.processors and _check_processor(processor.processors[k], v)):
-                    return False
-            return True
-        else:
-            return False
-    # A default token processor must match its type with the token value type
-    elif isinstance(processor, CWLTokenProcessor):
-        return processor.port_type == utils.infer_type_from_token(token_value)
-    # Other types of TokenProcessor are not supported
-    else:
-        raise WorkflowDefinitionException("A TokenProcessor of type {type} is not supported".format(
-            type=processor.__class__.__name__))
 
 
 async def _download_file(job: Job, url: Text) -> Text:
@@ -713,6 +682,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         return token_value
 
     async def collect_output(self, token: Token, output_dir: Text) -> Token:
+        if isinstance(token.job, MutableSequence) or self.port_type not in ['File', 'Directory']:
+            return await super().collect_output(token, output_dir)
         if token.value is not None and self.port_type in ['File', 'Directory']:
             context = self.get_context()
             output_collector = BaseJob(
@@ -809,6 +780,19 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 return await remotepath.size(None, None, _get_paths(token_value)) if token_value is not None else 0
 
 
+class CWLMapTokenProcessor(MapTokenProcessor):
+
+    def __init__(self,
+                 port: Port,
+                 token_processor: TokenProcessor):
+        super().__init__(port, token_processor)
+
+    async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
+        if isinstance(command_output.value, MutableMapping) and self.port.name in command_output.value:
+            command_output = command_output.update([{self.port.name: v} for v in command_output.value[self.port.name]])
+        return await super().compute_token(job, command_output)
+
+
 class CWLUnionTokenProcessor(UnionTokenProcessor):
 
     def __init__(self,
@@ -819,11 +803,18 @@ class CWLUnionTokenProcessor(UnionTokenProcessor):
         super().__init__(port, processors)
         self.default_value: Optional[Any] = default_value
         self.optional: bool = optional
+        self.check_processor[CWLTokenProcessor] = self._check_cwl_processor
+        self.check_processor[CWLMapTokenProcessor] = super()._check_map_processor
+        self.check_processor[CWLUnionTokenProcessor] = super()._check_union_processor
+
+    # noinspection PyMethodMayBeStatic
+    def _check_cwl_processor(self, processor: CWLTokenProcessor, token_value: Any):
+        return (processor.port_type == utils.infer_type_from_token(token_value) if token_value is not None
+                else True)
 
     def get_processor(self, token_value: Any) -> TokenProcessor:
         if token_value is None:
             token_value = self.default_value
-        for processor in self.processors:
-            if _check_processor(processor, token_value):
-                return processor
-        raise WorkflowDefinitionException("No suitable processors for token value " + str(token_value))
+        if isinstance(token_value, MutableMapping) and self.port.name in token_value:
+            token_value = token_value[self.port.name]
+        return super().get_processor(token_value)

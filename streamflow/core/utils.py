@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
 import os
 import posixpath
 import random
 import string
+import tarfile
+from pathlib import Path
 from typing import TYPE_CHECKING, MutableSequence
 
 from streamflow.core.workflow import TerminationToken, Step
@@ -22,6 +25,32 @@ def check_termination(inputs: Iterable[Token]) -> bool:
         elif isinstance(token, TerminationToken):
             return True
     return False
+
+
+def create_tar_from_byte_stream(byte_buffer: io.BytesIO,
+                                src: Text,
+                                dst: Text) -> None:
+    byte_buffer.flush()
+    byte_buffer.seek(0)
+    with tarfile.open(fileobj=byte_buffer, mode='r:') as tar:
+        for member in tar.getmembers():
+            if os.path.isdir(dst):
+                if member.path == src:
+                    member.path = posixpath.basename(member.path)
+                    tar.extract(member, dst)
+                    if member.isdir():
+                        dst = os.path.join(dst, member.path)
+                else:
+                    member.path = posixpath.relpath(member.path, src)
+                    tar.extract(member, dst)
+            elif member.isfile():
+                with tar.extractfile(member) as inputfile:
+                    with open(dst, 'wb') as outputfile:
+                        outputfile.write(inputfile.read())
+            else:
+                parent_dir = str(Path(dst).parent)
+                member.path = posixpath.basename(member.path)
+                tar.extract(member, parent_dir)
 
 
 def get_path_processor(step: Step):

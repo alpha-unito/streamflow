@@ -10,17 +10,34 @@ from streamflow.core.workflow import InputCombinator, Token, TerminationToken, I
 
 class DotProductInputCombinator(InputCombinator):
 
+    def __init__(self,
+                 name: Text,
+                 step: Optional[Step] = None,
+                 ports: Optional[MutableMapping[Text, InputPort]] = None):
+        super().__init__(name, step, ports)
+        self.terminated: List[Text] = []
+        self.token_values: MutableMapping[Text, Any] = {}
+
     async def get(self) -> MutableSequence[Token]:
-        while True:
-            # Retrieve input tokens
-            inputs = await asyncio.gather(*[asyncio.create_task(p.get()) for p in self.ports.values()])
-            # Check for termination
-            if utils.check_termination(inputs):
-                break
-            # Return input tokens
-            return flatten_list(inputs)
-        # When terminated, return a TerminationToken
-        return [TerminationToken(self.name)]
+        # Retrieve input tokens
+        input_tasks = {}
+        for port_name, port in self.ports.items():
+            if port_name not in self.terminated:
+                input_tasks[port_name] = asyncio.create_task(port.get())
+        inputs = dict(zip(input_tasks.keys(), await asyncio.gather(*input_tasks.values())))
+        # Check for termination
+        for name, token in inputs.items():
+            # If a TerminationToken is received, the corresponding port terminated its outputs
+            if (isinstance(token, TerminationToken) or
+                    (isinstance(token, MutableSequence) and utils.check_termination(token))):
+                self.terminated.append(name)
+                # When the last port terminates, the entire combinator terminates
+                if len(self.terminated) == len(self.ports):
+                    return [TerminationToken(self.name)]
+            else:
+                self.token_values[name] = token
+        # Return input tokens
+        return utils.flatten_list(list(self.token_values.values()))
 
 
 class CartesianProductInputCombinator(InputCombinator):

@@ -25,11 +25,12 @@ from streamflow.core.workflow import Port, OutputPort, Workflow, Target, Token, 
     InputCombinator, InputPort, Job, Status
 from streamflow.cwl.command import CWLCommand, CWLExpressionCommand, CWLMapCommandToken, \
     CWLUnionCommandToken, CWLObjectCommandToken, CWLCommandToken, CWLCommandOutput, CWLStepCommand
-from streamflow.cwl.token_processor import LoadListing, SecondaryFile, CWLTokenProcessor, CWLUnionTokenProcessor
+from streamflow.cwl.token_processor import LoadListing, SecondaryFile, CWLTokenProcessor, CWLUnionTokenProcessor, \
+    CWLMapTokenProcessor
 from streamflow.workflow.combinator import DotProductInputCombinator, CartesianProductInputCombinator, \
     DotProductOutputCombinator
 from streamflow.workflow.port import DefaultInputPort, DefaultOutputPort, ScatterInputPort, GatherOutputPort, \
-    ObjectTokenProcessor, MapTokenProcessor
+    ObjectTokenProcessor
 from streamflow.workflow.step import BaseStep, BaseJob
 
 if TYPE_CHECKING:
@@ -131,13 +132,8 @@ def _create_output_port(
         port_name: Text,
         port_description: MutableMapping,
         schema_def_types: MutableMapping[Text, Any],
-        context: MutableMapping[Text, Any],
-        gather: bool = False) -> OutputPort:
-    if gather:
-        # TODO: manage nested crossproduct strategies
-        port = GatherOutputPort(port_name)
-    else:
-        port = DefaultOutputPort(port_name)
+        context: MutableMapping[Text, Any]) -> OutputPort:
+    port = DefaultOutputPort(port_name)
     port.token_processor = _create_token_processor(
         port=port,
         port_type=port_description['type'],
@@ -165,7 +161,7 @@ def _create_token_processor(
                     schema_def_types=schema_def_types,
                     context=context,
                     optional=optional)
-                return MapTokenProcessor(port, processor)
+                return CWLMapTokenProcessor(port, processor)
             # Enum type: -> substitute with string and propagate the description
             elif port_type['type'] == 'enum':
                 return _create_token_processor(
@@ -846,9 +842,10 @@ class CWLTranslator(object):
         # Find scatter elements
         scatter_method = cwl_element.tool.get('scatterMethod')
         if isinstance(cwl_element.tool.get('scatter'), Text):
-            scatter_inputs = {_get_name(step_name, cwl_element.tool.get('scatter'))}
+            scatter_inputs = {_get_name(step_name, cwl_element.tool.get('scatter'), last_element_only=True)}
         else:
-            scatter_inputs = {_get_name(step_name, n) for n in cwl_element.tool.get('scatter', [])}
+            scatter_inputs = {_get_name(step_name, n, last_element_only=True)
+                              for n in cwl_element.tool.get('scatter', [])}
         # Process inputs
         for element_input in cwl_element.tool['inputs']:
             global_name = _get_name(step_name, element_input['id'], last_element_only=True)
@@ -900,24 +897,24 @@ class CWLTranslator(object):
             inner_step = _percolate_port(inner_name, self.output_ports).step
             # If output port comes from a scatter input, place a port in the gathering step
             if _check_scatter(inner_step, scatter_inputs, []):
-                element_output = {**element_output, **{'type': element_output['type']['items']}}
                 # Create input port
-                input_port = _create_input_port(
-                    port_name=port_name,
+                input_port = DefaultInputPort(port_name, gather_step)
+                input_port.token_processor = _create_token_processor(
+                    port=input_port,
+                    port_type=element_output['type']['items'],
                     port_description=element_output,
                     schema_def_types=schema_def_types,
                     context=context)
-                input_port.step = gather_step
                 input_port.dependee = self.output_ports[inner_name]
                 gather_step.input_ports[port_name] = input_port
                 # Create output port
-                output_port = _create_output_port(
-                    port_name=port_name,
+                output_port = GatherOutputPort(port_name, gather_step)
+                output_port.token_processor = _create_token_processor(
+                    port=output_port,
+                    port_type=element_output['type']['items'],
                     port_description=element_output,
                     schema_def_types=schema_def_types,
-                    context=context,
-                    gather=True)
-                output_port.step = gather_step
+                    context=context)
                 gather_step.output_ports[port_name] = output_port
                 # Remap output port
                 gather_name = _get_name(gather_step.name, element_output['id'], last_element_only=True)

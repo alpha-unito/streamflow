@@ -1,0 +1,222 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "singularity.json",
+  "type": "object",
+  "properties": {
+    "image": {
+      "type": "string",
+      "description": "The name of the Singularity image to run"
+    },
+    "addCaps": {
+      "type": "string",
+      "description": "A comma separated capability list to add"
+    },
+    "allowSetuid": {
+      "type": "boolean",
+      "description": "Allow setuid binaries in container (root only)"
+    },
+    "applyCgroups": {
+      "type": "string",
+      "description": "Apply cgroups from file for container processes (root only)"
+    },
+    "bind": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "A user-bind path specification, in the format src[:dest[:opts]]"
+    },
+    "boot": {
+      "type": "boolean",
+      "description": "Execute /sbin/init to boot container (root only)"
+    },
+    "cleanenv": {
+      "type": "boolean",
+      "description": "Clean environment before running container"
+    },
+    "contain": {
+      "type": "boolean",
+      "description": "Use minimal /dev and empty other directories (e.g. /tmp and $HOME) instead of sharing filesystems from your host"
+    },
+    "containall": {
+      "type": "boolean",
+      "description": "Contain not only file systems, but also PID, IPC, and environment"
+    },
+    "disableCache": {
+      "type": "boolean",
+      "description": "Don't use cache and don't create cache"
+    },
+    "dns": {
+      "type": "string",
+      "description": "List of DNS server separated by commas to add in resolv.conf"
+    },
+    "dropCaps": {
+      "type": "string",
+      "description": "A comma separated capability list to drop"
+    },
+    "env": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Pass environment variable to contained process"
+    },
+    "envFile": {
+      "type": "string",
+      "description": "Pass environment variables from file to contained process"
+    },
+    "fakeroot": {
+      "type": "boolean",
+      "description": "Run container in new user namespace as uid 0"
+    },
+    "fusemount": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "A FUSE filesystem mount specification of the form '<type>:<fuse command> <mountpoint>'"
+    },
+    "home": {
+      "type": "string",
+      "description": "A home directory specification, in the format src[:dest]",
+      "default": "$HOME"
+    },
+    "hostname": {
+      "type": "string",
+      "description": "Set container hostname"
+    },
+    "instanceNames": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "When referencing an external environment, names of existing instances must be explicitly listed"
+    },
+    "keepPrivs": {
+      "type": "boolean",
+      "description": "Let root user keep privileges in container (root only)"
+    },
+    "net": {
+      "type": "boolean",
+      "description": "Run container in a new network namespace (sets up a bridge network interface by default)"
+    },
+    "network": {
+      "type": "string",
+      "description": "Specify desired network type separated by commas, each network will bring up a dedicated interface inside container"
+      "default": "bridge"
+    },
+    "networkArgs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Specify network arguments to pass to CNI plugins"
+    },
+    "noHome": {
+      "type": "boolean",
+      "description": "Do not mount users home directory if /home is not the current working directory"
+    },
+    "noInit": {
+      "type": "boolean",
+      "description": "Do not start shim processes with --pid"
+    },
+    "noMount": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Disable one or more mount xxx options set in singularity.conf"
+    },
+    "noPrivs": {
+      "type": "boolean",
+      "description": "Drop all privileges from root user in container"
+    },
+    "noUmask": {
+      "type": "boolean",
+      "description": "Do not propagate umask to the container. Set default 0022 umask"
+    },
+    "nohttps": {
+      "type": "boolean",
+      "description": "Do not use HTTPS with the docker:// transport"
+    },
+    "nv": {
+      "type": "boolean",
+      "description": "Enable experimental NVIDIA support"
+    },
+    "overlay": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Use an overlayFS image for persistent data storage or as read-only layer of container"
+    },
+    "pemPath": {
+      "type": "string",
+      "description": "Enter a path to a PEM formatted RSA key for an encrypted container"
+    },
+    "pidFile": {
+      "type": "string",
+      "description": "Write instance PID to the file with the given name"
+    },
+    "replicas": {
+      "type": "integer",
+      "description": "Number of instances to be co-allocated",
+      "default": 1
+    },
+    "rocm": {
+      "type": "boolean",
+      "description": "Enable experimental ROCM support"
+    },
+    "scratch": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Include a scratch directory within the container that is linked to a temporary dir"
+    },
+    "security": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Enable security features (SELinux, Apparmor, Seccomp)"
+    },
+    "transferBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": "16kiB",
+    },
+    "userns": {
+      "type": "boolean",
+      "description": "Run container in a new user namespace, allowing Singularity to run completely unprivileged on recent kernels. This disables some features of Singularity, for example it only works with sandbox images"
+    },
+    "uts": {
+      "type": "boolean",
+      "description": "Run container in a new UTS namespace"
+    },
+    "workdir": {
+      "type": "string",
+      "description": "Working directory to be used for /tmp, /var/tmp and $HOME (if --contain was also used)"
+    },
+    "writable": {
+      "type": "boolean",
+      "description": "By default all Singularity containers are available as read only. This option makes the file system accessible as read/write"
+    },
+    "writableTmpfs": {
+      "type": "boolean",
+      "description": "Makes the file system accessible as read/write with non persistent data (with overlay support only)"
+    }
+  },
+  "required": [
+    "image"
+  ]
+}

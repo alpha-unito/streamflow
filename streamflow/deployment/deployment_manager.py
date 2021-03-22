@@ -5,11 +5,12 @@ from asyncio import Event
 from typing import TYPE_CHECKING
 
 from streamflow.core.deployment import DeploymentManager
-from streamflow.deployment.docker import DockerConnector, DockerComposeConnector
-from streamflow.deployment.helm import Helm2Connector, Helm3Connector
-from streamflow.deployment.occam import OccamConnector
-from streamflow.deployment.slurm import SlurmConnector
-from streamflow.deployment.ssh import SSHConnector
+from streamflow.deployment.connector.docker import DockerConnector, DockerComposeConnector
+from streamflow.deployment.connector.helm import Helm2Connector, Helm3Connector
+from streamflow.deployment.connector.occam import OccamConnector
+from streamflow.deployment.connector.singularity import SingularityConnector
+from streamflow.deployment.connector.slurm import SlurmConnector
+from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
@@ -24,8 +25,9 @@ connector_classes = {
     'helm2': Helm2Connector,
     'helm3': Helm3Connector,
     'occam': OccamConnector,
-    'ssh': SSHConnector,
-    'slurm': SlurmConnector
+    'singularity': SingularityConnector,
+    'slurm': SlurmConnector,
+    'ssh': SSHConnector
 }
 
 

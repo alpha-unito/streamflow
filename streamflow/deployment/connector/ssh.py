@@ -11,7 +11,7 @@ from jinja2 import Template
 from typing_extensions import Text
 
 from streamflow.core.scheduling import Resource
-from streamflow.deployment.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector
 
 
 def _parse_hostname(hostname):
@@ -56,7 +56,7 @@ class SSHConnector(BaseConnector):
         helper_file = tempfile.mktemp()
         with open(helper_file, mode='w') as f:
             f.write(self.template.render(
-                streamflow_command=command,
+                streamflow_command="sh -c '{command}'".format(command=command),
                 streamflow_environment=environment,
                 streamflow_workdir=workdir
             ))
@@ -111,7 +111,7 @@ class SSHConnector(BaseConnector):
             helper_file = await self._build_helper_file(encoded_command, resource, environment, workdir)
             result = await self.ssh_client.run(helper_file, stderr=STDOUT)
         else:
-            result = await self.ssh_client.run(encoded_command, stderr=STDOUT)
+            result = await self.ssh_client.run("sh -c '{command}'".format(command=encoded_command), stderr=STDOUT)
         if capture_output:
             return result.stdout.strip(), result.returncode
 

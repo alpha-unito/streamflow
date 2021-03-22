@@ -127,6 +127,11 @@
           "type": "object",
           "$ref": "occam.json#"
         },
+        "singularity": {
+          "$id": "#/definitions/model/definitions/singularity",
+          "type": "object",
+          "$ref": "singularity.json#"
+        },
         "slurm": {
           "$id": "#/definitions/model/definitions/slurm",
           "type": "object",
@@ -148,6 +153,7 @@
             "helm2",
             "helm3",
             "occam",
+            "singularity",
             "slurm",
             "ssh"
           ]

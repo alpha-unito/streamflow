@@ -51,6 +51,14 @@
       "type": "string",
       "description": "Write the container ID to the file"
     },
+    "containerIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "When referencing an external environment, ids of existing containers must be explicitly listed"
+    },
     "cpuPeriod": {
       "type": "integer",
       "description": "Limit CPU CFS (Completely Fair Scheduler) period"
@@ -388,6 +396,11 @@
     "readOnly": {
       "type": "boolean",
       "description": "Mount the container's root filesystem as read only"
+    },
+    "replicas": {
+      "type": "integer",
+      "description": "Number of instances to be co-allocated",
+      "default": 1
     },
     "restart": {
       "type": "string",
