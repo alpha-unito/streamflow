@@ -9,13 +9,13 @@ branches:
 env:
   - STREAMFLOW_VERSION="$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')"
 install:
-  - pip install pipenv pip-search
+  - pip install pipenv pypisearch requests tabulate
   - pipenv --python 3.8
   - pipenv install --dev
 script: pipenv run pytest
 before_deploy:
   - |
-    if [ "${STREAMFLOW_VERSION}" != "$(pip_search streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")" ]; then
+    if [ "${STREAMFLOW_VERSION}" != "$(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")" ]; then
       # Add git tag
       git config --local user.name "alpha-unito-bot"
       git config --local user.email "alpha@di.unito.it"
@@ -51,7 +51,7 @@ deploy:
       secure: httTThmkxpkucPfUaHpE9sH5VcrOGcu7pQWQ4n3Cp1/6HTbdWUXQyP9z1NjlpIYoN9EMjNL9Qz80gTmHx392LlJmlckX3v4brWO8wQIg28BZ1YifMDou7b4igap7dqh0n65toSdgVBRakUoh2C7fNNVlXp1hQ88wcpRI8823t2GEC6p74/Lh32zjCAt5DErVxAfO3CQsEbOdA2NrRlkQjJ5d/oRl0FCHW2vXGfZEA4dYlknATKhN3zcXRL9DvAUKI4kEjVpTfUFtFmLAXpCBluVb7isbL0coO/hgno9Cnj5utH29vTOWJTkfPItEzJCyJPy9ZvDWhlHXnGRtBLpSxuuQbRhqhQPWbCu4drpnpz87X5nXPjHgcfva2DkzSAevI+o21L9vY0YzLVYIRb6OFS6AHOoe2CldGlWx25iCMcJj3b2ls9tyR0ZOB4JEcz2I9u4XDONcPVFvL7xQKYtwpH6C7N4HutW7kTnscVWZ86eZTsXkV0C9UPIkEmwRgjHHbPVl0iDj0u/Xu0wk8/gUdQWHAXJdrRqvSfUhpUpAjIK48dNGC7egR2iQDCpF7SEwZeqO0UfK5B8geHFY5J19JlIGPx82D/uVM7lXWkxuWkTZ3DQaoesIuFsSpiFJdZOwDhj3GnK4HktUoUQNQalv/fLGTCcV3q98BTbd9N2qkpE=
     on:
       branch: master
-      condition: ${STREAMFLOW_VERSION} != $(pip_search streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
+      condition: ${STREAMFLOW_VERSION} != $(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
   - provider: pypi
     user: __token__
     password:
@@ -59,5 +59,5 @@ deploy:
     distributions: sdist bdist_wheel
     on:
       branch: master
-      condition: ${STREAMFLOW_VERSION} != $(pip_search streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
+      condition: ${STREAMFLOW_VERSION} != $(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
     edge: true
