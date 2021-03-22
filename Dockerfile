@@ -7,6 +7,7 @@ COPY ./streamflow ./Pipfile ./Pipfile.lock /streamflow/
 
 RUN apk --no-cache add \
         bash \
+        cargo \
         curl \
         g++ \
         libffi-dev \
