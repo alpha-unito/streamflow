@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import io
 import json
 import os
@@ -6,8 +7,7 @@ import posixpath
 import shlex
 import tarfile
 import tempfile
-from abc import ABC
-from pathlib import Path
+from abc import ABC, abstractmethod
 from typing import MutableSequence, Optional, Union, MutableMapping, Tuple, Any, cast
 
 from typing_extensions import Text
@@ -44,13 +44,25 @@ class SingularityBaseConnector(BaseConnector, ABC):
                                     src: Text,
                                     dst: Text,
                                     resources: MutableSequence[Text]) -> None:
+        created_tar_buffer = False
+        copy_tasks = []
         with tempfile.TemporaryFile() as tar_buffer:
-            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
-                tar.add(src, arcname=dst)
-            tar_buffer.seek(0)
-            await asyncio.gather(*[asyncio.create_task(
-                self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))
-            ) for resource in resources])
+            for resource in resources:
+                if await self._is_bind_transfer(resource, src, dst):
+                    try:
+                        os.symlink(posixpath.abspath(src), dst, target_is_directory=posixpath.isdir(dst))
+                    except OSError as e:
+                        if not e.errno == errno.EEXIST:
+                            raise
+                else:
+                    if not created_tar_buffer:
+                        with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+                            tar.add(src, arcname=dst)
+                        tar_buffer.seek(0)
+                        created_tar_buffer = True
+                    copy_tasks.append(asyncio.create_task(
+                        self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))))
+        await asyncio.gather(*copy_tasks)
 
     async def _copy_local_to_remote_single(self,
                                            resource: Text,
@@ -59,14 +71,14 @@ class SingularityBaseConnector(BaseConnector, ABC):
         command = "".join([
             "singularity "
             "exec ",
-            "instance://{service} "
+            "instance://{resource} "
             "tar "
             "xf "
             "- "
             "-C "
             "/"
         ]).format(
-            service=resource
+            resource=resource
         )
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(command),
@@ -86,13 +98,13 @@ class SingularityBaseConnector(BaseConnector, ABC):
         command = "".join([
             "singularity "
             "exec ",
-            "instance://{service} "
+            "instance://{resource} "
             "tar "
             "cPf "
             "- "
             "{src}"
         ]).format(
-            service=resource,
+            resource=resource,
             src=src
         )
         proc = await asyncio.create_subprocess_exec(
@@ -104,6 +116,33 @@ class SingularityBaseConnector(BaseConnector, ABC):
                 byte_buffer.write(data)
             await proc.wait()
             utils.create_tar_from_byte_stream(byte_buffer, src, dst)
+
+    async def _copy_remote_to_remote(self,
+                                     src: Text,
+                                     dst: Text,
+                                     resources: MutableSequence[Text],
+                                     source_remote: Text) -> None:
+        if await self._is_bind_transfer(source_remote, src, src):
+            effective_resources = []
+            for resource in resources:
+                if await self._is_bind_transfer(resource, dst, dst):
+                    try:
+                        os.symlink(posixpath.abspath(src), dst, target_is_directory=posixpath.isdir(dst))
+                    except OSError as e:
+                        if not e.errno == errno.EEXIST:
+                            raise
+                else:
+                    effective_resources.append(resource)
+            await super()._copy_remote_to_remote(src, dst, effective_resources, source_remote)
+        else:
+            await super()._copy_remote_to_remote(src, dst, resources, source_remote)
+
+    @abstractmethod
+    async def _is_bind_transfer(self,
+                                resource: Text,
+                                host_path: Text,
+                                instance_path: Text) -> bool:
+        ...
 
     async def run(self,
                   resource: Text,
@@ -120,10 +159,10 @@ class SingularityBaseConnector(BaseConnector, ABC):
         run_command = "".join([
             "singularity "
             "exec ",
-            "instance://{service} "
+            "instance://{resource} "
             "sh -c '{command}'"
         ]).format(
-            service=resource,
+            resource=resource,
             command=encoded_command
         )
         proc = await asyncio.create_subprocess_exec(
@@ -208,7 +247,7 @@ class SingularityConnector(SingularityBaseConnector):
         self.networkArgs: Optional[MutableSequence[Text]] = networkArgs
         self.noHome: bool = noHome
         self.noInit: bool = noInit
-        self.noMount: Optional[MutableSequence[Text]] = noMount
+        self.noMount: Optional[MutableSequence[Text]] = noMount or []
         self.noPrivs: bool = noPrivs
         self.noUmask: bool = noUmask
         self.nohttps: bool = nohttps
@@ -225,6 +264,29 @@ class SingularityConnector(SingularityBaseConnector):
         self.workdir: Optional[Text] = workdir
         self.writable: bool = writable
         self.writableTmpfs: bool = writableTmpfs
+
+    async def _get_bind_mounts(self, resource: Text) -> MutableSequence[MutableMapping[Text, Text]]:
+        bind_mounts, _ = await self.run(
+            resource=resource,
+            command=["cat", "/proc/1/mountinfo", "|", "awk", "'{print $9,$4,$5}'"],
+            capture_output=True)
+        # Exclude `overlay` and `tmpfs` mounts
+        return [{'Source': line.split()[1], 'Destination': line.split()[2]} for line in bind_mounts.splitlines()
+                if line.split()[0] not in ['tmpfs', 'overlay']]
+
+    async def _is_bind_transfer(self,
+                                resource: Text,
+                                host_path: Text,
+                                instance_path: Text) -> bool:
+        bind_mounts = await self._get_bind_mounts(resource)
+        host_binds = [b['Source'] for b in bind_mounts]
+        instance_binds = [b['Destination'] for b in bind_mounts]
+        for host_bind in host_binds:
+            if host_path.startswith(host_bind):
+                for instance_bind in instance_binds:
+                    if instance_path.startswith(instance_bind):
+                        return True
+        return False
 
     async def deploy(self, external: bool) -> None:
         if not external:

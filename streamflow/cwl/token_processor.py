@@ -550,7 +550,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             for path in paths:
                 if resources:
                     await asyncio.gather(*[asyncio.create_task(
-                            context.data_manager.register_path(job, resource, path)
+                        context.data_manager.register_path(job, resource, path)
                     ) for resource in resources])
                 else:
                     await context.data_manager.register_path(job, None, path)

@@ -3,15 +3,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
-import posixpath
 import shutil
-import stat
 import tempfile
 from abc import abstractmethod, ABC
 from asyncio.subprocess import STDOUT
 from typing import TYPE_CHECKING, MutableSequence
 
-from streamflow.core import utils
 from streamflow.core.deployment import Connector, ConnectorCopyKind
 from streamflow.log_handler import logger
 
@@ -121,7 +118,6 @@ class BaseConnector(Connector, ABC):
                                     resources: MutableSequence[Text]) -> None:
         ...
 
-
     async def copy(self,
                    src: Text,
                    dst: Text,
@@ -174,4 +170,3 @@ class BaseConnector(Connector, ABC):
             await self._copy_remote_to_local(src, dst, resources[0])
         else:
             raise NotImplementedError
-

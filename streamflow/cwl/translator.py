@@ -419,8 +419,7 @@ def _get_command_token_from_input(cwl_element: Any,
     # Simple type with `inputBinding` specified -> CWLCommandToken
     if command_line_binding is not None:
         if token is not None:
-            command_line_binding['valueFrom'] = token
-            return _get_command_token(command_line_binding, input_name)
+            return _get_command_token({**command_line_binding, **{'valueFrom': token}}, input_name)
         else:
             return _get_command_token(command_line_binding, input_name, port_type)
     # Simple type without `inputBinding` specified -> token

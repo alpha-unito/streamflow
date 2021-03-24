@@ -291,6 +291,7 @@ class CWLMapCommandToken(CWLCommandToken):
         context = copy.deepcopy(context)
         for value in inputs:
             context['inputs'][self.name] = value
+            context['self'] = value
             bindings_map = super().get_binding(
                 context=context,
                 bindings_map=bindings_map,
