@@ -608,8 +608,7 @@ class CWLCommand(CWLBaseCommand):
                     stdin=stdin,
                     stdout=stdout,
                     stderr=stderr,
-                    capture_output=True,
-                    job_name=job.name),
+                    capture_output=True),
                 self._get_timeout(job))
         # Handle exit codes
         if self.failure_codes is not None and exit_code in self.failure_codes:

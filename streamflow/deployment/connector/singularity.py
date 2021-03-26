@@ -8,7 +8,7 @@ import shlex
 import tarfile
 import tempfile
 from abc import ABC, abstractmethod
-from typing import MutableSequence, Optional, Union, MutableMapping, Tuple, Any, cast
+from typing import MutableSequence, Optional, MutableMapping, cast
 
 from typing_extensions import Text
 
@@ -36,9 +36,8 @@ class SingularityBaseConnector(BaseConnector, ABC):
 
     def __init__(self,
                  streamflow_config_dir: Text,
-                 transferBufferSize: int = 2 ** 16):
-        super().__init__(streamflow_config_dir)
-        self.transferBufferSize: int = transferBufferSize
+                 transferBufferSize: int):
+        super().__init__(streamflow_config_dir, transferBufferSize)
 
     async def _copy_local_to_remote(self,
                                     src: Text,
@@ -64,59 +63,6 @@ class SingularityBaseConnector(BaseConnector, ABC):
                         self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))))
         await asyncio.gather(*copy_tasks)
 
-    async def _copy_local_to_remote_single(self,
-                                           resource: Text,
-                                           tar_buffer: io.BufferedRandom) -> None:
-        resource_buffer = io.BufferedReader(tar_buffer.raw)
-        command = "".join([
-            "singularity "
-            "exec ",
-            "instance://{resource} "
-            "tar "
-            "xf "
-            "- "
-            "-C "
-            "/"
-        ]).format(
-            resource=resource
-        )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(command),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL)
-        while content := resource_buffer.read(self.transferBufferSize):
-            proc.stdin.write(content)
-            await proc.stdin.drain()
-        proc.stdin.close()
-        await proc.wait()
-
-    async def _copy_remote_to_local(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resource: Text) -> None:
-        command = "".join([
-            "singularity "
-            "exec ",
-            "instance://{resource} "
-            "tar "
-            "cPf "
-            "- "
-            "{src}"
-        ]).format(
-            resource=resource,
-            src=src
-        )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(command),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE)
-        with io.BytesIO() as byte_buffer:
-            while data := await proc.stdout.read(self.transferBufferSize):
-                byte_buffer.write(data)
-            await proc.wait()
-            utils.create_tar_from_byte_stream(byte_buffer, src, dst)
-
     async def _copy_remote_to_remote(self,
                                      src: Text,
                                      dst: Text,
@@ -137,41 +83,26 @@ class SingularityBaseConnector(BaseConnector, ABC):
         else:
             await super()._copy_remote_to_remote(src, dst, resources, source_remote)
 
-    @abstractmethod
-    async def _is_bind_transfer(self,
-                                resource: Text,
-                                host_path: Text,
-                                instance_path: Text) -> bool:
-        ...
-
-    async def run(self,
-                  resource: Text,
-                  command: MutableSequence[Text],
-                  environment: MutableMapping[Text, Text] = None,
-                  workdir: Optional[Text] = None,
-                  stdin: Optional[Union[int, Text]] = None,
-                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  capture_output: bool = False,
-                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
-        encoded_command = self.create_encoded_command(
-            command, resource, environment, workdir, stdin, stdout, stderr)
-        run_command = "".join([
+    def _get_run_command(self,
+                         command: Text,
+                         resource: Text,
+                         interactive: bool = False):
+        return "".join([
             "singularity "
             "exec ",
             "instance://{resource} "
             "sh -c '{command}'"
         ]).format(
             resource=resource,
-            command=encoded_command
+            command=command
         )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(run_command),
-            stdout=asyncio.subprocess.PIPE if capture_output else None,
-            stderr=asyncio.subprocess.PIPE if capture_output else None)
-        stdout, stderr = await proc.communicate()
-        if capture_output:
-            return stdout.decode().strip(), proc.returncode
+
+    @abstractmethod
+    async def _is_bind_transfer(self,
+                                resource: Text,
+                                host_path: Text,
+                                instance_path: Text) -> bool:
+        ...
 
 
 class SingularityConnector(SingularityBaseConnector):

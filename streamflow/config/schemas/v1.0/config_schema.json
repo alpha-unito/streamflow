@@ -303,6 +303,116 @@
     }
   },
   "properties": {
+    "checkpointManager": {
+      "$id": "#/properties/checkpointManager",
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-zA-Z0-9._-]*$": {}
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable checkpointing service",
+          "default": false
+        },
+        "type": {
+          "type": "string",
+          "description": "Fully qualified class name",
+          "default": "streamflow.recovery.checkpoint_manager.DefaultCheckpointManager"
+        }
+      }
+    },
+    "dataManager": {
+      "$id": "#/properties/dataManager",
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-zA-Z0-9._-]*$": {}
+          }
+        },
+        "type": {
+          "type": "string",
+          "description": "Fully qualified class name",
+          "default": "streamflow.data.data_manager.DefaultDataManager"
+        }
+      }
+    },
+    "deploymentManager": {
+      "$id": "#/properties/deploymentManager",
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-zA-Z0-9._-]*$": {}
+          }
+        },
+        "type": {
+          "type": "string",
+          "description": "Fully qualified class name",
+          "default": "streamflow.deployment.deployment_manager.DefaultDeploymentManager"
+        }
+      }
+    },
+    "failureManager": {
+      "$id": "#/properties/failureManager",
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-zA-Z0-9._-]*$": {}
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable checkpointing service",
+          "default": false
+        },
+        "type": {
+          "type": "string",
+          "description": "Fully qualified class name",
+          "default": "streamflow.recovery.failure_manager.DefaultFailureManager"
+        }
+      }
+    },
+    "scheduler": {
+      "$id": "#/properties/scheduler",
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-zA-Z0-9._-]*$": {}
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable checkpointing service",
+          "default": false
+        },
+        "type": {
+          "type": "string",
+          "description": "Fully qualified class name",
+          "default": "streamflow.scheduling.scheduler.DefaultScheduler"
+        }
+      }
+    },
+    "models": {
+      "$id": "#/properties/models",
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "$ref": "#/definitions/model"
+        }
+      },
+      "additionalProperties": false
+    },
     "version": {
       "type": "string"
     },
@@ -312,16 +422,6 @@
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
           "$ref": "#/definitions/workflow"
-        }
-      },
-      "additionalProperties": false
-    },
-    "models": {
-      "$id": "#/properties/models",
-      "type": "object",
-      "patternProperties": {
-        "^[a-z][a-zA-Z0-9._-]*$": {
-          "$ref": "#/definitions/model"
         }
       },
       "additionalProperties": false

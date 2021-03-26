@@ -5,12 +5,9 @@ import io
 import os
 import shlex
 import subprocess
-import tarfile
-import tempfile
 import uuid
 from abc import ABC
-from asyncio.subprocess import STDOUT
-from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, cast, Union
+from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
 
 import yaml
 from kubernetes_asyncio import client
@@ -51,12 +48,11 @@ class BaseHelmConnector(BaseConnector, ABC):
                  namespace: Optional[Text] = None,
                  releaseName: Optional[Text] = "release-%s" % str(uuid.uuid1()),
                  transferBufferSize: int = (32 << 20) - 1):
-        super().__init__(streamflow_config_dir)
+        super().__init__(streamflow_config_dir, transferBufferSize)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
         self.namespace = namespace
         self.releaseName = releaseName
-        self.transferBufferSize = transferBufferSize
         self.configuration: Optional[Configuration] = None
         self.client: Optional[client.CoreV1Api] = None
         self.client_ws: Optional[client.CoreV1Api] = None
@@ -82,13 +78,7 @@ class BaseHelmConnector(BaseConnector, ABC):
 
     async def _copy_local_to_remote(self, src: Text, dst: Text, resources: MutableSequence[Text]):
         effective_resources = await self._get_effective_resources(resources, dst)
-        with tempfile.TemporaryFile() as tar_buffer:
-            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
-                tar.add(src, arcname=dst)
-            tar_buffer.seek(0)
-            await asyncio.gather(*[asyncio.create_task(
-                self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))
-            ) for resource in effective_resources])
+        await super()._copy_local_to_remote(src, dst, effective_resources)
 
     @profile
     async def _copy_local_to_remote_single(self,
@@ -209,7 +199,7 @@ class BaseHelmConnector(BaseConnector, ABC):
         ws_api_client.set_default_header('Connection', 'upgrade,keep-alive')
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
 
-    async def get_available_resources(self, service):
+    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
         pods = await self.client.list_namespaced_pod(
             namespace=self.namespace or 'default',
             label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
@@ -226,30 +216,35 @@ class BaseHelmConnector(BaseConnector, ABC):
             # Filter out not ready and Terminating resources
             if is_ready and pod.metadata.deletion_timestamp is None:
                 for container in pod.spec.containers:
-                    if service == container.name:
+                    if not service or service == container.name:
                         resource_name = pod.metadata.name + ':' + service
                         valid_targets[resource_name] = Resource(name=resource_name, hostname=pod.status.pod_ip)
                         break
         return valid_targets
 
-    async def run(self,
-                  resource: Text,
-                  command: MutableSequence[Text],
-                  environment: MutableMapping[Text, Text] = None,
-                  workdir: Optional[Text] = None,
-                  stdin: Optional[Union[int, Text]] = None,
-                  stdout: Union[int, Text] = STDOUT,
-                  stderr: Union[int, Text] = STDOUT,
-                  capture_output: bool = False,
-                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
+    async def _run(self,
+                   resource: Text,
+                   command: MutableSequence[Text],
+                   environment: MutableMapping[Text, Text] = None,
+                   workdir: Optional[Text] = None,
+                   stdin: Optional[Union[int, Text]] = None,
+                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   capture_output: bool = False,
+                   encode: bool = True,
+                   interactive: bool = False,
+                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+        command = utils.create_command(
+            command, environment, workdir, stdin, stdout, stderr)
+        logger.debug("Executing command {command} on {resource}".format(command=command, resource=resource))
+        if encode:
+            command = utils.encode_command(command)
         pod, container = resource.split(':')
-        encoded_command = self.create_encoded_command(
-            command, resource, environment, workdir, stdin, stdout, stderr)
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
             container=container,
-            command=["sh", "-c", "{command}".format(command=encoded_command)],
+            command=["sh", "-c", "{command}".format(command=command)],
             stderr=True,
             stdin=False,
             stdout=True,

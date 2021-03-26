@@ -19,16 +19,16 @@ from streamflow.parser import parser
 from streamflow.scheduling.policy import DataLocalityPolicy
 
 _DEFAULTS = {
-    'checkpoint_manager': 'streamflow.recovery.checkpoint_manager.DefaultCheckpointManager',
-    'data_manager': 'streamflow.data.data_manager.DefaultDataManager',
-    'deployment_manager': 'streamflow.deployment.deployment_manager.DefaultDeploymentManager',
-    'failure_manager': 'streamflow.recovery.failure_manager.DefaultFailureManager',
+    'checkpointManager': 'streamflow.recovery.checkpoint_manager.DefaultCheckpointManager',
+    'dataManager': 'streamflow.data.data_manager.DefaultDataManager',
+    'deploymentManager': 'streamflow.deployment.deployment_manager.DefaultDeploymentManager',
+    'failureManager': 'streamflow.recovery.failure_manager.DefaultFailureManager',
     'scheduler': 'streamflow.scheduling.scheduler.DefaultScheduler'
 }
 
 _DISABLED = {
-    'checkpoint_manager': 'streamflow.recovery.checkpoint_manager.DummyCheckpointManager',
-    'failure_manager': 'streamflow.recovery.failure_manager.DummyFailureManager'
+    'checkpointManager': 'streamflow.recovery.checkpoint_manager.DummyCheckpointManager',
+    'failureManager': 'streamflow.recovery.failure_manager.DummyFailureManager'
 }
 
 
@@ -71,17 +71,18 @@ def _get_instance_from_config(
     return class_(**kwargs)
 
 
-def get_context(streamflow_file: Text, streamflow_config: MutableMapping[Text, Any]) -> StreamFlowContext:
+def get_context(streamflow_file: Text,
+                streamflow_config: MutableMapping[Text, Any]) -> StreamFlowContext:
     config_dir = os.path.dirname(streamflow_file)
     context = StreamFlowContext(config_dir)
     context.checkpoint_manager = _get_instance_from_config(
-        streamflow_config, 'checkpoint_manager', {'context': context}, enabled_by_default=False)
+        streamflow_config, 'checkpointManager', {'context': context}, enabled_by_default=False)
     context.data_manager = _get_instance_from_config(
-        streamflow_config, 'data_manager', {'context': context})
+        streamflow_config, 'dataManager', {'context': context})
     context.deployment_manager = _get_instance_from_config(
-        streamflow_config, 'deployment_manager', {'streamflow_config_dir': config_dir})
+        streamflow_config, 'deploymentManager', {'streamflow_config_dir': config_dir})
     context.failure_manager = _get_instance_from_config(
-        streamflow_config, 'failure_manager', {'context': context}, enabled_by_default=False)
+        streamflow_config, 'failureManager', {'context': context}, enabled_by_default=False)
     context.scheduler = _get_instance_from_config(
         streamflow_config, 'scheduler', {'context': context, 'default_policy': DataLocalityPolicy()})
     return context

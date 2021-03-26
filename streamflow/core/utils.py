@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import io
 import os
 import posixpath
@@ -7,7 +9,7 @@ import random
 import string
 import tarfile
 from pathlib import Path
-from typing import TYPE_CHECKING, MutableSequence
+from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union
 
 from streamflow.core.workflow import TerminationToken, Step
 
@@ -25,6 +27,32 @@ def check_termination(inputs: Iterable[Token]) -> bool:
         elif isinstance(token, TerminationToken):
             return True
     return False
+
+
+def create_command(command: MutableSequence[Text],
+                   environment: MutableMapping[Text, Text] = None,
+                   workdir: Optional[Text] = None,
+                   stdin: Optional[Union[int, Text]] = None,
+                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
+    command = "".join(
+        "{workdir}"
+        "{environment}"
+        "{command}"
+        "{stdin}"
+        "{stdout}"
+        "{stderr}"
+    ).format(
+        workdir="cd {workdir} && ".format(workdir=workdir) if workdir is not None else "",
+        environment="".join(["export %s=%s && " % (key, value) for (key, value) in
+                             environment.items()]) if environment is not None else "",
+        command=" ".join(command),
+        stdin=" < {stdin}".format(stdin=stdin) if stdin is not None else "",
+        stdout=" > {stdout}".format(stdout=stdout) if stdout != asyncio.subprocess.STDOUT else "",
+        stderr=(" 2>&1" if stderr == stdout else
+                " 2>{stderr}".format(stderr=stderr) if stderr != asyncio.subprocess.STDOUT else
+                ""))
+    return command
 
 
 def create_tar_from_byte_stream(byte_buffer: io.BytesIO,
@@ -53,6 +81,11 @@ def create_tar_from_byte_stream(byte_buffer: io.BytesIO,
                 tar.extract(member, parent_dir)
 
 
+def encode_command(command: Text):
+    return "echo {command} | base64 -d | sh".format(
+        command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
+
+
 def get_path_processor(step: Step):
     if step is not None and step.target is not None:
         return posixpath
@@ -75,9 +108,13 @@ def get_size(path):
 def flatten_list(hierarchical_list):
     if not hierarchical_list:
         return hierarchical_list
-    if isinstance(hierarchical_list[0], MutableSequence):
-        return flatten_list(hierarchical_list[0]) + flatten_list(hierarchical_list[1:])
-    return hierarchical_list[:1] + flatten_list(hierarchical_list[1:])
+    flat_list = []
+    for el in hierarchical_list:
+        if isinstance(el, MutableSequence):
+            flat_list.extend(flatten_list(el))
+        else:
+            flat_list.append(el)
+    return flat_list
 
 
 def random_name() -> Text:

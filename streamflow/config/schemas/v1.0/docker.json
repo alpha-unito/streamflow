@@ -466,6 +466,11 @@
       "uniqueItems": true,
       "description": "Mount a tmpfs directory"
     },
+    "transferBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": "16kiB"
+    },
     "ulimit": {
       "type": "array",
       "items": {

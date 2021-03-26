@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 from abc import abstractmethod, ABC
-from asyncio.subprocess import STDOUT
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -40,10 +40,9 @@ class Connector(ABC):
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   stdin: Optional[Union[int, Text]] = None,
-                  stdout: Union[int, Text] = STDOUT,
-                  stderr: Union[int, Text] = STDOUT,
-                  capture_output: bool = False,
-                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
+                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
         ...
 
     @abstractmethod

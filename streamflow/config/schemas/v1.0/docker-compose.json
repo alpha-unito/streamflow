@@ -116,6 +116,11 @@
     "tlsverify": {
       "type": "boolean",
       "description": "Use TLS and verify the remote"
+    },
+    "transferBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": "16kiB"
     }
   },
   "required": [

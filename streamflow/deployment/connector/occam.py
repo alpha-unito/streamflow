@@ -242,11 +242,9 @@ class OccamConnector(SSHConnector):
                     deploy_tasks.append(asyncio.create_task(self._deploy_node(name, service, node)))
             await asyncio.gather(*deploy_tasks)
 
-    async def get_available_resources(self, service: str) -> MutableMapping[Text, Resource]:
-        resources = {}
-        for node in self.jobs_table.get(service, []):
-            resources[node] = Resource(name=node, hostname=node.split('-')[0])
-        return resources
+    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
+        nodes = self.jobs_table.get(service, []) if service else utils.flatten_list(self.jobs_table.values())
+        return {n: Resource(name=n, hostname=n.split('-')[0]) for n in nodes}
 
     async def undeploy(self, external: bool) -> None:
         if not external:
@@ -265,10 +263,9 @@ class OccamConnector(SSHConnector):
                   environment: MutableMapping[Text, Text] = None,
                   workdir: Optional[Text] = None,
                   stdin: Optional[Union[int, Text]] = None,
-                  stdout: Union[int, Text] = STDOUT,
-                  stderr: Union[int, Text] = STDOUT,
-                  capture_output: bool = False,
-                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
+                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
         occam_command = "".join(
             "occam-exec "
             "{resource} "

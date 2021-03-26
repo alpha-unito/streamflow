@@ -32,19 +32,18 @@ async def _file_checksum(connector: Optional[Connector], target: Optional[Text],
         result, status = await connector.run(
             resource=target,
             command=["sha1sum {path} | awk '{{print $1}}'".format(path=path)],
-            capture_output=True
-        )
+            capture_output=True)
         _check_status(result, status)
         return result.strip()
     else:
         with open(path, "rb") as f:
             sha1_checksum = sha1()
-            while data := f.read(65536):
+            while data := f.read(2**16):
                 sha1_checksum.update(data)
             return sha1_checksum.hexdigest()
 
 
-def _listdir_local(path: Text, file_type: FileType, recursive: bool = False) -> MutableSequence[Text]:
+def _listdir_local(path: Text, file_type: FileType) -> MutableSequence[Text]:
     content = []
     dir_content = os.listdir(path)
     check = os.path.isfile if file_type == FileType.FILE else os.path.isdir
@@ -82,8 +81,7 @@ async def download(
                 command=["if [ command -v curl ]; curl -L -o \"{path}\"; else wget -P \"{dir}\" {url}; fi".format(
                     dir=parent_dir,
                     path=filepath,
-                    url=url
-                )])))
+                    url=url)])))
         await asyncio.gather(*download_tasks)
     else:
         async with aiohttp.ClientSession() as session:
@@ -105,8 +103,7 @@ async def exists(connector: Optional[Connector], target: Optional[Text], path: T
         result, status = await connector.run(
             resource=target,
             command=["test -e \"{path}\"".format(path=path)],
-            capture_output=True
-        )
+            capture_output=True)
         if status > 1:
             raise WorkflowExecutionException(result)
         else:
@@ -121,8 +118,7 @@ async def follow_symlink(connector: Optional[Connector], target: Optional[Text],
         result, status = await connector.run(
             resource=target,
             command=["readlink -f \"{path}\"".format(path=path)],
-            capture_output=True
-        )
+            capture_output=True)
         _check_status(result, status)
         return result.strip()
     else:
@@ -135,8 +131,7 @@ async def head(connector: Optional[Connector], target: Optional[Text], path: Tex
         result, status = await connector.run(
             resource=target,
             command=["head", "-c", num_bytes, path],
-            capture_output=True
-        )
+            capture_output=True)
         _check_status(result, status)
         return result.strip()
     else:
@@ -150,8 +145,7 @@ async def isdir(connector: Optional[Connector], target: Optional[Text], path: Te
         result, status = await connector.run(
             resource=target,
             command=["test -d \"{path}\"".format(path=path)],
-            capture_output=True
-        )
+            capture_output=True)
         if status > 1:
             raise WorkflowExecutionException(result)
         else:
@@ -166,8 +160,7 @@ async def isfile(connector: Optional[Connector], target: Optional[Text], path: T
         result, status = await connector.run(
             resource=target,
             command=["test -f \"{path}\"".format(path=path)],
-            capture_output=True
-        )
+            capture_output=True)
         if status > 1:
             raise WorkflowExecutionException(result)
         else:
@@ -190,8 +183,7 @@ async def listdir(connector: Optional[Connector],
         content, status = await connector.run(
             resource=target,
             command=command,
-            capture_output=True
-        )
+            capture_output=True)
         _check_status(content, status)
         content = content.strip(' \n')
         return content.split('\n') if content else []
@@ -229,8 +221,7 @@ async def read(connector: Optional[Connector], target: Optional[Text], path: Tex
         result, status = await connector.run(
             resource=target,
             command=["cat", path],
-            capture_output=True
-        )
+            capture_output=True)
         _check_status(result, status)
         return result.strip()
     else:
@@ -248,8 +239,7 @@ async def resolve(
             resource=target,
             command=["printf", "\"%s\\0\"", pattern, "|", "xargs", "-0", "-n1", "-I{}",
                      "sh", "-c", "\"if [ -e \\\"{}\\\" ]; then echo \\\"{}\\\"; fi\"", "|", "sort"],
-            capture_output=True
-        )
+            capture_output=True)
         _check_status(result, status)
         return result.split()
     else:
@@ -273,8 +263,7 @@ async def size(
             command=[''.join([
                 "find -L ", path, " -type f -exec ls -ln {} \\+ | ",
                 "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; "])],
-            capture_output=True
-        )
+            capture_output=True)
         _check_status(result, status)
         result = result.strip().strip("'\"")
         return int(result) if result.isdigit() else 0
@@ -307,8 +296,7 @@ async def write(connector: Optional[Connector], target: Optional[Text], path: Te
             resource=target,
             command=["printf", "\"{content}\"".format(content=content)],
             stdout=path,
-            capture_output=True
-        )
+            capture_output=True)
         _check_status(result, status)
     else:
         with open(path, "w") as f:

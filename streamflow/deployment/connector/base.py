@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import os
+import shlex
 import shutil
+import tarfile
 import tempfile
-from abc import abstractmethod, ABC
-from asyncio.subprocess import STDOUT
-from typing import TYPE_CHECKING, MutableSequence
+from abc import ABC
+from typing import TYPE_CHECKING, MutableSequence, Tuple, cast
 
+from streamflow.core import utils
 from streamflow.core.deployment import Connector, ConnectorCopyKind
 from streamflow.log_handler import logger
 
@@ -18,35 +21,6 @@ if TYPE_CHECKING:
 
 
 class BaseConnector(Connector, ABC):
-
-    @staticmethod
-    def create_encoded_command(command: MutableSequence[Text],
-                               resource: Text,
-                               environment: MutableMapping[Text, Text] = None,
-                               workdir: Optional[Text] = None,
-                               stdin: Optional[Union[int, Text]] = None,
-                               stdout: Union[int, Text] = STDOUT,
-                               stderr: Union[int, Text] = STDOUT) -> Text:
-        decoded_command = "".join(
-            "{workdir}"
-            "{environment}"
-            "{command}"
-            "{stdin}"
-            "{stdout}"
-            "{stderr}"
-        ).format(
-            workdir="cd {workdir} && ".format(workdir=workdir) if workdir is not None else "",
-            environment="".join(["export %s=%s && " % (key, value) for (key, value) in
-                                 environment.items()]) if environment is not None else "",
-            command=" ".join(command),
-            stdin=" < {stdin}".format(stdin=stdin) if stdin is not None else "",
-            stdout=" > {stdout}".format(stdout=stdout) if stdout != STDOUT else "",
-            stderr=" 2>&1" if stderr == stdout else (" 2>{stderr}".format(stderr=stderr) if stderr != STDOUT else "")
-        )
-        logger.debug("Executing command {command} on {resource}".format(command=decoded_command, resource=resource))
-        return "echo {command} | base64 -d | sh".format(
-            command=base64.b64encode(decoded_command.encode('utf-8')).decode('utf-8'),
-        )
 
     @staticmethod
     def get_option(name: Text,
@@ -64,6 +38,57 @@ class BaseConnector(Connector, ABC):
             return ""
         else:
             raise TypeError("Unsupported value type")
+
+    def __init__(self,
+                 streamflow_config_dir: Text,
+                 transferBufferSize: int):
+        super().__init__(streamflow_config_dir)
+        self.transferBufferSize: int = transferBufferSize
+
+    async def _copy_local_to_remote(self,
+                                    src: Text,
+                                    dst: Text,
+                                    resources: MutableSequence[Text]) -> None:
+        with tempfile.TemporaryFile() as tar_buffer:
+            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+                tar.add(src, arcname=dst)
+            tar_buffer.seek(0)
+            await asyncio.gather(*[asyncio.create_task(
+                self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))
+            ) for resource in resources])
+
+    async def _copy_local_to_remote_single(self,
+                                           resource: Text,
+                                           tar_buffer: io.BufferedRandom) -> None:
+        resource_buffer = io.BufferedReader(tar_buffer.raw)
+        proc = await self._run(
+            resource=resource,
+            command=["tar", "xf", "-", "-C", "/"],
+            encode=False,
+            interactive=True,
+            stream=True
+        )
+        while content := resource_buffer.read(self.transferBufferSize):
+            proc.stdin.write(content)
+            await proc.stdin.drain()
+        proc.stdin.close()
+        await proc.wait()
+
+    async def _copy_remote_to_local(self,
+                                    src: Text,
+                                    dst: Text,
+                                    resource: Text) -> None:
+        proc = await self._run(
+            resource=resource,
+            command=["tar", "cPf", "-", src],
+            capture_output=True,
+            encode=False,
+            stream=True)
+        with io.BytesIO() as byte_buffer:
+            while data := await proc.stdout.read(self.transferBufferSize):
+                byte_buffer.write(data)
+            await proc.wait()
+            utils.create_tar_from_byte_stream(byte_buffer, src, dst)
 
     async def _copy_remote_to_remote(self,
                                      src: Text,
@@ -104,19 +129,42 @@ class BaseConnector(Connector, ABC):
                     self._copy_local_to_remote(os.path.join(temp_dir, element), dst, [resource])))
             await asyncio.gather(*copy_tasks)
 
-    @abstractmethod
-    async def _copy_remote_to_local(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resource: Text) -> None:
-        ...
+    def _get_run_command(self,
+                         command: Text,
+                         resource: Text,
+                         interactive: bool = False):
+        raise NotImplementedError
 
-    @abstractmethod
-    async def _copy_local_to_remote(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resources: MutableSequence[Text]) -> None:
-        ...
+    async def _run(self,
+                   resource: Text,
+                   command: MutableSequence[Text],
+                   environment: MutableMapping[Text, Text] = None,
+                   workdir: Optional[Text] = None,
+                   stdin: Optional[Union[int, Text]] = None,
+                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   capture_output: bool = False,
+                   encode: bool = True,
+                   interactive: bool = False,
+                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+        command = utils.create_command(
+            command, environment, workdir, stdin, stdout, stderr)
+        logger.debug("Executing command {command} on {resource}".format(command=command, resource=resource))
+        if encode:
+            command = utils.encode_command(command)
+        run_command = self._get_run_command(command, resource, interactive=interactive)
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split(run_command),
+            stdin=asyncio.subprocess.PIPE if interactive else None,
+            stdout=asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL)
+        if stream:
+            return proc
+        elif capture_output:
+            stdout, _ = await proc.communicate()
+            return stdout.decode().strip(), proc.returncode
+        else:
+            await proc.wait()
 
     async def copy(self,
                    src: Text,
@@ -170,3 +218,22 @@ class BaseConnector(Connector, ABC):
             await self._copy_remote_to_local(src, dst, resources[0])
         else:
             raise NotImplementedError
+
+    async def run(self,
+                  resource: Text,
+                  command: MutableSequence[Text],
+                  environment: MutableMapping[Text, Text] = None,
+                  workdir: Optional[Text] = None,
+                  stdin: Optional[Union[int, Text]] = None,
+                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+        return await self._run(
+            resource=resource,
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            capture_output=capture_output)

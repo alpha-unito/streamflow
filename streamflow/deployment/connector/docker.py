@@ -3,7 +3,7 @@ import json
 import os
 import shlex
 from abc import ABC
-from typing import MutableSequence, MutableMapping, Any, Tuple, Optional, Union
+from typing import MutableSequence, MutableMapping, Any, Tuple, Optional
 
 from typing_extensions import Text
 
@@ -48,14 +48,6 @@ async def _check_effective_resource(common_paths: MutableMapping[Text, Any],
     return common_paths, effective_resources
 
 
-async def _copy_local_to_remote_single(src: Text,
-                                       dst: Text,
-                                       resource: Text) -> None:
-    dst = resource + ":" + dst
-    proc = await asyncio.create_subprocess_exec(*shlex.split(_get_copy_command(src, dst)))
-    await proc.wait()
-
-
 async def _exists_image(image_name: Text) -> bool:
     exists_command = "".join(
         "docker "
@@ -71,18 +63,6 @@ async def _exists_image(image_name: Text) -> bool:
         stderr=asyncio.subprocess.PIPE)
     await proc.wait()
     return proc.returncode == 0
-
-
-def _get_copy_command(src: Text, dst: Text):
-    return "".join([
-        "docker ",
-        "cp ",
-        "{src} ",
-        "{dst}"
-    ]).format(
-        src=src,
-        dst=dst
-    )
 
 
 async def _get_effective_resources(resources: MutableSequence[Text],
@@ -150,17 +130,7 @@ class DockerBaseConnector(BaseConnector, ABC):
                                     dst: Text,
                                     resources: MutableSequence[Text]) -> None:
         effective_resources = await _get_effective_resources(resources, dst)
-        await asyncio.gather(*[asyncio.create_task(
-            _copy_local_to_remote_single(src, dst, resource)
-        ) for resource in effective_resources])
-
-    async def _copy_remote_to_local(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resource: Text) -> None:
-        src = resource + ":" + src
-        proc = await asyncio.create_subprocess_exec(*shlex.split(_get_copy_command(src, dst)))
-        await proc.wait()
+        await super()._copy_local_to_remote(src, dst, effective_resources)
 
     async def _copy_remote_to_remote(self,
                                      src: Text,
@@ -170,37 +140,20 @@ class DockerBaseConnector(BaseConnector, ABC):
         effective_resources = await _get_effective_resources(resources, dst, source_remote)
         await super()._copy_remote_to_remote(src, dst, effective_resources, source_remote)
 
-    async def run(self,
-                  resource: Text,
-                  command: MutableSequence[Text],
-                  environment: MutableMapping[Text, Text] = None,
-                  workdir: Optional[Text] = None,
-                  stdin: Optional[Union[int, Text]] = None,
-                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  capture_output: bool = False,
-                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
-        encoded_command = self.create_encoded_command(
-            command, resource, environment, workdir, stdin, stdout, stderr)
-        run_command = "".join([
+    def _get_run_command(self,
+                         command: Text,
+                         resource: Text,
+                         interactive: bool = False):
+        return "".join([
             "docker "
             "exec ",
-            "-t ",
-            "{service} ",
+            "-i " if interactive else "",
+            "{resource} ",
             "sh -c '{command}'"
         ]).format(
-            service=resource,
-            command=encoded_command
+            resource=resource,
+            command=command
         )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(run_command),
-            stdout=asyncio.subprocess.PIPE if capture_output else None,
-            stderr=asyncio.subprocess.PIPE if capture_output else None)
-        if capture_output:
-            stdout, _ = await proc.communicate()
-            return stdout.decode().strip(), proc.returncode
-        else:
-            await proc.wait()
 
 
 class DockerConnector(DockerBaseConnector):
@@ -289,6 +242,7 @@ class DockerConnector(DockerBaseConnector):
                  storageOpts: Optional[MutableSequence[Text]] = None,
                  sysctl: Optional[MutableSequence[Text]] = None,
                  tmpfs: Optional[MutableSequence[Text]] = None,
+                 transferBufferSize: int = 2**16,
                  ulimit: Optional[MutableSequence[Text]] = None,
                  user: Optional[Text] = None,
                  userns: Optional[Text] = None,
@@ -297,7 +251,7 @@ class DockerConnector(DockerBaseConnector):
                  volumeDriver: Optional[Text] = None,
                  volumesFrom: Optional[MutableSequence[Text]] = None,
                  workdir: Optional[Text] = None):
-        super().__init__(streamflow_config_dir)
+        super().__init__(streamflow_config_dir, transferBufferSize)
         self.image: Text = image
         self.addHost: Optional[MutableSequence[Text]] = addHost
         self.blkioWeight: Optional[int] = blkioWeight
@@ -639,11 +593,12 @@ class DockerComposeConnector(DockerBaseConnector):
                  noStart: Optional[bool] = False,
                  build: Optional[bool] = False,
                  timeout: Optional[int] = None,
+                 transferBufferSize: int = 2**16,
                  renewAnonVolumes: Optional[bool] = False,
                  removeOrphans: Optional[bool] = False,
                  removeVolumes: Optional[bool] = False
                  ) -> None:
-        super().__init__(streamflow_config_dir)
+        super().__init__(streamflow_config_dir, transferBufferSize)
         self.files = [os.path.join(streamflow_config_dir, file) for file in files]
         self.projectName = projectName
         self.verbose = verbose
@@ -730,8 +685,9 @@ class DockerComposeConnector(DockerBaseConnector):
     async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
         ps_command = self.base_command() + "".join([
             "ps ",
-            "--filter \"com.docker.compose.service\"=\"{service}\"".format(service=service)
-        ])
+            "{filter}"
+        ]).format(
+            filter=("--filter \"com.docker.compose.service\"=\"{service}\"".format(service=service) if service else ""))
         logger.debug("Executing command {command}".format(command=ps_command))
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(ps_command),
