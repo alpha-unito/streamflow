@@ -26,8 +26,6 @@ class WorkflowConfig(object):
         self.config = workflow_config['config']
         self.models = streamflow_config.get('models', {})
         for name, model in self.models.items():
-            if 'from' in model:
-                model['config'] = {**self.models[model['from']]['config'], **model['config']}
             model['name'] = name
         self.filesystem = {'children': {}}
         for binding in workflow_config.get('bindings', []):

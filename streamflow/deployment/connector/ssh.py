@@ -76,6 +76,14 @@ class SSHConnector(BaseConnector):
         await self._copy_local_to_remote(helper_file, remote_path, [resource])
         return remote_path
 
+    async def _copy_local_to_remote(self, src: Text, dst: Text, resources: MutableSequence[Text]):
+        await asyncio.gather(*[asyncio.create_task(
+            asyncssh.scp(src, (self.ssh_client, dst), preserve=True, recurse=True)
+        ) for _ in resources])
+
+    async def _copy_remote_to_local(self, src: Text, dst: Text, resource: Text) -> None:
+        await asyncssh.scp((self.ssh_client, src), dst, preserve=True, recurse=True)
+
     async def deploy(self, external: bool) -> None:
         (hostname, port) = _parse_hostname(self.hostname)
         self.ssh_client = await asyncssh.connect(
@@ -96,6 +104,7 @@ class SSHConnector(BaseConnector):
                    stdin: Optional[Union[int, Text]] = None,
                    stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
                    stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   job_name: Optional[Text] = None,
                    capture_output: bool = False,
                    encode: bool = True,
                    interactive: bool = False,
@@ -107,7 +116,10 @@ class SSHConnector(BaseConnector):
             stdin=stdin,
             stdout=stdout,
             stderr=stderr)
-        logger.debug("Executing command {command} on {resource}".format(command=command, resource=resource))
+        logger.debug("Executing command {command} on {resource} {job}".format(
+            command=command,
+            resource=resource,
+            job="for job {job}".format(job=job_name) if job_name else ""))
         command = utils.encode_command(command)
         if self.template is not None:
             helper_file = await self._build_helper_file(command, resource, environment, workdir)

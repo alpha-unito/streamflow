@@ -9,7 +9,7 @@ from streamflow.deployment.connector.docker import DockerConnector, DockerCompos
 from streamflow.deployment.connector.helm import Helm2Connector, Helm3Connector
 from streamflow.deployment.connector.occam import OccamConnector
 from streamflow.deployment.connector.singularity import SingularityConnector
-from streamflow.deployment.connector.slurm import SlurmConnector
+from streamflow.deployment.connector.queue_manager import PBSConnector, SlurmConnector
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
 
@@ -25,6 +25,7 @@ connector_classes = {
     'helm2': Helm2Connector,
     'helm3': Helm3Connector,
     'occam': OccamConnector,
+    'pbs': PBSConnector,
     'singularity': SingularityConnector,
     'slurm': SlurmConnector,
     'ssh': SSHConnector

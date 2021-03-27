@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "slurm.json",
+  "$id": "queue_manager.json",
   "type": "object",
   "properties": {
     "file": {
@@ -10,6 +10,11 @@
     "hostname": {
       "type": "string",
       "description": "Hostname of the HPC facility"
+    },
+    "pollingInterval": {
+      "type": "integer",
+      "description": "Time interval (in seconds) between consecutive termination checks",
+      "default": 5
     },
     "sshKey": {
       "type": "string",

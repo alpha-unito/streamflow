@@ -42,7 +42,8 @@ class Connector(ABC):
                   stdin: Optional[Union[int, Text]] = None,
                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+                  capture_output: bool = False,
+                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         ...
 
     @abstractmethod

@@ -122,6 +122,11 @@
           "type": "object",
           "$ref": "helm3.json#"
         },
+        "pbs": {
+          "$id": "#/definitions/model/definitions/pbs",
+          "type": "object",
+          "$ref": "queue_manager.json#"
+        },
         "occam": {
           "$id": "#/definitions/model/definitions/occam",
           "type": "object",
@@ -135,7 +140,7 @@
         "slurm": {
           "$id": "#/definitions/model/definitions/slurm",
           "type": "object",
-          "$ref": "slurm.json#"
+          "$ref": "queue_manager.json#"
         },
         "ssh": {
           "$id": "#/definitions/model/definitions/ssh",
@@ -162,10 +167,6 @@
           "type": "boolean",
           "description": "If set, StreamFlow does not manage the lifecycle of the execution environment. This means that all required services must be up and running when the workflow starts",
           "default": false
-        },
-        "from": {
-          "type": "string",
-          "description": "If set, the config field of the current model will inherit from the one specified in this property"
         }
       },
       "allOf": [

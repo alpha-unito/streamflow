@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import io
 import os
 import shlex
@@ -144,12 +143,16 @@ class BaseConnector(Connector, ABC):
                    stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
                    stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
                    capture_output: bool = False,
+                   job_name: Optional[Text] = None,
                    encode: bool = True,
                    interactive: bool = False,
                    stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
-        logger.debug("Executing command {command} on {resource}".format(command=command, resource=resource))
+        logger.debug("Executing command {command} on {resource} {job}".format(
+            command=command,
+            resource=resource,
+            job="for job {job}".format(job=job_name) if job_name else ""))
         if encode:
             command = utils.encode_command(command)
         run_command = self._get_run_command(command, resource, interactive=interactive)
@@ -227,7 +230,8 @@ class BaseConnector(Connector, ABC):
                   stdin: Optional[Union[int, Text]] = None,
                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+                  capture_output: bool = False,
+                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
         return await self._run(
             resource=resource,
             command=command,
@@ -236,4 +240,5 @@ class BaseConnector(Connector, ABC):
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            capture_output=capture_output)
+            capture_output=capture_output,
+            job_name=job_name)

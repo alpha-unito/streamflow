@@ -9,6 +9,7 @@ pytest = "*"
 [packages]
 aiohttp = "*"
 asyncssh = "*"
+bcrypt = "*"
 cwltool = "*"
 Jinja2 = "*"
 jsonref = "*"
