@@ -115,6 +115,11 @@
       "type": "string",
       "description": "Chart repository url where to locate the requested chart"
     },
+    "resourcesCacheTTL": {
+      "type": "integer",
+      "description": "Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
+      "default": 10
+    },
     "skipCrds": {
       "type": "boolean",
       "description": "If set, no CRDs will be installed",

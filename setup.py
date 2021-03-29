@@ -35,6 +35,7 @@ setup(
     install_requires=[
         "aiohttp",
         "asyncssh",
+        "cachetools",
         "cwltool",
         "Jinja2",
         "jsonref",

@@ -45,13 +45,16 @@ def eval_expression(expression: Text,
                     timeout: Optional[int] = None,
                     strip_whitespace: bool = True):
     if isinstance(expression, Text) and ('$(' in expression or '${' in expression):
+        # The default cwltool timeout of 20 seconds is too low: raise it to 10 minutes
+        timeout = timeout or 600
+        # Call the CWL JavaScript evaluation stack
         return cwltool.expression.interpolate(
             expression,
             context,
             fullJS=full_js,
             jslib=cwltool.expression.jshead(expression_lib or [], context) if full_js else "",
             strip_whitespace=strip_whitespace,
-            timeout=timeout or cwltool.expression.default_timeout)
+            timeout=timeout)
     else:
         return expression
 

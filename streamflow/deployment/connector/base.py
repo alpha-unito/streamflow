@@ -242,3 +242,4 @@ class BaseConnector(Connector, ABC):
             stderr=stderr,
             capture_output=capture_output,
             job_name=job_name)
+

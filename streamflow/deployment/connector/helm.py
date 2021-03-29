@@ -10,6 +10,7 @@ from abc import ABC
 from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
 
 import yaml
+from cachetools import Cache, TTLCache
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import Configuration, ApiClient, V1Container
 from kubernetes_asyncio.config import incluster_config, ConfigException, load_kube_config
@@ -17,10 +18,11 @@ from kubernetes_asyncio.stream import WsApiClient, ws_client
 from typing_extensions import Text
 
 from streamflow.core import utils
+from streamflow.core.asyncache import cachedmethod
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
 from streamflow.deployment.connector.base import BaseConnector
-from streamflow.log_handler import logger, profile
+from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
@@ -47,12 +49,14 @@ class BaseHelmConnector(BaseConnector, ABC):
                  kubeconfig: Optional[Text] = os.path.join(os.environ['HOME'], ".kube", "config"),
                  namespace: Optional[Text] = None,
                  releaseName: Optional[Text] = "release-%s" % str(uuid.uuid1()),
+                 resourcesCacheTTL: int = 10,
                  transferBufferSize: int = (32 << 20) - 1):
         super().__init__(streamflow_config_dir, transferBufferSize)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
         self.namespace = namespace
         self.releaseName = releaseName
+        self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
         self.configuration: Optional[Configuration] = None
         self.client: Optional[client.CoreV1Api] = None
         self.client_ws: Optional[client.CoreV1Api] = None
@@ -80,7 +84,6 @@ class BaseHelmConnector(BaseConnector, ABC):
         effective_resources = await self._get_effective_resources(resources, dst)
         await super()._copy_local_to_remote(src, dst, effective_resources)
 
-    @profile
     async def _copy_local_to_remote_single(self,
                                            resource: Text,
                                            tar_buffer: io.BufferedRandom) -> None:
@@ -199,6 +202,7 @@ class BaseHelmConnector(BaseConnector, ABC):
         ws_api_client.set_default_header('Connection', 'upgrade,keep-alive')
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
 
+    @cachedmethod(lambda self: self.resourcesCache)
     async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
         pods = await self.client.list_namespaced_pod(
             namespace=self.namespace or 'default',
@@ -314,6 +318,7 @@ class Helm2Connector(BaseHelmConnector):
                  password: Optional[Text] = None,
                  renderSubchartNotes: Optional[bool] = False,
                  repo: Optional[Text] = None,
+                 resourcesCacheTTL: int = 10,
                  commandLineValues: Optional[MutableSequence[Text]] = None,
                  fileValues: Optional[MutableSequence[Text]] = None,
                  stringValues: Optional[MutableSequence[Text]] = None,
@@ -338,6 +343,7 @@ class Helm2Connector(BaseHelmConnector):
             kubeconfig=kubeconfig,
             namespace=namespace,
             releaseName=releaseName,
+            resourcesCacheTTL=resourcesCacheTTL,
             transferBufferSize=transferBufferSize
         )
         self.chart = os.path.join(streamflow_config_dir, chart)
@@ -548,6 +554,7 @@ class Helm3Connector(BaseHelmConnector):
                  registryConfig: Optional[Text] = os.path.join(os.environ['HOME'], ".config/helm/registry.json"),
                  repositoryCache: Optional[Text] = os.path.join(os.environ['HOME'], ".cache/helm/repository"),
                  repositoryConfig: Optional[Text] = os.path.join(os.environ['HOME'], ".config/helm/repositories.yaml"),
+                 resourcesCacheTTL: int = 10,
                  stringValues: Optional[MutableSequence[Text]] = None,
                  skipCrds: Optional[bool] = False,
                  timeout: Optional[Text] = "1000m",
@@ -564,6 +571,7 @@ class Helm3Connector(BaseHelmConnector):
             kubeconfig=kubeconfig,
             namespace=namespace,
             releaseName=releaseName,
+            resourcesCacheTTL=resourcesCacheTTL,
             transferBufferSize=transferBufferSize
         )
         self.chart = os.path.join(streamflow_config_dir, chart)

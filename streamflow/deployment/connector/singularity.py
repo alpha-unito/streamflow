@@ -10,26 +10,31 @@ import tempfile
 from abc import ABC, abstractmethod
 from typing import MutableSequence, Optional, MutableMapping, cast
 
+from cachetools import TTLCache, Cache
 from typing_extensions import Text
 
 from streamflow.core import utils
+from streamflow.core.asyncache import cachedmethod
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
-async def _get_resource(resource_name: Text) -> Resource:
+async def _get_resource(resource_name: Text) -> Optional[Resource]:
     inspect_command = "singularity instance list --json"
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(inspect_command),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
-    json_out = json.loads(stdout)
-    for instance in json_out["instances"]:
-        if instance["instance"] == resource_name:
-            return Resource(name=resource_name, hostname=instance["ip"])
+    if stdout:
+        json_out = json.loads(stdout)
+        for instance in json_out["instances"]:
+            if instance["instance"] == resource_name:
+                return Resource(name=resource_name, hostname=instance["ip"])
+    else:
+        return None
 
 
 class SingularityBaseConnector(BaseConnector, ABC):
@@ -144,6 +149,7 @@ class SingularityConnector(SingularityBaseConnector):
                  pemPath: Optional[Text] = None,
                  pidFile: Optional[Text] = None,
                  replicas: int = 1,
+                 resourcesCacheTTL: int = 10,
                  rocm: bool = False,
                  scratch: Optional[MutableSequence[Text]] = None,
                  security: Optional[MutableSequence[Text]] = None,
@@ -187,6 +193,7 @@ class SingularityConnector(SingularityBaseConnector):
         self.pemPath: Optional[Text] = pemPath
         self.pidFile: Optional[Text] = pidFile
         self.replicas: int = replicas
+        self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
         self.rocm: bool = rocm
         self.scratch: Optional[MutableSequence[Text]] = scratch
         self.security: Optional[MutableSequence[Text]] = security
@@ -322,8 +329,13 @@ class SingularityConnector(SingularityBaseConnector):
                 else:
                     raise WorkflowExecutionException(stderr.decode().strip())
 
+    @cachedmethod(lambda self: self.resourcesCache)
     async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
-        return {instance_name: await _get_resource(instance_name) for instance_name in self.instanceNames}
+        resource_tasks = {}
+        for instance_name in self.instanceNames:
+            resource_tasks[instance_name] = asyncio.create_task(_get_resource(instance_name))
+        return {k: v for k, v in zip(resource_tasks.keys(), await asyncio.gather(*resource_tasks.values()))
+                if v is not None}
 
     async def undeploy(self, external: bool) -> None:
         if not external and self.instanceNames:

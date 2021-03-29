@@ -402,6 +402,11 @@
       "description": "Number of instances to be co-allocated",
       "default": 1
     },
+    "resourcesCacheTTL": {
+      "type": "integer",
+      "description": "Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
+      "default": 10
+    },
     "restart": {
       "type": "string",
       "description": "Restart policy to apply when a container exists",

@@ -679,6 +679,7 @@ class CWLStepCommand(CWLBaseCommand):
 
     async def execute(self, job: Job) -> CommandOutput:
         context = utils.build_context(job)
+        logger.info('Executing job {job}'.format(job=job.name))
         # Process expressions
         processed_inputs = {}
         for k, v in self.input_expressions.items():

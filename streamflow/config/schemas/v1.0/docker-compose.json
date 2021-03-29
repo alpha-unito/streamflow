@@ -92,6 +92,11 @@
       "type": "boolean",
       "description": "Remove named volumes declared in the `volumes` section of the Compose file and anonymous volumes attached to containers"
     },
+    "resourcesCacheTTL": {
+      "type": "integer",
+      "description": "Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
+      "default": 10
+    },
     "timeout": {
       "type": "integer",
       "description": "Timeout in seconds for container shutdown when attached or when containers are already running",

@@ -29,10 +29,10 @@ class DefaultScheduler(Scheduler):
         self.retry_interval: Optional[int] = retry_delay
         self.wait_queue: Condition = Condition()
 
-    async def _get_resources(self,
-                             job: Job,
-                             scheduling_policy: Policy,
-                             available_resources: MutableMapping[Text, Resource]) -> Optional[MutableSequence[Text]]:
+    def _get_resources(self,
+                       job: Job,
+                       scheduling_policy: Policy,
+                       available_resources: MutableMapping[Text, Resource]) -> Optional[MutableSequence[Text]]:
         selected_resources = []
         for i in range(job.step.target.resources):
             selected_resource = (scheduling_policy or self.default_policy).get_resource(
@@ -61,24 +61,24 @@ class DefaultScheduler(Scheduler):
             model_name = job.step.target.model.name
             connector = self.context.deployment_manager.get_connector(model_name)
             while True:
-                available_resources = await connector.get_available_resources(job.step.target.service)
-                selected_resources = await self._get_resources(job, scheduling_policy, available_resources)
+                available_resources = dict(await connector.get_available_resources(job.step.target.service))
+                selected_resources = self._get_resources(job, scheduling_policy, available_resources)
                 if selected_resources is not None:
                     break
                 try:
                     await asyncio.wait_for(self.wait_queue.wait(), timeout=self.retry_interval)
                 except asyncio.TimeoutError:
                     pass
-        if len(selected_resources) == 1:
-            logger.info(
-                "Job {name} allocated on resource {resource}".format(name=job.name, resource=selected_resources[0]))
-        else:
-            logger.info(
-                "Job {name} allocated on resources {resources}".format(
-                    name=job.name,
-                    resources=', '.join(selected_resources)))
-        self.job_allocations[job.name] = JobAllocation(job, selected_resources, Status.RUNNING)
-        for selected_resource in selected_resources:
-            if selected_resource not in self.resource_allocations:
-                self.resource_allocations[selected_resource] = ResourceAllocation(selected_resource, model_name)
-            self.resource_allocations[selected_resource].jobs.append(job.name)
+            if len(selected_resources) == 1:
+                logger.info(
+                    "Job {name} allocated on resource {resource}".format(name=job.name, resource=selected_resources[0]))
+            else:
+                logger.info(
+                    "Job {name} allocated on resources {resources}".format(
+                        name=job.name,
+                        resources=', '.join(selected_resources)))
+            self.job_allocations[job.name] = JobAllocation(job, selected_resources, Status.RUNNING)
+            for selected_resource in selected_resources:
+                if selected_resource not in self.resource_allocations:
+                    self.resource_allocations[selected_resource] = ResourceAllocation(selected_resource, model_name)
+                self.resource_allocations[selected_resource].jobs.append(job.name)

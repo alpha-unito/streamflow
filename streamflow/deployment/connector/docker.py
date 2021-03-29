@@ -5,8 +5,10 @@ import shlex
 from abc import ABC
 from typing import MutableSequence, MutableMapping, Any, Tuple, Optional
 
+from cachetools import Cache, TTLCache
 from typing_extensions import Text
 
+from streamflow.core.asyncache import cachedmethod
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
 from streamflow.deployment.connector.base import BaseConnector
@@ -231,6 +233,7 @@ class DockerConnector(DockerBaseConnector):
                  publishAll: bool = False,
                  readOnly: bool = False,
                  replicas: int = 1,
+                 resourcesCacheTTL: int = 10,
                  restart: Optional[Text] = None,
                  rm: bool = True,
                  runtime: Optional[Text] = None,
@@ -323,6 +326,7 @@ class DockerConnector(DockerBaseConnector):
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
         self.replicas: int = replicas
+        self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
         self.restart: Optional[Text] = restart
         self.rm: bool = rm
         self.runtime: Optional[Text] = runtime
@@ -545,6 +549,7 @@ class DockerConnector(DockerBaseConnector):
                 else:
                     raise WorkflowExecutionException(stderr.decode().strip())
 
+    @cachedmethod(lambda self: self.resourcesCache)
     async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
         return {container_id: await _get_resource(container_id) for container_id in self.containerIds}
 
@@ -596,8 +601,8 @@ class DockerComposeConnector(DockerBaseConnector):
                  transferBufferSize: int = 2**16,
                  renewAnonVolumes: Optional[bool] = False,
                  removeOrphans: Optional[bool] = False,
-                 removeVolumes: Optional[bool] = False
-                 ) -> None:
+                 removeVolumes: Optional[bool] = False,
+                 resourcesCacheTTL: int = 10) -> None:
         super().__init__(streamflow_config_dir, transferBufferSize)
         self.files = [os.path.join(streamflow_config_dir, file) for file in files]
         self.projectName = projectName
@@ -615,6 +620,7 @@ class DockerComposeConnector(DockerBaseConnector):
         self.renewAnonVolumes = renewAnonVolumes
         self.removeOrphans = removeOrphans
         self.removeVolumes = removeVolumes
+        self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
         self.skipHostnameCheck = skipHostnameCheck
         self.projectDirectory = projectDirectory
         self.compatibility = compatibility
@@ -682,6 +688,7 @@ class DockerComposeConnector(DockerBaseConnector):
             proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
             await proc.wait()
 
+    @cachedmethod(lambda self: self.resourcesCache)
     async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
         ps_command = self.base_command() + "".join([
             "ps ",
