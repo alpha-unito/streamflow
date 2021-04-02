@@ -200,7 +200,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             for t in token_value:
                 value_tasks.append(asyncio.create_task(self._build_token_value(job, t, load_listing)))
             return await asyncio.gather(*value_tasks)
-        elif isinstance(token_value, MutableMapping) and token_value.get('class') in ['File', 'Directory']:
+        elif (isinstance(token_value, MutableMapping)
+              and token_value.get('class', token_value.get('type') in ['File', 'Directory'])):
             step = job.step if job is not None else self.port.step
             # Get filepath
             filepath = get_path_from_token(token_value)
@@ -227,7 +228,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 token_value = await _get_file_token(
                     step=step,
                     job=job,
-                    token_class=token_value.get('class'),
+                    token_class=token_value.get('class', token_value.get('type')),
                     filepath=filepath,
                     basename=token_value.get('basename'),
                     load_contents=load_contents,
@@ -291,7 +292,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 token_value = await _get_file_token(
                     step=step,
                     job=job,
-                    token_class=token_value.get('class'),
+                    token_class=token_value.get('class', token_value.get('type')),
                     filepath=filepath,
                     basename=token_value.get('basename'),
                     load_contents=load_contents,
@@ -608,13 +609,25 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             if 'basename' in token_value:
                 path_processor = get_path_processor(self.port.step)
                 dest_path = path_processor.join(job.input_directory, token_value['basename'])
-            # Transfer file in task's input folder
-            filepath = await self._transfer_file(
-                src_job=src_job,
-                dest_job=job,
-                src_path=location,
-                dest_path=dest_path,
-                writable=writable)
+            # Check if source file exists
+            src_connector = src_job.step.get_connector() if src_job is not None else None
+            src_resources = src_job.get_resources() or [None] if src_job is not None else [None]
+            src_found = False
+            for src_resource in src_resources:
+                if await remotepath.exists(src_connector, src_resource, location):
+                    src_found = True
+                    break
+            # If source_path exists, ransfer file in task's input folder
+            if src_found:
+                filepath = await self._transfer_file(
+                    src_job=src_job,
+                    dest_job=job,
+                    src_path=location,
+                    dest_path=dest_path,
+                    writable=writable)
+            # Otherwise, keep the current path
+            else:
+                filepath = location
             new_token_value = {'class': token_value['class'], 'path': filepath}
             # If token contains secondary files, transfer them, too
             if 'secondaryFiles' in token_value:

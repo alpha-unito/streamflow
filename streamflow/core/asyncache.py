@@ -91,7 +91,7 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                 async def wrapper(self, *args, **kwargs):
                     c = cache(self)
                     if c is None:
-                        return method(self, *args, **kwargs)
+                        return await method(self, *args, **kwargs)
                     k = key(*args, **kwargs)
                     try:
                         async with lock(self):

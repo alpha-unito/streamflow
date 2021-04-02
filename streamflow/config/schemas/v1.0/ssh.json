@@ -11,6 +11,11 @@
       "type": "string",
       "description": "Hostname of the HPC facility"
     },
+    "maxConcurrentSessions": {
+      "type": "integer",
+      "description": "Maximum number of concurrent session to open for a single SSH client connection",
+      "default": 10
+    },
     "sshKey": {
       "type": "string",
       "description": "Path to the SSH key needed to connect with Slurm environment"

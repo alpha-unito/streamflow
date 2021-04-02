@@ -240,7 +240,9 @@ class RemotePathMapper(object):
 
     def get(self, resource: Text, path: Text) -> Set[DataLocation]:
         resource = resource or LOCAL_RESOURCE
-        node = self._filesystems[resource]
+        node = self._filesystems.get(resource)
+        if not node:
+            return set()
         path = Path(path) if resource == LOCAL_RESOURCE else PosixPath(path)
         for token in path.parts:
             if token in node.children:

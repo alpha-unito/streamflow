@@ -11,6 +11,16 @@
       "type": "string",
       "description": "Hostname of the HPC facility"
     },
+    "maxConcurrentJobs": {
+      "type": "integer",
+      "description": "Maximum number of jobs concurrently scheduled for execution on the Queue Manager",
+      "default": 1
+    },
+    "maxConcurrentSessions": {
+      "type": "integer",
+      "description": "Maximum number of concurrent session to open for a single SSH client connection",
+      "default": 10
+    },
     "pollingInterval": {
       "type": "integer",
       "description": "Time interval (in seconds) between consecutive termination checks",

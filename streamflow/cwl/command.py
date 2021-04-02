@@ -61,8 +61,8 @@ def _get_value(token: Any, item_separator: Optional[Text]) -> Any:
             value = item_separator.join([str(v) for v in value])
         return value
     elif isinstance(token, MutableMapping):
-        if 'path' in token:
-            return token['path']
+        if (path := utils.get_path_from_token(token)) is not None:
+            return path
         else:
             raise WorkflowExecutionException("Unsupported value " + str(token) + " from expression")
     else:
@@ -122,7 +122,7 @@ class CWLCommandToken(object):
         # Obtain token value
         value = _get_value(processed_token, self.item_separator)
         # If token value is null, skip the command token
-        if not value:
+        if value is None:
             return bindings_map
         # Otherwise
         else:
