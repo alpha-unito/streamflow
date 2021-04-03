@@ -25,7 +25,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                  hostname: Text,
                  sshKey: Text,
                  username: Text,
-                 maxConcurrentJobs: Optional[int] = 9,
+                 maxConcurrentJobs: Optional[int] = 1,
                  pollingInterval: int = 5,
                  sshKeyPassphrase: Optional[Text] = None) -> None:
         super().__init__(
@@ -56,6 +56,11 @@ class QueueManagerConnector(SSHConnector, ABC):
     @abstractmethod
     async def _get_running_jobs(self,
                                 resource: Text) -> bool:
+        ...
+
+    @abstractmethod
+    async def _remove_jobs(self,
+                           resource: Text) -> None:
         ...
 
     @abstractmethod
@@ -108,6 +113,9 @@ class QueueManagerConnector(SSHConnector, ABC):
                 stdin=stdin,
                 stdout=stdout,
                 stderr=stderr)
+            logger.info("Scheduled job {job} with job id {job_id}".format(
+                job=job_name,
+                job_id=job_id))
             self.scheduledJobs.append(job_id)
             self.jobsCache.clear()
             while True:
@@ -134,6 +142,11 @@ class QueueManagerConnector(SSHConnector, ABC):
                 encode=encode,
                 interactive=interactive,
                 stream=stream)
+
+    async def undeploy(self, external: bool) -> None:
+        await self._remove_jobs(posixpath.join(self.hostname, '0'))
+        self.scheduledJobs = {}
+        await super().undeploy(external)
 
 
 class SlurmConnector(QueueManagerConnector):
@@ -168,6 +181,12 @@ class SlurmConnector(QueueManagerConnector):
                     states=",".join(['PENDING', 'RUNNING', 'SUSPENDED', 'COMPLETING', 'CONFIGURING',
                                      'RESIZING', 'REVOKED', 'SPECIAL_EXIT'])
                 ))).stdout.strip().splitlines()]
+
+    async def _remove_jobs(self,
+                           resource: Text) -> None:
+        async with self._get_ssh_client(resource) as ssh_client:
+            await ssh_client.run(
+                "scancel {job_ids}".format(job_ids=" ".join(self.scheduledJobs)))
 
     async def _run_batch_command(self,
                                  helper_file: Text,
@@ -220,6 +239,12 @@ class PBSConnector(QueueManagerConnector):
                     job_ids=" ".join(self.scheduledJobs)
                 ))).stdout.strip().splitlines()
 
+    async def _remove_jobs(self,
+                           resource: Text) -> None:
+        async with self._get_ssh_client(resource) as ssh_client:
+            await ssh_client.run(
+                "qdel {job_ids}".format(job_ids=" ".join(self.scheduledJobs)))
+
     async def _run_batch_command(self,
                                  helper_file: Text,
                                  job_name: Text,
@@ -233,7 +258,7 @@ class PBSConnector(QueueManagerConnector):
             job_name="-N \"{job_name}\"".format(job_name=job_name),
             stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",
             stdout=("-o \"{stdout}\"".format(stdout=stdout if stdout != STDOUT else
-                    "{job_name}.out".format(job_name=job_name))),
+                "{job_name}.out".format(job_name=job_name))),
             stderr="-e \"{stderr}\"".format(stderr=stderr) if stderr != STDOUT and stderr != stdout else "",
             helper_file=helper_file)
         async with self._get_ssh_client(resource) as ssh_client:

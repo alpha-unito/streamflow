@@ -76,7 +76,13 @@ class DefaultDataManager(DataManager):
                     remote_resources.append(dst_resource)
             await asyncio.gather(*mapping_tasks)
             if remote_resources:
-                await dst_connector.copy(src, dst, remote_resources, ConnectorCopyKind.REMOTE_TO_REMOTE, src_resource)
+                await dst_connector.copy(
+                    src=src,
+                    dst=dst,
+                    resources=remote_resources,
+                    kind=ConnectorCopyKind.REMOTE_TO_REMOTE,
+                    source_remote=src_resource,
+                    read_only=not writable)
                 # Register the new remote copies of the data
                 await asyncio.gather(*[asyncio.create_task(
                     self.path_mapper.create_mapping(
@@ -86,7 +92,12 @@ class DefaultDataManager(DataManager):
                 ) for dst_resource in remote_resources])
         # If source job is local, copy files to the remote resources
         elif src_connector is None:
-            await dst_connector.copy(src, dst, dst_resources, ConnectorCopyKind.LOCAL_TO_REMOTE)
+            await dst_connector.copy(
+                src=src,
+                dst=dst,
+                resources=dst_resources,
+                kind=ConnectorCopyKind.LOCAL_TO_REMOTE,
+                read_only=not writable)
             # Register the new remote copies of the data
             await asyncio.gather(*[asyncio.create_task(
                 self.path_mapper.create_mapping(
@@ -96,7 +107,12 @@ class DefaultDataManager(DataManager):
             ) for dst_resource in dst_resources])
         # If destination job is local, copy files from the remote resource
         elif dst_connector is None:
-            await src_connector.copy(src, dst, [src_resource], ConnectorCopyKind.REMOTE_TO_LOCAL)
+            await src_connector.copy(
+                src=src,
+                dst=dst,
+                resources=[src_resource],
+                kind=ConnectorCopyKind.REMOTE_TO_LOCAL,
+                read_only=not writable)
             # Register the new local copy of the data
             await self.path_mapper.create_mapping(
                 src, src_job, src_resource,
@@ -105,10 +121,19 @@ class DefaultDataManager(DataManager):
         # If jobs are both remote and scheduled on different models, perform an intermediate local copy
         else:
             temp_dir = tempfile.mkdtemp()
-            await src_connector.copy(src, temp_dir, [src_resource], ConnectorCopyKind.REMOTE_TO_LOCAL)
+            await src_connector.copy(
+                src=src,
+                dst=temp_dir,
+                resources=[src_resource],
+                kind=ConnectorCopyKind.REMOTE_TO_LOCAL,
+                read_only=not writable)
             await asyncio.gather(*[asyncio.create_task(dst_connector.copy(
-                os.path.join(temp_dir, element), dst, dst_resources, ConnectorCopyKind.LOCAL_TO_REMOTE)
-            ) for element in os.listdir(temp_dir)])
+                src=os.path.join(temp_dir, element),
+                dst=dst,
+                resources=dst_resources,
+                kind=ConnectorCopyKind.LOCAL_TO_REMOTE,
+                read_only=not writable
+            )) for element in os.listdir(temp_dir)])
             shutil.rmtree(temp_dir)
             # Register the new remote copies of the data
             await asyncio.gather(*[asyncio.create_task(

@@ -47,12 +47,13 @@ class SingularityBaseConnector(BaseConnector, ABC):
     async def _copy_local_to_remote(self,
                                     src: Text,
                                     dst: Text,
-                                    resources: MutableSequence[Text]) -> None:
+                                    resources: MutableSequence[Text],
+                                    read_only: bool = False) -> None:
         created_tar_buffer = False
         copy_tasks = []
         with tempfile.TemporaryFile() as tar_buffer:
             for resource in resources:
-                if await self._is_bind_transfer(resource, src, dst):
+                if read_only and await self._is_bind_transfer(resource, src, dst):
                     try:
                         os.symlink(posixpath.abspath(src), dst, target_is_directory=posixpath.isdir(dst))
                     except OSError as e:
@@ -65,15 +66,19 @@ class SingularityBaseConnector(BaseConnector, ABC):
                         tar_buffer.seek(0)
                         created_tar_buffer = True
                     copy_tasks.append(asyncio.create_task(
-                        self._copy_local_to_remote_single(resource, cast(io.BufferedRandom, tar_buffer))))
+                        self._copy_local_to_remote_single(
+                            resource=resource,
+                            tar_buffer=cast(io.BufferedRandom, tar_buffer),
+                            read_only=read_only)))
         await asyncio.gather(*copy_tasks)
 
     async def _copy_remote_to_remote(self,
                                      src: Text,
                                      dst: Text,
                                      resources: MutableSequence[Text],
-                                     source_remote: Text) -> None:
-        if await self._is_bind_transfer(source_remote, src, src):
+                                     source_remote: Text,
+                                     read_only: bool = False) -> None:
+        if read_only and await self._is_bind_transfer(source_remote, src, src):
             effective_resources = []
             for resource in resources:
                 if await self._is_bind_transfer(resource, dst, dst):
@@ -84,9 +89,19 @@ class SingularityBaseConnector(BaseConnector, ABC):
                             raise
                 else:
                     effective_resources.append(resource)
-            await super()._copy_remote_to_remote(src, dst, effective_resources, source_remote)
+            await super()._copy_remote_to_remote(
+                src=src,
+                dst=dst,
+                resources=effective_resources,
+                source_remote=source_remote,
+                read_only=read_only)
         else:
-            await super()._copy_remote_to_remote(src, dst, resources, source_remote)
+            await super()._copy_remote_to_remote(
+                src=src,
+                dst=dst,
+                resources=resources,
+                source_remote=source_remote,
+                read_only=read_only)
 
     def _get_run_command(self,
                          command: Text,

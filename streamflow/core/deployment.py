@@ -22,7 +22,8 @@ class Connector(ABC):
                    dst: Text,
                    resources: MutableSequence[Text],
                    kind: ConnectorCopyKind,
-                   source_remote: Optional[Text] = None) -> None:
+                   source_remote: Optional[Text] = None,
+                   read_only: bool = False) -> None:
         ...
 
     @abstractmethod

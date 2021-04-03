@@ -121,8 +121,8 @@ class CWLCommandToken(object):
                          ) -> MutableMapping[int, MutableSequence[Any]]:
         # Obtain token value
         value = _get_value(processed_token, self.item_separator)
-        # If token value is null, skip the command token
-        if value is None:
+        # If token value is null or an empty array, skip the command token
+        if value is None or value == []:
             return bindings_map
         # Otherwise
         else:
@@ -564,17 +564,17 @@ class CWLCommand(CWLBaseCommand):
             if stderr is not sys.stderr:
                 stderr.close()
         else:
-            if self.is_shell_command:
-                cmd = ["/bin/sh", "-c", "\"$(echo {command} | base64 -d)\"".format(
-                    command=base64.b64encode(" ".join(cmd).encode('utf-8')).decode('utf-8'))]
             connector = self.step.get_connector()
             resources = job.get_resources()
             logger.info('Executing job {job} on resource {resource} into directory {outdir}:\n{command}'.format(
                 job=job.name,
                 resource=resources[0] if resources else None,
                 outdir=job.output_directory,
-                command=' \\\n\t'.join(cmd),
-            ))
+                command=' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
+                                       if self.is_shell_command else cmd)))
+            if self.is_shell_command:
+                cmd = ["/bin/sh", "-c", "\"$(echo {command} | base64 -d)\"".format(
+                    command=base64.b64encode(" ".join(cmd).encode('utf-8')).decode('utf-8'))]
             # If step is assigned to multiple resources, add the STREAMFLOW_HOSTS environment variable
             if len(resources) > 1:
                 available_resources = await connector.get_available_resources(self.step.target.service)

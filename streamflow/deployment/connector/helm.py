@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import posixpath
 import shlex
 import subprocess
+import tarfile
+import tempfile
 import uuid
 from abc import ABC
 from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
@@ -50,7 +53,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                  namespace: Optional[Text] = None,
                  releaseName: Optional[Text] = "release-%s" % str(uuid.uuid1()),
                  resourcesCacheTTL: int = 10,
-                 transferBufferSize: int = (32 << 20) - 1):
+                 transferBufferSize: int = (2**25) - 1):
         super().__init__(streamflow_config_dir, transferBufferSize)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
@@ -76,17 +79,32 @@ class BaseHelmConnector(BaseConnector, ABC):
                                      src: Text,
                                      dst: Text,
                                      resources: MutableSequence[Text],
-                                     source_remote: Text) -> None:
+                                     source_remote: Text,
+                                     read_only: bool = False) -> None:
         effective_resources = await self._get_effective_resources(resources, dst)
-        await super()._copy_remote_to_remote(src, dst, effective_resources, source_remote)
+        await super()._copy_remote_to_remote(
+            src=src,
+            dst=dst,
+            resources=effective_resources,
+            source_remote=source_remote,
+            read_only=read_only)
 
-    async def _copy_local_to_remote(self, src: Text, dst: Text, resources: MutableSequence[Text]):
+    async def _copy_local_to_remote(self,
+                                    src: Text,
+                                    dst: Text,
+                                    resources: MutableSequence[Text],
+                                    read_only: bool = False):
         effective_resources = await self._get_effective_resources(resources, dst)
-        await super()._copy_local_to_remote(src, dst, effective_resources)
+        await super()._copy_local_to_remote(
+            src=src,
+            dst=dst,
+            resources=effective_resources,
+            read_only=read_only)
 
     async def _copy_local_to_remote_single(self,
                                            resource: Text,
-                                           tar_buffer: io.BufferedRandom) -> None:
+                                           tar_buffer: io.BufferedRandom,
+                                           read_only: bool = False) -> None:
         resource_buffer = io.BufferedReader(tar_buffer.raw)
         pod, container = resource.split(':')
         command = ['tar', 'xf', '-', '-C', '/']
@@ -120,9 +138,13 @@ class BaseHelmConnector(BaseConnector, ABC):
             if err['status'] != "Success":
                 raise WorkflowExecutionException(err['message'])
 
-    async def _copy_remote_to_local(self, src: Text, dst: Text, resource: Text):
+    async def _copy_remote_to_local(self,
+                                    src: Text,
+                                    dst: Text,
+                                    resource: Text,
+                                    read_only: bool = False):
         pod, container = resource.split(':')
-        command = ['tar', 'cPf', '-', src]
+        command = ["tar", "cf", "-", "-C", "/", posixpath.relpath(src, '/')]
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -133,15 +155,17 @@ class BaseHelmConnector(BaseConnector, ABC):
             stdout=True,
             tty=False,
             _preload_content=False)
-        with io.BytesIO() as byte_buffer:
+        with tempfile.TemporaryFile() as tar_buffer:
             while not response.closed:
                 async for msg in response:
                     channel = msg.data[0]
                     data = msg.data[1:]
                     if data and channel == ws_client.STDOUT_CHANNEL:
-                        byte_buffer.write(data)
+                        tar_buffer.write(data)
             await response.close()
-            utils.create_tar_from_byte_stream(byte_buffer, src, dst)
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode='r:') as tar:
+                utils.create_tar_from_byte_stream(tar, src, dst)
 
     async def _get_container(self, resource: Text) -> Tuple[Text, V1Container]:
         pod_name, container_name = resource.split(':')
@@ -335,8 +359,7 @@ class Helm2Connector(BaseHelmConnector):
                  chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,
                  purge: Optional[bool] = True,
-                 transferBufferSize: Optional[int] = (32 << 20) - 1
-                 ):
+                 transferBufferSize: Optional[int] = (2**25) - 1):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             inCluster=inCluster,

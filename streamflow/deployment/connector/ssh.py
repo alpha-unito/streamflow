@@ -111,15 +111,26 @@ class SSHConnector(BaseConnector):
                 streamflow_workdir=workdir))
         os.chmod(helper_file, os.stat(helper_file).st_mode | stat.S_IEXEC)
         remote_path = posixpath.join(workdir or '/tmp', os.path.basename(helper_file))
-        await self._copy_local_to_remote(helper_file, remote_path, [resource])
+        await self._copy_local_to_remote(
+            src=helper_file,
+            dst=remote_path,
+            resources=[resource])
         return remote_path
 
-    async def _copy_local_to_remote(self, src: Text, dst: Text, resources: MutableSequence[Text]):
+    async def _copy_local_to_remote(self,
+                                    src: Text,
+                                    dst: Text,
+                                    resources: MutableSequence[Text],
+                                    read_only: bool = False):
         for resource in resources:
             async with self._get_ssh_client(resource) as ssh_client:
                 await asyncssh.scp(src, (ssh_client, dst), preserve=True, recurse=True)
 
-    async def _copy_remote_to_local(self, src: Text, dst: Text, resource: Text) -> None:
+    async def _copy_remote_to_local(self,
+                                    src: Text,
+                                    dst: Text,
+                                    resource: Text,
+                                    read_only: bool = False) -> None:
         async with self._get_ssh_client(resource) as ssh_client:
             await asyncssh.scp((ssh_client, src), dst, preserve=True, recurse=True)
 

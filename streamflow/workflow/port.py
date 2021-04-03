@@ -149,7 +149,9 @@ class MapTokenProcessor(DefaultTokenProcessor):
             token = Token(name=self.port.name, value=[t.value for t in token_list], job=job.name)
         else:
             token = await self.processor.compute_token(job, command_output)
-        token.value = [] if token.value is None else list(token.value)
+        token.value = ([] if token.value is None else
+                       [token.value] if not isinstance(token.value, MutableSequence) else
+                       token.value)
         return token
 
     def get_related_resources(self, token: Token) -> Set[Text]:

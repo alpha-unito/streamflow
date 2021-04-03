@@ -130,17 +130,28 @@ class DockerBaseConnector(BaseConnector, ABC):
     async def _copy_local_to_remote(self,
                                     src: Text,
                                     dst: Text,
-                                    resources: MutableSequence[Text]) -> None:
+                                    resources: MutableSequence[Text],
+                                    read_only: bool = False) -> None:
         effective_resources = await _get_effective_resources(resources, dst)
-        await super()._copy_local_to_remote(src, dst, effective_resources)
+        await super()._copy_local_to_remote(
+            src=src,
+            dst=dst,
+            resources=effective_resources,
+            read_only=read_only)
 
     async def _copy_remote_to_remote(self,
                                      src: Text,
                                      dst: Text,
                                      resources: MutableSequence[Text],
-                                     source_remote: Text) -> None:
+                                     source_remote: Text,
+                                     read_only: bool = False) -> None:
         effective_resources = await _get_effective_resources(resources, dst, source_remote)
-        await super()._copy_remote_to_remote(src, dst, effective_resources, source_remote)
+        await super()._copy_remote_to_remote(
+            src=src,
+            dst=dst,
+            resources=effective_resources,
+            source_remote=source_remote,
+            read_only=read_only)
 
     def _get_run_command(self,
                          command: Text,

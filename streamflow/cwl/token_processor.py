@@ -201,7 +201,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 value_tasks.append(asyncio.create_task(self._build_token_value(job, t, load_listing)))
             return await asyncio.gather(*value_tasks)
         elif (isinstance(token_value, MutableMapping)
-              and token_value.get('class', token_value.get('type') in ['File', 'Directory'])):
+              and token_value.get('class', token_value.get('type')) in ['File', 'Directory']):
             step = job.step if job is not None else self.port.step
             # Get filepath
             filepath = get_path_from_token(token_value)

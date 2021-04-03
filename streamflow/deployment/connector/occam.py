@@ -95,7 +95,8 @@ class OccamConnector(SSHConnector):
                                      src: Text,
                                      dst: Text,
                                      resources: MutableSequence[Text],
-                                     source_remote: Text) -> None:
+                                     source_remote: Text,
+                                     read_only: bool = False) -> None:
         effective_resources = self._get_effective_resources(resources, dst, source_remote)
         # Check for the need of a temporary copy
         temp_dir = None
@@ -107,7 +108,13 @@ class OccamConnector(SSHConnector):
                 break
         # Perform the actual copies
         await asyncio.gather(*[asyncio.create_task(
-            self._copy_remote_to_remote_single(src, dst, resource, source_remote, temp_dir)
+            self._copy_remote_to_remote_single(
+                src=src,
+                dst=dst,
+                resource=resource,
+                source_remote=source_remote,
+                temp_dir=temp_dir,
+                read_only=read_only)
         ) for resource in effective_resources])
         # If a temporary location was created, delete it
         if temp_dir is not None:
@@ -118,7 +125,8 @@ class OccamConnector(SSHConnector):
                                             dst: Text,
                                             resource: Text,
                                             source_remote: Text,
-                                            temp_dir: Optional[Text]) -> None:
+                                            temp_dir: Optional[Text],
+                                            read_only: bool = False) -> None:
         if source_remote == resource:
             command = ['/bin/cp', "-rf", src, dst]
             await self.run(resource, command)
@@ -129,7 +137,8 @@ class OccamConnector(SSHConnector):
     async def _copy_local_to_remote(self,
                                     src: Text,
                                     dst: Text,
-                                    resources: MutableSequence[Text]) -> None:
+                                    resources: MutableSequence[Text],
+                                    read_only: bool = False) -> None:
         effective_resources = self._get_effective_resources(resources, dst)
         # Check for the need of a temporary copy
         temp_dir = None
@@ -143,7 +152,12 @@ class OccamConnector(SSHConnector):
         copy_tasks = []
         for resource in effective_resources:
             copy_tasks.append(asyncio.create_task(
-                self._copy_local_to_remote_single(src, dst, resource, temp_dir)))
+                self._copy_local_to_remote_single(
+                    src=src,
+                    dst=dst,
+                    resource=resource,
+                    temp_dir=temp_dir,
+                    read_only=read_only)))
         await asyncio.gather(*copy_tasks)
         # If a temporary location was created, delete it
         if temp_dir is not None:
@@ -153,7 +167,8 @@ class OccamConnector(SSHConnector):
                                            src: Text,
                                            dst: Text,
                                            resource: Text,
-                                           temp_dir: Optional[Text]) -> None:
+                                           temp_dir: Optional[Text],
+                                           read_only: bool = False) -> None:
         shared_path = self._get_shared_path(resource, dst)
         if shared_path is not None:
             await asyncssh.scp(src, (self.ssh_client, shared_path), preserve=True, recurse=True)
@@ -164,7 +179,8 @@ class OccamConnector(SSHConnector):
     async def _copy_remote_to_local(self,
                                     src: Text,
                                     dst: Text,
-                                    resource: Text) -> None:
+                                    resource: Text,
+                                    read_only: bool = False) -> None:
         shared_path = self._get_shared_path(resource, src)
         if shared_path is not None:
             await asyncssh.scp((self.ssh_client, shared_path), dst, preserve=True, recurse=True)
