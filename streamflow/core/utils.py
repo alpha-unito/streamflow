@@ -55,18 +55,18 @@ def create_command(command: MutableSequence[Text],
     return command
 
 
-def create_tar_from_byte_stream(tar: tarfile.TarFile,
-                                src: Text,
-                                dst: Text) -> None:
-    for member in tar.getmembers():
+def extract_tar_stream(tar: tarfile.TarFile,
+                       src: Text,
+                       dst: Text) -> None:
+    for member in tar:
         if os.path.isdir(dst):
-            if member.path == src:
+            if posixpath.join('/', member.path) == src:
                 member.path = posixpath.basename(member.path)
                 tar.extract(member, dst)
                 if member.isdir():
                     dst = os.path.join(dst, member.path)
             else:
-                member.path = posixpath.relpath(member.path, src)
+                member.path = posixpath.relpath(posixpath.join('/', member.path), src)
                 tar.extract(member, dst)
         elif member.isfile():
             with tar.extractfile(member) as inputfile:

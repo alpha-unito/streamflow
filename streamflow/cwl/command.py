@@ -59,7 +59,7 @@ def _get_value(token: Any, item_separator: Optional[Text]) -> Any:
             value.append(_get_value(element, item_separator))
         if item_separator is not None:
             value = item_separator.join([str(v) for v in value])
-        return value
+        return value or None
     elif isinstance(token, MutableMapping):
         if (path := utils.get_path_from_token(token)) is not None:
             return path
@@ -122,7 +122,7 @@ class CWLCommandToken(object):
         # Obtain token value
         value = _get_value(processed_token, self.item_separator)
         # If token value is null or an empty array, skip the command token
-        if value is None or value == []:
+        if value is None:
             return bindings_map
         # Otherwise
         else:
@@ -223,25 +223,24 @@ class CWLObjectCommandToken(CWLCommandToken):
             raise WorkflowDefinitionException(
                 "A {this} object can only be used to process dict values".format(this=self.__class__.__name__))
 
-    def _process_token(self,
-                       token_value: Any,
-                       context: MutableMapping[Text, Any],
-                       is_shell_command: bool = False,
-                       full_js: bool = False,
-                       expression_lib: Optional[MutableSequence[Text]] = None) -> Any:
-        self._check_dict(token_value)
-        local_bindings = {}
+    def get_binding(self,
+                    context: MutableMapping[Text, Any],
+                    bindings_map: MutableMapping[int, MutableSequence[Any]],
+                    is_shell_command: bool = False,
+                    full_js: bool = False,
+                    expression_lib: Optional[MutableSequence[Text]] = None) -> Any:
+        self._check_dict(self.value)
         context = copy.deepcopy(context)
         context['inputs'] = context['inputs'][self.name]
-        for key, token in token_value.items():
+        for key, token in self.value.items():
             if key in context['inputs'] and token is not None:
-                local_bindings = token.get_binding(
+                bindings_map = token.get_binding(
                     context=context,
-                    bindings_map=local_bindings,
+                    bindings_map=bindings_map,
                     is_shell_command=is_shell_command,
                     full_js=full_js,
                     expression_lib=expression_lib)
-        return _merge_tokens(local_bindings)
+        return bindings_map
 
 
 class CWLUnionCommandToken(CWLCommandToken):

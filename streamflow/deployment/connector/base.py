@@ -41,9 +41,11 @@ class BaseConnector(Connector, ABC):
 
     def __init__(self,
                  streamflow_config_dir: Text,
-                 transferBufferSize: int):
+                 transferBufferSize: int,
+                 readBufferSize: Optional[int] = None):
         super().__init__(streamflow_config_dir)
         self.transferBufferSize: int = transferBufferSize
+        self.readBufferSize: int = readBufferSize or 4 * self.transferBufferSize
 
     async def _copy_local_to_remote(self,
                                     src: Text,
@@ -51,7 +53,7 @@ class BaseConnector(Connector, ABC):
                                     resources: MutableSequence[Text],
                                     read_only: bool = False) -> None:
         with tempfile.TemporaryFile() as tar_buffer:
-            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+            with tarfile.open(fileobj=tar_buffer, mode='w|gz') as tar:
                 tar.add(src, arcname=dst)
             tar_buffer.seek(0)
             await asyncio.gather(*[asyncio.create_task(
@@ -65,10 +67,10 @@ class BaseConnector(Connector, ABC):
                                            resource: Text,
                                            tar_buffer: io.BufferedRandom,
                                            read_only: bool = False) -> None:
-        resource_buffer = io.BufferedReader(tar_buffer.raw)
+        resource_buffer = io.BufferedReader(tar_buffer.raw, buffer_size=self.readBufferSize)
         proc = await self._run(
             resource=resource,
-            command=["tar", "xf", "-", "-C", "/"],
+            command=["tar", "xzf", "-", "-C", "/"],
             encode=False,
             interactive=True,
             stream=True
@@ -86,7 +88,7 @@ class BaseConnector(Connector, ABC):
                                     read_only: bool = False) -> None:
         proc = await self._run(
             resource=resource,
-            command=["tar", "cf", "-", "-C", "/", posixpath.relpath(src, '/')],
+            command=["tar", "czf", "-", "-C", "/", posixpath.relpath(src, '/')],
             capture_output=True,
             encode=False,
             stream=True)
@@ -95,8 +97,8 @@ class BaseConnector(Connector, ABC):
                 tar_buffer.write(data)
             await proc.wait()
             tar_buffer.seek(0)
-            with tarfile.open(fileobj=tar_buffer, mode='r:') as tar:
-                utils.create_tar_from_byte_stream(tar, src, dst)
+            with tarfile.open(fileobj=tar_buffer, mode='r|gz') as tar:
+                utils.extract_tar_stream(tar, src, dst)
 
     async def _copy_remote_to_remote(self,
                                      src: Text,
@@ -281,4 +283,3 @@ class BaseConnector(Connector, ABC):
             stderr=stderr,
             capture_output=capture_output,
             job_name=job_name)
-

@@ -253,7 +253,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                                         secondary_file=sf,
                                         token_value=token_value,
                                         from_expression=True,
-                                        existing_sf=sf_map)))
+                                        existing_sf=sf_map,
+                                        load_contents=load_contents,
+                                        load_listing=load_listing or self.load_listing)))
                                     sf_specs.append(secondary_file)
                             else:
                                 sf_tasks.append(asyncio.create_task(self._process_secondary_file(
@@ -261,7 +263,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                                     secondary_file=sf_value,
                                     token_value=token_value,
                                     from_expression=True,
-                                    existing_sf=sf_map)))
+                                    existing_sf=sf_map,
+                                    load_contents=load_contents,
+                                    load_listing=load_listing or self.load_listing)))
                                 sf_specs.append(secondary_file)
                         # Otherwise, simply process the pattern string
                         else:
@@ -270,7 +274,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                                 secondary_file=secondary_file.pattern,
                                 token_value=token_value,
                                 from_expression=False,
-                                existing_sf=sf_map)))
+                                existing_sf=sf_map,
+                                load_contents=load_contents,
+                                load_listing=load_listing or self.load_listing)))
                             sf_specs.append(secondary_file)
                     for sf_value, sf_spec in zip(await asyncio.gather(*sf_tasks), sf_specs):
                         if sf_value is not None:
@@ -378,7 +384,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                                       secondary_file: Any,
                                       token_value: MutableMapping[Text, Any],
                                       from_expression: bool,
-                                      existing_sf: MutableMapping[Text, Any]) -> Optional[MutableMapping[Text, Any]]:
+                                      existing_sf: MutableMapping[Text, Any],
+                                      load_contents: bool,
+                                      load_listing: Optional[LoadListing]) -> Optional[MutableMapping[Text, Any]]:
         step = job.step if job is not None else self.port.step
         # If value is None, simply return None
         if secondary_file is None:
@@ -394,7 +402,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                         job=job,
                         token_class=secondary_file['class'],
                         filepath=filepath,
-                        basename=secondary_file.get('basename'))
+                        basename=secondary_file.get('basename'),
+                        load_contents=load_contents,
+                        load_listing=load_listing)
         # If value is a string
         else:
             # If value doesn't come from an expression, apply it to the primary path
@@ -413,7 +423,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                             step=step,
                             job=job,
                             token_class=token_class,
-                            filepath=filepath)
+                            filepath=filepath,
+                            load_contents=load_contents,
+                            load_listing=load_listing)
             else:
                 return existing_sf[filepath]
 

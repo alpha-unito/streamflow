@@ -16,6 +16,11 @@
       "description": "Maximum number of concurrent session to open for a single SSH client connection",
       "default": 10
     },
+    "readBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local disk reads during data transfers",
+      "default": "4 * transferBufferSize"
+    },
     "sshKey": {
       "type": "string",
       "description": "Path to the SSH key needed to connect with Slurm environment"
@@ -23,6 +28,11 @@
     "sshKeyPassphrase": {
       "type": "string",
       "description": "Passphrase protecting the SSH key"
+    },
+    "transferBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": "16kiB"
     },
     "username": {
       "type": "string",

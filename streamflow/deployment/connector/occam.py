@@ -2,7 +2,6 @@ import asyncio
 import os
 import posixpath
 import re
-from asyncio.subprocess import STDOUT
 from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
 
 import asyncssh
@@ -22,14 +21,17 @@ class OccamConnector(SSHConnector):
                  file: Text,
                  sshKey: Text,
                  username: Text,
+                 readBufferSize: Optional[int] = None,
                  sshKeyPassphrase: Optional[Text] = None,
                  hostname: Optional[Text] = "occam.c3s.unito.it",
-                 ) -> None:
+                 transferBufferSize: int = 2**16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             hostname=hostname,
+            readBufferSize=readBufferSize,
             sshKey=sshKey,
             sshKeyPassphrase=sshKeyPassphrase,
+            transferBufferSize=transferBufferSize,
             username=username)
         with open(os.path.join(streamflow_config_dir, file)) as f:
             yaml = YAML(typ='safe')
@@ -79,10 +81,11 @@ class OccamConnector(SSHConnector):
                 return posixpath.normpath(posixpath.join(local, posixpath.relpath(path, remote)))
         return None
 
-    async def _get_tmpdir(self):
+    async def _get_tmpdir(self, resource: Text):
         scratch_home = '/scratch/home/{username}'.format(username=self.username)
         temp_dir = posixpath.join(scratch_home, 'streamflow', "".join(utils.random_name()))
-        await self.ssh_client.run('mkdir -p {dir}'.format(dir=temp_dir))
+        async with self._get_ssh_client(resource) as ssh_client:
+            await ssh_client.run('mkdir -p {dir}'.format(dir=temp_dir))
         return temp_dir
 
     def _get_volumes(self, resource: Text) -> MutableSequence[Text]:
@@ -102,7 +105,7 @@ class OccamConnector(SSHConnector):
         temp_dir = None
         for resource in effective_resources:
             if source_remote != resource:
-                temp_dir = await self._get_tmpdir()
+                temp_dir = await self._get_tmpdir(resource)
                 copy1_command = ['/bin/cp', '-rf', src, temp_dir]
                 await self.run(source_remote, copy1_command)
                 break
@@ -118,7 +121,9 @@ class OccamConnector(SSHConnector):
         ) for resource in effective_resources])
         # If a temporary location was created, delete it
         if temp_dir is not None:
-            await self.ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
+            for resource in effective_resources:
+                async with self._get_ssh_client(resource) as ssh_client:
+                    await ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
 
     async def _copy_remote_to_remote_single(self,
                                             src: Text,
@@ -145,8 +150,9 @@ class OccamConnector(SSHConnector):
         for resource in effective_resources:
             shared_path = self._get_shared_path(resource, dst)
             if shared_path is None:
-                temp_dir = await self._get_tmpdir()
-                await asyncssh.scp(src, (self.ssh_client, temp_dir), preserve=True, recurse=True)
+                temp_dir = await self._get_tmpdir(resource)
+                async with self._get_ssh_client(resource) as ssh_client:
+                    await asyncssh.scp(src, (ssh_client, temp_dir), preserve=True, recurse=True)
                 break
         # Perform the actual copies
         copy_tasks = []
@@ -161,7 +167,9 @@ class OccamConnector(SSHConnector):
         await asyncio.gather(*copy_tasks)
         # If a temporary location was created, delete it
         if temp_dir is not None:
-            await self.ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
+            for resource in effective_resources:
+                async with self._get_ssh_client(resource) as ssh_client:
+                    await ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
 
     async def _copy_local_to_remote_single(self,
                                            src: Text,
@@ -171,7 +179,8 @@ class OccamConnector(SSHConnector):
                                            read_only: bool = False) -> None:
         shared_path = self._get_shared_path(resource, dst)
         if shared_path is not None:
-            await asyncssh.scp(src, (self.ssh_client, shared_path), preserve=True, recurse=True)
+            async with self._get_ssh_client(resource) as ssh_client:
+                await asyncssh.scp(src, (ssh_client, shared_path), preserve=True, recurse=True)
         else:
             copy_command = ['/bin/cp', "-rf", temp_dir + "/*", dst]
             await self.run(resource, copy_command)
@@ -183,22 +192,24 @@ class OccamConnector(SSHConnector):
                                     read_only: bool = False) -> None:
         shared_path = self._get_shared_path(resource, src)
         if shared_path is not None:
-            await asyncssh.scp((self.ssh_client, shared_path), dst, preserve=True, recurse=True)
+            async with self._get_ssh_client(resource) as ssh_client:
+                await asyncssh.scp((ssh_client, shared_path), dst, preserve=True, recurse=True)
         else:
-            temp_dir = await self._get_tmpdir()
+            temp_dir = await self._get_tmpdir(resource)
             copy_command = ['/bin/cp', "-rf", src, temp_dir, '&&',
                             'find', temp_dir, '-maxdepth', '1', '-mindepth', '1', '-exec', 'basename', '{}', '\\;']
             contents, _ = await self.run(resource, copy_command, capture_output=True)
             contents = contents.split()
             scp_tasks = []
-            for content in contents:
-                scp_tasks.append(asyncio.create_task(asyncssh.scp(
-                    (self.ssh_client, posixpath.join(temp_dir, content)),
-                    dst,
-                    preserve=True,
-                    recurse=True
-                )))
-            await asyncio.gather(*scp_tasks)
+            async with self._get_ssh_client(resource) as ssh_client:
+                for content in contents:
+                    scp_tasks.append(asyncio.create_task(asyncssh.scp(
+                        (ssh_client, posixpath.join(temp_dir, content)),
+                        dst,
+                        preserve=True,
+                        recurse=True
+                    )))
+                await asyncio.gather(*scp_tasks)
             delete_command = ['rm', '-rf', temp_dir]
             await self.run(resource, delete_command)
 
@@ -226,7 +237,8 @@ class OccamConnector(SSHConnector):
             command=" ".join(service.get('command', ""))
         )
         logger.debug("Executing {command}".format(command=deploy_command))
-        result = await self.ssh_client.run(deploy_command)
+        async with self._get_ssh_client(name) as ssh_client:
+            result = await ssh_client.run(deploy_command)
         output = result.stdout
         search_result = re.findall('({node}-[0-9]+).*'.format(node=node), output, re.MULTILINE)
         if search_result:
@@ -237,7 +249,7 @@ class OccamConnector(SSHConnector):
         else:
             raise Exception
 
-    async def _undeploy_node(self, job_id: Text):
+    async def _undeploy_node(self, name: Text, job_id: Text):
         undeploy_command = "".join([
             "occam-kill ",
             "{job_id}"
@@ -245,7 +257,8 @@ class OccamConnector(SSHConnector):
             job_id=job_id
         )
         logger.debug("Executing {command}".format(command=undeploy_command))
-        await self.ssh_client.run(undeploy_command)
+        async with self._get_ssh_client(name) as ssh_client:
+            await ssh_client.run(undeploy_command)
         logger.info("Killed {resource}".format(resource=job_id))
 
     async def deploy(self, external: bool) -> None:
@@ -268,36 +281,44 @@ class OccamConnector(SSHConnector):
             undeploy_tasks = []
             for name in self.jobs_table:
                 for job_id in self.jobs_table[name]:
-                    undeploy_tasks.append(asyncio.create_task(self._undeploy_node(job_id)))
+                    undeploy_tasks.append(asyncio.create_task(self._undeploy_node(name, job_id)))
             await asyncio.gather(*undeploy_tasks)
+            self.jobs_table = {}
         # Close connection
         await super().undeploy(external)
 
-    async def run(self,
-                  resource: Text,
-                  command: MutableSequence[Text],
-                  environment: MutableMapping[Text, Text] = None,
-                  workdir: Optional[Text] = None,
-                  stdin: Optional[Union[int, Text]] = None,
-                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  capture_output: bool = False) -> Optional[Tuple[Optional[Any], int]]:
+    async def _run(self,
+                   resource: Text,
+                   command: MutableSequence[Text],
+                   environment: MutableMapping[Text, Text] = None,
+                   workdir: Optional[Text] = None,
+                   stdin: Optional[Union[int, Text]] = None,
+                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   job_name: Optional[Text] = None,
+                   capture_output: bool = False,
+                   encode: bool = True,
+                   interactive: bool = False,
+                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+        command = self._get_command(
+            resource=resource,
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            encode=encode,
+            job_name=job_name)
         occam_command = "".join(
             "occam-exec "
             "{resource} "
             "sh -c '{command}'"
         ).format(
             resource=resource,
-            command=self.create_encoded_command(
-                command=command,
-                resource=resource,
-                environment=environment,
-                workdir=workdir,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr)
-        )
-        result = await self.ssh_client.run(occam_command)
+            command=command)
+        async with self._get_ssh_client(resource) as ssh_client:
+            result = await ssh_client.run(occam_command)
         if capture_output:
             lines = (line for line in result.stdout.split('\n'))
             out = ""

@@ -242,6 +242,7 @@ class DockerConnector(DockerBaseConnector):
                  privileged: bool = False,
                  publish: Optional[MutableSequence[Text]] = None,
                  publishAll: bool = False,
+                 readBufferSize: Optional[int] = None,
                  readOnly: bool = False,
                  replicas: int = 1,
                  resourcesCacheTTL: int = 10,
@@ -265,7 +266,10 @@ class DockerConnector(DockerBaseConnector):
                  volumeDriver: Optional[Text] = None,
                  volumesFrom: Optional[MutableSequence[Text]] = None,
                  workdir: Optional[Text] = None):
-        super().__init__(streamflow_config_dir, transferBufferSize)
+        super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
+            readBufferSize=readBufferSize,
+            transferBufferSize=transferBufferSize)
         self.image: Text = image
         self.addHost: Optional[MutableSequence[Text]] = addHost
         self.blkioWeight: Optional[int] = blkioWeight
@@ -609,12 +613,16 @@ class DockerComposeConnector(DockerBaseConnector):
                  noStart: Optional[bool] = False,
                  build: Optional[bool] = False,
                  timeout: Optional[int] = None,
+                 readBufferSize: Optional[int] = None,
                  transferBufferSize: int = 2**16,
                  renewAnonVolumes: Optional[bool] = False,
                  removeOrphans: Optional[bool] = False,
                  removeVolumes: Optional[bool] = False,
                  resourcesCacheTTL: int = 10) -> None:
-        super().__init__(streamflow_config_dir, transferBufferSize)
+        super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
+            readBufferSize=readBufferSize,
+            transferBufferSize=transferBufferSize)
         self.files = [os.path.join(streamflow_config_dir, file) for file in files]
         self.projectName = projectName
         self.verbose = verbose

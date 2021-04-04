@@ -157,6 +157,7 @@
             "helm",
             "helm2",
             "helm3",
+            "pbs",
             "occam",
             "singularity",
             "slurm",

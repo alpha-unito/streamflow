@@ -826,10 +826,16 @@ class CWLTranslator(object):
         else:
             step_definition = cwltool.load_tool.load_tool(run_command, self.loading_context)
             self._recursive_translate(workflow, step_definition, context, posixpath.join(step_name, 'run'))
+        # Merge requirements with the underlying step definition
+        context = copy.deepcopy(context)
+        for hint in step_definition.hints:
+            context['hints'][hint['class']] = hint
+        for requirement in step_definition.requirements:
+            context['requirements'][requirement['class']] = requirement
+        requirements = {**context['hints'], **context['requirements']}
         # Create input step
         input_step = BaseStep(step_name, self.context)
         # Extract custom types if present
-        requirements = {**context['hints'], **context['requirements']}
         schema_def_types = _get_schema_def_types(requirements)
         # Add command
         expression_lib, full_js = _process_javascript_requirement(requirements)

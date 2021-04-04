@@ -41,8 +41,12 @@ class SingularityBaseConnector(BaseConnector, ABC):
 
     def __init__(self,
                  streamflow_config_dir: Text,
-                 transferBufferSize: int):
-        super().__init__(streamflow_config_dir, transferBufferSize)
+                 transferBufferSize: int,
+                 readBufferSize: Optional[int] = None):
+        super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
+            readBufferSize=readBufferSize,
+            transferBufferSize=transferBufferSize)
 
     async def _copy_local_to_remote(self,
                                     src: Text,
@@ -130,7 +134,8 @@ class SingularityConnector(SingularityBaseConnector):
     def __init__(self,
                  streamflow_config_dir: Text,
                  image: Text,
-                 transferBufferSize: Optional[int] = 2 ** 16,
+                 readBufferSize: Optional[int] = None,
+                 transferBufferSize: int = 2 ** 16,
                  addCaps: Optional[Text] = None,
                  allowSetuid: bool = False,
                  applyCgroups: Optional[Text] = None,
@@ -173,7 +178,10 @@ class SingularityConnector(SingularityBaseConnector):
                  workdir: Optional[Text] = None,
                  writable: bool = False,
                  writableTmpfs: bool = False):
-        super().__init__(streamflow_config_dir, transferBufferSize)
+        super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
+            readBufferSize=readBufferSize,
+            transferBufferSize=transferBufferSize)
         self.image: Text = image
         self.addCaps: Optional[Text] = addCaps
         self.allowSetuid: bool = allowSetuid

@@ -27,13 +27,17 @@ class QueueManagerConnector(SSHConnector, ABC):
                  username: Text,
                  maxConcurrentJobs: Optional[int] = 1,
                  pollingInterval: int = 5,
-                 sshKeyPassphrase: Optional[Text] = None) -> None:
+                 sshKeyPassphrase: Optional[Text] = None,
+                 readBufferSize: Optional[int] = None,
+                 transferBufferSize: int = 2**16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             file=file,
             hostname=hostname,
+            readBufferSize=readBufferSize,
             sshKey=sshKey,
             sshKeyPassphrase=sshKeyPassphrase,
+            transferBufferSize=transferBufferSize,
             username=username)
         self.maxConcurrentJobs: int = maxConcurrentJobs
         self.pollingInterval: int = pollingInterval
@@ -253,12 +257,11 @@ class PBSConnector(QueueManagerConnector):
                                  stdin: Optional[Union[int, Text]] = None,
                                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
                                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
-        batch_command = "{workdir} qsub {job_name} {workdir} {stdin} {stdout} {stderr} {helper_file}".format(
+        batch_command = "{workdir} qsub {job_name} {stdin} {stdout} {stderr} {helper_file}".format(
             workdir="cd {workdir} &&".format(workdir=workdir) if workdir is not None else "",
-            job_name="-N \"{job_name}\"".format(job_name=job_name),
+            job_name="-N \"job-{job_name}\"".format(job_name=job_name),
             stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",
-            stdout=("-o \"{stdout}\"".format(stdout=stdout if stdout != STDOUT else
-                "{job_name}.out".format(job_name=job_name))),
+            stdout=("-o \"{stdout}\"".format(stdout=stdout if stdout != STDOUT else utils.random_name())),
             stderr="-e \"{stderr}\"".format(stderr=stderr) if stderr != STDOUT and stderr != stdout else "",
             helper_file=helper_file)
         async with self._get_ssh_client(resource) as ssh_client:

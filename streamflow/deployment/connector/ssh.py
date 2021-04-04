@@ -63,17 +63,28 @@ def _parse_hostname(hostname):
 
 class SSHConnector(BaseConnector):
 
-    def _get_run_command(self,
-                         command: Text,
-                         resource: Text,
-                         interactive: bool = False):
-        return "".join([
-            "ssh ",
-            "{resource} ",
-            "{command}"
-        ]).format(
+    @staticmethod
+    def _get_command(resource: Text,
+                     command: MutableSequence[Text],
+                     environment: MutableMapping[Text, Text] = None,
+                     workdir: Optional[Text] = None,
+                     stdin: Optional[Union[int, Text]] = None,
+                     stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
+                     stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                     job_name: Optional[Text] = None,
+                     encode: bool = True):
+        command = utils.create_command(
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr)
+        logger.debug("Executing command {command} on {resource} {job}".format(
+            command=command,
             resource=resource,
-            command=command)
+            job="for job {job}".format(job=job_name) if job_name else ""))
+        return utils.encode_command(command) if encode else command
 
     def __init__(self,
                  streamflow_config_dir: Text,
@@ -83,8 +94,12 @@ class SSHConnector(BaseConnector):
                  file: Optional[Text] = None,
                  maxConcurrentSessions: int = 10,
                  sshKeyPassphrase: Optional[Text] = None,
+                 readBufferSize: Optional[int] = None,
                  transferBufferSize: int = 2 ** 16) -> None:
-        super().__init__(streamflow_config_dir, transferBufferSize)
+        super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
+            readBufferSize=readBufferSize,
+            transferBufferSize=transferBufferSize)
         if file is not None:
             with open(os.path.join(streamflow_config_dir, file)) as f:
                 self.template: Optional[Template] = Template(f.read())
@@ -134,6 +149,18 @@ class SSHConnector(BaseConnector):
         async with self._get_ssh_client(resource) as ssh_client:
             await asyncssh.scp((ssh_client, src), dst, preserve=True, recurse=True)
 
+    def _get_run_command(self,
+                         command: Text,
+                         resource: Text,
+                         interactive: bool = False):
+        return "".join([
+            "ssh ",
+            "{resource} ",
+            "{command}"
+        ]).format(
+            resource=resource,
+            command=command)
+
     def _get_ssh_client(self, resource: Text):
         if resource not in self.ssh_contexts:
             (hostname, port) = _parse_hostname(self.hostname)
@@ -145,12 +172,6 @@ class SSHConnector(BaseConnector):
                 passphrase=self.sshKeyPassphrase,
                 max_concurrent_sessions=self.maxConcurrentSessions)
         return self.ssh_contexts[resource]
-
-    async def deploy(self, external: bool) -> None:
-        pass
-
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
-        return {self.hostname: Resource(self.hostname, self.hostname)}
 
     async def _run(self,
                    resource: Text,
@@ -165,18 +186,16 @@ class SSHConnector(BaseConnector):
                    encode: bool = True,
                    interactive: bool = False,
                    stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
-        command = utils.create_command(
+        command = self._get_command(
+            resource=resource,
             command=command,
             environment=environment,
             workdir=workdir,
             stdin=stdin,
             stdout=stdout,
-            stderr=stderr)
-        logger.debug("Executing command {command} on {resource} {job}".format(
-            command=command,
-            resource=resource,
-            job="for job {job}".format(job=job_name) if job_name else ""))
-        command = utils.encode_command(command)
+            stderr=stderr,
+            encode=encode,
+            job_name=job_name)
         if job_name is not None and self.template is not None:
             helper_file = await self._build_helper_file(command, resource, environment, workdir)
             async with self._get_ssh_client(resource) as ssh_client:
@@ -186,6 +205,12 @@ class SSHConnector(BaseConnector):
                 result = await ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT)
         if capture_output:
             return result.stdout.strip(), result.returncode
+
+    async def deploy(self, external: bool) -> None:
+        pass
+
+    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
+        return {self.hostname: Resource(self.hostname, self.hostname)}
 
     async def undeploy(self, external: bool) -> None:
         for ssh_context in self.ssh_contexts.values():
