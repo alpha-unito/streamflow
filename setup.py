@@ -43,7 +43,7 @@ setup(
         "kubernetes_asyncio",
         "uvloop"
     ],
-    python_requires=">=3.7, <4",
+    python_requires=">=3.8, <4",
     entry_points={"console_scripts": ["streamflow=streamflow.main:run"]},
     zip_safe=True,
     classifiers=[
@@ -53,7 +53,7 @@ setup(
         "Intended Audience :: Science/Research",
         "Operating System :: MacOS :: MacOS X",
         "Operating System :: POSIX",
-        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
         "Topic :: Scientific/Engineering",
         "Topic :: Scientific/Engineering :: Bio-Informatics",
         "Topic :: System :: Distributed Computing",

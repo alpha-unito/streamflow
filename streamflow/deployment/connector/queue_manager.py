@@ -200,9 +200,8 @@ class SlurmConnector(QueueManagerConnector):
                                  stdin: Optional[Union[int, Text]] = None,
                                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
                                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
-        batch_command = "sbatch --parsable {workdir} {job_name} {stdin} {stdout} {stderr} {helper_file}".format(
+        batch_command = "sbatch --parsable {workdir} {stdin} {stdout} {stderr} {helper_file}".format(
             workdir="-D {workdir}".format(workdir=workdir) if workdir is not None else "",
-            job_name="-J \"{job_name}\"".format(job_name=job_name),
             stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",
             stdout="-o \"{stdout}\"".format(stdout=stdout) if stdout != STDOUT else "",
             stderr="-e \"{stderr}\"".format(stderr=stderr) if stderr != STDOUT and stderr != stdout else "",
@@ -239,8 +238,9 @@ class PBSConnector(QueueManagerConnector):
                                 resource: Text) -> MutableSequence[Text]:
         async with self._get_ssh_client(resource) as ssh_client:
             return (await ssh_client.run(
-                "qstat -x {job_ids} | tail -n +3 | awk '{{if($5 != \"E\" && $5 != \"F\") {{print $1}}}}'".format(
-                    job_ids=" ".join(self.scheduledJobs)
+                "qstat -awx {job_ids} | grep '{grep_ids}' | awk '{{if($10 != \"E\" && $10 != \"F\") {{print $1}}}}'".format(
+                    job_ids=" ".join(self.scheduledJobs),
+                    grep_ids="\\|".join(self.scheduledJobs)
                 ))).stdout.strip().splitlines()
 
     async def _remove_jobs(self,
@@ -257,9 +257,8 @@ class PBSConnector(QueueManagerConnector):
                                  stdin: Optional[Union[int, Text]] = None,
                                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
                                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
-        batch_command = "{workdir} qsub {job_name} {stdin} {stdout} {stderr} {helper_file}".format(
+        batch_command = "{workdir} qsub {stdin} {stdout} {stderr} {helper_file}".format(
             workdir="cd {workdir} &&".format(workdir=workdir) if workdir is not None else "",
-            job_name="-N \"job-{job_name}\"".format(job_name=job_name),
             stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",
             stdout=("-o \"{stdout}\"".format(stdout=stdout if stdout != STDOUT else utils.random_name())),
             stderr="-e \"{stderr}\"".format(stderr=stderr) if stderr != STDOUT and stderr != stdout else "",
