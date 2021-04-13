@@ -19,7 +19,7 @@ The StreamFlow module is available on [PyPI](https://pypi.org/project/streamflow
 pip install streamflow
 ```
 
-Please note that StreamFlow requires `python >= 3.7`. Then you can execute it directly from the CLI
+Please note that StreamFlow requires `python >= 3.8`. Then you can execute it directly from the CLI
 
 ```bash
 streamflow /path/to/streamflow.yml
@@ -27,12 +27,11 @@ streamflow /path/to/streamflow.yml
 
 #### Docker
 
-StreamFlow Docker images are available on [Docker Hub](https://hub.docker.com/r/alphaunito/streamflow). In order to run
-a workflow inside the StreaFlow image
+StreamFlow Docker images are available on [Docker Hub](https://hub.docker.com/r/alphaunito/streamflow). In order to run a workflow inside the StreamFlow image
  - A StreamFlow project, containing a `streamflow.yml` file and all the other relevant dependencies (e.g. a CWL
    description of the workflow steps and a Helm description of the execution environment) need to be mounted as a volume
    inside the container, for example in the `/streamflow/project` folder
- - Workflow outputs, if any, will be stored in the `/streamflow/results` folder. Therefore, it is necessary to mount
+ - By default, workflow outputs will be stored in the `/streamflow/results` folder. Therefore, it is necessary to mount
    such location as a volume in order to persist the results
  - StreamFlow will save all its temporary files inside the `/tmp/streamflow` location. For debugging purposes, or in
    order to improve I/O performances in case of huge files, it could be useful to mount also such location as a volume

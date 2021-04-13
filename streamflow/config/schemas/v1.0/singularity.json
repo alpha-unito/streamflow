@@ -106,7 +106,7 @@
     },
     "network": {
       "type": "string",
-      "description": "Specify desired network type separated by commas, each network will bring up a dedicated interface inside container"
+      "description": "Specify desired network type separated by commas, each network will bring up a dedicated interface inside container",
       "default": "bridge"
     },
     "networkArgs": {
