@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -19,18 +20,23 @@ class DataManager(ABC):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    def get_data_locations(self, resource: Text, path: Text) -> Set[DataLocation]:
+    def get_data_locations(self,
+                           resource: Text,
+                           path: Text,
+                           location_type: Optional[DataLocationType] = None) -> Set[DataLocation]:
         ...
 
     @abstractmethod
-    def invalidate_location(self, resource: Text, path: Text) -> None:
+    def invalidate_location(self,
+                            resource: Text,
+                            path: Text) -> None:
         ...
 
     @abstractmethod
-    async def register_path(self,
-                            job: Optional[Job],
-                            resource: Optional[Text],
-                            path: Text):
+    def register_path(self,
+                      job: Optional[Job],
+                      resource: Optional[Text],
+                      path: Text):
         ...
 
     @abstractmethod
@@ -49,25 +55,35 @@ class FileType(Enum):
 
 
 class DataLocation(object):
-    __slots__ = ('path', 'job', 'resource', 'valid')
+    __slots__ = ('path', 'job', 'location_type', 'resource', 'available')
 
     def __init__(self,
                  path: Text,
                  job: Optional[Text],
+                 location_type: DataLocationType,
                  resource: Optional[Text] = None,
-                 valid: bool = True):
+                 available: bool = False):
         self.path: Text = path
         self.job: Optional[Text] = job
         self.resource: Optional[Text] = resource
-        self.valid: bool = valid
+        self.location_type: DataLocationType = location_type
+        self.available: asyncio.Event = asyncio.Event()
+        if available:
+            self.available.set()
 
     def __eq__(self, other):
         if not isinstance(other, DataLocation):
             return False
         else:
             return (self.path == other.path and
-                    self.job == other.job and
                     self.resource == other.resource)
 
     def __hash__(self):
-        return hash((self.path, self.job, self.resource))
+        return hash((self.path, self.resource))
+
+
+class DataLocationType(Enum):
+    PRIMARY = 0
+    SYMBOLIC_LINK = 1
+    WRITABLE_COPY = 3
+    INVALID = 4

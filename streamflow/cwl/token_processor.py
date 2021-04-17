@@ -10,7 +10,7 @@ from typing import Optional, Any, List, Union, MutableMapping, Set, cast, Mutabl
 from cwltool.utils import CONTENT_LIMIT
 from typing_extensions import Text
 
-from streamflow.core.data import FileType, LOCAL_RESOURCE
+from streamflow.core.data import FileType, LOCAL_RESOURCE, DataLocationType
 from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException, \
     UnrecoverableTokenException
@@ -453,10 +453,10 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         # Otherwise, get the list of other file locations from DataManager
         data_locations = set()
         for resource in resources:
-            data_locations.update(context.data_manager.get_data_locations(resource, path))
+            data_locations.update(context.data_manager.get_data_locations(resource, path, DataLocationType.PRIMARY))
         # Check if path is still present in original resources
         for location in data_locations:
-            if location.resource in job_resources and location.valid:
+            if location.resource in job_resources:
                 if await remotepath.exists(connector, location.resource, path):
                     return path
                 else:
@@ -531,16 +531,14 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             token['secondaryFiles'] = secondary_files
         return token
 
-    async def _register_data(self,
-                             job: Job,
-                             token_value: Union[MutableSequence[MutableMapping[Text, Any]], MutableMapping[Text, Any]]):
+    def _register_data(self,
+                       job: Job,
+                       token_value: Union[MutableSequence[MutableMapping[Text, Any]], MutableMapping[Text, Any]]):
         context = self.get_context()
         # If `token_value` is a list, process every item independently
         if isinstance(token_value, MutableSequence):
-            register_path_tasks = []
             for t in token_value:
-                register_path_tasks.append(asyncio.create_task(self._register_data(job, t)))
-                await asyncio.gather(*register_path_tasks)
+                self._register_data(job, t)
         # Otherwise, if token value is a dictionary and it refers to a File or a Directory, register the path
         elif (isinstance(token_value, MutableMapping)
               and 'class' in token_value
@@ -562,11 +560,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             resources = job.get_resources() or [None]
             for path in paths:
                 if resources:
-                    await asyncio.gather(*[asyncio.create_task(
+                    for resource in resources or [None]:
                         context.data_manager.register_path(job, resource, path)
-                    ) for resource in resources])
-                else:
-                    await context.data_manager.register_path(job, None, path)
 
     async def _transfer_file(self,
                              src_job: Optional[Job],
@@ -729,7 +724,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         if command_output.status == Status.SKIPPED:
             return Token(name=self.port.name, value=None, job=job.name)
         token_value = await self._get_value_from_command(job, command_output)
-        await self._register_data(job, token_value)
+        self._register_data(job, token_value)
         weight = await self.weight_token(job, token_value)
         return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
 
@@ -749,7 +744,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             data_locations = set()
             for resource in resources:
                 for path in paths:
-                    data_locations.update(context.data_manager.get_data_locations(resource, path))
+                    data_locations.update(context.data_manager.get_data_locations(
+                        resource, path, DataLocationType.PRIMARY))
             return set(loc.resource for loc in filter(lambda l: l.resource not in resources, data_locations))
         else:
             return set()
