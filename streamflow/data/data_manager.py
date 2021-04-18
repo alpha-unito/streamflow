@@ -183,7 +183,7 @@ class DefaultDataManager(DataManager):
             data_locations={DataLocation(
                 path=path,
                 job=job.name if job is not None else None,
-                resource=resource,
+                resource=resource or LOCAL_RESOURCE,
                 location_type=DataLocationType.PRIMARY,
                 available=True)})
         self.context.checkpoint_manager.register_path(job, path)

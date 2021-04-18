@@ -110,7 +110,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                                            read_only: bool = False) -> None:
         resource_buffer = io.BufferedReader(tar_buffer.raw, buffer_size=self.readBufferSize)
         pod, container = resource.split(':')
-        command = ['tar', 'xzf', '-', '-C', '/']
+        command = ['tar', 'xf', '-', '-C', '/']
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -133,7 +133,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                                     resource: Text,
                                     read_only: bool = False):
         pod, container = resource.split(':')
-        command = ["tar", "czf", "-", "-C", "/", posixpath.relpath(src, '/')]
+        command = ["tar", "cf", "-", "-C", "/", posixpath.relpath(src, '/')]
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -153,7 +153,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                         tar_buffer.write(data)
             await response.close()
             tar_buffer.seek(0)
-            with tarfile.open(fileobj=tar_buffer, mode='r|gz') as tar:
+            with tarfile.open(fileobj=tar_buffer, mode='r|') as tar:
                 utils.extract_tar_stream(tar, src, dst)
 
     async def _get_container(self, resource: Text) -> Tuple[Text, V1Container]:

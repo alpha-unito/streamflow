@@ -53,7 +53,7 @@ class BaseConnector(Connector, ABC):
                                     resources: MutableSequence[Text],
                                     read_only: bool = False) -> None:
         with tempfile.TemporaryFile() as tar_buffer:
-            with tarfile.open(fileobj=tar_buffer, mode='w|gz') as tar:
+            with tarfile.open(fileobj=tar_buffer, mode='w|') as tar:
                 tar.add(src, arcname=dst)
             tar_buffer.seek(0)
             await asyncio.gather(*[asyncio.create_task(
@@ -70,7 +70,7 @@ class BaseConnector(Connector, ABC):
         resource_buffer = io.BufferedReader(tar_buffer.raw, buffer_size=self.readBufferSize)
         proc = await self._run(
             resource=resource,
-            command=["tar", "xzf", "-", "-C", "/"],
+            command=["tar", "xf", "-", "-C", "/"],
             encode=False,
             interactive=True,
             stream=True
@@ -88,7 +88,7 @@ class BaseConnector(Connector, ABC):
                                     read_only: bool = False) -> None:
         proc = await self._run(
             resource=resource,
-            command=["tar", "czf", "-", "-C", "/", posixpath.relpath(src, '/')],
+            command=["tar", "cf", "-", "-C", "/", posixpath.relpath(src, '/')],
             capture_output=True,
             encode=False,
             stream=True)
@@ -97,7 +97,7 @@ class BaseConnector(Connector, ABC):
                 tar_buffer.write(data)
             await proc.wait()
             tar_buffer.seek(0)
-            with tarfile.open(fileobj=tar_buffer, mode='r|gz') as tar:
+            with tarfile.open(fileobj=tar_buffer, mode='r|') as tar:
                 utils.extract_tar_stream(tar, src, dst)
 
     async def _copy_remote_to_remote(self,
