@@ -28,13 +28,11 @@ class QueueManagerConnector(SSHConnector, ABC):
                  maxConcurrentJobs: Optional[int] = 1,
                  pollingInterval: int = 5,
                  sshKeyPassphrase: Optional[Text] = None,
-                 readBufferSize: Optional[int] = None,
                  transferBufferSize: int = 2**16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             file=file,
             hostname=hostname,
-            readBufferSize=readBufferSize,
             sshKey=sshKey,
             sshKeyPassphrase=sshKeyPassphrase,
             transferBufferSize=transferBufferSize,

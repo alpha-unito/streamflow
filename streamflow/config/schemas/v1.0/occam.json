@@ -12,11 +12,6 @@
       "description": "Hostname of Occam facility",
       "default": "occam.c3s.unito.it"
     },
-    "readBufferSize": {
-      "type": "integer",
-      "description": "Buffer size allocated for local disk reads during data transfers",
-      "default": "4 * transferBufferSize"
-    },
     "sshKey": {
       "type": "string",
       "description": "Path to the SSH key needed to connect with Occam environment"

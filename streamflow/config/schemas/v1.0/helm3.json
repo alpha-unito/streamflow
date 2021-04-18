@@ -88,11 +88,6 @@
       "type": "string",
       "description": " Chart repository password where to locate the requested chart"
     },
-    "readBufferSize": {
-      "type": "integer",
-      "description": "Buffer size allocated for local disk reads during data transfers",
-      "default": "4 * transferBufferSize"
-    },
     "registryConfig": {
       "type": "string",
       "description": "Path to the registry config file",

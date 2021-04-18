@@ -94,11 +94,9 @@ class SSHConnector(BaseConnector):
                  file: Optional[Text] = None,
                  maxConcurrentSessions: int = 10,
                  sshKeyPassphrase: Optional[Text] = None,
-                 readBufferSize: Optional[int] = None,
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize)
         if file is not None:
             with open(os.path.join(streamflow_config_dir, file)) as f:

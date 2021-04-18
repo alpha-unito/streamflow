@@ -9,6 +9,7 @@ import subprocess
 import tarfile
 import tempfile
 import uuid
+import zlib
 from abc import ABC
 from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
 
@@ -50,13 +51,11 @@ class BaseHelmConnector(BaseConnector, ABC):
                  inCluster: Optional[bool] = False,
                  kubeconfig: Optional[Text] = os.path.join(os.environ['HOME'], ".kube", "config"),
                  namespace: Optional[Text] = None,
-                 readBufferSize: Optional[int] = None,
                  releaseName: Optional[Text] = "release-%s" % str(uuid.uuid1()),
                  resourcesCacheTTL: int = 10,
                  transferBufferSize: int = (2 ** 25) - 1):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
@@ -108,9 +107,9 @@ class BaseHelmConnector(BaseConnector, ABC):
                                            resource: Text,
                                            tar_buffer: io.BufferedRandom,
                                            read_only: bool = False) -> None:
-        resource_buffer = io.BufferedReader(tar_buffer.raw, buffer_size=self.readBufferSize)
+        resource_buffer = io.BufferedReader(tar_buffer.raw)
         pod, container = resource.split(':')
-        command = ['tar', 'xf', '-', '-C', '/']
+        command = ["tar", "xf", "-", "-C", "/"]
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -133,7 +132,7 @@ class BaseHelmConnector(BaseConnector, ABC):
                                     resource: Text,
                                     read_only: bool = False):
         pod, container = resource.split(':')
-        command = ["tar", "cf", "-", "-C", "/", posixpath.relpath(src, '/')]
+        command = ["tar", "chf", "-", "-C", "/", posixpath.relpath(src, '/')]
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -153,7 +152,9 @@ class BaseHelmConnector(BaseConnector, ABC):
                         tar_buffer.write(data)
             await response.close()
             tar_buffer.seek(0)
-            with tarfile.open(fileobj=tar_buffer, mode='r|') as tar:
+            with tarfile.open(
+                    fileobj=tar_buffer,
+                    mode='r|') as tar:
                 utils.extract_tar_stream(tar, src, dst)
 
     async def _get_container(self, resource: Text) -> Tuple[Text, V1Container]:
@@ -348,8 +349,7 @@ class Helm2Connector(BaseHelmConnector):
                  chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,
                  purge: Optional[bool] = True,
-                 transferBufferSize: int = (2 ** 25) - 1,
-                 readBufferSize: Optional[int] = None):
+                 transferBufferSize: int = (2 ** 25) - 1):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             inCluster=inCluster,
@@ -357,7 +357,6 @@ class Helm2Connector(BaseHelmConnector):
             namespace=namespace,
             releaseName=releaseName,
             resourcesCacheTTL=resourcesCacheTTL,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize
         )
         self.chart = os.path.join(streamflow_config_dir, chart)
@@ -577,8 +576,7 @@ class Helm3Connector(BaseHelmConnector):
                  verify: Optional[bool] = False,
                  chartVersion: Optional[Text] = None,
                  wait: Optional[bool] = True,
-                 transferBufferSize: int = (32 << 20) - 1,
-                 readBufferSize: Optional[int] = None):
+                 transferBufferSize: int = (32 << 20) - 1):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             inCluster=inCluster,
@@ -586,7 +584,6 @@ class Helm3Connector(BaseHelmConnector):
             namespace=namespace,
             releaseName=releaseName,
             resourcesCacheTTL=resourcesCacheTTL,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize
         )
         self.chart = os.path.join(streamflow_config_dir, chart)

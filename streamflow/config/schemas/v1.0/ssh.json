@@ -16,11 +16,6 @@
       "description": "Maximum number of concurrent session to open for a single SSH client connection",
       "default": 10
     },
-    "readBufferSize": {
-      "type": "integer",
-      "description": "Buffer size allocated for local disk reads during data transfers",
-      "default": "4 * transferBufferSize"
-    },
     "sshKey": {
       "type": "string",
       "description": "Path to the SSH key needed to connect with Slurm environment"

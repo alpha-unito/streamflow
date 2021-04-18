@@ -7,6 +7,7 @@ import posixpath
 import shlex
 import tarfile
 import tempfile
+import zlib
 from abc import ABC, abstractmethod
 from typing import MutableSequence, Optional, MutableMapping, cast
 
@@ -41,11 +42,9 @@ class SingularityBaseConnector(BaseConnector, ABC):
 
     def __init__(self,
                  streamflow_config_dir: Text,
-                 transferBufferSize: int,
-                 readBufferSize: Optional[int] = None):
+                 transferBufferSize: int):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize)
 
     async def _copy_local_to_remote(self,
@@ -65,7 +64,11 @@ class SingularityBaseConnector(BaseConnector, ABC):
                             raise
                 else:
                     if not created_tar_buffer:
-                        with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+                        with tarfile.open(
+                                fileobj=tar_buffer,
+                                format=tarfile.GNU_FORMAT,
+                                mode='w|',
+                                dereference=True) as tar:
                             tar.add(src, arcname=dst)
                         tar_buffer.seek(0)
                         created_tar_buffer = True
@@ -134,7 +137,6 @@ class SingularityConnector(SingularityBaseConnector):
     def __init__(self,
                  streamflow_config_dir: Text,
                  image: Text,
-                 readBufferSize: Optional[int] = None,
                  transferBufferSize: int = 2 ** 16,
                  addCaps: Optional[Text] = None,
                  allowSetuid: bool = False,
@@ -180,7 +182,6 @@ class SingularityConnector(SingularityBaseConnector):
                  writableTmpfs: bool = False):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize)
         self.image: Text = image
         self.addCaps: Optional[Text] = addCaps

@@ -21,14 +21,12 @@ class OccamConnector(SSHConnector):
                  file: Text,
                  sshKey: Text,
                  username: Text,
-                 readBufferSize: Optional[int] = None,
                  sshKeyPassphrase: Optional[Text] = None,
                  hostname: Optional[Text] = "occam.c3s.unito.it",
                  transferBufferSize: int = 2**16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             hostname=hostname,
-            readBufferSize=readBufferSize,
             sshKey=sshKey,
             sshKeyPassphrase=sshKeyPassphrase,
             transferBufferSize=transferBufferSize,

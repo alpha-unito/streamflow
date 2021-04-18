@@ -393,11 +393,6 @@
       "type": "boolean",
       "description": "Publish all exposed ports to random ports"
     },
-    "readBufferSize": {
-      "type": "integer",
-      "description": "Buffer size allocated for local disk reads during data transfers",
-      "default": "4 * transferBufferSize"
-    },
     "readOnly": {
       "type": "boolean",
       "description": "Mount the container's root filesystem as read only"
