@@ -6,7 +6,7 @@ import os
 import posixpath
 from enum import Enum
 from pathlib import PurePosixPath
-from typing import MutableMapping, TYPE_CHECKING, Optional, MutableSequence
+from typing import MutableMapping, TYPE_CHECKING, Optional, MutableSequence, cast
 
 import cwltool.command_line_tool
 import cwltool.context
@@ -658,7 +658,17 @@ class CWLTranslator(object):
                 # Otherwise, the input element depends on a single output port
                 else:
                     source_name = _get_name(name_prefix, element_input['source'])
-                    port.dependee = self._get_source_port(workflow, source_name)
+                    source_port = self._get_source_port(workflow, source_name)
+                    port.dependee = source_port
+                    # Percolate secondary files
+                    current_processor = port.token_processor
+                    if (isinstance(source_port.step.command, CWLStepCommand) and
+                            isinstance(current_processor, CWLTokenProcessor) and
+                            current_processor.secondary_files):
+                        source_processor = cast(CWLTokenProcessor,
+                                                source_port.step.input_ports[source_port.name].token_processor)
+                        source_processor.secondary_files = list(set(
+                            (current_processor.secondary_files or []) + (source_processor.secondary_files or [])))
 
     def _recursive_translate(self,
                              workflow: Workflow,
@@ -882,6 +892,12 @@ class CWLTranslator(object):
                 # Link output port to inner step's input port
                 inner_step = workflow.steps[posixpath.join(step_name, 'run')]
                 inner_step.input_ports[port_name].dependee = output_port
+                # Percolate secondary files
+                inner_processor = inner_step.input_ports[port_name].token_processor
+                if isinstance(inner_processor, CWLTokenProcessor) and inner_processor.secondary_files:
+                    current_processor = cast(CWLTokenProcessor, input_step.input_ports[port_name].token_processor)
+                    current_processor.secondary_files = list(set(
+                        (current_processor.secondary_files or []) + (inner_processor.secondary_files or [])))
         # Add input combinator
         input_step.input_combinator = _get_input_combinator(input_step, scatter_inputs, scatter_method)
         # Add input step to workflow

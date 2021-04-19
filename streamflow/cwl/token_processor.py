@@ -146,12 +146,22 @@ class LoadListing(Enum):
 
 
 class SecondaryFile(object):
+    __slots__ = ('pattern', 'required')
 
     def __init__(self,
                  pattern: Text,
                  required: bool):
         self.pattern: Text = pattern
         self.required: bool = required
+
+    def __eq__(self, other):
+        if not isinstance(other, SecondaryFile):
+            return False
+        else:
+            return self.pattern == other.pattern
+
+    def __hash__(self):
+        return hash(self.pattern)
 
 
 class CWLTokenProcessor(DefaultTokenProcessor):
