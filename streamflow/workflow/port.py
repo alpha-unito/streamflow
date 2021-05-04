@@ -301,7 +301,7 @@ class UnionTokenProcessor(DefaultTokenProcessor):
         }
 
     # noinspection PyMethodMayBeStatic
-    def _check_default_token_processor(self, processor: MapTokenProcessor, token_value: Any):
+    def _check_default_token_processor(self, processor: DefaultTokenProcessor, token_value: Any):
         return True
 
     def _check_map_processor(self, processor: MapTokenProcessor, token_value: Any):
@@ -424,8 +424,8 @@ class ScatterInputPort(DefaultInputPort):
     async def get(self) -> Any:
         while not self.queue:
             token = await self.dependee.get(posixpath.join(self.step.name, self.name))
-            if isinstance(token, TerminationToken):
-                self.queue = [token]
+            if isinstance(token, TerminationToken) or token.value is None:
+                self.queue = [token.rename(self.name)]
             elif isinstance(token.job, MutableSequence):
                 self.queue = [t.rename(self.name) for t in token.value]
             elif isinstance(token.value, MutableSequence):

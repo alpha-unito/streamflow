@@ -7,17 +7,11 @@ import cwltool.expression
 from typing_extensions import Text
 
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.utils import get_token_value
 
 if TYPE_CHECKING:
-    from streamflow.core.workflow import Job, Token
+    from streamflow.core.workflow import Job
     from typing import Any, Optional
-
-
-def _get_token_value(token: Token) -> Any:
-    if isinstance(token.job, MutableSequence):
-        return [_get_token_value(t) for t in token.value]
-    else:
-        return token.value
 
 
 def build_context(job: Job) -> MutableMapping[Text, Any]:
@@ -27,7 +21,7 @@ def build_context(job: Job) -> MutableMapping[Text, Any]:
         'runtime': {}
     }
     for token in job.inputs:
-        context['inputs'][token.name] = _get_token_value(token)
+        context['inputs'][token.name] = get_token_value(token)
     context['runtime']['outdir'] = job.output_directory
     context['runtime']['tmpdir'] = job.tmp_directory
     # TODO: populate these fields with the right values

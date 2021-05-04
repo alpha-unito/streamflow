@@ -9,7 +9,7 @@ import random
 import string
 import tarfile
 from pathlib import Path
-from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union
+from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any
 
 from streamflow.core.workflow import TerminationToken, Step
 
@@ -100,6 +100,13 @@ def get_size(path):
                 fp = os.path.join(dirpath, f)
                 total_size += os.path.getsize(fp)
         return total_size
+
+
+def get_token_value(token: Token) -> Any:
+    if isinstance(token.job, MutableSequence):
+        return [get_token_value(t) for t in token.value]
+    else:
+        return token.value
 
 
 def flatten_list(hierarchical_list):

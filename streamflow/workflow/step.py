@@ -38,7 +38,8 @@ async def _retrieve_output(
         output_port: OutputPort,
         command_output: CommandOutput) -> None:
     token = await output_port.token_processor.compute_token(job, command_output)
-    output_port.put(token)
+    if token is not None:
+        output_port.put(token)
 
 
 class BaseJob(Job):

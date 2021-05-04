@@ -732,11 +732,12 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     async def compute_token(self, job: Job, command_output: CWLCommandOutput) -> Any:
         if command_output.status == Status.SKIPPED:
-            return Token(name=self.port.name, value=None, job=job.name)
-        token_value = await self._get_value_from_command(job, command_output)
-        self._register_data(job, token_value)
-        weight = await self.weight_token(job, token_value)
-        return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
+            return None
+        else:
+            token_value = await self._get_value_from_command(job, command_output)
+            self._register_data(job, token_value)
+            weight = await self.weight_token(job, token_value)
+            return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
 
     def get_related_resources(self, token: Token) -> Set[Text]:
         if self.port_type in ['File', 'Directory']:
@@ -772,7 +773,13 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         if token.value is None and self.default_value is not None:
             token = token.update(await self._build_token_value(job, self.default_value))
         if self.port_type == 'Any' or self.port_type is None:
-            self.port_type = utils.infer_type_from_token(token.value)
+            if (isinstance(self.port, InputPort) and
+                    isinstance(self.port.dependee.token_processor, CWLTokenProcessor) and
+                    self.port.dependee.token_processor.port_type != 'Any' and
+                    self.port.dependee.token_processor.port_type is not None):
+                self.port_type = self.port.dependee.token_processor.port_type
+            else:
+                self.port_type = utils.infer_type_from_token(token.value)
         if isinstance(token.value, MutableMapping) and token.value.get('class') in ['File', 'Directory']:
             context = self.get_context()
             src_job = context.scheduler.get_job(token.job)
@@ -815,13 +822,31 @@ class CWLMapTokenProcessor(MapTokenProcessor):
 
     def __init__(self,
                  port: Port,
-                 token_processor: TokenProcessor):
+                 token_processor: TokenProcessor,
+                 default_value: Optional[Any] = None,
+                 optional: bool = False):
         super().__init__(port, token_processor)
+        self.default_value: Optional[Any] = default_value
+        self.optional: bool = optional
 
     async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
         if isinstance(command_output.value, MutableMapping) and self.port.name in command_output.value:
             command_output = command_output.update([{self.port.name: v} for v in command_output.value[self.port.name]])
         return await super().compute_token(job, command_output)
+
+    async def update_token(self, job: Job, token: Token) -> Token:
+        if token.value is None:
+            token = token.update(self.default_value)
+        return await super().update_token(job, token)
+
+
+class CWLSkipTokenProcessor(DefaultTokenProcessor):
+
+    async def compute_token(self, job: Job, command_output: CWLCommandOutput) -> Any:
+        if command_output.status == Status.SKIPPED:
+            return Token(name=self.port.name, value=None, job=job.name)
+        else:
+            return None
 
 
 class CWLUnionTokenProcessor(UnionTokenProcessor):

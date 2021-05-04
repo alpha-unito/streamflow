@@ -67,10 +67,7 @@ class StreamFlowExecutor(Executor):
                 token_processor = self.workflow.output_ports[task_name].token_processor
                 token = await token_processor.collect_output(token, output_dir)
                 if token.value is not None:
-                    if isinstance(token.job, MutableSequence):
-                        output_tokens[task_name] = [t.value for t in token.value]
-                    else:
-                        output_tokens[task_name] = token.value
+                    output_tokens[task_name] = utils.get_token_value(token)
                 # Create a new task in place of the completed one
                 self.output_tasks.append(asyncio.create_task(
                     self.workflow.output_ports[task_name].get(output_consumer), name=task_name))

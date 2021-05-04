@@ -6,7 +6,7 @@ import os
 import posixpath
 from enum import Enum
 from pathlib import PurePosixPath
-from typing import MutableMapping, TYPE_CHECKING, Optional, MutableSequence, cast
+from typing import MutableMapping, TYPE_CHECKING, Optional, MutableSequence, cast, Callable
 
 import cwltool.command_line_tool
 import cwltool.context
@@ -19,16 +19,16 @@ from typing_extensions import Text
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ModelConfig
-from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import Port, OutputPort, Workflow, Target, Token, TerminationToken, \
     InputCombinator, InputPort, Job, Status
 from streamflow.cwl.command import CWLCommand, CWLExpressionCommand, CWLMapCommandToken, \
     CWLUnionCommandToken, CWLObjectCommandToken, CWLCommandToken, CWLCommandOutput, CWLStepCommand
 from streamflow.cwl.token_processor import LoadListing, SecondaryFile, CWLTokenProcessor, CWLUnionTokenProcessor, \
-    CWLMapTokenProcessor
+    CWLMapTokenProcessor, CWLSkipTokenProcessor
 from streamflow.workflow.combinator import DotProductInputCombinator, CartesianProductInputCombinator, \
-    DotProductOutputCombinator
+    DotProductOutputCombinator, NondeterminateMergeOutputCombinator
 from streamflow.workflow.port import DefaultInputPort, DefaultOutputPort, ScatterInputPort, GatherOutputPort, \
     ObjectTokenProcessor
 from streamflow.workflow.step import BaseStep, BaseJob
@@ -143,6 +143,24 @@ def _create_output_port(
     return port
 
 
+def _create_skip_link(port: OutputPort,
+                      step: Step) -> OutputPort:
+    skip_port_name = random_name()
+    skip_port = DefaultOutputPort(
+        name=skip_port_name,
+        step=step)
+    skip_port.token_processor = CWLSkipTokenProcessor(port=skip_port)
+    step.output_ports[skip_port_name] = skip_port
+    combinator = NondeterminateMergeOutputCombinator(
+        name=random_name(),
+        step=step,
+        ports={p.name: p for p in [port, skip_port]})
+    combinator.token_processor = CWLUnionTokenProcessor(
+        port=combinator,
+        processors=[port.token_processor, skip_port.token_processor])
+    return combinator
+
+
 def _create_token_processor(
         port: Port,
         port_type: Any,
@@ -161,7 +179,11 @@ def _create_token_processor(
                     schema_def_types=schema_def_types,
                     context=context,
                     optional=optional)
-                return CWLMapTokenProcessor(port, processor)
+                return CWLMapTokenProcessor(
+                    port=port,
+                    token_processor=processor,
+                    default_value=port_description.get('default'),
+                    optional=optional)
             # Enum type: -> substitute with string and propagate the description
             elif port_type['type'] == 'enum':
                 return _create_token_processor(
@@ -465,6 +487,32 @@ def _get_input_combinator(step: Step,
         return cartesian_combinator
 
 
+def _get_merge_strategy(pickValue: Text) -> Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]]:
+    if pickValue == 'first_non_null':
+        def merge_strategy(token_list):
+            for t in token_list:
+                if t.value is not None:
+                    return t
+            raise WorkflowExecutionException("All sources are null")
+    elif pickValue == 'the_only_non_null':
+        def merge_strategy(token_list):
+            ret = None
+            for t in token_list:
+                if t.value is not None:
+                    if ret is not None:
+                        raise WorkflowExecutionException("Expected only one source to be non-null")
+                    ret = t
+            if ret is None:
+                raise WorkflowExecutionException("All sources are null")
+            return ret
+    elif pickValue == 'all_non_null':
+        def merge_strategy(token_list):
+            return [t for t in token_list if t.value is not None]
+    else:
+        merge_strategy = None
+    return merge_strategy
+
+
 def _get_name(name_prefix: Text, element_id: Text, last_element_only: bool = False) -> Text:
     name = element_id.split('#')[-1]
     if last_element_only and '/' in name:
@@ -473,6 +521,21 @@ def _get_name(name_prefix: Text, element_id: Text, last_element_only: bool = Fal
         return posixpath.join('/', name)
     else:
         return posixpath.join(name_prefix, name)
+
+
+def _get_output_combinator(name: Text,
+                           ports: MutableMapping[Text, OutputPort],
+                           step: Optional[Step] = None,
+                           merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = None):
+    combinator = DotProductOutputCombinator(
+        name=name,
+        ports=ports,
+        step=step,
+        merge_strategy=merge_strategy)
+    combinator.token_processor = CWLUnionTokenProcessor(
+        port=combinator,
+        processors=[p.token_processor for p in ports.values()])
+    return combinator
 
 
 def _get_load_listing(port_description: MutableMapping[Text, Any],
@@ -494,10 +557,10 @@ def _get_schema_def_types(requirements: MutableMapping[Text, Any]) -> MutableMap
 def _get_secondary_files(cwl_element, default_required: bool) -> MutableSequence[SecondaryFile]:
     if isinstance(cwl_element, MutableSequence):
         return [SecondaryFile(sf['pattern'], sf.get('required')
-        if sf.get('required') is not None else default_required) for sf in cwl_element]
+                if sf.get('required') is not None else default_required) for sf in cwl_element]
     elif isinstance(cwl_element, MutableMapping):
         return [SecondaryFile(cwl_element['pattern'], cwl_element.get('required')
-        if cwl_element.get('required') is not None else default_required)]
+                if cwl_element.get('required') is not None else default_required)]
 
 
 async def _inject_input(job: Job, port: OutputPort, value: Any) -> None:
@@ -646,12 +709,13 @@ class CWLTranslator(object):
                     # If the list contains only one element and no `linkMerge` is specified, treat it as a singleton
                     if len(element_input['source']) == 1 and 'linkMerge' not in element_input:
                         source_name = _get_name(name_prefix, element_input['source'][0])
+                        source+p
                         port.dependee = self._get_source_port(workflow, source_name)
-                    # Otherwise, create a MultiSourceElement
+                    # Otherwise, create a DotrProductOutputCombinator
                     else:
                         source_names = [_get_name(name_prefix, src) for src in element_input['source']]
                         ports = [self._get_source_port(workflow, n) for n in source_names]
-                        port.dependee = DotProductOutputCombinator(
+                        port.dependee = _get_output_combinator(
                             name=port.name,
                             step=step,
                             ports={p.name: p for p in ports})
@@ -818,8 +882,34 @@ class CWLTranslator(object):
         # Process outputs
         for element_output in cwl_element.tool['outputs']:
             name = _get_name(name_prefix, element_output['id'])
-            source_name = _get_name(name_prefix, element_output['outputSource'])
-            self.output_ports[name] = self._get_source_port(workflow, source_name)
+            # If outputSource element is a list, the output element can depend on multiple ports
+            if isinstance(element_output['outputSource'], MutableSequence):
+                # If the list contains only one element and no `linkMerge` or `pickValue` are specified
+                if (len(element_output['outputSource']) == 1 and
+                        'linkMerge' not in element_output and
+                        'pickValue' not in element_output):
+                    # Treat it as a singleton
+                    source_name = _get_name(name_prefix, element_output['outputSource'][0])
+                    self.output_ports[name] = self._get_source_port(workflow, source_name)
+                # Otherwise, create a DotrProductOutputCombinator
+                else:
+                    source_names = [_get_name(name_prefix, src) for src in element_output['outputSource']]
+                    ports = {n: self._get_source_port(workflow, n) for n in source_names}
+                    self.output_ports[name] = _get_output_combinator(
+                        name=name,
+                        ports=ports,
+                        merge_strategy=_get_merge_strategy(element_output.get('pickValue')))
+            # Otherwise, the output element depends on a single output port
+            else:
+                source_name = _get_name(name_prefix, element_output['outputSource'])
+                source_port = self._get_source_port(workflow, source_name)
+                if 'pickValue' in element_output:
+                    self.output_ports[name] = _get_output_combinator(
+                        name=name,
+                        ports={source_port.name: source_port},
+                        merge_strategy=_get_merge_strategy(element_output.get('pickValue')))
+                else:
+                    self.output_ports[name] = source_port
 
     def _translate_workflow_step(self,
                                  workflow: Workflow,
@@ -918,21 +1008,36 @@ class CWLTranslator(object):
             inner_step = _percolate_port(inner_name, self.output_ports).step
             # If output port comes from a scatter input, place a port in the gathering step
             if _check_scatter(inner_step, scatter_inputs, []):
+                # Process port type
+                element_type = element_output['type']
+                if isinstance(element_type, MutableSequence):
+                    element_type = [t for t in filter(lambda x: x != 'null', element_type)]
+                    if len(element_type) == 1:
+                        port_type = element_type[0]['items']
+                    else:
+                        raise WorkflowDefinitionException('Invalid type for scatter port')
+                else:
+                    port_type = element_type['items']
                 # Create input port
                 input_port = DefaultInputPort(port_name, gather_step)
                 input_port.token_processor = _create_token_processor(
                     port=input_port,
-                    port_type=element_output['type']['items'],
+                    port_type=port_type,
                     port_description=element_output,
                     schema_def_types=schema_def_types,
                     context=context)
-                input_port.dependee = self.output_ports[inner_name]
+                source_port = self._get_source_port(workflow, inner_name)
+                if 'when' in cwl_element.tool:
+                    source_port = _create_skip_link(
+                        port=source_port,
+                        step=input_step)
+                input_port.dependee = source_port
                 gather_step.input_ports[port_name] = input_port
                 # Create output port
                 output_port = GatherOutputPort(port_name, gather_step)
                 output_port.token_processor = _create_token_processor(
                     port=output_port,
-                    port_type=element_output['type']['items'],
+                    port_type=port_type,
                     port_description=element_output,
                     schema_def_types=schema_def_types,
                     context=context)
@@ -943,7 +1048,12 @@ class CWLTranslator(object):
                 self.output_ports[outer_name] = gather_name
             else:
                 # Remap output port
-                self.output_ports[outer_name] = inner_name
+                source_port = self._get_source_port(workflow, inner_name)
+                if 'when' in cwl_element.tool:
+                    source_port = _create_skip_link(
+                        port=source_port,
+                        step=input_step)
+                self.output_ports[outer_name] = source_port
         if gather_step is not None:
             gather_step.input_combinator = _get_input_combinator(gather_step)
             workflow.steps[gather_step.name] = gather_step
