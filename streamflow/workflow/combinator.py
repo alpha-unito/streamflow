@@ -207,7 +207,7 @@ class NondeterminateMergeOutputCombinator(OutputCombinator):
                 return
 
     def empty(self) -> bool:
-        return all([q.empty() for q in self.queues])
+        return all([p.empty() for p in self.ports.values()])
 
     async def get(self, consumer: Text) -> Token:
         if consumer not in self.queues:

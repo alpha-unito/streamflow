@@ -557,10 +557,10 @@ def _get_schema_def_types(requirements: MutableMapping[Text, Any]) -> MutableMap
 def _get_secondary_files(cwl_element, default_required: bool) -> MutableSequence[SecondaryFile]:
     if isinstance(cwl_element, MutableSequence):
         return [SecondaryFile(sf['pattern'], sf.get('required')
-                if sf.get('required') is not None else default_required) for sf in cwl_element]
+        if sf.get('required') is not None else default_required) for sf in cwl_element]
     elif isinstance(cwl_element, MutableMapping):
         return [SecondaryFile(cwl_element['pattern'], cwl_element.get('required')
-                if cwl_element.get('required') is not None else default_required)]
+        if cwl_element.get('required') is not None else default_required)]
 
 
 async def _inject_input(job: Job, port: OutputPort, value: Any) -> None:
@@ -709,7 +709,6 @@ class CWLTranslator(object):
                     # If the list contains only one element and no `linkMerge` is specified, treat it as a singleton
                     if len(element_input['source']) == 1 and 'linkMerge' not in element_input:
                         source_name = _get_name(name_prefix, element_input['source'][0])
-                        source+p
                         port.dependee = self._get_source_port(workflow, source_name)
                     # Otherwise, create a DotrProductOutputCombinator
                     else:
@@ -726,13 +725,19 @@ class CWLTranslator(object):
                     port.dependee = source_port
                     # Percolate secondary files
                     current_processor = port.token_processor
-                    if (isinstance(source_port.step.command, CWLStepCommand) and
-                            isinstance(current_processor, CWLTokenProcessor) and
-                            current_processor.secondary_files):
-                        source_processor = cast(CWLTokenProcessor,
-                                                source_port.step.input_ports[source_port.name].token_processor)
-                        source_processor.secondary_files = list(set(
-                            (current_processor.secondary_files or []) + (source_processor.secondary_files or [])))
+                    if isinstance(current_processor, CWLTokenProcessor) and current_processor.secondary_files:
+                        if isinstance(source_port, DotProductOutputCombinator):
+                            for src_port in source_port.ports.values():
+                                if (isinstance(src_port.step.command, CWLStepCommand) and
+                                        isinstance(src_port.token_processor, CWLTokenProcessor)):
+                                    port.token_processor.secondary_files = list(set(
+                                        (current_processor.secondary_files or []) +
+                                        (src_port.token_processor.secondary_files or [])))
+                        elif (isinstance(source_port.step.command, CWLStepCommand) and
+                              isinstance(source_port.token_processor, CWLTokenProcessor)):
+                            port.token_processor.secondary_files = list(set(
+                                (current_processor.secondary_files or []) +
+                                (source_port.token_processor.secondary_files or [])))
 
     def _recursive_translate(self,
                              workflow: Workflow,
@@ -897,6 +902,9 @@ class CWLTranslator(object):
                     ports = {n: self._get_source_port(workflow, n) for n in source_names}
                     self.output_ports[name] = _get_output_combinator(
                         name=name,
+                        step=BaseStep(
+                            name=random_name(),
+                            context=self.context),
                         ports=ports,
                         merge_strategy=_get_merge_strategy(element_output.get('pickValue')))
             # Otherwise, the output element depends on a single output port
@@ -906,6 +914,9 @@ class CWLTranslator(object):
                 if 'pickValue' in element_output:
                     self.output_ports[name] = _get_output_combinator(
                         name=name,
+                        step=BaseStep(
+                            name=random_name(),
+                            context=self.context),
                         ports={source_port.name: source_port},
                         merge_strategy=_get_merge_strategy(element_output.get('pickValue')))
                 else:
@@ -1005,9 +1016,13 @@ class CWLTranslator(object):
             inner_name = _get_name(posixpath.join(step_name, 'run'), element_output['id'], last_element_only=True)
             outer_name = _get_name(step_name, element_output['id'], last_element_only=True)
             port_name = posixpath.relpath(outer_name, step_name)
-            inner_step = _percolate_port(inner_name, self.output_ports).step
+            inner_port = _percolate_port(inner_name, self.output_ports)
+            if isinstance(inner_port, DotProductOutputCombinator):
+                inner_steps = [p.step for p in inner_port.ports.values()]
+            else:
+                inner_steps = [inner_port.step]
             # If output port comes from a scatter input, place a port in the gathering step
-            if _check_scatter(inner_step, scatter_inputs, []):
+            if any(_check_scatter(inner_step, scatter_inputs, []) for inner_step in inner_steps):
                 # Process port type
                 element_type = element_output['type']
                 if isinstance(element_type, MutableSequence):
