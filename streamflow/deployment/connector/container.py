@@ -2,6 +2,7 @@ import asyncio
 import errno
 import io
 import json
+import logging
 import os
 import posixpath
 import shlex
@@ -71,24 +72,24 @@ class ContainerConnector(BaseConnector, ABC):
                 if read_only and await self._is_bind_transfer(resource, src, dst):
                     try:
                         os.symlink(posixpath.abspath(src), dst, target_is_directory=posixpath.isdir(dst))
+                        continue
                     except OSError as e:
                         if not e.errno == errno.EEXIST:
-                            raise
-                else:
-                    if not created_tar_buffer:
-                        with tarfile.open(
-                                fileobj=tar_buffer,
-                                format=tarfile.GNU_FORMAT,
-                                mode='w|',
-                                dereference=True) as tar:
-                            tar.add(src, arcname=dst)
-                        tar_buffer.seek(0)
-                        created_tar_buffer = True
-                    copy_tasks.append(asyncio.create_task(
-                        self._copy_local_to_remote_single(
-                            resource=resource,
-                            tar_buffer=cast(io.BufferedRandom, tar_buffer),
-                            read_only=read_only)))
+                            logging.exception(f"Bind mount optimization not aplicable: {e}")
+                if not created_tar_buffer:
+                    with tarfile.open(
+                            fileobj=tar_buffer,
+                            format=tarfile.GNU_FORMAT,
+                            mode='w|',
+                            dereference=True) as tar:
+                        tar.add(src, arcname=dst)
+                    tar_buffer.seek(0)
+                    created_tar_buffer = True
+                copy_tasks.append(asyncio.create_task(
+                    self._copy_local_to_remote_single(
+                        resource=resource,
+                        tar_buffer=cast(io.BufferedRandom, tar_buffer),
+                        read_only=read_only)))
             await asyncio.gather(*copy_tasks)
 
     async def _copy_remote_to_remote(self,
@@ -104,11 +105,11 @@ class ContainerConnector(BaseConnector, ABC):
                 if await self._is_bind_transfer(resource, dst, dst):
                     try:
                         os.symlink(posixpath.abspath(src), dst, target_is_directory=posixpath.isdir(dst))
+                        continue
                     except OSError as e:
                         if not e.errno == errno.EEXIST:
-                            raise
-                else:
-                    non_bind_resources.append(resource)
+                            logging.exception(f"Bind mount optimization not aplicable: {e}")
+                non_bind_resources.append(resource)
             await super()._copy_remote_to_remote(
                 src=src,
                 dst=dst,

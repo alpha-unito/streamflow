@@ -707,7 +707,9 @@ class CWLTranslator(object):
                 # If source element is a list, the input element can depend on multiple ports
                 if isinstance(element_input['source'], MutableSequence):
                     # If the list contains only one element and no `linkMerge` is specified, treat it as a singleton
-                    if len(element_input['source']) == 1 and 'linkMerge' not in element_input:
+                    if (len(element_input['source']) == 1 and
+                            'linkMerge' not in element_input and
+                            'pickValue' not in element_input):
                         source_name = _get_name(name_prefix, element_input['source'][0])
                         port.dependee = self._get_source_port(workflow, source_name)
                     # Otherwise, create a DotrProductOutputCombinator
@@ -717,7 +719,8 @@ class CWLTranslator(object):
                         port.dependee = _get_output_combinator(
                             name=port.name,
                             step=step,
-                            ports={p.name: p for p in ports})
+                            ports={p.name: p for p in ports},
+                            merge_strategy=_get_merge_strategy(element_input.get('pickValue')))
                 # Otherwise, the input element depends on a single output port
                 else:
                     source_name = _get_name(name_prefix, element_input['source'])
@@ -753,9 +756,8 @@ class CWLTranslator(object):
         # In the root process, override requirements when provided in the input file
         workflow_id = self.cwl_definition.tool['id']
         if name_prefix == (_get_name('/', workflow_id) if '#' in workflow_id else '/'):
-            req_string = 'https://w3id.org/cwl/cwl#requirements'
-            if req_string in self.cwl_inputs:
-                current_context['requirements'] = {req['class']: req for req in self.cwl_inputs[req_string]}
+            if 'requirements' in self.cwl_inputs:
+                current_context['requirements'] = {req['class']: req for req in self.cwl_inputs['requirements']}
         # Dispatch element
         if isinstance(cwl_element, cwltool.workflow.Workflow):
             self._translate_workflow(workflow, cwl_element, current_context, name_prefix)
@@ -930,12 +932,15 @@ class CWLTranslator(object):
         # Process content
         step_name = _get_name(name_prefix, cwl_element.id)
         run_command = cwl_element.tool['run']
+        loading_context = self.loading_context.copy()
+        loading_context.requirements = list(context['requirements'].values())
+        loading_context.hints = list(context['hints'].values())
         if isinstance(run_command, MutableMapping):
-            step_definition = self.loading_context.construct_tool_object(run_command, self.loading_context)
+            step_definition = self.loading_context.construct_tool_object(run_command, loading_context)
             # Recusrively process the step
             self._recursive_translate(workflow, step_definition, context, posixpath.join(step_name, 'run'))
         else:
-            step_definition = cwltool.load_tool.load_tool(run_command, self.loading_context)
+            step_definition = cwltool.load_tool.load_tool(run_command, loading_context)
             self._recursive_translate(workflow, step_definition, context, posixpath.join(step_name, 'run'))
         # Merge requirements with the underlying step definition
         context = copy.deepcopy(context)
@@ -1037,7 +1042,7 @@ class CWLTranslator(object):
                 input_port = DefaultInputPort(port_name, gather_step)
                 input_port.token_processor = _create_token_processor(
                     port=input_port,
-                    port_type=port_type,
+                    port_type=port_type['items'] if scatter_method == 'nested_crossproduct' else port_type,
                     port_description=element_output,
                     schema_def_types=schema_def_types,
                     context=context)
@@ -1050,9 +1055,18 @@ class CWLTranslator(object):
                 gather_step.input_ports[port_name] = input_port
                 # Create output port
                 output_port = GatherOutputPort(port_name, gather_step)
+                if scatter_method == 'nested_crossproduct':
+                    def merge_strategy(token_list):
+                        groups = {}
+                        for t in token_list:
+                            if t.tag not in groups:
+                                groups[t.tag] = []
+                            groups[t.tag].append(t)
+                        return list(groups.values())
+                    output_port.merge_strategy = merge_strategy
                 output_port.token_processor = _create_token_processor(
                     port=output_port,
-                    port_type=port_type,
+                    port_type=port_type['items'] if scatter_method == 'nested_crossproduct' else port_type,
                     port_description=element_output,
                     schema_def_types=schema_def_types,
                     context=context)

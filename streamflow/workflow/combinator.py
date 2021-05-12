@@ -4,7 +4,7 @@ from asyncio import Queue, Task, FIRST_COMPLETED, Lock
 from typing import List, MutableMapping, Text, Any, cast, MutableSequence, Optional, Union, Callable, Set
 
 from streamflow.core import utils
-from streamflow.core.utils import flatten_list
+from streamflow.core.utils import flatten_list, get_tag
 from streamflow.core.workflow import InputCombinator, Token, TerminationToken, InputPort, Step, OutputCombinator, \
     OutputPort, TokenProcessor, Port, Job, CommandOutput
 
@@ -23,29 +23,30 @@ class DotProductInputCombinator(InputCombinator):
                  step: Optional[Step] = None,
                  ports: Optional[MutableMapping[Text, InputPort]] = None):
         super().__init__(name, step, ports)
-        self.terminated: List[Text] = []
         self.token_values: MutableMapping[Text, Any] = {}
 
     async def get(self) -> MutableSequence[Token]:
-        # Retrieve input tokens
-        input_tasks = {}
-        for port_name, port in self.ports.items():
-            if port_name not in self.terminated:
-                input_tasks[port_name] = asyncio.create_task(port.get())
-        inputs = dict(zip(input_tasks.keys(), await asyncio.gather(*input_tasks.values())))
-        # Check for termination
-        for name, token in inputs.items():
-            # If a TerminationToken is received, the corresponding port terminated its outputs
-            if (isinstance(token, TerminationToken) or
-                    (isinstance(token, MutableSequence) and utils.check_termination(token))):
-                self.terminated.append(name)
-                # When the last port terminates, the entire combinator terminates
-                if len(self.terminated) == len(self.ports):
+        while True:
+            # Check if some complete input sets are available
+            for tag in list(self.token_values.keys()):
+                if len(self.token_values[tag]) == len(self.ports):
+                    return flatten_list(self.token_values.pop(tag))
+            # Retrieve input tokens
+            inputs = await asyncio.gather(*[asyncio.create_task(port.get()) for port in self.ports.values()])
+            # Check for termination
+            for token in inputs:
+                # If a TerminationToken is received, the corresponding port terminated its outputs
+                if utils.check_termination(token):
                     return [TerminationToken(self.name)]
-            else:
-                self.token_values[name] = token
-        # Return input tokens
-        return utils.flatten_list(list(self.token_values.values()))
+                elif isinstance(token, MutableSequence):
+                    for t in token:
+                        if t.tag not in self.token_values:
+                            self.token_values[t.tag] = []
+                        self.token_values[t.tag].append(t)
+                elif isinstance(token, Token):
+                    if token.tag not in self.token_values:
+                        self.token_values[token.tag] = []
+                    self.token_values[token.tag].append(token)
 
 
 class CartesianProductInputCombinator(InputCombinator):
@@ -140,6 +141,7 @@ class DotProductOutputCombinator(OutputCombinator):
                  merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = None):
         super().__init__(name, step, ports)
         self.merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = merge_strategy
+        self.token_values: MutableMapping[Text, Any] = {}
 
     def _merge(self, outputs: MutableSequence[Token]):
         inner_list = []
@@ -150,30 +152,52 @@ class DotProductOutputCombinator(OutputCombinator):
                 inner_list.append(t)
         return self.merge_strategy(inner_list)
 
+    async def _retrieve(self, consumer: Text):
+        while True:
+            # Check if some complete input sets are available
+            if consumer not in self.token_values:
+                self.token_values[consumer] = {}
+            for tag in list(self.token_values[consumer].keys()):
+                if len(self.token_values[consumer][tag]) == len(self.ports):
+                    return flatten_list(self.token_values[consumer].pop(tag))
+            # Retrieve output tokens
+            outputs = await asyncio.gather(*[asyncio.create_task(p.get(consumer)) for p in self.ports.values()])
+            # Check for termination
+            for token in outputs:
+                # If a TerminationToken is received, the corresponding port terminated its outputs
+                if utils.check_termination(token):
+                    return [TerminationToken(self.name)]
+                elif isinstance(token, MutableSequence):
+                    for t in token:
+                        if t.tag not in self.token_values[consumer]:
+                            self.token_values[consumer][t.tag] = []
+                        self.token_values[consumer][t.tag].append(t)
+                elif isinstance(token, Token):
+                    if token.tag not in self.token_values[consumer]:
+                        self.token_values[consumer][token.tag] = []
+                    self.token_values[consumer][token.tag].append(token)
+
     def empty(self) -> bool:
         return all([p.empty() for p in self.ports.values()])
 
     async def get(self, consumer: Text) -> Token:
-        while True:
-            # Retrieve input tokens
-            outputs = await asyncio.gather(*[asyncio.create_task(p.get(consumer)) for p in self.ports.values()])
-            # Check for termination
-            if utils.check_termination(outputs):
-                break
-            # Return token
-            outputs = flatten_list(outputs)
-            if self.merge_strategy is not None:
-                outputs = self._merge(outputs)
-            if isinstance(outputs, MutableSequence):
-                return Token(
-                    name=self.name,
-                    job=[t.job for t in outputs],
-                    value=outputs,
-                    weight=sum([t.weight for t in outputs]))
-            else:
-                return outputs
-        # When terminated, return a TerminationToken
-        return TerminationToken(self.name)
+        outputs = await self._retrieve(consumer)
+        # Check for termination
+        if utils.check_termination(outputs):
+            return TerminationToken(self.name)
+        # Return token
+        outputs = flatten_list(outputs)
+        if self.merge_strategy is not None:
+            outputs = self._merge(outputs)
+        if isinstance(outputs, MutableSequence):
+            return Token(
+                name=self.name,
+                job=[t.job for t in outputs],
+                value=outputs,
+                tag=get_tag(outputs),
+                weight=sum([t.weight for t in outputs]))
+        else:
+            return outputs
 
     def put(self, token: Token):
         raise NotImplementedError()
@@ -198,8 +222,7 @@ class NondeterminateMergeOutputCombinator(OutputCombinator):
             for task in finished:
                 task_name = cast(Task, task).get_name()
                 token = task.result()
-                if not (isinstance(token, TerminationToken) and not
-                        (isinstance(token, MutableSequence) and utils.check_termination(token))):
+                if not utils.check_termination(token):
                     self.queues[consumer].put_nowait(token)
                     tasks.append(asyncio.create_task(self.ports[task_name].get(consumer), name=task_name))
             if len(tasks) == 0:

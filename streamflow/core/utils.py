@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import io
 import os
 import posixpath
 import random
@@ -11,22 +10,24 @@ import tarfile
 from pathlib import Path
 from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any
 
-from streamflow.core.workflow import TerminationToken, Step
+from streamflow.core.workflow import Token, TerminationToken, Step
 
 if TYPE_CHECKING:
-    from streamflow.core.workflow import Token
     from typing import Iterable
     from typing_extensions import Text
 
 
-def check_termination(inputs: Iterable[Token]) -> bool:
-    for token in inputs:
-        if isinstance(token, MutableSequence):
-            if check_termination(token):
+def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
+    if isinstance(inputs, Token):
+        return isinstance(inputs, TerminationToken)
+    else:
+        for token in inputs:
+            if isinstance(token, MutableSequence):
+                if check_termination(token):
+                    return True
+            elif isinstance(token, TerminationToken):
                 return True
-        elif isinstance(token, TerminationToken):
-            return True
-    return False
+        return False
 
 
 def create_command(command: MutableSequence[Text],
@@ -100,6 +101,14 @@ def get_size(path):
                 fp = os.path.join(dirpath, f)
                 total_size += os.path.getsize(fp)
         return total_size
+
+
+def get_tag(tokens: MutableSequence[Token]) -> str:
+    output_tag = '/'
+    for tag in [t.tag for t in tokens]:
+        if len(tag) > len(output_tag):
+            output_tag = tag
+    return output_tag
 
 
 def get_token_value(token: Token) -> Any:

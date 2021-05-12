@@ -14,7 +14,7 @@ from streamflow.core.data import FileType, LOCAL_RESOURCE, DataLocationType
 from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException, \
     UnrecoverableTokenException
-from streamflow.core.utils import get_path_processor, random_name, flatten_list
+from streamflow.core.utils import get_path_processor, random_name, flatten_list, get_tag
 from streamflow.core.workflow import Step, Port, InputPort, Job, Token, Status, TokenProcessor, CommandOutput
 from streamflow.cwl import utils
 from streamflow.cwl.command import CWLCommandOutput
@@ -737,7 +737,12 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             token_value = await self._get_value_from_command(job, command_output)
             self._register_data(job, token_value)
             weight = await self.weight_token(job, token_value)
-            return Token(name=self.port.name, value=token_value, job=job.name, weight=weight)
+            return Token(
+                name=self.port.name,
+                value=token_value,
+                job=job.name,
+                tag=get_tag(job.inputs),
+                weight=weight)
 
     def get_related_resources(self, token: Token) -> Set[Text]:
         if self.port_type in ['File', 'Directory']:
@@ -844,7 +849,11 @@ class CWLSkipTokenProcessor(DefaultTokenProcessor):
 
     async def compute_token(self, job: Job, command_output: CWLCommandOutput) -> Any:
         if command_output.status == Status.SKIPPED:
-            return Token(name=self.port.name, value=None, job=job.name)
+            return Token(
+                name=self.port.name,
+                value=None,
+                job=job.name,
+                tag=get_tag(job.inputs))
         else:
             return None
 

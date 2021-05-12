@@ -37,7 +37,11 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     loading_context.loader = cwltool.load_tool.default_loader(
         loading_context.fetcher_constructor
     )
-    cwl_definition = cwltool.load_tool.load_tool(cwl_args[0], loading_context)
+    loading_context, workflowobj, uri = cwltool.load_tool.fetch_document(cwl_args[0], loading_context)
+    loading_context, uri = cwltool.load_tool.resolve_and_validate_document(
+        loading_context, workflowobj, uri
+    )
+    cwl_definition = cwltool.load_tool.make_tool(uri, loading_context)
     if len(cwl_args) == 2:
         cwl_inputs, _ = loading_context.loader.resolve_ref(cwl_args[1], checklinks=False)
     else:
