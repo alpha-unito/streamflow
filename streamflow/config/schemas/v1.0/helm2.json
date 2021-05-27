@@ -80,6 +80,11 @@
       "type": "string",
       "description": "Absolute path of the kubeconfig file to be used"
     },
+    "maxConcurrentConnections": {
+      "type": "integer",
+      "description": "Maximum number of concurrent connections to open for a single Kubernetes client",
+      "default": 10
+    },
     "namespace": {
       "type": "string",
       "description": "Namespace to install the release into",
