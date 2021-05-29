@@ -83,6 +83,19 @@ class QueueManagerConnector(SSHConnector, ABC):
             resources[name] = Resource(name, self.hostname)
         return resources
 
+    async def _copy_remote_to_remote(self,
+                                     src: Text,
+                                     dst: Text,
+                                     resources: MutableSequence[Text],
+                                     source_remote: Text,
+                                     read_only: bool = False) -> None:
+        return await super()._copy_remote_to_remote(
+            src=src,
+            dst=dst,
+            resources=[source_remote],
+            source_remote=source_remote,
+            read_only=read_only)
+
     async def _run(self,
                    resource: Text,
                    command: MutableSequence[Text],

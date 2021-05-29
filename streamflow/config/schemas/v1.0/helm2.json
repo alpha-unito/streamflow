@@ -83,7 +83,7 @@
     "maxConcurrentConnections": {
       "type": "integer",
       "description": "Maximum number of concurrent connections to open for a single Kubernetes client",
-      "default": 10
+      "default": 4096
     },
     "namespace": {
       "type": "string",
