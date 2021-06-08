@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, MutableSequence
 
+from streamflow.core.scheduling import Hardware
+
 if TYPE_CHECKING:
     from streamflow.deployment.deployment_manager import ModelConfig
     from streamflow.core.context import StreamFlowContext
@@ -20,6 +22,11 @@ class Command(ABC):
     async def execute(self, job: Job) -> CommandOutput:
         ...
 
+    async def skip(self, job: Job) -> CommandOutput:
+        return CommandOutput(
+            value=None,
+            status=Status.SKIPPED)
+
 
 class CommandOutput(object):
     __slots__ = ('value', 'status')
@@ -32,6 +39,23 @@ class CommandOutput(object):
 
     def update(self, value: Any):
         return CommandOutput(value=value, status=self.status)
+
+
+class Condition(ABC):
+
+    def __init__(self, step: Step):
+        self.step: Step = step
+
+    @abstractmethod
+    async def eval(self, job: Job) -> bool:
+        ...
+
+
+class HardwareRequirement(ABC):
+
+    @abstractmethod
+    def eval(self, inputs: MutableSequence[Token]) -> Hardware:
+        ...
 
 
 class Token(object):
@@ -79,7 +103,7 @@ class Executor(ABC):
 
 
 class Job(ABC):
-    __slots__ = ('name', 'step', 'inputs', 'input_directory', 'output_directory', 'tmp_directory')
+    __slots__ = ('name', 'step', 'inputs', 'input_directory', 'output_directory', 'tmp_directory', 'hardware')
 
     def __init__(self,
                  name: str,
@@ -87,13 +111,15 @@ class Job(ABC):
                  inputs: MutableSequence[Token],
                  input_directory: Optional[str] = None,
                  output_directory: Optional[str] = None,
-                 tmp_directory: Optional[str] = None):
+                 tmp_directory: Optional[str] = None,
+                 hardware: Optional[Hardware] = None):
         self.name: str = name
         self.step = step
         self.inputs: MutableSequence[Token] = inputs
         self.input_directory: Optional[str] = input_directory
         self.output_directory: Optional[str] = output_directory
         self.tmp_directory: Optional[str] = tmp_directory
+        self.hardware: Optional[Hardware] = hardware
 
     def get_resources(self, statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[str]:
         return self.step.context.scheduler.get_resources(self.name, statuses)
@@ -218,6 +244,8 @@ class Step(ABC):
         super().__init__()
         self.context: StreamFlowContext = context
         self.command: Optional[Command] = command
+        self.condition: Optional[Condition] = None
+        self.hardware_requirement: HardwareRequirement = None
         self.input_combinator: Optional[InputCombinator] = None
         self.input_ports: MutableMapping[str, Union[InputPort, InputCombinator]] = {}
         self.name: str = name

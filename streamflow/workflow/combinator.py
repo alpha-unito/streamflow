@@ -1,15 +1,15 @@
 import asyncio
 import itertools
 from asyncio import Queue, Task, FIRST_COMPLETED, Lock
-from typing import List, MutableMapping, Text, Any, cast, MutableSequence, Optional, Union, Callable, Set
+from typing import List, MutableMapping, Any, cast, MutableSequence, Optional, Union, Callable
 
 from streamflow.core import utils
 from streamflow.core.utils import flatten_list, get_tag
 from streamflow.core.workflow import InputCombinator, Token, TerminationToken, InputPort, Step, OutputCombinator, \
-    OutputPort, TokenProcessor, Port, Job, CommandOutput
+    OutputPort
 
 
-def _get_job_name(token: Union[Token, MutableSequence[Token]]) -> Text:
+def _get_job_name(token: Union[Token, MutableSequence[Token]]) -> str:
     if isinstance(token, MutableSequence):
         return ",".join(token[0].job) if isinstance(token[0].job, MutableSequence) else token[0].job
     else:
@@ -19,11 +19,11 @@ def _get_job_name(token: Union[Token, MutableSequence[Token]]) -> Text:
 class DotProductInputCombinator(InputCombinator):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[Text, InputPort]] = None):
+                 ports: Optional[MutableMapping[str, InputPort]] = None):
         super().__init__(name, step, ports)
-        self.token_values: MutableMapping[Text, Any] = {}
+        self.token_values: MutableMapping[str, Any] = {}
 
     async def get(self) -> MutableSequence[Token]:
         while True:
@@ -52,14 +52,14 @@ class DotProductInputCombinator(InputCombinator):
 class CartesianProductInputCombinator(InputCombinator):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[Text, InputPort]] = None):
+                 ports: Optional[MutableMapping[str, InputPort]] = None):
         super().__init__(name, step, ports)
         self.lock: Lock = Lock()
         self.queue: Queue = Queue()
-        self.terminated: List[Text] = []
-        self.token_lists: MutableMapping[Text, List[Any]] = {}
+        self.terminated: List[str] = []
+        self.token_lists: MutableMapping[str, List[Any]] = {}
 
     async def _cartesian_multiplier(self):
         input_tasks = []
@@ -128,13 +128,13 @@ class CartesianProductInputCombinator(InputCombinator):
 class DotProductOutputCombinator(OutputCombinator):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[Text, OutputPort]] = None,
+                 ports: Optional[MutableMapping[str, OutputPort]] = None,
                  merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = None):
         super().__init__(name, step, ports)
         self.merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = merge_strategy
-        self.token_values: MutableMapping[Text, Any] = {}
+        self.token_values: MutableMapping[str, Any] = {}
 
     def _merge(self, outputs: MutableSequence[Token]):
         inner_list = []
@@ -145,7 +145,7 @@ class DotProductOutputCombinator(OutputCombinator):
                 inner_list.append(t)
         return self.merge_strategy(inner_list)
 
-    async def _retrieve(self, consumer: Text):
+    async def _retrieve(self, consumer: str):
         while True:
             # Check if some complete input sets are available
             if consumer not in self.token_values:
@@ -173,7 +173,7 @@ class DotProductOutputCombinator(OutputCombinator):
     def empty(self) -> bool:
         return all([p.empty() for p in self.ports.values()])
 
-    async def get(self, consumer: Text) -> Token:
+    async def get(self, consumer: str) -> Token:
         outputs = await self._retrieve(consumer)
         # Check for termination
         if utils.check_termination(outputs):
@@ -199,13 +199,13 @@ class DotProductOutputCombinator(OutputCombinator):
 class NondeterminateMergeOutputCombinator(OutputCombinator):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[Text, OutputPort]] = None):
+                 ports: Optional[MutableMapping[str, OutputPort]] = None):
         super().__init__(name, step, ports)
-        self.queues: MutableMapping[Text, Queue] = {}
+        self.queues: MutableMapping[str, Queue] = {}
 
-    async def _get(self, consumer: Text) -> None:
+    async def _get(self, consumer: str) -> None:
         tasks = []
         for port_name, port in self.ports.items():
             tasks.append(asyncio.create_task(port.get(consumer), name=port_name))
@@ -225,7 +225,7 @@ class NondeterminateMergeOutputCombinator(OutputCombinator):
     def empty(self) -> bool:
         return all([p.empty() for p in self.ports.values()])
 
-    async def get(self, consumer: Text) -> Token:
+    async def get(self, consumer: str) -> Token:
         if consumer not in self.queues:
             self.queues[consumer] = Queue()
             asyncio.create_task(self._get(consumer))

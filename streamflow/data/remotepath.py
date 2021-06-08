@@ -19,15 +19,14 @@ from streamflow.log_handler import profile
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
     from typing import Union, Optional
-    from typing_extensions import Text
 
 
-def _check_status(result: Text, status: int):
+def _check_status(result: str, status: int):
     if status != 0:
         raise WorkflowExecutionException(result)
 
 
-async def _file_checksum(connector: Optional[Connector], target: Optional[Text], path: Text):
+async def _file_checksum(connector: Optional[Connector], target: Optional[str], path: str):
     if connector is not None:
         result, status = await connector.run(
             resource=target,
@@ -43,7 +42,7 @@ async def _file_checksum(connector: Optional[Connector], target: Optional[Text],
             return sha1_checksum.hexdigest()
 
 
-def _listdir_local(path: Text, file_type: FileType) -> MutableSequence[Text]:
+def _listdir_local(path: str, file_type: FileType) -> MutableSequence[str]:
     content = []
     dir_content = os.listdir(path)
     check = os.path.isfile if file_type == FileType.FILE else os.path.isdir
@@ -55,7 +54,7 @@ def _listdir_local(path: Text, file_type: FileType) -> MutableSequence[Text]:
 
 
 @profile
-async def checksum(connector: Optional[Connector], target: Optional[Text], path: Text) -> Text:
+async def checksum(connector: Optional[Connector], target: Optional[str], path: str) -> str:
     if await isfile(connector, target, path):
         return await _file_checksum(connector, target, path)
     else:
@@ -65,8 +64,8 @@ async def checksum(connector: Optional[Connector], target: Optional[Text], path:
 @profile
 async def download(
         connector: Optional[Connector],
-        targets: Optional[MutableSequence[Text]],
-        url: Text, parent_dir: Text) -> Text:
+        targets: Optional[MutableSequence[str]],
+        url: str, parent_dir: str) -> str:
     await mkdir(connector, targets, parent_dir)
     if connector is not None:
         async with aiohttp.ClientSession() as session:
@@ -98,7 +97,7 @@ async def download(
 
 
 @profile
-async def exists(connector: Optional[Connector], target: Optional[Text], path: Text) -> bool:
+async def exists(connector: Optional[Connector], target: Optional[str], path: str) -> bool:
     if connector is not None:
         result, status = await connector.run(
             resource=target,
@@ -113,7 +112,7 @@ async def exists(connector: Optional[Connector], target: Optional[Text], path: T
 
 
 @profile
-async def follow_symlink(connector: Optional[Connector], target: Optional[Text], path: Text) -> Text:
+async def follow_symlink(connector: Optional[Connector], target: Optional[str], path: str) -> str:
     if connector is not None:
         result, status = await connector.run(
             resource=target,
@@ -126,7 +125,7 @@ async def follow_symlink(connector: Optional[Connector], target: Optional[Text],
 
 
 @profile
-async def head(connector: Optional[Connector], target: Optional[Text], path: Text, num_bytes: int) -> Text:
+async def head(connector: Optional[Connector], target: Optional[str], path: str, num_bytes: int) -> str:
     if connector is not None:
         result, status = await connector.run(
             resource=target,
@@ -140,7 +139,7 @@ async def head(connector: Optional[Connector], target: Optional[Text], path: Tex
 
 
 @profile
-async def isdir(connector: Optional[Connector], target: Optional[Text], path: Text):
+async def isdir(connector: Optional[Connector], target: Optional[str], path: str):
     if connector is not None:
         result, status = await connector.run(
             resource=target,
@@ -155,7 +154,7 @@ async def isdir(connector: Optional[Connector], target: Optional[Text], path: Te
 
 
 @profile
-async def isfile(connector: Optional[Connector], target: Optional[Text], path: Text):
+async def isfile(connector: Optional[Connector], target: Optional[str], path: str):
     if connector is not None:
         result, status = await connector.run(
             resource=target,
@@ -171,9 +170,9 @@ async def isfile(connector: Optional[Connector], target: Optional[Text], path: T
 
 @profile
 async def listdir(connector: Optional[Connector],
-                  target: Optional[Text],
-                  path: Text,
-                  file_type: FileType) -> MutableSequence[Text]:
+                  target: Optional[str],
+                  path: str,
+                  file_type: FileType) -> MutableSequence[str]:
     if connector is not None:
         command = "find -L \"{path}\" -mindepth 1 -maxdepth 1 {type}".format(
             path=path,
@@ -194,16 +193,16 @@ async def listdir(connector: Optional[Connector],
 @profile
 async def mkdir(
         connector: Optional[Connector],
-        targets: Optional[MutableSequence[Text]],
-        path: Text) -> None:
+        targets: Optional[MutableSequence[str]],
+        path: str) -> None:
     return await mkdirs(connector, targets, [path])
 
 
 @profile
 async def mkdirs(
         connector: Optional[Connector],
-        targets: Optional[MutableSequence[Text]],
-        paths: MutableSequence[Text]) -> None:
+        targets: Optional[MutableSequence[str]],
+        paths: MutableSequence[str]) -> None:
     if connector is not None:
         command = ["mkdir", "-p"]
         command.extend(paths)
@@ -216,7 +215,7 @@ async def mkdirs(
 
 
 @profile
-async def read(connector: Optional[Connector], target: Optional[Text], path: Text) -> Text:
+async def read(connector: Optional[Connector], target: Optional[str], path: str) -> str:
     if connector is not None:
         result, status = await connector.run(
             resource=target,
@@ -232,8 +231,8 @@ async def read(connector: Optional[Connector], target: Optional[Text], path: Tex
 @profile
 async def resolve(
         connector: Optional[Connector],
-        target: Optional[Text],
-        pattern: Text) -> Optional[MutableSequence[Text]]:
+        target: Optional[str],
+        pattern: str) -> Optional[MutableSequence[str]]:
     if connector is not None:
         result, status = await connector.run(
             resource=target,
@@ -249,8 +248,8 @@ async def resolve(
 @profile
 async def size(
         connector: Optional[Connector],
-        target: Optional[Text],
-        path: Union[Text, MutableSequence[Text]]) -> int:
+        target: Optional[str],
+        path: Union[str, MutableSequence[str]]) -> int:
     if not path:
         return 0
     elif connector is not None:
@@ -278,7 +277,7 @@ async def size(
 
 
 @profile
-async def symlink(connector: Optional[Connector], target: Optional[Text], src: Text, path: Text) -> None:
+async def symlink(connector: Optional[Connector], target: Optional[str], src: str, path: str) -> None:
     if connector is not None:
         await connector.run(resource=target, command=["ln", "-snf", src, path])
     else:
@@ -290,7 +289,7 @@ async def symlink(connector: Optional[Connector], target: Optional[Text], src: T
 
 
 @profile
-async def write(connector: Optional[Connector], target: Optional[Text], path: Text, content: Text) -> None:
+async def write(connector: Optional[Connector], target: Optional[str], path: str, content: str) -> None:
     if connector is not None:
         result, status = await connector.run(
             resource=target,

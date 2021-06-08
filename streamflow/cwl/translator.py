@@ -14,7 +14,6 @@ import cwltool.load_tool
 import cwltool.process
 import cwltool.workflow
 from ruamel.yaml.comments import CommentedSeq
-from typing_extensions import Text
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
@@ -25,6 +24,7 @@ from streamflow.core.workflow import Port, OutputPort, Workflow, Target, Token, 
     InputCombinator, InputPort, Job, Status
 from streamflow.cwl.command import CWLCommand, CWLExpressionCommand, CWLMapCommandToken, \
     CWLUnionCommandToken, CWLObjectCommandToken, CWLCommandToken, CWLCommandOutput, CWLStepCommand
+from streamflow.cwl.condition import CWLCondition
 from streamflow.cwl.token_processor import LoadListing, SecondaryFile, CWLTokenProcessor, CWLUnionTokenProcessor, \
     CWLMapTokenProcessor, CWLSkipTokenProcessor
 from streamflow.workflow.combinator import DotProductInputCombinator, CartesianProductInputCombinator, \
@@ -45,8 +45,8 @@ class LinkMergeMethod(Enum):
 
 def _build_command(
         cwl_element: cwltool.command_line_tool.CommandLineTool,
-        schema_def_types: MutableMapping[Text, Any],
-        context: MutableMapping[Text, Any],
+        schema_def_types: MutableMapping[str, Any],
+        context: MutableMapping[str, Any],
         step: Step) -> CWLCommand:
     command = CWLCommand(step)
     # Process baseCommand
@@ -89,7 +89,7 @@ def _build_command(
     return command
 
 
-def _check_scatter(step: Step, scatter_inputs: Set[Text], visited_steps: MutableSequence[Text] = None):
+def _check_scatter(step: Step, scatter_inputs: Set[str], visited_steps: MutableSequence[str] = None):
     visited_steps.append(step.name)
     for port_name in [posixpath.join(step.name, p) for p in step.input_ports]:
         if port_name in scatter_inputs:
@@ -101,7 +101,7 @@ def _check_scatter(step: Step, scatter_inputs: Set[Text], visited_steps: Mutable
     return False
 
 
-def _create_context() -> MutableMapping[Text, Any]:
+def _create_context() -> MutableMapping[str, Any]:
     return {
         'requirements': {},
         'hints': {}
@@ -109,10 +109,10 @@ def _create_context() -> MutableMapping[Text, Any]:
 
 
 def _create_input_port(
-        port_name: Text,
-        port_description: MutableMapping[Text, Any],
-        schema_def_types: MutableMapping[Text, Any],
-        context: MutableMapping[Text, Any],
+        port_name: str,
+        port_description: MutableMapping[str, Any],
+        schema_def_types: MutableMapping[str, Any],
+        context: MutableMapping[str, Any],
         scatter: bool = False) -> InputPort:
     # Create port
     if scatter:
@@ -129,10 +129,10 @@ def _create_input_port(
 
 
 def _create_output_port(
-        port_name: Text,
+        port_name: str,
         port_description: MutableMapping,
-        schema_def_types: MutableMapping[Text, Any],
-        context: MutableMapping[Text, Any]) -> OutputPort:
+        schema_def_types: MutableMapping[str, Any],
+        context: MutableMapping[str, Any]) -> OutputPort:
     port = DefaultOutputPort(port_name)
     port.token_processor = _create_token_processor(
         port=port,
@@ -165,8 +165,8 @@ def _create_token_processor(
         port: Port,
         port_type: Any,
         port_description: MutableMapping,
-        schema_def_types: MutableMapping[Text, Any],
-        context: MutableMapping[Text, Any],
+        schema_def_types: MutableMapping[str, Any],
+        context: MutableMapping[str, Any],
         optional: bool = False) -> TokenProcessor:
     if isinstance(port_type, MutableMapping):
         if 'type' in port_type:
@@ -332,8 +332,8 @@ def _create_token_processor(
 
 
 def _get_command_token(binding: Any,
-                       input_name: Optional[Text] = None,
-                       token_type: Optional[Text] = None) -> CWLCommandToken:
+                       input_name: Optional[str] = None,
+                       token_type: Optional[str] = None) -> CWLCommandToken:
     # Normalize type (Python does not distinguish among all CWL number types)
     token_type = 'long' if token_type == 'int' else 'double' if token_type == 'float' else token_type
     if isinstance(binding, MutableMapping):
@@ -361,8 +361,8 @@ def _get_command_token(binding: Any,
 
 def _get_command_token_from_input(cwl_element: Any,
                                   port_type: Any,
-                                  input_name: Text,
-                                  schema_def_types: Optional[MutableMapping[Text, Any]] = None):
+                                  input_name: str,
+                                  schema_def_types: Optional[MutableMapping[str, Any]] = None):
     token = None
     command_line_binding = cwl_element.get('inputBinding', None)
     if isinstance(port_type, MutableMapping):
@@ -450,8 +450,8 @@ def _get_command_token_from_input(cwl_element: Any,
 
 
 def _get_input_combinator(step: Step,
-                          scatter_inputs: Optional[Set[Text]] = None,
-                          scatter_method: Optional[Text] = None) -> InputCombinator:
+                          scatter_inputs: Optional[Set[str]] = None,
+                          scatter_method: Optional[str] = None) -> InputCombinator:
     scatter_inputs = scatter_inputs or set()
     # If there are no scatter ports in this step, create a single DotProduct combinator
     if not [n for n in scatter_inputs if n.startswith(step.name)]:
@@ -487,7 +487,7 @@ def _get_input_combinator(step: Step,
         return cartesian_combinator
 
 
-def _get_merge_strategy(pickValue: Text) -> Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]]:
+def _get_merge_strategy(pickValue: str) -> Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]]:
     if pickValue == 'first_non_null':
         def merge_strategy(token_list):
             for t in token_list:
@@ -513,7 +513,7 @@ def _get_merge_strategy(pickValue: Text) -> Optional[Callable[[MutableSequence[T
     return merge_strategy
 
 
-def _get_name(name_prefix: Text, element_id: Text, last_element_only: bool = False) -> Text:
+def _get_name(name_prefix: str, element_id: str, last_element_only: bool = False) -> str:
     name = element_id.split('#')[-1]
     if last_element_only and '/' in name:
         name = name.split('/')[-1]
@@ -523,8 +523,8 @@ def _get_name(name_prefix: Text, element_id: Text, last_element_only: bool = Fal
         return posixpath.join(name_prefix, name)
 
 
-def _get_output_combinator(name: Text,
-                           ports: MutableMapping[Text, OutputPort],
+def _get_output_combinator(name: str,
+                           ports: MutableMapping[str, OutputPort],
                            step: Optional[Step] = None,
                            merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = None):
     combinator = DotProductOutputCombinator(
@@ -538,8 +538,8 @@ def _get_output_combinator(name: Text,
     return combinator
 
 
-def _get_load_listing(port_description: MutableMapping[Text, Any],
-                      context: MutableMapping[Text, Any]) -> LoadListing:
+def _get_load_listing(port_description: MutableMapping[str, Any],
+                      context: MutableMapping[str, Any]) -> LoadListing:
     requirements = {**context['hints'], **context['requirements']}
     if 'loadListing' in port_description:
         return LoadListing[port_description['loadListing']]
@@ -549,7 +549,7 @@ def _get_load_listing(port_description: MutableMapping[Text, Any],
         return LoadListing.no_listing
 
 
-def _get_schema_def_types(requirements: MutableMapping[Text, Any]) -> MutableMapping[Text, Any]:
+def _get_schema_def_types(requirements: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
     return ({sd['name']: sd for sd in requirements['SchemaDefRequirement']['types']}
             if 'SchemaDefRequirement' in requirements else {})
 
@@ -571,7 +571,7 @@ async def _inject_input(job: Job, port: OutputPort, value: Any) -> None:
     port.put(TerminationToken(name=port.name))
 
 
-def _percolate_port(port_name: Text, *args) -> OutputPort:
+def _percolate_port(port_name: str, *args) -> OutputPort:
     for arg in args:
         if port_name in arg:
             port = arg[port_name]
@@ -581,7 +581,7 @@ def _percolate_port(port_name: Text, *args) -> OutputPort:
                 return _percolate_port(port, *args)
 
 
-def _process_javascript_requirement(requirements: MutableMapping[Text, Any]) -> (Optional[MutableSequence[Any]], bool):
+def _process_javascript_requirement(requirements: MutableMapping[str, Any]) -> (Optional[MutableSequence[Any]], bool):
     expression_lib = None
     full_js = False
     if 'InlineJavascriptRequirement' in requirements:
@@ -593,7 +593,7 @@ def _process_javascript_requirement(requirements: MutableMapping[Text, Any]) -> 
     return expression_lib, full_js
 
 
-def _process_docker_requirement(docker_requirement: MutableMapping[Text, Any]) -> Target:
+def _process_docker_requirement(docker_requirement: MutableMapping[str, Any]) -> Target:
     # Retrieve image
     if 'dockerPull' in docker_requirement:
         image_name = docker_requirement['dockerPull']
@@ -627,15 +627,15 @@ class CWLTranslator(object):
     def __init__(self,
                  context: StreamFlowContext,
                  cwl_definition: cwltool.process.Process,
-                 cwl_inputs: MutableMapping[Text, Any],
+                 cwl_inputs: MutableMapping[str, Any],
                  workflow_config: WorkflowConfig,
                  loading_context: cwltool.context.LoadingContext):
         self.context: StreamFlowContext = context
         self.cwl_definition: cwltool.process.Process = cwl_definition
-        self.cwl_inputs: Optional[MutableMapping[Text, Any]] = cwl_inputs
+        self.cwl_inputs: Optional[MutableMapping[str, Any]] = cwl_inputs
         self.workflow_config: WorkflowConfig = workflow_config
         self.loading_context: cwltool.context.LoadingContext = loading_context
-        self.output_ports: MutableMapping[Text, Union[Text, OutputPort]] = {}
+        self.output_ports: MutableMapping[str, Union[str, OutputPort]] = {}
 
     def _apply_config(self, workflow: Workflow):
         for step in workflow.steps.values():
@@ -655,14 +655,14 @@ class CWLTranslator(object):
             if step_workdir is not None:
                 step.workdir = step_workdir
 
-    def _get_source_port(self, workflow: Workflow, source_name: Text):
+    def _get_source_port(self, workflow: Workflow, source_name: str):
         source_step, source_port = posixpath.split(source_name)
         if source_step in workflow.steps and source_port in workflow.steps[source_step].output_ports:
             return workflow.steps[source_step].output_ports[source_port]
         else:
             return _percolate_port(source_name, self.output_ports)
 
-    async def _inject_inputs(self, workflow: Workflow, root_prefix: Text):
+    async def _inject_inputs(self, workflow: Workflow, root_prefix: str):
         # Create a dummy job and an empty context
         input_injector = BaseJob(
             name=random_name(),
@@ -696,7 +696,7 @@ class CWLTranslator(object):
     def _process_dependencies(self,
                               workflow: Workflow,
                               cwl_element: cwltool.workflow.WorkflowStep,
-                              name_prefix: Text):
+                              name_prefix: str):
         step_name = _get_name(name_prefix, cwl_element.id)
         step = workflow.steps[step_name]
         for element_input in cwl_element.tool['inputs']:
@@ -745,8 +745,8 @@ class CWLTranslator(object):
     def _recursive_translate(self,
                              workflow: Workflow,
                              cwl_element: cwltool.process.Process,
-                             context: MutableMapping[Text, Any],
-                             name_prefix: Text = "/"):
+                             context: MutableMapping[str, Any],
+                             name_prefix: str = "/"):
         # Update context
         current_context = copy.deepcopy(context)
         for hint in cwl_element.hints:
@@ -775,8 +775,8 @@ class CWLTranslator(object):
                                      workflow: Workflow,
                                      cwl_element: Union[cwltool.command_line_tool.CommandLineTool,
                                                         cwltool.command_line_tool.ExpressionTool],
-                                     context: MutableMapping[Text, Any],
-                                     name_prefix: Text):
+                                     context: MutableMapping[str, Any],
+                                     name_prefix: str):
         step = BaseStep(name_prefix, self.context)
         # Extract custom types if present
         requirements = {**context['hints'], **context['requirements']}
@@ -842,8 +842,8 @@ class CWLTranslator(object):
     def _translate_workflow(self,
                             workflow: Workflow,
                             cwl_element: cwltool.workflow.Workflow,
-                            context: MutableMapping[Text, Any],
-                            name_prefix: Text):
+                            context: MutableMapping[str, Any],
+                            name_prefix: str):
         # Extract custom types if present
         requirements = {**context['hints'], **context['requirements']}
         schema_def_types = _get_schema_def_types(requirements)
@@ -927,8 +927,8 @@ class CWLTranslator(object):
     def _translate_workflow_step(self,
                                  workflow: Workflow,
                                  cwl_element: cwltool.workflow.WorkflowStep,
-                                 context: MutableMapping[Text, Any],
-                                 name_prefix: Text):
+                                 context: MutableMapping[str, Any],
+                                 name_prefix: str):
         # Process content
         step_name = _get_name(name_prefix, cwl_element.id)
         run_command = cwl_element.tool['run']
@@ -953,16 +953,23 @@ class CWLTranslator(object):
         input_step = BaseStep(step_name, self.context)
         # Extract custom types if present
         schema_def_types = _get_schema_def_types(requirements)
-        # Add command
+        # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
+        # Add condition if present
+        if 'when' in cwl_element.tool:
+            input_step.condition = CWLCondition(
+                step=input_step,
+                expression=cwl_element.tool['when'],
+                expression_lib=expression_lib,
+                full_js=full_js)
+        # Add command
         input_step.command = CWLStepCommand(
             step=input_step,
             expression_lib=expression_lib,
-            full_js=full_js,
-            when_expression=cwl_element.tool.get('when'))
+            full_js=full_js)
         # Find scatter elements
         scatter_method = cwl_element.tool.get('scatterMethod')
-        if isinstance(cwl_element.tool.get('scatter'), Text):
+        if isinstance(cwl_element.tool.get('scatter'), str):
             scatter_inputs = {_get_name(step_name, cwl_element.tool.get('scatter'), last_element_only=True)}
         else:
             scatter_inputs = {_get_name(step_name, n, last_element_only=True)

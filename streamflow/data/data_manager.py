@@ -18,15 +18,14 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.workflow import Job
     from typing import Optional, MutableMapping, Set, MutableSequence
-    from typing_extensions import Text
 
 
 async def _copy(src_connector: Optional[Connector],
-                src_resource: Optional[Text],
-                src: Text,
+                src_resource: Optional[str],
+                src: str,
                 dst_connector: Optional[Connector],
-                dst_resources: Optional[MutableSequence[Text]],
-                dst: Text,
+                dst_resources: Optional[MutableSequence[str]],
+                dst: str,
                 writable: False) -> None:
     if src_connector is None and dst_connector is None:
         if os.path.isdir(src):
@@ -82,11 +81,11 @@ class DefaultDataManager(DataManager):
 
     async def _transfer_from_resource(self,
                                       src_job: Optional[Job],
-                                      src_resource: Optional[Text],
-                                      src: Text,
+                                      src_resource: Optional[str],
+                                      src: str,
                                       dst_job: Optional[Job],
-                                      dst_resources: MutableSequence[Text],
-                                      dst: Text,
+                                      dst_resources: MutableSequence[str],
+                                      dst: str,
                                       writable: bool):
         src_connector = src_job.step.get_connector() if src_job is not None else None
         dst_connector = dst_job.step.get_connector() if dst_job is not None else None
@@ -164,19 +163,19 @@ class DefaultDataManager(DataManager):
             data_location.available.set()
 
     def get_data_locations(self,
-                           resource: Text,
-                           path: Text,
+                           resource: str,
+                           path: str,
                            location_type: Optional[DataLocationType] = None) -> Set[DataLocation]:
         data_locations = self.path_mapper.get(resource, path, location_type)
         return {loc for loc in data_locations if loc.location_type != DataLocationType.INVALID}
 
-    def invalidate_location(self, resource: Text, path: Text) -> None:
+    def invalidate_location(self, resource: str, path: str) -> None:
         self.path_mapper.invalidate_location(resource, path)
 
     def register_path(self,
                       job: Optional[Job],
-                      resource: Optional[Text],
-                      path: Text):
+                      resource: Optional[str],
+                      path: str):
         self.path_mapper.put(
             resource=resource,
             path=path,
@@ -189,9 +188,9 @@ class DefaultDataManager(DataManager):
         self.context.checkpoint_manager.register_path(job, path)
 
     async def transfer_data(self,
-                            src: Text,
+                            src: str,
                             src_job: Optional[Job],
-                            dst: Text,
+                            dst: str,
                             dst_job: Optional[Job],
                             writable: bool = False):
         # Get connectors and resources from steps
@@ -239,16 +238,16 @@ class RemotePathNode(object):
     __slots__ = ('children', 'locations')
 
     def __init__(self):
-        self.children: MutableMapping[Text, RemotePathNode] = {}
+        self.children: MutableMapping[str, RemotePathNode] = {}
         self.locations: Set[DataLocation] = set()
 
 
 class RemotePathMapper(object):
 
     def __init__(self):
-        self._filesystems: MutableMapping[Text, RemotePathNode] = {LOCAL_RESOURCE: RemotePathNode()}
+        self._filesystems: MutableMapping[str, RemotePathNode] = {LOCAL_RESOURCE: RemotePathNode()}
 
-    def _process_resource(self, resource: Text) -> Text:
+    def _process_resource(self, resource: str) -> str:
         if resource is None:
             resource = LOCAL_RESOURCE
         if resource not in self._filesystems:
@@ -257,11 +256,11 @@ class RemotePathMapper(object):
 
     def create_mapping(self,
                        location_type: DataLocationType,
-                       src_path: Text,
-                       src_resource: Optional[Text],
-                       dst_path: Text,
+                       src_path: str,
+                       src_resource: Optional[str],
+                       dst_path: str,
                        dst_job: Optional[Job],
-                       dst_resource: Optional[Text],
+                       dst_resource: Optional[str],
                        available: bool = False) -> DataLocation:
         src_resource = self._process_resource(src_resource)
         data_locations = self.get(src_resource, src_path)
@@ -277,7 +276,7 @@ class RemotePathMapper(object):
         self.put(dst_resource, dst_path, data_locations)
         return dst_data_location
 
-    def _remove_node(self, resource: Text, node: RemotePathNode):
+    def _remove_node(self, resource: str, node: RemotePathNode):
         node.locations = set(filter(lambda l: l.resource != resource, node.locations))
         for location in node.locations:
             self.put(location.resource, location.path, node.locations)
@@ -285,7 +284,7 @@ class RemotePathMapper(object):
             self._remove_node(resource, n)
         return node
 
-    def get(self, resource: Text, path: Text, location_type: Optional[DataLocationType] = None) -> Set[DataLocation]:
+    def get(self, resource: str, path: str, location_type: Optional[DataLocationType] = None) -> Set[DataLocation]:
         resource = resource or LOCAL_RESOURCE
         node = self._filesystems.get(resource)
         if not node:
@@ -299,7 +298,7 @@ class RemotePathMapper(object):
         return ({loc for loc in node.locations if loc.location_type == location_type} if location_type
                 else node.locations)
 
-    def invalidate_location(self, resource: Optional[Text], path: Text) -> None:
+    def invalidate_location(self, resource: Optional[str], path: str) -> None:
         resource = resource or LOCAL_RESOURCE
         locations = self.get(resource, path)
         for location in locations:
@@ -307,7 +306,7 @@ class RemotePathMapper(object):
                 location.location_type = DataLocationType.INVALID
         self.put(resource, path, locations)
 
-    def put(self, resource: Text, path: Text, data_locations: Set[DataLocation]) -> None:
+    def put(self, resource: str, path: str, data_locations: Set[DataLocation]) -> None:
         resource = self._process_resource(resource)
         node = self._filesystems[resource]
         path = Path(path) if resource == LOCAL_RESOURCE else PosixPath(path)
@@ -317,7 +316,7 @@ class RemotePathMapper(object):
             node = node.children[token]
         node.locations = data_locations
 
-    def remove_resource(self, resource: Text):
+    def remove_resource(self, resource: str):
         if resource in self._filesystems:
             node = self._filesystems[resource]
             self._remove_node(resource, node)

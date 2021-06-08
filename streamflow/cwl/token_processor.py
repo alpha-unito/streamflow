@@ -8,7 +8,6 @@ from enum import Enum, auto
 from typing import Optional, Any, List, Union, MutableMapping, Set, cast, MutableSequence
 
 from cwltool.utils import CONTENT_LIMIT
-from typing_extensions import Text
 
 from streamflow.core.data import FileType, LOCAL_RESOURCE, DataLocationType
 from streamflow.core.deployment import Connector
@@ -25,7 +24,7 @@ from streamflow.workflow.port import DefaultTokenProcessor, UnionTokenProcessor,
 from streamflow.workflow.step import BaseStep, BaseJob
 
 
-async def _download_file(job: Job, url: Text) -> Text:
+async def _download_file(job: Job, url: str) -> str:
     connector = job.step.get_connector()
     resources = job.get_resources()
     try:
@@ -34,7 +33,7 @@ async def _download_file(job: Job, url: Text) -> Text:
         raise WorkflowExecutionException("Error downloading file from " + url)
 
 
-async def _get_class_from_path(path: Text, job: Job) -> Text:
+async def _get_class_from_path(path: str, job: Job) -> str:
     connector = job.step.get_connector()
     for resource in (job.get_resources() or [None]) if job is not None else [None]:
         t_path = await remotepath.follow_symlink(connector, resource, path)
@@ -43,11 +42,11 @@ async def _get_class_from_path(path: Text, job: Job) -> Text:
 
 async def _get_file_token(step: Step,
                           job: Job,
-                          token_class: Text,
-                          filepath: Text,
-                          basename: Optional[Text] = None,
+                          token_class: str,
+                          filepath: str,
+                          basename: Optional[str] = None,
                           load_contents: bool = False,
-                          load_listing: Optional[LoadListing] = None) -> MutableMapping[Text, Any]:
+                          load_listing: Optional[LoadListing] = None) -> MutableMapping[str, Any]:
     connector = step.get_connector()
     resources = job.get_resources() or [None] if job is not None else [None]
     path_processor = get_path_processor(step)
@@ -87,9 +86,9 @@ async def _get_file_token(step: Step,
 async def _get_listing(
         step: Step,
         job: Job,
-        dirpath: Text,
+        dirpath: str,
         load_contents: bool,
-        recursive: bool) -> MutableSequence[MutableMapping[Text, Any]]:
+        recursive: bool) -> MutableSequence[MutableMapping[str, Any]]:
     listing_tokens = {}
     connector = step.get_connector()
     resources = job.get_resources() or [None]
@@ -114,10 +113,10 @@ async def _get_listing(
                     token_class='File',
                     filepath=file,
                     load_contents=load_contents))
-    return cast(MutableSequence[MutableMapping[Text, Any]], await asyncio.gather(*listing_tokens.values()))
+    return cast(MutableSequence[MutableMapping[str, Any]], await asyncio.gather(*listing_tokens.values()))
 
 
-def _get_paths(token_value: Any) -> MutableSequence[Text]:
+def _get_paths(token_value: Any) -> MutableSequence[str]:
     path = get_path_from_token(token_value)
     if path is not None:
         return [path]
@@ -130,7 +129,7 @@ def _get_paths(token_value: Any) -> MutableSequence[Text]:
         return []
 
 
-async def _expand_glob(connector: Optional[Connector], resource: Optional[Text], path: Text) -> MutableSequence[Text]:
+async def _expand_glob(connector: Optional[Connector], resource: Optional[str], path: str) -> MutableSequence[str]:
     return await remotepath.resolve(connector, resource, path) or []
     # paths = await remotepath.resolve(connector, resource, path) or []
     # follow_tasks = []
@@ -149,9 +148,9 @@ class SecondaryFile(object):
     __slots__ = ('pattern', 'required')
 
     def __init__(self,
-                 pattern: Text,
+                 pattern: str,
                  required: bool):
-        self.pattern: Text = pattern
+        self.pattern: str = pattern
         self.required: bool = required
 
     def __eq__(self, other):
@@ -168,28 +167,28 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     def __init__(self,
                  port: Port,
-                 port_type: Text,
+                 port_type: str,
                  default_value: Optional[Any] = None,
-                 expression_lib: Optional[MutableSequence[Text]] = None,
-                 file_format: Optional[Text] = None,
+                 expression_lib: Optional[MutableSequence[str]] = None,
+                 file_format: Optional[str] = None,
                  full_js: bool = False,
-                 glob: Optional[Text] = None,
+                 glob: Optional[str] = None,
                  load_contents: bool = False,
                  load_listing: LoadListing = LoadListing.no_listing,
                  optional: bool = False,
-                 output_eval: Optional[Text] = None,
+                 output_eval: Optional[str] = None,
                  secondary_files: Optional[MutableSequence[SecondaryFile]] = None,
                  streamable: bool = False,
                  writable: bool = False):
         super().__init__(port)
-        self.expression_lib: Optional[MutableSequence[Text]] = expression_lib
+        self.expression_lib: Optional[MutableSequence[str]] = expression_lib
         self.full_js: bool = full_js
-        self.glob: Optional[Text] = glob
+        self.glob: Optional[str] = glob
         self.optional: bool = optional
-        self.output_eval: Optional[Text] = output_eval
-        self.port_type: Text = port_type
+        self.output_eval: Optional[str] = output_eval
+        self.port_type: str = port_type
         self.default_value: Optional[Any] = default_value
-        self.file_format: Optional[Text] = file_format
+        self.file_format: Optional[str] = file_format
         self.load_contents: bool = load_contents
         self.load_listing: LoadListing = load_listing
         self.secondary_files: Optional[MutableSequence[SecondaryFile]] = secondary_files
@@ -392,11 +391,11 @@ class CWLTokenProcessor(DefaultTokenProcessor):
     async def _process_secondary_file(self,
                                       job: Job,
                                       secondary_file: Any,
-                                      token_value: MutableMapping[Text, Any],
+                                      token_value: MutableMapping[str, Any],
                                       from_expression: bool,
-                                      existing_sf: MutableMapping[Text, Any],
+                                      existing_sf: MutableMapping[str, Any],
                                       load_contents: bool,
-                                      load_listing: Optional[LoadListing]) -> Optional[MutableMapping[Text, Any]]:
+                                      load_listing: Optional[LoadListing]) -> Optional[MutableMapping[str, Any]]:
         step = job.step if job is not None else self.port.step
         # If value is None, simply return None
         if secondary_file is None:
@@ -440,8 +439,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 return existing_sf[filepath]
 
     def _process_sf_path(self,
-                         pattern: Text,
-                         primary_path: Text) -> Text:
+                         pattern: str,
+                         primary_path: str) -> str:
         if pattern.startswith('^'):
             path_processor = get_path_processor(self.port.step)
             return self._process_sf_path(pattern[1:], path_processor.splitext(primary_path)[0])
@@ -450,9 +449,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     async def _recover_path(self,
                             job: Job,
-                            resources: MutableSequence[Text],
+                            resources: MutableSequence[str],
                             token: Token,
-                            path: Text) -> Optional[Text]:
+                            path: str) -> Optional[str]:
         context = self.get_context()
         connector = self.port.step.get_connector()
         job_resources = job.get_resources() or [None]
@@ -495,7 +494,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     async def _recover_token(self,
                              job: Job,
-                             resources: MutableSequence[Text],
+                             resources: MutableSequence[str],
                              token: Token) -> Token:
         if isinstance(token.value, MutableSequence):
             elements = []
@@ -507,7 +506,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     async def _recover_token_value(self,
                                    job: Job,
-                                   resources: MutableSequence[Text],
+                                   resources: MutableSequence[str],
                                    token: Token,
                                    token_value: Any) -> Any:
         new_token_value = {'class': token_value['class']}
@@ -543,7 +542,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     def _register_data(self,
                        job: Job,
-                       token_value: Union[MutableSequence[MutableMapping[Text, Any]], MutableMapping[Text, Any]]):
+                       token_value: Union[MutableSequence[MutableMapping[str, Any]], MutableMapping[str, Any]]):
         context = self.get_context()
         # If `token_value` is a list, process every item independently
         if isinstance(token_value, MutableSequence):
@@ -576,9 +575,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
     async def _transfer_file(self,
                              src_job: Optional[Job],
                              dest_job: Optional[Job],
-                             src_path: Text,
-                             dest_path: Optional[Text] = None,
-                             writable: Optional[bool] = None) -> Text:
+                             src_path: str,
+                             dest_path: Optional[str] = None,
+                             writable: Optional[bool] = None) -> str:
         if dest_path is None:
             if isinstance(self.port, InputPort) and src_job is not None:
                 if src_path.startswith(src_job.output_directory):
@@ -609,7 +608,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                                  src_job: Job,
                                  token_value: Any,
                                  load_listing: Optional[LoadListing] = None,
-                                 writable: Optional[bool] = None) -> MutableMapping[Text, Any]:
+                                 writable: Optional[bool] = None) -> MutableMapping[str, Any]:
         path_processor = get_path_processor(src_job.step) if src_job is not None else os.path
         if 'location' not in token_value and 'path' in token_value:
             token_value['location'] = token_value['path']
@@ -711,7 +710,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             token_value['listing'] = await asyncio.gather(*listing_tasks)
         return token_value
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence) or self.port_type not in ['File', 'Directory']:
             return await super().collect_output(token, output_dir)
         if token.value is not None and self.port_type in ['File', 'Directory']:
@@ -744,7 +743,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 tag=get_tag(job.inputs),
                 weight=weight)
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         if self.port_type in ['File', 'Directory']:
             context = self.get_context()
             # If the token is actually an aggregate of multiple tokens, consider each token separately
@@ -766,7 +765,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         else:
             return set()
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence) or self.port_type not in ['File', 'Directory']:
             return await super().recover_token(job, resources, token)
         else:

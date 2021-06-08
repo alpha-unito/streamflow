@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Token
-    from typing_extensions import Text, Optional
+    from typing import Optional
 
 
 class WorkflowException(Exception):
@@ -25,6 +25,6 @@ class FailureHandlingException(WorkflowException):
 
 class UnrecoverableTokenException(WorkflowException):
 
-    def __init__(self, message: Text, token: Optional[Token] = None):
+    def __init__(self, message: str, token: Optional[Token] = None):
         super().__init__(message)
         self.token: Token = token

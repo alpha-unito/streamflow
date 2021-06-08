@@ -8,7 +8,6 @@ from typing import Optional, MutableSequence, MutableMapping, Tuple, Any, Union
 
 import cachetools
 from cachetools import Cache, TTLCache
-from typing_extensions import Text
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -20,14 +19,14 @@ from streamflow.log_handler import logger
 class QueueManagerConnector(SSHConnector, ABC):
 
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 file: Text,
-                 hostname: Text,
-                 sshKey: Text,
-                 username: Text,
+                 streamflow_config_dir: str,
+                 file: str,
+                 hostname: str,
+                 sshKey: str,
+                 username: str,
                  maxConcurrentJobs: Optional[int] = 1,
                  pollingInterval: int = 5,
-                 sshKeyPassphrase: Optional[Text] = None,
+                 sshKeyPassphrase: Optional[str] = None,
                  transferBufferSize: int = 2**16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
@@ -39,72 +38,58 @@ class QueueManagerConnector(SSHConnector, ABC):
             username=username)
         self.maxConcurrentJobs: int = maxConcurrentJobs
         self.pollingInterval: int = pollingInterval
-        self.scheduledJobs: MutableSequence[Text] = []
+        self.scheduledJobs: MutableSequence[str] = []
         self.jobsCache: Cache = TTLCache(maxsize=1, ttl=self.pollingInterval)
         self.jobsCacheLock: Lock = Lock()
 
     @abstractmethod
     async def _get_output(self,
-                          job_id: Text,
-                          resource: Text) -> Text:
+                          job_id: str,
+                          resource: str) -> str:
         ...
 
     @abstractmethod
     async def _get_returncode(self,
-                              job_id: Text,
-                              resource: Text) -> int:
+                              job_id: str,
+                              resource: str) -> int:
         ...
 
     @abstractmethod
     async def _get_running_jobs(self,
-                                resource: Text) -> bool:
+                                resource: str) -> bool:
         ...
 
     @abstractmethod
     async def _remove_jobs(self,
-                           resource: Text) -> None:
+                           resource: str) -> None:
         ...
 
     @abstractmethod
     async def _run_batch_command(self,
-                                 helper_file: Text,
-                                 job_name: Text,
-                                 resource: Text,
-                                 workdir: Optional[Text] = None,
-                                 stdin: Optional[Union[int, Text]] = None,
-                                 stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                                 stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
+                                 helper_file: str,
+                                 job_name: str,
+                                 resource: str,
+                                 workdir: Optional[str] = None,
+                                 stdin: Optional[Union[int, str]] = None,
+                                 stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                                 stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
         ...
 
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
-        resources = {}
-        for i in range(self.maxConcurrentJobs):
-            name = posixpath.join(self.hostname, str(i))
-            resources[name] = Resource(name, self.hostname)
-        return resources
-
-    async def _copy_remote_to_remote(self,
-                                     src: Text,
-                                     dst: Text,
-                                     resources: MutableSequence[Text],
-                                     source_remote: Text,
-                                     read_only: bool = False) -> None:
-        return await super()._copy_remote_to_remote(
-            src=src,
-            dst=dst,
-            resources=[source_remote],
-            source_remote=source_remote,
-            read_only=read_only)
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+        return {self.hostname: Resource(
+            name=self.hostname,
+            hostname=self.hostname,
+            slots=self.maxConcurrentJobs)}
 
     async def _run(self,
-                   resource: Text,
-                   command: MutableSequence[Text],
-                   environment: MutableMapping[Text, Text] = None,
-                   workdir: Optional[Text] = None,
-                   stdin: Optional[Union[int, Text]] = None,
-                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[Text] = None,
+                   resource: str,
+                   command: MutableSequence[str],
+                   environment: MutableMapping[str, str] = None,
+                   workdir: Optional[str] = None,
+                   stdin: Optional[Union[int, str]] = None,
+                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                   job_name: Optional[str] = None,
                    capture_output: bool = False,
                    encode: bool = True,
                    interactive: bool = False,
@@ -167,8 +152,8 @@ class QueueManagerConnector(SSHConnector, ABC):
 class SlurmConnector(QueueManagerConnector):
 
     async def _get_output(self,
-                          job_id: Text,
-                          resource: Text) -> Text:
+                          job_id: str,
+                          resource: str) -> str:
         async with self._get_ssh_client(resource) as ssh_client:
             output_path = (await ssh_client.run(
                 "scontrol show -o job {job_id} | sed -n 's/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'".format(
@@ -178,8 +163,8 @@ class SlurmConnector(QueueManagerConnector):
                     if output_path else "")
 
     async def _get_returncode(self,
-                              job_id: Text,
-                              resource: Text) -> int:
+                              job_id: str,
+                              resource: str) -> int:
         async with self._get_ssh_client(resource) as ssh_client:
             return int((await ssh_client.run(
                 "scontrol show -o job {job_id} | sed -n 's/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'".format(
@@ -188,7 +173,7 @@ class SlurmConnector(QueueManagerConnector):
 
     @cachedmethod(lambda self: self.jobsCache, key=partial(cachetools.keys.hashkey, 'running_jobs'))
     async def _get_running_jobs(self,
-                                resource: Text) -> MutableSequence[Text]:
+                                resource: str) -> MutableSequence[str]:
         async with self._get_ssh_client(resource) as ssh_client:
             return [j.strip() for j in (await ssh_client.run(
                 "squeue -h -j {job_ids} -t {states} -O JOBID".format(
@@ -198,19 +183,19 @@ class SlurmConnector(QueueManagerConnector):
                 ))).stdout.strip().splitlines()]
 
     async def _remove_jobs(self,
-                           resource: Text) -> None:
+                           resource: str) -> None:
         async with self._get_ssh_client(resource) as ssh_client:
             await ssh_client.run(
                 "scancel {job_ids}".format(job_ids=" ".join(self.scheduledJobs)))
 
     async def _run_batch_command(self,
-                                 helper_file: Text,
-                                 job_name: Text,
-                                 resource: Text,
-                                 workdir: Optional[Text] = None,
-                                 stdin: Optional[Union[int, Text]] = None,
-                                 stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                                 stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
+                                 helper_file: str,
+                                 job_name: str,
+                                 resource: str,
+                                 workdir: Optional[str] = None,
+                                 stdin: Optional[Union[int, str]] = None,
+                                 stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                                 stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
         batch_command = "sbatch --parsable {workdir} {stdin} {stdout} {stderr} {helper_file}".format(
             workdir="-D {workdir}".format(workdir=workdir) if workdir is not None else "",
             stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",
@@ -225,8 +210,8 @@ class SlurmConnector(QueueManagerConnector):
 class PBSConnector(QueueManagerConnector):
 
     async def _get_output(self,
-                          job_id: Text,
-                          resource: Text) -> Text:
+                          job_id: str,
+                          resource: str) -> str:
         async with self._get_ssh_client(resource) as ssh_client:
             output_path = (await ssh_client.run(
                 "qstat {job_id} -xf | sed -n 's/^\\s*Output_Path\\s=\\s.*:\\(.*\\)\\s*$/\\1/p'".format(
@@ -236,8 +221,8 @@ class PBSConnector(QueueManagerConnector):
                     if output_path else "")
 
     async def _get_returncode(self,
-                              job_id: Text,
-                              resource: Text) -> int:
+                              job_id: str,
+                              resource: str) -> int:
         async with self._get_ssh_client(resource) as ssh_client:
             return int((await ssh_client.run(
                 "qstat {job_id} -xf | sed -n 's/^\\s*Exit_status\\s=\\s\\([0-9]\\+\\)\\s*$/\\1/p'".format(
@@ -246,7 +231,7 @@ class PBSConnector(QueueManagerConnector):
 
     @cachedmethod(lambda self: self.jobsCache, key=partial(cachetools.keys.hashkey, 'running_jobs'))
     async def _get_running_jobs(self,
-                                resource: Text) -> MutableSequence[Text]:
+                                resource: str) -> MutableSequence[str]:
         async with self._get_ssh_client(resource) as ssh_client:
             return (await ssh_client.run(
                 "qstat -awx {job_ids} | grep '{grep_ids}' | awk '{{if($10 != \"E\" && $10 != \"F\") {{print $1}}}}'".format(
@@ -255,19 +240,19 @@ class PBSConnector(QueueManagerConnector):
                 ))).stdout.strip().splitlines()
 
     async def _remove_jobs(self,
-                           resource: Text) -> None:
+                           resource: str) -> None:
         async with self._get_ssh_client(resource) as ssh_client:
             await ssh_client.run(
                 "qdel {job_ids}".format(job_ids=" ".join(self.scheduledJobs)))
 
     async def _run_batch_command(self,
-                                 helper_file: Text,
-                                 job_name: Text,
-                                 resource: Text,
-                                 workdir: Optional[Text] = None,
-                                 stdin: Optional[Union[int, Text]] = None,
-                                 stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                                 stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
+                                 helper_file: str,
+                                 job_name: str,
+                                 resource: str,
+                                 workdir: Optional[str] = None,
+                                 stdin: Optional[Union[int, str]] = None,
+                                 stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                                 stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
         batch_command = "{workdir} qsub {stdin} {stdout} {stderr} {helper_file}".format(
             workdir="cd {workdir} &&".format(workdir=workdir) if workdir is not None else "",
             stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",

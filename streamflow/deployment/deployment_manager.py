@@ -15,7 +15,6 @@ from streamflow.log_handler import logger
 if TYPE_CHECKING:
     from streamflow.core.deployment import ModelConfig, Connector
     from typing import MutableMapping, Optional, Any
-    from typing_extensions import Text
 
 connector_classes = {
     'docker': DockerConnector,
@@ -33,11 +32,11 @@ connector_classes = {
 
 class DefaultDeploymentManager(DeploymentManager):
 
-    def __init__(self, streamflow_config_dir: Text) -> None:
+    def __init__(self, streamflow_config_dir: str) -> None:
         super().__init__(streamflow_config_dir)
-        self.config_map: MutableMapping[Text, Any] = {}
-        self.events_map: MutableMapping[Text, Event] = {}
-        self.deployments_map: MutableMapping[Text, Connector] = {}
+        self.config_map: MutableMapping[str, Any] = {}
+        self.events_map: MutableMapping[str, Event] = {}
+        self.deployments_map: MutableMapping[str, Connector] = {}
 
     async def deploy(self, model_config: ModelConfig):
         model_name = model_config.name
@@ -59,13 +58,13 @@ class DefaultDeploymentManager(DeploymentManager):
                 if model_name in self.config_map:
                     break
 
-    def get_connector(self, model_name: Text) -> Optional[Connector]:
+    def get_connector(self, model_name: str) -> Optional[Connector]:
         return self.deployments_map.get(model_name, None)
 
-    def is_deployed(self, model_name: Text):
+    def is_deployed(self, model_name: str):
         return model_name in self.deployments_map
 
-    async def undeploy(self, model_name: Text):
+    async def undeploy(self, model_name: str):
         if model_name in dict(self.deployments_map):
             await self.events_map[model_name].wait()
             self.events_map[model_name].clear()

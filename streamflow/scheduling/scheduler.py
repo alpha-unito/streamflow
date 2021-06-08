@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Job
     from streamflow.scheduling.policy import Policy
     from typing import MutableMapping
-    from typing_extensions import Text
 
 
 class DefaultScheduler(Scheduler):
@@ -32,7 +31,7 @@ class DefaultScheduler(Scheduler):
     def _get_resources(self,
                        job: Job,
                        scheduling_policy: Policy,
-                       available_resources: MutableMapping[Text, Resource]) -> Optional[MutableSequence[Text]]:
+                       available_resources: MutableMapping[str, Resource]) -> Optional[MutableSequence[str]]:
         selected_resources = []
         for i in range(job.step.target.resources):
             selected_resource = (scheduling_policy or self.default_policy).get_resource(
@@ -77,7 +76,19 @@ class DefaultScheduler(Scheduler):
                     "Job {name} allocated on resources {resources}".format(
                         name=job.name,
                         resources=', '.join(selected_resources)))
-            self.job_allocations[job.name] = JobAllocation(job, selected_resources, Status.RUNNING)
+            if job.hardware:
+                self.job_allocations[job.name] = JobAllocation(
+                    job=job,
+                    resources=selected_resources,
+                    status=Status.RUNNING,
+                    hardware=job.hardware)
+            else:
+                available_resources = dict(await connector.get_available_resources(job.step.target.service))
+                self.job_allocations[job.name] = JobAllocation(
+                    job=job,
+                    resources=selected_resources,
+                    status=Status.RUNNING,
+                    hardware=available_resources[selected_resources[0]].hardware)
             for selected_resource in selected_resources:
                 if selected_resource not in self.resource_allocations:
                     self.resource_allocations[selected_resource] = ResourceAllocation(selected_resource, model_name)

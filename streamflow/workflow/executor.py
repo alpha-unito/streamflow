@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.workflow import Workflow
     from typing import Any, MutableMapping, Optional
-    from typing_extensions import Text
 
 
 class StreamFlowExecutor(Executor):
@@ -27,10 +26,10 @@ class StreamFlowExecutor(Executor):
         self.context: StreamFlowContext = context
         self.executions: MutableSequence[Task] = []
         self.output_tasks: MutableSequence[Task] = []
-        self.received: MutableSequence[Text] = []
+        self.received: MutableSequence[str] = []
         self.closed: bool = False
 
-    async def _execute(self, step: Text):
+    async def _execute(self, step: str):
         try:
             await self.workflow.steps[step].run()
         except Exception as e:
@@ -45,9 +44,9 @@ class StreamFlowExecutor(Executor):
         self.closed = True
 
     async def _wait_outputs(self,
-                            output_consumer: Text,
-                            output_dir: Text,
-                            output_tokens: MutableMapping[Text, Any]) -> MutableMapping[Text, Any]:
+                            output_consumer: str,
+                            output_dir: str,
+                            output_tokens: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
         finished, unfinished = await asyncio.wait(self.output_tasks, return_when=FIRST_COMPLETED)
         self.output_tasks = list(unfinished)
         for task in finished:
@@ -73,7 +72,7 @@ class StreamFlowExecutor(Executor):
                     self.workflow.output_ports[task_name].get(output_consumer), name=task_name))
         return output_tokens
 
-    async def run(self, output_dir: Optional[Text] = os.getcwd()):
+    async def run(self, output_dir: Optional[str] = os.getcwd()):
         output_tokens = {}
         # Execute workflow
         for step in self.workflow.steps:

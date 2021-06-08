@@ -12,7 +12,6 @@ from abc import ABC, abstractmethod
 from typing import MutableSequence, MutableMapping, Any, Tuple, Optional, cast
 
 from cachetools import Cache, TTLCache
-from typing_extensions import Text
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -25,12 +24,12 @@ from streamflow.log_handler import logger
 class ContainerConnector(BaseConnector, ABC):
 
     async def _check_effective_resource(self,
-                                        common_paths: MutableMapping[Text, Any],
-                                        effective_resources: MutableSequence[Text],
-                                        resource: Text,
-                                        path: Text,
-                                        source_remote: Optional[Text] = None
-                                        ) -> Tuple[MutableMapping[Text, Any], MutableSequence[Text]]:
+                                        common_paths: MutableMapping[str, Any],
+                                        effective_resources: MutableSequence[str],
+                                        resource: str,
+                                        path: str,
+                                        source_remote: Optional[str] = None
+                                        ) -> Tuple[MutableMapping[str, Any], MutableSequence[str]]:
         # Get all container mounts
         volumes = await self._get_volumes(resource)
         for volume in volumes:
@@ -60,9 +59,9 @@ class ContainerConnector(BaseConnector, ABC):
         return common_paths, effective_resources
 
     async def _copy_local_to_remote(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resources: MutableSequence[Text],
+                                    src: str,
+                                    dst: str,
+                                    resources: MutableSequence[str],
                                     read_only: bool = False) -> None:
         effective_resources = await self._get_effective_resources(resources, dst)
         created_tar_buffer = False
@@ -93,10 +92,10 @@ class ContainerConnector(BaseConnector, ABC):
             await asyncio.gather(*copy_tasks)
 
     async def _copy_remote_to_remote(self,
-                                     src: Text,
-                                     dst: Text,
-                                     resources: MutableSequence[Text],
-                                     source_remote: Text,
+                                     src: str,
+                                     dst: str,
+                                     resources: MutableSequence[str],
+                                     source_remote: str,
                                      read_only: bool = False) -> None:
         effective_resources = await self._get_effective_resources(resources, dst, source_remote)
         non_bind_resources = []
@@ -125,9 +124,9 @@ class ContainerConnector(BaseConnector, ABC):
                 read_only=read_only)
 
     async def _get_effective_resources(self,
-                                       resources: MutableSequence[Text],
-                                       dest_path: Text,
-                                       source_remote: Optional[Text] = None) -> MutableSequence[Text]:
+                                       resources: MutableSequence[str],
+                                       dest_path: str,
+                                       source_remote: Optional[str] = None) -> MutableSequence[str]:
         common_paths = {}
         effective_resources = []
         for resource in resources:
@@ -141,23 +140,23 @@ class ContainerConnector(BaseConnector, ABC):
 
     @abstractmethod
     async def _get_bind_mounts(self,
-                               resource: Text) -> MutableSequence[MutableMapping[Text, Text]]:
+                               resource: str) -> MutableSequence[MutableMapping[str, str]]:
         ...
 
     @abstractmethod
     async def _get_resource(self,
-                            resource_name: Text) -> Optional[Resource]:
+                            resource_name: str) -> Optional[Resource]:
         ...
 
     @abstractmethod
     async def _get_volumes(self,
-                           resource: Text) -> MutableSequence[MutableMapping[Text, Text]]:
+                           resource: str) -> MutableSequence[MutableMapping[str, str]]:
         ...
 
     async def _is_bind_transfer(self,
-                                resource: Text,
-                                host_path: Text,
-                                instance_path: Text) -> bool:
+                                resource: str,
+                                host_path: str,
+                                instance_path: str) -> bool:
         bind_mounts = await self._get_bind_mounts(resource)
         host_binds = [b['Source'] for b in bind_mounts]
         instance_binds = [b['Destination'] for b in bind_mounts]
@@ -172,11 +171,11 @@ class ContainerConnector(BaseConnector, ABC):
 class DockerBaseConnector(ContainerConnector, ABC):
 
     async def _get_bind_mounts(self,
-                               resource: Text) -> MutableSequence[MutableMapping[Text, Text]]:
+                               resource: str) -> MutableSequence[MutableMapping[str, str]]:
         return [v for v in await self._get_volumes(resource) if v['Type'] == 'bind']
 
     async def _get_resource(self,
-                            resource_name: Text) -> Resource:
+                            resource_name: str) -> Resource:
         inspect_command = "".join([
             "docker ",
             "inspect ",
@@ -191,8 +190,8 @@ class DockerBaseConnector(ContainerConnector, ABC):
         return Resource(name=resource_name, hostname=stdout.decode().strip())
 
     def _get_run_command(self,
-                         command: Text,
-                         resource: Text,
+                         command: str,
+                         resource: str,
                          interactive: bool = False):
         return "".join([
             "docker "
@@ -206,7 +205,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         )
 
     async def _get_volumes(self,
-                           resource: Text) -> MutableSequence[MutableMapping[Text, Text]]:
+                           resource: str) -> MutableSequence[MutableMapping[str, str]]:
         inspect_command = "".join([
             "docker ",
             "inspect ",
@@ -224,15 +223,15 @@ class DockerBaseConnector(ContainerConnector, ABC):
 class DockerConnector(DockerBaseConnector):
 
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 image: Text,
-                 addHost: Optional[MutableSequence[Text]] = None,
+                 streamflow_config_dir: str,
+                 image: str,
+                 addHost: Optional[MutableSequence[str]] = None,
                  blkioWeight: Optional[int] = None,
                  blkioWeightDevice: Optional[MutableSequence[int]] = None,
-                 capAdd: Optional[MutableSequence[Text]] = None,
-                 capDrop: Optional[MutableSequence[Text]] = None,
-                 cgroupParent: Optional[Text] = None,
-                 cidfile: Optional[Text] = None,
+                 capAdd: Optional[MutableSequence[str]] = None,
+                 capDrop: Optional[MutableSequence[str]] = None,
+                 cgroupParent: Optional[str] = None,
+                 cidfile: Optional[str] = None,
                  containerIds: Optional[MutableSequence] = None,
                  cpuPeriod: Optional[int] = None,
                  cpuQuota: Optional[int] = None,
@@ -240,180 +239,180 @@ class DockerConnector(DockerBaseConnector):
                  cpuRTRuntime: Optional[int] = None,
                  cpuShares: Optional[int] = None,
                  cpus: Optional[float] = None,
-                 cpusetCpus: Optional[Text] = None,
-                 cpusetMems: Optional[Text] = None,
-                 detachKeys: Optional[Text] = None,
-                 device: Optional[MutableSequence[Text]] = None,
-                 deviceCgroupRule: Optional[MutableSequence[Text]] = None,
-                 deviceReadBps: Optional[MutableSequence[Text]] = None,
-                 deviceReadIops: Optional[MutableSequence[Text]] = None,
-                 deviceWriteBps: Optional[MutableSequence[Text]] = None,
-                 deviceWriteIops: Optional[MutableSequence[Text]] = None,
+                 cpusetCpus: Optional[str] = None,
+                 cpusetMems: Optional[str] = None,
+                 detachKeys: Optional[str] = None,
+                 device: Optional[MutableSequence[str]] = None,
+                 deviceCgroupRule: Optional[MutableSequence[str]] = None,
+                 deviceReadBps: Optional[MutableSequence[str]] = None,
+                 deviceReadIops: Optional[MutableSequence[str]] = None,
+                 deviceWriteBps: Optional[MutableSequence[str]] = None,
+                 deviceWriteIops: Optional[MutableSequence[str]] = None,
                  disableContentTrust: bool = True,
-                 dns: Optional[MutableSequence[Text]] = None,
-                 dnsOptions: Optional[MutableSequence[Text]] = None,
-                 dnsSearch: Optional[MutableSequence[Text]] = None,
-                 domainname: Optional[Text] = None,
-                 entrypoint: Optional[Text] = None,
-                 env: Optional[MutableSequence[Text]] = None,
-                 envFile: Optional[MutableSequence[Text]] = None,
-                 expose: Optional[MutableSequence[Text]] = None,
-                 gpus: Optional[MutableSequence[Text]] = None,
-                 groupAdd: Optional[MutableSequence[Text]] = None,
-                 healthCmd: Optional[Text] = None,
-                 healthInterval: Optional[Text] = None,
+                 dns: Optional[MutableSequence[str]] = None,
+                 dnsOptions: Optional[MutableSequence[str]] = None,
+                 dnsSearch: Optional[MutableSequence[str]] = None,
+                 domainname: Optional[str] = None,
+                 entrypoint: Optional[str] = None,
+                 env: Optional[MutableSequence[str]] = None,
+                 envFile: Optional[MutableSequence[str]] = None,
+                 expose: Optional[MutableSequence[str]] = None,
+                 gpus: Optional[MutableSequence[str]] = None,
+                 groupAdd: Optional[MutableSequence[str]] = None,
+                 healthCmd: Optional[str] = None,
+                 healthInterval: Optional[str] = None,
                  healthRetries: Optional[int] = None,
-                 healthStartPeriod: Optional[Text] = None,
-                 healthTimeout: Optional[Text] = None,
-                 hostname: Optional[Text] = None,
+                 healthStartPeriod: Optional[str] = None,
+                 healthTimeout: Optional[str] = None,
+                 hostname: Optional[str] = None,
                  init: bool = True,
-                 ip: Optional[Text] = None,
-                 ip6: Optional[Text] = None,
-                 ipc: Optional[Text] = None,
-                 isolation: Optional[Text] = None,
+                 ip: Optional[str] = None,
+                 ip6: Optional[str] = None,
+                 ipc: Optional[str] = None,
+                 isolation: Optional[str] = None,
                  kernelMemory: Optional[int] = None,
-                 label: Optional[MutableSequence[Text]] = None,
-                 labelFile: Optional[MutableSequence[Text]] = None,
-                 link: Optional[MutableSequence[Text]] = None,
-                 linkLocalIP: Optional[MutableSequence[Text]] = None,
-                 logDriver: Optional[Text] = None,
-                 logOpts: Optional[MutableSequence[Text]] = None,
-                 macAddress: Optional[Text] = None,
+                 label: Optional[MutableSequence[str]] = None,
+                 labelFile: Optional[MutableSequence[str]] = None,
+                 link: Optional[MutableSequence[str]] = None,
+                 linkLocalIP: Optional[MutableSequence[str]] = None,
+                 logDriver: Optional[str] = None,
+                 logOpts: Optional[MutableSequence[str]] = None,
+                 macAddress: Optional[str] = None,
                  memory: Optional[int] = None,
                  memoryReservation: Optional[int] = None,
                  memorySwap: Optional[int] = None,
                  memorySwappiness: Optional[int] = None,
-                 mount: Optional[MutableSequence[Text]] = None,
-                 network: Optional[MutableSequence[Text]] = None,
-                 networkAlias: Optional[MutableSequence[Text]] = None,
+                 mount: Optional[MutableSequence[str]] = None,
+                 network: Optional[MutableSequence[str]] = None,
+                 networkAlias: Optional[MutableSequence[str]] = None,
                  noHealthcheck: bool = False,
                  oomKillDisable: bool = False,
                  oomScoreAdj: Optional[int] = None,
-                 pid: Optional[Text] = None,
+                 pid: Optional[str] = None,
                  pidsLimit: Optional[int] = None,
                  privileged: bool = False,
-                 publish: Optional[MutableSequence[Text]] = None,
+                 publish: Optional[MutableSequence[str]] = None,
                  publishAll: bool = False,
                  readOnly: bool = False,
                  replicas: int = 1,
                  resourcesCacheTTL: int = 10,
-                 restart: Optional[Text] = None,
+                 restart: Optional[str] = None,
                  rm: bool = True,
-                 runtime: Optional[Text] = None,
-                 securityOpts: Optional[MutableSequence[Text]] = None,
+                 runtime: Optional[str] = None,
+                 securityOpts: Optional[MutableSequence[str]] = None,
                  shmSize: Optional[int] = None,
                  sigProxy: bool = True,
-                 stopSignal: Optional[Text] = None,
+                 stopSignal: Optional[str] = None,
                  stopTimeout: Optional[int] = None,
-                 storageOpts: Optional[MutableSequence[Text]] = None,
-                 sysctl: Optional[MutableSequence[Text]] = None,
-                 tmpfs: Optional[MutableSequence[Text]] = None,
+                 storageOpts: Optional[MutableSequence[str]] = None,
+                 sysctl: Optional[MutableSequence[str]] = None,
+                 tmpfs: Optional[MutableSequence[str]] = None,
                  transferBufferSize: int = 2**16,
-                 ulimit: Optional[MutableSequence[Text]] = None,
-                 user: Optional[Text] = None,
-                 userns: Optional[Text] = None,
-                 uts: Optional[Text] = None,
-                 volume: Optional[MutableSequence[Text]] = None,
-                 volumeDriver: Optional[Text] = None,
-                 volumesFrom: Optional[MutableSequence[Text]] = None,
-                 workdir: Optional[Text] = None):
+                 ulimit: Optional[MutableSequence[str]] = None,
+                 user: Optional[str] = None,
+                 userns: Optional[str] = None,
+                 uts: Optional[str] = None,
+                 volume: Optional[MutableSequence[str]] = None,
+                 volumeDriver: Optional[str] = None,
+                 volumesFrom: Optional[MutableSequence[str]] = None,
+                 workdir: Optional[str] = None):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
-        self.image: Text = image
-        self.addHost: Optional[MutableSequence[Text]] = addHost
+        self.image: str = image
+        self.addHost: Optional[MutableSequence[str]] = addHost
         self.blkioWeight: Optional[int] = blkioWeight
         self.blkioWeightDevice: Optional[MutableSequence[int]] = blkioWeightDevice
-        self.capAdd: Optional[MutableSequence[Text]] = capAdd
-        self.capDrop: Optional[MutableSequence[Text]] = capDrop
-        self.cgroupParent: Optional[Text] = cgroupParent
-        self.cidfile: Optional[Text] = cidfile
-        self.containerIds: MutableSequence[Text] = containerIds or []
+        self.capAdd: Optional[MutableSequence[str]] = capAdd
+        self.capDrop: Optional[MutableSequence[str]] = capDrop
+        self.cgroupParent: Optional[str] = cgroupParent
+        self.cidfile: Optional[str] = cidfile
+        self.containerIds: MutableSequence[str] = containerIds or []
         self.cpuPeriod: Optional[int] = cpuPeriod
         self.cpuQuota: Optional[int] = cpuQuota
         self.cpuRTPeriod: Optional[int] = cpuRTPeriod
         self.cpuRTRuntime: Optional[int] = cpuRTRuntime
         self.cpuShares: Optional[int] = cpuShares
         self.cpus: Optional[float] = cpus
-        self.cpusetCpus: Optional[Text] = cpusetCpus
-        self.cpusetMems: Optional[Text] = cpusetMems
-        self.detachKeys: Optional[Text] = detachKeys
-        self.device: Optional[MutableSequence[Text]] = device
-        self.deviceCgroupRule: Optional[MutableSequence[Text]] = deviceCgroupRule
-        self.deviceReadBps: Optional[MutableSequence[Text]] = deviceReadBps
-        self.deviceReadIops: Optional[MutableSequence[Text]] = deviceReadIops
-        self.deviceWriteBps: Optional[MutableSequence[Text]] = deviceWriteBps
-        self.deviceWriteIops: Optional[MutableSequence[Text]] = deviceWriteIops
+        self.cpusetCpus: Optional[str] = cpusetCpus
+        self.cpusetMems: Optional[str] = cpusetMems
+        self.detachKeys: Optional[str] = detachKeys
+        self.device: Optional[MutableSequence[str]] = device
+        self.deviceCgroupRule: Optional[MutableSequence[str]] = deviceCgroupRule
+        self.deviceReadBps: Optional[MutableSequence[str]] = deviceReadBps
+        self.deviceReadIops: Optional[MutableSequence[str]] = deviceReadIops
+        self.deviceWriteBps: Optional[MutableSequence[str]] = deviceWriteBps
+        self.deviceWriteIops: Optional[MutableSequence[str]] = deviceWriteIops
         self.disableContentTrust: bool = disableContentTrust
-        self.dns: Optional[MutableSequence[Text]] = dns
-        self.dnsOptions: Optional[MutableSequence[Text]] = dnsOptions
-        self.dnsSearch: Optional[MutableSequence[Text]] = dnsSearch
-        self.domainname: Optional[Text] = domainname
-        self.entrypoint: Optional[Text] = entrypoint
-        self.env: Optional[MutableSequence[Text]] = env
-        self.envFile: Optional[MutableSequence[Text]] = envFile
-        self.expose: Optional[MutableSequence[Text]] = expose
-        self.gpus: Optional[MutableSequence[Text]] = gpus
-        self.groupAdd: Optional[MutableSequence[Text]] = groupAdd
-        self.healthCmd: Optional[Text] = healthCmd
-        self.healthInterval: Optional[Text] = healthInterval
+        self.dns: Optional[MutableSequence[str]] = dns
+        self.dnsOptions: Optional[MutableSequence[str]] = dnsOptions
+        self.dnsSearch: Optional[MutableSequence[str]] = dnsSearch
+        self.domainname: Optional[str] = domainname
+        self.entrypoint: Optional[str] = entrypoint
+        self.env: Optional[MutableSequence[str]] = env
+        self.envFile: Optional[MutableSequence[str]] = envFile
+        self.expose: Optional[MutableSequence[str]] = expose
+        self.gpus: Optional[MutableSequence[str]] = gpus
+        self.groupAdd: Optional[MutableSequence[str]] = groupAdd
+        self.healthCmd: Optional[str] = healthCmd
+        self.healthInterval: Optional[str] = healthInterval
         self.healthRetries: Optional[int] = healthRetries
-        self.healthStartPeriod: Optional[Text] = healthStartPeriod
-        self.healthTimeout: Optional[Text] = healthTimeout
-        self.hostname: Optional[Text] = hostname
+        self.healthStartPeriod: Optional[str] = healthStartPeriod
+        self.healthTimeout: Optional[str] = healthTimeout
+        self.hostname: Optional[str] = hostname
         self.init: bool = init
-        self.ip: Optional[Text] = ip
-        self.ip6: Optional[Text] = ip6
-        self.ipc: Optional[Text] = ipc
-        self.isolation: Optional[Text] = isolation
+        self.ip: Optional[str] = ip
+        self.ip6: Optional[str] = ip6
+        self.ipc: Optional[str] = ipc
+        self.isolation: Optional[str] = isolation
         self.kernelMemory: Optional[int] = kernelMemory
-        self.label: Optional[MutableSequence[Text]] = label
-        self.labelFile: Optional[MutableSequence[Text]] = labelFile
-        self.link: Optional[MutableSequence[Text]] = link
-        self.linkLocalIP: Optional[MutableSequence[Text]] = linkLocalIP
-        self.logDriver: Optional[Text] = logDriver
-        self.logOpts: Optional[MutableSequence[Text]] = logOpts
-        self.macAddress: Optional[Text] = macAddress
+        self.label: Optional[MutableSequence[str]] = label
+        self.labelFile: Optional[MutableSequence[str]] = labelFile
+        self.link: Optional[MutableSequence[str]] = link
+        self.linkLocalIP: Optional[MutableSequence[str]] = linkLocalIP
+        self.logDriver: Optional[str] = logDriver
+        self.logOpts: Optional[MutableSequence[str]] = logOpts
+        self.macAddress: Optional[str] = macAddress
         self.memory: Optional[int] = memory
         self.memoryReservation: Optional[int] = memoryReservation
         self.memorySwap: Optional[int] = memorySwap
         self.memorySwappiness: Optional[int] = memorySwappiness
-        self.mount: Optional[MutableSequence[Text]] = mount
-        self.network: Optional[MutableSequence[Text]] = network
-        self.networkAlias: Optional[MutableSequence[Text]] = networkAlias
+        self.mount: Optional[MutableSequence[str]] = mount
+        self.network: Optional[MutableSequence[str]] = network
+        self.networkAlias: Optional[MutableSequence[str]] = networkAlias
         self.noHealthcheck: bool = noHealthcheck
         self.oomKillDisable: bool = oomKillDisable
         self.oomScoreAdj: Optional[int] = oomScoreAdj
-        self.pid: Optional[Text] = pid
+        self.pid: Optional[str] = pid
         self.pidsLimit: Optional[int] = pidsLimit
         self.privileged: bool = privileged
-        self.publish: Optional[MutableSequence[Text]] = publish
+        self.publish: Optional[MutableSequence[str]] = publish
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
         self.replicas: int = replicas
         self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
-        self.restart: Optional[Text] = restart
+        self.restart: Optional[str] = restart
         self.rm: bool = rm
-        self.runtime: Optional[Text] = runtime
-        self.securityOpts: Optional[MutableSequence[Text]] = securityOpts
+        self.runtime: Optional[str] = runtime
+        self.securityOpts: Optional[MutableSequence[str]] = securityOpts
         self.shmSize: Optional[int] = shmSize
         self.sigProxy: bool = sigProxy
-        self.stopSignal: Optional[Text] = stopSignal
+        self.stopSignal: Optional[str] = stopSignal
         self.stopTimeout: Optional[int] = stopTimeout
-        self.storageOpts: Optional[MutableSequence[Text]] = storageOpts
-        self.sysctl: Optional[MutableSequence[Text]] = sysctl
-        self.tmpfs: Optional[MutableSequence[Text]] = tmpfs
-        self.ulimit: Optional[MutableSequence[Text]] = ulimit
-        self.user: Optional[Text] = user
-        self.userns: Optional[Text] = userns
-        self.uts: Optional[Text] = uts
-        self.volume: Optional[MutableSequence[Text]] = volume
-        self.volumeDriver: Optional[Text] = volumeDriver
-        self.volumesFrom: Optional[MutableSequence[Text]] = volumesFrom
-        self.workdir: Optional[Text] = workdir
+        self.storageOpts: Optional[MutableSequence[str]] = storageOpts
+        self.sysctl: Optional[MutableSequence[str]] = sysctl
+        self.tmpfs: Optional[MutableSequence[str]] = tmpfs
+        self.ulimit: Optional[MutableSequence[str]] = ulimit
+        self.user: Optional[str] = user
+        self.userns: Optional[str] = userns
+        self.uts: Optional[str] = uts
+        self.volume: Optional[MutableSequence[str]] = volume
+        self.volumeDriver: Optional[str] = volumeDriver
+        self.volumesFrom: Optional[MutableSequence[str]] = volumesFrom
+        self.workdir: Optional[str] = workdir
 
     async def _exists_image(self,
-                            image_name: Text) -> bool:
+                            image_name: str) -> bool:
         exists_command = "".join(
             "docker "
             "image "
@@ -430,7 +429,7 @@ class DockerConnector(DockerBaseConnector):
         return proc.returncode == 0
 
     async def _pull_image(self,
-                          image_name: Text) -> None:
+                          image_name: str) -> None:
         exists_command = "".join(
             "docker "
             "pull "
@@ -645,7 +644,7 @@ class DockerConnector(DockerBaseConnector):
                     raise WorkflowExecutionException(stderr.decode().strip())
 
     @cachedmethod(lambda self: self.resourcesCache)
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
         return {container_id: await self._get_resource(container_id) for container_id in self.containerIds}
 
     async def undeploy(self, external: bool) -> None:
@@ -670,20 +669,20 @@ class DockerConnector(DockerBaseConnector):
 class DockerComposeConnector(DockerBaseConnector):
 
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 files: MutableSequence[Text],
-                 projectName: Optional[Text] = None,
+                 streamflow_config_dir: str,
+                 files: MutableSequence[str],
+                 projectName: Optional[str] = None,
                  verbose: Optional[bool] = False,
-                 logLevel: Optional[Text] = None,
+                 logLevel: Optional[str] = None,
                  noAnsi: Optional[bool] = False,
-                 host: Optional[Text] = None,
+                 host: Optional[str] = None,
                  tls: Optional[bool] = False,
-                 tlscacert: Optional[Text] = None,
-                 tlscert: Optional[Text] = None,
-                 tlskey: Optional[Text] = None,
+                 tlscacert: Optional[str] = None,
+                 tlscert: Optional[str] = None,
+                 tlskey: Optional[str] = None,
                  tlsverify: Optional[bool] = False,
                  skipHostnameCheck: Optional[bool] = False,
-                 projectDirectory: Optional[Text] = None,
+                 projectDirectory: Optional[str] = None,
                  compatibility: Optional[bool] = False,
                  noDeps: Optional[bool] = False,
                  forceRecreate: Optional[bool] = False,
@@ -728,7 +727,7 @@ class DockerComposeConnector(DockerBaseConnector):
         self.tlskey = tlskey
         self.tlsverify = tlsverify
 
-    def base_command(self) -> Text:
+    def base_command(self) -> str:
         return "".join([
             "docker-compose ",
             "{files}",
@@ -786,7 +785,7 @@ class DockerComposeConnector(DockerBaseConnector):
             await proc.wait()
 
     @cachedmethod(lambda self: self.resourcesCache)
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
         ps_command = self.base_command() + "".join([
             "ps ",
             "{filter}"
@@ -824,16 +823,16 @@ class DockerComposeConnector(DockerBaseConnector):
 class SingularityBaseConnector(ContainerConnector, ABC):
 
     def __init__(self,
-                 streamflow_config_dir: Text,
+                 streamflow_config_dir: str,
                  transferBufferSize: int):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
 
-    async def _get_bind_mounts(self, resource: Text) -> MutableSequence[MutableMapping[Text, Text]]:
+    async def _get_bind_mounts(self, resource: str) -> MutableSequence[MutableMapping[str, str]]:
         return await self._get_volumes(resource)
 
-    async def _get_resource(self, resource_name: Text) -> Optional[Resource]:
+    async def _get_resource(self, resource_name: str) -> Optional[Resource]:
         inspect_command = "singularity instance list --json"
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(inspect_command),
@@ -849,8 +848,8 @@ class SingularityBaseConnector(ContainerConnector, ABC):
             return None
 
     def _get_run_command(self,
-                         command: Text,
-                         resource: Text,
+                         command: str,
+                         resource: str,
                          interactive: bool = False):
         return "".join([
             "singularity "
@@ -863,7 +862,7 @@ class SingularityBaseConnector(ContainerConnector, ABC):
         )
 
     async def _get_volumes(self,
-                           resource: Text) -> MutableSequence[MutableMapping[Text, Text]]:
+                           resource: str) -> MutableSequence[MutableMapping[str, str]]:
         bind_mounts, _ = await self.run(
             resource=resource,
             command=["cat", "/proc/1/mountinfo", "|", "awk", "'{print $9,$4,$5}'"],
@@ -876,95 +875,95 @@ class SingularityBaseConnector(ContainerConnector, ABC):
 class SingularityConnector(SingularityBaseConnector):
 
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 image: Text,
+                 streamflow_config_dir: str,
+                 image: str,
                  transferBufferSize: int = 2 ** 16,
-                 addCaps: Optional[Text] = None,
+                 addCaps: Optional[str] = None,
                  allowSetuid: bool = False,
-                 applyCgroups: Optional[Text] = None,
-                 bind: Optional[MutableSequence[Text]] = None,
+                 applyCgroups: Optional[str] = None,
+                 bind: Optional[MutableSequence[str]] = None,
                  boot: bool = False,
                  cleanenv: bool = False,
                  contain: bool = False,
                  containall: bool = False,
                  disableCache: bool = False,
-                 dns: Optional[Text] = None,
-                 dropCaps: Optional[Text] = None,
-                 env: Optional[MutableSequence[Text]] = None,
-                 envFile: Optional[Text] = None,
+                 dns: Optional[str] = None,
+                 dropCaps: Optional[str] = None,
+                 env: Optional[MutableSequence[str]] = None,
+                 envFile: Optional[str] = None,
                  fakeroot: bool = False,
-                 fusemount: Optional[MutableSequence[Text]] = None,
-                 home: Optional[Text] = None,
-                 hostname: Optional[Text] = None,
-                 instanceNames: Optional[MutableSequence[Text]] = None,
+                 fusemount: Optional[MutableSequence[str]] = None,
+                 home: Optional[str] = None,
+                 hostname: Optional[str] = None,
+                 instanceNames: Optional[MutableSequence[str]] = None,
                  keepPrivs: bool = False,
                  net: bool = False,
-                 network: Optional[Text] = None,
-                 networkArgs: Optional[MutableSequence[Text]] = None,
+                 network: Optional[str] = None,
+                 networkArgs: Optional[MutableSequence[str]] = None,
                  noHome: bool = False,
                  noInit: bool = False,
-                 noMount: Optional[MutableSequence[Text]] = None,
+                 noMount: Optional[MutableSequence[str]] = None,
                  noPrivs: bool = False,
                  noUmask: bool = False,
                  nohttps: bool = False,
                  nv: bool = False,
-                 overlay: Optional[MutableSequence[Text]] = None,
-                 pemPath: Optional[Text] = None,
-                 pidFile: Optional[Text] = None,
+                 overlay: Optional[MutableSequence[str]] = None,
+                 pemPath: Optional[str] = None,
+                 pidFile: Optional[str] = None,
                  replicas: int = 1,
                  resourcesCacheTTL: int = 10,
                  rocm: bool = False,
-                 scratch: Optional[MutableSequence[Text]] = None,
-                 security: Optional[MutableSequence[Text]] = None,
+                 scratch: Optional[MutableSequence[str]] = None,
+                 security: Optional[MutableSequence[str]] = None,
                  userns: bool = False,
                  uts: bool = False,
-                 workdir: Optional[Text] = None,
+                 workdir: Optional[str] = None,
                  writable: bool = False,
                  writableTmpfs: bool = False):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
-        self.image: Text = image
-        self.addCaps: Optional[Text] = addCaps
+        self.image: str = image
+        self.addCaps: Optional[str] = addCaps
         self.allowSetuid: bool = allowSetuid
-        self.applyCgroups: Optional[Text] = applyCgroups
-        self.bind: Optional[MutableSequence[Text]] = bind
+        self.applyCgroups: Optional[str] = applyCgroups
+        self.bind: Optional[MutableSequence[str]] = bind
         self.boot: bool = boot
         self.cleanenv: bool = cleanenv
         self.contain: bool = contain
         self.containall: bool = containall
         self.disableCache: bool = disableCache
-        self.dns: Optional[Text] = dns
-        self.dropCaps: Optional[Text] = dropCaps
-        self.env: Optional[MutableSequence[Text]] = env
-        self.envFile: Optional[Text] = envFile
+        self.dns: Optional[str] = dns
+        self.dropCaps: Optional[str] = dropCaps
+        self.env: Optional[MutableSequence[str]] = env
+        self.envFile: Optional[str] = envFile
         self.fakeroot: bool = fakeroot
-        self.fusemount: Optional[MutableSequence[Text]] = fusemount
-        self.home: Optional[Text] = home
-        self.hostname: Optional[Text] = hostname
-        self.instanceNames: MutableSequence[Text] = instanceNames or []
+        self.fusemount: Optional[MutableSequence[str]] = fusemount
+        self.home: Optional[str] = home
+        self.hostname: Optional[str] = hostname
+        self.instanceNames: MutableSequence[str] = instanceNames or []
         self.keepPrivs: bool = keepPrivs
         self.net: bool = net
-        self.network: Optional[Text] = network
-        self.networkArgs: Optional[MutableSequence[Text]] = networkArgs
+        self.network: Optional[str] = network
+        self.networkArgs: Optional[MutableSequence[str]] = networkArgs
         self.noHome: bool = noHome
         self.noInit: bool = noInit
-        self.noMount: Optional[MutableSequence[Text]] = noMount or []
+        self.noMount: Optional[MutableSequence[str]] = noMount or []
         self.noPrivs: bool = noPrivs
         self.noUmask: bool = noUmask
         self.nohttps: bool = nohttps
         self.nv: bool = nv
-        self.overlay: Optional[MutableSequence[Text]] = overlay
-        self.pemPath: Optional[Text] = pemPath
-        self.pidFile: Optional[Text] = pidFile
+        self.overlay: Optional[MutableSequence[str]] = overlay
+        self.pemPath: Optional[str] = pemPath
+        self.pidFile: Optional[str] = pidFile
         self.replicas: int = replicas
         self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
         self.rocm: bool = rocm
-        self.scratch: Optional[MutableSequence[Text]] = scratch
-        self.security: Optional[MutableSequence[Text]] = security
+        self.scratch: Optional[MutableSequence[str]] = scratch
+        self.security: Optional[MutableSequence[str]] = security
         self.userns: bool = userns
         self.uts: bool = uts
-        self.workdir: Optional[Text] = workdir
+        self.workdir: Optional[str] = workdir
         self.writable: bool = writable
         self.writableTmpfs: bool = writableTmpfs
 
@@ -1072,7 +1071,7 @@ class SingularityConnector(SingularityBaseConnector):
                     raise WorkflowExecutionException(stderr.decode().strip())
 
     @cachedmethod(lambda self: self.resourcesCache)
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
         resource_tasks = {}
         for instance_name in self.instanceNames:
             resource_tasks[instance_name] = asyncio.create_task(self._get_resource(instance_name))

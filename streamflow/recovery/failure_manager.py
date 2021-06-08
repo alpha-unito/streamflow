@@ -2,8 +2,6 @@ import asyncio
 from asyncio import Condition
 from typing import Optional, MutableMapping, MutableSequence
 
-from typing_extensions import Text
-
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException
 from streamflow.core.recovery import FailureManager, JobVersion, ReplayRequest, ReplayResponse
@@ -50,11 +48,11 @@ class DefaultFailureManager(FailureManager):
                  max_retries: Optional[int] = None,
                  retry_delay: Optional[int] = None):
         super().__init__(context)
-        self.jobs: MutableMapping[Text, JobVersion] = {}
+        self.jobs: MutableMapping[str, JobVersion] = {}
         self.max_retries: int = max_retries
-        self.replay_cache: MutableMapping[Text, ReplayResponse] = {}
+        self.replay_cache: MutableMapping[str, ReplayResponse] = {}
         self.retry_delay: Optional[int] = retry_delay
-        self.wait_queues: MutableMapping[Text, Condition] = {}
+        self.wait_queues: MutableMapping[str, Condition] = {}
 
     async def _do_handle_failure(self, job: Job) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)

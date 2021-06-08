@@ -7,7 +7,6 @@ import sys
 from typing import MutableMapping, Any
 
 import uvloop
-from typing_extensions import Text
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
@@ -54,9 +53,9 @@ async def _async_main(args):
 
 
 def _get_instance_from_config(
-        streamflow_config: MutableMapping[Text, Any],
-        instance_type: Text,
-        kwargs: MutableMapping[Text, Any],
+        streamflow_config: MutableMapping[str, Any],
+        instance_type: str,
+        kwargs: MutableMapping[str, Any],
         enabled_by_default: bool = True) -> Any:
     config = streamflow_config.get(instance_type, None)
     if config is not None:
@@ -71,8 +70,8 @@ def _get_instance_from_config(
     return class_(**kwargs)
 
 
-def get_context(streamflow_file: Text,
-                streamflow_config: MutableMapping[Text, Any]) -> StreamFlowContext:
+def get_context(streamflow_file: str,
+                streamflow_config: MutableMapping[str, Any]) -> StreamFlowContext:
     config_dir = os.path.dirname(streamflow_file)
     context = StreamFlowContext(config_dir)
     context.checkpoint_manager = _get_instance_from_config(

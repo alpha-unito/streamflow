@@ -6,8 +6,6 @@ import posixpath
 from asyncio import Event, Queue
 from typing import TYPE_CHECKING, List, MutableMapping, MutableSequence, Optional, cast, Type, Callable
 
-from typing_extensions import Text
-
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import TokenProcessor, InputPort, OutputPort, Token, TerminationToken, Port, CommandOutput
@@ -28,7 +26,7 @@ def _get_tag(tokens: MutableSequence[Token]):
 
 class DefaultTokenProcessor(TokenProcessor):
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return token.update(await asyncio.gather(*[asyncio.create_task(
                 self.collect_output(t if isinstance(t, Token) else token.update(t), output_dir)
@@ -46,10 +44,10 @@ class DefaultTokenProcessor(TokenProcessor):
     def get_context(self) -> StreamFlowContext:
         return self.port.step.context
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         return set()
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             return token.update(await asyncio.gather(*[asyncio.create_task(
                 self.recover_token(job, resources, t)
@@ -81,7 +79,7 @@ class ListTokenProcessor(DefaultTokenProcessor):
             raise WorkflowDefinitionException(
                 "A {this} object can only be used to process list values".format(this=self.__class__.__name__))
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().collect_output(token, output_dir)
         self._check_list(token.value)
@@ -92,7 +90,7 @@ class ListTokenProcessor(DefaultTokenProcessor):
                 output_tasks.append(asyncio.create_task(processor.collect_output(partial_token, output_dir)))
         return token.update([t.value for t in await asyncio.gather(*output_tasks)])
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         self._check_list(token.value)
         related_resources = set()
         for i, processor in enumerate(self.processors):
@@ -101,7 +99,7 @@ class ListTokenProcessor(DefaultTokenProcessor):
                 related_resources.update(processor.get_related_resources(partial_token))
         return related_resources
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().recover_token(job, resources, token)
         self._check_list(token.value)
@@ -145,7 +143,7 @@ class MapTokenProcessor(DefaultTokenProcessor):
             raise WorkflowDefinitionException(
                 "A {this} object can only be used to process list values".format(this=self.__class__.__name__))
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().collect_output(token, output_dir)
         self._check_list(token.value)
@@ -171,14 +169,14 @@ class MapTokenProcessor(DefaultTokenProcessor):
                        token.value)
         return token
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         self._check_list(token.value)
         related_resources = set()
         for v in token.value:
             related_resources.update(self.processor.get_related_resources(token.update(v)))
         return related_resources
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             recover_tasks = []
             for t in token.value:
@@ -219,11 +217,11 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
 
     def __init__(self,
                  port: Port,
-                 processors: MutableMapping[Text, TokenProcessor]):
+                 processors: MutableMapping[str, TokenProcessor]):
         super().__init__(port)
-        self.processors: MutableMapping[Text, TokenProcessor] = processors
+        self.processors: MutableMapping[str, TokenProcessor] = processors
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().collect_output(token, output_dir)
         self._check_dict(token.value)
@@ -273,7 +271,7 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
                 job=job.name,
                 tag=get_tag(job.inputs))
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         self._check_dict(token.value)
         related_resources = set()
         for key, processor in self.processors.items():
@@ -282,7 +280,7 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
                 related_resources.update(processor.get_related_resources(partial_token))
         return related_resources
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().recover_token(job, resources, token)
         self._check_dict(token.value)
@@ -365,17 +363,17 @@ class UnionTokenProcessor(DefaultTokenProcessor):
         processor = self.get_processor(command_output.value)
         return await processor.compute_token(job, command_output)
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().collect_output(token, output_dir)
         processor = self.get_processor(token.value)
         return await processor.collect_output(token, output_dir)
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         processor = self.get_processor(token.value)
         return processor.get_related_resources(token)
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().recover_token(job, resources, token)
         processor = self.get_processor(token.value)
@@ -395,7 +393,7 @@ class UnionTokenProcessor(DefaultTokenProcessor):
 class DefaultInputPort(InputPort):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None):
         super().__init__(name, step)
         self.fireable: Event = Event()
@@ -409,14 +407,14 @@ class DefaultInputPort(InputPort):
 class DefaultOutputPort(OutputPort):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None):
         super().__init__(name, step)
         self.fireable: Event = Event()
-        self.step_queues: MutableMapping[Text, Queue] = {}
+        self.step_queues: MutableMapping[str, Queue] = {}
         self.token: MutableSequence[Token] = []
 
-    def _init_consumer(self, consumer_name: Text):
+    def _init_consumer(self, consumer_name: str):
         self.step_queues[consumer_name] = Queue()
         for t in self.token:
             self.step_queues[consumer_name].put_nowait(copy.deepcopy(t))
@@ -430,7 +428,7 @@ class DefaultOutputPort(OutputPort):
             q.put_nowait(copy.deepcopy(token))
         self.fireable.set()
 
-    async def get(self, consumer: Text) -> Token:
+    async def get(self, consumer: str) -> Token:
         await self.fireable.wait()
         if consumer not in self.step_queues:
             self._init_consumer(consumer)
@@ -440,12 +438,12 @@ class DefaultOutputPort(OutputPort):
 class ScatterInputPort(DefaultInputPort):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None):
         super().__init__(name, step)
         self.queue: List = []
 
-    async def _build_token(self, job_name: Text, token_value: Any, count: int) -> Token:
+    async def _build_token(self, job_name: str, token_value: Any, count: int) -> Token:
         job = self.step.context.scheduler.get_job(job_name)
         weight = await self.token_processor.weight_token(job, token_value)
         return Token(
@@ -464,7 +462,7 @@ class ScatterInputPort(DefaultInputPort):
                 self.queue = [t.rename(self.name) for t in token.value]
             elif isinstance(token.value, MutableSequence):
                 self.queue = await asyncio.gather(*[asyncio.create_task(
-                    self._build_token(cast(Text, token.job), t, i)
+                    self._build_token(cast(str, token.job), t, i)
                 ) for i, t in enumerate(token.value)])
             else:
                 raise WorkflowDefinitionException("Scatter ports require iterable inputs")
@@ -474,7 +472,7 @@ class ScatterInputPort(DefaultInputPort):
 class GatherOutputPort(DefaultOutputPort):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None,
                  merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = None):
         super().__init__(name, step)

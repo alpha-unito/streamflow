@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.workflow import Job
     from typing import Optional, Set
-    from typing_extensions import Text
 
 LOCAL_RESOURCE = '__LOCAL__'
 
@@ -21,29 +20,29 @@ class DataManager(ABC):
 
     @abstractmethod
     def get_data_locations(self,
-                           resource: Text,
-                           path: Text,
+                           resource: str,
+                           path: str,
                            location_type: Optional[DataLocationType] = None) -> Set[DataLocation]:
         ...
 
     @abstractmethod
     def invalidate_location(self,
-                            resource: Text,
-                            path: Text) -> None:
+                            resource: str,
+                            path: str) -> None:
         ...
 
     @abstractmethod
     def register_path(self,
                       job: Optional[Job],
-                      resource: Optional[Text],
-                      path: Text):
+                      resource: Optional[str],
+                      path: str):
         ...
 
     @abstractmethod
     async def transfer_data(self,
-                            src: Text,
+                            src: str,
                             src_job: Optional[Job],
-                            dst: Text,
+                            dst: str,
                             dst_job: Optional[Job],
                             writable: bool = False):
         ...
@@ -58,14 +57,14 @@ class DataLocation(object):
     __slots__ = ('path', 'job', 'location_type', 'resource', 'available')
 
     def __init__(self,
-                 path: Text,
-                 job: Optional[Text],
+                 path: str,
+                 job: Optional[str],
                  location_type: DataLocationType,
-                 resource: Optional[Text] = None,
+                 resource: Optional[str] = None,
                  available: bool = False):
-        self.path: Text = path
-        self.job: Optional[Text] = job
-        self.resource: Optional[Text] = resource
+        self.path: str = path
+        self.job: Optional[str] = job
+        self.resource: Optional[str] = resource
         self.location_type: DataLocationType = location_type
         self.available: asyncio.Event = asyncio.Event()
         if available:

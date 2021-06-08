@@ -4,7 +4,6 @@ from collections import MutableMapping
 from typing import TYPE_CHECKING, MutableSequence
 
 import cwltool.expression
-from typing_extensions import Text
 
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.utils import get_token_value
@@ -14,7 +13,7 @@ if TYPE_CHECKING:
     from typing import Any, Optional
 
 
-def build_context(job: Job) -> MutableMapping[Text, Any]:
+def build_context(job: Job) -> MutableMapping[str, Any]:
     context = {
         'inputs': {},
         'self': None,
@@ -32,13 +31,13 @@ def build_context(job: Job) -> MutableMapping[Text, Any]:
     return context
 
 
-def eval_expression(expression: Text,
-                    context: MutableMapping[Text, Any],
+def eval_expression(expression: str,
+                    context: MutableMapping[str, Any],
                     full_js: bool = False,
-                    expression_lib: Optional[MutableSequence[Text]] = None,
+                    expression_lib: Optional[MutableSequence[str]] = None,
                     timeout: Optional[int] = None,
                     strip_whitespace: bool = True):
-    if isinstance(expression, Text) and ('$(' in expression or '${' in expression):
+    if isinstance(expression, str) and ('$(' in expression or '${' in expression):
         # The default cwltool timeout of 20 seconds is too low: raise it to 10 minutes
         timeout = timeout or 600
         # Call the CWL JavaScript evaluation stack
@@ -53,18 +52,18 @@ def eval_expression(expression: Text,
         return expression
 
 
-def get_path_from_token(token_value: MutableMapping[Text, Any]) -> Optional[Text]:
+def get_path_from_token(token_value: MutableMapping[str, Any]) -> Optional[str]:
     path = token_value.get('path') or token_value.get('location')
     return path[7:] if path is not None and path.startswith('file://') else path
 
 
-def infer_type_from_token(token_value: Any) -> Text:
+def infer_type_from_token(token_value: Any) -> str:
     if token_value is None:
         raise WorkflowDefinitionException('Inputs of type `Any` cannot be null')
     if isinstance(token_value, MutableMapping):
         if 'class' in token_value:
             return token_value['class']
-    elif isinstance(token_value, Text):
+    elif isinstance(token_value, str):
         return 'string'
     elif isinstance(token_value, int):
         return 'long'

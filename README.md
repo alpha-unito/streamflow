@@ -74,19 +74,16 @@ StreamFlow the permissions to manage deployments of pods and executions of tasks
 
 ## Contribute to StreamFlow
 
-StreamFlow uses [pipenv](https://pipenv.kennethreitz.org/en/latest/) to guarantee deterministic builds.
-Therefore, the recommended way to manage dependencies is by means of the `pipenv` command.
-
 As a first step, get StreamFlow from [GitHub](https://github.com/alpha-unito/streamflow) 
 ```bash
 git clone git@github.com:alpha-unito/streamflow.git
 ```
 
-Then you can install all the requred packages using the `pipenv` command
+Then you can install all the requred packages using the `python setup.py install` command
+
 ```bash
-pip install --user pipenv
 cd streamflow
-pipenv install
+python setup.py install
 ```
 
 Finally, you can run StreamFlow in the generated virtual environment. In order for this to work, it is

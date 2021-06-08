@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import MutableMapping, Any, Optional
-    from typing_extensions import Text
 
 
 def set_targets(current_node, target):
@@ -18,8 +17,8 @@ def set_targets(current_node, target):
 class WorkflowConfig(object):
 
     def __init__(self,
-                 workflow_name: Text,
-                 streamflow_config: MutableMapping[Text, Any]) -> None:
+                 workflow_name: str,
+                 streamflow_config: MutableMapping[str, Any]) -> None:
         super().__init__()
         workflow_config = streamflow_config['workflows'][workflow_name]
         self.type = workflow_config['type']
@@ -36,7 +35,7 @@ class WorkflowConfig(object):
                 current_config['workdir'] = binding['workdir']
         set_targets(self.filesystem, None)
 
-    def _build_config(self, path: PurePosixPath) -> MutableMapping[Text, Any]:
+    def _build_config(self, path: PurePosixPath) -> MutableMapping[str, Any]:
         current_node = self.filesystem
         for part in path.parts:
             if part not in current_node['children']:
@@ -44,7 +43,7 @@ class WorkflowConfig(object):
             current_node = current_node['children'][part]
         return current_node
 
-    def get(self, path: PurePosixPath, name: Text, default: Optional[Any] = None) -> Optional[Any]:
+    def get(self, path: PurePosixPath, name: str, default: Optional[Any] = None) -> Optional[Any]:
         current_node = self.filesystem
         for part in path.parts:
             if part not in current_node['children']:
@@ -52,7 +51,7 @@ class WorkflowConfig(object):
             current_node = current_node['children'][part]
         return current_node.get(name)
 
-    def propagate(self, path: PurePosixPath, name: Text) -> Optional[Any]:
+    def propagate(self, path: PurePosixPath, name: str) -> Optional[Any]:
         current_node = self.filesystem
         value = None
         for part in path.parts:

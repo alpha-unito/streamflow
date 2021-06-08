@@ -10,7 +10,6 @@ from typing import MutableSequence, Optional, MutableMapping, Tuple, Any, Union
 import asyncssh
 from asyncssh import SSHClientConnection
 from jinja2 import Template
-from typing_extensions import Text
 
 from streamflow.core import utils
 from streamflow.core.scheduling import Resource
@@ -21,17 +20,17 @@ from streamflow.log_handler import logger
 class SSHContext(object):
 
     def __init__(self,
-                 host: Text,
+                 host: str,
                  port: int,
-                 username: Text,
-                 client_keys: MutableSequence[Text],
-                 passphrase: Text,
+                 username: str,
+                 client_keys: MutableSequence[str],
+                 passphrase: str,
                  max_concurrent_sessions: int):
-        self._host: Text = host
+        self._host: str = host
         self._port: int = port
-        self._username: Text = username
-        self._client_keys: MutableSequence[Text] = client_keys
-        self._passphrase: Text = passphrase
+        self._username: str = username
+        self._client_keys: MutableSequence[str] = client_keys
+        self._passphrase: str = passphrase
         self._ssh_connection: Optional[SSHClientConnection] = None
         self._connection_lock: Lock = Lock()
         self._sem: Semaphore = Semaphore(max_concurrent_sessions)
@@ -64,14 +63,14 @@ def _parse_hostname(hostname):
 class SSHConnector(BaseConnector):
 
     @staticmethod
-    def _get_command(resource: Text,
-                     command: MutableSequence[Text],
-                     environment: MutableMapping[Text, Text] = None,
-                     workdir: Optional[Text] = None,
-                     stdin: Optional[Union[int, Text]] = None,
-                     stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                     stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                     job_name: Optional[Text] = None,
+    def _get_command(resource: str,
+                     command: MutableSequence[str],
+                     environment: MutableMapping[str, str] = None,
+                     workdir: Optional[str] = None,
+                     stdin: Optional[Union[int, str]] = None,
+                     stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                     stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                     job_name: Optional[str] = None,
                      encode: bool = True):
         command = utils.create_command(
             command=command,
@@ -87,13 +86,13 @@ class SSHConnector(BaseConnector):
         return utils.encode_command(command) if encode else command
 
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 hostname: Text,
-                 username: Text,
-                 sshKey: Text,
-                 file: Optional[Text] = None,
+                 streamflow_config_dir: str,
+                 hostname: str,
+                 username: str,
+                 sshKey: str,
+                 file: Optional[str] = None,
                  maxConcurrentSessions: int = 10,
-                 sshKeyPassphrase: Optional[Text] = None,
+                 sshKeyPassphrase: Optional[str] = None,
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
@@ -103,19 +102,19 @@ class SSHConnector(BaseConnector):
                 self.template: Optional[Template] = Template(f.read())
         else:
             self.template: Optional[Template] = None
-        self.hostname: Text = hostname
-        self.sshKey: Text = sshKey
-        self.sshKeyPassphrase: Optional[Text] = sshKeyPassphrase
-        self.username: Text = username
+        self.hostname: str = hostname
+        self.sshKey: str = sshKey
+        self.sshKeyPassphrase: Optional[str] = sshKeyPassphrase
+        self.username: str = username
         self.maxConcurrentSessions: int = maxConcurrentSessions
-        self.jobs_table: MutableMapping[Text, MutableSequence[Text]] = {}
-        self.ssh_contexts: MutableMapping[Text, SSHContext] = {}
+        self.jobs_table: MutableMapping[str, MutableSequence[str]] = {}
+        self.ssh_contexts: MutableMapping[str, SSHContext] = {}
 
     async def _build_helper_file(self,
-                                 command: Text,
-                                 resource: Text,
-                                 environment: MutableMapping[Text, Text] = None,
-                                 workdir: Text = None) -> Text:
+                                 command: str,
+                                 resource: str,
+                                 environment: MutableMapping[str, str] = None,
+                                 workdir: str = None) -> str:
         helper_file = tempfile.mktemp()
         with open(helper_file, mode='w') as f:
             f.write(self.template.render(
@@ -131,25 +130,25 @@ class SSHConnector(BaseConnector):
         return remote_path
 
     async def _copy_local_to_remote(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resources: MutableSequence[Text],
+                                    src: str,
+                                    dst: str,
+                                    resources: MutableSequence[str],
                                     read_only: bool = False):
         for resource in resources:
             async with self._get_ssh_client(resource) as ssh_client:
                 await asyncssh.scp(src, (ssh_client, dst), preserve=True, recurse=True)
 
     async def _copy_remote_to_local(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resource: Text,
+                                    src: str,
+                                    dst: str,
+                                    resource: str,
                                     read_only: bool = False) -> None:
         async with self._get_ssh_client(resource) as ssh_client:
             await asyncssh.scp((ssh_client, src), dst, preserve=True, recurse=True)
 
     def _get_run_command(self,
-                         command: Text,
-                         resource: Text,
+                         command: str,
+                         resource: str,
                          interactive: bool = False):
         return "".join([
             "ssh ",
@@ -159,7 +158,7 @@ class SSHConnector(BaseConnector):
             resource=resource,
             command=command)
 
-    def _get_ssh_client(self, resource: Text):
+    def _get_ssh_client(self, resource: str):
         if resource not in self.ssh_contexts:
             (hostname, port) = _parse_hostname(self.hostname)
             self.ssh_contexts[resource] = SSHContext(
@@ -172,14 +171,14 @@ class SSHConnector(BaseConnector):
         return self.ssh_contexts[resource]
 
     async def _run(self,
-                   resource: Text,
-                   command: MutableSequence[Text],
-                   environment: MutableMapping[Text, Text] = None,
-                   workdir: Optional[Text] = None,
-                   stdin: Optional[Union[int, Text]] = None,
-                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[Text] = None,
+                   resource: str,
+                   command: MutableSequence[str],
+                   environment: MutableMapping[str, str] = None,
+                   workdir: Optional[str] = None,
+                   stdin: Optional[Union[int, str]] = None,
+                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                   job_name: Optional[str] = None,
                    capture_output: bool = False,
                    encode: bool = True,
                    interactive: bool = False,
@@ -207,7 +206,7 @@ class SSHConnector(BaseConnector):
     async def deploy(self, external: bool) -> None:
         pass
 
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
         return {self.hostname: Resource(self.hostname, self.hostname)}
 
     async def undeploy(self, external: bool) -> None:

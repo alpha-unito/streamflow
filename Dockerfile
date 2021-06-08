@@ -20,10 +20,8 @@ RUN apk --no-cache add \
     && curl -L https://git.io/get_helm.sh -o /tmp/get_helm.sh \
     && chmod +x /tmp/get_helm.sh \
     && /tmp/get_helm.sh --version ${HELM_VERSION} \
-    && pip install pipenv \
     && cd /streamflow \
-    && pipenv install \
-    && rm -f Pipfile*
+    && python setup.py install
 
 FROM python:3.8-alpine
 LABEL maintainer="iacopo.colonnelli@unito.it"

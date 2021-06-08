@@ -14,7 +14,6 @@ from streamflow.core.workflow import Token, TerminationToken, Step
 
 if TYPE_CHECKING:
     from typing import Iterable
-    from typing_extensions import Text
 
 
 def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
@@ -30,12 +29,12 @@ def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
         return False
 
 
-def create_command(command: MutableSequence[Text],
-                   environment: MutableMapping[Text, Text] = None,
-                   workdir: Optional[Text] = None,
-                   stdin: Optional[Union[int, Text]] = None,
-                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
+def create_command(command: MutableSequence[str],
+                   environment: MutableMapping[str, str] = None,
+                   workdir: Optional[str] = None,
+                   stdin: Optional[Union[int, str]] = None,
+                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
     command = "".join(
         "{workdir}"
         "{environment}"
@@ -57,8 +56,8 @@ def create_command(command: MutableSequence[Text],
 
 
 def extract_tar_stream(tar: tarfile.TarFile,
-                       src: Text,
-                       dst: Text) -> None:
+                       src: str,
+                       dst: str) -> None:
     for member in tar:
         if os.path.isdir(dst):
             if posixpath.join('/', member.path) == src:
@@ -79,7 +78,7 @@ def extract_tar_stream(tar: tarfile.TarFile,
             tar.extract(member, parent_dir)
 
 
-def encode_command(command: Text):
+def encode_command(command: str):
     return "echo {command} | base64 -d | sh".format(
         command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
 
@@ -130,5 +129,5 @@ def flatten_list(hierarchical_list):
     return flat_list
 
 
-def random_name() -> Text:
+def random_name() -> str:
     return ''.join([random.choice(string.ascii_letters) for _ in range(6)])
