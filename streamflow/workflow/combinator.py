@@ -59,7 +59,7 @@ class CartesianProductInputCombinator(InputCombinator):
         self.lock: Lock = Lock()
         self.queue: Queue = Queue()
         self.terminated: List[Text] = []
-        self.token_lists: MutableMapping[Text, MutableMapping[Text, List[Any]]] = {}
+        self.token_lists: MutableMapping[Text, List[Any]] = {}
 
     async def _cartesian_multiplier(self):
         input_tasks = []
@@ -82,12 +82,7 @@ class CartesianProductInputCombinator(InputCombinator):
                 else:
                     # Get all combinations of the new element with the others
                     list_of_lists = []
-                    token_job = _get_job_name(token)
-                    if token_job not in self.token_lists:
-                        self.token_lists[token_job] = {}
-                        for port_name in self.ports:
-                            self.token_lists[token_job][port_name] = []
-                    for name, token_list in self.token_lists[token_job].items():
+                    for name, token_list in self.token_lists.items():
                         if name == task_name:
                             list_of_lists.append([token])
                         else:
@@ -97,11 +92,14 @@ class CartesianProductInputCombinator(InputCombinator):
                     for element in cartesian_product:
                         self.queue.put_nowait(list(element))
                     # Put the new token in the related list
-                    self.token_lists[token_job][task_name].append(token)
+                    self.token_lists[task_name].append(token)
                     # Create a new task in place of the completed one
                     input_tasks.append(asyncio.create_task(self.ports[task_name].get(), name=task_name))
 
     async def _initialize(self):
+        # Initialize token lists
+        for port in self.ports.values():
+            self.token_lists[port.name] = []
         # Retrieve initial input tokens
         input_tasks = []
         for port in self.ports.values():
@@ -113,12 +111,7 @@ class CartesianProductInputCombinator(InputCombinator):
         # Otherwise put initial inputs in token lists and in queue and start cartesian multiplier
         else:
             for name, token in inputs.items():
-                token_job = _get_job_name(token)
-                if token_job not in self.token_lists:
-                    self.token_lists[token_job] = {}
-                    for port_name in self.ports:
-                        self.token_lists[token_job][port_name] = []
-                self.token_lists[token_job][name].append(token)
+                self.token_lists[name].append(token)
             self.queue.put_nowait(list(inputs.values()))
             asyncio.create_task(self._cartesian_multiplier())
 
@@ -129,7 +122,7 @@ class CartesianProductInputCombinator(InputCombinator):
                 await self._initialize()
         # Otherwise simply wait for new input tokens
         inputs = await self.queue.get()
-        return flatten_list(inputs)
+        return utils.flatten_list(inputs)
 
 
 class DotProductOutputCombinator(OutputCombinator):
