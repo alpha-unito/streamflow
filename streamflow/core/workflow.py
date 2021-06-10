@@ -245,7 +245,7 @@ class Step(ABC):
         self.context: StreamFlowContext = context
         self.command: Optional[Command] = command
         self.condition: Optional[Condition] = None
-        self.hardware_requirement: HardwareRequirement = None
+        self.hardware_requirement: Optional[HardwareRequirement] = None
         self.input_combinator: Optional[InputCombinator] = None
         self.input_ports: MutableMapping[str, Union[InputPort, InputCombinator]] = {}
         self.name: str = name

@@ -212,6 +212,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         elif (isinstance(token_value, MutableMapping)
               and token_value.get('class', token_value.get('type')) in ['File', 'Directory']):
             step = job.step if job is not None else self.port.step
+            path_processor = get_path_processor(step)
             # Get filepath
             filepath = get_path_from_token(token_value)
             if filepath is not None:
@@ -221,7 +222,6 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     sf_tasks = []
                     for sf in token_value.get('secondaryFiles', []):
                         sf_path = get_path_from_token(sf)
-                        path_processor = get_path_processor(step)
                         if not path_processor.isabs(sf_path):
                             path_processor.join(path_processor.dirname(filepath), sf_path)
                         sf_tasks.append(asyncio.create_task(_get_file_token(
@@ -298,7 +298,6 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     token_value['secondaryFiles'] = list(sf_map.values())
             # If there is only a 'contents' field, create a file on the step's resource and build the token
             elif 'contents' in token_value:
-                path_processor = get_path_processor(self.port.step)
                 filepath = path_processor.join(job.output_directory, token_value.get('basename', random_name()))
                 connector = job.step.get_connector()
                 resources = job.get_resources() or [None] if job is not None else [None]
@@ -312,6 +311,27 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     basename=token_value.get('basename'),
                     load_contents=load_contents,
                     load_listing=load_listing or self.load_listing)
+            # If there is only a 'listing' field, build a folder token and process all the listing entries recursively
+            elif 'listing' in token_value:
+                filepath = job.output_directory
+                if 'basename' in token_value:
+                    filepath = path_processor.join(filepath, token_value['basename'])
+                    listing_tokens = await asyncio.gather(*[
+                        self._build_token_value(
+                            job=job,
+                            token_value=lst,
+                            load_contents=load_contents,
+                            load_listing=load_listing
+                        ) for lst in token_value['listing']])
+                    token_value = await _get_file_token(
+                        step=step,
+                        job=job,
+                        token_class=token_value.get('class', token_value.get('type')),
+                        filepath=filepath,
+                        basename=token_value.get('basename'),
+                        load_contents=load_contents,
+                        load_listing=load_listing or self.load_listing)
+                    token_value['listing'] = listing_tokens
         return token_value
 
     async def _get_value_from_command(self, job: Job, command_output: CWLCommandOutput):

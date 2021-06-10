@@ -107,13 +107,13 @@ class BaseStep(Step):
             name=posixpath.join(self.name, asyncio.current_task().get_name()),
             step=self,
             inputs=inputs,
-            hardware=self.hardware_requirement.eval(inputs))
+            hardware=self.hardware_requirement.eval(inputs) if self.hardware_requirement else None)
         logger.info("Job {name} created".format(name=job.name))
         # Initialise command output with defualt values
         command_output = CommandOutput(value=None, status=Status.FAILED)
         try:
             # If condition is satisfied (or null)
-            if self.condition is None or self.condition.eval(job):
+            if self.condition is None or await self.condition.eval(job):
                 # Setup runtime environment
                 if self.target is not None:
                     await self.context.deployment_manager.deploy(self.target.model)
@@ -130,7 +130,7 @@ class BaseStep(Step):
                     self.terminate(command_output.status)
             # Otherwise, if condition is not satisfied, skip the execution
             else:
-                await self.command.skip(job)
+                command_output = await self.command.skip(job)
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise

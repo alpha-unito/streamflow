@@ -331,11 +331,14 @@ class CWLBaseCommand(Command, ABC):
                                 job: Job,
                                 context: MutableMapping[str, Any],
                                 element: Any,
+                                base_path: Optional[str] = None,
                                 dest_path: Optional[str] = None,
                                 writable: bool = False) -> None:
         path_processor = get_path_processor(job.step)
         connector = job.step.get_connector()
         resources = job.get_resources() or [None]
+        # Initialize base path to job output directory if present
+        base_path = base_path or job.output_directory
         # If current element is a string, it must be an expression
         if isinstance(element, str):
             listing = eval_expression(
@@ -347,8 +350,14 @@ class CWLBaseCommand(Command, ABC):
             listing = element
         # If listing is a list, each of its elements must be processed independently
         if isinstance(listing, MutableSequence):
-            await asyncio.gather(
-                *[asyncio.create_task(self._prepare_work_dir(job, context, el, dest_path, writable)) for el in listing])
+            await asyncio.gather(*[asyncio.create_task(
+                self._prepare_work_dir(
+                    job=job,
+                    context=context,
+                    element=el,
+                    base_path=base_path,
+                    writable=writable)
+            ) for el in listing])
         # If listing is a dictionary, it could be a File, a Directory, a Dirent or some other object
         elif isinstance(listing, MutableMapping):
             # If it is a File or Directory element, put the correspnding file in the output directory
@@ -359,10 +368,10 @@ class CWLBaseCommand(Command, ABC):
                     if dest_path is None:
                         if src_path.startswith(job.input_directory):
                             relpath = path_processor.relpath(src_path, job.input_directory)
-                            dest_path = path_processor.join(job.output_directory, relpath)
+                            dest_path = path_processor.join(base_path, relpath)
                         else:
                             basename = path_processor.basename(src_path)
-                            dest_path = path_processor.join(job.output_directory, basename)
+                            dest_path = path_processor.join(base_path, basename)
                     for resource in resources:
                         if await remotepath.exists(connector, resource, src_path):
                             await self.step.context.data_manager.transfer_data(
@@ -376,7 +385,7 @@ class CWLBaseCommand(Command, ABC):
                 # If the source path does not exist, create a File or a Directory in the remote path
                 if not src_found:
                     if dest_path is None:
-                        dest_path = job.output_directory
+                        dest_path = base_path
                     if src_path is not None:
                         dest_path = path_processor.join(dest_path, path_processor.basename(src_path))
                     if listing['class'] == 'Directory':
@@ -390,11 +399,28 @@ class CWLBaseCommand(Command, ABC):
                 # If `listing` is present, recursively process folder contents
                 if 'listing' in listing:
                     if 'basename' in listing:
-                        dest_path = path_processor.join(dest_path, listing['basename'])
-                        await remotepath.mkdir(connector, resources, dest_path)
+                        folder_path = path_processor.join(base_path, listing['basename'])
+                        await remotepath.mkdir(connector, resources, folder_path)
+                    else:
+                        folder_path = dest_path or base_path
                     await asyncio.gather(*[asyncio.create_task(
-                        self._prepare_work_dir(job, context, element, dest_path, writable)
+                        self._prepare_work_dir(
+                            job=job,
+                            context=context,
+                            element=element,
+                            base_path=folder_path,
+                            writable=writable)
                     ) for element in listing['listing']])
+                # If `secondaryFiles` is present, resursively process secondary files
+                if 'secondaryFiles' in listing:
+                    await asyncio.gather(*[asyncio.create_task(
+                        self._prepare_work_dir(
+                            job=job,
+                            context=context,
+                            element=element,
+                            base_path=base_path,
+                            writable=writable)
+                    ) for element in listing['secondaryFiles']])
             # If it is a Dirent element, put or create the corresponding file according to the entryname field
             elif 'entry' in listing:
                 entry = eval_expression(
@@ -409,31 +435,48 @@ class CWLBaseCommand(Command, ABC):
                         context=context,
                         full_js=self.full_js,
                         expression_lib=self.expression_lib)
+                    # The entryname field overrides the value of basename of the File or Directory object
+                    if (isinstance(entry, MutableMapping) and
+                            'path' not in entry and 'location' not in entry and
+                            'basename' in entry):
+                        entry['basename'] = dest_path
                     if not path_processor.isabs(dest_path):
                         dest_path = path_processor.join(job.output_directory, dest_path)
                 writable = listing['writable'] if 'writable' in listing else False
                 # If entry is a string, a new text file must be created with the string as the file contents
                 if isinstance(entry, str):
-                    await self._write_remote_file(job, entry, dest_path, writable)
+                    await self._write_remote_file(job, entry, dest_path or base_path, writable)
                 # If entry is a list
                 elif isinstance(entry, MutableSequence):
                     # If all elements are Files or Directories, each of them must be processed independently
                     if all('class' in t and t['class'] in ['File', 'Directory'] for t in entry):
-                        await self._prepare_work_dir(job, context, entry, dest_path, writable)
+                        await self._prepare_work_dir(
+                            job=job,
+                            context=context,
+                            element=entry,
+                            base_path=base_path,
+                            dest_path=dest_path,
+                            writable=writable)
                     # Otherwise, the content should be serialised to JSON
                     else:
-                        await self._write_remote_file(job, json.dumps(entry), dest_path, writable)
+                        await self._write_remote_file(job, json.dumps(entry), dest_path or base_path, writable)
                 # If entry is a dict
                 elif isinstance(entry, MutableMapping):
                     # If it is a File or Directory, it must be put in the destination path
                     if 'class' in entry and entry['class'] in ['File', 'Directory']:
-                        await self._prepare_work_dir(job, context, entry, dest_path, writable)
+                        await self._prepare_work_dir(
+                            job=job,
+                            context=context,
+                            element=entry,
+                            base_path=base_path,
+                            dest_path=dest_path,
+                            writable=writable)
                     # Otherwise, the content should be serialised to JSON
                     else:
-                        await self._write_remote_file(job, json.dumps(entry), dest_path, writable)
+                        await self._write_remote_file(job, json.dumps(entry), dest_path or base_path, writable)
                 # Every object different from a string should be serialised to JSON
                 else:
-                    await self._write_remote_file(job, json.dumps(entry), dest_path, writable)
+                    await self._write_remote_file(job, json.dumps(entry), dest_path or base_path, writable)
 
     async def _write_remote_file(self, job: Job,
                                  content: str,

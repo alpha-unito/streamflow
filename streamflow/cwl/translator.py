@@ -25,6 +25,7 @@ from streamflow.core.workflow import Port, OutputPort, Workflow, Target, Token, 
 from streamflow.cwl.command import CWLCommand, CWLExpressionCommand, CWLMapCommandToken, \
     CWLUnionCommandToken, CWLObjectCommandToken, CWLCommandToken, CWLCommandOutput, CWLStepCommand
 from streamflow.cwl.condition import CWLCondition
+from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.token_processor import LoadListing, SecondaryFile, CWLTokenProcessor, CWLUnionTokenProcessor, \
     CWLMapTokenProcessor, CWLSkipTokenProcessor
 from streamflow.workflow.combinator import DotProductInputCombinator, CartesianProductInputCombinator, \
@@ -449,6 +450,21 @@ def _get_command_token_from_input(cwl_element: Any,
         return token
 
 
+def _get_hardware_requirement(requirements: MutableMapping[str, Any]):
+    hardware_requirement = CWLHardwareRequirement()
+    if 'ResourceRequirement' in requirements:
+        resource_requirement = requirements['ResourceRequirement']
+        hardware_requirement.cores = resource_requirement.get(
+            'coresMin', resource_requirement.get('coresMax', hardware_requirement.cores))
+        hardware_requirement.memory = resource_requirement.get(
+            'ramMin', resource_requirement.get('ramMax', hardware_requirement.memory))
+        hardware_requirement.tmpdir = resource_requirement.get(
+            'tmpdirMin', resource_requirement.get('tmpdirMax', hardware_requirement.tmpdir))
+        hardware_requirement.outdir = resource_requirement.get(
+            'outdirMin', resource_requirement.get('outdirMax', hardware_requirement.outdir))
+    return hardware_requirement
+
+
 def _get_input_combinator(step: Step,
                           scatter_inputs: Optional[Set[str]] = None,
                           scatter_method: Optional[str] = None) -> InputCombinator:
@@ -781,6 +797,8 @@ class CWLTranslator(object):
         # Extract custom types if present
         requirements = {**context['hints'], **context['requirements']}
         schema_def_types = _get_schema_def_types(requirements)
+        # Process hardware requirements
+        step.hardware_requirement = _get_hardware_requirement(requirements)
         # Process inputs
         for element_input in cwl_element.tool['inputs']:
             global_name = _get_name(name_prefix, element_input['id'], last_element_only=True)

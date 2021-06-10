@@ -23,11 +23,13 @@ def build_context(job: Job) -> MutableMapping[str, Any]:
         context['inputs'][token.name] = get_token_value(token)
     context['runtime']['outdir'] = job.output_directory
     context['runtime']['tmpdir'] = job.tmp_directory
-    # TODO: populate these fields with the right values
-    context['runtime']['cores'] = 1
-    context['runtime']['ram'] = 1
-    context['runtime']['outdirSize'] = 1024
-    context['runtime']['tmpdirSize'] = 1024
+    if job.hardware:
+        context['runtime']['cores'] = job.hardware.cores
+        context['runtime']['ram'] = job.hardware.memory
+        # noinspection PyUnresolvedReferences
+        context['runtime']['tmpdirSize'] = job.hardware.tmpdir
+        # noinspection PyUnresolvedReferences
+        context['runtime']['outdirSize'] = job.hardware.outdir
     return context
 
 
@@ -36,7 +38,7 @@ def eval_expression(expression: str,
                     full_js: bool = False,
                     expression_lib: Optional[MutableSequence[str]] = None,
                     timeout: Optional[int] = None,
-                    strip_whitespace: bool = True):
+                    strip_whitespace: bool = True) -> Any:
     if isinstance(expression, str) and ('$(' in expression or '${' in expression):
         # The default cwltool timeout of 20 seconds is too low: raise it to 10 minutes
         timeout = timeout or 600
