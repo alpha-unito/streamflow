@@ -7,8 +7,10 @@ import cwltool.load_tool
 import cwltool.loghandler
 import cwltool.process
 import cwltool.process
+import cwltool.utils
 import cwltool.workflow
 from cwltool.resolver import tool_resolver
+from schema_salad.ref_resolver import Loader, file_uri
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
@@ -43,7 +45,14 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     )
     cwl_definition = cwltool.load_tool.make_tool(uri, loading_context)
     if len(cwl_args) == 2:
-        cwl_inputs, _ = loading_context.loader.resolve_ref(cwl_args[1], checklinks=False)
+        loading_context.loader.add_namespaces(cwl_definition.metadata.get('$namespaces', {}))
+        cwl_inputs, _ = loading_context.loader.resolve_ref(cwl_args[1])
+
+        def expand_formats(p) -> None:
+            if "format" in p:
+                p["format"] = loading_context.loader.expand_url(p["format"], "")
+
+        cwltool.utils.visit_class(cwl_inputs, ("File",), expand_formats)
     else:
         cwl_inputs = {}
     # Transpile CWL workflow to the StreamFlow representation

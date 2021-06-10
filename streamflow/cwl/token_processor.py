@@ -7,7 +7,9 @@ import urllib.parse
 from enum import Enum, auto
 from typing import Optional, Any, List, Union, MutableMapping, Set, cast, MutableSequence
 
+import cwltool.builder
 from cwltool.utils import CONTENT_LIMIT
+from rdflib import Graph
 
 from streamflow.core.data import FileType, LOCAL_RESOURCE, DataLocationType
 from streamflow.core.deployment import Connector
@@ -44,6 +46,7 @@ async def _get_file_token(step: Step,
                           job: Job,
                           token_class: str,
                           filepath: str,
+                          file_format: Optional[str] = None,
                           basename: Optional[str] = None,
                           load_contents: bool = False,
                           load_listing: Optional[LoadListing] = None) -> MutableMapping[str, Any]:
@@ -60,6 +63,8 @@ async def _get_file_token(step: Step,
         'dirname': path_processor.dirname(filepath)
     }
     if token_class == 'File':
+        if file_format:
+            token['format'] = file_format
         token['nameroot'], token['nameext'] = path_processor.splitext(basename)
         for resource in resources:
             if await remotepath.exists(connector, resource, filepath):
@@ -171,6 +176,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                  default_value: Optional[Any] = None,
                  expression_lib: Optional[MutableSequence[str]] = None,
                  file_format: Optional[str] = None,
+                 format_graph: Optional[Graph] = None,
                  full_js: bool = False,
                  glob: Optional[str] = None,
                  load_contents: bool = False,
@@ -189,6 +195,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         self.port_type: str = port_type
         self.default_value: Optional[Any] = default_value
         self.file_format: Optional[str] = file_format
+        self.format_graph: Optional[Graph] = format_graph
         self.load_contents: bool = load_contents
         self.load_listing: LoadListing = load_listing
         self.secondary_files: Optional[MutableSequence[SecondaryFile]] = secondary_files
@@ -229,6 +236,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                             job=job,
                             token_class=sf['class'],
                             filepath=sf_path,
+                            file_format=sf.get('format'),
                             basename=sf.get('basename'),
                             load_contents=load_contents,
                             load_listing=load_listing or self.load_listing)))
@@ -239,6 +247,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     job=job,
                     token_class=token_value.get('class', token_value.get('type')),
                     filepath=filepath,
+                    file_format=token_value.get('format'),
                     basename=token_value.get('basename'),
                     load_contents=load_contents,
                     load_listing=load_listing or self.load_listing)
@@ -308,6 +317,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     job=job,
                     token_class=token_value.get('class', token_value.get('type')),
                     filepath=filepath,
+                    file_format=token_value.get('format'),
                     basename=token_value.get('basename'),
                     load_contents=load_contents,
                     load_listing=load_listing or self.load_listing)
@@ -328,6 +338,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                         job=job,
                         token_class=token_value.get('class', token_value.get('type')),
                         filepath=filepath,
+                        file_format=token_value.get('format'),
                         basename=token_value.get('basename'),
                         load_contents=load_contents,
                         load_listing=load_listing or self.load_listing)
@@ -397,14 +408,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 expression=self.output_eval,
                 context=context,
                 full_js=self.full_js,
-                expression_lib=self.expression_lib
-            )
+                expression_lib=self.expression_lib)
             # Build token
-            if isinstance(token, MutableSequence):
-                paths = [{'path': el['path'], 'class': el['class']} for el in token]
-                return await self._build_token_value(job, paths)
-            else:
-                return await self._build_token_value(job, token)
+            return await self._build_token_value(job, token)
         # As the default value (no return path is met in previous code), simply process the command output
         return await self._build_token_value(job, token_value)
 
@@ -431,6 +437,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                         job=job,
                         token_class=secondary_file['class'],
                         filepath=filepath,
+                        file_format=secondary_file.get('format'),
                         basename=secondary_file.get('basename'),
                         load_contents=load_contents,
                         load_listing=load_listing)
@@ -548,7 +555,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     step=job.step,
                     job=job,
                     token_class=listing['class'],
-                    filepath=recovered_path))
+                    filepath=recovered_path,
+                    file_format=listing.get('format')))
         secondary_files = []
         if 'secondaryFiles' in token_value:
             sf_tasks = [asyncio.create_task(self._recover_path(job, resources, token, get_path_from_token(sf))) for sf
@@ -665,6 +673,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             else:
                 filepath = location
             new_token_value = {'class': token_value['class'], 'path': filepath}
+            # Propagate format if present
+            if 'format' in token_value:
+                new_token_value['format'] = token_value['format']
             # If token contains secondary files, transfer them, too
             if 'secondaryFiles' in token_value:
                 sf_tasks = []
@@ -689,6 +700,15 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 token_value=new_token_value,
                 load_contents=self.load_contents or 'contents' in token_value,
                 load_listing=load_listing)
+            # Check input format if specified
+            if isinstance(self.port, InputPort) and self.file_format:
+                context = utils.build_context(job)
+                input_formats = utils.eval_expression(
+                    expression=self.file_format,
+                    context=context,
+                    full_js=self.full_js,
+                    expression_lib=self.expression_lib)
+                cwltool.builder.check_format(token_value, input_formats, self.format_graph)
             return token_value
         # If there is only a 'contents' field, simply build the token value
         elif 'contents' in token_value:
@@ -754,6 +774,16 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             return None
         else:
             token_value = await self._get_value_from_command(job, command_output)
+            # Add format if present
+            if isinstance(token_value, MutableMapping) and token_value.get('class') == 'File':
+                if self.file_format and 'format' not in token_value:
+                    context = utils.build_context(job)
+                    context['self'] = token_value
+                    token_value['format'] = utils.eval_expression(
+                        expression=self.file_format,
+                        context=context,
+                        full_js=self.full_js,
+                        expression_lib=self.expression_lib)
             self._register_data(job, token_value)
             weight = await self.weight_token(job, token_value)
             return Token(

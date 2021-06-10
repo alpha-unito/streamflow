@@ -13,6 +13,7 @@ import cwltool.context
 import cwltool.load_tool
 import cwltool.process
 import cwltool.workflow
+from rdflib import Graph
 from ruamel.yaml.comments import CommentedSeq
 
 from streamflow.config.config import WorkflowConfig
@@ -113,6 +114,7 @@ def _create_input_port(
         port_name: str,
         port_description: MutableMapping[str, Any],
         schema_def_types: MutableMapping[str, Any],
+        format_graph: Graph,
         context: MutableMapping[str, Any],
         scatter: bool = False) -> InputPort:
     # Create port
@@ -125,6 +127,7 @@ def _create_input_port(
         port_type=port_description['type'],
         port_description=port_description,
         schema_def_types=schema_def_types,
+        format_graph=format_graph,
         context=context)
     return port
 
@@ -133,6 +136,7 @@ def _create_output_port(
         port_name: str,
         port_description: MutableMapping,
         schema_def_types: MutableMapping[str, Any],
+        format_graph: Graph,
         context: MutableMapping[str, Any]) -> OutputPort:
     port = DefaultOutputPort(port_name)
     port.token_processor = _create_token_processor(
@@ -140,6 +144,7 @@ def _create_output_port(
         port_type=port_description['type'],
         port_description=port_description,
         schema_def_types=schema_def_types,
+        format_graph=format_graph,
         context=context)
     return port
 
@@ -167,6 +172,7 @@ def _create_token_processor(
         port_type: Any,
         port_description: MutableMapping,
         schema_def_types: MutableMapping[str, Any],
+        format_graph: Graph,
         context: MutableMapping[str, Any],
         optional: bool = False) -> TokenProcessor:
     if isinstance(port_type, MutableMapping):
@@ -178,6 +184,7 @@ def _create_token_processor(
                     port_type=port_type['items'],
                     port_description=port_description,
                     schema_def_types=schema_def_types,
+                    format_graph=format_graph,
                     context=context,
                     optional=optional)
                 return CWLMapTokenProcessor(
@@ -192,6 +199,7 @@ def _create_token_processor(
                     port_type='string',
                     port_description=port_description,
                     schema_def_types=schema_def_types,
+                    format_graph=format_graph,
                     context=context,
                     optional=optional)
             # Generic object type -> propagate the type
@@ -201,6 +209,7 @@ def _create_token_processor(
                     port_type=port_type['type'],
                     port_description=port_type,
                     schema_def_types=schema_def_types,
+                    format_graph=format_graph,
                     context=context,
                     optional=optional)
         # Untyped object -> not supported
@@ -216,6 +225,7 @@ def _create_token_processor(
                 port_type=types[0],
                 port_description=port_description,
                 schema_def_types=schema_def_types,
+                format_graph=format_graph,
                 context=context,
                 optional=optional)
         # List of types: -> UnionTokenProcessor
@@ -227,6 +237,7 @@ def _create_token_processor(
                     port_type=port_type,
                     port_description=port_description,
                     schema_def_types=schema_def_types,
+                    format_graph=format_graph,
                     context=context))
             default_value = port_description.get('default', None)
             return CWLUnionTokenProcessor(
@@ -244,6 +255,7 @@ def _create_token_processor(
                 port_type=port_type['type'],
                 port_description=port_type,
                 schema_def_types=schema_def_types,
+                format_graph=format_graph,
                 context=context)
         return ObjectTokenProcessor(port, token_processors)
     # Optional type -> Propagate with optional = True
@@ -253,6 +265,7 @@ def _create_token_processor(
             port_type=port_type[:-1].strip(),
             port_description=port_description,
             schema_def_types=schema_def_types,
+            format_graph=format_graph,
             context=context,
             optional=True)
     # Complex type -> Extract from schema definitions and propagate
@@ -262,6 +275,7 @@ def _create_token_processor(
             port_type=schema_def_types[port_type],
             port_description=port_description,
             schema_def_types=schema_def_types,
+            format_graph=format_graph,
             context=context,
             optional=optional)
     # Simple type -> Create typed token processor
@@ -282,6 +296,7 @@ def _create_token_processor(
                 default_value=default_value,
                 expression_lib=expression_lib,
                 file_format=file_format,
+                format_graph=format_graph,
                 full_js=full_js,
                 glob=location,
                 optional=optional,
@@ -573,10 +588,10 @@ def _get_schema_def_types(requirements: MutableMapping[str, Any]) -> MutableMapp
 def _get_secondary_files(cwl_element, default_required: bool) -> MutableSequence[SecondaryFile]:
     if isinstance(cwl_element, MutableSequence):
         return [SecondaryFile(sf['pattern'], sf.get('required')
-        if sf.get('required') is not None else default_required) for sf in cwl_element]
+                if sf.get('required') is not None else default_required) for sf in cwl_element]
     elif isinstance(cwl_element, MutableMapping):
         return [SecondaryFile(cwl_element['pattern'], cwl_element.get('required')
-        if cwl_element.get('required') is not None else default_required)]
+                if cwl_element.get('required') is not None else default_required)]
 
 
 async def _inject_input(job: Job, port: OutputPort, value: Any) -> None:
@@ -807,6 +822,7 @@ class CWLTranslator(object):
                 port_name=port_name,
                 port_description=element_input,
                 schema_def_types=schema_def_types,
+                format_graph=self.loading_context.loader.graph,
                 context=context)
             port.step = step
             step.input_ports[port_name] = port
@@ -820,6 +836,7 @@ class CWLTranslator(object):
                 port_name=port_name,
                 port_description=element_output,
                 schema_def_types=schema_def_types,
+                format_graph=self.loading_context.loader.graph,
                 context=context)
             port.step = step
             self.output_ports[global_name] = port
@@ -883,6 +900,7 @@ class CWLTranslator(object):
                 port_name=port_name,
                 port_description=element_input,
                 schema_def_types=schema_def_types,
+                format_graph=self.loading_context.loader.graph,
                 context=context)
             port.step = input_step
             input_step.input_ports[port_name] = port
@@ -891,6 +909,7 @@ class CWLTranslator(object):
                 port_name=port_name,
                 port_description=element_input,
                 schema_def_types=schema_def_types,
+                format_graph=self.loading_context.loader.graph,
                 context=context)
             output_port.step = input_step
             input_step.output_ports[port_name] = output_port
@@ -1004,6 +1023,7 @@ class CWLTranslator(object):
                 port_name=port_name,
                 port_description=element_input,
                 schema_def_types=schema_def_types,
+                format_graph=self.loading_context.loader.graph,
                 context=context,
                 scatter=scatter)
             port.step = input_step
@@ -1017,6 +1037,7 @@ class CWLTranslator(object):
                     port_name=port_name,
                     port_description=element_input,
                     schema_def_types=schema_def_types,
+                    format_graph=self.loading_context.loader.graph,
                     context=context)
                 output_port.step = input_step
                 input_step.output_ports[port_name] = output_port
@@ -1070,6 +1091,7 @@ class CWLTranslator(object):
                     port_type=port_type['items'] if scatter_method == 'nested_crossproduct' else port_type,
                     port_description=element_output,
                     schema_def_types=schema_def_types,
+                    format_graph=self.loading_context.loader.graph,
                     context=context)
                 source_port = self._get_source_port(workflow, inner_name)
                 if 'when' in cwl_element.tool:
@@ -1094,6 +1116,7 @@ class CWLTranslator(object):
                     port_type=port_type['items'] if scatter_method == 'nested_crossproduct' else port_type,
                     port_description=element_output,
                     schema_def_types=schema_def_types,
+                    format_graph=self.loading_context.loader.graph,
                     context=context)
                 gather_step.output_ports[port_name] = output_port
                 # Remap output port
