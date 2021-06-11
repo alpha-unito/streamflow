@@ -7,12 +7,18 @@ import posixpath
 import random
 import string
 import tarfile
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any
 
-from streamflow.core.workflow import Token, TerminationToken, Step
+from streamflow.core.data import LOCAL_RESOURCE
+from streamflow.core.deployment import ModelConfig
+from streamflow.core.workflow import Target, TerminationToken, Token
 
 if TYPE_CHECKING:
+    from streamflow.core.context import StreamFlowContext
+    from streamflow.core.deployment import Connector
+    from streamflow.core.workflow import Job, Step
     from typing import Iterable
 
 
@@ -44,7 +50,7 @@ def create_command(command: MutableSequence[str],
         "{stderr}"
     ).format(
         workdir="cd {workdir} && ".format(workdir=workdir) if workdir is not None else "",
-        environment="".join(["export %s=%s && " % (key, value) for (key, value) in
+        environment="".join(["export %s=\"%s\" && " % (key, value) for (key, value) in
                              environment.items()]) if environment is not None else "",
         command=" ".join(command),
         stdin=" < {stdin}".format(stdin=stdin) if stdin is not None else "",
@@ -83,11 +89,30 @@ def encode_command(command: str):
         command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
 
 
+def get_connector(job: Optional[Job], context: StreamFlowContext) -> Connector:
+    return job.step.get_connector() if job is not None else context.deployment_manager.get_connector(LOCAL_RESOURCE)
+
+
+def get_local_target(workdir: Optional[str] = None) -> Target:
+    return Target(
+        model=ModelConfig(
+            name=LOCAL_RESOURCE,
+            connector_type='local',
+            config={},
+            external=True),
+        resources=1,
+        service=workdir or os.path.join(tempfile.gettempdir(), 'streamflow'))
+
+
 def get_path_processor(step: Step):
-    if step is not None and step.target is not None:
+    if step is not None and step.target != 'local':
         return posixpath
     else:
         return os.path
+
+
+def get_resources(job: Optional[Job]) -> MutableSequence[str]:
+    return job.get_resources() or [LOCAL_RESOURCE] if job is not None else [LOCAL_RESOURCE]
 
 
 def get_size(path):

@@ -69,12 +69,11 @@ class ContainerConnector(BaseConnector, ABC):
         with tempfile.TemporaryFile() as tar_buffer:
             for resource in effective_resources:
                 if read_only and await self._is_bind_transfer(resource, src, dst):
-                    try:
-                        os.symlink(posixpath.abspath(src), dst, target_is_directory=posixpath.isdir(dst))
-                        continue
-                    except OSError as e:
-                        if not e.errno == errno.EEXIST:
-                            logging.exception(f"Bind mount optimization not aplicable: {e}")
+                    copy_tasks.append(asyncio.create_task(
+                        self.run(
+                            resource=resource,
+                            command=["ln", "-snf", posixpath.abspath(src), dst])))
+                    continue
                 if not created_tar_buffer:
                     with tarfile.open(
                             fileobj=tar_buffer,
@@ -102,12 +101,10 @@ class ContainerConnector(BaseConnector, ABC):
         if read_only and await self._is_bind_transfer(source_remote, src, src):
             for resource in effective_resources:
                 if await self._is_bind_transfer(resource, dst, dst):
-                    try:
-                        os.symlink(posixpath.abspath(src), dst, target_is_directory=posixpath.isdir(dst))
-                        continue
-                    except OSError as e:
-                        if not e.errno == errno.EEXIST:
-                            logging.exception(f"Bind mount optimization not aplicable: {e}")
+                    await self.run(
+                        resource=resource,
+                        command=["ln", "-snf", posixpath.abspath(src), dst])
+                    continue
                 non_bind_resources.append(resource)
             await super()._copy_remote_to_remote(
                 src=src,

@@ -45,6 +45,8 @@ class DefaultTokenProcessor(TokenProcessor):
         return self.port.step.context
 
     def get_related_resources(self, token: Token) -> Set[str]:
+        if isinstance(token.job, MutableSequence):
+            return set().union(*(self.get_related_resources(t) for t in token.value))
         return set()
 
     async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
@@ -170,6 +172,8 @@ class MapTokenProcessor(DefaultTokenProcessor):
         return token
 
     def get_related_resources(self, token: Token) -> Set[str]:
+        if isinstance(token.job, MutableSequence):
+            return set().union(*(self.processor.get_related_resources(t) for t in token.value))
         self._check_list(token.value)
         related_resources = set()
         for v in token.value:
@@ -202,10 +206,11 @@ class MapTokenProcessor(DefaultTokenProcessor):
 
     async def weight_token(self, job: Job, token_value: Any) -> int:
         self._check_list(token_value)
-        weight = 0
-        for v in token_value:
-            weight += self.processor.weight_token(job, v)
-        return weight
+        return sum(await asyncio.gather(*[asyncio.create_task(
+            self.processor.weight_token(
+                job=job,
+                token_value=t)
+        ) for t in token_value]))
 
 
 class ObjectTokenProcessor(DefaultTokenProcessor):
@@ -459,7 +464,9 @@ class ScatterInputPort(DefaultInputPort):
             if isinstance(token, TerminationToken) or token.value is None:
                 self.queue = [token.rename(self.name)]
             elif isinstance(token.job, MutableSequence):
-                self.queue = [t.rename(self.name) for t in token.value]
+                self.queue = await asyncio.gather(*[asyncio.create_task(
+                    self._build_token(cast(str, t.job), t.value, i)
+                ) for i, t in enumerate(token.value)])
             elif isinstance(token.value, MutableSequence):
                 self.queue = await asyncio.gather(*[asyncio.create_task(
                     self._build_token(cast(str, token.job), t, i)
@@ -482,6 +489,7 @@ class GatherOutputPort(DefaultOutputPort):
         if isinstance(token, TerminationToken):
             token_list = self.token
             if token_list:
+                token_list = sorted(token_list, key=lambda t: int(posixpath.basename(t.tag)))
                 self.token = [Token(
                     name=self.name,
                     job=[t.job for t in token_list],

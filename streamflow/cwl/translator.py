@@ -4,6 +4,7 @@ import asyncio
 import copy
 import os
 import posixpath
+import tempfile
 from enum import Enum
 from pathlib import PurePosixPath
 from typing import MutableMapping, TYPE_CHECKING, Optional, MutableSequence, cast, Callable
@@ -20,7 +21,7 @@ from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ModelConfig
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
-from streamflow.core.utils import random_name
+from streamflow.core.utils import random_name, get_local_target
 from streamflow.core.workflow import Port, OutputPort, Workflow, Target, Token, TerminationToken, \
     InputCombinator, InputPort, Job, Status
 from streamflow.cwl.command import CWLCommand, CWLExpressionCommand, CWLMapCommandToken, \
@@ -51,30 +52,13 @@ def _build_command(
         context: MutableMapping[str, Any],
         step: Step) -> CWLCommand:
     command = CWLCommand(step)
-    # Process baseCommand
-    if 'baseCommand' in cwl_element.tool:
-        if isinstance(cwl_element.tool['baseCommand'], CommentedSeq):
-            for command_token in cwl_element.tool['baseCommand']:
-                command.base_command.append(command_token)
-        else:
-            command.base_command.append(cwl_element.tool['baseCommand'])
-    # Process arguments
-    if 'arguments' in cwl_element.tool:
-        for argument in cwl_element.tool['arguments']:
-            command.command_tokens.append(_get_command_token(argument))
-    # Process inputs
-    for input_port in cwl_element.tool['inputs']:
-        command_token = _get_command_token_from_input(
-            cwl_element=input_port,
-            port_type=input_port['type'],
-            input_name=_get_name("", input_port['id'], last_element_only=True),
-            schema_def_types=schema_def_types)
-        if command_token is not None:
-            command.command_tokens.append(command_token)
     # Process InitialWorkDirRequirement
     requirements = {**context['hints'], **context['requirements']}
     if 'InitialWorkDirRequirement' in requirements:
         command.initial_work_dir = requirements['InitialWorkDirRequirement']['listing']
+    # Process InplaceUpdateRequirement
+    if 'InplaceUpdateRequirement' in requirements:
+        command.inplace_update = requirements['InplaceUpdateRequirement']['inplaceUpdate']
     # Process EnvVarRequirement
     if 'EnvVarRequirement' in requirements:
         for env_entry in requirements['EnvVarRequirement']['envDef']:
@@ -88,6 +72,29 @@ def _build_command(
     if 'permanentFailCodes' or 'temporaryFailCodes' in cwl_element.tool:
         command.failure_codes = cwl_element.tool.get('permanentFailCodes', [])
         command.failure_codes.extend(cwl_element.tool.get('temporaryFailCodes', []))
+    # Process baseCommand
+    if 'baseCommand' in cwl_element.tool:
+        if isinstance(cwl_element.tool['baseCommand'], CommentedSeq):
+            for command_token in cwl_element.tool['baseCommand']:
+                command.base_command.append(command_token)
+        else:
+            command.base_command.append(cwl_element.tool['baseCommand'])
+    # Process arguments
+    if 'arguments' in cwl_element.tool:
+        for argument in cwl_element.tool['arguments']:
+            command.command_tokens.append(_get_command_token(
+                binding=argument,
+                is_shell_command=command.is_shell_command))
+    # Process inputs
+    for input_port in cwl_element.tool['inputs']:
+        command_token = _get_command_token_from_input(
+            cwl_element=input_port,
+            port_type=input_port['type'],
+            input_name=_get_name("", input_port['id'], last_element_only=True),
+            is_shell_command=command.is_shell_command,
+            schema_def_types=schema_def_types)
+        if command_token is not None:
+            command.command_tokens.append(command_token)
     return command
 
 
@@ -348,6 +355,7 @@ def _create_token_processor(
 
 
 def _get_command_token(binding: Any,
+                       is_shell_command: bool = False,
                        input_name: Optional[str] = None,
                        token_type: Optional[str] = None) -> CWLCommandToken:
     # Normalize type (Python does not distinguish among all CWL number types)
@@ -363,6 +371,7 @@ def _get_command_token(binding: Any,
             name=input_name,
             value=value,
             token_type=token_type,
+            is_shell_command=is_shell_command,
             item_separator=item_separator,
             position=position,
             prefix=prefix,
@@ -378,6 +387,7 @@ def _get_command_token(binding: Any,
 def _get_command_token_from_input(cwl_element: Any,
                                   port_type: Any,
                                   input_name: str,
+                                  is_shell_command: bool = False,
                                   schema_def_types: Optional[MutableMapping[str, Any]] = None):
     token = None
     command_line_binding = cwl_element.get('inputBinding', None)
@@ -389,15 +399,20 @@ def _get_command_token_from_input(cwl_element: Any,
                     cwl_element=port_type,
                     port_type=port_type['items'],
                     input_name=input_name,
+                    is_shell_command=is_shell_command,
                     schema_def_types=schema_def_types)
                 if token is not None:
-                    token = CWLMapCommandToken(input_name, token)
+                    token = CWLMapCommandToken(
+                        name=input_name,
+                        value=token,
+                        is_shell_command=is_shell_command)
             # Enum type: -> substitute the type with string and reprocess
             elif port_type['type'] == 'enum':
                 return _get_command_token_from_input(
                     cwl_element=cwl_element,
                     port_type='string',
                     input_name=input_name,
+                    is_shell_command=is_shell_command,
                     schema_def_types=schema_def_types)
             # Generic typed object: -> propagate
             else:
@@ -405,6 +420,7 @@ def _get_command_token_from_input(cwl_element: Any,
                     cwl_element=port_type,
                     port_type=port_type['type'],
                     input_name=input_name,
+                    is_shell_command=is_shell_command,
                     schema_def_types=schema_def_types)
         else:
             raise WorkflowDefinitionException("Unsupported dictionary type without explicit `type` key")
@@ -416,6 +432,7 @@ def _get_command_token_from_input(cwl_element: Any,
                 cwl_element=cwl_element,
                 port_type=types[0],
                 input_name=input_name,
+                is_shell_command=is_shell_command,
                 schema_def_types=schema_def_types)
         # List of types: -> CWLUnionCommandToken
         else:
@@ -425,11 +442,16 @@ def _get_command_token_from_input(cwl_element: Any,
                     cwl_element=cwl_element,
                     port_type=port_type,
                     input_name=input_name,
+                    is_shell_command=is_shell_command,
                     schema_def_types=schema_def_types)
                 if token is not None:
                     command_tokens.append(token)
             if command_tokens:
-                token = CWLUnionCommandToken(input_name, command_tokens)
+                token = CWLUnionCommandToken(
+                    name=input_name,
+                    value=command_tokens,
+                    is_shell_command=True,
+                    shell_quote=False)
     elif isinstance(port_type, str):
         # Complex type -> Extract from schema definitions and propagate
         if '#' in port_type:
@@ -437,6 +459,7 @@ def _get_command_token_from_input(cwl_element: Any,
                 cwl_element=cwl_element,
                 port_type=schema_def_types[port_type],
                 input_name=input_name,
+                is_shell_command=is_shell_command,
                 schema_def_types=schema_def_types)
         # Object type: -> CWLObjectCommandToken
         elif port_type == 'record':
@@ -447,19 +470,37 @@ def _get_command_token_from_input(cwl_element: Any,
                     cwl_element=el,
                     port_type=el['type'],
                     input_name=key,
+                    is_shell_command=is_shell_command,
                     schema_def_types=schema_def_types)
                 if el_token is not None:
                     command_tokens[key] = el_token
             if command_tokens:
                 token = CWLObjectCommandToken(
                     name=input_name,
-                    value=command_tokens)
+                    value=command_tokens,
+                    is_shell_command=True,
+                    shell_quote=False)
     # Simple type with `inputBinding` specified -> CWLCommandToken
     if command_line_binding is not None:
         if token is not None:
-            return _get_command_token({**command_line_binding, **{'valueFrom': token}}, input_name)
+            # By default, do not escape composite command tokens
+            if 'shellQuote' not in command_line_binding:
+                command_line_binding['shellQuote'] = False
+                return _get_command_token(
+                    binding={**command_line_binding, **{'valueFrom': token}},
+                    is_shell_command=True,
+                    input_name=input_name)
+            else:
+                return _get_command_token(
+                    binding={**command_line_binding, **{'valueFrom': token}},
+                    is_shell_command=is_shell_command,
+                    input_name=input_name)
         else:
-            return _get_command_token(command_line_binding, input_name, port_type)
+            return _get_command_token(
+                binding=command_line_binding,
+                is_shell_command=is_shell_command,
+                input_name=input_name,
+                token_type=port_type)
     # Simple type without `inputBinding` specified -> token
     else:
         return token
@@ -594,6 +635,16 @@ def _get_secondary_files(cwl_element, default_required: bool) -> MutableSequence
                 if cwl_element.get('required') is not None else default_required)]
 
 
+def _get_type_from_array(port_type: str):
+    if isinstance(port_type, MutableMapping):
+        if port_type['type'] == 'array':
+            return _get_type_from_array(port_type['items'])
+        else:
+            return port_type['type']
+    else:
+        return port_type
+
+
 async def _inject_input(job: Job, port: OutputPort, value: Any) -> None:
     port.step = job.step
     port.put(await port.token_processor.compute_token(
@@ -624,7 +675,8 @@ def _process_javascript_requirement(requirements: MutableMapping[str, Any]) -> (
     return expression_lib, full_js
 
 
-def _process_docker_requirement(docker_requirement: MutableMapping[str, Any]) -> Target:
+def _process_docker_requirement(step: Step,
+                                docker_requirement: MutableMapping[str, Any]) -> Target:
     # Retrieve image
     if 'dockerPull' in docker_requirement:
         image_name = docker_requirement['dockerPull']
@@ -641,16 +693,22 @@ def _process_docker_requirement(docker_requirement: MutableMapping[str, Any]) ->
     }
     if 'dockerOutputDirectory' in docker_requirement:
         docker_config['workdir'] = docker_requirement['dockerOutputDirectory']
+    if step.workdir:
+        docker_config["volume"] = "{host}:{container}".format(
+            host=step.workdir,
+            container=step.workdir)
+    else:
+        docker_config["volume"] = "{host}:{container}".format(
+            host=os.path.join(tempfile.gettempdir(), 'streamflow'),
+            container=posixpath.join('/tmp', 'streamflow'))
     # Build step target
     return Target(
         model=ModelConfig(
             name='docker-requirement-{id}'.format(id=random_name()),
             connector_type='docker',
             config=docker_config,
-            external=False
-        ),
-        service=image_name
-    )
+            external=False),
+        service=image_name)
 
 
 class CWLTranslator(object):
@@ -672,6 +730,9 @@ class CWLTranslator(object):
         for step in workflow.steps.values():
             step_path = PurePosixPath(step.name)
             step_target = self.workflow_config.propagate(step_path, 'target')
+            step_workdir = self.workflow_config.propagate(step_path, 'workdir')
+            if step_workdir is not None:
+                step.workdir = step_workdir
             if step_target is not None:
                 target_model = self.workflow_config.models[step_target['model']]
                 step.target = Target(
@@ -682,9 +743,8 @@ class CWLTranslator(object):
                         external=target_model.get('external', False)),
                     resources=step_target.get('resources', 1),
                     service=step_target.get('service'))
-            step_workdir = self.workflow_config.propagate(step_path, 'workdir')
-            if step_workdir is not None:
-                step.workdir = step_workdir
+            elif step.target is None:
+                step.target = get_local_target(step_workdir)
 
     def _get_source_port(self, workflow: Workflow, source_name: str):
         source_step, source_port = posixpath.split(source_name)
@@ -694,15 +754,23 @@ class CWLTranslator(object):
             return _percolate_port(source_name, self.output_ports)
 
     async def _inject_inputs(self, workflow: Workflow, root_prefix: str):
-        # Create a dummy job and an empty context
-        input_injector = BaseJob(
-            name=random_name(),
-            step=BaseStep(random_name(), self.context),
-            inputs=[])
-        input_injector.output_directory = os.getcwd()
-        # Inject input values into initial ports
-        inject_tasks = []
         if self.cwl_inputs:
+            # Create a dummy job
+            input_injector = BaseJob(
+                name=random_name(),
+                step=BaseStep(
+                    name=random_name(),
+                    context=self.context,
+                    target=get_local_target()),
+                inputs=[])
+            path = self.cwl_inputs['id']
+            if '#' in path:
+                path = path.split('#')[-1]
+            if path.startswith('file://'):
+                path = path[7:]
+            input_injector.output_directory = os.path.dirname(path)
+            # Inject input values into initial ports
+            inject_tasks = []
             for key, value in self.cwl_inputs.items():
                 if key in workflow.steps[root_prefix].input_ports:
                     # Retrieve input port
@@ -713,7 +781,7 @@ class CWLTranslator(object):
                     input_port.dependee = port
                     # Inject input value
                     inject_tasks.append(asyncio.create_task(_inject_input(input_injector, port, value)))
-        await asyncio.gather(*inject_tasks)
+            await asyncio.gather(*inject_tasks)
         # Create null-valued tokens for unbound input ports
         for step in workflow.steps.values():
             for input_name, input_port in step.input_ports.items():
@@ -843,7 +911,7 @@ class CWLTranslator(object):
             step.output_ports[port_name] = port
         # Process DockerRequirement
         if 'DockerRequirement' in requirements:
-            step.target = _process_docker_requirement(requirements['DockerRequirement'])
+            step.target = _process_docker_requirement(step, requirements['DockerRequirement'])
         # Process command
         if isinstance(cwl_element, cwltool.command_line_tool.CommandLineTool):
             step.command = _build_command(
@@ -1017,7 +1085,7 @@ class CWLTranslator(object):
             port_name = posixpath.relpath(global_name, step_name)
             scatter = global_name in scatter_inputs
             if scatter:
-                element_input = {**element_input, **{'type': element_input['type']['items']}}
+                element_input = {**element_input, **{'type': _get_type_from_array(element_input['type'])}}
             # Create an input port
             port = _create_input_port(
                 port_name=port_name,
@@ -1079,16 +1147,16 @@ class CWLTranslator(object):
                 if isinstance(element_type, MutableSequence):
                     element_type = [t for t in filter(lambda x: x != 'null', element_type)]
                     if len(element_type) == 1:
-                        port_type = element_type[0]['items']
+                        port_type = _get_type_from_array(element_type[0])
                     else:
                         raise WorkflowDefinitionException('Invalid type for scatter port')
                 else:
-                    port_type = element_type['items']
+                    port_type = _get_type_from_array(element_type)
                 # Create input port
                 input_port = DefaultInputPort(port_name, gather_step)
                 input_port.token_processor = _create_token_processor(
                     port=input_port,
-                    port_type=port_type['items'] if scatter_method == 'nested_crossproduct' else port_type,
+                    port_type=_get_type_from_array(port_type) if scatter_method == 'nested_crossproduct' else port_type,
                     port_description=element_output,
                     schema_def_types=schema_def_types,
                     format_graph=self.loading_context.loader.graph,
@@ -1113,7 +1181,7 @@ class CWLTranslator(object):
                     output_port.merge_strategy = merge_strategy
                 output_port.token_processor = _create_token_processor(
                     port=output_port,
-                    port_type=port_type['items'] if scatter_method == 'nested_crossproduct' else port_type,
+                    port_type=_get_type_from_array(port_type) if scatter_method == 'nested_crossproduct' else port_type,
                     port_description=element_output,
                     schema_def_types=schema_def_types,
                     format_graph=self.loading_context.loader.graph,

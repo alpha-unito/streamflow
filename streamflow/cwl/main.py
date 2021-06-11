@@ -10,7 +10,6 @@ import cwltool.process
 import cwltool.utils
 import cwltool.workflow
 from cwltool.resolver import tool_resolver
-from schema_salad.ref_resolver import Loader, file_uri
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext

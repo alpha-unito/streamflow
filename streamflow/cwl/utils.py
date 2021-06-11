@@ -55,7 +55,7 @@ def eval_expression(expression: str,
 
 
 def get_path_from_token(token_value: MutableMapping[str, Any]) -> Optional[str]:
-    path = token_value.get('path') or token_value.get('location')
+    path = token_value.get('path', token_value.get('location'))
     return path[7:] if path is not None and path.startswith('file://') else path
 
 

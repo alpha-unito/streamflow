@@ -15,7 +15,7 @@ class CWLHardware(Hardware):
                  memory: float = 0.0,
                  tmpdir: float = 0.0,
                  outdir: float = 0.0):
-        super().__init__(cores, memory, (tmpdir + outdir) / 1024)
+        super().__init__(cores, memory, math.ceil((tmpdir + outdir) / 1024))
         self.tmpdir: float = tmpdir
         self.outdir: float = outdir
 
@@ -25,8 +25,8 @@ class CWLHardwareRequirement(HardwareRequirement):
     def __init__(self,
                  cores: Union[str, float] = 1,
                  memory: Union[str, float] = 256,
-                 tmpdir: Union[str, float] = 1,
-                 outdir: Union[str, float] = 1,
+                 tmpdir: Union[str, float] = 1024,
+                 outdir: Union[str, float] = 1024,
                  full_js: bool = False,
                  expression_lib: Optional[MutableSequence[str]] = None, ):
         self.cores: Union[str, float] = cores

@@ -14,6 +14,7 @@ import aiohttp
 from streamflow.core import utils
 from streamflow.core.data import FileType
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.deployment.connector.local import LocalConnector
 from streamflow.log_handler import profile
 
 if TYPE_CHECKING:
@@ -26,20 +27,20 @@ def _check_status(result: str, status: int):
         raise WorkflowExecutionException(result)
 
 
-async def _file_checksum(connector: Optional[Connector], target: Optional[str], path: str):
-    if connector is not None:
-        result, status = await connector.run(
-            resource=target,
-            command=["sha1sum {path} | awk '{{print $1}}'".format(path=path)],
-            capture_output=True)
-        _check_status(result, status)
-        return result.strip()
-    else:
+async def _file_checksum(connector: Optional[Connector], resource: Optional[str], path: str):
+    if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
             sha1_checksum = sha1()
             while data := f.read(2**16):
                 sha1_checksum.update(data)
             return sha1_checksum.hexdigest()
+    else:
+        result, status = await connector.run(
+            resource=resource,
+            command=["sha1sum {path} | awk '{{print $1}}'".format(path=path)],
+            capture_output=True)
+        _check_status(result, status)
+        return result.strip()
 
 
 def _listdir_local(path: str, file_type: FileType) -> MutableSequence[str]:
@@ -54,9 +55,9 @@ def _listdir_local(path: str, file_type: FileType) -> MutableSequence[str]:
 
 
 @profile
-async def checksum(connector: Optional[Connector], target: Optional[str], path: str) -> str:
-    if await isfile(connector, target, path):
-        return await _file_checksum(connector, target, path)
+async def checksum(connector: Optional[Connector], resource: Optional[str], path: str) -> str:
+    if await isfile(connector, resource, path):
+        return await _file_checksum(connector, resource, path)
     else:
         raise Exception("Checksum for folders is not implemented yet")
 
@@ -64,25 +65,10 @@ async def checksum(connector: Optional[Connector], target: Optional[str], path: 
 @profile
 async def download(
         connector: Optional[Connector],
-        targets: Optional[MutableSequence[str]],
+        resources: Optional[MutableSequence[str]],
         url: str, parent_dir: str) -> str:
-    await mkdir(connector, targets, parent_dir)
-    if connector is not None:
-        async with aiohttp.ClientSession() as session:
-            async with session.head(url, allow_redirects=True) as response:
-                if response.status == 200:
-                    _, params = cgi.parse_header(response.headers.get('Content-Disposition', ''))
-                    filepath = posixpath.join(parent_dir, params['filename'])
-        download_tasks = []
-        for target in targets:
-            download_tasks.append(asyncio.create_task(connector.run(
-                resource=target,
-                command=["if [ command -v curl ]; curl -L -o \"{path}\"; else wget -P \"{dir}\" {url}; fi".format(
-                    dir=parent_dir,
-                    path=filepath,
-                    url=url)])))
-        await asyncio.gather(*download_tasks)
-    else:
+    await mkdir(connector, resources, parent_dir)
+    if isinstance(connector, LocalConnector):
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:
@@ -93,180 +79,181 @@ async def download(
                     raise Exception
         with open(filepath, mode="wb") as f:
             f.write(content)
+    else:
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url, allow_redirects=True) as response:
+                if response.status == 200:
+                    _, params = cgi.parse_header(response.headers.get('Content-Disposition', ''))
+                    filepath = posixpath.join(parent_dir, params['filename'])
+        download_tasks = []
+        for resource in resources:
+            download_tasks.append(asyncio.create_task(connector.run(
+                resource=resource,
+                command=["if [ command -v curl ]; curl -L -o \"{path}\"; else wget -P \"{dir}\" {url}; fi".format(
+                    dir=parent_dir,
+                    path=filepath,
+                    url=url)])))
+        await asyncio.gather(*download_tasks)
     return filepath
 
 
 @profile
-async def exists(connector: Optional[Connector], target: Optional[str], path: str) -> bool:
-    if connector is not None:
+async def exists(connector: Optional[Connector], resource: Optional[str], path: str) -> bool:
+    if isinstance(connector, LocalConnector):
+        return os.path.exists(path)
+    else:
         result, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=["test -e \"{path}\"".format(path=path)],
             capture_output=True)
         if status > 1:
             raise WorkflowExecutionException(result)
         else:
             return not status
-    else:
-        return os.path.exists(path)
 
 
 @profile
-async def follow_symlink(connector: Optional[Connector], target: Optional[str], path: str) -> str:
-    if connector is not None:
+async def follow_symlink(connector: Optional[Connector], resource: Optional[str], path: str) -> str:
+    if isinstance(connector, LocalConnector):
+        return os.path.realpath(path)
+    else:
         result, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=["readlink -f \"{path}\"".format(path=path)],
             capture_output=True)
         _check_status(result, status)
         return result.strip()
-    else:
-        return os.path.realpath(path)
 
 
 @profile
-async def head(connector: Optional[Connector], target: Optional[str], path: str, num_bytes: int) -> str:
-    if connector is not None:
+async def head(connector: Optional[Connector], resource: Optional[str], path: str, num_bytes: int) -> str:
+    if isinstance(connector, LocalConnector):
+        with open(path, "rb") as f:
+            return f.read(num_bytes).decode('utf-8')
+    else:
         result, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=["head", "-c", num_bytes, path],
             capture_output=True)
         _check_status(result, status)
         return result.strip()
-    else:
-        with open(path, "rb") as f:
-            return f.read(num_bytes).decode('utf-8')
 
 
 @profile
-async def isdir(connector: Optional[Connector], target: Optional[str], path: str):
-    if connector is not None:
+async def isdir(connector: Optional[Connector], resource: Optional[str], path: str):
+    if isinstance(connector, LocalConnector):
+        return os.path.isdir(path)
+    else:
         result, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=["test -d \"{path}\"".format(path=path)],
             capture_output=True)
         if status > 1:
             raise WorkflowExecutionException(result)
         else:
             return not status
-    else:
-        return os.path.isdir(path)
 
 
 @profile
-async def isfile(connector: Optional[Connector], target: Optional[str], path: str):
-    if connector is not None:
+async def isfile(connector: Optional[Connector], resource: Optional[str], path: str):
+    if isinstance(connector, LocalConnector):
+        return os.path.isfile(path)
+    else:
         result, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=["test -f \"{path}\"".format(path=path)],
             capture_output=True)
         if status > 1:
             raise WorkflowExecutionException(result)
         else:
             return not status
-    else:
-        return os.path.isfile(path)
 
 
 @profile
 async def listdir(connector: Optional[Connector],
-                  target: Optional[str],
+                  resource: Optional[str],
                   path: str,
                   file_type: FileType) -> MutableSequence[str]:
-    if connector is not None:
+    if isinstance(connector, LocalConnector):
+        return _listdir_local(path, file_type)
+    else:
         command = "find -L \"{path}\" -mindepth 1 -maxdepth 1 {type}".format(
             path=path,
             type="-type {type}".format(
                 type="d" if file_type == FileType.DIRECTORY else "f") if file_type is not None else ""
         ).split()
         content, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=command,
             capture_output=True)
         _check_status(content, status)
         content = content.strip(' \n')
         return content.split('\n') if content else []
-    else:
-        return _listdir_local(path, file_type)
 
 
 @profile
 async def mkdir(
         connector: Optional[Connector],
-        targets: Optional[MutableSequence[str]],
+        resources: Optional[MutableSequence[str]],
         path: str) -> None:
-    return await mkdirs(connector, targets, [path])
+    return await mkdirs(connector, resources, [path])
 
 
 @profile
 async def mkdirs(
         connector: Optional[Connector],
-        targets: Optional[MutableSequence[str]],
+        resources: Optional[MutableSequence[str]],
         paths: MutableSequence[str]) -> None:
-    if connector is not None:
+    if isinstance(connector, LocalConnector):
+        for path in paths:
+            os.makedirs(path, exist_ok=True)
+    else:
         command = ["mkdir", "-p"]
         command.extend(paths)
         await asyncio.gather(*[asyncio.create_task(
-            connector.run(resource=target, command=command)
-        ) for target in targets])
-    else:
-        for path in paths:
-            os.makedirs(path, exist_ok=True)
+            connector.run(resource=resource, command=command)
+        ) for resource in resources])
 
 
 @profile
-async def read(connector: Optional[Connector], target: Optional[str], path: str) -> str:
-    if connector is not None:
+async def read(connector: Optional[Connector], resource: Optional[str], path: str) -> str:
+    if isinstance(connector, LocalConnector):
+        with open(path, "rb") as f:
+            return f.read().decode('utf-8')
+    else:
         result, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=["cat", path],
             capture_output=True)
         _check_status(result, status)
         return result.strip()
-    else:
-        with open(path, "rb") as f:
-            return f.read().decode('utf-8')
 
 
 @profile
 async def resolve(
         connector: Optional[Connector],
-        target: Optional[str],
+        resource: Optional[str],
         pattern: str) -> Optional[MutableSequence[str]]:
-    if connector is not None:
+    if isinstance(connector, LocalConnector):
+        return sorted(glob.glob(pattern))
+    else:
         result, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=["printf", "\"%s\\0\"", pattern, "|", "xargs", "-0", "-n1", "-I{}",
                      "sh", "-c", "\"if [ -e \\\"{}\\\" ]; then echo \\\"{}\\\"; fi\"", "|", "sort"],
             capture_output=True)
         _check_status(result, status)
         return result.split()
-    else:
-        return sorted(glob.glob(pattern))
 
 
 @profile
 async def size(
         connector: Optional[Connector],
-        target: Optional[str],
+        resource: Optional[str],
         path: Union[str, MutableSequence[str]]) -> int:
     if not path:
         return 0
-    elif connector is not None:
-        if isinstance(path, MutableSequence):
-            path = ' '.join(["\"{path}\"".format(path=p) for p in path])
-        else:
-            path = "\"{path}\"".format(path=path)
-        result, status = await connector.run(
-            resource=target,
-            command=[''.join([
-                "find -L ", path, " -type f -exec ls -ln {} \\+ | ",
-                "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; "])],
-            capture_output=True)
-        _check_status(result, status)
-        result = result.strip().strip("'\"")
-        return int(result) if result.isdigit() else 0
-    else:
+    elif isinstance(connector, LocalConnector):
         if isinstance(path, MutableSequence):
             weight = 0
             for p in path:
@@ -274,29 +261,43 @@ async def size(
             return weight
         else:
             return utils.get_size(path)
+    else:
+        if isinstance(path, MutableSequence):
+            path = ' '.join(["\"{path}\"".format(path=p) for p in path])
+        else:
+            path = "\"{path}\"".format(path=path)
+        result, status = await connector.run(
+            resource=resource,
+            command=[''.join([
+                "find -L ", path, " -type f -exec ls -ln {} \\+ | ",
+                "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; "])],
+            capture_output=True)
+        _check_status(result, status)
+        result = result.strip().strip("'\"")
+        return int(result) if result.isdigit() else 0
 
 
 @profile
-async def symlink(connector: Optional[Connector], target: Optional[str], src: str, path: str) -> None:
-    if connector is not None:
-        await connector.run(resource=target, command=["ln", "-snf", src, path])
-    else:
+async def symlink(connector: Optional[Connector], resource: Optional[str], src: str, path: str) -> None:
+    if isinstance(connector, LocalConnector):
         try:
             os.symlink(os.path.abspath(src), path, target_is_directory=os.path.isdir(path))
         except OSError as e:
             if not e.errno == errno.EEXIST:
                 raise
+    else:
+        await connector.run(resource=resource, command=["ln", "-snf", src, path])
 
 
 @profile
-async def write(connector: Optional[Connector], target: Optional[str], path: str, content: str) -> None:
-    if connector is not None:
+async def write(connector: Optional[Connector], resource: Optional[str], path: str, content: str) -> None:
+    if isinstance(connector, LocalConnector):
+        with open(path, "w") as f:
+            f.write(content)
+    else:
         result, status = await connector.run(
-            resource=target,
+            resource=resource,
             command=["printf", "\"{content}\"".format(content=content)],
             stdout=path,
             capture_output=True)
         _check_status(result, status)
-    else:
-        with open(path, "w") as f:
-            f.write(content)

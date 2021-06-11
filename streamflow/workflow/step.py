@@ -44,7 +44,7 @@ async def _retrieve_output(
 class BaseJob(Job):
 
     def _init_dir(self) -> str:
-        if self.step.target is not None:
+        if self.step.target != 'local':
             path_processor = posixpath
             workdir = self.step.workdir or path_processor.join('/tmp', 'streamflow')
         else:
@@ -59,7 +59,7 @@ class BaseJob(Job):
         self.tmp_directory = self._init_dir() if self.tmp_directory is None else self.tmp_directory
         await remotepath.mkdirs(
             connector=self.step.get_connector(),
-            targets=self.get_resources(),
+            resources=self.get_resources(),
             paths=[self.input_directory, self.output_directory, self.tmp_directory])
 
     async def run(self):
@@ -69,8 +69,7 @@ class BaseJob(Job):
             # Execute job
             if not self.step.terminated:
                 self.step.status = Status.RUNNING
-            if self.step.target is not None:
-                await self.step.context.scheduler.notify_status(self.name, Status.RUNNING)
+            await self.step.context.scheduler.notify_status(self.name, Status.RUNNING)
             command_output = await self.step.command.execute(self)
             if command_output.status == Status.FAILED:
                 logger.error("Job {name} failed {error}".format(
@@ -115,9 +114,8 @@ class BaseStep(Step):
             # If condition is satisfied (or null)
             if self.condition is None or await self.condition.eval(job):
                 # Setup runtime environment
-                if self.target is not None:
-                    await self.context.deployment_manager.deploy(self.target.model)
-                    await self.context.scheduler.schedule(job)
+                await self.context.deployment_manager.deploy(self.target.model)
+                await self.context.scheduler.schedule(job)
                 # Initialize job
                 await job.initialize()
                 # Update tokens after target assignment
@@ -155,8 +153,7 @@ class BaseStep(Step):
                 self.terminate(command_output.status)
         finally:
             # Notify completion to scheduler
-            if self.target is not None:
-                await self.context.scheduler.notify_status(job.name, command_output.status)
+            await self.context.scheduler.notify_status(job.name, command_output.status)
         # Retrieve output tokens
         if not self.terminated:
             try:
@@ -172,10 +169,7 @@ class BaseStep(Step):
         return command_output.status
 
     def get_connector(self) -> Optional[Connector]:
-        if self.target is not None:
-            return self.context.deployment_manager.get_connector(self.target.model.name)
-        else:
-            return None
+        return self.context.deployment_manager.get_connector(self.target.model.name)
 
     async def run(self) -> None:
         jobs = []

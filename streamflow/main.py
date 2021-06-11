@@ -12,6 +12,7 @@ from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowException
+from streamflow.core.utils import get_local_target
 from streamflow.cwl.main import main as cwl_main
 from streamflow.log_handler import logger, profile
 from streamflow.parser import parser
@@ -35,6 +36,8 @@ _DISABLED = {
 async def _async_main(args):
     streamflow_config = SfValidator().validate(args.streamflow_file)
     context = get_context(args.streamflow_file, streamflow_config)
+    local_target = get_local_target()
+    await context.deployment_manager.deploy(local_target.model)
     try:
         workflow_tasks = []
         for workflow in streamflow_config.get('workflows', {}):

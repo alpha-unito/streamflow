@@ -8,10 +8,12 @@ import tempfile
 from pathlib import Path, PosixPath
 from typing import TYPE_CHECKING
 
+from streamflow.core import utils
 from streamflow.core.data import DataManager, DataLocation, LOCAL_RESOURCE, DataLocationType
 from streamflow.core.deployment import Connector
 from streamflow.data import remotepath
 from streamflow.deployment.connector.base import ConnectorCopyKind
+from streamflow.deployment.connector.local import LocalConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
@@ -27,13 +29,7 @@ async def _copy(src_connector: Optional[Connector],
                 dst_resources: Optional[MutableSequence[str]],
                 dst: str,
                 writable: False) -> None:
-    if src_connector is None and dst_connector is None:
-        if os.path.isdir(src):
-            os.makedirs(dst, exist_ok=True)
-            shutil.copytree(src, dst, dirs_exist_ok=True)
-        else:
-            shutil.copy(src, dst)
-    elif src_connector == dst_connector:
+    if src_connector == dst_connector:
         await dst_connector.copy(
             src=src,
             dst=dst,
@@ -41,14 +37,14 @@ async def _copy(src_connector: Optional[Connector],
             kind=ConnectorCopyKind.REMOTE_TO_REMOTE,
             source_remote=src_resource,
             read_only=not writable)
-    elif src_connector is None:
+    elif isinstance(src_connector, LocalConnector):
         await dst_connector.copy(
             src=src,
             dst=dst,
             resources=dst_resources,
             kind=ConnectorCopyKind.LOCAL_TO_REMOTE,
             read_only=not writable)
-    elif dst_connector is None:
+    elif isinstance(dst_connector, LocalConnector):
         await src_connector.copy(
             src=src,
             dst=dst,
@@ -87,10 +83,10 @@ class DefaultDataManager(DataManager):
                                       dst_resources: MutableSequence[str],
                                       dst: str,
                                       writable: bool):
-        src_connector = src_job.step.get_connector() if src_job is not None else None
-        dst_connector = dst_job.step.get_connector() if dst_job is not None else None
+        src_connector = utils.get_connector(src_job, self.context)
+        dst_connector = utils.get_connector(dst_job, self.context)
         # Register source path among data locations
-        path_processor = os.path if src_connector is None else posixpath
+        path_processor = os.path if isinstance(src_connector, LocalConnector) is None else posixpath
         src = path_processor.abspath(src)
         # Create destination folder
         await remotepath.mkdir(dst_connector, dst_resources, str(Path(dst).parent))
@@ -100,7 +96,7 @@ class DefaultDataManager(DataManager):
         copy_tasks = []
         remote_resources = []
         data_locations = []
-        for dst_resource in (dst_resources or [None]):
+        for dst_resource in dst_resources:
             # Check if a primary copy of the source path is already present on the destination resource
             found_existing_loc = False
             for primary_loc in primary_locations:
@@ -194,10 +190,10 @@ class DefaultDataManager(DataManager):
                             dst_job: Optional[Job],
                             writable: bool = False):
         # Get connectors and resources from steps
-        src_connector = src_job.step.get_connector() if src_job is not None else None
-        src_resources = src_job.get_resources() if src_job is not None else []
-        dst_connector = dst_job.step.get_connector() if dst_job is not None else None
-        dst_resources = dst_job.get_resources() if dst_job is not None else []
+        src_connector = utils.get_connector(src_job, self.context)
+        src_resources = utils.get_resources(src_job)
+        dst_connector = utils.get_connector(dst_job, self.context)
+        dst_resources = utils.get_resources(dst_job)
         src_found = False
         # If source file is local, simply transfer it
         if not src_resources:

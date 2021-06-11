@@ -5,16 +5,15 @@ import base64
 import copy
 import json
 import logging
-import sys
+import shlex
 import tempfile
 from abc import ABC
 from asyncio.subprocess import STDOUT
 from typing import Union, Optional, List, Any, IO, MutableMapping, MutableSequence
 
-import shellescape
-
+from streamflow.core.data import LOCAL_RESOURCE
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
-from streamflow.core.utils import get_path_processor, flatten_list
+from streamflow.core.utils import get_path_processor, flatten_list, get_resources, get_connector
 from streamflow.core.workflow import Step, Command, Job, CommandOutput, Token, Status
 from streamflow.cwl import utils
 from streamflow.cwl.utils import eval_expression
@@ -68,6 +67,13 @@ def _get_value(token: Any, item_separator: Optional[str]) -> Any:
         return token
 
 
+def _escape_value(value: Any) -> Any:
+    if isinstance(value, MutableSequence):
+        return [_escape_value(v) for v in value]
+    else:
+        return shlex.quote(str(value))
+
+
 def _merge_tokens(bindings_map: MutableMapping[int, MutableSequence[Any]]) -> MutableSequence[Any]:
     command = []
     for binding_position in sorted(bindings_map.keys()):
@@ -96,6 +102,7 @@ class CWLCommandToken(object):
                  name: str,
                  value: Any,
                  token_type: Optional[str] = None,
+                 is_shell_command: bool = False,
                  item_separator: Optional[str] = None,
                  position: Union[str, int] = 0,
                  prefix: Optional[str] = None,
@@ -104,6 +111,7 @@ class CWLCommandToken(object):
         self.name: str = name
         self.value: Any = value
         self.token_type: Optional[str] = token_type
+        self.is_shell_command: bool = is_shell_command
         self.item_separator: Optional[str] = item_separator
         self.position: Union[str, int] = position
         self.prefix: Optional[str] = prefix
@@ -114,7 +122,6 @@ class CWLCommandToken(object):
                          processed_token: Any,
                          context: MutableMapping[str, Any],
                          bindings_map: MutableMapping[int, MutableSequence[Any]],
-                         is_shell_command: bool = False,
                          full_js: bool = False,
                          expression_lib: Optional[MutableSequence[str]] = None
                          ) -> MutableMapping[int, MutableSequence[Any]]:
@@ -128,10 +135,10 @@ class CWLCommandToken(object):
             # Obtain prefix if present
             if self.prefix is not None:
                 if isinstance(value, bool):
-                    value = [self.prefix if value else '']
+                    value = [self.prefix] if value else value
                 elif self.separate:
                     if isinstance(value, MutableSequence):
-                        value = [self.prefix, " ".join([str(v) for v in value])]
+                        value = [self.prefix] + list(value)
                     else:
                         value = [self.prefix, value]
                 elif isinstance(value, MutableSequence):
@@ -144,9 +151,9 @@ class CWLCommandToken(object):
             # Ensure value is a list
             if not isinstance(value, MutableSequence):
                 value = [value]
-            # Process shell escape
-            if is_shell_command and self.shell_quote:
-                value = [shellescape.quote(v) for v in value]
+            # Process shell escape only on the single command token
+            if not self.is_shell_command or self.shell_quote:
+                value = [_escape_value(v) for v in value]
             # Obtain token position
             if isinstance(self.position, str) and not self.position.isnumeric():
                 context['self'] = processed_token
@@ -170,14 +177,12 @@ class CWLCommandToken(object):
     def _process_token(self,
                        token_value: Any,
                        context: MutableMapping[str, Any],
-                       is_shell_command: bool = False,
                        full_js: bool = False,
                        expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         if isinstance(token_value, CWLCommandToken):
             local_bindings = token_value.get_binding(
                 context=context,
                 bindings_map={},
-                is_shell_command=is_shell_command,
                 full_js=full_js,
                 expression_lib=expression_lib)
             processed_token = _merge_tokens(local_bindings)
@@ -197,20 +202,17 @@ class CWLCommandToken(object):
     def get_binding(self,
                     context: MutableMapping[str, Any],
                     bindings_map: MutableMapping[int, MutableSequence[Any]],
-                    is_shell_command: bool = False,
                     full_js: bool = False,
                     expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         processed_token = self._process_token(
             token_value=self.value,
             context=context,
-            is_shell_command=is_shell_command,
             full_js=full_js,
             expression_lib=expression_lib)
         return self._compute_binding(
             processed_token=processed_token,
             context=context,
             bindings_map=bindings_map,
-            is_shell_command=is_shell_command,
             full_js=full_js,
             expression_lib=expression_lib)
 
@@ -225,7 +227,6 @@ class CWLObjectCommandToken(CWLCommandToken):
     def get_binding(self,
                     context: MutableMapping[str, Any],
                     bindings_map: MutableMapping[int, MutableSequence[Any]],
-                    is_shell_command: bool = False,
                     full_js: bool = False,
                     expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         self._check_dict(self.value)
@@ -236,7 +237,6 @@ class CWLObjectCommandToken(CWLCommandToken):
                 bindings_map = token.get_binding(
                     context=context,
                     bindings_map=bindings_map,
-                    is_shell_command=is_shell_command,
                     full_js=full_js,
                     expression_lib=expression_lib)
         return bindings_map
@@ -247,7 +247,6 @@ class CWLUnionCommandToken(CWLCommandToken):
     def get_binding(self,
                     context: MutableMapping[str, Any],
                     bindings_map: MutableMapping[int, MutableSequence[Any]],
-                    is_shell_command: bool = False,
                     full_js: bool = False,
                     expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         inputs = context['inputs'][self.name]
@@ -255,7 +254,6 @@ class CWLUnionCommandToken(CWLCommandToken):
         return command_token.get_binding(
             context=context,
             bindings_map=bindings_map,
-            is_shell_command=is_shell_command,
             full_js=full_js,
             expression_lib=expression_lib)
 
@@ -279,7 +277,6 @@ class CWLMapCommandToken(CWLCommandToken):
     def get_binding(self,
                     context: MutableMapping[str, Any],
                     bindings_map: MutableMapping[int, MutableSequence[Any]],
-                    is_shell_command: bool = False,
                     full_js: bool = False,
                     expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         inputs = context['inputs'][self.name]
@@ -293,7 +290,6 @@ class CWLMapCommandToken(CWLCommandToken):
             bindings_map = super().get_binding(
                 context=context,
                 bindings_map=bindings_map,
-                is_shell_command=is_shell_command,
                 full_js=full_js,
                 expression_lib=expression_lib)
         return bindings_map
@@ -305,12 +301,14 @@ class CWLBaseCommand(Command, ABC):
                  step: Step,
                  expression_lib: Optional[MutableSequence[str]] = None,
                  initial_work_dir: Optional[Union[str, MutableSequence[Any]]] = None,
+                 inplace_update: bool = False,
                  full_js: bool = False,
                  time_limit: Optional[Union[int, str]] = None):
         super().__init__(step)
         self.expression_lib: Optional[MutableSequence[str]] = expression_lib
         self.full_js: bool = full_js
         self.initial_work_dir: Optional[Union[str, MutableSequence[Any]]] = initial_work_dir
+        self.inplace_update: bool = inplace_update
         self.time_limit: Optional[Union[int, str]] = time_limit
 
     def _get_timeout(self, job: Job) -> Optional[int]:
@@ -335,8 +333,8 @@ class CWLBaseCommand(Command, ABC):
                                 dest_path: Optional[str] = None,
                                 writable: bool = False) -> None:
         path_processor = get_path_processor(job.step)
-        connector = job.step.get_connector()
-        resources = job.get_resources() or [None]
+        connector = get_connector(job, self.step.context)
+        resources = get_resources(job)
         # Initialize base path to job output directory if present
         base_path = base_path or job.output_directory
         # If current element is a string, it must be an expression
@@ -442,7 +440,7 @@ class CWLBaseCommand(Command, ABC):
                         entry['basename'] = dest_path
                     if not path_processor.isabs(dest_path):
                         dest_path = path_processor.join(job.output_directory, dest_path)
-                writable = listing['writable'] if 'writable' in listing else False
+                writable = listing['writable'] if 'writable' in listing and not self.inplace_update else False
                 # If entry is a string, a new text file must be created with the string as the file contents
                 if isinstance(entry, str):
                     await self._write_remote_file(job, entry, dest_path or base_path, writable)
@@ -502,13 +500,20 @@ class CWLCommand(CWLBaseCommand):
                  failure_codes: Optional[MutableSequence[int]] = None,
                  full_js: bool = False,
                  initial_work_dir: Optional[Union[str, MutableSequence[Any]]] = None,
+                 inplace_update: bool = False,
                  is_shell_command: bool = False,
                  success_codes: Optional[MutableSequence[int]] = None,
                  step_stderr: Optional[str] = None,
                  step_stdin: Optional[str] = None,
                  step_stdout: Optional[str] = None,
                  time_limit: Optional[Union[int, str]] = None):
-        super().__init__(step, expression_lib, initial_work_dir, full_js, time_limit)
+        super().__init__(
+            step=step,
+            expression_lib=expression_lib,
+            initial_work_dir=initial_work_dir,
+            inplace_update=inplace_update,
+            full_js=full_js,
+            time_limit=time_limit)
         self.base_command: MutableSequence[str] = []
         self.command_tokens: MutableSequence[CWLCommandToken] = []
         self.environment: MutableMapping[str, str] = {}
@@ -523,8 +528,7 @@ class CWLCommand(CWLBaseCommand):
         command = []
         bindings_map = {}
         # Process baseCommand
-        for command_token in self.base_command:
-            command.append(command_token)
+        command.append(shlex.join(self.base_command))
         # Process tokens
         for command_token in self.command_tokens:
             if command_token.name is not None:
@@ -535,32 +539,11 @@ class CWLCommand(CWLBaseCommand):
             bindings_map = command_token.get_binding(
                 context=context,
                 bindings_map=bindings_map,
-                is_shell_command=self.is_shell_command,
                 full_js=self.full_js,
                 expression_lib=self.expression_lib)
         # Merge tokens
         command.extend(_merge_tokens(bindings_map))
         return command
-
-    def _get_stream(self,
-                    job: Job,
-                    context: MutableMapping[str, Any],
-                    stream: Optional[str],
-                    default_stream: IO,
-                    is_input: bool = False) -> IO:
-        if isinstance(stream, str):
-            stream = eval_expression(
-                expression=stream,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib)
-            path_processor = get_path_processor(self.step)
-            if not path_processor.isabs(stream):
-                basedir = job.input_directory if is_input else job.output_directory
-                stream = path_processor.join(basedir, stream)
-            return open(stream, "rb" if is_input else "wb")
-        else:
-            return default_stream
 
     async def execute(self, job: Job) -> CWLCommandOutput:
         context = utils.build_context(job)
@@ -580,84 +563,54 @@ class CWLCommand(CWLBaseCommand):
             parsed_env['HOME'] = job.output_directory
         if 'TMPDIR' not in parsed_env:
             parsed_env['TMPDIR'] = job.tmp_directory
-        if self.step.target is None:
-            if self.is_shell_command:
-                cmd = ["/bin/sh", "-c", " ".join(cmd)]
-            # Open streams
-            stderr = self._get_stream(job, context, self.stderr, sys.stderr)
-            stdin = self._get_stream(job, context, self.stdin, sys.stdin, is_input=True)
-            stdout = self._get_stream(job, context, self.stdout, sys.stderr)
-            # Execute command
-            logger.info('Executing job {job} into directory {outdir}: \n{command}'.format(
-                job=job.name,
-                outdir=job.output_directory,
-                command=' \\\n\t'.join(cmd)
-            ))
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=job.output_directory,
-                env=parsed_env,
+        connector = get_connector(job, self.step.context)
+        resources = get_resources(job)
+        logger.info('Executing job {job} {resource} into directory {outdir}:\n{command}'.format(
+            job=job.name,
+            resource="locally" if resources[0] == LOCAL_RESOURCE else "on resource {res}".format(
+                res=resources[0]),
+            outdir=job.output_directory,
+            command=' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
+                                   if self.is_shell_command else cmd)))
+        if self.is_shell_command:
+            cmd = ["/bin/sh", "-c", "\"$(echo {command} | base64 -d)\"".format(
+                command=base64.b64encode(" ".join(cmd).encode('utf-8')).decode('utf-8'))]
+        # If step is assigned to multiple resources, add the STREAMFLOW_HOSTS environment variable
+        if len(resources) > 1:
+            available_resources = await connector.get_available_resources(self.step.target.service)
+            hosts = {k: v.hostname for k, v in available_resources.items() if k in resources}
+            parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
+        # Process streams
+        stdin = eval_expression(
+            expression=self.stdin,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib)
+        stdout = eval_expression(
+            expression=self.stdout,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib
+        ) if self.stdout is not None else STDOUT
+        stderr = eval_expression(
+            expression=self.stderr,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib
+        ) if self.stderr is not None else stdout
+        # Execute remote command
+        result, exit_code = await asyncio.wait_for(
+            connector.run(
+                resources[0] if resources else None,
+                cmd,
+                environment=parsed_env,
+                workdir=job.output_directory,
                 stdin=stdin,
                 stdout=stdout,
-                stderr=stderr
-            )
-            result, error = await asyncio.wait_for(proc.communicate(), self._get_timeout(job))
-            exit_code = proc.returncode
-            # Close streams
-            if stdin is not sys.stdin:
-                stdin.close()
-            if stdout is not sys.stderr:
-                stdout.close()
-            if stderr is not sys.stderr:
-                stderr.close()
-        else:
-            connector = self.step.get_connector()
-            resources = job.get_resources()
-            logger.info('Executing job {job} on resource {resource} into directory {outdir}:\n{command}'.format(
-                job=job.name,
-                resource=resources[0] if resources else None,
-                outdir=job.output_directory,
-                command=' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
-                                       if self.is_shell_command else cmd)))
-            if self.is_shell_command:
-                cmd = ["/bin/sh", "-c", "\"$(echo {command} | base64 -d)\"".format(
-                    command=base64.b64encode(" ".join(cmd).encode('utf-8')).decode('utf-8'))]
-            # If step is assigned to multiple resources, add the STREAMFLOW_HOSTS environment variable
-            if len(resources) > 1:
-                available_resources = await connector.get_available_resources(self.step.target.service)
-                hosts = {k: v.hostname for k, v in available_resources.items() if k in resources}
-                parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
-            # Process streams
-            stdin = eval_expression(
-                expression=self.stdin,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib)
-            stdout = eval_expression(
-                expression=self.stdout,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib
-            ) if self.stdout is not None else STDOUT
-            stderr = eval_expression(
-                expression=self.stderr,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib
-            ) if self.stderr is not None else stdout
-            # Execute remote command
-            result, exit_code = await asyncio.wait_for(
-                connector.run(
-                    resources[0] if resources else None,
-                    cmd,
-                    environment=parsed_env,
-                    workdir=job.output_directory,
-                    stdin=stdin,
-                    stdout=stdout,
-                    stderr=stderr,
-                    capture_output=True,
-                    job_name=job.name),
-                self._get_timeout(job))
+                stderr=stderr,
+                capture_output=True,
+                job_name=job.name),
+            self._get_timeout(job))
         # Handle exit codes
         if self.failure_codes is not None and exit_code in self.failure_codes:
             status = Status.FAILED
@@ -678,8 +631,15 @@ class CWLExpressionCommand(CWLBaseCommand):
                  expression_lib: Optional[List[str]] = None,
                  full_js: bool = False,
                  initial_work_dir: Optional[Union[str, List[Any]]] = None,
+                 inplace_update: bool = False,
                  time_limit: Optional[Union[int, str]] = None):
-        super().__init__(step, expression_lib, initial_work_dir, full_js, time_limit)
+        super().__init__(
+            step=step,
+            expression_lib=expression_lib,
+            initial_work_dir=initial_work_dir,
+            inplace_update=inplace_update,
+            full_js=full_js,
+            time_limit=time_limit)
         self.expression: str = expression
 
     async def execute(self, job: Job) -> CWLCommandOutput:
@@ -704,8 +664,15 @@ class CWLStepCommand(CWLBaseCommand):
                  expression_lib: Optional[MutableSequence[str]] = None,
                  full_js: bool = False,
                  initial_work_dir: Optional[Union[str, MutableSequence[Any]]] = None,
+                 inplace_update: bool = False,
                  time_limit: Optional[Union[int, str]] = None):
-        super().__init__(step, expression_lib, initial_work_dir, full_js, time_limit)
+        super().__init__(
+            step=step,
+            expression_lib=expression_lib,
+            initial_work_dir=initial_work_dir,
+            inplace_update=inplace_update,
+            full_js=full_js,
+            time_limit=time_limit)
         self.input_expressions: MutableMapping[str, str] = {}
 
     async def execute(self, job: Job) -> CommandOutput:

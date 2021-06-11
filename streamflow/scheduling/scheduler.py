@@ -4,6 +4,7 @@ import asyncio
 from asyncio import Condition
 from typing import TYPE_CHECKING, MutableSequence, Optional
 
+from streamflow.core.data import LOCAL_RESOURCE
 from streamflow.core.scheduling import ResourceAllocation, JobAllocation, Scheduler
 from streamflow.core.workflow import Status
 from streamflow.log_handler import logger
@@ -70,7 +71,10 @@ class DefaultScheduler(Scheduler):
                     pass
             if len(selected_resources) == 1:
                 logger.info(
-                    "Job {name} allocated on resource {resource}".format(name=job.name, resource=selected_resources[0]))
+                    "Job {name} allocated {resource}".format(
+                        name=job.name,
+                        resource="locally" if selected_resources[0] == LOCAL_RESOURCE else "on resource {res}".format(
+                            res=selected_resources[0])))
             else:
                 logger.info(
                     "Job {name} allocated on resources {resources}".format(

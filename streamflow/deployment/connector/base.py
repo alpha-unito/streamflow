@@ -8,11 +8,11 @@ import shlex
 import shutil
 import tarfile
 import tempfile
-import zlib
 from abc import ABC
 from typing import TYPE_CHECKING, MutableSequence, Tuple, cast
 
 from streamflow.core import utils
+from streamflow.core.data import LOCAL_RESOURCE
 from streamflow.core.deployment import Connector, ConnectorCopyKind
 from streamflow.log_handler import logger
 
@@ -211,18 +211,21 @@ class BaseConnector(Connector, ABC):
             if source_remote is None:
                 raise Exception("Source resource is mandatory for remote to remote copy")
             if len(resources) > 1:
-                logger.info("Copying {src} on resource {source_remote} to {dst} on resources:\n\t{resources}".format(
-                    source_remote=source_remote,
+                logger.info("Copying {src} {source_remote} to {dst} on resources:\n\t{resources}".format(
+                    source_remote=("on local file-system" if source_remote == LOCAL_RESOURCE else
+                                   "on resource {res}".format(res=source_remote)),
                     src=src,
                     dst=dst,
                     resources='\n\t'.join(resources)
                 ))
             else:
-                logger.info("Copying {src} on resource {source_remote} to {dst} on resource {resource}".format(
-                    source_remote=source_remote,
+                logger.info("Copying {src} {source_remote} to {dst} {resource}".format(
+                    source_remote=("on local file-system" if source_remote == LOCAL_RESOURCE else
+                                   "on resource {res}".format(res=source_remote)),
                     src=src,
                     dst=dst,
-                    resource=resources[0]
+                    resource=("on local file-system" if resources[0] == LOCAL_RESOURCE else
+                              "on resource {res}".format(res=resources[0]))
                 ))
             await self._copy_remote_to_remote(
                 src=src,
