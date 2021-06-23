@@ -321,8 +321,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 filepath = path_processor.join(job.output_directory, token_value.get('basename', random_name()))
                 connector = get_connector(job, self.get_context())
                 resources = get_resources(job)
-                await asyncio.gather(*[asyncio.create_task(
-                    remotepath.write(connector, res, filepath, token_value['contents'])) for res in resources])
+                await asyncio.gather(*(asyncio.create_task(
+                    remotepath.write(connector, res, filepath, token_value['contents'])) for res in resources))
                 token_value = await _get_file_token(
                     step=step,
                     job=job,
@@ -342,13 +342,13 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 if must_load_listing == LoadListing.shallow_listing:
                     must_load_listing = LoadListing.no_listing
                 # Build listing tokens
-                listing_tokens = await asyncio.gather(*[
+                listing_tokens = await asyncio.gather(*(
                     self._build_token_value(
                         job=job,
                         token_value=lst,
                         load_contents=load_contents,
                         load_listing=must_load_listing
-                    ) for lst in token_value['listing']])
+                    ) for lst in token_value['listing']))
                 token_value = await _get_file_token(
                     step=step,
                     job=job,
@@ -683,9 +683,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     src_path=location,
                     dest_path=dest_path,
                     writable=writable)
-            # Otherwise, keep the current destination path
+            # Otherwise, keep the current location
             else:
-                filepath = dest_path
+                filepath = location
             new_token_value = {'class': token_value['class'], 'path': filepath}
             # Propagate format if present
             if 'format' in token_value:
@@ -720,7 +720,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     # Check if destination file exists
                     dst_found = False
                     for dst_resource in dst_resources:
-                        if await remotepath.exists(dst_connector, dst_resource, location):
+                        if await remotepath.exists(dst_connector, dst_resource, current_dest_path):
                             dst_found = True
                             break
                     # If it does not exist remotely, transfer it
@@ -907,7 +907,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         if token_value is None or self.port_type not in ['File', 'Directory']:
             return 0
         elif isinstance(token_value, MutableSequence):
-            return sum(await asyncio.gather(*[asyncio.create_task(self.weight_token(job, t)) for t in token_value]))
+            return sum(await asyncio.gather(*(asyncio.create_task(self.weight_token(job, t)) for t in token_value)))
         elif 'size' in token_value:
             weight = token_value['size']
             if 'secondaryFiles' in token_value:
@@ -936,7 +936,11 @@ class CWLMapTokenProcessor(MapTokenProcessor):
 
     async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
         if isinstance(command_output.value, MutableMapping) and self.port.name in command_output.value:
-            command_output = command_output.update([{self.port.name: v} for v in command_output.value[self.port.name]])
+            value = command_output.value[self.port.name]
+            if isinstance(value, MutableMapping):
+                command_output = command_output.update([{self.port.name: v} for v in value])
+            else:
+                command_output = command_output.update(value)
         return await super().compute_token(job, command_output)
 
     def get_related_resources(self, token: Token) -> Set[str]:

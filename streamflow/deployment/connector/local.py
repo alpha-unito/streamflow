@@ -1,6 +1,7 @@
 import asyncio
 import os
 import shutil
+import tempfile
 from typing import MutableMapping, MutableSequence, Optional, Union, Tuple, Any
 
 import psutil
@@ -38,7 +39,7 @@ class LocalConnector(BaseConnector):
             shutil.copy(src, dst)
 
     async def deploy(self, external: bool) -> None:
-        pass
+        os.makedirs(os.path.join(tempfile.gettempdir(), 'streamflow'), exist_ok=True)
 
     async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
         if service:

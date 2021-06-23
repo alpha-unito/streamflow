@@ -119,9 +119,9 @@ class BaseStep(Step):
                 # Initialize job
                 await job.initialize()
                 # Update tokens after target assignment
-                job.inputs = await asyncio.gather(*[asyncio.create_task(
+                job.inputs = await asyncio.gather(*(asyncio.create_task(
                     self.input_ports[token.name].token_processor.update_token(job, token)
-                ) for token in inputs])
+                ) for token in inputs))
                 # Run job
                 command_output = await job.run()
                 if command_output.status == Status.FAILED:
@@ -157,9 +157,9 @@ class BaseStep(Step):
         # Retrieve output tokens
         if not self.terminated:
             try:
-                await asyncio.gather(*[asyncio.create_task(
+                await asyncio.gather(*(asyncio.create_task(
                     _retrieve_output(job, output_port, command_output)
-                ) for output_port in self.output_ports.values()])
+                ) for output_port in self.output_ports.values()))
             except BaseException as e:
                 logger.exception(e)
                 command_output.status = Status.FAILED

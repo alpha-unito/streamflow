@@ -16,9 +16,9 @@
       "type": "string",
       "description": "Path to the SSH key needed to connect with Occam environment"
     },
-    "sshKeyPassphrase": {
+    "sshKeyPassphraseFile": {
       "type": "string",
-      "description": "Passphrase protecting Occam SSH key"
+      "description": "Path to a file containing the passphrase protecting the SSH key"
     },
     "transferBufferSize": {
       "type": "integer",

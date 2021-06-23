@@ -1,5 +1,4 @@
 import asyncio
-import posixpath
 from abc import ABC, abstractmethod
 from asyncio import Lock
 from asyncio.subprocess import STDOUT
@@ -22,20 +21,27 @@ class QueueManagerConnector(SSHConnector, ABC):
                  streamflow_config_dir: str,
                  file: str,
                  hostname: str,
-                 sshKey: str,
                  username: str,
+                 checkHostKey: bool = True,
+                 dataTransferConnection: Optional[Union[str, MutableMapping[str, Any]]] = None,
                  maxConcurrentJobs: Optional[int] = 1,
+                 passwordFile: Optional[str] = None,
                  pollingInterval: int = 5,
-                 sshKeyPassphrase: Optional[str] = None,
+                 sshKey: Optional[str] = None,
+                 sshKeyPassphraseFile: Optional[str] = None,
                  transferBufferSize: int = 2**16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
+            checkHostKey=checkHostKey,
+            dataTransferConnection=dataTransferConnection,
             file=file,
-            hostname=hostname,
+            nodes=[hostname],
+            passwordFile=passwordFile,
             sshKey=sshKey,
-            sshKeyPassphrase=sshKeyPassphrase,
+            sshKeyPassphraseFile=sshKeyPassphraseFile,
             transferBufferSize=transferBufferSize,
             username=username)
+        self.hostname: str = hostname
         self.maxConcurrentJobs: int = maxConcurrentJobs
         self.pollingInterval: int = pollingInterval
         self.scheduledJobs: MutableSequence[str] = []
@@ -117,7 +123,8 @@ class QueueManagerConnector(SSHConnector, ABC):
                 job=job_name,
                 job_id=job_id))
             self.scheduledJobs.append(job_id)
-            self.jobsCache.clear()
+            async with self.jobsCacheLock:
+                self.jobsCache.clear()
             while True:
                 async with self.jobsCacheLock:
                     running_jobs = await self._get_running_jobs(resource)
@@ -144,7 +151,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 stream=stream)
 
     async def undeploy(self, external: bool) -> None:
-        await self._remove_jobs(posixpath.join(self.hostname, '0'))
+        await self._remove_jobs(self.hostname)
         self.scheduledJobs = {}
         await super().undeploy(external)
 

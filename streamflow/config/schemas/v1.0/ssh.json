@@ -2,32 +2,125 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "ssh.json",
   "type": "object",
+  "definitions": {
+    "connection": {
+      "$id": "#/definitions/connection",
+      "type": "object",
+      "properties": {
+        "checkHostKey": {
+          "type": "boolean",
+          "description": "Perform a strict validation of the host SSH keys (and return exception if key is not recognized as valid)",
+          "default": true
+        },
+        "hostname": {
+          "type": "string",
+          "description": "The hostname[:port] or address[:port] to connect to."
+        },
+        "passwordFile": {
+          "type": ["string", "null"],
+          "description": "Path to a file containing the password to use for authentication"
+        },
+        "sshKey": {
+          "type": ["string", "null"],
+          "description": "Path to the SSH key needed to connect with Slurm environment"
+        },
+        "sshKeyPassphraseFile": {
+          "type": ["string", "null"],
+          "description": "Path to a file containing the passphrase protecting the SSH key"
+        },
+        "tunnel": {
+          "oneOf": [
+            {
+              "type": "object",
+              "$ref": "#/definitions/connection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "External SSH connection parameters for tunneling"
+        },
+        "username": {
+          "type": ["string", "null"],
+          "description": "Username needed to connect with Occam environment"
+        }
+      },
+      "required": [
+        "hostname"
+      ],
+      "additionalProperties": false
+    }
+  },
   "properties": {
+    "checkHostKey": {
+      "type": "boolean",
+      "description": "Perform a strict validation of the host SSH keys (and return exception if key is not recognized as valid)",
+      "default": true
+    },
+    "dataTransferConnection": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "$ref": "ssh.json#/definitions/connection"
+        }
+      ],
+      "description": "Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"
+    },
     "file": {
       "type": "string",
       "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
     },
-    "hostname": {
-      "type": "string",
-      "description": "Hostname of the HPC facility"
+    "nodes": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "$ref": "#/definitions/connection"
+          }
+        ]
+      },
+      "description": "List of worker nodes. They can be represented as either single hostnames or connection objects. When a property is missing, it is inherited from the connector context"
     },
     "maxConcurrentSessions": {
       "type": "integer",
       "description": "Maximum number of concurrent session to open for a single SSH client connection",
       "default": 10
     },
+    "passwordFile": {
+      "type": "string",
+      "description": "Path to a file containing the password to use for authentication"
+    },
+    "sharedPaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Portions of the file-system shared among all the nodes in the farm"
+    },
     "sshKey": {
       "type": "string",
       "description": "Path to the SSH key needed to connect with Slurm environment"
     },
-    "sshKeyPassphrase": {
+    "sshKeyPassphraseFile": {
       "type": "string",
-      "description": "Passphrase protecting the SSH key"
+      "description": "Path to a file containing the passphrase protecting the SSH key"
     },
     "transferBufferSize": {
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",
       "default": "16kiB"
+    },
+    "tunnel": {
+      "type": "object",
+      "description": "External SSH connection parameters for tunneling",
+      "$ref": "#/definitions/connection"
     },
     "username": {
       "type": "string",
@@ -35,9 +128,8 @@
     }
   },
   "required": [
-    "hostname",
-    "username",
-    "sshKey"
+    "nodes",
+    "username"
   ],
   "additionalProperties": false
 }

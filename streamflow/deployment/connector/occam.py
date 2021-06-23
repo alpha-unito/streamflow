@@ -20,23 +20,23 @@ class OccamConnector(SSHConnector):
                  file: str,
                  sshKey: str,
                  username: str,
-                 sshKeyPassphrase: Optional[str] = None,
+                 sshKeyPassphraseFile: Optional[str] = None,
                  hostname: Optional[str] = "occam.c3s.unito.it",
                  transferBufferSize: int = 2**16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
-            hostname=hostname,
+            nodes=[hostname],
             sshKey=sshKey,
-            sshKeyPassphrase=sshKeyPassphrase,
+            sshKeyPassphraseFile=sshKeyPassphraseFile,
+            sharedPaths=[
+                '/archive/home/{username}'.format(username=username),
+                '/scratch/home/{username}'.format(username=username)],
             transferBufferSize=transferBufferSize,
             username=username)
         with open(os.path.join(streamflow_config_dir, file)) as f:
             yaml = YAML(typ='safe')
             self.env_description = yaml.load(f)
-        self.sharedPaths = [
-            '/archive/home/{username}'.format(username=username),
-            '/scratch/home/{username}'.format(username=username)
-        ]
+        self.jobs_table: MutableMapping[str, MutableSequence[str]] = {}
 
     def _get_effective_resources(self,
                                  resources: MutableSequence[str],
@@ -107,7 +107,7 @@ class OccamConnector(SSHConnector):
                 await self.run(source_remote, copy1_command)
                 break
         # Perform the actual copies
-        await asyncio.gather(*[asyncio.create_task(
+        await asyncio.gather(*(asyncio.create_task(
             self._copy_remote_to_remote_single(
                 src=src,
                 dst=dst,
@@ -115,7 +115,7 @@ class OccamConnector(SSHConnector):
                 source_remote=source_remote,
                 temp_dir=temp_dir,
                 read_only=read_only)
-        ) for resource in effective_resources])
+        ) for resource in effective_resources))
         # If a temporary location was created, delete it
         if temp_dir is not None:
             for resource in effective_resources:

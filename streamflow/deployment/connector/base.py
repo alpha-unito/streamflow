@@ -58,12 +58,12 @@ class BaseConnector(Connector, ABC):
                     dereference=True) as tar:
                 tar.add(src, arcname=dst)
             tar_buffer.seek(0)
-            await asyncio.gather(*[asyncio.create_task(
+            await asyncio.gather(*(asyncio.create_task(
                 self._copy_local_to_remote_single(
                     resource=resource,
                     tar_buffer=cast(io.BufferedRandom, tar_buffer),
                     read_only=read_only)
-            ) for resource in resources])
+            ) for resource in resources))
 
     async def _copy_local_to_remote_single(self,
                                            resource: str,

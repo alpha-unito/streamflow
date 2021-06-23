@@ -45,7 +45,7 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     cwl_definition = cwltool.load_tool.make_tool(uri, loading_context)
     if len(cwl_args) == 2:
         loading_context.loader.add_namespaces(cwl_definition.metadata.get('$namespaces', {}))
-        cwl_inputs, _ = loading_context.loader.resolve_ref(cwl_args[1])
+        cwl_inputs, _ = loading_context.loader.resolve_ref(cwl_args[1], checklinks=False)
 
         def expand_formats(p) -> None:
             if "format" in p:

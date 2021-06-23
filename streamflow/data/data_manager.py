@@ -59,13 +59,13 @@ async def _copy(src_connector: Optional[Connector],
             resources=[src_resource],
             kind=ConnectorCopyKind.REMOTE_TO_LOCAL,
             read_only=not writable)
-        await asyncio.gather(*[asyncio.create_task(dst_connector.copy(
+        await asyncio.gather(*(asyncio.create_task(dst_connector.copy(
             src=os.path.join(temp_dir, element),
             dst=dst,
             resources=dst_resources,
             kind=ConnectorCopyKind.LOCAL_TO_REMOTE,
             read_only=not writable
-        )) for element in os.listdir(temp_dir)])
+        )) for element in os.listdir(temp_dir)))
         shutil.rmtree(temp_dir)
 
 

@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 
 def _is_valid(current_resource: str,
-              valid_resources: MutableSequence[str],
               job: Job,
               available_resources: MutableMapping[str, Resource],
               jobs: MutableMapping[str, JobAllocation],
@@ -26,14 +25,12 @@ def _is_valid(current_resource: str,
         if (resource_obj.hardware - used_hardware) >= job.hardware:
             return True
         else:
-            valid_resources.remove(current_resource)
             return False
     # Otherwise, simply compute the number of allocated slots
     else:
         if len(running_jobs) < available_resources[current_resource].slots:
             return True
         else:
-            valid_resources.remove(current_resource)
             return False
 
 
@@ -59,19 +56,19 @@ class DataLocalityPolicy(Policy):
                 if current_resource in valid_resources:
                     if _is_valid(
                             current_resource=current_resource,
-                            valid_resources=valid_resources,
                             job=job,
                             available_resources=available_resources,
                             jobs=jobs,
                             resources=resources):
                         return current_resource
+                    else:
+                        valid_resources.remove(current_resource)
         # If a data-related allocation is not possible, assign a resource among the remaining free ones
         for resource in valid_resources:
             if resource not in resources:
                 return resource
             if _is_valid(
                     current_resource=resource,
-                    valid_resources=valid_resources,
                     job=job,
                     available_resources=available_resources,
                     jobs=jobs,

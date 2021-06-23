@@ -210,9 +210,9 @@ async def mkdirs(
     else:
         command = ["mkdir", "-p"]
         command.extend(paths)
-        await asyncio.gather(*[asyncio.create_task(
+        await asyncio.gather(*(asyncio.create_task(
             connector.run(resource=resource, command=command)
-        ) for resource in resources])
+        ) for resource in resources))
 
 
 @profile

@@ -32,7 +32,7 @@ class DotProductInputCombinator(InputCombinator):
                 if len(self.token_values[tag]) == len(self.ports):
                     return flatten_list(self.token_values.pop(tag))
             # Retrieve input tokens
-            inputs = await asyncio.gather(*[asyncio.create_task(port.get()) for port in self.ports.values()])
+            inputs = await asyncio.gather(*(asyncio.create_task(port.get()) for port in self.ports.values()))
             # Check for termination
             for token in inputs:
                 # If a TerminationToken is received, the corresponding port terminated its outputs
@@ -154,7 +154,7 @@ class DotProductOutputCombinator(OutputCombinator):
                 if len(self.token_values[consumer][tag]) == len(self.ports):
                     return flatten_list(self.token_values[consumer].pop(tag))
             # Retrieve output tokens
-            outputs = await asyncio.gather(*[asyncio.create_task(p.get(consumer)) for p in self.ports.values()])
+            outputs = await asyncio.gather(*(asyncio.create_task(p.get(consumer)) for p in self.ports.values()))
             # Check for termination
             for token in outputs:
                 # If a TerminationToken is received, the corresponding port terminated its outputs

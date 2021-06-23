@@ -348,14 +348,14 @@ class CWLBaseCommand(Command, ABC):
             listing = element
         # If listing is a list, each of its elements must be processed independently
         if isinstance(listing, MutableSequence):
-            await asyncio.gather(*[asyncio.create_task(
+            await asyncio.gather(*(asyncio.create_task(
                 self._prepare_work_dir(
                     job=job,
                     context=context,
                     element=el,
                     base_path=base_path,
                     writable=writable)
-            ) for el in listing])
+            ) for el in listing))
         # If listing is a dictionary, it could be a File, a Directory, a Dirent or some other object
         elif isinstance(listing, MutableMapping):
             # If it is a File or Directory element, put the correspnding file in the output directory
@@ -401,24 +401,24 @@ class CWLBaseCommand(Command, ABC):
                         await remotepath.mkdir(connector, resources, folder_path)
                     else:
                         folder_path = dest_path or base_path
-                    await asyncio.gather(*[asyncio.create_task(
+                    await asyncio.gather(*(asyncio.create_task(
                         self._prepare_work_dir(
                             job=job,
                             context=context,
                             element=element,
                             base_path=folder_path,
                             writable=writable)
-                    ) for element in listing['listing']])
+                    ) for element in listing['listing']))
                 # If `secondaryFiles` is present, resursively process secondary files
                 if 'secondaryFiles' in listing:
-                    await asyncio.gather(*[asyncio.create_task(
+                    await asyncio.gather(*(asyncio.create_task(
                         self._prepare_work_dir(
                             job=job,
                             context=context,
                             element=element,
                             base_path=base_path,
                             writable=writable)
-                    ) for element in listing['secondaryFiles']])
+                    ) for element in listing['secondaryFiles']))
             # If it is a Dirent element, put or create the corresponding file according to the entryname field
             elif 'entry' in listing:
                 entry = eval_expression(
