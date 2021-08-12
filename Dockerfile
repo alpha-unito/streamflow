@@ -1,9 +1,11 @@
-FROM python:3.8-alpine AS builder
+FROM python:3.8-alpine3.13 AS builder
 ARG HELM_VERSION
 
-ENV PIPENV_VENV_IN_PROJECT=1
+ENV PYTHONPATH="${PYTHONPATH}:/build"
+ENV PATH="/root/.local/bin:${PATH}"
 
-COPY ./streamflow ./Pipfile ./Pipfile.lock /streamflow/
+COPY ./setup.py ./setup.cfg ./pytest.ini ./MANIFEST.in ./LICENSE ./README.md /build/
+COPY ./streamflow /build/streamflow
 
 RUN apk --no-cache add \
         bash \
@@ -11,33 +13,33 @@ RUN apk --no-cache add \
         curl \
         g++ \
         libffi-dev \
-        libressl-dev \
         libxml2-dev \
         libxslt-dev \
         make \
         musl-dev \
         openssl \
+        openssl-dev \
     && curl -L https://git.io/get_helm.sh -o /tmp/get_helm.sh \
     && chmod +x /tmp/get_helm.sh \
     && /tmp/get_helm.sh --version ${HELM_VERSION} \
-    && cd /streamflow \
-    && python setup.py install
+    && cd /build \
+    && pip install --user .
 
-FROM python:3.8-alpine
+FROM python:3.9-alpine3.13
 LABEL maintainer="iacopo.colonnelli@unito.it"
 
-ENV PYTHONPATH="${PYTHONPATH}:/"
+ENV PATH="/root/.local/bin:${PATH}"
 
-COPY --from=builder /streamflow/ /streamflow/
+COPY --from=builder "/root/.local/" "/root/.local/"
 COPY --from=builder /usr/local/bin/helm /usr/local/bin/helm
 
 RUN apk --no-cache add \
-        libressl \
         libxml2 \
         libxslt \
         nodejs \
+        openssl \
     && mkdir -p /streamflow/results
 
 WORKDIR /streamflow/results
 
-ENTRYPOINT ["/streamflow/.venv/bin/python", "-m", "streamflow"]
+ENTRYPOINT ["streamflow"]

@@ -9,10 +9,8 @@ branches:
 env:
   - STREAMFLOW_VERSION="$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')"
 install:
-  - pip install pipenv pypisearch requests tabulate
-  - pipenv --python 3.8
-  - pipenv install --dev
-script: pipenv run pytest
+  - pip install pypisearch requests tabulate pytest
+script: pytest
 before_deploy:
   - |
     if [ "${STREAMFLOW_VERSION}" != "$(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")" ]; then
