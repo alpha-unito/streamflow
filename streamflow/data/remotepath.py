@@ -247,6 +247,29 @@ async def resolve(
 
 
 @profile
+async def rm(
+        connector: Optional[Connector],
+        resource: Optional[str],
+        path: Union[str, MutableSequence[str]]) -> None:
+    if isinstance(connector, LocalConnector):
+        if isinstance(path, MutableSequence):
+            for p in path:
+                if os.path.exists(p):
+                    os.remove(p)
+        else:
+            if os.path.exists(path):
+                return os.remove(path)
+    else:
+        if isinstance(path, MutableSequence):
+            path = ' '.join(["\"{path}\"".format(path=p) for p in path])
+        else:
+            path = "\"{path}\"".format(path=path)
+        await connector.run(
+            resource=resource,
+            command=[''.join(["rm -rf ", path])])
+
+
+@profile
 async def size(
         connector: Optional[Connector],
         resource: Optional[str],

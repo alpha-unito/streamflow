@@ -65,7 +65,7 @@ class Token(object):
                  name: str,
                  value: Any,
                  job: Optional[Union[str, MutableSequence[str]]] = None,
-                 tag: str = '/',
+                 tag: str = '0',
                  weight: int = 0):
         self.name = name
         self.value: Any = value
@@ -240,7 +240,8 @@ class Step(ABC):
                  name: str,
                  context: StreamFlowContext,
                  command: Optional[Command] = None,
-                 target: Optional[Target] = None):
+                 target: Optional[Target] = None,
+                 workflow: Optional[Workflow] = None):
         super().__init__()
         self.context: StreamFlowContext = context
         self.command: Optional[Command] = command
@@ -254,6 +255,7 @@ class Step(ABC):
         self.target: Optional[Target] = target
         self.terminated: bool = False
         self.workdir: Optional[str] = None
+        self.workflow: Optional[Workflow] = workflow
 
     @abstractmethod
     def get_connector(self) -> Optional[Connector]:
@@ -285,4 +287,9 @@ class Workflow(object):
     def __init__(self):
         super().__init__()
         self.steps: MutableMapping[str, Step] = {}
+        self.root_steps: MutableSequence[str] = []
         self.output_ports: MutableMapping[str, OutputPort] = {}
+
+    def add_step(self, step: Step):
+        self.steps[step.name] = step
+        step.workflow = self

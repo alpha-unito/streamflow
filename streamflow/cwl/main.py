@@ -6,7 +6,6 @@ import cwltool.context
 import cwltool.load_tool
 import cwltool.loghandler
 import cwltool.process
-import cwltool.process
 import cwltool.utils
 import cwltool.workflow
 from cwltool.resolver import tool_resolver
@@ -36,20 +35,24 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     loading_context = cwltool.context.LoadingContext()
     loading_context.resolver = tool_resolver
     loading_context.loader = cwltool.load_tool.default_loader(
-        loading_context.fetcher_constructor
-    )
+        loading_context.fetcher_constructor)
     loading_context, workflowobj, uri = cwltool.load_tool.fetch_document(cwl_args[0], loading_context)
     loading_context, uri = cwltool.load_tool.resolve_and_validate_document(
         loading_context, workflowobj, uri
     )
     cwl_definition = cwltool.load_tool.make_tool(uri, loading_context)
     if len(cwl_args) == 2:
-        loading_context.loader.add_namespaces(cwl_definition.metadata.get('$namespaces', {}))
-        cwl_inputs, _ = loading_context.loader.resolve_ref(cwl_args[1], checklinks=False)
+        loader = cwltool.load_tool.default_loader(
+            loading_context.fetcher_constructor)
+        loader.add_namespaces(cwl_definition.metadata.get('$namespaces', {}))
+        cwl_inputs, _ = loader.resolve_ref(
+            cwl_args[1],
+            checklinks=False,
+            content_types=cwltool.CWL_CONTENT_TYPES)
 
         def expand_formats(p) -> None:
             if "format" in p:
-                p["format"] = loading_context.loader.expand_url(p["format"], "")
+                p["format"] = loader.expand_url(p["format"], "")
 
         cwltool.utils.visit_class(cwl_inputs, ("File",), expand_formats)
     else:

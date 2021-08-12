@@ -128,7 +128,7 @@ def get_size(path):
 
 
 def get_tag(tokens: MutableSequence[Token]) -> str:
-    output_tag = '/'
+    output_tag = '0'
     for tag in [t.tag for t in tokens]:
         if len(tag) > len(output_tag):
             output_tag = tag

@@ -16,14 +16,6 @@ if TYPE_CHECKING:
     from typing import Any, Set
 
 
-def _get_tag(tokens: MutableSequence[Token]):
-    output_tag = '/'
-    for tag in [posixpath.dirname(t.tag) for t in tokens]:
-        if len(tag) > len(output_tag):
-            output_tag = tag
-    return output_tag
-
-
 class DefaultTokenProcessor(TokenProcessor):
 
     async def collect_output(self, token: Token, output_dir: str) -> Token:
@@ -456,7 +448,7 @@ class ScatterInputPort(DefaultInputPort):
             name=self.name,
             value=token_value,
             job=job_name,
-            tag=posixpath.join(get_tag(job.inputs if job is not None else []), str(count)),
+            tag=get_tag(job.inputs if job is not None else []) + '.' + str(count),
             weight=weight)
 
     async def get(self) -> Any:
@@ -490,11 +482,11 @@ class GatherOutputPort(DefaultOutputPort):
         if isinstance(token, TerminationToken):
             token_list = self.token
             if token_list:
-                token_list = sorted(token_list, key=lambda t: int(posixpath.basename(t.tag)))
+                token_list = sorted(token_list, key=lambda t: int(t.tag.split('.')[-1]))
                 self.token = [Token(
                     name=self.name,
                     job=[t.job for t in token_list],
-                    tag=_get_tag(token_list),
+                    tag=get_tag(token_list).split('.')[-1],
                     value=self.merge_strategy(token_list) if self.merge_strategy else token_list)]
                 self.token.append(token)
             else:

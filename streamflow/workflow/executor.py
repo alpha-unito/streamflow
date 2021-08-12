@@ -70,6 +70,10 @@ class StreamFlowExecutor(Executor):
                 # Create a new task in place of the completed one
                 self.output_tasks.append(asyncio.create_task(
                     self.workflow.output_ports[task_name].get(output_consumer), name=task_name))
+                # Check if new output ports have been created
+                for port_name, port in self.workflow.output_ports.items():
+                    if port_name not in self.output_tasks:
+                        self.output_tasks.append(asyncio.create_task(port.get(output_consumer), name=port_name))
         return output_tokens
 
     async def run(self, output_dir: Optional[str] = os.getcwd()):

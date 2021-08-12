@@ -65,6 +65,10 @@ def infer_type_from_token(token_value: Any) -> str:
     if isinstance(token_value, MutableMapping):
         if 'class' in token_value:
             return token_value['class']
+        else:
+            return 'record'
+    elif isinstance(token_value, MutableSequence):
+        return 'array'
     elif isinstance(token_value, str):
         return 'string'
     elif isinstance(token_value, int):
