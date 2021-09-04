@@ -724,13 +724,17 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             # Check for secondary files on the source resources
             sf_map = {get_path_from_token(sf): sf for sf in token_value.get('secondaryFiles', [])}
             if src_job:
-                sf_map = await self._process_secondary_files(
+                new_sf_map = await self._process_secondary_files(
                     job=src_job,
-                    sf_map=sf_map,
+                    sf_map=sf_map.copy(),
                     token_value=token_value,
                     load_contents=self.load_contents,
                     load_listing=load_listing,
                     check_required=False)
+                for k, v in new_sf_map.items():
+                    if k not in sf_map:
+                        self._register_data(job=job, token_value=v)
+                sf_map = new_sf_map
             # If token contains secondary files, transfer them, too
             if sf_map:
                 sf_tasks = []
