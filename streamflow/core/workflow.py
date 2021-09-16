@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 class Command(ABC):
 
     def __init__(self, step: Step):
+        super().__init__()
         self.step: Step = step
 
     @abstractmethod
@@ -251,6 +252,7 @@ class Step(ABC):
         self.input_ports: MutableMapping[str, Union[InputPort, InputCombinator]] = {}
         self.name: str = name
         self.output_ports: MutableMapping[str, OutputPort] = {}
+        self.persistent_id: Optional[int] = None
         self.status: Status = Status.WAITING
         self.target: Optional[Target] = target
         self.terminated: bool = False

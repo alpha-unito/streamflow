@@ -1049,6 +1049,9 @@ class CWLTranslator(object):
             step.command.stderr = cwl_element.tool['stderr']
         # Add step to workflow
         workflow.add_step(step)
+        step.persistent_id = self.context.persistence_manager.db.add_step(
+            name=posixpath.join('/', *[s for s in step.name.split(posixpath.sep) if s != "run"]),
+            status=step.status.value)
 
     async def _translate_workflow(self,
                                   workflow: Workflow,

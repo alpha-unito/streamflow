@@ -34,6 +34,7 @@ setup(
     long_description_content_type="text/markdown",
     install_requires=[
         "aiohttp",
+        "apsw",
         "asyncssh",
         "bcrypt",
         "cachetools",
@@ -41,7 +42,10 @@ setup(
         "Jinja2",
         "jsonref",
         "jsonschema",
+        "kaleido",
         "kubernetes_asyncio",
+        "pandas",
+        "plotly",
         "uvloop"
     ],
     python_requires=">=3.8, <4",

@@ -168,6 +168,11 @@ class BaseStep(Step):
             name=job.name, status=command_output.status.name))
         return command_output.status
 
+    def _set_status(self, status: Status):
+        self.status = status
+        if self.persistent_id is not None:
+            self.context.persistence_manager.db.update_step(self.persistent_id, {"status": status.value})
+
     def get_connector(self) -> Optional[Connector]:
         return self.context.deployment_manager.get_connector(self.target.model.name)
 
@@ -184,7 +189,7 @@ class BaseStep(Step):
                 if utils.check_termination(inputs):
                     break
                 # Set status to fireable
-                self.status = Status.FIREABLE
+                self._set_status(Status.FIREABLE)
                 # Run job
                 jobs.append(asyncio.create_task(
                     self._run_job(inputs),
@@ -204,6 +209,6 @@ class BaseStep(Step):
             # Add a TerminationToken to each output port
             for port in self.output_ports.values():
                 port.put(TerminationToken(name=port.name))
-            self.status = status
+            self._set_status(status)
             self.terminated = True
             logger.info("Step {name} terminated with status {status}".format(name=self.name, status=status.name))

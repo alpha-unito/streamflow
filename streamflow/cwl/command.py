@@ -8,6 +8,7 @@ import logging
 import posixpath
 import shlex
 import tempfile
+import time
 from abc import ABC
 from asyncio.subprocess import STDOUT
 from typing import Union, Optional, List, Any, IO, MutableMapping, MutableSequence
@@ -649,13 +650,18 @@ class CWLCommand(CWLBaseCommand):
         # Get execution target
         connector = get_connector(job, self.step.context)
         resources = get_resources(job)
+        cmd_string = ' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
+                                    if self.is_shell_command else cmd)
         logger.info('Executing job {job} {resource} into directory {outdir}:\n{command}'.format(
             job=job.name,
             resource="locally" if resources[0] == LOCAL_RESOURCE else "on resource {res}".format(
                 res=resources[0]),
             outdir=job.output_directory,
-            command=' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
-                                   if self.is_shell_command else cmd)))
+            command=cmd_string))
+        # Persist command
+        command_id = self.step.context.persistence_manager.db.add_command(
+            step_id=self.step.persistent_id,
+            cmd=cmd_string)
         # Escape shell command when needed
         if self.is_shell_command:
             cmd = ["/bin/sh", "-c", "\"$(echo {command} | base64 -d)\"".format(
@@ -684,6 +690,7 @@ class CWLCommand(CWLBaseCommand):
             expression_lib=self.expression_lib
         ) if self.stderr is not None else stdout
         # Execute remote command
+        start_time = time.time_ns()
         result, exit_code = await asyncio.wait_for(
             connector.run(
                 resources[0] if resources else None,
@@ -696,6 +703,7 @@ class CWLCommand(CWLBaseCommand):
                 capture_output=True,
                 job_name=job.name),
             self._get_timeout(job))
+        end_time = time.time_ns()
         # Handle exit codes
         if self.failure_codes and exit_code in self.failure_codes:
             status = Status.FAILED
@@ -705,6 +713,13 @@ class CWLCommand(CWLBaseCommand):
                 logger.info(result)
         else:
             status = Status.FAILED
+        # Update command persistence
+        self.step.context.persistence_manager.db.update_command(command_id, {
+            "status": status.value,
+            "output": str(result),
+            "start_time": start_time,
+            "end_time": end_time
+        })
         # Check if file `cwl.output.json` exists either locally on at least one resource
         result = await _check_cwl_output(job, result)
         return CWLCommandOutput(value=result, status=status, exit_code=exit_code)
@@ -736,6 +751,10 @@ class CWLExpressionCommand(CWLBaseCommand):
         if self.initial_work_dir is not None:
             await self._prepare_work_dir(job, context, self.initial_work_dir)
         logger.info('Evaluating expression for job {job}'.format(job=job.name))
+        # Persist command
+        command_id = self.step.context.persistence_manager.db.add_command(self.step.persistent_id, self.expression)
+        # Execute command
+        start_time = time.time_ns()
         timeout = self._get_timeout(job)
         result = eval_expression(
             expression=self.expression,
@@ -743,6 +762,15 @@ class CWLExpressionCommand(CWLBaseCommand):
             full_js=self.full_js,
             expression_lib=self.expression_lib,
             timeout=timeout)
+        end_time = time.time_ns()
+        # Update command persistence
+        self.step.context.persistence_manager.db.update_command(command_id, {
+            "status": Status.COMPLETED.value,
+            "output": str(result),
+            "start_time": start_time,
+            "end_time": end_time
+        })
+        # Return result
         return CWLCommandOutput(value=result, status=Status.COMPLETED, exit_code=0)
 
 
