@@ -70,13 +70,15 @@ async def _get_class_from_path(path: str, job: Job, context: StreamFlowContext) 
         return 'File' if await remotepath.isfile(connector, resource, t_path) else 'Directory'
 
 
-async def _get_file_token(job: Job,
-                          token_class: str,
-                          filepath: str,
-                          file_format: Optional[str] = None,
-                          basename: Optional[str] = None,
-                          load_contents: bool = False,
-                          load_listing: Optional[LoadListing] = None) -> MutableMapping[str, Any]:
+async def _get_file_token(
+        context: StreamFlowContext,
+        job: Job,
+        token_class: str,
+        filepath: str,
+        file_format: Optional[str] = None,
+        basename: Optional[str] = None,
+        load_contents: bool = False,
+        load_listing: Optional[LoadListing] = None) -> MutableMapping[str, Any]:
     connector = job.step.get_connector()
     resources = get_resources(job)
     path_processor = get_path_processor(job.step)
@@ -104,18 +106,23 @@ async def _get_file_token(job: Job,
                         connector, resource, filepath, CONTENT_LIMIT)
                 filepath = await remotepath.follow_symlink(connector, resource, filepath)
                 token['checksum'] = 'sha1${checksum}'.format(
-                    checksum=await remotepath.checksum(connector, resource, filepath))
+                    checksum=await remotepath.checksum(context, connector, resource, filepath))
                 break
     elif token_class == 'Directory' and load_listing != LoadListing.no_listing:
         for resource in resources:
             if await remotepath.exists(connector, resource, filepath):
                 token['listing'] = await _get_listing(
-                    job, filepath, load_contents, load_listing == LoadListing.deep_listing)
+                    context=context,
+                    job=job,
+                    dirpath=filepath,
+                    load_contents=load_contents,
+                    recursive=load_listing == LoadListing.deep_listing)
                 break
     return token
 
 
 async def _get_listing(
+        context: StreamFlowContext,
         job: Job,
         dirpath: str,
         load_contents: bool,
@@ -129,6 +136,7 @@ async def _get_listing(
             if directory not in listing_tokens:
                 load_listing = LoadListing.deep_listing if recursive else LoadListing.no_listing
                 listing_tokens[directory] = asyncio.create_task(_get_file_token(
+                    context=context,
                     job=job,
                     token_class='Directory',
                     filepath=directory,
@@ -138,6 +146,7 @@ async def _get_listing(
         for file in files:
             if file not in listing_tokens:
                 listing_tokens[file] = asyncio.create_task(_get_file_token(
+                    context=context,
                     job=job,
                     token_class='File',
                     filepath=file,
@@ -220,6 +229,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                                  token_value: Any,
                                  load_contents: Optional[bool] = None,
                                  load_listing: Optional[LoadListing] = None) -> Any:
+        context = self.get_context()
         if load_contents is None:
             load_contents = self.load_contents
         if isinstance(token_value, MutableSequence):
@@ -245,6 +255,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                         if not path_processor.isabs(sf_path):
                             path_processor.join(path_processor.dirname(filepath), sf_path)
                         sf_tasks.append(asyncio.create_task(_get_file_token(
+                            context=context,
                             job=job,
                             token_class=sf['class'],
                             filepath=sf_path,
@@ -255,6 +266,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     sf_map = {get_path_from_token(sf): sf for sf in await asyncio.gather(*sf_tasks)}
                 # Compute the new token value
                 token_value = await _get_file_token(
+                    context=context,
                     job=job,
                     token_class=token_value.get('class', token_value.get('type')),
                     filepath=filepath,
@@ -280,6 +292,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 await asyncio.gather(*(asyncio.create_task(
                     remotepath.write(connector, res, filepath, token_value['contents'])) for res in resources))
                 token_value = await _get_file_token(
+                    context=context,
                     job=job,
                     token_class=token_value.get('class', token_value.get('type')),
                     filepath=filepath,
@@ -305,6 +318,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                         load_listing=must_load_listing
                     ) for lst in token_value['listing']))
                 token_value = await _get_file_token(
+                    context=context,
                     job=job,
                     token_class=token_value.get('class', token_value.get('type')),
                     filepath=filepath,
@@ -391,6 +405,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                                       existing_sf: MutableMapping[str, Any],
                                       load_contents: bool,
                                       load_listing: Optional[LoadListing]) -> Optional[MutableMapping[str, Any]]:
+        context = self.get_context()
         # If value is None, simply return None
         if secondary_file is None:
             return None
@@ -401,6 +416,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             for resource in get_resources(job):
                 if await remotepath.exists(connector, resource, filepath):
                     return await _get_file_token(
+                        context=context,
                         job=job,
                         token_class=secondary_file['class'],
                         filepath=filepath,
@@ -423,6 +439,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     if await remotepath.exists(connector, resource, filepath):
                         token_class = 'File' if await remotepath.isfile(connector, resource, filepath) else 'Directory'
                         return await _get_file_token(
+                            context=context,
                             job=job,
                             token_class=token_class,
                             filepath=filepath,
@@ -581,11 +598,13 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             if 'basename' in token_value:
                 new_token_value['basename'] = token_value['basename']
             new_token_value['listing'] = []
+            context = self.get_context()
             for listing in token_value['listing']:
                 path = listing['path'] if 'path' in listing else listing['location']
                 path = path[7:] if path.startswith('file://') else path
                 recovered_path = await self._recover_path(job, resources, token, path)
                 new_token_value['listing'].append(await _get_file_token(
+                    context=context,
                     job=job,
                     token_class=listing['class'],
                     filepath=recovered_path,
@@ -678,6 +697,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                                  token_value: Any,
                                  load_listing: Optional[LoadListing] = None,
                                  writable: Optional[bool] = None) -> MutableMapping[str, Any]:
+        context = self.get_context()
         path_processor = get_path_processor(src_job.step)
         if 'location' not in token_value and 'path' in token_value:
             token_value['location'] = token_value['path']
@@ -786,6 +806,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     # Build listing tokens
                     listing_tasks.append(asyncio.create_task(
                         _get_file_token(
+                            context=context,
                             job=job,
                             token_class=element['class'],
                             filepath=current_dest_path,
@@ -844,6 +865,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             listing_tasks = []
             for token_class, path in zip(classes, dest_paths):
                 listing_tasks.append(asyncio.create_task(_get_file_token(
+                    context=context,
                     job=job,
                     token_class=token_class,
                     filepath=path)))

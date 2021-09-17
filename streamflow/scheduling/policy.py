@@ -18,7 +18,8 @@ def _is_valid(current_resource: str,
               resources: MutableMapping[str, ResourceAllocation]) -> bool:
     resource_obj = available_resources[current_resource]
     running_jobs = list(
-        filter(lambda x: jobs[x].status == Status.RUNNING, resources[current_resource].jobs))
+        filter(lambda x: jobs[x].status == Status.RUNNING,
+               resources[current_resource].jobs)) if current_resource in resources else []
     # If resource is segmentable and job provides requirements, compute the used amount of resources
     if resource_obj.hardware is not None and job.hardware is not None:
         used_hardware = sum((jobs[j].hardware for j in running_jobs), start=Hardware())
@@ -26,6 +27,9 @@ def _is_valid(current_resource: str,
             return True
         else:
             return False
+    # If resource is segmentable but job does not provide requirements, treat it as null-weighted
+    elif resource_obj.hardware is not None:
+        return True
     # Otherwise, simply compute the number of allocated slots
     else:
         if len(running_jobs) < available_resources[current_resource].slots:
@@ -46,7 +50,7 @@ class DataLocalityPolicy(Policy):
         for token in sorted(job.inputs, key=lambda x: x.weight, reverse=True):
             # Get related resources
             related_resources = set()
-            for j in token.job if isinstance(token.job, MutableSequence) else [token.job]:
+            for j in (token.job if isinstance(token.job, MutableSequence) else [token.job]):
                 if j in jobs:
                     related_resources.update(r for r in jobs[j].resources)
             token_processor = job.step.input_ports[token.name].token_processor
@@ -65,8 +69,6 @@ class DataLocalityPolicy(Policy):
                         valid_resources.remove(current_resource)
         # If a data-related allocation is not possible, assign a resource among the remaining free ones
         for resource in valid_resources:
-            if resource not in resources:
-                return resource
             if _is_valid(
                     current_resource=resource,
                     job=job,

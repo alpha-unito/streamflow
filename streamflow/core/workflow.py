@@ -249,7 +249,7 @@ class Step(ABC):
         self.condition: Optional[Condition] = None
         self.hardware_requirement: Optional[HardwareRequirement] = None
         self.input_combinator: Optional[InputCombinator] = None
-        self.input_ports: MutableMapping[str, Union[InputPort, InputCombinator]] = {}
+        self.input_ports: MutableMapping[str, InputPort] = {}
         self.name: str = name
         self.output_ports: MutableMapping[str, OutputPort] = {}
         self.persistent_id: Optional[int] = None

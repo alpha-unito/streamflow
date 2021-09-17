@@ -20,12 +20,13 @@ from rdflib import Graph
 from ruamel.yaml.comments import CommentedSeq
 
 from streamflow.config.config import WorkflowConfig
+from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ModelConfig
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.utils import random_name, get_local_target
 from streamflow.core.workflow import Port, OutputPort, Workflow, Target, Token, TerminationToken, \
-    InputCombinator, InputPort, Status
+    InputCombinator, InputPort, Status, OutputCombinator
 from streamflow.cwl.command import CWLCommand, CWLExpressionCommand, CWLMapCommandToken, \
     CWLUnionCommandToken, CWLObjectCommandToken, CWLCommandToken, CWLCommandOutput, CWLStepCommand
 from streamflow.cwl.condition import CWLCondition
@@ -595,8 +596,13 @@ def _get_command_token_from_input(cwl_element: Any,
         return token
 
 
-def _get_hardware_requirement(requirements: MutableMapping[str, Any]):
-    hardware_requirement = CWLHardwareRequirement()
+def _get_hardware_requirement(
+        requirements: MutableMapping[str, Any],
+        expression_lib: Optional[MutableSequence[str]],
+        full_js: bool):
+    hardware_requirement = CWLHardwareRequirement(
+        expression_lib=expression_lib,
+        full_js=full_js)
     if 'ResourceRequirement' in requirements:
         resource_requirement = requirements['ResourceRequirement']
         hardware_requirement.cores = resource_requirement.get(
@@ -665,10 +671,10 @@ def _get_schema_def_types(requirements: MutableMapping[str, Any]) -> MutableMapp
 def _get_secondary_files(cwl_element, default_required: bool) -> MutableSequence[SecondaryFile]:
     if isinstance(cwl_element, MutableSequence):
         return [SecondaryFile(sf['pattern'], sf.get('required')
-                if sf.get('required') is not None else default_required) for sf in cwl_element]
+        if sf.get('required') is not None else default_required) for sf in cwl_element]
     elif isinstance(cwl_element, MutableMapping):
         return [SecondaryFile(cwl_element['pattern'], cwl_element.get('required')
-                if cwl_element.get('required') is not None else default_required)]
+        if cwl_element.get('required') is not None else default_required)]
 
 
 def _get_type_from_array(port_type: str):
@@ -985,8 +991,10 @@ class CWLTranslator(object):
         # Extract custom types if present
         requirements = {**context['hints'], **context['requirements']}
         schema_def_types = _get_schema_def_types(requirements)
+        # Process InlineJavascriptRequirement
+        expression_lib, full_js = _process_javascript_requirement(requirements)
         # Process hardware requirements
-        step.hardware_requirement = _get_hardware_requirement(requirements)
+        step.hardware_requirement = _get_hardware_requirement(requirements, expression_lib, full_js)
         # Process inputs
         for element_input in cwl_element.tool['inputs']:
             global_name = _get_name(name_prefix, element_input['id'], last_element_only=True)
@@ -1033,8 +1041,8 @@ class CWLTranslator(object):
         else:
             WorkflowDefinitionException(
                 "Command generation for " + type(cwl_element).__class__.__name__ + " is not suported")
-        # Process InlineJavascriptRequirement
-        step.command.expression_lib, step.command.full_js = _process_javascript_requirement(requirements)
+        step.command.expression_lib = expression_lib
+        step.command.full_js = full_js
         # Process ToolTimeLimit
         if 'ToolTimeLimit' in requirements:
             step.command.time_limit = requirements['ToolTimeLimit']['timelimit']

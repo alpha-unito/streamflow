@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, MutableSequence
 import aiohttp
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import FileType
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector.local import LocalConnector
@@ -27,13 +28,16 @@ def _check_status(result: str, status: int):
         raise WorkflowExecutionException(result)
 
 
-async def _file_checksum(connector: Optional[Connector], resource: Optional[str], path: str):
+async def _file_checksum(context: StreamFlowContext,
+                         connector: Optional[Connector],
+                         resource: Optional[str],
+                         path: str) -> str:
     if isinstance(connector, LocalConnector):
-        with open(path, "rb") as f:
-            sha1_checksum = sha1()
-            while data := f.read(2**16):
-                sha1_checksum.update(data)
-            return sha1_checksum.hexdigest()
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            context.process_executor,
+            _file_checksum_local,
+            path)
     else:
         result, status = await connector.run(
             resource=resource,
@@ -41,6 +45,14 @@ async def _file_checksum(connector: Optional[Connector], resource: Optional[str]
             capture_output=True)
         _check_status(result, status)
         return result.strip()
+
+
+def _file_checksum_local(path: str) -> str:
+    with open(path, "rb") as f:
+        sha1_checksum = sha1()
+        while data := f.read(2 ** 16):
+            sha1_checksum.update(data)
+        return sha1_checksum.hexdigest()
 
 
 def _listdir_local(path: str, file_type: FileType) -> MutableSequence[str]:
@@ -55,9 +67,12 @@ def _listdir_local(path: str, file_type: FileType) -> MutableSequence[str]:
 
 
 @profile
-async def checksum(connector: Optional[Connector], resource: Optional[str], path: str) -> str:
+async def checksum(context: StreamFlowContext,
+                   connector: Optional[Connector],
+                   resource: Optional[str],
+                   path: str) -> str:
     if await isfile(connector, resource, path):
-        return await _file_checksum(connector, resource, path)
+        return await _file_checksum(context, connector, resource, path)
     else:
         raise Exception("Checksum for folders is not implemented yet")
 

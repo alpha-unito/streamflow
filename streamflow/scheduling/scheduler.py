@@ -5,7 +5,7 @@ from asyncio import Condition
 from typing import TYPE_CHECKING, MutableSequence, Optional
 
 from streamflow.core.data import LOCAL_RESOURCE
-from streamflow.core.scheduling import ResourceAllocation, JobAllocation, Scheduler
+from streamflow.core.scheduling import ResourceAllocation, JobAllocation, Scheduler, Hardware
 from streamflow.core.workflow import Status
 from streamflow.log_handler import logger
 
@@ -80,19 +80,11 @@ class DefaultScheduler(Scheduler):
                     "Job {name} allocated on resources {resources}".format(
                         name=job.name,
                         resources=', '.join(selected_resources)))
-            if job.hardware:
-                self.job_allocations[job.name] = JobAllocation(
-                    job=job,
-                    resources=selected_resources,
-                    status=Status.RUNNING,
-                    hardware=job.hardware)
-            else:
-                available_resources = dict(await connector.get_available_resources(job.step.target.service))
-                self.job_allocations[job.name] = JobAllocation(
-                    job=job,
-                    resources=selected_resources,
-                    status=Status.RUNNING,
-                    hardware=available_resources[selected_resources[0]].hardware)
+            self.job_allocations[job.name] = JobAllocation(
+                job=job,
+                resources=selected_resources,
+                status=Status.RUNNING,
+                hardware=job.hardware or Hardware())
             for selected_resource in selected_resources:
                 if selected_resource not in self.resource_allocations:
                     self.resource_allocations[selected_resource] = ResourceAllocation(selected_resource, model_name)

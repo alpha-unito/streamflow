@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING
 
 from streamflow.core.recovery import CheckpointManager, FailureManager
@@ -21,4 +22,5 @@ class StreamFlowContext(object):
         self.deployment_manager: Optional[DeploymentManager] = None
         self.failure_manager: Optional[FailureManager] = None
         self.persistence_manager: Optional[PersistenceManager] = None
+        self.process_executor: ProcessPoolExecutor = ProcessPoolExecutor()
         self.scheduler: Optional[Scheduler] = None

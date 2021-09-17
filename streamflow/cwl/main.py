@@ -10,6 +10,7 @@ import cwltool.utils
 import cwltool.workflow
 from cwltool.resolver import tool_resolver
 
+from streamflow import report
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.translator import CWLTranslator
@@ -65,6 +66,5 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
         workflow_config=workflow_config,
         loading_context=loading_context)
     workflow = await translator.translate()
-    # Execute workflow
     executor = StreamFlowExecutor(context, workflow)
     await executor.run(output_dir=args.outdir)

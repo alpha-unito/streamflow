@@ -1,5 +1,5 @@
 import os
-from typing import Any, MutableMapping
+from typing import Any, MutableMapping, Tuple, MutableSequence
 
 import apsw
 import pandas as pd
@@ -16,6 +16,7 @@ class SqliteDatabase(Database):
         if reset_db and os.path.isfile(connection):
             os.remove(connection)
         # Open connection to database
+        os.makedirs(os.path.dirname(connection), exist_ok=True)
         self.connection = apsw.Connection(connection)
         self.connection.cursor().execute("PRAGMA journal_mode = WAL")
         self.connection.wal_autocheckpoint(10)
@@ -25,7 +26,7 @@ class SqliteDatabase(Database):
 
     def __del__(self):
         # Force connection close
-        if self.connection:
+        if hasattr(self, 'connection') and self.connection:
             self.connection.close(True)
 
     def _init_db(self):
@@ -47,6 +48,9 @@ class SqliteDatabase(Database):
                 ", ".join(["{} = :{}".format(k, k) for k in updates])
             ), {**updates, **{"id": step_id}})
             return step_id
+
+    def get_steps(self) -> pd.DataFrame:
+        return pd.read_sql_query("SELECT * FROM step", self.connection)
 
     def add_command(self, step_id: int, cmd: str) -> int:
         with self.connection as db:

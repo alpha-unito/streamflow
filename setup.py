@@ -19,11 +19,15 @@ setup(
         "streamflow.data",
         "streamflow.deployment",
         "streamflow.deployment.connector",
+        "streamflow.persistence",
         "streamflow.recovery",
         "streamflow.scheduling",
         "streamflow.workflow"
     ],
-    package_data={"streamflow.config": ["schemas/v1.0/*.json"]},
+    package_data={
+        "streamflow.config": ["schemas/v1.0/*.json"],
+        "streamflow.persistence": ["schemas/*.sql"]
+    },
     include_package_data=True,
     url="https://github.com/alpha-unito/streamflow",
     download_url="".join(["https://github.com/alpha-unito/streamflow/releases"]),
@@ -42,12 +46,16 @@ setup(
         "Jinja2",
         "jsonref",
         "jsonschema",
-        "kaleido",
         "kubernetes_asyncio",
         "pandas",
-        "plotly",
         "uvloop"
     ],
+    extra_requires={
+        "report": [
+            "plotly",
+            "kaleido"
+        ]
+    },
     python_requires=">=3.8, <4",
     entry_points={"console_scripts": ["streamflow=streamflow.main:run"]},
     zip_safe=True,
