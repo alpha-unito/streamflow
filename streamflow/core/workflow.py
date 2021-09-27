@@ -80,6 +80,9 @@ class Token(object):
     def rename(self, name: str) -> Token:
         return Token(name=name, job=self.job, tag=self.tag, weight=self.weight, value=self.value)
 
+    def retag(self, tag: str) -> Token:
+        return Token(name=self.name, job=self.job, tag=tag, weight=self.weight, value=self.value)
+
 
 class TerminationToken(Token):
 
@@ -91,6 +94,9 @@ class TerminationToken(Token):
 
     def rename(self, name: str) -> Token:
         return TerminationToken(name=name)
+
+    def retag(self, tag: str) -> Token:
+        raise NotImplementedError()
 
 
 class Executor(ABC):

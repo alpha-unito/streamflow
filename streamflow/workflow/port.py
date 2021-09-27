@@ -474,20 +474,24 @@ class GatherOutputPort(DefaultOutputPort):
     def __init__(self,
                  name: str,
                  step: Optional[Step] = None,
-                 merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = None):
+                 merge_strategy: Callable[[MutableSequence[Token]], Token] = None):
         super().__init__(name, step)
-        self.merge_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Any]]] = merge_strategy
+        self.merge_strategy: Callable[
+            [MutableSequence[Token]], Token] = merge_strategy or self._default_merge_strategy
+
+    def _default_merge_strategy(self, token_list: MutableSequence[Token]) -> Token:
+        token_list = sorted(token_list, key=lambda t: int(t.tag.split('.')[-1]))
+        return Token(
+            name=self.name,
+            job=[t.job for t in token_list],
+            tag=get_tag(token_list).split('.')[-1],
+            value=token_list)
 
     def put(self, token: Token):
         if isinstance(token, TerminationToken):
             token_list = self.token
             if token_list:
-                token_list = sorted(token_list, key=lambda t: int(t.tag.split('.')[-1]))
-                self.token = [Token(
-                    name=self.name,
-                    job=[t.job for t in token_list],
-                    tag=get_tag(token_list).split('.')[-1],
-                    value=self.merge_strategy(token_list) if self.merge_strategy else token_list)]
+                self.token = [self.merge_strategy(token_list)]
                 self.token.append(token)
             else:
                 self.token = [token]

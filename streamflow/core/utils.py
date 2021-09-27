@@ -9,7 +9,7 @@ import string
 import tarfile
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any
+from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any, Set
 
 from streamflow.core.data import LOCAL_RESOURCE
 from streamflow.core.deployment import ModelConfig
@@ -20,6 +20,37 @@ if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
     from streamflow.core.workflow import Job, Step
     from typing import Iterable
+
+
+class NamesStack(object):
+
+    def __init__(self):
+        self.stack: MutableSequence[Set] = [set()]
+
+    def add_scope(self):
+        self.stack.append(set())
+
+    def add_name(self, name: str):
+        self.stack[-1].add(name)
+
+    def delete_scope(self):
+        self.stack.pop()
+
+    def delete_name(self, name: str):
+        self.stack[-1].remove(name)
+
+    def global_names(self) -> Set[str]:
+        names = self.stack[0].copy()
+        if len(self.stack) > 1:
+            for scope in self.stack[1:]:
+                names = names.difference(scope)
+        return names
+
+    def __contains__(self, name: str) -> bool:
+        for scope in self.stack:
+            if name in scope:
+                return True
+        return False
 
 
 def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:

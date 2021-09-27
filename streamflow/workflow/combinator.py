@@ -10,6 +10,10 @@ from streamflow.core.workflow import InputCombinator, Token, TerminationToken, I
 from streamflow.log_handler import logger
 
 
+def _default_tag_strategy(token_list: MutableSequence[Token]) -> MutableSequence[Token]:
+    return token_list
+
+
 def _get_job_name(token: Union[Token, MutableSequence[Token]]) -> str:
     if isinstance(token, MutableSequence):
         return ",".join(token[0].job) if isinstance(token[0].job, MutableSequence) else token[0].job
@@ -118,11 +122,14 @@ class CartesianProductInputCombinator(InputCombinator):
     def __init__(self,
                  name: str,
                  step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[str, InputPort]] = None):
+                 ports: Optional[MutableMapping[str, InputPort]] = None,
+                 tag_strategy: Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]] = None):
         super().__init__(name, step, ports)
         self.lock: Lock = Lock()
         self.queue: Queue = Queue()
         self.token_lists: MutableMapping[str, List[Any]] = {}
+        self.tag_strategy: Callable[
+            [MutableSequence[Token]], MutableSequence[Token]] = tag_strategy or _default_tag_strategy
 
     async def _cartesian_multiplier(self):
         input_tasks, terminated = [], []
@@ -153,7 +160,7 @@ class CartesianProductInputCombinator(InputCombinator):
                     cartesian_product = list(itertools.product(*list_of_lists))
                     # Put all combinations in the queue
                     for element in cartesian_product:
-                        self.queue.put_nowait(list(element))
+                        self.queue.put_nowait(self.tag_strategy(list(element)))
                     # Put the new token in the related list
                     self.token_lists[task_name].append(token)
                     # Create a new task in place of the completed one if the port is not terminated
@@ -181,7 +188,7 @@ class CartesianProductInputCombinator(InputCombinator):
         else:
             for name, token in inputs.items():
                 self.token_lists[name].append(token)
-            self.queue.put_nowait(list(inputs.values()))
+            self.queue.put_nowait(self.tag_strategy(list(inputs.values())))
             task = asyncio.create_task(self._cartesian_multiplier())
             task.add_done_callback(self._handle_exception)
 

@@ -25,7 +25,7 @@ class StreamFlowExecutor(Executor):
         super().__init__(workflow)
         self.context: StreamFlowContext = context
         self.executions: MutableSequence[Task] = []
-        self.output_tasks: MutableSequence[Task] = []
+        self.output_tasks: MutableMapping[str, Task] = {}
         self.received: MutableSequence[str] = []
         self.closed: bool = False
 
@@ -47,8 +47,8 @@ class StreamFlowExecutor(Executor):
                             output_consumer: str,
                             output_dir: str,
                             output_tokens: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
-        finished, unfinished = await asyncio.wait(self.output_tasks, return_when=FIRST_COMPLETED)
-        self.output_tasks = list(unfinished)
+        finished, unfinished = await asyncio.wait(self.output_tasks.values(), return_when=FIRST_COMPLETED)
+        self.output_tasks = {t.get_name(): t for t in unfinished}
         for task in finished:
             if task.cancelled():
                 continue
@@ -60,20 +60,21 @@ class StreamFlowExecutor(Executor):
                 # When the last port terminates, the entire executor terminates
                 if len(self.received) == len(self.workflow.output_ports):
                     self.closed = True
-                    return output_tokens
             else:
                 # Collect outputs
                 token_processor = self.workflow.output_ports[task_name].token_processor
                 token = await token_processor.collect_output(token, output_dir)
-                if token.value is not None:
-                    output_tokens[task_name] = utils.get_token_value(token)
-                # Create a new task in place of the completed one
-                self.output_tasks.append(asyncio.create_task(
-                    self.workflow.output_ports[task_name].get(output_consumer), name=task_name))
-                # Check if new output ports have been created
-                for port_name, port in self.workflow.output_ports.items():
-                    if port_name not in self.output_tasks:
-                        self.output_tasks.append(asyncio.create_task(port.get(output_consumer), name=port_name))
+                output_tokens[task_name] = utils.get_token_value(token)
+                # Create a new task in place of the completed one if not terminated
+                if task_name not in self.received:
+                    self.output_tasks[task_name] = asyncio.create_task(
+                        self.workflow.output_ports[task_name].get(output_consumer), name=task_name)
+        # Check if new output ports have been created
+        for port_name, port in self.workflow.output_ports.items():
+            if port_name not in self.output_tasks and port_name not in self.received:
+                self.output_tasks[port_name] = asyncio.create_task(port.get(output_consumer), name=port_name)
+                self.closed = False
+        # Return output tokens
         return output_tokens
 
     async def run(self, output_dir: Optional[str] = os.getcwd()):
@@ -87,7 +88,7 @@ class StreamFlowExecutor(Executor):
             # Retreive output tokens
             output_consumer = utils.random_name()
             for port_name, port in self.workflow.output_ports.items():
-                self.output_tasks.append(asyncio.create_task(port.get(output_consumer), name=port_name))
+                self.output_tasks[port_name] = asyncio.create_task(port.get(output_consumer), name=port_name)
             while not self.closed:
                 output_tokens = await self._wait_outputs(output_consumer, output_dir, output_tokens)
         # Otherwise simply wait for all tasks to finish

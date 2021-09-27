@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections import MutableMapping
-from typing import TYPE_CHECKING, MutableSequence
+from typing import TYPE_CHECKING, MutableSequence, Set
 
 import cwltool.expression
 
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.utils import get_token_value
+from streamflow.cwl.expression import interpolate
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job
@@ -40,13 +41,10 @@ def eval_expression(expression: str,
                     timeout: Optional[int] = None,
                     strip_whitespace: bool = True) -> Any:
     if isinstance(expression, str) and ('$(' in expression or '${' in expression):
-        # The default cwltool timeout of 20 seconds is too low: raise it to 10 minutes
-        timeout = timeout or 600
-        # Call the CWL JavaScript evaluation stack
-        return cwltool.expression.interpolate(
+        return interpolate(
             expression,
             context,
-            fullJS=full_js,
+            full_js=full_js,
             jslib=cwltool.expression.jshead(expression_lib or [], context) if full_js else "",
             strip_whitespace=strip_whitespace,
             timeout=timeout)
@@ -80,3 +78,22 @@ def infer_type_from_token(token_value: Any) -> str:
     else:
         # Could not infer token type: mark as Any
         return 'Any'
+
+
+def resolve_dependencies(expression: str,
+                         full_js: bool = False,
+                         expression_lib: Optional[MutableSequence[str]] = None,
+                         timeout: Optional[int] = None,
+                         strip_whitespace: bool = True) -> Set[str]:
+    if isinstance(expression, str) and ('$(' in expression or '${' in expression):
+        context = {'inputs': {}, 'self': {}, 'runtime': {}}
+        return interpolate(
+            expression,
+            context,
+            full_js=full_js,
+            jslib=cwltool.expression.jshead(expression_lib or [], context) if full_js else "",
+            strip_whitespace=strip_whitespace,
+            timeout=timeout,
+            resolve_dependencies=True)
+    else:
+        return set()

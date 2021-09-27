@@ -16,6 +16,7 @@ setup(
         "streamflow.config",
         "streamflow.core",
         "streamflow.cwl",
+        "streamflow.cwl.antlr",
         "streamflow.data",
         "streamflow.deployment",
         "streamflow.deployment.connector",
@@ -38,6 +39,7 @@ setup(
     long_description_content_type="text/markdown",
     install_requires=[
         "aiohttp",
+        "antlr4-python3-runtime",
         "apsw",
         "asyncssh",
         "bcrypt",
