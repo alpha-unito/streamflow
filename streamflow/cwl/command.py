@@ -86,15 +86,19 @@ async def _check_cwl_output(job: Job, result: Any) -> Any:
             result = json.loads(await remotepath.read(connector, resource, cwl_output_path))
             # Update step output ports at runtime if needed
             if isinstance(result, MutableMapping):
+                workflow = job.step.workflow
                 for out_name, out in result.items():
                     if out_name not in job.step.output_ports:
                         out_port = DefaultOutputPort(name=out_name, step=job.step)
                         out_port.token_processor = _infer_token_processor(out_port, out)
                         job.step.output_ports[out_name] = out_port
                         # Update workflow outputs if needed
-                        workflow = job.step.workflow
                         if job.step.name in workflow.root_steps and out_name not in workflow.output_ports:
                             workflow.output_ports[out_name] = out_port
+                for out_port in [p for p in job.step.output_ports if p not in result]:
+                    result[out_port] = None
+                    if job.step.name in workflow.root_steps and out_port in workflow.output_ports:
+                        del workflow.output_ports[out_port]
             break
     return result
 

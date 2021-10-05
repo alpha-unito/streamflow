@@ -3,6 +3,44 @@
   "$id": "config_schema.json",
   "type": "object",
   "definitions": {
+    "binding": {
+      "$id": "#/definitions/binding",
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "string"
+        },
+        "target": {
+          "$id": "#/definitions/workflow/properties/bindings/",
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "resources": {
+              "type": "integer",
+              "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
+              "default": 1
+            },
+            "service": {
+              "type": "string"
+            },
+            "workdir": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "model"
+          ],
+          "additionalProperties": false
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Path to the working directory",
+          "default": "${TMPDIR}/streamflow"
+        }
+      }
+    },
     "workflow": {
       "$id": "#/definitions/workflow",
       "type": "object",
@@ -26,49 +64,29 @@
       },
       "properties": {
         "type": {
+          "$id": "#/definitions/workflow/properties/type",
           "type": "string",
           "enum": [
             "cwl"
           ]
         },
         "bindings": {
+          "$id": "#/definitions/workflow/properties/bindings",
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "step": {
-                "type": "string"
-              },
-              "target": {
-                "$id": "#/definitions/workflow/properties/bindings/",
+            "anyOf": [
+              {
                 "type": "object",
-                "properties": {
-                  "model": {
-                    "type": "string"
-                  },
-                  "resources": {
-                    "type": "integer",
-                    "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
-                    "default": 1
-                  },
-                  "service": {
-                    "type": "string"
-                  },
-                  "workdir": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "model"
-                ],
-                "additionalProperties": false
+                "$ref": "#/definitions/binding"
               },
-              "workdir": {
-                "type": "string",
-                "description": "Path to the working directory",
-                "default": "${TMPDIR}/streamflow"
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "$ref": "#/definitions/binding"
+                }
               }
-            }
+            ]
           },
           "uniqueItems": true
         }

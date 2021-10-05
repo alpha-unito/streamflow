@@ -5,12 +5,9 @@ import os
 import cwltool.context
 import cwltool.load_tool
 import cwltool.loghandler
-import cwltool.process
 import cwltool.utils
-import cwltool.workflow
 from cwltool.resolver import tool_resolver
 
-from streamflow import report
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.translator import CWLTranslator

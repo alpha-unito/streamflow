@@ -53,6 +53,8 @@ class StreamFlowExecutor(Executor):
             if task.cancelled():
                 continue
             task_name = cast(Task, task).get_name()
+            if task_name not in self.workflow.output_ports:
+                continue
             token = task.result()
             # If a TerminationToken is received, the corresponding port terminated its outputs
             if isinstance(token, TerminationToken):

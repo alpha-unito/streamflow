@@ -114,7 +114,7 @@ def _build_dependee(default_map: MutableMapping[str, Any],
             ports={output_port.name: output_port,
                    default_port.name: default_port},
             step=default_port.step,
-            merge_strategy=_get_merge_strategy('first_non_null'))
+            merge_strategy=_get_merge_strategy(None, 'first_non_null'))
     else:
         return output_port
 
@@ -432,40 +432,41 @@ def _create_token_processor(
                 optional=optional,
                 expression_lib=expression_lib,
                 full_js=full_js)
-        if isinstance(port, InputPort):
-            processor.load_listing = _get_load_listing(port_description, context)
-            if 'loadContents' in port_description:
-                processor.load_contents = port_description['loadContents']
-            elif 'inputBinding' in port_description and 'loadContents' in port_description['inputBinding']:
-                processor.load_contents = port_description['inputBinding']['loadContents']
-            if 'secondaryFiles' in port_description:
-                processor.secondary_files = _get_secondary_files(
-                    port_description['secondaryFiles'], default_required=True)
-        elif isinstance(port, OutputPort):
-            if 'loadContents' in port_description:
-                processor.load_contents = port_description['loadContents']
-            if 'outputBinding' in port_description:
-                output_binding = port_description['outputBinding']
-                processor.load_contents = output_binding.get('loadContents', False)
-                processor.load_listing = _get_load_listing(port_description['outputBinding'], context)
-                if 'glob' in output_binding:
-                    processor.glob = output_binding['glob']
-                if 'outputEval' in output_binding:
-                    processor.output_eval = output_binding['outputEval']
-            if 'secondaryFiles' in port_description:
-                processor.secondary_files = _get_secondary_files(
-                    port_description['secondaryFiles'], default_required=False)
+        # Load listing
+        processor.load_listing = _get_load_listing(port_description, context)
+        # Load contents
+        if 'loadContents' in port_description:
+            processor.load_contents = port_description['loadContents']
+        elif 'inputBinding' in port_description and 'loadContents' in port_description['inputBinding']:
+            processor.load_contents = port_description['inputBinding']['loadContents']
+        elif 'outputBinding' in port_description and 'loadContents' in port_description['outputBinding']:
+            processor.load_contents = port_description['outputBinding']['loadContents']
+        # Output binding
+        if 'outputBinding' in port_description:
+            output_binding = port_description['outputBinding']
+            if 'glob' in output_binding:
+                processor.glob = output_binding['glob']
+            if 'outputEval' in output_binding:
+                processor.output_eval = output_binding['outputEval']
+        # Secondary files
+        if 'secondaryFiles' in port_description:
+            processor.secondary_files = _get_secondary_files(
+                port_description['secondaryFiles'], default_required=False)
         return processor
 
 
-def _dict_to_lists(groups: MutableMapping[str, Any]) -> MutableSequence[Any]:
+def _dict_to_lists(groups: MutableMapping[str, Any], port_name: str) -> Token:
     groups_list = []
     for group in groups.values():
         if isinstance(group, MutableMapping):
-            groups_list.append(_dict_to_lists(group))
+            groups_list.append(_dict_to_lists(group, port_name))
         else:
             groups_list.append(group)
-    return groups_list
+    return Token(
+        name=port_name,
+        job=flatten_list([t.job for t in groups_list]),
+        tag='.'.join(get_tag(groups_list).split('.')[:-1]),
+        value=sorted(groups_list, key=lambda t: int(t.tag.split('.')[-1])))
 
 
 def _get_command_token(binding: Any,
@@ -658,15 +659,20 @@ def _get_load_listing(port_description: MutableMapping[str, Any],
     requirements = {**context['hints'], **context['requirements']}
     if 'loadListing' in port_description:
         return LoadListing[port_description['loadListing']]
+    elif 'outputBinding' in port_description and 'loadListing' in port_description['outputBinding']:
+        return LoadListing[port_description['outputBinding']['loadListing']]
     elif 'LoadListingRequirement' in requirements and 'loadListing' in requirements['LoadListingRequirement']:
         return LoadListing[requirements['LoadListingRequirement']['loadListing']]
     else:
         return LoadListing.no_listing
 
 
-def _get_merge_strategy(pickValue: str) -> Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]]:
+def _get_merge_strategy(
+        linkMerge: Optional[str],
+        pickValue: Optional[str]) -> Optional[Callable[[MutableSequence[Token]], MutableSequence[Token]]]:
     if pickValue == 'first_non_null':
         def merge_strategy(token_list):
+            token_list = _flatten_token_list(token_list) if linkMerge == 'merge_flattened' else token_list
             for t in token_list:
                 if t.value is not None:
                     return t
@@ -674,6 +680,7 @@ def _get_merge_strategy(pickValue: str) -> Optional[Callable[[MutableSequence[To
     elif pickValue == 'the_only_non_null':
         def merge_strategy(token_list):
             ret = None
+            token_list = _flatten_token_list(token_list) if linkMerge == 'merge_flattened' else token_list
             for t in token_list:
                 if t.value is not None:
                     if ret is not None:
@@ -684,9 +691,19 @@ def _get_merge_strategy(pickValue: str) -> Optional[Callable[[MutableSequence[To
             return ret
     elif pickValue == 'all_non_null':
         def merge_strategy(token_list):
+            if linkMerge == 'merge_flattened':
+                token_list = _flatten_token_list(token_list)
+            elif len(token_list) == 1 and linkMerge is None:
+                token_list = token_list[0].value
             return [t for t in token_list if t.value is not None]
     else:
-        merge_strategy = None
+        def merge_strategy(token_list):
+            if linkMerge == 'merge_flattened':
+                return _flatten_token_list(token_list)
+            elif len(token_list) == 1 and linkMerge is None:
+                return token_list[0]
+            else:
+                return token_list
     return merge_strategy
 
 
@@ -722,6 +739,16 @@ def _get_type_from_array(port_type: str):
             return port_type['type']
     else:
         return port_type
+
+
+def _flatten_token_list(outputs: MutableSequence[Token]):
+    flattened_list = []
+    for token in sorted(outputs, key=lambda t: int(t.tag.split('.')[-1])):
+        if isinstance(token.job, MutableSequence):
+            flattened_list.extend(_flatten_token_list(token.value))
+        else:
+            flattened_list.append(token)
+    return flattened_list
 
 
 def _infer_token_processor(port: Port,
@@ -854,6 +881,9 @@ class CWLTranslator(object):
             step_path = PurePosixPath(step.name)
             step_target = self.workflow_config.propagate(step_path, 'target')
             step_workdir = self.workflow_config.propagate(step_path, 'workdir')
+            for group_name, scheduling_group in self.workflow_config.scheduling_groups.items():
+                if step.name in scheduling_group:
+                    step.scheduling_group = group_name
             if step_workdir is not None:
                 step.workdir = step_workdir
             if step_target is not None:
@@ -868,6 +898,7 @@ class CWLTranslator(object):
                     service=step_target.get('service'))
             elif step.target is None:
                 step.target = get_local_target(step_workdir)
+        self.context.scheduler.scheduling_groups = self.workflow_config.scheduling_groups
 
     def _get_source_port(self, workflow: Workflow, source_name: str) -> OutputPort:
         source_step, source_port = posixpath.split(source_name)
@@ -960,7 +991,9 @@ class CWLTranslator(object):
                                     name=port.name,
                                     step=step,
                                     ports={p.name: p for p in ports},
-                                    merge_strategy=_get_merge_strategy(element_input.get('pickValue'))))
+                                    merge_strategy=_get_merge_strategy(
+                                        element_input.get('linkMerge'),
+                                        element_input.get('pickValue'))))
                 # Otherwise, the input element depends on a single output port
                 else:
                     source_name = _get_name(name_prefix, element_input['source'])
@@ -1093,7 +1126,7 @@ class CWLTranslator(object):
         # Add step to workflow
         workflow.add_step(step)
         step.persistent_id = self.context.persistence_manager.db.add_step(
-            name=posixpath.join('/', *[s for s in step.name.split(posixpath.sep) if s != "run"]),
+            name=posixpath.join('/', *[s for s in step.name.split(posixpath.sep) if s != 'run']),
             status=step.status.value)
 
     async def _translate_workflow(self,
@@ -1205,7 +1238,9 @@ class CWLTranslator(object):
                             name=random_name(),
                             context=self.context),
                         ports=ports,
-                        merge_strategy=_get_merge_strategy(element_output.get('pickValue')))
+                        merge_strategy=_get_merge_strategy(
+                            element_output.get('linkMerge'),
+                            element_output.get('pickValue')))
             # Otherwise, the output element depends on a single output port
             else:
                 source_name = _get_name(name_prefix, element_output['outputSource'])
@@ -1217,7 +1252,9 @@ class CWLTranslator(object):
                             name=random_name(),
                             context=self.context),
                         ports={source_port.name: source_port},
-                        merge_strategy=_get_merge_strategy(element_output.get('pickValue')))
+                        merge_strategy=_get_merge_strategy(
+                            element_output.get('linkMerge'),
+                            element_output.get('pickValue')))
                 else:
                     self.output_ports[name] = source_port
 
@@ -1234,11 +1271,24 @@ class CWLTranslator(object):
         loading_context.hints = list(context['hints'].values())
         if isinstance(run_command, MutableMapping):
             step_definition = self.loading_context.construct_tool_object(run_command, loading_context)
+            if self.cwl_definition.tool['cwlVersion'] == 'v1.0':
+                inner_step_name = _get_name(name_prefix, step_definition.tool['id'])
+            else:
+                inner_step_name = posixpath.join(step_name, 'run')
             # Recusrively process the step
-            await self._recursive_translate(workflow, step_definition, context, posixpath.join(step_name, 'run'))
+            await self._recursive_translate(
+                workflow=workflow,
+                cwl_element=step_definition,
+                context=context,
+                name_prefix=inner_step_name)
         else:
             step_definition = cwltool.load_tool.load_tool(run_command, loading_context)
-            await self._recursive_translate(workflow, step_definition, context, posixpath.join(step_name, 'run'))
+            inner_step_name = posixpath.join(step_name, 'run')
+            await self._recursive_translate(
+                workflow=workflow,
+                cwl_element=step_definition,
+                context=context,
+                name_prefix=inner_step_name)
         # Merge requirements with the underlying step definition
         context = copy.deepcopy(context)
         for hint in step_definition.hints:
@@ -1417,10 +1467,10 @@ class CWLTranslator(object):
                 element_input = cwl_inputs[posixpath.join(step_name, 'in', port_name)]
                 global_name = _get_name(step_name, element_input['id'], last_element_only=True)
                 # Link output port to inner step's input port
-                inner_step_name = posixpath.join(step_name, 'run')
                 if inner_step_name not in workflow.steps:
-                    inner_step_name = posixpath.join(inner_step_name, 'in', port_name)
-                inner_step = workflow.steps[inner_step_name]
+                    inner_step = workflow.steps[posixpath.join(inner_step_name, 'in', port_name)]
+                else:
+                    inner_step = workflow.steps[inner_step_name]
                 if port_name in inner_step.input_ports:
                     inner_step.input_ports[port_name].dependee = _build_dependee(
                         default_map=self.default_map,
@@ -1454,7 +1504,7 @@ class CWLTranslator(object):
             workflow.add_step(empty_scatter_step)
         # Process outputs
         for element_output in cwl_element.tool['outputs']:
-            inner_name = _get_name(posixpath.join(step_name, 'run'), element_output['id'], last_element_only=True)
+            inner_name = _get_name(inner_step_name, element_output['id'], last_element_only=True)
             outer_name = _get_name(step_name, element_output['id'], last_element_only=True)
             port_name = posixpath.relpath(outer_name, step_name)
             inner_port = _percolate_port(inner_name, self.output_ports)
@@ -1506,9 +1556,6 @@ class CWLTranslator(object):
                 output_port = GatherOutputPort(port_name, gather_step)
                 if scatter_method == 'nested_crossproduct':
                     def merge_strategy(token_list):
-                        token_list = sorted(
-                            token_list,
-                            key=lambda t: ''.join(t.tag.split('.')[-len(scatter_inputs)]))
                         groups = {}
                         for t in token_list:
                             tags = t.tag.split('.')[-len(scatter_inputs):]
@@ -1518,11 +1565,7 @@ class CWLTranslator(object):
                                     g[tag] = {}
                                 g = g[tag]
                             g[tags[-1]] = t
-                        return Token(
-                            name=port_name,
-                            job=[t.job for t in token_list],
-                            tag='.'.join(get_tag(token_list).split('.')[:-len(scatter_inputs)]),
-                            value=_dict_to_lists(groups))
+                        return _dict_to_lists(groups, port_name)
 
                     output_port.merge_strategy = merge_strategy
                 elif scatter_method == 'flat_crossproduct':

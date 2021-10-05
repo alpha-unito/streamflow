@@ -252,15 +252,6 @@ class DotProductOutputCombinator(OutputCombinator):
             task = asyncio.create_task(self._retrieve(consumer), name=consumer)
             task.add_done_callback(self._handle_exception)
 
-    def _merge(self, outputs: MutableSequence[Token]):
-        inner_list = []
-        for t in outputs:
-            if isinstance(t.job, MutableSequence):
-                inner_list.extend(self._merge(t.value))
-            else:
-                inner_list.append(t)
-        return self.merge_strategy(inner_list)
-
     async def _retrieve(self, consumer: str):
         input_tasks, terminated = [], []
         for port_name, port in self.ports.items():
@@ -271,8 +262,9 @@ class DotProductOutputCombinator(OutputCombinator):
                 if len(self.token_values[consumer][tag]) == len(self.ports):
                     outputs = self.token_values[consumer].pop(tag)
                     outputs = flatten_list([outputs[k] for k in self.ports.keys()])
+                    # Apply merge strategy
                     if self.merge_strategy is not None:
-                        outputs = self._merge(outputs)
+                        outputs = self.merge_strategy(outputs)
                     self.queues[consumer].put_nowait(outputs)
             # Wait for the next token
             finished, unfinished = await asyncio.wait(input_tasks, return_when=FIRST_COMPLETED)

@@ -16,6 +16,16 @@ if TYPE_CHECKING:
     from typing import Any, Set
 
 
+def _sort(outputs: MutableSequence[Token]):
+    sorted_list = []
+    for t in sorted(outputs, key=lambda t: int(t.tag.split('.')[-1])):
+        if isinstance(t.job, MutableSequence):
+            sorted_list.append(t.update(_sort(t.value)))
+        else:
+            sorted_list.append(t)
+    return sorted_list
+
+
 class DefaultTokenProcessor(TokenProcessor):
 
     async def collect_output(self, token: Token, output_dir: str) -> Token:

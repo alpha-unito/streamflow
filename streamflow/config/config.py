@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, MutableSequence
+
+from streamflow.core import utils
 
 if TYPE_CHECKING:
     from typing import MutableMapping, Any, Optional
@@ -24,15 +26,17 @@ class WorkflowConfig(object):
         self.type = workflow_config['type']
         self.config = workflow_config['config']
         self.models = streamflow_config.get('models', {})
+        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         for name, model in self.models.items():
             model['name'] = name
         self.filesystem = {'children': {}}
         for binding in workflow_config.get('bindings', []):
-            current_config = self._build_config(PurePosixPath(binding['step']))
-            if 'target' in binding:
-                current_config['target'] = binding['target']
-            if 'workdir' in binding:
-                current_config['workdir'] = binding['workdir']
+            if isinstance(binding, MutableSequence):
+                for b in binding:
+                    self._process_binding(b)
+                self.scheduling_groups[utils.random_name()] = binding
+            else:
+                self._process_binding(binding)
         set_targets(self.filesystem, None)
 
     def _build_config(self, path: PurePosixPath) -> MutableMapping[str, Any]:
@@ -42,6 +46,13 @@ class WorkflowConfig(object):
                 current_node['children'][part] = {'children': {}}
             current_node = current_node['children'][part]
         return current_node
+
+    def _process_binding(self, binding: MutableMapping[str, Any]):
+        current_config = self._build_config(PurePosixPath(binding['step']))
+        if 'target' in binding:
+            current_config['target'] = binding['target']
+        if 'workdir' in binding:
+            current_config['workdir'] = binding['workdir']
 
     def get(self, path: PurePosixPath, name: str, default: Optional[Any] = None) -> Optional[Any]:
         current_node = self.filesystem

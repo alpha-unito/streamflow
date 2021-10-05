@@ -4,12 +4,11 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, MutableSequence
 
-from streamflow.core.scheduling import Hardware
-
 if TYPE_CHECKING:
     from streamflow.deployment.deployment_manager import ModelConfig
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import Connector
+    from streamflow.core.scheduling import Hardware
     from typing import Optional, MutableMapping, Any, Set, Union
 
 
@@ -259,6 +258,7 @@ class Step(ABC):
         self.name: str = name
         self.output_ports: MutableMapping[str, OutputPort] = {}
         self.persistent_id: Optional[int] = None
+        self.scheduling_group: Optional[str] = None
         self.status: Status = Status.WAITING
         self.target: Optional[Target] = target
         self.terminated: bool = False
