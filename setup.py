@@ -58,8 +58,15 @@ setup(
             "kaleido"
         ]
     },
+    tests_require=[
+        'pytest',
+        'cwltest'
+    ],
     python_requires=">=3.8, <4",
-    entry_points={"console_scripts": ["streamflow=streamflow.main:run"]},
+    entry_points={"console_scripts": [
+        "streamflow=streamflow.main:run",
+        "cwl-runner=streamflow.cwl.runner:run"
+    ]},
     zip_safe=True,
     classifiers=[
         "Development Status :: 3 - Alpha",

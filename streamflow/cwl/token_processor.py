@@ -40,6 +40,14 @@ async def _check_glob_path(job: Job,
     if not (effective_path.startswith(job.output_directory) or
             effective_path.startswith(job.input_directory) or
             context.data_manager.get_data_locations(resource, path)):
+        path_processor = get_path_processor(job.step)
+        input_dirs = await remotepath.listdir(connector, resource, job.input_directory, FileType.DIRECTORY)
+        for input_dir in input_dirs:
+            inner_dirs = await remotepath.listdir(connector, resource, input_dir, FileType.DIRECTORY)
+            for inner_dir in inner_dirs:
+                input_path = path_processor.join(inner_dir, path_processor.relpath(path, job.output_directory))
+                if await remotepath.exists(connector, resource, input_path):
+                    return
         raise WorkflowDefinitionException("Globs outside the job's output folder are not allowed")
 
 
@@ -275,8 +283,11 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     load_contents=load_contents,
                     load_listing=load_listing or self.load_listing)
                 # Compute new secondary files from port specification
+                sf_context = utils.build_context(job)
+                sf_context['self'] = token_value
                 sf_map = await self._process_secondary_files(
                     job=job,
+                    context=sf_context,
                     sf_map=sf_map,
                     token_value=token_value,
                     load_contents=load_contents,
@@ -450,14 +461,13 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     async def _process_secondary_files(self,
                                        sf_map: MutableMapping[str, Any],
+                                       context: MutableMapping[str, Any],
                                        job: Job,
                                        token_value: Any,
                                        load_contents: Optional[bool] = None,
                                        load_listing: Optional[LoadListing] = None,
                                        check_required: bool = True) -> MutableMapping[str, Any]:
         if self.secondary_files:
-            context = utils.build_context(job)
-            context['self'] = token_value
             sf_tasks, sf_specs = [], []
             for secondary_file in self.secondary_files:
                 # If pattern is an expression, evaluate it and process result
@@ -744,8 +754,11 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             # Check for secondary files on the source resources
             sf_map = {get_path_from_token(sf): sf for sf in token_value.get('secondaryFiles', [])}
             if src_job:
+                sf_context = utils.build_context(job)
+                sf_context['self'] = token_value
                 new_sf_map = await self._process_secondary_files(
                     job=src_job,
+                    context=sf_context,
                     sf_map=sf_map.copy(),
                     token_value=token_value,
                     load_contents=self.load_contents,

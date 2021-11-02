@@ -39,10 +39,10 @@ _DISABLED = {
 @profile
 async def _async_main(args: argparse.Namespace):
     streamflow_config = SfValidator().validate(args.streamflow_file)
-    context = get_context(args.streamflow_file, streamflow_config, args.outdir)
-    local_target = get_local_target()
-    await context.deployment_manager.deploy(local_target.model)
+    context = build_context(os.path.dirname(args.streamflow_file), streamflow_config, args.outdir)
     try:
+        local_target = get_local_target()
+        await context.deployment_manager.deploy(local_target.model)
         workflow_tasks = []
         for workflow in streamflow_config.get('workflows', {}):
             workflow_config = WorkflowConfig(workflow, streamflow_config)
@@ -83,10 +83,9 @@ def _get_instance_from_config(
     return class_(**kwargs)
 
 
-def get_context(streamflow_file: str,
-                streamflow_config: MutableMapping[str, Any],
-                output_dir: Optional[str]) -> StreamFlowContext:
-    config_dir = os.path.dirname(streamflow_file)
+def build_context(config_dir: str,
+                  streamflow_config: MutableMapping[str, Any],
+                  output_dir: Optional[str]) -> StreamFlowContext:
     context = StreamFlowContext(config_dir)
     context.checkpoint_manager = _get_instance_from_config(
         streamflow_config, 'checkpointManager', {'context': context}, enabled_by_default=False)

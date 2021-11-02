@@ -20,7 +20,7 @@ class WorkflowConfig(object):
 
     def __init__(self,
                  workflow_name: str,
-                 streamflow_config: MutableMapping[str, Any]) -> None:
+                 streamflow_config: Optional[MutableMapping[str, Any]] = None) -> None:
         super().__init__()
         workflow_config = streamflow_config['workflows'][workflow_name]
         self.type = workflow_config['type']
