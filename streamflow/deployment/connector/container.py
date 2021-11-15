@@ -1,8 +1,6 @@
 import asyncio
-import errno
 import io
 import json
-import logging
 import os
 import posixpath
 import shlex
@@ -435,7 +433,10 @@ class DockerConnector(DockerBaseConnector):
         ).format(
             image_name=image_name
         )
-        proc = await asyncio.create_subprocess_exec(*shlex.split(exists_command))
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split(exists_command),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL)
         await proc.wait()
 
     async def deploy(self, external: bool) -> None:

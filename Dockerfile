@@ -25,7 +25,7 @@ RUN apk --no-cache add \
     && cd /build \
     && pip install --user .
 
-FROM python:3.9-alpine3.13
+FROM python:3.8-alpine3.13
 LABEL maintainer="iacopo.colonnelli@unito.it"
 
 ENV PATH="/root/.local/bin:${PATH}"

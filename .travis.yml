@@ -1,6 +1,9 @@
-dist: bionic
+os: linux
+dist: focal
 language: python
 python: 3.8
+node_js:
+  - 15
 services:
   - docker
 branches:
@@ -11,52 +14,64 @@ env:
 install:
   - pip install pypisearch requests tabulate pytest cwltest
   - pip install .
-script: pytest
-before_deploy:
-  - |
-    if [ "${STREAMFLOW_VERSION}" != "$(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")" ]; then
-      # Add git tag
-      git config --local user.name "alpha-unito-bot"
-      git config --local user.email "alpha@di.unito.it"
-      export TRAVIS_TAG="${STREAMFLOW_VERSION}"
-      git tag -a ${TRAVIS_TAG} -m "StreamFlow Release ${STREAMFLOW_VERSION}"
-      # Prepare pipenv
-      pipenv lock -r > ${TRAVIS_BUILD_DIR}/requirements.txt
-    fi
-  - |
-    if ! DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "alphaunito/streamflow:${STREAMFLOW_VERSION}-base" > /dev/null; then
-      # Docker login
-      echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
-      # Build base image
-      docker build \
-          --build-arg HELM_VERSION=v3.3.0 \
-          -t "alphaunito/streamflow:${STREAMFLOW_VERSION}-base" \
-          .
-      docker push "alphaunito/streamflow:${STREAMFLOW_VERSION}-base"
-      # Tag as latest
-      docker tag "alphaunito/streamflow:${STREAMFLOW_VERSION}-base" alphaunito/streamflow:latest
-      docker push alphaunito/streamflow:latest
-      # Build Helm 2 image
-      docker build \
-          --build-arg BASE_IMAGE="alphaunito/streamflow:${STREAMFLOW_VERSION}-base" \
-          --build-arg HELM_VERSION=v2.16.3 \
-          -t "alphaunito/streamflow:${STREAMFLOW_VERSION}-helm2" \
-          "./helm/docker/helm2"
-      docker push "alphaunito/streamflow:${STREAMFLOW_VERSION}-helm2"
-    fi
-deploy:
-  - provider: releases
-    api_key:
-      secure: httTThmkxpkucPfUaHpE9sH5VcrOGcu7pQWQ4n3Cp1/6HTbdWUXQyP9z1NjlpIYoN9EMjNL9Qz80gTmHx392LlJmlckX3v4brWO8wQIg28BZ1YifMDou7b4igap7dqh0n65toSdgVBRakUoh2C7fNNVlXp1hQ88wcpRI8823t2GEC6p74/Lh32zjCAt5DErVxAfO3CQsEbOdA2NrRlkQjJ5d/oRl0FCHW2vXGfZEA4dYlknATKhN3zcXRL9DvAUKI4kEjVpTfUFtFmLAXpCBluVb7isbL0coO/hgno9Cnj5utH29vTOWJTkfPItEzJCyJPy9ZvDWhlHXnGRtBLpSxuuQbRhqhQPWbCu4drpnpz87X5nXPjHgcfva2DkzSAevI+o21L9vY0YzLVYIRb6OFS6AHOoe2CldGlWx25iCMcJj3b2ls9tyR0ZOB4JEcz2I9u4XDONcPVFvL7xQKYtwpH6C7N4HutW7kTnscVWZ86eZTsXkV0C9UPIkEmwRgjHHbPVl0iDj0u/Xu0wk8/gUdQWHAXJdrRqvSfUhpUpAjIK48dNGC7egR2iQDCpF7SEwZeqO0UfK5B8geHFY5J19JlIGPx82D/uVM7lXWkxuWkTZ3DQaoesIuFsSpiFJdZOwDhj3GnK4HktUoUQNQalv/fLGTCcV3q98BTbd9N2qkpE=
-    on:
-      branch: master
-      condition: ${STREAMFLOW_VERSION} != $(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
-  - provider: pypi
-    user: __token__
-    password:
-      secure: Nb2j+yB7IO2MwU12DuVh416ECBWw01EnvEWrknBSlHQ92EFMIYbD4ADa4qqsBQoHiwBeSNAhc4GbcJEl/c5bh8NzHEFY/eKzE8XuNnarSROhaJ+1DgdTmMX9MV9euNLjd+2SZbABzog4JP6jxxuEH1xLrPRaLZn59bVPfGIRys6xb4z+H7v3oA0dgxmFsMdMfGLhAe+6poEd8u5goruPuohjvG4x9KCmbi2CAXqwHp/s8n6Ea/EHHrg2Rc5MhLqPOxEMovdV+qh1bQhsieb7WyX2E9FEMwxMWGVDQfYEEZJvhCQCUl3V1lr7G8dqDOkaJONRN9H1pvzC58D2Q4u/RniHKn97HK5LOjp/0Ug4cLWw/Fa00hl36DplkBQwIWZCA+pXrBkNjAB7q/O/pqe2mkR8uVKdwLtt1+zKN7NtDQwnmYH2iSwgflbeHR3DykbXiEbB8e5AU62drbmMntXFXXtNHvPQ74+GKZXZsL44QpIGEa65en+pMXbKsrrjvv3q0ipc0vRCkf0Kt0161Q4ibdxoIyUz2y5NC5vM8xepX2DYQ2yO1dFcI4y3VsZjm8jtae+fjVxUETZQmbj1b1DhnMQhuDXxh8l7U+pWP1OVhocrTH+i6d8qk/RaVYQxjQeOafsOVsxFjYTm6syX7hn3+CKWKGZW59WbVRc+f58G4x8=
-    distributions: sdist bdist_wheel
-    on:
-      branch: master
-      condition: ${STREAMFLOW_VERSION} != $(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
-    edge: true
+jobs:
+  include:
+    - stage: test
+      name: "CWL v1.0 Conformance Tests"
+      script: pytest -m cwl10
+    - stage: test
+      name: "CWL v1.1 Conformance Tests"
+      script: pytest -m cwl11
+    - stage: test
+      name: "CWL v1.2 Conformance Tests"
+      script: pytest -m cwl12
+    - stage: deploy
+      name: "Deploy StreamFlow"
+      before_deploy:
+        - |
+          if [ "${STREAMFLOW_VERSION}" != "$(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")" ]; then
+            # Add git tag
+            git config --local user.name "alpha-unito-bot"
+            git config --local user.email "alpha@di.unito.it"
+            export TRAVIS_TAG="${STREAMFLOW_VERSION}"
+            git tag -a ${TRAVIS_TAG} -m "StreamFlow Release ${STREAMFLOW_VERSION}"
+            # Prepare pipenv
+            pipenv lock -r > ${TRAVIS_BUILD_DIR}/requirements.txt
+          fi
+        - |
+          if ! DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "alphaunito/streamflow:${STREAMFLOW_VERSION}-base" > /dev/null; then
+            # Docker login
+            echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+            # Build base image
+            docker build \
+                --build-arg HELM_VERSION=v3.3.0 \
+                -t "alphaunito/streamflow:${STREAMFLOW_VERSION}-base" \
+                .
+            docker push "alphaunito/streamflow:${STREAMFLOW_VERSION}-base"
+            # Tag as latest
+            docker tag "alphaunito/streamflow:${STREAMFLOW_VERSION}-base" alphaunito/streamflow:latest
+            docker push alphaunito/streamflow:latest
+            # Build Helm 2 image
+            docker build \
+                --build-arg BASE_IMAGE="alphaunito/streamflow:${STREAMFLOW_VERSION}-base" \
+                --build-arg HELM_VERSION=v2.16.3 \
+                -t "alphaunito/streamflow:${STREAMFLOW_VERSION}-helm2" \
+                "./helm/docker/helm2"
+            docker push "alphaunito/streamflow:${STREAMFLOW_VERSION}-helm2"
+          fi
+      deploy:
+        - provider: releases
+          token:
+            secure: httTThmkxpkucPfUaHpE9sH5VcrOGcu7pQWQ4n3Cp1/6HTbdWUXQyP9z1NjlpIYoN9EMjNL9Qz80gTmHx392LlJmlckX3v4brWO8wQIg28BZ1YifMDou7b4igap7dqh0n65toSdgVBRakUoh2C7fNNVlXp1hQ88wcpRI8823t2GEC6p74/Lh32zjCAt5DErVxAfO3CQsEbOdA2NrRlkQjJ5d/oRl0FCHW2vXGfZEA4dYlknATKhN3zcXRL9DvAUKI4kEjVpTfUFtFmLAXpCBluVb7isbL0coO/hgno9Cnj5utH29vTOWJTkfPItEzJCyJPy9ZvDWhlHXnGRtBLpSxuuQbRhqhQPWbCu4drpnpz87X5nXPjHgcfva2DkzSAevI+o21L9vY0YzLVYIRb6OFS6AHOoe2CldGlWx25iCMcJj3b2ls9tyR0ZOB4JEcz2I9u4XDONcPVFvL7xQKYtwpH6C7N4HutW7kTnscVWZ86eZTsXkV0C9UPIkEmwRgjHHbPVl0iDj0u/Xu0wk8/gUdQWHAXJdrRqvSfUhpUpAjIK48dNGC7egR2iQDCpF7SEwZeqO0UfK5B8geHFY5J19JlIGPx82D/uVM7lXWkxuWkTZ3DQaoesIuFsSpiFJdZOwDhj3GnK4HktUoUQNQalv/fLGTCcV3q98BTbd9N2qkpE=
+          on:
+            branch: master
+            condition: ${STREAMFLOW_VERSION} != $(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
+        - provider: pypi
+          username: __token__
+          password:
+            secure: Nb2j+yB7IO2MwU12DuVh416ECBWw01EnvEWrknBSlHQ92EFMIYbD4ADa4qqsBQoHiwBeSNAhc4GbcJEl/c5bh8NzHEFY/eKzE8XuNnarSROhaJ+1DgdTmMX9MV9euNLjd+2SZbABzog4JP6jxxuEH1xLrPRaLZn59bVPfGIRys6xb4z+H7v3oA0dgxmFsMdMfGLhAe+6poEd8u5goruPuohjvG4x9KCmbi2CAXqwHp/s8n6Ea/EHHrg2Rc5MhLqPOxEMovdV+qh1bQhsieb7WyX2E9FEMwxMWGVDQfYEEZJvhCQCUl3V1lr7G8dqDOkaJONRN9H1pvzC58D2Q4u/RniHKn97HK5LOjp/0Ug4cLWw/Fa00hl36DplkBQwIWZCA+pXrBkNjAB7q/O/pqe2mkR8uVKdwLtt1+zKN7NtDQwnmYH2iSwgflbeHR3DykbXiEbB8e5AU62drbmMntXFXXtNHvPQ74+GKZXZsL44QpIGEa65en+pMXbKsrrjvv3q0ipc0vRCkf0Kt0161Q4ibdxoIyUz2y5NC5vM8xepX2DYQ2yO1dFcI4y3VsZjm8jtae+fjVxUETZQmbj1b1DhnMQhuDXxh8l7U+pWP1OVhocrTH+i6d8qk/RaVYQxjQeOafsOVsxFjYTm6syX7hn3+CKWKGZW59WbVRc+f58G4x8=
+          distributions: sdist bdist_wheel
+          on:
+            branch: master
+            condition: ${STREAMFLOW_VERSION} != $(python -m pypisearch streamflow | grep -oP "(?<=^streamflow \()(.*)(?=\))")
+          edge: true

@@ -2,15 +2,13 @@ import argparse
 import os.path
 
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import plotly.io as pio
 
 from streamflow.persistence.persistence_manager import DefaultPersistenceManager
 from streamflow.persistence.sqlite import SqliteDatabase
 
 
-def _export_to_file(fig: go.Figure, args: argparse.Namespace, default_name: str) -> None:
+def _export_to_file(fig, args: argparse.Namespace, default_name: str) -> None:
+    import plotly.io as pio
     if args.format == "html":
         pio.write_html(fig, file=args.name or default_name + ".html")
     elif args.format == "json":
@@ -20,6 +18,7 @@ def _export_to_file(fig: go.Figure, args: argparse.Namespace, default_name: str)
 
 
 def create_report(args: argparse.Namespace):
+    import plotly.express as px
     # Retrieve data
     database = SqliteDatabase(os.path.join(args.outdir, ".streamflow", "sqlite.db"), reset_db=False)
     persistence_manager = DefaultPersistenceManager(db=database, output_dir=args.outdir)

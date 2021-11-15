@@ -694,10 +694,10 @@ def _get_schema_def_types(requirements: MutableMapping[str, Any]) -> MutableMapp
 def _get_secondary_files(cwl_element, default_required: bool) -> MutableSequence[SecondaryFile]:
     if isinstance(cwl_element, MutableSequence):
         return [SecondaryFile(sf['pattern'], sf.get('required')
-                if sf.get('required') is not None else default_required) for sf in cwl_element]
+        if sf.get('required') is not None else default_required) for sf in cwl_element]
     elif isinstance(cwl_element, MutableMapping):
         return [SecondaryFile(cwl_element['pattern'], cwl_element.get('required')
-                if cwl_element.get('required') is not None else default_required)]
+        if cwl_element.get('required') is not None else default_required)]
 
 
 def _get_type_from_array(port_type: str):
@@ -1035,6 +1035,10 @@ class CWLTranslator(object):
                     input_port.dependee.put(Token(name=input_port.dependee.name, value=None))
                     input_port.dependee.put(TerminationToken(name=input_port.dependee.name))
 
+    def _is_cwl10(self):
+        return (self.cwl_definition.tool['cwlVersion'] == 'v1.0' or
+                self.cwl_definition.tool['http://commonwl.org/cwltool#original_cwlVersion'] == 'v1.0')
+
     def _process_dependencies(self,
                               workflow: Workflow,
                               cwl_element: cwltool.workflow.WorkflowStep,
@@ -1352,10 +1356,8 @@ class CWLTranslator(object):
         loading_context.hints = list(context['hints'].values())
         if isinstance(run_command, MutableMapping):
             step_definition = self.loading_context.construct_tool_object(run_command, loading_context)
-            if self.cwl_definition.tool['cwlVersion'] == 'v1.0':
-                inner_step_name = _get_name(name_prefix, step_definition.tool['id'])
-            else:
-                inner_step_name = posixpath.join(step_name, 'run')
+            inner_step_name = (_get_name(name_prefix, step_definition.tool['id']) if self._is_cwl10() else
+                               posixpath.join(step_name, 'run'))
             # Recusrively process the step
             await self._recursive_translate(
                 workflow=workflow,
