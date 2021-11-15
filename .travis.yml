@@ -9,7 +9,8 @@ branches:
 env:
   - STREAMFLOW_VERSION="$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')"
 install:
-  - pip install pypisearch requests tabulate pytest
+  - pip install pypisearch requests tabulate pytest cwltest
+  - pip install .
 script: pytest
 before_deploy:
   - |

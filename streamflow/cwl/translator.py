@@ -49,6 +49,16 @@ class LinkMergeMethod(Enum):
     merge_flattened = 2
 
 
+class ScatterPredecessor(object):
+    __slots__ = ('step', 'scatter_step')
+
+    def __init__(self,
+                 step: str,
+                 scatter_step: str):
+        self.step: str = step
+        self.scatter_step: str = scatter_step
+
+
 def _build_command(
         cwl_element: cwltool.command_line_tool.CommandLineTool,
         schema_def_types: MutableMapping[str, Any],
@@ -169,45 +179,6 @@ async def _create_default_port(port: Port,
         port=default_port,
         value=value)
     return default_port
-
-
-def _create_input_combinator(step: Step,
-                             scatter_inputs: Optional[MutableSequence[str]] = None,
-                             scatter_method: Optional[str] = None) -> InputCombinator:
-    scatter_ports = [p.name for p in step.input_ports.values() if _check_scatter([p])]
-    # If there are no scatter ports in this step, create a single DotProduct combinator
-    if not scatter_ports:
-        input_combinator = DotProductInputCombinator(random_name())
-        for port in step.input_ports.values():
-            input_combinator.ports[port.name] = port
-        return input_combinator
-    # If there are scatter ports
-    else:
-        other_ports = [p.name for p in step.input_ports.values() if p.name not in scatter_ports]
-        cartesian_combinator = CartesianProductInputCombinator(random_name())
-        # Choose the right combinator for the scatter ports, based on the `scatterMethod` property
-        if scatter_method is None or scatter_method == 'dotproduct':
-            scatter_name = random_name()
-            scatter_combinator = DotProductInputCombinator(scatter_name)
-        else:
-            scatter_name = random_name()
-            scatter_ports = scatter_inputs
-            scatter_combinator = CartesianProductInputCombinator(scatter_name)
-
-            def tag_strategy(token_list: MutableSequence[Token]) -> MutableSequence[Token]:
-                tag = [t.tag.split('.')[-1] for t in token_list]
-                return [t.retag('.'.join(t.tag.split('.')[:-1] + tag)) for t in token_list]
-
-            scatter_combinator.tag_strategy = tag_strategy
-        scatter_combinator.ports = {p: step.input_ports[p] for p in scatter_ports}
-        cartesian_combinator.ports[scatter_name] = scatter_combinator
-        # Create a CartesianProduct combinator between the scatter ports and the DotProduct of the others
-        if other_ports:
-            dotproduct_name = random_name()
-            dotproduct_combinator = DotProductInputCombinator(dotproduct_name)
-            dotproduct_combinator.ports = {p: step.input_ports[p] for p in other_ports}
-            cartesian_combinator.ports[dotproduct_name] = dotproduct_combinator
-        return cartesian_combinator
 
 
 async def _create_input_port(
@@ -456,12 +427,10 @@ def _create_token_processor(
 
 
 def _dict_to_lists(groups: MutableMapping[str, Any], port_name: str) -> Token:
-    groups_list = []
-    for group in groups.values():
-        if isinstance(group, MutableMapping):
-            groups_list.append(_dict_to_lists(group, port_name))
-        else:
-            groups_list.append(group)
+    if isinstance(groups, MutableMapping):
+        groups_list = [_dict_to_lists(g, port_name) for g in groups.values()]
+    else:
+        groups_list = groups
     return Token(
         name=port_name,
         job=flatten_list([t.job for t in groups_list]),
@@ -725,10 +694,10 @@ def _get_schema_def_types(requirements: MutableMapping[str, Any]) -> MutableMapp
 def _get_secondary_files(cwl_element, default_required: bool) -> MutableSequence[SecondaryFile]:
     if isinstance(cwl_element, MutableSequence):
         return [SecondaryFile(sf['pattern'], sf.get('required')
-        if sf.get('required') is not None else default_required) for sf in cwl_element]
+                if sf.get('required') is not None else default_required) for sf in cwl_element]
     elif isinstance(cwl_element, MutableMapping):
         return [SecondaryFile(cwl_element['pattern'], cwl_element.get('required')
-        if cwl_element.get('required') is not None else default_required)]
+                if cwl_element.get('required') is not None else default_required)]
 
 
 def _get_type_from_array(port_type: str):
@@ -870,6 +839,7 @@ class CWLTranslator(object):
         self.cwl_definition: cwltool.process.Process = cwl_definition
         self.cwl_inputs: Optional[MutableMapping[str, Any]] = cwl_inputs
         self.default_map: MutableMapping[str, Any] = {}
+        self.gather_map: MutableMapping[str, str] = {}
         self.input_dependencies: MutableMapping[str, Set[str]] = {}
         self.loading_context: cwltool.context.LoadingContext = loading_context
         self.output_ports: MutableMapping[str, Union[str, OutputPort]] = {}
@@ -899,6 +869,117 @@ class CWLTranslator(object):
             elif step.target is None:
                 step.target = get_local_target(step_workdir)
         self.context.scheduler.scheduling_groups = self.workflow_config.scheduling_groups
+
+    def _create_input_combinator(self,
+                                 step: Step) -> InputCombinator:
+        cartesian_combinator = None
+        other_ports = step.input_ports.values()
+        scatter_inputs = self.scatter[step.name]['inputs'] if step.name in self.scatter else None
+        scatter_method = self.scatter[step.name]['method'] if step.name in self.scatter else None
+        if scatter_inputs:
+            other_ports = [p.name for p in other_ports if p.name not in scatter_inputs]
+            if scatter_method is None or scatter_method == 'dotproduct':
+                scatter_name = random_name()
+                scatter_combinator = DotProductInputCombinator(scatter_name)
+            else:
+                scatter_name = random_name()
+                scatter_combinator = CartesianProductInputCombinator(scatter_name)
+
+                def tag_strategy(token_list: MutableSequence[Token]) -> MutableSequence[Token]:
+                    tag = [t.tag.split('.')[-1] for t in token_list]
+                    return [t.retag('.'.join(t.tag.split('.')[:-1] + tag)) for t in token_list]
+
+                scatter_combinator.tag_strategy = tag_strategy
+            scatter_combinator.ports = {p: step.input_ports[p] for p in scatter_inputs}
+            if other_ports:
+                cartesian_combinator = CartesianProductInputCombinator(random_name())
+                cartesian_combinator.ports[scatter_name] = scatter_combinator
+            else:
+                return scatter_combinator
+        scatter_ports = {}
+        for p in other_ports:
+            if p.dependee is not None:
+                if p.dependee.step and (predecessors := self._get_scatter_predecessors(p.dependee.step)):
+                    scatter_step = max((pred.scatter_step for pred in predecessors), key=len)
+                else:
+                    scatter_step = '/'
+                if scatter_step not in scatter_ports:
+                    scatter_ports[scatter_step] = []
+                scatter_ports[scatter_step].append(p)
+        inner_combinator = None
+        for level in sorted(scatter_ports, reverse=True, key=len):
+            if len(scatter_ports[level]) > 1:
+                input_combinator = DotProductInputCombinator(random_name())
+                input_combinator.ports = {p.name: p for p in scatter_ports[level]}
+                port = input_combinator
+            else:
+                port = scatter_ports[level][0]
+            if inner_combinator:
+                combinator = CartesianProductInputCombinator(random_name())
+                if len(scatter_ports[level]) > 1:
+
+                    def tag_strategy(token_list: MutableSequence[Token]) -> MutableSequence[Token]:
+                        token_list = flatten_list(token_list)
+                        group_by_scatter_step = {}
+                        for t in token_list:
+                            for s, ports in scatter_ports.items():
+                                if next((p for p in ports if p.name == t.name), None):
+                                    if s not in group_by_scatter_step:
+                                        group_by_scatter_step[s] = []
+                                    group_by_scatter_step[s].append(t)
+                        token_list = []
+                        tag = []
+                        for s in sorted(group_by_scatter_step, key=len):
+                            tag.extend(group_by_scatter_step[s][0].tag.split('.')[-len(group_by_scatter_step[s]):])
+                            token_list.extend([t.retag('.'.join(t.tag.split('.')[:-len(group_by_scatter_step[s])]))
+                                               for t in group_by_scatter_step[s]])
+                        return [t.retag('.'.join(t.tag.split('.') + tag)) for t in token_list]
+
+                    combinator.tag_strategy = tag_strategy
+                combinator.ports[port.name] = port
+                combinator.ports[inner_combinator.name] = inner_combinator
+                inner_combinator = combinator
+            else:
+                inner_combinator = port
+        if cartesian_combinator:
+            cartesian_combinator.ports[inner_combinator.name] = inner_combinator
+            return cartesian_combinator
+        elif isinstance(inner_combinator, InputCombinator):
+            return inner_combinator
+        else:
+            combinator = DotProductInputCombinator(random_name())
+            if inner_combinator is not None:
+                combinator.ports[inner_combinator.name] = inner_combinator
+            return combinator
+
+    def _get_scatter_predecessors(self,
+                                  step: Step,
+                                  scatter_step: str = '',
+                                  gather_blacklist: MutableSequence[str] = None):
+        predecessors = {ScatterPredecessor(step=step.name, scatter_step=scatter_step)}
+        if any(isinstance(p, ScatterInputPort) for p in step.input_ports.values()):
+            if not gather_blacklist or step.name not in gather_blacklist:
+                scatter_step = step.name
+        for p in step.input_ports.values():
+            if p.dependee is not None:
+                if isinstance(p.dependee, OutputCombinator):
+                    for port in p.dependee.ports.values():
+                        if port.step is not None:
+                            blacklist = copy.copy(gather_blacklist) if gather_blacklist else []
+                            if blacklist_scatter := self.gather_map.get(
+                                    posixpath.join(port.step.name, port.name)):
+                                blacklist.append(blacklist_scatter)
+                            predecessors = predecessors.union(self._get_scatter_predecessors(
+                                port.step, scatter_step, blacklist))
+                elif p.dependee.step is not None:
+                    if isinstance(p.dependee, GatherOutputPort):
+                        blacklist = copy.copy(gather_blacklist) if gather_blacklist else []
+                        if blacklist_scatter := self.gather_map.get(
+                                posixpath.join(p.dependee.step.name, p.dependee.name)):
+                            blacklist.append(blacklist_scatter)
+                    predecessors = predecessors.union(self._get_scatter_predecessors(
+                        p.dependee.step, scatter_step, gather_blacklist))
+        return predecessors
 
     def _get_source_port(self, workflow: Workflow, source_name: str) -> OutputPort:
         source_step, source_port = posixpath.split(source_name)
@@ -1508,11 +1589,17 @@ class CWLTranslator(object):
             outer_name = _get_name(step_name, element_output['id'], last_element_only=True)
             port_name = posixpath.relpath(outer_name, step_name)
             inner_port = _percolate_port(inner_name, self.output_ports)
-            if isinstance(inner_port, DotProductOutputCombinator):
-                inner_steps = [p.step for p in inner_port.ports.values()]
-                gather = _check_scatter(flatten_list([list(s.input_ports.values()) for s in inner_steps]))
+            if scatter_step is not None:
+                if isinstance(inner_port, DotProductOutputCombinator):
+                    predecessors = set()
+                    for s in [p.step for p in inner_port.ports.values()]:
+                        predecessors = predecessors.union(self._get_scatter_predecessors(s)) if s else set()
+                else:
+                    predecessors = self._get_scatter_predecessors(inner_port.step) if inner_port.step else set()
+                predecessors = {p.step for p in predecessors}
+                gather = scatter_step.name in predecessors
             else:
-                gather = _check_scatter(list(inner_port.step.input_ports.values()))
+                gather = False
             # If output port comes from a scatter input, place a port in the gather and empty scatter steps
             if gather:
                 # Process port type
@@ -1531,6 +1618,7 @@ class CWLTranslator(object):
                     step=gather_step,
                     expression_lib=expression_lib,
                     full_js=full_js)
+                self.gather_map[gather_step.name] = scatter_step.name
                 # Create input port
                 input_port = DefaultInputPort(port_name, gather_step)
                 input_port.token_processor = _create_token_processor(
@@ -1560,24 +1648,30 @@ class CWLTranslator(object):
                         for t in token_list:
                             tags = t.tag.split('.')[-len(scatter_inputs):]
                             g = groups
-                            for tag in tags[:-1]:
+                            for tag in tags[:-2]:
                                 if tag not in g:
                                     g[tag] = {}
                                 g = g[tag]
-                            g[tags[-1]] = t
-                        return _dict_to_lists(groups, port_name)
+                            if tags[-2] not in g:
+                                g[tags[-2]] = []
+                            g[tags[-2]].append(t)
+                        return [_dict_to_lists(groups, port_name)]
 
                     output_port.merge_strategy = merge_strategy
                 elif scatter_method == 'flat_crossproduct':
                     def merge_strategy(token_list):
-                        token_list = sorted(
-                            token_list,
-                            key=lambda t: ''.join(t.tag.split('.')[-len(scatter_inputs)]))
-                        return Token(
+                        token_list = sorted(token_list, key=lambda t: t.tag)
+                        token_dict = {}
+                        for t in token_list:
+                            tag = '.'.join(t.tag.split('.')[:-len(scatter_inputs)])
+                            if tag not in token_dict:
+                                token_dict[tag] = []
+                            token_dict[tag].append(t)
+                        return [Token(
                             name=port_name,
                             job=[t.job for t in token_list],
                             tag='.'.join(get_tag(token_list).split('.')[:-len(scatter_inputs)]),
-                            value=token_list)
+                            value=token_list)]
 
                     output_port.merge_strategy = merge_strategy
                 output_port.token_processor = _create_token_processor(
@@ -1627,12 +1721,9 @@ class CWLTranslator(object):
         # Add input combinators
         for step in workflow.steps.values():
             if step.name in self.scatter:
-                step.input_combinator = _create_input_combinator(
-                    step=step,
-                    scatter_inputs=self.scatter[step.name]['inputs'],
-                    scatter_method=self.scatter[step.name]['method'])
+                step.input_combinator = self._create_input_combinator(step)
             else:
-                step.input_combinator = _create_input_combinator(step)
+                step.input_combinator = self._create_input_combinator(step)
         # Extract workflow outputs
         root_prefix = posixpath.join(root_prefix, '')
         for output_name, output_value in self.output_ports.items():
