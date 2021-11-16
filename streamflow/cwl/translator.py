@@ -1188,6 +1188,11 @@ class CWLTranslator(object):
                 schema_def_types=schema_def_types,
                 context=context,
                 step=step)
+            # Process ToolTimeLimit
+            if 'ToolTimeLimit' in requirements:
+                step.command.time_limit = requirements['ToolTimeLimit']['timelimit']
+                if step.command.time_limit < 0:
+                    raise WorkflowDefinitionException('Invalid time limit for step {step}'.format(step=name_prefix))
         elif isinstance(cwl_element, cwltool.command_line_tool.ExpressionTool):
             if 'expression' in cwl_element.tool:
                 step.command = CWLExpressionCommand(step, cwl_element.tool['expression'])
@@ -1196,11 +1201,6 @@ class CWLTranslator(object):
                 "Command generation for " + type(cwl_element).__class__.__name__ + " is not suported")
         step.command.expression_lib = expression_lib
         step.command.full_js = full_js
-        # Process ToolTimeLimit
-        if 'ToolTimeLimit' in requirements:
-            step.command.time_limit = requirements['ToolTimeLimit']['timelimit']
-            if step.command.time_limit < 0:
-                raise WorkflowDefinitionException('Invalid time limit for step {step}'.format(step=name_prefix))
         # Process streams
         if 'stdin' in cwl_element.tool:
             step.command.stdin = cwl_element.tool['stdin']
