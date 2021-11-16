@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import uuid
 from abc import ABC
+from shutil import which
 from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
 from urllib.parse import urlencode
 
@@ -22,11 +23,23 @@ from kubernetes_asyncio.stream import WsApiClient, ws_client
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+
+def _check_helm_installed():
+    if which("helm") is not None:
+        raise WorkflowExecutionException("Helm must be installed on the system to use the Helm connector.")
+
+
+async def _get_helm_version():
+    proc = await asyncio.create_subprocess_exec("helm version --template '{{.Version}}'")
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
 
 
 class PatchedInClusterConfigLoader(incluster_config.InClusterConfigLoader):
@@ -90,14 +103,13 @@ class PatchedWsApiClient(WsApiClient):
             return await self.rest_client.pool_manager.ws_connect(url, headers=headers, heartbeat=30)
 
 
-class BaseHelmConnector(BaseConnector, ABC):
+class BaseKubernetesConnector(BaseConnector, ABC):
 
     def __init__(self,
                  streamflow_config_dir: str,
                  inCluster: Optional[bool] = False,
                  kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
                  namespace: Optional[str] = None,
-                 releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
                  resourcesCacheTTL: int = 10,
                  transferBufferSize: int = (2 ** 25) - 1,
                  maxConcurrentConnections: int = 4096):
@@ -107,7 +119,6 @@ class BaseHelmConnector(BaseConnector, ABC):
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
         self.namespace = namespace
-        self.releaseName = releaseName
         self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
         self.configuration: Optional[Configuration] = None
         self.client: Optional[client.CoreV1Api] = None
@@ -254,6 +265,29 @@ class BaseHelmConnector(BaseConnector, ABC):
                 effective_resources.append(resource)
         return effective_resources
 
+    def _get_run_command(self,
+                         command: str,
+                         resource: str,
+                         interactive: bool = False):
+        pod, container = resource.split(':')
+        return (
+            "kubectl "
+            "{namespace}"
+            "{kubeconfig}"
+            "exec "
+            "{pod} "
+            "{interactive}"
+            "{container}"
+            "-- "
+            "{command}"
+        ).format(
+            namespace=self.get_option("namespace", self.namespace),
+            kubeconfig=self.get_option("kubeconfig", self.kubeconfig),
+            pod=pod,
+            interactive=self.get_option("i", interactive),
+            container=self.get_option("container", container),
+            command=command)
+
     async def deploy(self, external: bool):
         # Init standard client
         configuration = await self._get_configuration()
@@ -265,30 +299,6 @@ class BaseHelmConnector(BaseConnector, ABC):
         ws_api_client = PatchedWsApiClient(configuration=configuration)
         ws_api_client.set_default_header('Connection', 'upgrade,keep-alive')
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
-
-    @cachedmethod(lambda self: self.resourcesCache)
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
-        pods = await self.client.list_namespaced_pod(
-            namespace=self.namespace or 'default',
-            label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
-            field_selector="status.phase=Running"
-        )
-        valid_targets = {}
-        for pod in pods.items:
-            # Check if pod is ready
-            is_ready = True
-            for condition in pod.status.conditions:
-                if condition.status != 'True':
-                    is_ready = False
-                    break
-            # Filter out not ready and Terminating resources
-            if is_ready and pod.metadata.deletion_timestamp is None:
-                for container in pod.spec.containers:
-                    if not service or service == container.name:
-                        resource_name = pod.metadata.name + ':' + service
-                        valid_targets[resource_name] = Resource(name=resource_name, hostname=pod.status.pod_ip)
-                        break
-        return valid_targets
 
     async def _run(self,
                    resource: str,
@@ -353,6 +363,93 @@ class BaseHelmConnector(BaseConnector, ABC):
         self.configuration = None
 
 
+class KubernetesConnector(BaseKubernetesConnector, ABC):
+
+    def __init__(self,
+                 streamflow_config_dir: str,
+                 files: MutableSequence[str],
+                 force: bool = False,
+                 forceConflicts: bool = False,
+                 gracePeriod: int = -1,
+                 inCluster: Optional[bool] = False,
+                 kubeconfig: Optional[str] = None,
+                 namespace: Optional[str] = None,
+                 openapiPatch: bool = True,
+                 overwrite: bool = True,
+                 prune: bool = False,
+                 pruneWhitelist: Optional[MutableSequence] = None,
+                 recursive: bool = False,
+                 resourcesCacheTTL: int = 10,
+                 timeout: int = 5,
+                 transferBufferSize: int = (2 ** 25) - 1,
+                 validate: bool = True,
+                 wait: bool = True):
+        super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
+            inCluster=inCluster,
+            kubeconfig=kubeconfig,
+            namespace=namespace,
+            resourcesCacheTTL=resourcesCacheTTL,
+            transferBufferSize=transferBufferSize)
+        self.files: MutableSequence[str] = files
+        self.force: bool = force
+        self.forceConflicts: bool = forceConflicts
+        self.gracePeriod: int = gracePeriod
+        self.openapiPatch: bool = openapiPatch
+        self.overwrite: bool = overwrite
+        self.prune: bool = prune
+        self.pruneWhiteList: Optional[MutableSequence] = pruneWhitelist
+        self.recursive: bool = recursive
+        self.timeout: int = timeout
+        self.validate: bool = validate
+        self.wait: bool = wait
+        # TODO: implement
+
+
+class BaseHelmConnector(BaseKubernetesConnector, ABC):
+
+    def __init__(self,
+                 streamflow_config_dir: str,
+                 inCluster: Optional[bool] = False,
+                 kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
+                 namespace: Optional[str] = None,
+                 releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
+                 resourcesCacheTTL: int = 10,
+                 transferBufferSize: int = (2 ** 25) - 1):
+        super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
+            inCluster=inCluster,
+            kubeconfig=kubeconfig,
+            namespace=namespace,
+            resourcesCacheTTL=resourcesCacheTTL,
+            transferBufferSize=transferBufferSize)
+        self.releaseName: str = releaseName
+
+    @cachedmethod(lambda self: self.resourcesCache)
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+        pods = await self.client.list_namespaced_pod(
+            namespace=self.namespace or 'default',
+            label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
+            field_selector="status.phase=Running"
+        )
+        valid_targets = {}
+        for pod in pods.items:
+            # Check if pod is ready
+            is_ready = True
+            for condition in pod.status.conditions:
+                if condition.status != 'True':
+                    is_ready = False
+                    break
+            # Filter out not ready and Terminating resources
+            if is_ready and pod.metadata.deletion_timestamp is None:
+                for container in pod.spec.containers:
+                    if not service or service == container.name:
+                        resource_name = pod.metadata.name + ':' + service
+                        valid_targets[resource_name] = Resource(name=resource_name, hostname=pod.status.pod_ip)
+                        break
+        return valid_targets
+
+
 class Helm2Connector(BaseHelmConnector):
 
     def __init__(self,
@@ -374,7 +471,7 @@ class Helm2Connector(BaseHelmConnector):
                  init: Optional[bool] = False,
                  keyFile: Optional[str] = None,
                  keyring: Optional[str] = None,
-                 releaseName: Optional[str] = None,
+                 releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
                  nameTemplate: Optional[str] = None,
                  namespace: Optional[str] = None,
                  noCrdHook: Optional[bool] = False,
@@ -481,6 +578,13 @@ class Helm2Connector(BaseHelmConnector):
         # Create clients
         await super().deploy(external)
         if not external:
+            # Check if Helm is installed
+            _check_helm_installed()
+            # Check correct version of Helm
+            version = await _get_helm_version()
+            if not version.startswith("v2"):
+                raise WorkflowExecutionException(
+                    "Helm {version} is not compatible with Helm2Connector".format(version=version))
             # Deploy Helm charts
             deploy_command = self.base_command() + "".join([
                 "install "
@@ -605,7 +709,7 @@ class Helm3Connector(BaseHelmConnector):
                  keepHistory: Optional[bool] = False,
                  keyFile: Optional[str] = None,
                  keyring: Optional[str] = None,
-                 releaseName: Optional[str] = None,
+                 releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
                  nameTemplate: Optional[str] = None,
                  namespace: Optional[str] = None,
                  noHooks: Optional[bool] = False,
@@ -690,6 +794,13 @@ class Helm3Connector(BaseHelmConnector):
         # Create clients
         await super().deploy(external)
         if not external:
+            # Check if Helm is installed
+            _check_helm_installed()
+            # Check correct version of Helm
+            version = await _get_helm_version()
+            if not version.startswith("v3"):
+                raise WorkflowExecutionException(
+                    "Helm {version} is not compatible with Helm3Connector".format(version=version))
             # Deploy Helm charts
             deploy_command = self.base_command() + "".join([
                 "install "

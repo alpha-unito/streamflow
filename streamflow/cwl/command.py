@@ -738,16 +738,14 @@ class CWLExpressionCommand(CWLBaseCommand):
                  expression_lib: Optional[List[str]] = None,
                  full_js: bool = False,
                  initial_work_dir: Optional[Union[str, List[Any]]] = None,
-                 inplace_update: bool = False,
-                 time_limit: Optional[Union[int, str]] = None):
+                 inplace_update: bool = False):
         super().__init__(
             step=step,
             absolute_initial_workdir_allowed=absolute_initial_workdir_allowed,
             expression_lib=expression_lib,
             initial_work_dir=initial_work_dir,
             inplace_update=inplace_update,
-            full_js=full_js,
-            time_limit=time_limit)
+            full_js=full_js)
         self.expression: str = expression
 
     async def execute(self, job: Job) -> CWLCommandOutput:
@@ -759,13 +757,11 @@ class CWLExpressionCommand(CWLBaseCommand):
         command_id = self.step.context.persistence_manager.db.add_command(self.step.persistent_id, self.expression)
         # Execute command
         start_time = time.time_ns()
-        timeout = self._get_timeout(job)
         result = eval_expression(
             expression=self.expression,
             context=context,
             full_js=self.full_js,
-            expression_lib=self.expression_lib,
-            timeout=timeout)
+            expression_lib=self.expression_lib)
         end_time = time.time_ns()
         # Update command persistence
         self.step.context.persistence_manager.db.update_command(command_id, {
