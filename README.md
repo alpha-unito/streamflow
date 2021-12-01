@@ -85,7 +85,7 @@ cd streamflow
 python setup.py install
 ```
 
-StreamFlow relies on [Travis CI](https://travis-ci.com/) for PyPI and Docker Hub distributions. Therefore, in order to publish a
+StreamFlow relies on GitHub Actions for PyPI and Docker Hub distributions. Therefore, in order to publish a
 new version of the software, you only have to augment the version number in `version.py` file.
 
 ## StreamFlow Team
