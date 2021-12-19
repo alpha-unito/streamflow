@@ -19,7 +19,7 @@ The StreamFlow module is available on [PyPI](https://pypi.org/project/streamflow
 pip install streamflow
 ```
 
-Please note that StreamFlow requires `python >= 3.8`. Then you can execute it directly from the CLI
+Please note that StreamFlow requires `python >= 3.7`. Then you can execute it directly from the CLI
 
 ```bash
 streamflow run /path/to/streamflow.yml
@@ -27,11 +27,12 @@ streamflow run /path/to/streamflow.yml
 
 #### Docker
 
-StreamFlow Docker images are available on [Docker Hub](https://hub.docker.com/r/alphaunito/streamflow). In order to run a workflow inside the StreamFlow image
+StreamFlow Docker images are available on [Docker Hub](https://hub.docker.com/r/alphaunito/streamflow). In order to run
+a workflow inside the StreaFlow image
  - A StreamFlow project, containing a `streamflow.yml` file and all the other relevant dependencies (e.g. a CWL
    description of the workflow steps and a Helm description of the execution environment) need to be mounted as a volume
    inside the container, for example in the `/streamflow/project` folder
- - By default, workflow outputs will be stored in the `/streamflow/results` folder. Therefore, it is necessary to mount
+ - Workflow outputs, if any, will be stored in the `/streamflow/results` folder. Therefore, it is necessary to mount
    such location as a volume in order to persist the results
  - StreamFlow will save all its temporary files inside the `/tmp/streamflow` location. For debugging purposes, or in
    order to improve I/O performances in case of huge files, it could be useful to mount also such location as a volume
@@ -76,28 +77,46 @@ StreamFlow relies on the [Common Workflow Language](https://www.commonwl.org/) (
 
 ### CWL v1.0
 
+#### Classes
+
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/command_line_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/expression_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/workflow.json)
+
+#### Required features
+
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/required.json)
+
+#### Optional features
+
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/docker.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/env_var.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/expression_tool.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/initial_work_dir.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/inline_javascript.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/multiple_input.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/required.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/resource.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/scatter.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/schema_def.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/shell_command.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/step_input.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/subworkflow.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/workflow.json)
 
 ### CWL v1.1
 
+#### Classes
+
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/command_line_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/expression_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/workflow.json)
+
+#### Required features
+
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/required.json)
+
+#### Optional features
+
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/docker.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/env_var.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/expression_tool.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/format_checking.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/initial_work_dir.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/inline_javascript.json)
@@ -105,7 +124,6 @@ StreamFlow relies on the [Common Workflow Language](https://www.commonwl.org/) (
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/input_object_requirements.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/multiple_input.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/networkaccess.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/required.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/resource.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/scatter.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/schema_def.json)
@@ -114,15 +132,24 @@ StreamFlow relies on the [Common Workflow Language](https://www.commonwl.org/) (
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/step_input.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/subworkflow.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/timelimit.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/workflow.json)
 
 ### CWL v1.2
 
+#### Classes
+
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/command_line_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/expression_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/workflow.json)
+
+#### Required features
+
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/required.json)
+
+#### Optional features
+
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/conditional.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/docker.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/env_var.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/expression_tool.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/format_checking.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/initial_work_dir.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/inline_javascript.json)
@@ -132,7 +159,6 @@ StreamFlow relies on the [Common Workflow Language](https://www.commonwl.org/) (
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/multiple_input.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/multiple.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/networkaccess.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/required.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/resource.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/scatter.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/schema_def.json)
@@ -140,7 +166,6 @@ StreamFlow relies on the [Common Workflow Language](https://www.commonwl.org/) (
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/step_input.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/subworkflow.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/timelimit.json)
-![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/workflow.json)
 ![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/work_reuse.json)
 
 ## Contribute to StreamFlow
