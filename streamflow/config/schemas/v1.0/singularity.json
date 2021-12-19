@@ -165,11 +165,6 @@
       "type": "string",
       "description": "Write instance PID to the file with the given name"
     },
-    "readBufferSize": {
-      "type": "integer",
-      "description": "Buffer size allocated for local disk reads during data transfers",
-      "default": "4 * transferBufferSize"
-    },
     "replicas": {
       "type": "integer",
       "description": "Number of instances to be co-allocated",

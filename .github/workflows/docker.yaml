@@ -1,0 +1,41 @@
+name: "Build Docker container"
+on:
+  workflow_run:
+    workflows:
+      - "CWL Conformance"
+    branches:
+      - master
+    types:
+      - completed
+jobs:
+  deploy:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: docker/setup-qemu-action@v1
+      - uses: docker/setup-buildx-action@v1
+      - uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: "Get StreamFlow version"
+        run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
+      - name: "Check if Docker image already exists"
+        run : echo "EXISTS_IMAGE=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect alphaunito/streamflow:${STREAMFLOW_VERSION}-base > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
+      - name: "Build base image"
+        id: docker-base
+        if: ${{ !env.EXISTS_IMAGE }}
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: |
+            alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-base
+            alphaunito/streamflow:latest
+      - name: "Build Helm 2 image"
+        id: docker-helm
+        if: ${{ !env.EXISTS_IMAGE }}
+        uses: docker/build-push-action@v2
+        with:
+          file: helm/docker/helm2/Dockerfile
+          push: true
+          tags: alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-helm2

@@ -4,7 +4,7 @@ metadata:
   name: {{ include "streamflow.fullname" . }}
   labels:
     {{- include "streamflow.labels" . | nindent 4 }}
-  annottions:
+  annotations:
     "helm.sh/hook": post-install
     "helm.sh/hook-delete-policy": hook-succeeded
 spec:

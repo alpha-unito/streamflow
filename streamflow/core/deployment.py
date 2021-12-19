@@ -8,21 +8,20 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from streamflow.core.scheduling import Resource
     from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
-    from typing_extensions import Text
 
 
 class Connector(ABC):
 
-    def __init__(self, streamflow_config_dir: Text):
-        self.streamflow_config_dir: Text = streamflow_config_dir
+    def __init__(self, streamflow_config_dir: str):
+        self.streamflow_config_dir: str = streamflow_config_dir
 
     @abstractmethod
     async def copy(self,
-                   src: Text,
-                   dst: Text,
-                   resources: MutableSequence[Text],
+                   src: str,
+                   dst: str,
+                   resources: MutableSequence[str],
                    kind: ConnectorCopyKind,
-                   source_remote: Optional[Text] = None,
+                   source_remote: Optional[str] = None,
                    read_only: bool = False) -> None:
         ...
 
@@ -31,20 +30,20 @@ class Connector(ABC):
         ...
 
     @abstractmethod
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
         ...
 
     @abstractmethod
     async def run(self,
-                  resource: Text,
-                  command: MutableSequence[Text],
-                  environment: MutableMapping[Text, Text] = None,
-                  workdir: Optional[Text] = None,
-                  stdin: Optional[Union[int, Text]] = None,
-                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                  resource: str,
+                  command: MutableSequence[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: Optional[str] = None,
+                  stdin: Optional[Union[int, str]] = None,
+                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
-                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
+                  job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         ...
 
     @abstractmethod
@@ -61,23 +60,23 @@ class ConnectorCopyKind(Enum):
 class DeploymentManager(ABC):
 
     def __init__(self,
-                 streamflow_config_dir: Text) -> None:
-        self.streamflow_config_dir: Text = streamflow_config_dir
+                 streamflow_config_dir: str) -> None:
+        self.streamflow_config_dir: str = streamflow_config_dir
 
     @abstractmethod
     async def deploy(self, model_config: ModelConfig):
         ...
 
     @abstractmethod
-    def get_connector(self, model_name: Text) -> Optional[Connector]:
+    def get_connector(self, model_name: str) -> Optional[Connector]:
         ...
 
     @abstractmethod
-    def is_deployed(self, model_name: Text):
+    def is_deployed(self, model_name: str):
         ...
 
     @abstractmethod
-    async def undeploy(self, model_name: Text):
+    async def undeploy(self, model_name: str):
         ...
 
     @abstractmethod
@@ -88,11 +87,11 @@ class DeploymentManager(ABC):
 class ModelConfig(object):
 
     def __init__(self,
-                 name: Text,
-                 connector_type: Text,
-                 config: MutableMapping[Text, Any],
+                 name: str,
+                 connector_type: str,
+                 config: MutableMapping[str, Any],
                  external: bool) -> None:
-        self.name: Text = name
-        self.connector_type: Text = connector_type
-        self.config: MutableMapping[Text, Any] = config
+        self.name: str = name
+        self.connector_type: str = connector_type
+        self.config: MutableMapping[str, Any] = config
         self.external = external

@@ -2,8 +2,7 @@ import asyncio
 from asyncio import Condition
 from typing import Optional, MutableMapping, MutableSequence
 
-from typing_extensions import Text
-
+from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException
 from streamflow.core.recovery import FailureManager, JobVersion, ReplayRequest, ReplayResponse
@@ -50,11 +49,11 @@ class DefaultFailureManager(FailureManager):
                  max_retries: Optional[int] = None,
                  retry_delay: Optional[int] = None):
         super().__init__(context)
-        self.jobs: MutableMapping[Text, JobVersion] = {}
+        self.jobs: MutableMapping[str, JobVersion] = {}
         self.max_retries: int = max_retries
-        self.replay_cache: MutableMapping[Text, ReplayResponse] = {}
+        self.replay_cache: MutableMapping[str, ReplayResponse] = {}
         self.retry_delay: Optional[int] = retry_delay
-        self.wait_queues: MutableMapping[Text, Condition] = {}
+        self.wait_queues: MutableMapping[str, Condition] = {}
 
     async def _do_handle_failure(self, job: Job) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -72,17 +71,16 @@ class DefaultFailureManager(FailureManager):
             # Update version
             self.jobs[job.name].version += 1
             try:
-                resources = job.get_resources() or [None]
-                # If job must be executed remotely, manage job rescheduling
-                if job.step.target is not None:
-                    connector = job.step.get_connector()
-                    available_resources = await connector.get_available_resources(job.step.target.service)
-                    active_resources = job.get_resources([Status.RUNNING])
-                    # If some resources are dead, notify job failure and schedule it on new resources
-                    if not active_resources or not all(res in available_resources for res in active_resources):
-                        if active_resources:
-                            await self.context.scheduler.notify_status(job.name, Status.FAILED)
-                        await self.context.scheduler.schedule(job)
+                resources = utils.get_resources(job)
+                # Manage job rescheduling
+                connector = utils.get_connector(job, self.context)
+                available_resources = await connector.get_available_resources(job.step.target.service)
+                active_resources = job.get_resources([Status.RUNNING])
+                # If some resources are dead, notify job failure and schedule it on new resources
+                if not active_resources or not all(res in available_resources for res in active_resources):
+                    if active_resources:
+                        await self.context.scheduler.notify_status(job.name, Status.FAILED)
+                    await self.context.scheduler.schedule(job)
                 # Initialize directories
                 await job.initialize()
                 # Recover input tokens
@@ -148,12 +146,10 @@ class DefaultFailureManager(FailureManager):
                     outputs=None,
                     version=self.jobs[target_job.name].version + 1)
                 try:
-                    if sender_job.step.target is not None:
-                        await self.context.scheduler.notify_status(sender_job.name, Status.WAITING)
+                    await self.context.scheduler.notify_status(sender_job.name, Status.WAITING)
                     command_output = await self._replay_job(self.jobs[target_job.name])
                 finally:
-                    if target_job.step.target is not None:
-                        await self.context.scheduler.notify_status(target_job.name, command_output.status)
+                    await self.context.scheduler.notify_status(target_job.name, command_output.status)
                 # Retrieve output
                 output_ports = target_job.step.output_ports.values()
                 output_tasks = []

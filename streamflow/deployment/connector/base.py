@@ -12,20 +12,20 @@ from abc import ABC
 from typing import TYPE_CHECKING, MutableSequence, Tuple, cast
 
 from streamflow.core import utils
+from streamflow.core.data import LOCAL_RESOURCE
 from streamflow.core.deployment import Connector, ConnectorCopyKind
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import Any, Optional, MutableMapping, Union
-    from typing_extensions import Text
 
 
 class BaseConnector(Connector, ABC):
 
     @staticmethod
-    def get_option(name: Text,
+    def get_option(name: str,
                    value: Any,
-                   ) -> Text:
+                   ) -> str:
         if len(name) > 1:
             name = "-{name} ".format(name=name)
         if isinstance(value, bool):
@@ -40,37 +40,39 @@ class BaseConnector(Connector, ABC):
             raise TypeError("Unsupported value type")
 
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 transferBufferSize: int,
-                 readBufferSize: Optional[int] = None):
+                 streamflow_config_dir: str,
+                 transferBufferSize: int):
         super().__init__(streamflow_config_dir)
         self.transferBufferSize: int = transferBufferSize
-        self.readBufferSize: int = readBufferSize or 4 * self.transferBufferSize
 
     async def _copy_local_to_remote(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resources: MutableSequence[Text],
+                                    src: str,
+                                    dst: str,
+                                    resources: MutableSequence[str],
                                     read_only: bool = False) -> None:
         with tempfile.TemporaryFile() as tar_buffer:
-            with tarfile.open(fileobj=tar_buffer, mode='w|gz') as tar:
+            with tarfile.open(
+                    fileobj=tar_buffer,
+                    format=tarfile.GNU_FORMAT,
+                    mode='w|',
+                    dereference=True) as tar:
                 tar.add(src, arcname=dst)
             tar_buffer.seek(0)
-            await asyncio.gather(*[asyncio.create_task(
+            await asyncio.gather(*(asyncio.create_task(
                 self._copy_local_to_remote_single(
                     resource=resource,
                     tar_buffer=cast(io.BufferedRandom, tar_buffer),
                     read_only=read_only)
-            ) for resource in resources])
+            ) for resource in resources))
 
     async def _copy_local_to_remote_single(self,
-                                           resource: Text,
+                                           resource: str,
                                            tar_buffer: io.BufferedRandom,
                                            read_only: bool = False) -> None:
-        resource_buffer = io.BufferedReader(tar_buffer.raw, buffer_size=self.readBufferSize)
+        resource_buffer = io.BufferedReader(tar_buffer.raw)
         proc = await self._run(
             resource=resource,
-            command=["tar", "xzf", "-", "-C", "/"],
+            command=["tar", "xf", "-", "-C", "/"],
             encode=False,
             interactive=True,
             stream=True
@@ -82,13 +84,13 @@ class BaseConnector(Connector, ABC):
         await proc.wait()
 
     async def _copy_remote_to_local(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resource: Text,
+                                    src: str,
+                                    dst: str,
+                                    resource: str,
                                     read_only: bool = False) -> None:
         proc = await self._run(
             resource=resource,
-            command=["tar", "czf", "-", "-C", "/", posixpath.relpath(src, '/')],
+            command=["tar", "chf", "-", "-C", "/", posixpath.relpath(src, '/')],
             capture_output=True,
             encode=False,
             stream=True)
@@ -97,14 +99,16 @@ class BaseConnector(Connector, ABC):
                 tar_buffer.write(data)
             await proc.wait()
             tar_buffer.seek(0)
-            with tarfile.open(fileobj=tar_buffer, mode='r|gz') as tar:
+            with tarfile.open(
+                    fileobj=tar_buffer,
+                    mode='r|') as tar:
                 utils.extract_tar_stream(tar, src, dst)
 
     async def _copy_remote_to_remote(self,
-                                     src: Text,
-                                     dst: Text,
-                                     resources: MutableSequence[Text],
-                                     source_remote: Text,
+                                     src: str,
+                                     dst: str,
+                                     resources: MutableSequence[str],
+                                     source_remote: str,
                                      read_only: bool = False) -> None:
         # Check for the need of a temporary copy
         temp_dir = None
@@ -134,11 +138,11 @@ class BaseConnector(Connector, ABC):
             shutil.rmtree(temp_dir)
 
     async def _copy_remote_to_remote_single(self,
-                                            src: Text,
-                                            dst: Text,
-                                            resource: Text,
-                                            source_remote: Text,
-                                            temp_dir: Optional[Text],
+                                            src: str,
+                                            dst: str,
+                                            resource: str,
+                                            source_remote: str,
+                                            temp_dir: Optional[str],
                                             read_only: bool = False) -> None:
         if source_remote == resource:
             if src != dst:
@@ -156,21 +160,21 @@ class BaseConnector(Connector, ABC):
             await asyncio.gather(*copy_tasks)
 
     def _get_run_command(self,
-                         command: Text,
-                         resource: Text,
+                         command: str,
+                         resource: str,
                          interactive: bool = False):
         raise NotImplementedError
 
     async def _run(self,
-                   resource: Text,
-                   command: MutableSequence[Text],
-                   environment: MutableMapping[Text, Text] = None,
-                   workdir: Optional[Text] = None,
-                   stdin: Optional[Union[int, Text]] = None,
-                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                   resource: str,
+                   command: MutableSequence[str],
+                   environment: MutableMapping[str, str] = None,
+                   workdir: Optional[str] = None,
+                   stdin: Optional[Union[int, str]] = None,
+                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                    capture_output: bool = False,
-                   job_name: Optional[Text] = None,
+                   job_name: Optional[str] = None,
                    encode: bool = True,
                    interactive: bool = False,
                    stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
@@ -197,28 +201,31 @@ class BaseConnector(Connector, ABC):
             await proc.wait()
 
     async def copy(self,
-                   src: Text,
-                   dst: Text,
-                   resources: MutableSequence[Text],
+                   src: str,
+                   dst: str,
+                   resources: MutableSequence[str],
                    kind: ConnectorCopyKind,
-                   source_remote: Optional[Text] = None,
+                   source_remote: Optional[str] = None,
                    read_only: bool = False) -> None:
         if kind == ConnectorCopyKind.REMOTE_TO_REMOTE:
             if source_remote is None:
                 raise Exception("Source resource is mandatory for remote to remote copy")
             if len(resources) > 1:
-                logger.info("Copying {src} on resource {source_remote} to {dst} on resources:\n\t{resources}".format(
-                    source_remote=source_remote,
+                logger.info("Copying {src} {source_remote} to {dst} on resources:\n\t{resources}".format(
+                    source_remote=("on local file-system" if source_remote == LOCAL_RESOURCE else
+                                   "on resource {res}".format(res=source_remote)),
                     src=src,
                     dst=dst,
                     resources='\n\t'.join(resources)
                 ))
             else:
-                logger.info("Copying {src} on resource {source_remote} to {dst} on resource {resource}".format(
-                    source_remote=source_remote,
+                logger.info("Copying {src} {source_remote} to {dst} {resource}".format(
+                    source_remote=("on local file-system" if source_remote == LOCAL_RESOURCE else
+                                   "on resource {res}".format(res=source_remote)),
                     src=src,
                     dst=dst,
-                    resource=resources[0]
+                    resource=("on local file-system" if resources[0] == LOCAL_RESOURCE else
+                              "on resource {res}".format(res=resources[0]))
                 ))
             await self._copy_remote_to_remote(
                 src=src,
@@ -264,15 +271,15 @@ class BaseConnector(Connector, ABC):
             raise NotImplementedError
 
     async def run(self,
-                  resource: Text,
-                  command: MutableSequence[Text],
-                  environment: MutableMapping[Text, Text] = None,
-                  workdir: Optional[Text] = None,
-                  stdin: Optional[Union[int, Text]] = None,
-                  stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                  stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
+                  resource: str,
+                  command: MutableSequence[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: Optional[str] = None,
+                  stdin: Optional[Union[int, str]] = None,
+                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
-                  job_name: Optional[Text] = None) -> Optional[Tuple[Optional[Any], int]]:
+                  job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         return await self._run(
             resource=resource,
             command=command,

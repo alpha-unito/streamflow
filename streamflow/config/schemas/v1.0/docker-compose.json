@@ -80,11 +80,6 @@
       "type": "boolean",
       "description": "Build images before starting containers"
     },
-    "readBufferSize": {
-      "type": "integer",
-      "description": "Buffer size allocated for local disk reads during data transfers",
-      "default": "4 * transferBufferSize"
-    },
     "renewAnonVolumes": {
       "type": "boolean",
       "description": "Recreate anonymous volumes instead of retrieving data from the previous containers"

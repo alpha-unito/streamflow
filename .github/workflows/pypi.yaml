@@ -1,0 +1,34 @@
+name: "Publish on PyPI"
+on:
+  workflow_run:
+    workflows:
+      - "CWL Conformance"
+    branches:
+      - master
+    types:
+      - completed
+jobs:
+  publish:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+      - name: "Install pypisearch package"
+        run: python -m pip install pypisearch --user
+      - name: "Get StreamFlow version"
+        run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
+      - name: "Get PyPI version"
+        run: echo "PYPI_VERSION=$(python -m pypisearch streamflow | grep -oP '(?<=^streamflow \()(.*)(?=\))')" >> $GITHUB_ENV
+      - name: "Build Python packages"
+        if: ${{ env.STREAMFLOW_VERSION != env.PYPI_VERSION }}
+        run: |
+          python -m pip install build --user
+          python -m build --sdist --wheel --outdir dist/ .
+      - name: "Publish package to PyPI"
+        uses: pypa/gh-action-pypi-publish@release/v1
+        if: ${{ env.STREAMFLOW_VERSION != env.PYPI_VERSION }}
+        with:
+          user: __token__
+          password:  ${{ secrets.PYPI_TOKEN }}

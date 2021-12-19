@@ -2,39 +2,76 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import io
 import os
 import posixpath
 import random
 import string
 import tarfile
+import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union
+from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any, Set
 
-from streamflow.core.workflow import TerminationToken, Step
+from streamflow.core.data import LOCAL_RESOURCE
+from streamflow.core.deployment import ModelConfig
+from streamflow.core.workflow import Target, TerminationToken, Token
 
 if TYPE_CHECKING:
-    from streamflow.core.workflow import Token
+    from streamflow.core.context import StreamFlowContext
+    from streamflow.core.deployment import Connector
+    from streamflow.core.workflow import Job, Step
     from typing import Iterable
-    from typing_extensions import Text
 
 
-def check_termination(inputs: Iterable[Token]) -> bool:
-    for token in inputs:
-        if isinstance(token, MutableSequence):
-            if check_termination(token):
+class NamesStack(object):
+
+    def __init__(self):
+        self.stack: MutableSequence[Set] = [set()]
+
+    def add_scope(self):
+        self.stack.append(set())
+
+    def add_name(self, name: str):
+        self.stack[-1].add(name)
+
+    def delete_scope(self):
+        self.stack.pop()
+
+    def delete_name(self, name: str):
+        self.stack[-1].remove(name)
+
+    def global_names(self) -> Set[str]:
+        names = self.stack[0].copy()
+        if len(self.stack) > 1:
+            for scope in self.stack[1:]:
+                names = names.difference(scope)
+        return names
+
+    def __contains__(self, name: str) -> bool:
+        for scope in self.stack:
+            if name in scope:
                 return True
-        elif isinstance(token, TerminationToken):
-            return True
-    return False
+        return False
 
 
-def create_command(command: MutableSequence[Text],
-                   environment: MutableMapping[Text, Text] = None,
-                   workdir: Optional[Text] = None,
-                   stdin: Optional[Union[int, Text]] = None,
-                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT) -> Text:
+def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
+    if isinstance(inputs, Token):
+        return isinstance(inputs, TerminationToken)
+    else:
+        for token in inputs:
+            if isinstance(token, MutableSequence):
+                if check_termination(token):
+                    return True
+            elif isinstance(token, TerminationToken):
+                return True
+        return False
+
+
+def create_command(command: MutableSequence[str],
+                   environment: MutableMapping[str, str] = None,
+                   workdir: Optional[str] = None,
+                   stdin: Optional[Union[int, str]] = None,
+                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
     command = "".join(
         "{workdir}"
         "{environment}"
@@ -44,7 +81,7 @@ def create_command(command: MutableSequence[Text],
         "{stderr}"
     ).format(
         workdir="cd {workdir} && ".format(workdir=workdir) if workdir is not None else "",
-        environment="".join(["export %s=%s && " % (key, value) for (key, value) in
+        environment="".join(["export %s=\"%s\" && " % (key, value) for (key, value) in
                              environment.items()]) if environment is not None else "",
         command=" ".join(command),
         stdin=" < {stdin}".format(stdin=stdin) if stdin is not None else "",
@@ -56,8 +93,8 @@ def create_command(command: MutableSequence[Text],
 
 
 def extract_tar_stream(tar: tarfile.TarFile,
-                       src: Text,
-                       dst: Text) -> None:
+                       src: str,
+                       dst: str) -> None:
     for member in tar:
         if os.path.isdir(dst):
             if posixpath.join('/', member.path) == src:
@@ -78,16 +115,35 @@ def extract_tar_stream(tar: tarfile.TarFile,
             tar.extract(member, parent_dir)
 
 
-def encode_command(command: Text):
+def encode_command(command: str):
     return "echo {command} | base64 -d | sh".format(
         command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
 
 
+def get_connector(job: Optional[Job], context: StreamFlowContext) -> Connector:
+    return job.step.get_connector() if job is not None else context.deployment_manager.get_connector(LOCAL_RESOURCE)
+
+
+def get_local_target(workdir: Optional[str] = None) -> Target:
+    return Target(
+        model=ModelConfig(
+            name=LOCAL_RESOURCE,
+            connector_type='local',
+            config={},
+            external=True),
+        resources=1,
+        service=workdir or os.path.join(tempfile.gettempdir(), 'streamflow'))
+
+
 def get_path_processor(step: Step):
-    if step is not None and step.target is not None:
+    if step is not None and step.target != 'local':
         return posixpath
     else:
         return os.path
+
+
+def get_resources(job: Optional[Job]) -> MutableSequence[str]:
+    return job.get_resources() or [LOCAL_RESOURCE] if job is not None else [LOCAL_RESOURCE]
 
 
 def get_size(path):
@@ -102,6 +158,21 @@ def get_size(path):
         return total_size
 
 
+def get_tag(tokens: MutableSequence[Token]) -> str:
+    output_tag = '0'
+    for tag in [t.tag for t in tokens]:
+        if len(tag) > len(output_tag):
+            output_tag = tag
+    return output_tag
+
+
+def get_token_value(token: Token) -> Any:
+    if isinstance(token.job, MutableSequence):
+        return [get_token_value(t) for t in token.value]
+    else:
+        return token.value
+
+
 def flatten_list(hierarchical_list):
     if not hierarchical_list:
         return hierarchical_list
@@ -114,5 +185,5 @@ def flatten_list(hierarchical_list):
     return flat_list
 
 
-def random_name() -> Text:
+def random_name() -> str:
     return ''.join([random.choice(string.ascii_letters) for _ in range(6)])

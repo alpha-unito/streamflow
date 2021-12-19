@@ -8,18 +8,24 @@ if TYPE_CHECKING:
     from streamflow.deployment.deployment_manager import ModelConfig
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import Connector
+    from streamflow.core.scheduling import Hardware
     from typing import Optional, MutableMapping, Any, Set, Union
-    from typing_extensions import Text
 
 
 class Command(ABC):
 
     def __init__(self, step: Step):
+        super().__init__()
         self.step: Step = step
 
     @abstractmethod
     async def execute(self, job: Job) -> CommandOutput:
         ...
+
+    async def skip(self, job: Job) -> CommandOutput:
+        return CommandOutput(
+            value=None,
+            status=Status.SKIPPED)
 
 
 class CommandOutput(object):
@@ -35,36 +41,61 @@ class CommandOutput(object):
         return CommandOutput(value=value, status=self.status)
 
 
+class Condition(ABC):
+
+    def __init__(self, step: Step):
+        self.step: Step = step
+
+    @abstractmethod
+    async def eval(self, job: Job) -> bool:
+        ...
+
+
+class HardwareRequirement(ABC):
+
+    @abstractmethod
+    def eval(self, inputs: MutableSequence[Token]) -> Hardware:
+        ...
+
+
 class Token(object):
-    __slots__ = ('name', 'value', 'job', 'weight')
+    __slots__ = ('name', 'value', 'job', 'tag', 'weight')
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  value: Any,
-                 job: Optional[Union[Text, MutableSequence[Text]]] = None,
+                 job: Optional[Union[str, MutableSequence[str]]] = None,
+                 tag: str = '0',
                  weight: int = 0):
         self.name = name
         self.value: Any = value
-        self.job: Optional[Union[Text, MutableSequence[Text]]] = job
+        self.job: Optional[Union[str, MutableSequence[str]]] = job
+        self.tag: str = tag
         self.weight: int = weight
 
     def update(self, value: Any) -> Token:
-        return Token(name=self.name, job=self.job, weight=self.weight, value=value)
+        return Token(name=self.name, job=self.job, tag=self.tag, weight=self.weight, value=value)
 
-    def rename(self, name: Text):
-        return Token(name=name, job=self.job, weight=self.weight, value=self.value)
+    def rename(self, name: str) -> Token:
+        return Token(name=name, job=self.job, tag=self.tag, weight=self.weight, value=self.value)
+
+    def retag(self, tag: str) -> Token:
+        return Token(name=self.name, job=self.job, tag=tag, weight=self.weight, value=self.value)
 
 
 class TerminationToken(Token):
 
-    def __init__(self, name: Text):
+    def __init__(self, name: str):
         super().__init__(name, None)
 
     def update(self, value: Any) -> Token:
         raise NotImplementedError()
 
-    def rename(self, name: Text):
+    def rename(self, name: str) -> Token:
         return TerminationToken(name=name)
+
+    def retag(self, tag: str) -> Token:
+        raise NotImplementedError()
 
 
 class Executor(ABC):
@@ -78,23 +109,25 @@ class Executor(ABC):
 
 
 class Job(ABC):
-    __slots__ = ('name', 'step', 'inputs', 'input_directory', 'output_directory', 'tmp_directory')
+    __slots__ = ('name', 'step', 'inputs', 'input_directory', 'output_directory', 'tmp_directory', 'hardware')
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Step,
                  inputs: MutableSequence[Token],
-                 input_directory: Optional[Text] = None,
-                 output_directory: Optional[Text] = None,
-                 tmp_directory: Optional[Text] = None):
-        self.name: Text = name
+                 input_directory: Optional[str] = None,
+                 output_directory: Optional[str] = None,
+                 tmp_directory: Optional[str] = None,
+                 hardware: Optional[Hardware] = None):
+        self.name: str = name
         self.step = step
         self.inputs: MutableSequence[Token] = inputs
-        self.input_directory: Optional[Text] = input_directory
-        self.output_directory: Optional[Text] = output_directory
-        self.tmp_directory: Optional[Text] = tmp_directory
+        self.input_directory: Optional[str] = input_directory
+        self.output_directory: Optional[str] = output_directory
+        self.tmp_directory: Optional[str] = tmp_directory
+        self.hardware: Optional[Hardware] = hardware
 
-    def get_resources(self, statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[Text]:
+    def get_resources(self, statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[str]:
         return self.step.context.scheduler.get_resources(self.name, statuses)
 
     @abstractmethod
@@ -109,9 +142,9 @@ class Job(ABC):
 class Port(ABC):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None):
-        self.name: Text = name
+        self.name: str = name
         self.step: Optional[Step] = step
         self.token_processor: Optional[TokenProcessor] = None
 
@@ -119,7 +152,7 @@ class Port(ABC):
 class InputPort(Port, ABC):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None):
         super().__init__(name, step)
         self.dependee: Optional[OutputPort] = None
@@ -132,11 +165,11 @@ class InputPort(Port, ABC):
 class InputCombinator(InputPort, ABC):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[Text, InputPort]] = None):
+                 ports: Optional[MutableMapping[str, InputPort]] = None):
         super().__init__(name, step)
-        self.ports: MutableMapping[Text, InputPort] = ports or {}
+        self.ports: MutableMapping[str, InputPort] = ports or {}
 
     @abstractmethod
     async def get(self) -> MutableSequence[Token]:
@@ -150,7 +183,7 @@ class OutputPort(Port, ABC):
         ...
 
     @abstractmethod
-    async def get(self, consumer: Text) -> Token:
+    async def get(self, consumer: str) -> Token:
         ...
 
     @abstractmethod
@@ -161,11 +194,11 @@ class OutputPort(Port, ABC):
 class OutputCombinator(OutputPort, ABC):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[Text, OutputPort]] = None):
+                 ports: Optional[MutableMapping[str, OutputPort]] = None):
         super().__init__(name, step)
-        self.ports: MutableMapping[Text, OutputPort] = ports or {}
+        self.ports: MutableMapping[str, OutputPort] = ports or {}
 
 
 class TokenProcessor(ABC):
@@ -174,7 +207,7 @@ class TokenProcessor(ABC):
         self.port: Port = port
 
     @abstractmethod
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         ...
 
     @abstractmethod
@@ -182,11 +215,11 @@ class TokenProcessor(ABC):
         ...
 
     @abstractmethod
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         ...
 
     @abstractmethod
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         ...
 
     @abstractmethod
@@ -210,21 +243,27 @@ class Status(Enum):
 class Step(ABC):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  context: StreamFlowContext,
                  command: Optional[Command] = None,
-                 target: Optional[Target] = None):
+                 target: Optional[Target] = None,
+                 workflow: Optional[Workflow] = None):
         super().__init__()
         self.context: StreamFlowContext = context
         self.command: Optional[Command] = command
+        self.condition: Optional[Condition] = None
+        self.hardware_requirement: Optional[HardwareRequirement] = None
         self.input_combinator: Optional[InputCombinator] = None
-        self.input_ports: MutableMapping[Text, Union[InputPort, InputCombinator]] = {}
-        self.name: Text = name
-        self.output_ports: MutableMapping[Text, OutputPort] = {}
+        self.input_ports: MutableMapping[str, InputPort] = {}
+        self.name: str = name
+        self.output_ports: MutableMapping[str, OutputPort] = {}
+        self.persistent_id: Optional[int] = None
+        self.scheduling_group: Optional[str] = None
         self.status: Status = Status.WAITING
         self.target: Optional[Target] = target
         self.terminated: bool = False
-        self.workdir: Optional[Text] = None
+        self.workdir: Optional[str] = None
+        self.workflow: Optional[Workflow] = workflow
 
     @abstractmethod
     def get_connector(self) -> Optional[Connector]:
@@ -245,15 +284,20 @@ class Target(object):
     def __init__(self,
                  model: ModelConfig,
                  resources: int = 1,
-                 service: Optional[Text] = None):
+                 service: Optional[str] = None):
         self.model: ModelConfig = model
         self.resources: int = resources
-        self.service: Optional[Text] = service
+        self.service: Optional[str] = service
 
 
 class Workflow(object):
 
     def __init__(self):
         super().__init__()
-        self.steps: MutableMapping[Text, Step] = {}
-        self.output_ports: MutableMapping[Text, OutputPort] = {}
+        self.steps: MutableMapping[str, Step] = {}
+        self.root_steps: MutableSequence[str] = []
+        self.output_ports: MutableMapping[str, OutputPort] = {}
+
+    def add_step(self, step: Step):
+        self.steps[step.name] = step
+        step.workflow = self

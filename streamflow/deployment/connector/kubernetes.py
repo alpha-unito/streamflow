@@ -10,7 +10,9 @@ import tarfile
 import tempfile
 import uuid
 from abc import ABC
+from shutil import which
 from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
+from urllib.parse import urlencode
 
 import yaml
 from cachetools import Cache, TTLCache
@@ -18,15 +20,26 @@ from kubernetes_asyncio import client
 from kubernetes_asyncio.client import Configuration, ApiClient, V1Container
 from kubernetes_asyncio.config import incluster_config, ConfigException, load_kube_config
 from kubernetes_asyncio.stream import WsApiClient, ws_client
-from typing_extensions import Text
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+
+def _check_helm_installed():
+    if which("helm") is not None:
+        raise WorkflowExecutionException("Helm must be installed on the system to use the Helm connector.")
+
+
+async def _get_helm_version():
+    proc = await asyncio.create_subprocess_exec("helm version --template '{{.Version}}'")
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
 
 
 class PatchedInClusterConfigLoader(incluster_config.InClusterConfigLoader):
@@ -43,29 +56,74 @@ class PatchedInClusterConfigLoader(incluster_config.InClusterConfigLoader):
         configuration.api_key['authorization'] = "bearer " + self.token
 
 
-class BaseHelmConnector(BaseConnector, ABC):
+class PatchedWsApiClient(WsApiClient):
+
+    async def request(self, method, url, query_params=None, headers=None,
+                      post_params=None, body=None, _preload_content=True,
+                      _request_timeout=None):
+        if query_params:
+            new_query_params = []
+            for key, value in query_params:
+                if key == 'command' and isinstance(value, list):
+                    for command in value:
+                        new_query_params.append((key, command))
+                else:
+                    new_query_params.append((key, value))
+            query_params = new_query_params
+        if headers is None:
+            headers = {}
+        if 'sec-websocket-protocol' not in headers:
+            headers['sec-websocket-protocol'] = 'v4.channel.k8s.io'
+
+        if query_params:
+            url += '?' + urlencode(query_params)
+
+        url = ws_client.get_websocket_url(url)
+
+        if _preload_content:
+
+            resp_all = ''
+            async with self.rest_client.pool_manager.ws_connect(
+                    url,
+                    headers=headers,
+                    heartbeat=30) as ws:
+                async for msg in ws:
+                    msg = msg.data.decode('utf-8')
+                    if len(msg) > 1:
+                        channel = ord(msg[0])
+                        data = msg[1:]
+                        if data:
+                            if channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
+                                resp_all += data
+
+            return ws_client.WsResponse(resp_all.encode('utf-8'))
+
+        else:
+
+            return await self.rest_client.pool_manager.ws_connect(url, headers=headers, heartbeat=30)
+
+
+class BaseKubernetesConnector(BaseConnector, ABC):
 
     def __init__(self,
-                 streamflow_config_dir: Text,
+                 streamflow_config_dir: str,
                  inCluster: Optional[bool] = False,
-                 kubeconfig: Optional[Text] = os.path.join(os.environ['HOME'], ".kube", "config"),
-                 namespace: Optional[Text] = None,
-                 readBufferSize: Optional[int] = None,
-                 releaseName: Optional[Text] = "release-%s" % str(uuid.uuid1()),
+                 kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
+                 namespace: Optional[str] = None,
                  resourcesCacheTTL: int = 10,
-                 transferBufferSize: int = (2 ** 25) - 1):
+                 transferBufferSize: int = (2 ** 25) - 1,
+                 maxConcurrentConnections: int = 4096):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
         self.namespace = namespace
-        self.releaseName = releaseName
         self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
         self.configuration: Optional[Configuration] = None
         self.client: Optional[client.CoreV1Api] = None
         self.client_ws: Optional[client.CoreV1Api] = None
+        self.maxConcurrentConnections: int = maxConcurrentConnections
 
     def _configure_incluster_namespace(self):
         if self.namespace is None:
@@ -79,10 +137,10 @@ class BaseHelmConnector(BaseConnector, ABC):
                     raise ConfigException("Namespace file exists but empty.")
 
     async def _copy_remote_to_remote(self,
-                                     src: Text,
-                                     dst: Text,
-                                     resources: MutableSequence[Text],
-                                     source_remote: Text,
+                                     src: str,
+                                     dst: str,
+                                     resources: MutableSequence[str],
+                                     source_remote: str,
                                      read_only: bool = False) -> None:
         effective_resources = await self._get_effective_resources(resources, dst)
         await super()._copy_remote_to_remote(
@@ -93,9 +151,9 @@ class BaseHelmConnector(BaseConnector, ABC):
             read_only=read_only)
 
     async def _copy_local_to_remote(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resources: MutableSequence[Text],
+                                    src: str,
+                                    dst: str,
+                                    resources: MutableSequence[str],
                                     read_only: bool = False):
         effective_resources = await self._get_effective_resources(resources, dst)
         await super()._copy_local_to_remote(
@@ -105,12 +163,12 @@ class BaseHelmConnector(BaseConnector, ABC):
             read_only=read_only)
 
     async def _copy_local_to_remote_single(self,
-                                           resource: Text,
+                                           resource: str,
                                            tar_buffer: io.BufferedRandom,
                                            read_only: bool = False) -> None:
-        resource_buffer = io.BufferedReader(tar_buffer.raw, buffer_size=self.readBufferSize)
+        resource_buffer = io.BufferedReader(tar_buffer.raw)
         pod, container = resource.split(':')
-        command = ['tar', 'xzf', '-', '-C', '/']
+        command = ["tar", "xf", "-", "-C", "/"]
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -128,12 +186,12 @@ class BaseHelmConnector(BaseConnector, ABC):
         await response.close()
 
     async def _copy_remote_to_local(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resource: Text,
+                                    src: str,
+                                    dst: str,
+                                    resource: str,
                                     read_only: bool = False):
         pod, container = resource.split(':')
-        command = ["tar", "czf", "-", "-C", "/", posixpath.relpath(src, '/')]
+        command = ["tar", "chf", "-", "-C", "/", posixpath.relpath(src, '/')]
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -153,10 +211,12 @@ class BaseHelmConnector(BaseConnector, ABC):
                         tar_buffer.write(data)
             await response.close()
             tar_buffer.seek(0)
-            with tarfile.open(fileobj=tar_buffer, mode='r|gz') as tar:
+            with tarfile.open(
+                    fileobj=tar_buffer,
+                    mode='r|') as tar:
                 utils.extract_tar_stream(tar, src, dst)
 
-    async def _get_container(self, resource: Text) -> Tuple[Text, V1Container]:
+    async def _get_container(self, resource: str) -> Tuple[str, V1Container]:
         pod_name, container_name = resource.split(':')
         pod = await self.client.read_namespaced_pod(name=pod_name, namespace=self.namespace or 'default')
         for container in pod.spec.containers:
@@ -176,9 +236,9 @@ class BaseHelmConnector(BaseConnector, ABC):
         return self.configuration
 
     async def _get_effective_resources(self,
-                                       resources: MutableSequence[Text],
-                                       dest_path: Text,
-                                       source_remote: Optional[Text] = None) -> MutableSequence[Text]:
+                                       resources: MutableSequence[str],
+                                       dest_path: str,
+                                       source_remote: Optional[str] = None) -> MutableSequence[str]:
         # Get containers
         container_tasks = []
         for resource in resources:
@@ -205,49 +265,50 @@ class BaseHelmConnector(BaseConnector, ABC):
                 effective_resources.append(resource)
         return effective_resources
 
+    def _get_run_command(self,
+                         command: str,
+                         resource: str,
+                         interactive: bool = False):
+        pod, container = resource.split(':')
+        return (
+            "kubectl "
+            "{namespace}"
+            "{kubeconfig}"
+            "exec "
+            "{pod} "
+            "{interactive}"
+            "{container}"
+            "-- "
+            "{command}"
+        ).format(
+            namespace=self.get_option("namespace", self.namespace),
+            kubeconfig=self.get_option("kubeconfig", self.kubeconfig),
+            pod=pod,
+            interactive=self.get_option("i", interactive),
+            container=self.get_option("container", container),
+            command=command)
+
     async def deploy(self, external: bool):
         # Init standard client
         configuration = await self._get_configuration()
+        configuration.connection_pool_maxsize = self.maxConcurrentConnections
         self.client = client.CoreV1Api(api_client=ApiClient(configuration=configuration))
         # Init WebSocket client
         configuration = await self._get_configuration()
-        ws_api_client = WsApiClient(configuration=configuration)
+        configuration.connection_pool_maxsize = self.maxConcurrentConnections
+        ws_api_client = PatchedWsApiClient(configuration=configuration)
         ws_api_client.set_default_header('Connection', 'upgrade,keep-alive')
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
 
-    @cachedmethod(lambda self: self.resourcesCache)
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
-        pods = await self.client.list_namespaced_pod(
-            namespace=self.namespace or 'default',
-            label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
-            field_selector="status.phase=Running"
-        )
-        valid_targets = {}
-        for pod in pods.items:
-            # Check if pod is ready
-            is_ready = True
-            for condition in pod.status.conditions:
-                if condition.status != 'True':
-                    is_ready = False
-                    break
-            # Filter out not ready and Terminating resources
-            if is_ready and pod.metadata.deletion_timestamp is None:
-                for container in pod.spec.containers:
-                    if not service or service == container.name:
-                        resource_name = pod.metadata.name + ':' + service
-                        valid_targets[resource_name] = Resource(name=resource_name, hostname=pod.status.pod_ip)
-                        break
-        return valid_targets
-
     async def _run(self,
-                   resource: Text,
-                   command: MutableSequence[Text],
-                   environment: MutableMapping[Text, Text] = None,
-                   workdir: Optional[Text] = None,
-                   stdin: Optional[Union[int, Text]] = None,
-                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[Text] = None,
+                   resource: str,
+                   command: MutableSequence[str],
+                   environment: MutableMapping[str, str] = None,
+                   workdir: Optional[str] = None,
+                   stdin: Optional[Union[int, str]] = None,
+                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                   job_name: Optional[str] = None,
                    capture_output: bool = False,
                    encode: bool = True,
                    interactive: bool = False,
@@ -302,54 +363,97 @@ class BaseHelmConnector(BaseConnector, ABC):
         self.configuration = None
 
 
+class BaseHelmConnector(BaseKubernetesConnector, ABC):
+
+    def __init__(self,
+                 streamflow_config_dir: str,
+                 inCluster: Optional[bool] = False,
+                 kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
+                 namespace: Optional[str] = None,
+                 releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
+                 resourcesCacheTTL: int = 10,
+                 transferBufferSize: int = (2 ** 25) - 1):
+        super().__init__(
+            streamflow_config_dir=streamflow_config_dir,
+            inCluster=inCluster,
+            kubeconfig=kubeconfig,
+            namespace=namespace,
+            resourcesCacheTTL=resourcesCacheTTL,
+            transferBufferSize=transferBufferSize)
+        self.releaseName: str = releaseName
+
+    @cachedmethod(lambda self: self.resourcesCache)
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+        pods = await self.client.list_namespaced_pod(
+            namespace=self.namespace or 'default',
+            label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
+            field_selector="status.phase=Running"
+        )
+        valid_targets = {}
+        for pod in pods.items:
+            # Check if pod is ready
+            is_ready = True
+            for condition in pod.status.conditions:
+                if condition.status != 'True':
+                    is_ready = False
+                    break
+            # Filter out not ready and Terminating resources
+            if is_ready and pod.metadata.deletion_timestamp is None:
+                for container in pod.spec.containers:
+                    if not service or service == container.name:
+                        resource_name = pod.metadata.name + ':' + service
+                        valid_targets[resource_name] = Resource(name=resource_name, hostname=pod.status.pod_ip)
+                        break
+        return valid_targets
+
+
 class Helm2Connector(BaseHelmConnector):
 
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 chart: Text,
+                 streamflow_config_dir: str,
+                 chart: str,
                  debug: Optional[bool] = False,
-                 home: Optional[Text] = os.path.join(os.environ['HOME'], ".helm"),
-                 kubeContext: Optional[Text] = None,
-                 kubeconfig: Optional[Text] = None,
+                 home: Optional[str] = os.path.join(os.environ['HOME'], ".helm"),
+                 kubeContext: Optional[str] = None,
+                 kubeconfig: Optional[str] = None,
                  tillerConnectionTimeout: Optional[int] = None,
-                 tillerNamespace: Optional[Text] = None,
+                 tillerNamespace: Optional[str] = None,
                  atomic: Optional[bool] = False,
-                 caFile: Optional[Text] = None,
-                 certFile: Optional[Text] = None,
+                 caFile: Optional[str] = None,
+                 certFile: Optional[str] = None,
                  depUp: Optional[bool] = False,
-                 description: Optional[Text] = None,
+                 description: Optional[str] = None,
                  devel: Optional[bool] = False,
                  inCluster: Optional[bool] = False,
                  init: Optional[bool] = False,
-                 keyFile: Optional[Text] = None,
-                 keyring: Optional[Text] = None,
-                 releaseName: Optional[Text] = None,
-                 nameTemplate: Optional[Text] = None,
-                 namespace: Optional[Text] = None,
+                 keyFile: Optional[str] = None,
+                 keyring: Optional[str] = None,
+                 releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
+                 nameTemplate: Optional[str] = None,
+                 namespace: Optional[str] = None,
                  noCrdHook: Optional[bool] = False,
                  noHooks: Optional[bool] = False,
-                 password: Optional[Text] = None,
+                 password: Optional[str] = None,
                  renderSubchartNotes: Optional[bool] = False,
-                 repo: Optional[Text] = None,
+                 repo: Optional[str] = None,
                  resourcesCacheTTL: int = 10,
-                 commandLineValues: Optional[MutableSequence[Text]] = None,
-                 fileValues: Optional[MutableSequence[Text]] = None,
-                 stringValues: Optional[MutableSequence[Text]] = None,
+                 commandLineValues: Optional[MutableSequence[str]] = None,
+                 fileValues: Optional[MutableSequence[str]] = None,
+                 stringValues: Optional[MutableSequence[str]] = None,
                  timeout: Optional[int] = str(60000),
                  tls: Optional[bool] = False,
-                 tlscacert: Optional[Text] = None,
-                 tlscert: Optional[Text] = None,
-                 tlshostname: Optional[Text] = None,
-                 tlskey: Optional[Text] = None,
+                 tlscacert: Optional[str] = None,
+                 tlscert: Optional[str] = None,
+                 tlshostname: Optional[str] = None,
+                 tlskey: Optional[str] = None,
                  tlsverify: Optional[bool] = False,
-                 username: Optional[Text] = None,
-                 yamlValues: Optional[MutableSequence[Text]] = None,
+                 username: Optional[str] = None,
+                 yamlValues: Optional[MutableSequence[str]] = None,
                  verify: Optional[bool] = False,
-                 chartVersion: Optional[Text] = None,
+                 chartVersion: Optional[str] = None,
                  wait: Optional[bool] = True,
                  purge: Optional[bool] = True,
-                 transferBufferSize: int = (2 ** 25) - 1,
-                 readBufferSize: Optional[int] = None):
+                 transferBufferSize: int = (2 ** 25) - 1):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             inCluster=inCluster,
@@ -357,7 +461,6 @@ class Helm2Connector(BaseHelmConnector):
             namespace=namespace,
             releaseName=releaseName,
             resourcesCacheTTL=resourcesCacheTTL,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize
         )
         self.chart = os.path.join(streamflow_config_dir, chart)
@@ -432,6 +535,13 @@ class Helm2Connector(BaseHelmConnector):
         # Create clients
         await super().deploy(external)
         if not external:
+            # Check if Helm is installed
+            _check_helm_installed()
+            # Check correct version of Helm
+            version = await _get_helm_version()
+            if not version.startswith("v2"):
+                raise WorkflowExecutionException(
+                    "Helm {version} is not compatible with Helm2Connector".format(version=version))
             # Deploy Helm charts
             deploy_command = self.base_command() + "".join([
                 "install "
@@ -542,43 +652,42 @@ class Helm2Connector(BaseHelmConnector):
 
 class Helm3Connector(BaseHelmConnector):
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 chart: Text,
+                 streamflow_config_dir: str,
+                 chart: str,
                  debug: Optional[bool] = False,
-                 kubeContext: Optional[Text] = None,
-                 kubeconfig: Optional[Text] = None,
+                 kubeContext: Optional[str] = None,
+                 kubeconfig: Optional[str] = None,
                  atomic: Optional[bool] = False,
-                 caFile: Optional[Text] = None,
-                 certFile: Optional[Text] = None,
+                 caFile: Optional[str] = None,
+                 certFile: Optional[str] = None,
                  depUp: Optional[bool] = False,
                  devel: Optional[bool] = False,
                  inCluster: Optional[bool] = False,
                  keepHistory: Optional[bool] = False,
-                 keyFile: Optional[Text] = None,
-                 keyring: Optional[Text] = None,
-                 releaseName: Optional[Text] = None,
-                 nameTemplate: Optional[Text] = None,
-                 namespace: Optional[Text] = None,
+                 keyFile: Optional[str] = None,
+                 keyring: Optional[str] = None,
+                 releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
+                 nameTemplate: Optional[str] = None,
+                 namespace: Optional[str] = None,
                  noHooks: Optional[bool] = False,
-                 password: Optional[Text] = None,
+                 password: Optional[str] = None,
                  renderSubchartNotes: Optional[bool] = False,
-                 repo: Optional[Text] = None,
-                 commandLineValues: Optional[MutableSequence[Text]] = None,
-                 fileValues: Optional[MutableSequence[Text]] = None,
-                 registryConfig: Optional[Text] = os.path.join(os.environ['HOME'], ".config/helm/registry.json"),
-                 repositoryCache: Optional[Text] = os.path.join(os.environ['HOME'], ".cache/helm/repository"),
-                 repositoryConfig: Optional[Text] = os.path.join(os.environ['HOME'], ".config/helm/repositories.yaml"),
+                 repo: Optional[str] = None,
+                 commandLineValues: Optional[MutableSequence[str]] = None,
+                 fileValues: Optional[MutableSequence[str]] = None,
+                 registryConfig: Optional[str] = os.path.join(os.environ['HOME'], ".config/helm/registry.json"),
+                 repositoryCache: Optional[str] = os.path.join(os.environ['HOME'], ".cache/helm/repository"),
+                 repositoryConfig: Optional[str] = os.path.join(os.environ['HOME'], ".config/helm/repositories.yaml"),
                  resourcesCacheTTL: int = 10,
-                 stringValues: Optional[MutableSequence[Text]] = None,
+                 stringValues: Optional[MutableSequence[str]] = None,
                  skipCrds: Optional[bool] = False,
-                 timeout: Optional[Text] = "1000m",
-                 username: Optional[Text] = None,
-                 yamlValues: Optional[MutableSequence[Text]] = None,
+                 timeout: Optional[str] = "1000m",
+                 username: Optional[str] = None,
+                 yamlValues: Optional[MutableSequence[str]] = None,
                  verify: Optional[bool] = False,
-                 chartVersion: Optional[Text] = None,
+                 chartVersion: Optional[str] = None,
                  wait: Optional[bool] = True,
-                 transferBufferSize: int = (32 << 20) - 1,
-                 readBufferSize: Optional[int] = None):
+                 transferBufferSize: int = (32 << 20) - 1):
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
             inCluster=inCluster,
@@ -586,7 +695,6 @@ class Helm3Connector(BaseHelmConnector):
             namespace=namespace,
             releaseName=releaseName,
             resourcesCacheTTL=resourcesCacheTTL,
-            readBufferSize=readBufferSize,
             transferBufferSize=transferBufferSize
         )
         self.chart = os.path.join(streamflow_config_dir, chart)
@@ -643,6 +751,13 @@ class Helm3Connector(BaseHelmConnector):
         # Create clients
         await super().deploy(external)
         if not external:
+            # Check if Helm is installed
+            _check_helm_installed()
+            # Check correct version of Helm
+            version = await _get_helm_version()
+            if not version.startswith("v3"):
+                raise WorkflowExecutionException(
+                    "Helm {version} is not compatible with Helm3Connector".format(version=version))
             # Deploy Helm charts
             deploy_command = self.base_command() + "".join([
                 "install "

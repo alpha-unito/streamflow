@@ -1,6 +1,6 @@
 # StreamFlow
 
-[![Build Status](https://travis-ci.com/alpha-unito/streamflow.svg?branch=master)](https://travis-ci.com/alpha-unito/streamflow)
+[![CWL Conformance](https://github.com/alpha-unito/streamflow/actions/workflows/cwl-conformance.yaml/badge.svg?branch=master)](https://github.com/alpha-unito/streamflow/actions/workflows/cwl-conformance.yaml)
 
 The StreamFlow framework is a container-native *Workflow Management System (WMS)* written in Python 3.
 It has been designed around two main principles:
@@ -22,7 +22,7 @@ pip install streamflow
 Please note that StreamFlow requires `python >= 3.8`. Then you can execute it directly from the CLI
 
 ```bash
-streamflow /path/to/streamflow.yml
+streamflow run /path/to/streamflow.yml
 ```
 
 #### Docker
@@ -45,8 +45,7 @@ docker run -d \
     --mount type=bind,source="$(pwd)"/my-project,target=/streamflow/project \
     --mount type=bind,source="$(pwd)"/results,target=/streamflow/results \
     --mount type=bind,source="$(pwd)"/tmp,target=/tmp/streamflow \
-    alphaunito/streamflow \
-    /streamflow/project/streamflow.yml
+    alphaunito/streamflow run /streamflow/project/streamflow.yml
 ```
 
 #### Kubernetes
@@ -71,31 +70,94 @@ Please note that, in case [RBAC](https://kubernetes.io/docs/reference/access-aut
 Kubernetes cluster, a proper `RoleBinding` must be attached to the `ServiceAccount` object, in order to give
 StreamFlow the permissions to manage deployments of pods and executions of tasks.
 
-## Contribute to StreamFlow
+## CWL Compatibility
 
-StreamFlow uses [pipenv](https://pipenv.kennethreitz.org/en/latest/) to guarantee deterministic builds.
-Therefore, the recommended way to manage dependencies is by means of the `pipenv` command.
+StreamFlow relies on the [Common Workflow Language](https://www.commonwl.org/) (CWL) standard to design workflow models. CWL conformance badges for StreamFlow are reported below.
+
+### CWL v1.0
+
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/command_line_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/docker.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/env_var.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/expression_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/initial_work_dir.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/inline_javascript.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/multiple_input.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/required.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/resource.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/scatter.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/schema_def.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/shell_command.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/step_input.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/subworkflow.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.0/workflow.json)
+
+### CWL v1.1
+
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/command_line_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/docker.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/env_var.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/expression_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/format_checking.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/initial_work_dir.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/inline_javascript.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/inplace_update.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/input_object_requirements.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/multiple_input.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/networkaccess.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/required.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/resource.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/scatter.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/schema_def.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/shell_command.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/step_input_expression.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/step_input.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/subworkflow.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/timelimit.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.1/workflow.json)
+
+### CWL v1.2
+
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/command_line_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/conditional.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/docker.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/env_var.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/expression_tool.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/format_checking.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/initial_work_dir.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/inline_javascript.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/inplace_update.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/input_object_requirements.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/load_listing.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/multiple_input.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/multiple.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/networkaccess.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/required.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/resource.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/scatter.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/schema_def.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/shell_command.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/step_input.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/subworkflow.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/timelimit.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/workflow.json)
+![](https://badgen.net/https/streamflow.di.unito.it/cwl-conformance/v1.2/work_reuse.json)
+
+## Contribute to StreamFlow
 
 As a first step, get StreamFlow from [GitHub](https://github.com/alpha-unito/streamflow) 
 ```bash
 git clone git@github.com:alpha-unito/streamflow.git
 ```
 
-Then you can install all the requred packages using the `pipenv` command
+Then you can install all the requred packages using the `python setup.py install` command
+
 ```bash
-pip install --user pipenv
 cd streamflow
-pipenv install
+python setup.py install
 ```
 
-Finally, you can run StreamFlow in the generated virtual environment. In order for this to work, it is
-necessary to add the streamflow project folder (the one generated by the `git clone` command) to your
-`PYTHONPATH` list
-```bash
-pipenv run python -m streamflow
-```
-
-StreamFlow relies on [Travis CI](https://travis-ci.com/) for PyPI and Docker Hub distributions. Therefore, in order to publish a
+StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for PyPI and Docker Hub distributions. Therefore, in order to publish a
 new version of the software, you only have to augment the version number in `version.py` file.
 
 ## StreamFlow Team

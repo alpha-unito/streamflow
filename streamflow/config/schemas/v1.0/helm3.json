@@ -71,6 +71,11 @@
       "type": "string",
       "description": "Absolute path of the kubeconfig file to be used"
     },
+    "maxConcurrentConnections": {
+      "type": "integer",
+      "description": "Maximum number of concurrent connections to open for a single Kubernetes client",
+      "default": 4096
+    },
     "namespace": {
       "type": "string",
       "description": "Namespace to install the release into",
@@ -87,11 +92,6 @@
     "password": {
       "type": "string",
       "description": " Chart repository password where to locate the requested chart"
-    },
-    "readBufferSize": {
-      "type": "integer",
-      "description": "Buffer size allocated for local disk reads during data transfers",
-      "default": "4 * transferBufferSize"
     },
     "registryConfig": {
       "type": "string",

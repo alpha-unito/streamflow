@@ -6,9 +6,8 @@ import posixpath
 from asyncio import Event, Queue
 from typing import TYPE_CHECKING, List, MutableMapping, MutableSequence, Optional, cast, Type, Callable
 
-from typing_extensions import Text
-
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.utils import get_tag
 from streamflow.core.workflow import TokenProcessor, InputPort, OutputPort, Token, TerminationToken, Port, CommandOutput
 
 if TYPE_CHECKING:
@@ -17,37 +16,53 @@ if TYPE_CHECKING:
     from typing import Any, Set
 
 
+def _sort(outputs: MutableSequence[Token]):
+    sorted_list = []
+    for t in sorted(outputs, key=lambda t: int(t.tag.split('.')[-1])):
+        if isinstance(t.job, MutableSequence):
+            sorted_list.append(t.update(_sort(t.value)))
+        else:
+            sorted_list.append(t)
+    return sorted_list
+
+
 class DefaultTokenProcessor(TokenProcessor):
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
-            return token.update(await asyncio.gather(*[asyncio.create_task(
-                self.collect_output(t, output_dir)
-            ) for t in token.value]))
+            return token.update(await asyncio.gather(*(asyncio.create_task(
+                self.collect_output(t if isinstance(t, Token) else token.update(t), output_dir)
+            ) for t in token.value)))
         else:
             return token
 
     async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
-        return Token(name=self.port.name, value=command_output.value, job=job.name)
+        return Token(
+            name=self.port.name,
+            value=command_output.value,
+            job=job.name,
+            tag=get_tag(job.inputs))
 
     def get_context(self) -> StreamFlowContext:
         return self.port.step.context
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
+        if isinstance(token.job, MutableSequence):
+            return set().union(*(self.get_related_resources(t) for t in token.value))
         return set()
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
-            return token.update(await asyncio.gather(*[asyncio.create_task(
+            return token.update(await asyncio.gather(*(asyncio.create_task(
                 self.recover_token(job, resources, t)
-            ) for t in token.value]))
+            ) for t in token.value)))
         return token
 
     async def update_token(self, job: Job, token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
-            return token.update(await asyncio.gather(*[asyncio.create_task(
+            return token.update(await asyncio.gather(*(asyncio.create_task(
                 self.update_token(job, t)
-            ) for t in token.value]))
+            ) for t in token.value)))
         else:
             return token
 
@@ -68,7 +83,7 @@ class ListTokenProcessor(DefaultTokenProcessor):
             raise WorkflowDefinitionException(
                 "A {this} object can only be used to process list values".format(this=self.__class__.__name__))
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().collect_output(token, output_dir)
         self._check_list(token.value)
@@ -79,7 +94,7 @@ class ListTokenProcessor(DefaultTokenProcessor):
                 output_tasks.append(asyncio.create_task(processor.collect_output(partial_token, output_dir)))
         return token.update([t.value for t in await asyncio.gather(*output_tasks)])
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         self._check_list(token.value)
         related_resources = set()
         for i, processor in enumerate(self.processors):
@@ -88,7 +103,7 @@ class ListTokenProcessor(DefaultTokenProcessor):
                 related_resources.update(processor.get_related_resources(partial_token))
         return related_resources
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().recover_token(job, resources, token)
         self._check_list(token.value)
@@ -132,7 +147,7 @@ class MapTokenProcessor(DefaultTokenProcessor):
             raise WorkflowDefinitionException(
                 "A {this} object can only be used to process list values".format(this=self.__class__.__name__))
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().collect_output(token, output_dir)
         self._check_list(token.value)
@@ -143,25 +158,32 @@ class MapTokenProcessor(DefaultTokenProcessor):
 
     async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
         if isinstance(command_output.value, MutableSequence):
-            token_list = await asyncio.gather(*[asyncio.create_task(
+            token_list = await asyncio.gather(*(asyncio.create_task(
                 self.processor.compute_token(job, command_output.update(value))
-            ) for value in command_output.value])
-            token = Token(name=self.port.name, value=[t.value for t in token_list], job=job.name)
+            ) for value in command_output.value))
+            token = Token(
+                name=self.port.name,
+                value=[t.value for t in token_list],
+                job=job.name,
+                tag=get_tag(job.inputs))
         else:
             token = await self.processor.compute_token(job, command_output)
-        token.value = ([] if token.value is None else
-                       [token.value] if not isinstance(token.value, MutableSequence) else
-                       token.value)
+        if token is not None:
+            token.value = ([] if token.value is None else
+                           [token.value] if not isinstance(token.value, MutableSequence) else
+                           token.value)
         return token
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
+        if isinstance(token.job, MutableSequence):
+            return set().union(*(self.processor.get_related_resources(t) for t in token.value))
         self._check_list(token.value)
         related_resources = set()
         for v in token.value:
             related_resources.update(self.processor.get_related_resources(token.update(v)))
         return related_resources
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             recover_tasks = []
             for t in token.value:
@@ -187,10 +209,11 @@ class MapTokenProcessor(DefaultTokenProcessor):
 
     async def weight_token(self, job: Job, token_value: Any) -> int:
         self._check_list(token_value)
-        weight = 0
-        for v in token_value:
-            weight += self.processor.weight_token(job, v)
-        return weight
+        return sum(await asyncio.gather(*(asyncio.create_task(
+            self.processor.weight_token(
+                job=job,
+                token_value=t)
+        ) for t in token_value)))
 
 
 class ObjectTokenProcessor(DefaultTokenProcessor):
@@ -202,11 +225,11 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
 
     def __init__(self,
                  port: Port,
-                 processors: MutableMapping[Text, TokenProcessor]):
+                 processors: MutableMapping[str, TokenProcessor]):
         super().__init__(port)
-        self.processors: MutableMapping[Text, TokenProcessor] = processors
+        self.processors: MutableMapping[str, TokenProcessor] = processors
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().collect_output(token, output_dir)
         self._check_dict(token.value)
@@ -220,10 +243,14 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
 
     async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
         if isinstance(command_output.value, MutableSequence):
-            token_value = [t.value for t in await asyncio.gather(*[asyncio.create_task(
+            token_value = [t.value for t in await asyncio.gather(*(asyncio.create_task(
                 self.compute_token(job, command_output.update(cv))
-            ) for cv in command_output.value])]
-            return Token(name=self.port.name, value=token_value, job=job.name)
+            ) for cv in command_output.value))]
+            return Token(
+                name=self.port.name,
+                value=token_value,
+                job=job.name,
+                tag=get_tag(job.inputs))
         if isinstance(command_output.value, MutableMapping):
             if self.port.name in command_output.value:
                 return await self.compute_token(job, command_output.update(command_output.value[self.port.name]))
@@ -235,16 +262,24 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
                         token_tasks[key] = asyncio.create_task(processor.compute_token(job, partial_command))
                 token_value = dict(
                     zip(token_tasks.keys(), [t.value for t in await asyncio.gather(*token_tasks.values())]))
-                return Token(name=self.port.name, value=token_value, job=job.name)
+                return Token(
+                    name=self.port.name,
+                    value=token_value,
+                    job=job.name,
+                    tag=get_tag(job.inputs))
         else:
             token_tasks = {}
             for key, processor in self.processors.items():
                 token_tasks[key] = asyncio.create_task(processor.compute_token(job, command_output))
             token_value = dict(
                 zip(token_tasks.keys(), [t.value for t in await asyncio.gather(*token_tasks.values())]))
-            return Token(name=self.port.name, value=token_value, job=job.name)
+            return Token(
+                name=self.port.name,
+                value=token_value,
+                job=job.name,
+                tag=get_tag(job.inputs))
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         self._check_dict(token.value)
         related_resources = set()
         for key, processor in self.processors.items():
@@ -253,7 +288,7 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
                 related_resources.update(processor.get_related_resources(partial_token))
         return related_resources
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().recover_token(job, resources, token)
         self._check_dict(token.value)
@@ -301,7 +336,7 @@ class UnionTokenProcessor(DefaultTokenProcessor):
         }
 
     # noinspection PyMethodMayBeStatic
-    def _check_default_token_processor(self, processor: MapTokenProcessor, token_value: Any):
+    def _check_default_token_processor(self, processor: DefaultTokenProcessor, token_value: Any):
         return True
 
     def _check_map_processor(self, processor: MapTokenProcessor, token_value: Any):
@@ -336,17 +371,17 @@ class UnionTokenProcessor(DefaultTokenProcessor):
         processor = self.get_processor(command_output.value)
         return await processor.compute_token(job, command_output)
 
-    async def collect_output(self, token: Token, output_dir: Text) -> Token:
+    async def collect_output(self, token: Token, output_dir: str) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().collect_output(token, output_dir)
         processor = self.get_processor(token.value)
         return await processor.collect_output(token, output_dir)
 
-    def get_related_resources(self, token: Token) -> Set[Text]:
+    def get_related_resources(self, token: Token) -> Set[str]:
         processor = self.get_processor(token.value)
         return processor.get_related_resources(token)
 
-    async def recover_token(self, job: Job, resources: MutableSequence[Text], token: Token) -> Token:
+    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             return await super().recover_token(job, resources, token)
         processor = self.get_processor(token.value)
@@ -366,7 +401,7 @@ class UnionTokenProcessor(DefaultTokenProcessor):
 class DefaultInputPort(InputPort):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None):
         super().__init__(name, step)
         self.fireable: Event = Event()
@@ -380,14 +415,14 @@ class DefaultInputPort(InputPort):
 class DefaultOutputPort(OutputPort):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None):
         super().__init__(name, step)
         self.fireable: Event = Event()
-        self.step_queues: MutableMapping[Text, Queue] = {}
+        self.step_queues: MutableMapping[str, Queue] = {}
         self.token: MutableSequence[Token] = []
 
-    def _init_consumer(self, consumer_name: Text):
+    def _init_consumer(self, consumer_name: str):
         self.step_queues[consumer_name] = Queue()
         for t in self.token:
             self.step_queues[consumer_name].put_nowait(copy.deepcopy(t))
@@ -401,7 +436,7 @@ class DefaultOutputPort(OutputPort):
             q.put_nowait(copy.deepcopy(token))
         self.fireable.set()
 
-    async def get(self, consumer: Text) -> Token:
+    async def get(self, consumer: str) -> Token:
         await self.fireable.wait()
         if consumer not in self.step_queues:
             self._init_consumer(consumer)
@@ -411,27 +446,34 @@ class DefaultOutputPort(OutputPort):
 class ScatterInputPort(DefaultInputPort):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  step: Optional[Step] = None):
         super().__init__(name, step)
         self.queue: List = []
 
-    async def _build_token(self, job_name: Text, token_value: Any) -> Token:
+    async def _build_token(self, job_name: str, token_value: Any, count: int) -> Token:
         job = self.step.context.scheduler.get_job(job_name)
         weight = await self.token_processor.weight_token(job, token_value)
-        return Token(name=self.name, value=token_value, job=job_name, weight=weight)
+        return Token(
+            name=self.name,
+            value=token_value,
+            job=job_name,
+            tag=get_tag(job.inputs if job is not None else []) + '.' + str(count),
+            weight=weight)
 
     async def get(self) -> Any:
         while not self.queue:
             token = await self.dependee.get(posixpath.join(self.step.name, self.name))
-            if isinstance(token, TerminationToken):
-                self.queue = [token]
+            if isinstance(token, TerminationToken) or token.value is None:
+                self.queue = [token.rename(self.name)]
             elif isinstance(token.job, MutableSequence):
-                self.queue = [t.rename(self.name) for t in token.value]
+                self.queue = await asyncio.gather(*(asyncio.create_task(
+                    self._build_token(cast(str, t.job), t.value, i)
+                ) for i, t in enumerate(token.value)))
             elif isinstance(token.value, MutableSequence):
-                self.queue = await asyncio.gather(*[asyncio.create_task(
-                    self._build_token(cast(Text, token.job), t)
-                ) for t in token.value])
+                self.queue = await asyncio.gather(*(asyncio.create_task(
+                    self._build_token(cast(str, token.job), t, i)
+                ) for i, t in enumerate(token.value)))
             else:
                 raise WorkflowDefinitionException("Scatter ports require iterable inputs")
         return self.queue.pop(0)
@@ -439,11 +481,33 @@ class ScatterInputPort(DefaultInputPort):
 
 class GatherOutputPort(DefaultOutputPort):
 
+    def __init__(self,
+                 name: str,
+                 step: Optional[Step] = None,
+                 merge_strategy: Callable[[MutableSequence[Token]], MutableSequence[Token]] = None):
+        super().__init__(name, step)
+        self.merge_strategy: Callable[
+            [MutableSequence[Token]], MutableSequence[Token]] = merge_strategy or self._default_merge_strategy
+
+    def _default_merge_strategy(self, token_list: MutableSequence[Token]) -> MutableSequence[Token]:
+        token_list = sorted(token_list, key=lambda t: t.tag)
+        token_dict = {}
+        for t in token_list:
+            tag = '.'.join(t.tag.split('.')[:-1]) or t.tag
+            if tag not in token_dict:
+                token_dict[tag] = []
+            token_dict[tag].append(t)
+        return [Token(
+            name=self.name,
+            job=[t.job for t in tokens],
+            tag=tag,
+            value=tokens) for tag, tokens in token_dict.items()]
+
     def put(self, token: Token):
         if isinstance(token, TerminationToken):
             token_list = self.token
             if token_list:
-                self.token = [Token(name=self.name, job=[t.job for t in token_list], value=token_list)]
+                self.token = self.merge_strategy(token_list)
                 self.token.append(token)
             else:
                 self.token = [token]

@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
     from streamflow.core.workflow import OutputPort
     from typing import Optional, MutableSequence
-    from typing_extensions import Text
 
 
 def _get_step_status(statuses: MutableSequence[Status]):
@@ -38,13 +37,14 @@ async def _retrieve_output(
         output_port: OutputPort,
         command_output: CommandOutput) -> None:
     token = await output_port.token_processor.compute_token(job, command_output)
-    output_port.put(token)
+    if token is not None:
+        output_port.put(token)
 
 
 class BaseJob(Job):
 
-    def _init_dir(self) -> Text:
-        if self.step.target is not None:
+    def _init_dir(self) -> str:
+        if self.step.target != 'local':
             path_processor = posixpath
             workdir = self.step.workdir or path_processor.join('/tmp', 'streamflow')
         else:
@@ -59,7 +59,7 @@ class BaseJob(Job):
         self.tmp_directory = self._init_dir() if self.tmp_directory is None else self.tmp_directory
         await remotepath.mkdirs(
             connector=self.step.get_connector(),
-            targets=self.get_resources(),
+            resources=self.get_resources(),
             paths=[self.input_directory, self.output_directory, self.tmp_directory])
 
     async def run(self):
@@ -69,8 +69,7 @@ class BaseJob(Job):
             # Execute job
             if not self.step.terminated:
                 self.step.status = Status.RUNNING
-            if self.step.target is not None:
-                await self.step.context.scheduler.notify_status(self.name, Status.RUNNING)
+            await self.step.context.scheduler.notify_status(self.name, Status.RUNNING)
             command_output = await self.step.command.execute(self)
             if command_output.status == Status.FAILED:
                 logger.error("Job {name} failed {error}".format(
@@ -106,25 +105,30 @@ class BaseStep(Step):
         job = BaseJob(
             name=posixpath.join(self.name, asyncio.current_task().get_name()),
             step=self,
-            inputs=inputs)
+            inputs=inputs,
+            hardware=self.hardware_requirement.eval(inputs) if self.hardware_requirement else None)
         logger.info("Job {name} created".format(name=job.name))
         # Initialise command output with defualt values
         command_output = CommandOutput(value=None, status=Status.FAILED)
         try:
-            # Setup runtime environment
-            if self.target is not None:
+            # If condition is satisfied (or null)
+            if self.condition is None or await self.condition.eval(job):
+                # Setup runtime environment
                 await self.context.deployment_manager.deploy(self.target.model)
                 await self.context.scheduler.schedule(job)
-            # Initialize job
-            await job.initialize()
-            # Update tokens after target assignment
-            job.inputs = await asyncio.gather(*[asyncio.create_task(
-                self.input_ports[token.name].token_processor.update_token(job, token)
-            ) for token in inputs])
-            # Run job
-            command_output = await job.run()
-            if command_output.status == Status.FAILED:
-                self.terminate(command_output.status)
+                # Initialize job
+                await job.initialize()
+                # Update tokens after target assignment
+                job.inputs = await asyncio.gather(*(asyncio.create_task(
+                    self.input_ports[token.name].token_processor.update_token(job, token)
+                ) for token in inputs))
+                # Run job
+                command_output = await job.run()
+                if command_output.status == Status.FAILED:
+                    self.terminate(command_output.status)
+            # Otherwise, if condition is not satisfied, skip the execution
+            else:
+                command_output = await self.command.skip(job)
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
@@ -149,14 +153,13 @@ class BaseStep(Step):
                 self.terminate(command_output.status)
         finally:
             # Notify completion to scheduler
-            if self.target is not None:
-                await self.context.scheduler.notify_status(job.name, command_output.status)
+            await self.context.scheduler.notify_status(job.name, command_output.status)
         # Retrieve output tokens
         if not self.terminated:
             try:
-                await asyncio.gather(*[asyncio.create_task(
+                await asyncio.gather(*(asyncio.create_task(
                     _retrieve_output(job, output_port, command_output)
-                ) for output_port in self.output_ports.values()])
+                ) for output_port in self.output_ports.values()))
             except BaseException as e:
                 logger.exception(e)
                 command_output.status = Status.FAILED
@@ -165,11 +168,13 @@ class BaseStep(Step):
             name=job.name, status=command_output.status.name))
         return command_output.status
 
+    def _set_status(self, status: Status):
+        self.status = status
+        if self.persistent_id is not None:
+            self.context.persistence_manager.db.update_step(self.persistent_id, {"status": status.value})
+
     def get_connector(self) -> Optional[Connector]:
-        if self.target is not None:
-            return self.context.deployment_manager.get_connector(self.target.model.name)
-        else:
-            return None
+        return self.context.deployment_manager.get_connector(self.target.model.name)
 
     async def run(self) -> None:
         jobs = []
@@ -184,7 +189,7 @@ class BaseStep(Step):
                 if utils.check_termination(inputs):
                     break
                 # Set status to fireable
-                self.status = Status.FIREABLE
+                self._set_status(Status.FIREABLE)
                 # Run job
                 jobs.append(asyncio.create_task(
                     self._run_job(inputs),
@@ -204,6 +209,6 @@ class BaseStep(Step):
             # Add a TerminationToken to each output port
             for port in self.output_ports.values():
                 port.put(TerminationToken(name=port.name))
-            self.status = status
+            self._set_status(status)
             self.terminated = True
             logger.info("Step {name} terminated with status {status}".format(name=self.name, status=status.name))

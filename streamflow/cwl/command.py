@@ -5,22 +5,45 @@ import base64
 import copy
 import json
 import logging
-import sys
+import posixpath
+import shlex
 import tempfile
+import time
 from abc import ABC
 from asyncio.subprocess import STDOUT
 from typing import Union, Optional, List, Any, IO, MutableMapping, MutableSequence
 
-import shellescape
-from typing_extensions import Text
-
+from streamflow.core.data import LOCAL_RESOURCE
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
-from streamflow.core.utils import get_path_processor, flatten_list
-from streamflow.core.workflow import Step, Command, Job, CommandOutput, Token, Status
+from streamflow.core.utils import get_path_processor, flatten_list, get_resources, get_connector
+from streamflow.core.workflow import Step, Command, Job, CommandOutput, Token, Status, TokenProcessor, Port
 from streamflow.cwl import utils
+from streamflow.cwl.token_processor import CWLMapTokenProcessor, CWLTokenProcessor
 from streamflow.cwl.utils import eval_expression
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
+from streamflow.workflow.port import DefaultOutputPort, ObjectTokenProcessor
+
+
+def _adjust_inputs(inputs: MutableSequence[MutableMapping[str, Any]],
+                   path_processor,
+                   src_path: str,
+                   dest_path: str) -> MutableSequence[MutableMapping[str, Any]]:
+    for inp in inputs:
+        if isinstance(inp, MutableMapping) and inp.get('class') in ('File', 'Directory'):
+            path = utils.get_path_from_token(inp)
+            if path == src_path:
+                inp['path'] = dest_path
+                dirname, basename = path_processor.split(dest_path)
+                inp['dirname'] = dirname
+                inp['basename'] = basename
+                if inp['class'] == 'File':
+                    nameroot, nameext = path_processor.splitext(basename)
+                    inp['nameroot'] = nameroot
+                    inp['nameext'] = nameext
+            elif inp['class'] == 'Directory' and src_path.startswith(path) and 'listing' in inp:
+                inp['listing'] = _adjust_inputs(inp['listing'], path_processor, src_path, dest_path)
+    return inputs
 
 
 def _check_command_token(command_token: CWLCommandToken, input_value: Any) -> bool:
@@ -52,7 +75,35 @@ def _check_command_token(command_token: CWLCommandToken, input_value: Any) -> bo
         return command_token.token_type == utils.infer_type_from_token(input_value)
 
 
-def _get_value(token: Any, item_separator: Optional[Text]) -> Any:
+async def _check_cwl_output(job: Job, result: Any) -> Any:
+    path_processor = get_path_processor(job.step)
+    cwl_output_path = path_processor.join(job.output_directory, 'cwl.output.json')
+    connector = get_connector(job, job.step.context)
+    resources = get_resources(job)
+    for resource in resources:
+        if await remotepath.exists(connector, resource, cwl_output_path):
+            # If file exists, use its contents as token value
+            result = json.loads(await remotepath.read(connector, resource, cwl_output_path))
+            # Update step output ports at runtime if needed
+            if isinstance(result, MutableMapping):
+                workflow = job.step.workflow
+                for out_name, out in result.items():
+                    if out_name not in job.step.output_ports:
+                        out_port = DefaultOutputPort(name=out_name, step=job.step)
+                        out_port.token_processor = _infer_token_processor(out_port, out)
+                        job.step.output_ports[out_name] = out_port
+                        # Update workflow outputs if needed
+                        if job.step.name in workflow.root_steps and out_name not in workflow.output_ports:
+                            workflow.output_ports[out_name] = out_port
+                for out_port in [p for p in job.step.output_ports if p not in result]:
+                    result[out_port] = None
+                    if job.step.name in workflow.root_steps and out_port in workflow.output_ports:
+                        del workflow.output_ports[out_port]
+            break
+    return result
+
+
+def _get_value(token: Any, item_separator: Optional[str]) -> Any:
     if isinstance(token, MutableSequence):
         value = []
         for element in token:
@@ -69,7 +120,29 @@ def _get_value(token: Any, item_separator: Optional[Text]) -> Any:
         return token
 
 
-def _merge_tokens(bindings_map: MutableMapping[int, MutableSequence[Any]]) -> MutableSequence[Any]:
+def _infer_token_processor(port: Port,
+                           value: Any) -> TokenProcessor:
+    port_type = utils.infer_type_from_token(value)
+    if port_type == 'array':
+        return CWLMapTokenProcessor(
+            port=port,
+            token_processor=_infer_token_processor(port, value[0] if len(value) > 1 else None))
+    elif port_type == 'record':
+        return ObjectTokenProcessor(
+            port=port,
+            processors={k: _infer_token_processor(port, v) for k, v in value})
+    else:
+        return CWLTokenProcessor(port=port, port_type=port_type)
+
+
+def _escape_value(value: Any) -> Any:
+    if isinstance(value, MutableSequence):
+        return [_escape_value(v) for v in value]
+    else:
+        return shlex.quote(str(value))
+
+
+def _merge_tokens(bindings_map: MutableMapping[str, MutableSequence[Any]]) -> MutableSequence[Any]:
     command = []
     for binding_position in sorted(bindings_map.keys()):
         for binding in bindings_map[binding_position]:
@@ -94,31 +167,32 @@ class CWLCommandOutput(CommandOutput):
 class CWLCommandToken(object):
 
     def __init__(self,
-                 name: Text,
+                 name: str,
                  value: Any,
-                 token_type: Optional[Text] = None,
-                 item_separator: Optional[Text] = None,
-                 position: Union[Text, int] = 0,
-                 prefix: Optional[Text] = None,
+                 token_type: Optional[str] = None,
+                 is_shell_command: bool = False,
+                 item_separator: Optional[str] = None,
+                 position: Union[str, int] = 0,
+                 prefix: Optional[str] = None,
                  separate: bool = True,
                  shell_quote: bool = True):
-        self.name: Text = name
+        self.name: str = name
         self.value: Any = value
-        self.token_type: Optional[Text] = token_type
-        self.item_separator: Optional[Text] = item_separator
-        self.position: Union[Text, int] = position
-        self.prefix: Optional[Text] = prefix
+        self.token_type: Optional[str] = token_type
+        self.is_shell_command: bool = is_shell_command
+        self.item_separator: Optional[str] = item_separator
+        self.position: Union[str, int] = position
+        self.prefix: Optional[str] = prefix
         self.separate: bool = separate
         self.shell_quote: bool = shell_quote
 
     def _compute_binding(self,
                          processed_token: Any,
-                         context: MutableMapping[Text, Any],
-                         bindings_map: MutableMapping[int, MutableSequence[Any]],
-                         is_shell_command: bool = False,
+                         context: MutableMapping[str, Any],
+                         bindings_map: MutableMapping[str, MutableSequence[Any]],
                          full_js: bool = False,
-                         expression_lib: Optional[MutableSequence[Text]] = None
-                         ) -> MutableMapping[int, MutableSequence[Any]]:
+                         expression_lib: Optional[MutableSequence[str]] = None
+                         ) -> MutableMapping[str, MutableSequence[Any]]:
         # Obtain token value
         value = _get_value(processed_token, self.item_separator)
         # If token value is null or an empty array, skip the command token
@@ -129,10 +203,10 @@ class CWLCommandToken(object):
             # Obtain prefix if present
             if self.prefix is not None:
                 if isinstance(value, bool):
-                    value = [self.prefix if value else '']
+                    value = [self.prefix] if value else value
                 elif self.separate:
                     if isinstance(value, MutableSequence):
-                        value = [self.prefix, " ".join([str(v) for v in value])]
+                        value = [self.prefix] + list(value)
                     else:
                         value = [self.prefix, value]
                 elif isinstance(value, MutableSequence):
@@ -145,9 +219,9 @@ class CWLCommandToken(object):
             # Ensure value is a list
             if not isinstance(value, MutableSequence):
                 value = [value]
-            # Process shell escape
-            if is_shell_command and self.shell_quote:
-                value = [shellescape.quote(v) for v in value]
+            # Process shell escape only on the single command token
+            if not self.is_shell_command or self.shell_quote:
+                value = [_escape_value(v) for v in value]
             # Obtain token position
             if isinstance(self.position, str) and not self.position.isnumeric():
                 context['self'] = processed_token
@@ -159,26 +233,25 @@ class CWLCommandToken(object):
                 try:
                     position = int(position) if position is not None else 0
                 except ValueError:
-                    position = 0
+                    pass
             else:
                 position = int(self.position)
-            if position not in bindings_map:
-                bindings_map[position] = []
+            sort_key = "".join([str(position), self.name]) if self.name else str(position)
+            if sort_key not in bindings_map:
+                bindings_map[sort_key] = []
             # Place value in proper position
-            bindings_map[position].append(value)
+            bindings_map[sort_key].append(value)
             return bindings_map
 
     def _process_token(self,
                        token_value: Any,
-                       context: MutableMapping[Text, Any],
-                       is_shell_command: bool = False,
+                       context: MutableMapping[str, Any],
                        full_js: bool = False,
-                       expression_lib: Optional[MutableSequence[Text]] = None) -> Any:
+                       expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         if isinstance(token_value, CWLCommandToken):
             local_bindings = token_value.get_binding(
                 context=context,
                 bindings_map={},
-                is_shell_command=is_shell_command,
                 full_js=full_js,
                 expression_lib=expression_lib)
             processed_token = _merge_tokens(local_bindings)
@@ -196,22 +269,19 @@ class CWLCommandToken(object):
         return processed_token
 
     def get_binding(self,
-                    context: MutableMapping[Text, Any],
-                    bindings_map: MutableMapping[int, MutableSequence[Any]],
-                    is_shell_command: bool = False,
+                    context: MutableMapping[str, Any],
+                    bindings_map: MutableMapping[str, MutableSequence[Any]],
                     full_js: bool = False,
-                    expression_lib: Optional[MutableSequence[Text]] = None) -> Any:
+                    expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         processed_token = self._process_token(
             token_value=self.value,
             context=context,
-            is_shell_command=is_shell_command,
             full_js=full_js,
             expression_lib=expression_lib)
         return self._compute_binding(
             processed_token=processed_token,
             context=context,
             bindings_map=bindings_map,
-            is_shell_command=is_shell_command,
             full_js=full_js,
             expression_lib=expression_lib)
 
@@ -224,11 +294,10 @@ class CWLObjectCommandToken(CWLCommandToken):
                 "A {this} object can only be used to process dict values".format(this=self.__class__.__name__))
 
     def get_binding(self,
-                    context: MutableMapping[Text, Any],
-                    bindings_map: MutableMapping[int, MutableSequence[Any]],
-                    is_shell_command: bool = False,
+                    context: MutableMapping[str, Any],
+                    bindings_map: MutableMapping[str, MutableSequence[Any]],
                     full_js: bool = False,
-                    expression_lib: Optional[MutableSequence[Text]] = None) -> Any:
+                    expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         self._check_dict(self.value)
         context = copy.deepcopy(context)
         context['inputs'] = context['inputs'][self.name]
@@ -237,7 +306,6 @@ class CWLObjectCommandToken(CWLCommandToken):
                 bindings_map = token.get_binding(
                     context=context,
                     bindings_map=bindings_map,
-                    is_shell_command=is_shell_command,
                     full_js=full_js,
                     expression_lib=expression_lib)
         return bindings_map
@@ -246,17 +314,15 @@ class CWLObjectCommandToken(CWLCommandToken):
 class CWLUnionCommandToken(CWLCommandToken):
 
     def get_binding(self,
-                    context: MutableMapping[Text, Any],
-                    bindings_map: MutableMapping[int, MutableSequence[Any]],
-                    is_shell_command: bool = False,
+                    context: MutableMapping[str, Any],
+                    bindings_map: MutableMapping[str, MutableSequence[Any]],
                     full_js: bool = False,
-                    expression_lib: Optional[MutableSequence[Text]] = None) -> Any:
+                    expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         inputs = context['inputs'][self.name]
         command_token = self.get_command_token(inputs)
         return command_token.get_binding(
             context=context,
             bindings_map=bindings_map,
-            is_shell_command=is_shell_command,
             full_js=full_js,
             expression_lib=expression_lib)
 
@@ -278,11 +344,10 @@ class CWLMapCommandToken(CWLCommandToken):
                 "A {this} object can only be used to process list values".format(this=self.__class__.__name__))
 
     def get_binding(self,
-                    context: MutableMapping[Text, Any],
-                    bindings_map: MutableMapping[int, MutableSequence[Any]],
-                    is_shell_command: bool = False,
+                    context: MutableMapping[str, Any],
+                    bindings_map: MutableMapping[str, MutableSequence[Any]],
                     full_js: bool = False,
-                    expression_lib: Optional[MutableSequence[Text]] = None) -> Any:
+                    expression_lib: Optional[MutableSequence[str]] = None) -> Any:
         inputs = context['inputs'][self.name]
         if isinstance(inputs, Token):
             inputs = inputs.value
@@ -294,7 +359,6 @@ class CWLMapCommandToken(CWLCommandToken):
             bindings_map = super().get_binding(
                 context=context,
                 bindings_map=bindings_map,
-                is_shell_command=is_shell_command,
                 full_js=full_js,
                 expression_lib=expression_lib)
         return bindings_map
@@ -304,20 +368,24 @@ class CWLBaseCommand(Command, ABC):
 
     def __init__(self,
                  step: Step,
-                 expression_lib: Optional[MutableSequence[Text]] = None,
-                 initial_work_dir: Optional[Union[Text, MutableSequence[Any]]] = None,
+                 absolute_initial_workdir_allowed: bool = False,
+                 expression_lib: Optional[MutableSequence[str]] = None,
+                 initial_work_dir: Optional[Union[str, MutableSequence[Any]]] = None,
+                 inplace_update: bool = False,
                  full_js: bool = False,
-                 time_limit: Optional[Union[int, Text]] = None):
+                 time_limit: Optional[Union[int, str]] = None):
         super().__init__(step)
-        self.expression_lib: Optional[MutableSequence[Text]] = expression_lib
+        self.absolute_initial_workdir_allowed: bool = absolute_initial_workdir_allowed
+        self.expression_lib: Optional[MutableSequence[str]] = expression_lib
         self.full_js: bool = full_js
-        self.initial_work_dir: Optional[Union[Text, MutableSequence[Any]]] = initial_work_dir
-        self.time_limit: Optional[Union[int, Text]] = time_limit
+        self.initial_work_dir: Optional[Union[str, MutableSequence[Any]]] = initial_work_dir
+        self.inplace_update: bool = inplace_update
+        self.time_limit: Optional[Union[int, str]] = time_limit
 
     def _get_timeout(self, job: Job) -> Optional[int]:
         if isinstance(self.time_limit, int):
             timeout = self.time_limit
-        elif isinstance(self.time_limit, Text):
+        elif isinstance(self.time_limit, str):
             context = utils.build_context(job)
             timeout = int(eval_expression(
                 expression=self.time_limit,
@@ -330,15 +398,18 @@ class CWLBaseCommand(Command, ABC):
 
     async def _prepare_work_dir(self,
                                 job: Job,
-                                context: MutableMapping[Text, Any],
+                                context: MutableMapping[str, Any],
                                 element: Any,
-                                dest_path: Optional[Text] = None,
+                                base_path: Optional[str] = None,
+                                dest_path: Optional[str] = None,
                                 writable: bool = False) -> None:
         path_processor = get_path_processor(job.step)
-        connector = job.step.get_connector()
-        resources = job.get_resources() or [None]
+        connector = get_connector(job, self.step.context)
+        resources = get_resources(job)
+        # Initialize base path to job output directory if present
+        base_path = base_path or job.output_directory
         # If current element is a string, it must be an expression
-        if isinstance(element, Text):
+        if isinstance(element, str):
             listing = eval_expression(
                 expression=element,
                 context=context,
@@ -348,8 +419,14 @@ class CWLBaseCommand(Command, ABC):
             listing = element
         # If listing is a list, each of its elements must be processed independently
         if isinstance(listing, MutableSequence):
-            await asyncio.gather(
-                *[asyncio.create_task(self._prepare_work_dir(job, context, el, dest_path, writable)) for el in listing])
+            await asyncio.gather(*(asyncio.create_task(
+                self._prepare_work_dir(
+                    job=job,
+                    context=context,
+                    element=el,
+                    base_path=base_path,
+                    writable=writable)
+            ) for el in listing))
         # If listing is a dictionary, it could be a File, a Directory, a Dirent or some other object
         elif isinstance(listing, MutableMapping):
             # If it is a File or Directory element, put the correspnding file in the output directory
@@ -358,12 +435,8 @@ class CWLBaseCommand(Command, ABC):
                 src_found = False
                 if src_path is not None:
                     if dest_path is None:
-                        if src_path.startswith(job.input_directory):
-                            relpath = path_processor.relpath(src_path, job.input_directory)
-                            dest_path = path_processor.join(job.output_directory, relpath)
-                        else:
-                            basename = path_processor.basename(src_path)
-                            dest_path = path_processor.join(job.output_directory, basename)
+                        basename = path_processor.basename(src_path)
+                        dest_path = path_processor.join(base_path, basename)
                     for resource in resources:
                         if await remotepath.exists(connector, resource, src_path):
                             await self.step.context.data_manager.transfer_data(
@@ -372,12 +445,17 @@ class CWLBaseCommand(Command, ABC):
                                 dst=dest_path,
                                 dst_job=job,
                                 writable=writable)
+                            _adjust_inputs(
+                                inputs=context['inputs'].values(),
+                                path_processor=path_processor,
+                                src_path=src_path,
+                                dest_path=dest_path)
                             src_found = True
                             break
                 # If the source path does not exist, create a File or a Directory in the remote path
                 if not src_found:
                     if dest_path is None:
-                        dest_path = job.output_directory
+                        dest_path = base_path
                     if src_path is not None:
                         dest_path = path_processor.join(dest_path, path_processor.basename(src_path))
                     if listing['class'] == 'Directory':
@@ -391,11 +469,28 @@ class CWLBaseCommand(Command, ABC):
                 # If `listing` is present, recursively process folder contents
                 if 'listing' in listing:
                     if 'basename' in listing:
-                        dest_path = path_processor.join(dest_path, listing['basename'])
-                        await remotepath.mkdir(connector, resources, dest_path)
-                    await asyncio.gather(*[asyncio.create_task(
-                        self._prepare_work_dir(job, context, element, dest_path, writable)
-                    ) for element in listing['listing']])
+                        folder_path = path_processor.join(base_path, listing['basename'])
+                        await remotepath.mkdir(connector, resources, folder_path)
+                    else:
+                        folder_path = dest_path or base_path
+                    await asyncio.gather(*(asyncio.create_task(
+                        self._prepare_work_dir(
+                            job=job,
+                            context=context,
+                            element=element,
+                            base_path=folder_path,
+                            writable=writable)
+                    ) for element in listing['listing']))
+                # If `secondaryFiles` is present, resursively process secondary files
+                if 'secondaryFiles' in listing:
+                    await asyncio.gather(*(asyncio.create_task(
+                        self._prepare_work_dir(
+                            job=job,
+                            context=context,
+                            element=element,
+                            base_path=base_path,
+                            writable=writable)
+                    ) for element in listing['secondaryFiles']))
             # If it is a Dirent element, put or create the corresponding file according to the entryname field
             elif 'entry' in listing:
                 entry = eval_expression(
@@ -411,72 +506,110 @@ class CWLBaseCommand(Command, ABC):
                         full_js=self.full_js,
                         expression_lib=self.expression_lib)
                     if not path_processor.isabs(dest_path):
+                        dest_path = posixpath.abspath(posixpath.join(job.output_directory, dest_path))
+                    if not (dest_path.startswith(job.output_directory) or self.absolute_initial_workdir_allowed):
+                        raise WorkflowDefinitionException("Entryname cannot be outside the job's output directory")
+                    # The entryname field overrides the value of basename of the File or Directory object
+                    if (isinstance(entry, MutableMapping) and
+                            'path' not in entry and 'location' not in entry and
+                            'basename' in entry):
+                        entry['basename'] = dest_path
+                    if not path_processor.isabs(dest_path):
                         dest_path = path_processor.join(job.output_directory, dest_path)
-                writable = listing['writable'] if 'writable' in listing else False
+                writable = listing['writable'] if 'writable' in listing and not self.inplace_update else False
                 # If entry is a string, a new text file must be created with the string as the file contents
-                if isinstance(entry, Text):
-                    await self._write_remote_file(job, entry, dest_path, writable)
+                if isinstance(entry, str):
+                    await self._write_remote_file(job, entry, dest_path or base_path, writable)
                 # If entry is a list
                 elif isinstance(entry, MutableSequence):
                     # If all elements are Files or Directories, each of them must be processed independently
                     if all('class' in t and t['class'] in ['File', 'Directory'] for t in entry):
-                        await self._prepare_work_dir(job, context, entry, dest_path, writable)
+                        await self._prepare_work_dir(
+                            job=job,
+                            context=context,
+                            element=entry,
+                            base_path=base_path,
+                            dest_path=dest_path,
+                            writable=writable)
                     # Otherwise, the content should be serialised to JSON
                     else:
-                        await self._write_remote_file(job, json.dumps(entry), dest_path, writable)
+                        await self._write_remote_file(job, json.dumps(entry), dest_path or base_path, writable)
                 # If entry is a dict
                 elif isinstance(entry, MutableMapping):
                     # If it is a File or Directory, it must be put in the destination path
                     if 'class' in entry and entry['class'] in ['File', 'Directory']:
-                        await self._prepare_work_dir(job, context, entry, dest_path, writable)
+                        await self._prepare_work_dir(
+                            job=job,
+                            context=context,
+                            element=entry,
+                            base_path=base_path,
+                            dest_path=dest_path,
+                            writable=writable)
                     # Otherwise, the content should be serialised to JSON
                     else:
-                        await self._write_remote_file(job, json.dumps(entry), dest_path, writable)
+                        await self._write_remote_file(job, json.dumps(entry), dest_path or base_path, writable)
                 # Every object different from a string should be serialised to JSON
-                else:
-                    await self._write_remote_file(job, json.dumps(entry), dest_path, writable)
+                elif entry is not None:
+                    await self._write_remote_file(job, json.dumps(entry), dest_path or base_path, writable)
 
     async def _write_remote_file(self, job: Job,
-                                 content: Text,
-                                 dest_path: Optional[Text] = None,
+                                 content: str,
+                                 dest_path: Optional[str] = None,
                                  writable: bool = False):
         file_name = tempfile.mktemp()
         with open(file_name, mode='w') as file:
             file.write(content)
         await self.step.context.data_manager.transfer_data(file_name, None, dest_path, job, not writable)
 
+    async def skip(self, job: Job):
+        return CWLCommandOutput(
+            value={t.name: None for t in job.inputs},
+            status=Status.SKIPPED,
+            exit_code=0)
+
 
 class CWLCommand(CWLBaseCommand):
 
     def __init__(self,
                  step: Step,
-                 expression_lib: Optional[MutableSequence[Text]] = None,
+                 absolute_initial_workdir_allowed: bool = False,
+                 expression_lib: Optional[MutableSequence[str]] = None,
                  failure_codes: Optional[MutableSequence[int]] = None,
                  full_js: bool = False,
-                 initial_work_dir: Optional[Union[Text, MutableSequence[Any]]] = None,
+                 initial_work_dir: Optional[Union[str, MutableSequence[Any]]] = None,
+                 inplace_update: bool = False,
                  is_shell_command: bool = False,
+                 output_directory: Optional[str] = None,
                  success_codes: Optional[MutableSequence[int]] = None,
-                 step_stderr: Optional[Text] = None,
-                 step_stdin: Optional[Text] = None,
-                 step_stdout: Optional[Text] = None,
-                 time_limit: Optional[Union[int, Text]] = None):
-        super().__init__(step, expression_lib, initial_work_dir, full_js, time_limit)
-        self.base_command: MutableSequence[Text] = []
+                 step_stderr: Optional[str] = None,
+                 step_stdin: Optional[str] = None,
+                 step_stdout: Optional[str] = None,
+                 time_limit: Optional[Union[int, str]] = None):
+        super().__init__(
+            step=step,
+            absolute_initial_workdir_allowed=absolute_initial_workdir_allowed,
+            expression_lib=expression_lib,
+            initial_work_dir=initial_work_dir,
+            inplace_update=inplace_update,
+            full_js=full_js,
+            time_limit=time_limit)
+        self.base_command: MutableSequence[str] = []
         self.command_tokens: MutableSequence[CWLCommandToken] = []
-        self.environment: MutableMapping[Text, Text] = {}
-        self.is_shell_command: bool = is_shell_command
-        self.success_codes: Optional[MutableSequence[int]] = success_codes
+        self.environment: MutableMapping[str, str] = {}
         self.failure_codes: Optional[MutableSequence[int]] = failure_codes
-        self.stderr: Union[Text, IO] = step_stderr
-        self.stdin: Union[Text, IO] = step_stdin
-        self.stdout: Union[Text, IO] = step_stdout
+        self.is_shell_command: bool = is_shell_command
+        self.output_directory: Optional[str] = output_directory
+        self.success_codes: Optional[MutableSequence[int]] = success_codes
+        self.stderr: Union[str, IO] = step_stderr
+        self.stdin: Union[str, IO] = step_stdin
+        self.stdout: Union[str, IO] = step_stdout
 
-    def _get_executable_command(self, context: MutableMapping[Text, Any]) -> MutableSequence[Text]:
+    def _get_executable_command(self, context: MutableMapping[str, Any]) -> MutableSequence[str]:
         command = []
         bindings_map = {}
         # Process baseCommand
-        for command_token in self.base_command:
-            command.append(command_token)
+        if self.base_command:
+            command.append(shlex.join(self.base_command))
         # Process tokens
         for command_token in self.command_tokens:
             if command_token.name is not None:
@@ -487,41 +620,27 @@ class CWLCommand(CWLBaseCommand):
             bindings_map = command_token.get_binding(
                 context=context,
                 bindings_map=bindings_map,
-                is_shell_command=self.is_shell_command,
                 full_js=self.full_js,
                 expression_lib=self.expression_lib)
         # Merge tokens
         command.extend(_merge_tokens(bindings_map))
         return command
 
-    def _get_stream(self,
-                    job: Job,
-                    context: MutableMapping[Text, Any],
-                    stream: Optional[Text],
-                    default_stream: IO,
-                    is_input: bool = False) -> IO:
-        if isinstance(stream, str):
-            stream = eval_expression(
-                expression=stream,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib)
-            path_processor = get_path_processor(self.step)
-            if not path_processor.isabs(stream):
-                basedir = job.input_directory if is_input else job.output_directory
-                stream = path_processor.join(basedir, stream)
-            return open(stream, "rb" if is_input else "wb")
-        else:
-            return default_stream
-
     async def execute(self, job: Job) -> CWLCommandOutput:
+        # Override output directory if needed (e.g. when dockerOutputDirectory is set)
+        if self.output_directory:
+            job.output_directory = self.output_directory
+        # Build context
         context = utils.build_context(job)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Job {job} inputs: {inputs}".format(
                 job=job.name, inputs=json.dumps(context['inputs'], indent=4, sort_keys=True)))
+        # Build working directory
         if self.initial_work_dir is not None:
             await self._prepare_work_dir(job, context, self.initial_work_dir)
+        # Build command string
         cmd = self._get_executable_command(context)
+        # Build environment variables
         parsed_env = {k: str(eval_expression(
             expression=v,
             context=context,
@@ -532,93 +651,81 @@ class CWLCommand(CWLBaseCommand):
             parsed_env['HOME'] = job.output_directory
         if 'TMPDIR' not in parsed_env:
             parsed_env['TMPDIR'] = job.tmp_directory
-        if self.step.target is None:
-            if self.is_shell_command:
-                cmd = ["/bin/sh", "-c", " ".join(cmd)]
-            # Open streams
-            stderr = self._get_stream(job, context, self.stderr, sys.stderr)
-            stdin = self._get_stream(job, context, self.stdin, sys.stdin, is_input=True)
-            stdout = self._get_stream(job, context, self.stdout, sys.stderr)
-            # Execute command
-            logger.info('Executing job {job} into directory {outdir}: \n{command}'.format(
-                job=job.name,
-                outdir=job.output_directory,
-                command=' \\\n\t'.join(cmd)
-            ))
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=job.output_directory,
-                env=parsed_env,
+        # Get execution target
+        connector = get_connector(job, self.step.context)
+        resources = get_resources(job)
+        cmd_string = ' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
+                                    if self.is_shell_command else cmd)
+        logger.info('Executing job {job} {resource} into directory {outdir}:\n{command}'.format(
+            job=job.name,
+            resource="locally" if resources[0] == LOCAL_RESOURCE else "on resource {res}".format(
+                res=resources[0]),
+            outdir=job.output_directory,
+            command=cmd_string))
+        # Persist command
+        command_id = self.step.context.persistence_manager.db.add_command(
+            step_id=self.step.persistent_id,
+            cmd=cmd_string)
+        # Escape shell command when needed
+        if self.is_shell_command:
+            cmd = ["/bin/sh", "-c", "\"$(echo {command} | base64 -d)\"".format(
+                command=base64.b64encode(" ".join(cmd).encode('utf-8')).decode('utf-8'))]
+        # If step is assigned to multiple resources, add the STREAMFLOW_HOSTS environment variable
+        if len(resources) > 1:
+            available_resources = await connector.get_available_resources(self.step.target.service)
+            hosts = {k: v.hostname for k, v in available_resources.items() if k in resources}
+            parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
+        # Process streams
+        stdin = eval_expression(
+            expression=self.stdin,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib)
+        stdout = eval_expression(
+            expression=self.stdout,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib
+        ) if self.stdout is not None else STDOUT
+        stderr = eval_expression(
+            expression=self.stderr,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib
+        ) if self.stderr is not None else stdout
+        # Execute remote command
+        start_time = time.time_ns()
+        result, exit_code = await asyncio.wait_for(
+            connector.run(
+                resources[0] if resources else None,
+                cmd,
+                environment=parsed_env,
+                workdir=job.output_directory,
                 stdin=stdin,
                 stdout=stdout,
-                stderr=stderr
-            )
-            result, error = await asyncio.wait_for(proc.communicate(), self._get_timeout(job))
-            exit_code = proc.returncode
-            # Close streams
-            if stdin is not sys.stdin:
-                stdin.close()
-            if stdout is not sys.stderr:
-                stdout.close()
-            if stderr is not sys.stderr:
-                stderr.close()
-        else:
-            connector = self.step.get_connector()
-            resources = job.get_resources()
-            logger.info('Executing job {job} on resource {resource} into directory {outdir}:\n{command}'.format(
-                job=job.name,
-                resource=resources[0] if resources else None,
-                outdir=job.output_directory,
-                command=' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
-                                       if self.is_shell_command else cmd)))
-            if self.is_shell_command:
-                cmd = ["/bin/sh", "-c", "\"$(echo {command} | base64 -d)\"".format(
-                    command=base64.b64encode(" ".join(cmd).encode('utf-8')).decode('utf-8'))]
-            # If step is assigned to multiple resources, add the STREAMFLOW_HOSTS environment variable
-            if len(resources) > 1:
-                available_resources = await connector.get_available_resources(self.step.target.service)
-                hosts = {k: v.hostname for k, v in available_resources.items() if k in resources}
-                parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
-            # Process streams
-            stdin = eval_expression(
-                expression=self.stdin,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib)
-            stdout = eval_expression(
-                expression=self.stdout,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib
-            ) if self.stdout is not None else STDOUT
-            stderr = eval_expression(
-                expression=self.stderr,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib
-            ) if self.stderr is not None else stdout
-            # Execute remote command
-            result, exit_code = await asyncio.wait_for(
-                connector.run(
-                    resources[0] if resources else None,
-                    cmd,
-                    environment=parsed_env,
-                    workdir=job.output_directory,
-                    stdin=stdin,
-                    stdout=stdout,
-                    stderr=stderr,
-                    capture_output=True,
-                    job_name=job.name),
-                self._get_timeout(job))
+                stderr=stderr,
+                capture_output=True,
+                job_name=job.name),
+            self._get_timeout(job))
+        end_time = time.time_ns()
         # Handle exit codes
-        if self.failure_codes is not None and exit_code in self.failure_codes:
+        if self.failure_codes and exit_code in self.failure_codes:
             status = Status.FAILED
-        elif (self.success_codes is not None and exit_code in self.success_codes) or exit_code == 0:
+        elif (self.success_codes and exit_code in self.success_codes) or exit_code == 0:
             status = Status.COMPLETED
             if result:
                 logger.info(result)
         else:
             status = Status.FAILED
+        # Update command persistence
+        self.step.context.persistence_manager.db.update_command(command_id, {
+            "status": status.value,
+            "output": str(result),
+            "start_time": start_time,
+            "end_time": end_time
+        })
+        # Check if file `cwl.output.json` exists either locally on at least one resource
+        result = await _check_cwl_output(job, result)
         return CWLCommandOutput(value=result, status=status, exit_code=exit_code)
 
 
@@ -626,26 +733,44 @@ class CWLExpressionCommand(CWLBaseCommand):
 
     def __init__(self,
                  step: Step,
-                 expression: Text,
-                 expression_lib: Optional[List[Text]] = None,
+                 expression: str,
+                 absolute_initial_workdir_allowed: bool = False,
+                 expression_lib: Optional[List[str]] = None,
                  full_js: bool = False,
-                 initial_work_dir: Optional[Union[Text, List[Any]]] = None,
-                 time_limit: Optional[Union[int, Text]] = None):
-        super().__init__(step, expression_lib, initial_work_dir, full_js, time_limit)
-        self.expression: Text = expression
+                 initial_work_dir: Optional[Union[str, List[Any]]] = None,
+                 inplace_update: bool = False):
+        super().__init__(
+            step=step,
+            absolute_initial_workdir_allowed=absolute_initial_workdir_allowed,
+            expression_lib=expression_lib,
+            initial_work_dir=initial_work_dir,
+            inplace_update=inplace_update,
+            full_js=full_js)
+        self.expression: str = expression
 
     async def execute(self, job: Job) -> CWLCommandOutput:
         context = utils.build_context(job)
         if self.initial_work_dir is not None:
             await self._prepare_work_dir(job, context, self.initial_work_dir)
         logger.info('Evaluating expression for job {job}'.format(job=job.name))
-        timeout = self._get_timeout(job)
+        # Persist command
+        command_id = self.step.context.persistence_manager.db.add_command(self.step.persistent_id, self.expression)
+        # Execute command
+        start_time = time.time_ns()
         result = eval_expression(
             expression=self.expression,
             context=context,
             full_js=self.full_js,
-            expression_lib=self.expression_lib,
-            timeout=timeout)
+            expression_lib=self.expression_lib)
+        end_time = time.time_ns()
+        # Update command persistence
+        self.step.context.persistence_manager.db.update_command(command_id, {
+            "status": Status.COMPLETED.value,
+            "output": str(result),
+            "start_time": start_time,
+            "end_time": end_time
+        })
+        # Return result
         return CWLCommandOutput(value=result, status=Status.COMPLETED, exit_code=0)
 
 
@@ -653,28 +778,21 @@ class CWLStepCommand(CWLBaseCommand):
 
     def __init__(self,
                  step: Step,
-                 expression_lib: Optional[MutableSequence[Text]] = None,
+                 absolute_initial_workdir_allowed: bool = False,
+                 expression_lib: Optional[MutableSequence[str]] = None,
                  full_js: bool = False,
-                 initial_work_dir: Optional[Union[Text, MutableSequence[Any]]] = None,
-                 time_limit: Optional[Union[int, Text]] = None,
-                 when_expression: Optional[Text] = None):
-        super().__init__(step, expression_lib, initial_work_dir, full_js, time_limit)
-        self.input_expressions: MutableMapping[Text, Text] = {}
-        self.when_expression: Optional[Text] = when_expression
-
-    def _evaulate_condition(self, context: MutableMapping[Text, Any]) -> bool:
-        if self.when_expression is not None:
-            condition = utils.eval_expression(
-                expression=self.when_expression,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib)
-            if condition is True or condition is False:
-                return condition
-            else:
-                raise WorkflowDefinitionException("Conditional 'when' must evaluate to 'true' or 'false'")
-        else:
-            return True
+                 initial_work_dir: Optional[Union[str, MutableSequence[Any]]] = None,
+                 inplace_update: bool = False,
+                 time_limit: Optional[Union[int, str]] = None):
+        super().__init__(
+            step=step,
+            absolute_initial_workdir_allowed=absolute_initial_workdir_allowed,
+            expression_lib=expression_lib,
+            initial_work_dir=initial_work_dir,
+            inplace_update=inplace_update,
+            full_js=full_js,
+            time_limit=time_limit)
+        self.input_expressions: MutableMapping[str, str] = {}
 
     async def execute(self, job: Job) -> CommandOutput:
         context = utils.build_context(job)
@@ -689,15 +807,7 @@ class CWLStepCommand(CWLBaseCommand):
                 full_js=self.full_js,
                 expression_lib=self.expression_lib)
         context['inputs'] = {**context['inputs'], **processed_inputs}
-        # If condition is satisfied, return the updated inputs
-        if self._evaulate_condition(context):
-            return CWLCommandOutput(
-                value=context['inputs'],
-                status=Status.COMPLETED,
-                exit_code=0)
-        # Otherwise, skip and return None
-        else:
-            return CWLCommandOutput(
-                value={t.name: None for t in job.inputs},
-                status=Status.SKIPPED,
-                exit_code=0)
+        return CWLCommandOutput(
+            value=context['inputs'],
+            status=Status.COMPLETED,
+            exit_code=0)

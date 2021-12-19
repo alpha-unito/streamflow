@@ -6,7 +6,6 @@ from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
 
 import asyncssh
 from ruamel.yaml import YAML
-from typing_extensions import Text
 
 from streamflow.core import utils
 from streamflow.core.scheduling import Resource
@@ -17,34 +16,32 @@ from streamflow.log_handler import logger
 class OccamConnector(SSHConnector):
 
     def __init__(self,
-                 streamflow_config_dir: Text,
-                 file: Text,
-                 sshKey: Text,
-                 username: Text,
-                 readBufferSize: Optional[int] = None,
-                 sshKeyPassphrase: Optional[Text] = None,
-                 hostname: Optional[Text] = "occam.c3s.unito.it",
+                 streamflow_config_dir: str,
+                 file: str,
+                 sshKey: str,
+                 username: str,
+                 sshKeyPassphraseFile: Optional[str] = None,
+                 hostname: Optional[str] = "occam.c3s.unito.it",
                  transferBufferSize: int = 2**16) -> None:
         super().__init__(
             streamflow_config_dir=streamflow_config_dir,
-            hostname=hostname,
-            readBufferSize=readBufferSize,
+            nodes=[hostname],
             sshKey=sshKey,
-            sshKeyPassphrase=sshKeyPassphrase,
+            sshKeyPassphraseFile=sshKeyPassphraseFile,
+            sharedPaths=[
+                '/archive/home/{username}'.format(username=username),
+                '/scratch/home/{username}'.format(username=username)],
             transferBufferSize=transferBufferSize,
             username=username)
         with open(os.path.join(streamflow_config_dir, file)) as f:
             yaml = YAML(typ='safe')
             self.env_description = yaml.load(f)
-        self.sharedPaths = [
-            '/archive/home/{username}'.format(username=username),
-            '/scratch/home/{username}'.format(username=username)
-        ]
+        self.jobs_table: MutableMapping[str, MutableSequence[str]] = {}
 
     def _get_effective_resources(self,
-                                 resources: MutableSequence[Text],
-                                 dest_path: Text,
-                                 source_remote: Optional[Text] = None) -> MutableSequence[Text]:
+                                 resources: MutableSequence[str],
+                                 dest_path: str,
+                                 source_remote: Optional[str] = None) -> MutableSequence[str]:
         # If destination path is in a shared location, transfer only on the first resource
         for shared_path in self.sharedPaths:
             if dest_path.startswith(shared_path):
@@ -70,7 +67,7 @@ class OccamConnector(SSHConnector):
 
         return effective_resources
 
-    def _get_shared_path(self, resource: Text, path: Text) -> Optional[Text]:
+    def _get_shared_path(self, resource: str, path: str) -> Optional[str]:
         for shared_path in self.sharedPaths:
             if path.startswith(shared_path):
                 return path
@@ -81,24 +78,24 @@ class OccamConnector(SSHConnector):
                 return posixpath.normpath(posixpath.join(local, posixpath.relpath(path, remote)))
         return None
 
-    async def _get_tmpdir(self, resource: Text):
+    async def _get_tmpdir(self, resource: str):
         scratch_home = '/scratch/home/{username}'.format(username=self.username)
         temp_dir = posixpath.join(scratch_home, 'streamflow', "".join(utils.random_name()))
         async with self._get_ssh_client(resource) as ssh_client:
             await ssh_client.run('mkdir -p {dir}'.format(dir=temp_dir))
         return temp_dir
 
-    def _get_volumes(self, resource: Text) -> MutableSequence[Text]:
+    def _get_volumes(self, resource: str) -> MutableSequence[str]:
         for name in self.jobs_table:
             if resource in self.jobs_table[name]:
                 service = name
                 return self.env_description[service].get('volumes', [])
 
     async def _copy_remote_to_remote(self,
-                                     src: Text,
-                                     dst: Text,
-                                     resources: MutableSequence[Text],
-                                     source_remote: Text,
+                                     src: str,
+                                     dst: str,
+                                     resources: MutableSequence[str],
+                                     source_remote: str,
                                      read_only: bool = False) -> None:
         effective_resources = self._get_effective_resources(resources, dst, source_remote)
         # Check for the need of a temporary copy
@@ -110,7 +107,7 @@ class OccamConnector(SSHConnector):
                 await self.run(source_remote, copy1_command)
                 break
         # Perform the actual copies
-        await asyncio.gather(*[asyncio.create_task(
+        await asyncio.gather(*(asyncio.create_task(
             self._copy_remote_to_remote_single(
                 src=src,
                 dst=dst,
@@ -118,7 +115,7 @@ class OccamConnector(SSHConnector):
                 source_remote=source_remote,
                 temp_dir=temp_dir,
                 read_only=read_only)
-        ) for resource in effective_resources])
+        ) for resource in effective_resources))
         # If a temporary location was created, delete it
         if temp_dir is not None:
             for resource in effective_resources:
@@ -126,11 +123,11 @@ class OccamConnector(SSHConnector):
                     await ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
 
     async def _copy_remote_to_remote_single(self,
-                                            src: Text,
-                                            dst: Text,
-                                            resource: Text,
-                                            source_remote: Text,
-                                            temp_dir: Optional[Text],
+                                            src: str,
+                                            dst: str,
+                                            resource: str,
+                                            source_remote: str,
+                                            temp_dir: Optional[str],
                                             read_only: bool = False) -> None:
         if source_remote == resource:
             command = ['/bin/cp', "-rf", src, dst]
@@ -140,9 +137,9 @@ class OccamConnector(SSHConnector):
             await self.run(resource, copy2_command)
 
     async def _copy_local_to_remote(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resources: MutableSequence[Text],
+                                    src: str,
+                                    dst: str,
+                                    resources: MutableSequence[str],
                                     read_only: bool = False) -> None:
         effective_resources = self._get_effective_resources(resources, dst)
         # Check for the need of a temporary copy
@@ -172,10 +169,10 @@ class OccamConnector(SSHConnector):
                     await ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
 
     async def _copy_local_to_remote_single(self,
-                                           src: Text,
-                                           dst: Text,
-                                           resource: Text,
-                                           temp_dir: Optional[Text],
+                                           src: str,
+                                           dst: str,
+                                           resource: str,
+                                           temp_dir: Optional[str],
                                            read_only: bool = False) -> None:
         shared_path = self._get_shared_path(resource, dst)
         if shared_path is not None:
@@ -186,9 +183,9 @@ class OccamConnector(SSHConnector):
             await self.run(resource, copy_command)
 
     async def _copy_remote_to_local(self,
-                                    src: Text,
-                                    dst: Text,
-                                    resource: Text,
+                                    src: str,
+                                    dst: str,
+                                    resource: str,
                                     read_only: bool = False) -> None:
         shared_path = self._get_shared_path(resource, src)
         if shared_path is not None:
@@ -213,7 +210,7 @@ class OccamConnector(SSHConnector):
             delete_command = ['rm', '-rf', temp_dir]
             await self.run(resource, delete_command)
 
-    async def _deploy_node(self, name: Text, service: MutableMapping[Text, Any], node: Text):
+    async def _deploy_node(self, name: str, service: MutableMapping[str, Any], node: str):
         deploy_command = "".join([
             "{workdir}"
             "occam-run ",
@@ -249,7 +246,7 @@ class OccamConnector(SSHConnector):
         else:
             raise Exception
 
-    async def _undeploy_node(self, name: Text, job_id: Text):
+    async def _undeploy_node(self, name: str, job_id: str):
         undeploy_command = "".join([
             "occam-kill ",
             "{job_id}"
@@ -271,7 +268,7 @@ class OccamConnector(SSHConnector):
                     deploy_tasks.append(asyncio.create_task(self._deploy_node(name, service, node)))
             await asyncio.gather(*deploy_tasks)
 
-    async def get_available_resources(self, service: Text) -> MutableMapping[Text, Resource]:
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
         nodes = self.jobs_table.get(service, []) if service else utils.flatten_list(self.jobs_table.values())
         return {n: Resource(name=n, hostname=n.split('-')[0]) for n in nodes}
 
@@ -288,14 +285,14 @@ class OccamConnector(SSHConnector):
         await super().undeploy(external)
 
     async def _run(self,
-                   resource: Text,
-                   command: MutableSequence[Text],
-                   environment: MutableMapping[Text, Text] = None,
-                   workdir: Optional[Text] = None,
-                   stdin: Optional[Union[int, Text]] = None,
-                   stdout: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, Text] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[Text] = None,
+                   resource: str,
+                   command: MutableSequence[str],
+                   environment: MutableMapping[str, str] = None,
+                   workdir: Optional[str] = None,
+                   stdin: Optional[Union[int, str]] = None,
+                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                   job_name: Optional[str] = None,
                    capture_output: bool = False,
                    encode: bool = True,
                    interactive: bool = False,

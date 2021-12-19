@@ -9,7 +9,6 @@ from ruamel.yaml import YAML
 
 if TYPE_CHECKING:
     from typing import Any, MutableMapping
-    from typing_extensions import Text
 
 
 def load_jsonschema(config_file):
@@ -40,7 +39,7 @@ class SfValidator(object):
         super().__init__()
         self.yaml = YAML(typ='safe')
 
-    def validate(self, streamflow_file: Text) -> MutableMapping[Text, Any]:
+    def validate(self, streamflow_file: str) -> MutableMapping[str, Any]:
         with open(streamflow_file) as f:
             streamflow_config = self.yaml.load(f)
         schema = load_jsonschema(streamflow_config)
