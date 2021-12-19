@@ -148,7 +148,7 @@ async def head(connector: Optional[Connector], resource: Optional[str], path: st
     else:
         result, status = await connector.run(
             resource=resource,
-            command=["head", "-c", num_bytes, path],
+            command=["head", "-c", str(num_bytes), path],
             capture_output=True)
         _check_status(result, status)
         return result.strip()
