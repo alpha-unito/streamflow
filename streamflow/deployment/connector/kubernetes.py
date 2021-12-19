@@ -363,49 +363,6 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self.configuration = None
 
 
-class KubernetesConnector(BaseKubernetesConnector, ABC):
-
-    def __init__(self,
-                 streamflow_config_dir: str,
-                 files: MutableSequence[str],
-                 force: bool = False,
-                 forceConflicts: bool = False,
-                 gracePeriod: int = -1,
-                 inCluster: Optional[bool] = False,
-                 kubeconfig: Optional[str] = None,
-                 namespace: Optional[str] = None,
-                 openapiPatch: bool = True,
-                 overwrite: bool = True,
-                 prune: bool = False,
-                 pruneWhitelist: Optional[MutableSequence] = None,
-                 recursive: bool = False,
-                 resourcesCacheTTL: int = 10,
-                 timeout: int = 5,
-                 transferBufferSize: int = (2 ** 25) - 1,
-                 validate: bool = True,
-                 wait: bool = True):
-        super().__init__(
-            streamflow_config_dir=streamflow_config_dir,
-            inCluster=inCluster,
-            kubeconfig=kubeconfig,
-            namespace=namespace,
-            resourcesCacheTTL=resourcesCacheTTL,
-            transferBufferSize=transferBufferSize)
-        self.files: MutableSequence[str] = files
-        self.force: bool = force
-        self.forceConflicts: bool = forceConflicts
-        self.gracePeriod: int = gracePeriod
-        self.openapiPatch: bool = openapiPatch
-        self.overwrite: bool = overwrite
-        self.prune: bool = prune
-        self.pruneWhiteList: Optional[MutableSequence] = pruneWhitelist
-        self.recursive: bool = recursive
-        self.timeout: int = timeout
-        self.validate: bool = validate
-        self.wait: bool = wait
-        # TODO: implement
-
-
 class BaseHelmConnector(BaseKubernetesConnector, ABC):
 
     def __init__(self,

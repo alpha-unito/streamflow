@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core.deployment import DeploymentManager
 from streamflow.deployment.connector.container import DockerConnector, DockerComposeConnector, SingularityConnector
-from streamflow.deployment.connector.helm import Helm2Connector, Helm3Connector
+from streamflow.deployment.connector.kubernetes import Helm2Connector, Helm3Connector
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.connector.occam import OccamConnector
 from streamflow.deployment.connector.queue_manager import PBSConnector, SlurmConnector

@@ -69,15 +69,13 @@ setup(
     ]},
     zip_safe=True,
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
-        "Operating System :: MacOS :: MacOS X",
-        "Operating System :: POSIX",
+        "Operating System :: OS Independent",
         "Programming Language :: Python :: 3.8",
         "Topic :: Scientific/Engineering",
-        "Topic :: Scientific/Engineering :: Bio-Informatics",
         "Topic :: System :: Distributed Computing",
     ],
 )

@@ -81,12 +81,6 @@ class QueueManagerConnector(SSHConnector, ABC):
                                  stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
         ...
 
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
-        return {self.hostname: Resource(
-            name=self.hostname,
-            hostname=self.hostname,
-            slots=self.maxConcurrentJobs)}
-
     async def _run(self,
                    resource: str,
                    command: MutableSequence[str],
@@ -149,6 +143,12 @@ class QueueManagerConnector(SSHConnector, ABC):
                 encode=encode,
                 interactive=interactive,
                 stream=stream)
+
+    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+        return {self.hostname: Resource(
+            name=self.hostname,
+            hostname=self.hostname,
+            slots=self.maxConcurrentJobs)}
 
     async def undeploy(self, external: bool) -> None:
         await self._remove_jobs(self.hostname)

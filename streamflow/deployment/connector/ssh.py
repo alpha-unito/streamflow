@@ -15,7 +15,7 @@ from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.deployment import ConnectorCopyKind
-from streamflow.core.scheduling import Resource
+from streamflow.core.scheduling import Resource, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -89,7 +89,10 @@ class SSHConfig(object):
                  username: str):
         self.check_host_key: bool = check_host_key
         self.client_keys: MutableSequence[str] = client_keys
+        self.cores: Optional[int] = None
+        self.disk: Optional[int] = None
         self.hostname: str = hostname
+        self.memory: Optional[int] = None
         self.password_file: Optional[str] = password_file
         self.ssh_key_passphrase_file: Optional[str] = ssh_key_passphrase_file
         self.tunnel: Optional[SSHConfig] = tunnel
@@ -240,6 +243,7 @@ class SSHConnector(BaseConnector):
                 streamflow_config_dir=self.streamflow_config_dir,
                 config=self.nodes[resource],
                 max_concurrent_sessions=self.maxConcurrentSessions)
+            self._get_resource_config(resource)
         return self.ssh_contexts[resource]
 
     async def _run(self,
@@ -286,10 +290,27 @@ class SSHConnector(BaseConnector):
             elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
                 await asyncssh.scp(src, (ssh_client, dst), preserve=True, recurse=True)
 
+    async def _get_resource_config(self, resource: str):
+        resource_config = self.nodes[resource]
+        async with self.ssh_contexts[resource] as ssh_client:
+            resource_config.cores = float(await ssh_client.run("nproc"))
+            resource_config.memory = float(await ssh_client.run("free | grep Mem | awk '{print $2}'")) / 2 ** 10
+            resource_config.disk = float(await ssh_client.run("df / | tail -n 1 | awk '{print $2}'")) / 2 ** 10
+
     async def deploy(self, external: bool) -> None:
         pass
 
     async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+        resources = {}
+        for resource_obj in self.nodes.values():
+            resources[resource_obj.hostname] = Resource(
+                name=resource_obj.hostname,
+                hostname=resource_obj.hostname,
+                hardware=Hardware(
+                    cores=resource_obj.cores,
+                    memory=resource_obj.memory,
+                    disk=resource_obj.disk))
+
         return {hostname: Resource(hostname, hostname) for hostname in self.nodes}
 
     async def undeploy(self, external: bool) -> None:
