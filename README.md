@@ -19,7 +19,7 @@ The StreamFlow module is available on [PyPI](https://pypi.org/project/streamflow
 pip install streamflow
 ```
 
-Please note that StreamFlow requires `python >= 3.7`. Then you can execute it directly from the CLI
+Please note that StreamFlow requires `python >= 3.8`. Then you can execute it directly from the CLI
 
 ```bash
 streamflow run /path/to/streamflow.yml
@@ -175,11 +175,11 @@ As a first step, get StreamFlow from [GitHub](https://github.com/alpha-unito/str
 git clone git@github.com:alpha-unito/streamflow.git
 ```
 
-Then you can install all the requred packages using the `python setup.py install` command
+Then you can install all the requred packages using the `pip install` command
 
 ```bash
 cd streamflow
-python setup.py install
+pip install .
 ```
 
 StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for PyPI and Docker Hub distributions. Therefore, in order to publish a
