@@ -64,7 +64,7 @@
         },
         {
           "type": "object",
-          "$ref": "ssh.json#/definitions/connection"
+          "$ref": "#/definitions/connection"
         }
       ],
       "description": "Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"

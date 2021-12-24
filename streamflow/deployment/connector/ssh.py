@@ -11,10 +11,13 @@ from typing import MutableSequence, Optional, MutableMapping, Tuple, Any, Union
 
 import asyncssh
 from asyncssh import SSHClientConnection
+from cachetools import Cache, LRUCache
 from jinja2 import Template
 
 from streamflow.core import utils
+from streamflow.core.asyncache import cachedmethod
 from streamflow.core.deployment import ConnectorCopyKind
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Resource, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
@@ -89,10 +92,7 @@ class SSHConfig(object):
                  username: str):
         self.check_host_key: bool = check_host_key
         self.client_keys: MutableSequence[str] = client_keys
-        self.cores: Optional[int] = None
-        self.disk: Optional[int] = None
         self.hostname: str = hostname
-        self.memory: Optional[int] = None
         self.password_file: Optional[str] = password_file
         self.ssh_key_passphrase_file: Optional[str] = ssh_key_passphrase_file
         self.tunnel: Optional[SSHConfig] = tunnel
@@ -159,6 +159,7 @@ class SSHConnector(BaseConnector):
         self.dataTransferConfig: Optional[SSHConfig] = self._get_config(
             dataTransferConnection)
         self.nodes: MutableMapping[str, SSHConfig] = {n.hostname: n for n in [self._get_config(n) for n in nodes]}
+        self.hardwareCache: Cache = LRUCache(maxsize=len(self.nodes))
 
     async def _build_helper_file(self,
                                  command: str,
@@ -243,7 +244,6 @@ class SSHConnector(BaseConnector):
                 streamflow_config_dir=self.streamflow_config_dir,
                 config=self.nodes[resource],
                 max_concurrent_sessions=self.maxConcurrentSessions)
-            self._get_resource_config(resource)
         return self.ssh_contexts[resource]
 
     async def _run(self,
@@ -290,12 +290,21 @@ class SSHConnector(BaseConnector):
             elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
                 await asyncssh.scp(src, (ssh_client, dst), preserve=True, recurse=True)
 
-    async def _get_resource_config(self, resource: str):
-        resource_config = self.nodes[resource]
-        async with self.ssh_contexts[resource] as ssh_client:
-            resource_config.cores = float(await ssh_client.run("nproc"))
-            resource_config.memory = float(await ssh_client.run("free | grep Mem | awk '{print $2}'")) / 2 ** 10
-            resource_config.disk = float(await ssh_client.run("df / | tail -n 1 | awk '{print $2}'")) / 2 ** 10
+    @cachedmethod(lambda self: self.hardwareCache)
+    async def _get_resource_hardware(self, resource: str) -> Hardware:
+        async with self._get_ssh_client(resource) as ssh_client:
+            cores, memory, disk = await asyncio.gather(
+                ssh_client.run("nproc", stderr=STDOUT),
+                ssh_client.run("free | grep Mem | awk '{print $2}'", stderr=STDOUT),
+                ssh_client.run("df / | tail -n 1 | awk '{print $2}'", stderr=STDOUT))
+            if cores.returncode == 0 and memory.returncode == 0 and disk.returncode == 0:
+                return Hardware(
+                    cores=float(cores.stdout.strip()),
+                    memory=float(memory.stdout.strip()) / 2 ** 10,
+                    disk=float(disk.stdout.strip()) / 2 ** 10)
+            else:
+                raise WorkflowExecutionException(
+                    "Impossible to retrieve resources for {resource}".format(resource=resource))
 
     async def deploy(self, external: bool) -> None:
         pass
@@ -303,15 +312,18 @@ class SSHConnector(BaseConnector):
     async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
         resources = {}
         for resource_obj in self.nodes.values():
+            hardware = await self._get_resource_hardware(resource_obj.hostname)
             resources[resource_obj.hostname] = Resource(
                 name=resource_obj.hostname,
                 hostname=resource_obj.hostname,
-                hardware=Hardware(
-                    cores=resource_obj.cores,
-                    memory=resource_obj.memory,
-                    disk=resource_obj.disk))
-
-        return {hostname: Resource(hostname, hostname) for hostname in self.nodes}
+                hardware=hardware)
+            logger.debug(
+                "Resource {resource} available with {cores} cores, {mem}MiB memory and {disk}MiB disk space".format(
+                    resource=resource_obj.hostname,
+                    cores=hardware.cores,
+                    mem=hardware.memory,
+                    disk=hardware.disk))
+        return resources
 
     async def undeploy(self, external: bool) -> None:
         for ssh_context in self.ssh_contexts.values():
