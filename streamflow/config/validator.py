@@ -7,6 +7,8 @@ from jsonref import loads
 from jsonschema import Draft7Validator
 from ruamel.yaml import YAML
 
+from streamflow.core.exception import WorkflowDefinitionException
+
 if TYPE_CHECKING:
     from typing import Any, MutableMapping
 
@@ -23,14 +25,13 @@ def load_jsonschema(config_file):
         return loads(f.read(), base_uri='file://{}/'.format(base_path), jsonschema=True)
 
 
-def handle_errors(errors, filename):
+def handle_errors(errors):
     errors = list(sorted(errors, key=str))
     if not errors:
         return
-    raise Exception(
-        "The {file_msg} file is invalid because:\n{error_msg}".format(
-            file_msg="'{}'".format(filename) if filename else "",
-            error_msg=errors[0]))
+    raise WorkflowDefinitionException(
+        "The StreamFlow configuration is invalid because:\n{error_msgs}".format(
+            error_msgs="\n".join([" - {msg}".format(msg=err) for err in errors])))
 
 
 class SfValidator(object):
@@ -39,11 +40,13 @@ class SfValidator(object):
         super().__init__()
         self.yaml = YAML(typ='safe')
 
-    def validate(self, streamflow_file: str) -> MutableMapping[str, Any]:
+    def validate_file(self, streamflow_file: str) -> MutableMapping[str, Any]:
         with open(streamflow_file) as f:
             streamflow_config = self.yaml.load(f)
+        return self.validate(streamflow_config)
+
+    def validate(self, streamflow_config: MutableMapping[str, Any]):
         schema = load_jsonschema(streamflow_config)
         validator = Draft7Validator(schema)
-        handle_errors(
-            validator.iter_errors(streamflow_config), streamflow_file)
+        handle_errors(validator.iter_errors(streamflow_config))
         return streamflow_config
