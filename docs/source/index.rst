@@ -36,6 +36,7 @@ For LaTeX users, the following BibTeX entry can be used:
 
 .. toctree::
    :caption: Getting Started
+   :hidden:
 
    install.rst
    architecture.rst
@@ -43,12 +44,14 @@ For LaTeX users, the following BibTeX entry can be used:
 
 .. toctree::
    :caption: CWL Standard
+   :hidden:
 
    cwl/cwl-conformance.rst
    cwl/cwl-runner.rst
 
 .. toctree::
    :caption: Connectors
+   :hidden:
 
    connector/docker.rst
    connector/docker-compose.rst

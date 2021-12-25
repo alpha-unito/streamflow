@@ -39,13 +39,13 @@ async def _async_main(args: argparse.Namespace):
         if len(workflows) == 1:
             workflow_name = list(workflows.keys())[0]
         elif len(workflows) == 0:
-            workflow_name = os.path.basename(args.processfile)
+            workflow_name = 'cwl-workflow'
             streamflow_config['workflows'][workflow_name] = {}
         else:
             raise WorkflowDefinitionException(
                 "A StreamFlow file must contain only one workflow definition when used with cwl-runner.")
     else:
-        workflow_name = os.path.basename(args.processfile)
+        workflow_name = 'cwl-workflow'
         streamflow_config = {
             'version': 'v1.0',
             'workflows': {
