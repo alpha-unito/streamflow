@@ -24,7 +24,7 @@ jobs:
       - name: "Create Release"
         id: create-release
         uses: actions/create-release@v1
-        if: ${{ steps.checkTag.outputs.exists == 'false' }}
+        if: ${{ steps.check-tag.outputs.exists == 'false' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
