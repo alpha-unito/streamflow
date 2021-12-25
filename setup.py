@@ -56,6 +56,11 @@ setup(
         "report": [
             "plotly",
             "kaleido"
+        ],
+        "docs": [
+            "sphinx",
+            "sphinx-jsonschema",
+            "sphinx-rtd-theme"
         ]
     },
     tests_require=[

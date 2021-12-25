@@ -2,4 +2,7 @@
 SingularityConnector
 =====================
 
-.. jsonschema:: https://raw.githubusercontent.com/alpha-unito/streamflow/feature/docs/streamflow/config/schemas/v1.0/singularity.json
+The `Singularity <https://sylabs.io/singularity>`_ connector can spawn one or more instances of a Singularity container locally on the StreamFlow node. The units of deployment and binding for this connector correspond to the set of homogeneous container instances, while the unit of scheduling is the single instance.
+
+.. jsonschema:: ../../../streamflow/config/schemas/v1.0/singularity.json
+    :lift_description: true

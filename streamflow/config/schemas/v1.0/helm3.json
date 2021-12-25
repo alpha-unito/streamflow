@@ -30,7 +30,7 @@
     },
     "debug": {
       "type": "boolean",
-      "description": " Enable verbose output"
+      "description": "Enable verbose output"
     },
     "depUp": {
       "type": "boolean",
@@ -38,7 +38,7 @@
     },
     "devel": {
       "type": "boolean",
-      "description": " Use development versions, too (equivalent to version `>0.0.0-0`). If version is set, this is ignored"
+      "description": "Use development versions, too (equivalent to version >0.0.0-0). If version is set, this is ignored"
     },
     "fileValues": {
       "type": "string",
@@ -91,7 +91,7 @@
     },
     "password": {
       "type": "string",
-      "description": " Chart repository password where to locate the requested chart"
+      "description": "Chart repository password where to locate the requested chart"
     },
     "registryConfig": {
       "type": "string",

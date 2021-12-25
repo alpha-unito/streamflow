@@ -67,7 +67,7 @@
     },
     "username": {
       "type": "string",
-      "description": "Username needed to connect with Occam environment"
+      "description": "Username needed to connect with the SSH environment"
     }
   },
   "required": [

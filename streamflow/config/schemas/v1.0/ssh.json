@@ -6,6 +6,8 @@
     "connection": {
       "$id": "#/definitions/connection",
       "type": "object",
+      "title": "SSHConnection",
+      "description": "This complex type represents an SSH connection to a remote node, identified by its hostname.",
       "properties": {
         "checkHostKey": {
           "type": "boolean",
@@ -42,7 +44,7 @@
         },
         "username": {
           "type": ["string", "null"],
-          "description": "Username needed to connect with Occam environment"
+          "description": "Username needed to connect with the SSH environment"
         }
       },
       "required": [
@@ -124,7 +126,7 @@
     },
     "username": {
       "type": "string",
-      "description": "Username needed to connect with Occam environment"
+      "description": "Username needed to connect with the SSH environment"
     }
   },
   "required": [

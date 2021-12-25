@@ -15,7 +15,7 @@ StreamFlow source code is available on `GitHub <https://github.com/alpha-unito/s
 
     I. Colonnelli, B. Cantalupo, I. Merelli and M. Aldinucci,
     "StreamFlow: cross-breeding cloud with HPC,"
-    in IEEE Transactions on Emerging Topics in Computing,
+    in IEEE Transactions on Emerging Topics in Computing, vol. 9, iss. 4, p. 1723-1737,
     doi: 10.1109/TETC.2020.3019202.
 
 For LaTeX users, the following BibTeX entry can be used:
@@ -28,12 +28,13 @@ For LaTeX users, the following BibTeX entry can be used:
         journal = {{IEEE} {T}ransactions on {E}merging {T}opics in {C}omputing},
         title   = {{StreamFlow}: cross-breeding cloud with {HPC}},
         url     = {https://doi.org/10.1109/TETC.2020.3019202},
-        year    = {2020}
+        volume  = {9},
+        number  = {4},
+        pages   = {1723-1737},
+        year    = {2021}
     }
 
 .. toctree::
-   :maxdepth: 1
-   :hidden:
    :caption: Getting Started
 
    install.rst
@@ -41,8 +42,12 @@ For LaTeX users, the following BibTeX entry can be used:
    operations.rst
 
 .. toctree::
-   :maxdepth: 1
-   :hidden:
+   :caption: CWL Standard
+
+   cwl/cwl-conformance.rst
+   cwl/cwl-runner.rst
+
+.. toctree::
    :caption: Connectors
 
    connector/docker.rst

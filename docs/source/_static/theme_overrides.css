@@ -1,0 +1,26 @@
+.wy-table-responsive table td, .wy-table-responsive table th {
+    white-space: normal !important;
+}
+
+.wy-table-responsive {
+    overflow: visible !important;
+}
+
+.jsonschema-table {
+    border-left: none !important;
+    border-right: none !important;
+}
+
+.jsonschema-table tr td {
+    background-color: #fcfcfc !important;
+    border-top: 1px solid #e1e4e5 !important;
+    border-bottom: 1px solid #e1e4e5 !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+.jsonschema-table tr:first-child td {
+    text-align: center !important;
+    text-transform: capitalize;
+    font-weight: bold;
+}

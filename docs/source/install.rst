@@ -5,7 +5,7 @@ Install
 You can install StreamFlow as a Python package with ``pip``, run it in a `Docker <https://www.docker.com/>`_ container or deploy it on `Kubernetes <https://kubernetes.io/>`_ with `Helm <https://helm.sh/>`_.
 
 Pip
----
+===
 
 The StreamFlow module is available on `PyPI <https://pypi.org/project/streamflow/>`_, so you can install it using the following command::
 
@@ -16,7 +16,7 @@ Please note that StreamFlow requires ``python >= 3.8`` to be installed on the sy
     streamflow /path/to/streamflow.yml
 
 Docker
-------
+======
 
 StreamFlow Docker images are available on `Docker Hub <https://hub.docker.com/r/alphaunito/streamflow>`_. To download the latest StreamFlow image, you can use the following command::
 
@@ -44,7 +44,7 @@ The command below gives an example of how to execute a StreamFlow workflow in a 
   All the container-based connectors (i.e., ``DockerConnector``, ``DockerComposeConnector`` and ``SingularityConnector``) are not supported from inside a Docker container, as running nested containers is a non-trivial task.
 
 Kubernetes
-----------
+==========
 
 It is also possible to execute the StreamFlow container as a `Job <https://kubernetes.io/docs/concepts/workloads/controllers/job/>`_ in Kubernetes, with the same characteristics and restrictions discussed for the :ref:`Docker <Docker>` case. A Helm template of a StreamfFlow Job can be found :repo:`here <helm/chart>`.
 
