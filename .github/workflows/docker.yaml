@@ -21,21 +21,26 @@ jobs:
       - name: "Get StreamFlow version"
         run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
       - name: "Check if Docker image already exists"
-        run : echo "EXISTS_IMAGE=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect alphaunito/streamflow:${STREAMFLOW_VERSION}-base > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
+        run : echo "NEW_IMAGE=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect alphaunito/streamflow:${STREAMFLOW_VERSION}-base > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
       - name: "Build base image"
         id: docker-base
-        if: ${{ !env.EXISTS_IMAGE }}
+        if: ${{ env.NEW_IMAGE }}
         uses: docker/build-push-action@v2
         with:
+          build-args: |
+            HELM_VERSION=v3.7.2
           push: true
           tags: |
             alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-base
             alphaunito/streamflow:latest
       - name: "Build Helm 2 image"
         id: docker-helm
-        if: ${{ !env.EXISTS_IMAGE }}
+        if: ${{ env.NEW_IMAGE }}
         uses: docker/build-push-action@v2
         with:
           file: helm/docker/helm2/Dockerfile
+          build-args: |
+            BASE_IMAGE=alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-base
+            HELM_VERSION=v2.17.0
           push: true
           tags: alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-helm2
