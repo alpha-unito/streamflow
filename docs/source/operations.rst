@@ -89,7 +89,6 @@ Name                                                        Class
 :ref:`docker <DockerConnector>`                             streamflow.deployment.connector.docker.DockerConnector
 :ref:`docker-compose <DockerComposeConnector>`              streamflow.deployment.connector.docker.DockerComposeConnector
 :ref:`helm <Helm3Connector>`                                streamflow.deployment.connector.kubernetes.Helm3Connector
-:ref:`helm2 <Helm2Connector (Deprecated)>` (Deprecated)     streamflow.deployment.connector.kubernetes.Helm2Connector
 :ref:`helm3 <Helm3Connector>`                               streamflow.deployment.connector.kubernetes.Helm3Connector
 :ref:`occam <OccamConnector>`                               streamflow.deployment.connector.occam.OccamConnector
 :ref:`pbs <PBSConnector>`                                   streamflow.deployment.connector.queue_manager.PBSConnector

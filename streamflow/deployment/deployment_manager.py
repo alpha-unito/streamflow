@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core.deployment import DeploymentManager
 from streamflow.deployment.connector.container import DockerConnector, DockerComposeConnector, SingularityConnector
-from streamflow.deployment.connector.kubernetes import Helm2Connector, Helm3Connector
+from streamflow.deployment.connector.kubernetes import Helm3Connector
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.connector.occam import OccamConnector
 from streamflow.deployment.connector.queue_manager import PBSConnector, SlurmConnector
@@ -21,7 +21,6 @@ connector_classes = {
     'docker': DockerConnector,
     'docker-compose': DockerComposeConnector,
     'helm': Helm3Connector,
-    'helm2': Helm2Connector,
     'helm3': Helm3Connector,
     'local': LocalConnector,
     'occam': OccamConnector,

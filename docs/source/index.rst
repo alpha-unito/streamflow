@@ -55,7 +55,6 @@ For LaTeX users, the following BibTeX entry can be used:
 
    connector/docker.rst
    connector/docker-compose.rst
-   connector/helm2.rst
    connector/helm3.rst
    connector/occam.rst
    connector/pbs.rst

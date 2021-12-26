@@ -130,11 +130,6 @@
           "type": "object",
           "$ref": "docker-compose.json"
         },
-        "helm2": {
-          "$id": "#/definitions/model/definitions/helm2",
-          "type": "object",
-          "$ref": "helm2.json#"
-        },
         "helm3": {
           "$id": "#/definitions/model/definitions/helm3",
           "type": "object",
@@ -173,7 +168,6 @@
             "docker",
             "docker-compose",
             "helm",
-            "helm2",
             "helm3",
             "pbs",
             "occam",
@@ -221,24 +215,6 @@
                 "$id": "#/definitions/model/properties/config",
                 "type": "object",
                 "$ref": "#/definitions/model/definitions/docker-compose"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "helm2"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/model/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/model/definitions/helm2"
               }
             }
           }
