@@ -5,8 +5,6 @@ import os
 import platform
 import sys
 
-import uvloop
-
 import streamflow.cwl.main
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
@@ -86,9 +84,6 @@ def main(args):
         return
     if args.quiet:
         logger.setLevel(logging.WARN)
-    if platform.python_implementation() == 'CPython':
-        logger.info('CPython detected: using uvloop EventLoop implementation')
-        uvloop.install()
     asyncio.run(_async_main(args))
 
 

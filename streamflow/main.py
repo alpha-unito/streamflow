@@ -3,11 +3,8 @@ import asyncio
 import importlib
 import logging
 import os
-import platform
 import sys
 from typing import MutableMapping, Any, Optional
-
-import uvloop
 
 from streamflow import report
 from streamflow.config.config import WorkflowConfig
@@ -110,9 +107,6 @@ def main(args):
     elif args.context == "run":
         if args.quiet:
             logger.setLevel(logging.WARN)
-        if platform.python_implementation() == 'CPython':
-            logger.info('CPython detected: using uvloop EventLoop implementation')
-            uvloop.install()
         asyncio.run(_async_main(args))
     elif args.context == "report":
         report.create_report(args)

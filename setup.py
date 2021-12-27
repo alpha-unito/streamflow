@@ -49,8 +49,7 @@ setup(
         "jsonref",
         "jsonschema",
         "kubernetes_asyncio",
-        "pandas",
-        "uvloop"
+        "pandas"
     ],
     extra_requires={
         "report": [

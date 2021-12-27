@@ -32,13 +32,18 @@ SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/name
 
 
 def _check_helm_installed():
-    if which("helm") is not None:
+    if which("helm") is None:
         raise WorkflowExecutionException("Helm must be installed on the system to use the Helm connector.")
 
 
 async def _get_helm_version():
-    proc = await asyncio.create_subprocess_exec("helm version --template '{{.Version}}'")
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split("helm version --template '{{.Version}}'"),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL)
     stdout, _ = await proc.communicate()
+    print(stdout)
+    exit(1)
     return stdout.decode().strip()
 
 
