@@ -64,19 +64,19 @@ class DeploymentManager(ABC):
         self.streamflow_config_dir: str = streamflow_config_dir
 
     @abstractmethod
-    async def deploy(self, model_config: ModelConfig):
+    async def deploy(self, deployment_config: DeploymentConfig):
         ...
 
     @abstractmethod
-    def get_connector(self, model_name: str) -> Optional[Connector]:
+    def get_connector(self, deployment_name: str) -> Optional[Connector]:
         ...
 
     @abstractmethod
-    def is_deployed(self, model_name: str):
+    def is_deployed(self, deployment_name: str):
         ...
 
     @abstractmethod
-    async def undeploy(self, model_name: str):
+    async def undeploy(self, deployment_name: str):
         ...
 
     @abstractmethod
@@ -84,7 +84,7 @@ class DeploymentManager(ABC):
         ...
 
 
-class ModelConfig(object):
+class DeploymentConfig(object):
 
     def __init__(self,
                  name: str,

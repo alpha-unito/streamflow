@@ -15,7 +15,7 @@ StreamFlow source code is available on `GitHub <https://github.com/alpha-unito/s
 
     I. Colonnelli, B. Cantalupo, I. Merelli and M. Aldinucci,
     "StreamFlow: cross-breeding cloud with HPC,"
-    in IEEE Transactions on Emerging Topics in Computing, vol. 9, iss. 4, p. 1723-1737,
+    in IEEE Transactions on Emerging Topics in Computing, vol. 9, iss. 4, p. 1723-1737, 2021.
     doi: 10.1109/TETC.2020.3019202.
 
 For LaTeX users, the following BibTeX entry can be used:

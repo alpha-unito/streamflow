@@ -274,7 +274,7 @@ class OccamConnector(SSHConnector):
 
     async def undeploy(self, external: bool) -> None:
         if not external:
-            # Undeploy models
+            # Undeploy
             undeploy_tasks = []
             for name in self.jobs_table:
                 for job_id in self.jobs_table[name]:

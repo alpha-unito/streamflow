@@ -52,13 +52,13 @@ docker run -d \
 #### Kubernetes
 
 It is also possible to execute the StreamFlow container as a `Job` in [Kubernetes](https://kubernetes.io/).
-In this case, StreamFlow is able to deploy `Helm` models directly on the parent cluster through the
+In this case, StreamFlow is able to deploy `Helm` charts directly on the parent cluster through the
 `ServiceAccount` credentials. In order to do that, the `inCluster` option must be set to `true` for each
 involved module on the `streamflow.yml` file
 
 ```yaml
-models:
-  helm-model:
+deployments:
+  helm-deployment:
     type: helm
     config:
       inCluster: true

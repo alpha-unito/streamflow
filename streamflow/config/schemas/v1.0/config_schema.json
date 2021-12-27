@@ -14,6 +14,9 @@
           "$id": "#/definitions/workflow/properties/bindings/",
           "type": "object",
           "properties": {
+            "deployment": {
+              "type": "string"
+            },
             "model": {
               "type": "string"
             },
@@ -29,8 +32,17 @@
               "type": "string"
             }
           },
-          "required": [
-            "model"
+          "oneOf": [
+            {
+              "required": [
+                "deployment"
+              ]
+            },
+            {
+              "required": [
+                "model"
+              ]
+            }
           ],
           "additionalProperties": false
         },
@@ -116,47 +128,47 @@
         "config"
       ]
     },
-    "model": {
-      "$id": "#/definitions/model",
+    "deployment": {
+      "$id": "#/definitions/deployment",
       "type": "object",
       "definitions": {
         "docker": {
-          "$id": "#/definitions/model/definitions/docker",
+          "$id": "#/definitions/deployment/definitions/docker",
           "type": "object",
           "$ref": "docker.json"
         },
         "docker-compose": {
-          "$id": "#/definitions/model/definitions/docker-compose",
+          "$id": "#/definitions/deployment/definitions/docker-compose",
           "type": "object",
           "$ref": "docker-compose.json"
         },
         "helm3": {
-          "$id": "#/definitions/model/definitions/helm3",
+          "$id": "#/definitions/deployment/definitions/helm3",
           "type": "object",
           "$ref": "helm3.json#"
         },
         "pbs": {
-          "$id": "#/definitions/model/definitions/pbs",
+          "$id": "#/definitions/deployment/definitions/pbs",
           "type": "object",
           "$ref": "queue_manager.json#"
         },
         "occam": {
-          "$id": "#/definitions/model/definitions/occam",
+          "$id": "#/definitions/deployment/definitions/occam",
           "type": "object",
           "$ref": "occam.json#"
         },
         "singularity": {
-          "$id": "#/definitions/model/definitions/singularity",
+          "$id": "#/definitions/deployment/definitions/singularity",
           "type": "object",
           "$ref": "singularity.json#"
         },
         "slurm": {
-          "$id": "#/definitions/model/definitions/slurm",
+          "$id": "#/definitions/deployment/definitions/slurm",
           "type": "object",
           "$ref": "queue_manager.json#"
         },
         "ssh": {
-          "$id": "#/definitions/model/definitions/ssh",
+          "$id": "#/definitions/deployment/definitions/ssh",
           "type": "object",
           "$ref": "ssh.json#"
         }
@@ -194,9 +206,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/docker"
+                "$ref": "#/definitions/deployment/definitions/docker"
               }
             }
           }
@@ -212,9 +224,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/docker-compose"
+                "$ref": "#/definitions/deployment/definitions/docker-compose"
               }
             }
           }
@@ -230,9 +242,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/helm3"
+                "$ref": "#/definitions/deployment/definitions/helm3"
               }
             }
           }
@@ -248,9 +260,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/occam"
+                "$ref": "#/definitions/deployment/definitions/occam"
               }
             }
           }
@@ -266,9 +278,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/slurm"
+                "$ref": "#/definitions/deployment/definitions/slurm"
               }
             }
           }
@@ -284,9 +296,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/ssh"
+                "$ref": "#/definitions/deployment/definitions/ssh"
               }
             }
           }
@@ -400,11 +412,21 @@
       }
     },
     "models": {
-      "$id": "#/properties/models",
+      "$id": "#/properties/deployments",
       "type": "object",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
-          "$ref": "#/definitions/model"
+          "$ref": "#/definitions/deployment"
+        }
+      },
+      "additionalProperties": false
+    },
+    "deployments": {
+      "$id": "#/properties/deployments",
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "$ref": "#/definitions/deployment"
         }
       },
       "additionalProperties": false

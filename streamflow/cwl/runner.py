@@ -27,7 +27,7 @@ parser.add_argument('--quiet', action='store_true', help='No diagnostic output')
 parser.add_argument('--version', action='store_true',
                     help='Report the name and version, then quit without further processing')
 parser.add_argument('--streamflow-file', type=str,
-                    help='The path to a StreamFlow file specifying models and bindings for the workflow steps.')
+                    help='The path to a StreamFlow file specifying deployments and bindings for the workflow steps.')
 
 
 async def _async_main(args: argparse.Namespace):
@@ -63,7 +63,7 @@ async def _async_main(args: argparse.Namespace):
     context = build_context(os.getcwd(), streamflow_config, args.outdir)
     try:
         local_target = get_local_target()
-        await context.deployment_manager.deploy(local_target.model)
+        await context.deployment_manager.deploy(local_target.deployment)
         await streamflow.cwl.main.main(
             workflow_config=workflow_config,
             context=context,

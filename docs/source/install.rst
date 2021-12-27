@@ -48,7 +48,7 @@ Kubernetes
 
 It is also possible to execute the StreamFlow container as a `Job <https://kubernetes.io/docs/concepts/workloads/controllers/job/>`_ in Kubernetes, with the same characteristics and restrictions discussed for the :ref:`Docker <Docker>` case. A Helm template of a StreamfFlow Job can be found :repo:`here <helm/chart>`.
 
-In this case, the StreamFlow ``HelmConnector`` is able to deploy Helm models directly on the parent cluster, relying on `ServiceAccount <https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/>`_ credentials.
+In this case, the StreamFlow ``HelmConnector`` is able to deploy Helm charts directly on the parent cluster, relying on `ServiceAccount <https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/>`_ credentials.
 
 .. warning::
   In case `RBAC <https://kubernetes.io/docs/reference/access-authn-authz/rbac/>`_ is active on the Kubernetes cluster, a proper RoleBinding must be attached to the ServiceAccount object, in order to give StreamFlow the permissions to manage deployments of pods and executions of tasks.

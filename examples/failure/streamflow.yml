@@ -9,17 +9,17 @@ workflows:
     bindings:
       - step: /open_step
         target:
-          model: helm-failure
+          deployment: helm-failure
           service: debian
       - step: /sum_step
         target:
-          model: helm-failure
+          deployment: helm-failure
           service: debian
       - step: /comb_step
         target:
-          model: helm-failure
+          deployment: helm-failure
           service: debian
-models:
+deployments:
   helm-failure:
     type: helm
     config:

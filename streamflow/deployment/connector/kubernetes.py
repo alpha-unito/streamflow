@@ -5,7 +5,6 @@ import io
 import os
 import posixpath
 import shlex
-import subprocess
 import tarfile
 import tempfile
 import uuid
@@ -555,7 +554,7 @@ class Helm3Connector(BaseKubernetesConnector):
 
     async def undeploy(self, external: bool) -> None:
         if not external:
-            # Undeploy model
+            # Undeploy
             undeploy_command = self.base_command() + (
                 "uninstall "
                 "{keepHistory}"

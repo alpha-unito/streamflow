@@ -42,7 +42,7 @@ async def _async_main(args: argparse.Namespace):
     context = build_context(os.path.dirname(args.streamflow_file), streamflow_config, args.outdir)
     try:
         local_target = get_local_target()
-        await context.deployment_manager.deploy(local_target.model)
+        await context.deployment_manager.deploy(local_target.deployment)
         workflow_tasks = []
         for workflow in streamflow_config.get('workflows', {}):
             workflow_config = WorkflowConfig(workflow, streamflow_config)

@@ -5,7 +5,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, MutableSequence
 
 if TYPE_CHECKING:
-    from streamflow.deployment.deployment_manager import ModelConfig
+    from streamflow.deployment.deployment_manager import DeploymentConfig
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import Connector
     from streamflow.core.scheduling import Hardware
@@ -279,13 +279,13 @@ class Step(ABC):
 
 
 class Target(object):
-    __slots__ = ('model', 'resources', 'service')
+    __slots__ = ('deployment', 'resources', 'service')
 
     def __init__(self,
-                 model: ModelConfig,
+                 deployment: DeploymentConfig,
                  resources: int = 1,
                  service: Optional[str] = None):
-        self.model: ModelConfig = model
+        self.deployment: DeploymentConfig = deployment
         self.resources: int = resources
         self.service: Optional[str] = service
 

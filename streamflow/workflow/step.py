@@ -114,7 +114,7 @@ class BaseStep(Step):
             # If condition is satisfied (or null)
             if self.condition is None or await self.condition.eval(job):
                 # Setup runtime environment
-                await self.context.deployment_manager.deploy(self.target.model)
+                await self.context.deployment_manager.deploy(self.target.deployment)
                 await self.context.scheduler.schedule(job)
                 # Initialize job
                 await job.initialize()
@@ -174,7 +174,7 @@ class BaseStep(Step):
             self.context.persistence_manager.db.update_step(self.persistent_id, {"status": status.value})
 
     def get_connector(self) -> Optional[Connector]:
-        return self.context.deployment_manager.get_connector(self.target.model.name)
+        return self.context.deployment_manager.get_connector(self.target.deployment.name)
 
     async def run(self) -> None:
         jobs = []

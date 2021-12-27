@@ -103,13 +103,13 @@ class Resource(object):
 
 
 class ResourceAllocation(object):
-    __slots__ = ('name', 'model', 'jobs')
+    __slots__ = ('name', 'deployment', 'jobs')
 
     def __init__(self,
                  name: str,
-                 model: str):
+                 deployment: str):
         self.name: str = name
-        self.model: str = model
+        self.deployment: str = deployment
         self.jobs: MutableSequence[str] = []
 
 

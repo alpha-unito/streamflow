@@ -9,17 +9,17 @@ workflows:
     bindings:
       - step: /pre_correction
         target:
-          model: helm-mf
+          deployment: helm-mf
           service: debian
       - step: /photo_correction
         target:
-          model: helm-mf
+          deployment: helm-mf
           service: debian
       - step: /stacking
         target:
-          model: helm-mf
+          deployment: helm-mf
           service: debian
-models:
+deployments:
   helm-mf:
     type: helm
     config:

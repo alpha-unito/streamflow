@@ -33,7 +33,7 @@ class DefaultScheduler(Scheduler):
 
     def _allocate_job(self,
                       job: Job,
-                      model_name: str,
+                      deployment_name: str,
                       selected_resources: MutableSequence[str]):
         if len(selected_resources) == 1:
             logger.info(
@@ -53,7 +53,7 @@ class DefaultScheduler(Scheduler):
             hardware=job.hardware or Hardware())
         for selected_resource in selected_resources:
             if selected_resource not in self.resource_allocations:
-                self.resource_allocations[selected_resource] = ResourceAllocation(selected_resource, model_name)
+                self.resource_allocations[selected_resource] = ResourceAllocation(selected_resource, deployment_name)
             self.resource_allocations[selected_resource].jobs.append(job.name)
 
     def _deallocate_job(self, job: Job):
@@ -101,8 +101,8 @@ class DefaultScheduler(Scheduler):
                        job: Job,
                        scheduling_policy: Policy = None) -> None:
         async with self.wait_queue:
-            model_name = job.step.target.model.name
-            connector = self.context.deployment_manager.get_connector(model_name)
+            deployment_name = job.step.target.deployment.name
+            connector = self.context.deployment_manager.get_connector(deployment_name)
             while True:
                 if job.name in self.job_allocations:
                     return
@@ -118,7 +118,7 @@ class DefaultScheduler(Scheduler):
                             selected_resources = self._get_resources(j, scheduling_policy, available_resources)
                             if selected_resources is None:
                                 break
-                            self._allocate_job(j, model_name, selected_resources)
+                            self._allocate_job(j, deployment_name, selected_resources)
                             allocated_jobs.append(j)
                         if len(allocated_jobs) < group_size:
                             for j in allocated_jobs:
@@ -128,7 +128,7 @@ class DefaultScheduler(Scheduler):
                 else:
                     selected_resources = self._get_resources(job, scheduling_policy, available_resources)
                     if selected_resources is not None:
-                        self._allocate_job(job, model_name, selected_resources)
+                        self._allocate_job(job, deployment_name, selected_resources)
                         return
                 try:
                     await asyncio.wait_for(self.wait_queue.wait(), timeout=self.retry_interval)

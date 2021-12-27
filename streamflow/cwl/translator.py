@@ -21,7 +21,7 @@ from ruamel.yaml.comments import CommentedSeq
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import ModelConfig
+from streamflow.core.deployment import DeploymentConfig
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.utils import random_name, get_local_target, flatten_list, get_tag
 from streamflow.core.workflow import Port, OutputPort, Workflow, Target, Token, TerminationToken, \
@@ -819,7 +819,7 @@ def _process_docker_requirement(step: Step,
             container=docker_config['workdir']))
     # Build step target
     return Target(
-        model=ModelConfig(
+        deployment=DeploymentConfig(
             name='docker-requirement-{id}'.format(id=random_name()),
             connector_type='docker',
             config=docker_config,
@@ -857,13 +857,19 @@ class CWLTranslator(object):
             if step_workdir is not None:
                 step.workdir = step_workdir
             if step_target is not None:
-                target_model = self.workflow_config.models[step_target['model']]
+                if 'deployment' in step_target:
+                    target_deployment = self.workflow_config.deplyoments[step_target['deployment']]
+                else:
+                    target_deployment = self.workflow_config.deplyoments[step_target['model']]
+                    from streamflow.log_handler import logger
+                    logger.warn("The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                                "Use `deployment` instead.")
                 step.target = Target(
-                    model=ModelConfig(
-                        name=target_model['name'],
-                        connector_type=target_model['type'],
-                        config=target_model['config'],
-                        external=target_model.get('external', False)),
+                    deployment=DeploymentConfig(
+                        name=target_deployment['name'],
+                        connector_type=target_deployment['type'],
+                        config=target_deployment['config'],
+                        external=target_deployment.get('external', False)),
                     resources=step_target.get('resources', 1),
                     service=step_target.get('service'))
             elif step.target is None:

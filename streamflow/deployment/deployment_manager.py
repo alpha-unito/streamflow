@@ -14,7 +14,7 @@ from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import ModelConfig, Connector
+    from streamflow.core.deployment import DeploymentConfig, Connector
     from typing import MutableMapping, Optional, Any
 
 connector_classes = {
@@ -39,44 +39,44 @@ class DefaultDeploymentManager(DeploymentManager):
         self.events_map: MutableMapping[str, Event] = {}
         self.deployments_map: MutableMapping[str, Connector] = {}
 
-    async def deploy(self, model_config: ModelConfig):
-        model_name = model_config.name
+    async def deploy(self, deployment_config: DeploymentConfig):
+        deployment_name = deployment_config.name
         while True:
-            if model_name not in self.events_map:
-                self.events_map[model_name] = Event()
-            if model_name not in self.config_map:
-                self.config_map[model_name] = model_config
-                connector = connector_classes[model_config.connector_type](self.streamflow_config_dir,
-                                                                           **model_config.config)
-                self.deployments_map[model_name] = connector
-                if not model_config.external:
-                    logger.info("Deploying model {model}".format(model=model_name))
-                await connector.deploy(model_config.external)
-                self.events_map[model_name].set()
+            if deployment_name not in self.events_map:
+                self.events_map[deployment_name] = Event()
+            if deployment_name not in self.config_map:
+                self.config_map[deployment_name] = deployment_config
+                connector = connector_classes[deployment_config.connector_type](self.streamflow_config_dir,
+                                                                                **deployment_config.config)
+                self.deployments_map[deployment_name] = connector
+                if not deployment_config.external:
+                    logger.info("Deploying {deployment}".format(deployment=deployment_name))
+                await connector.deploy(deployment_config.external)
+                self.events_map[deployment_name].set()
                 break
             else:
-                await self.events_map[model_name].wait()
-                if model_name in self.config_map:
+                await self.events_map[deployment_name].wait()
+                if deployment_name in self.config_map:
                     break
 
-    def get_connector(self, model_name: str) -> Optional[Connector]:
-        return self.deployments_map.get(model_name, None)
+    def get_connector(self, deployment_name: str) -> Optional[Connector]:
+        return self.deployments_map.get(deployment_name, None)
 
-    def is_deployed(self, model_name: str):
-        return model_name in self.deployments_map
+    def is_deployed(self, deployment_name: str):
+        return deployment_name in self.deployments_map
 
-    async def undeploy(self, model_name: str):
-        if model_name in dict(self.deployments_map):
-            await self.events_map[model_name].wait()
-            self.events_map[model_name].clear()
-            connector = self.deployments_map[model_name]
-            config = self.config_map[model_name]
+    async def undeploy(self, deployment_name: str):
+        if deployment_name in dict(self.deployments_map):
+            await self.events_map[deployment_name].wait()
+            self.events_map[deployment_name].clear()
+            connector = self.deployments_map[deployment_name]
+            config = self.config_map[deployment_name]
             if not config.external:
-                logger.info("Undeploying model {model}".format(model=model_name))
+                logger.info("Undeploying {deployment}".format(deployment=deployment_name))
             await connector.undeploy(config.external)
-            del self.deployments_map[model_name]
-            del self.config_map[model_name]
-            self.events_map[model_name].set()
+            del self.deployments_map[deployment_name]
+            del self.config_map[deployment_name]
+            self.events_map[deployment_name].set()
 
     async def undeploy_all(self):
         undeployments = []

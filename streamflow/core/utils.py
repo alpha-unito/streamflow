@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any, Set
 
 from streamflow.core.data import LOCAL_RESOURCE
-from streamflow.core.deployment import ModelConfig
+from streamflow.core.deployment import DeploymentConfig
 from streamflow.core.workflow import Target, TerminationToken, Token
 
 if TYPE_CHECKING:
@@ -126,7 +126,7 @@ def get_connector(job: Optional[Job], context: StreamFlowContext) -> Connector:
 
 def get_local_target(workdir: Optional[str] = None) -> Target:
     return Target(
-        model=ModelConfig(
+        deployment=DeploymentConfig(
             name=LOCAL_RESOURCE,
             connector_type='local',
             config={},

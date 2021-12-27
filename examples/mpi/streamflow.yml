@@ -9,14 +9,14 @@ workflows:
     bindings:
       - step: /compile
         target:
-          model: dc-mpi
+          deployment: dc-mpi
           service: openmpi
       - step: /execute
         target:
-          model: dc-mpi
+          deployment: dc-mpi
           resources: 2
           service: openmpi
-models:
+deployments:
   dc-mpi:
     type: docker-compose
     config:
