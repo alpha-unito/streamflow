@@ -1,7 +1,7 @@
 import os
-from typing import Any, MutableMapping, Tuple, MutableSequence
+import sqlite3
+from typing import Any, MutableMapping
 
-import apsw
 import pandas as pd
 
 from streamflow.core.persistence import Database
@@ -17,9 +17,10 @@ class SqliteDatabase(Database):
             os.remove(connection)
         # Open connection to database
         os.makedirs(os.path.dirname(connection), exist_ok=True)
-        self.connection = apsw.Connection(connection)
-        self.connection.cursor().execute("PRAGMA journal_mode = WAL")
-        self.connection.wal_autocheckpoint(10)
+        self.connection = sqlite3.Connection(connection)
+        cursor = self.connection.cursor()
+        cursor.execute("PRAGMA journal_mode = WAL")
+        cursor.execute("PRAGMA wal_autocheckpoint = 10")
         # If is a new database, initialise it
         if reset_db:
             self._init_db()
@@ -27,20 +28,21 @@ class SqliteDatabase(Database):
     def __del__(self):
         # Force connection close
         if hasattr(self, 'connection') and self.connection:
-            self.connection.close(True)
+            self.connection.close()
 
     def _init_db(self):
         schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schemas', 'sqlite.sql')
         with open(schema_path, "r") as f:
             with self.connection as db:
-                db.cursor().execute(f.read())
+                db.cursor().executescript(f.read())
 
     def add_step(self, name: str, status: int) -> int:
         with self.connection as db:
-            db.cursor().execute("INSERT INTO step(name, status) VALUES(:name, :status)", {
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO step(name, status) VALUES(:name, :status)", {
                 "name": name,
                 "status": status})
-            return db.last_insert_rowid()
+            return cursor.lastrowid
 
     def update_step(self, step_id: int, updates: MutableMapping[str, Any]) -> int:
         with self.connection as db:
@@ -54,10 +56,11 @@ class SqliteDatabase(Database):
 
     def add_command(self, step_id: int, cmd: str) -> int:
         with self.connection as db:
-            db.cursor().execute("INSERT INTO command(step, cmd) VALUES(:step, :cmd)", {
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO command(step, cmd) VALUES(:step, :cmd)", {
                 "step": step_id,
                 "cmd": cmd})
-            return db.last_insert_rowid()
+            return cursor.lastrowid
 
     def update_command(self, command_id: int, updates: MutableMapping[str, Any]) -> int:
         with self.connection as db:

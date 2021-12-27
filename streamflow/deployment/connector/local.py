@@ -1,6 +1,7 @@
 import asyncio
 import os
 import shutil
+import sys
 import tempfile
 from typing import MutableMapping, MutableSequence, Optional, Union, Tuple, Any
 
@@ -24,7 +25,10 @@ class LocalConnector(BaseConnector):
                          command: str,
                          resource: str,
                          interactive: bool = False):
-        return "sh -c '{command}'".format(command=command)
+        if sys.platform == 'win32':
+            return "cmd /C '{command}'".format(command=command)
+        else:
+            return "sh -c '{command}'".format(command=command)
 
     async def _copy_remote_to_remote(self,
                                      src: str,

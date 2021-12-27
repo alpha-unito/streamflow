@@ -40,7 +40,6 @@ setup(
     install_requires=[
         "aiohttp",
         "antlr4-python3-runtime",
-        "apsw",
         "asyncssh",
         "bcrypt",
         "cachetools",
