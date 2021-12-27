@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Job
     from typing import Optional, Set
 
-LOCAL_RESOURCE = '__LOCAL__'
+LOCAL_LOCATION = '__LOCAL__'
 
 
 class DataManager(ABC):
@@ -20,21 +20,21 @@ class DataManager(ABC):
 
     @abstractmethod
     def get_data_locations(self,
-                           resource: str,
+                           location: str,
                            path: str,
-                           location_type: Optional[DataLocationType] = None) -> Set[DataLocation]:
+                           location_type: Optional[DataType] = None) -> Set[DataLocation]:
         ...
 
     @abstractmethod
     def invalidate_location(self,
-                            resource: str,
+                            location: str,
                             path: str) -> None:
         ...
 
     @abstractmethod
     def register_path(self,
                       job: Optional[Job],
-                      resource: Optional[str],
+                      location: Optional[str],
                       path: str):
         ...
 
@@ -54,18 +54,18 @@ class FileType(Enum):
 
 
 class DataLocation(object):
-    __slots__ = ('path', 'job', 'location_type', 'resource', 'available')
+    __slots__ = ('path', 'job', 'data_type', 'location', 'available')
 
     def __init__(self,
                  path: str,
                  job: Optional[str],
-                 location_type: DataLocationType,
-                 resource: Optional[str] = None,
+                 data_type: DataType,
+                 location: Optional[str] = None,
                  available: bool = False):
         self.path: str = path
         self.job: Optional[str] = job
-        self.resource: Optional[str] = resource
-        self.location_type: DataLocationType = location_type
+        self.location: Optional[str] = location
+        self.data_type: DataType = data_type
         self.available: asyncio.Event = asyncio.Event()
         if available:
             self.available.set()
@@ -75,13 +75,13 @@ class DataLocation(object):
             return False
         else:
             return (self.path == other.path and
-                    self.resource == other.resource)
+                    self.location == other.location)
 
     def __hash__(self):
-        return hash((self.path, self.resource))
+        return hash((self.path, self.location))
 
 
-class DataLocationType(Enum):
+class DataType(Enum):
     PRIMARY = 0
     SYMBOLIC_LINK = 1
     WRITABLE_COPY = 3

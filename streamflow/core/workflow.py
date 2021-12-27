@@ -127,8 +127,8 @@ class Job(ABC):
         self.tmp_directory: Optional[str] = tmp_directory
         self.hardware: Optional[Hardware] = hardware
 
-    def get_resources(self, statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[str]:
-        return self.step.context.scheduler.get_resources(self.name, statuses)
+    def get_locations(self, statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[str]:
+        return self.step.context.scheduler.get_locations(self.name, statuses)
 
     @abstractmethod
     async def initialize(self):
@@ -215,11 +215,11 @@ class TokenProcessor(ABC):
         ...
 
     @abstractmethod
-    def get_related_resources(self, token: Token) -> Set[str]:
+    def get_related_locations(self, token: Token) -> Set[str]:
         ...
 
     @abstractmethod
-    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
+    async def recover_token(self, job: Job, locations: MutableSequence[str], token: Token) -> Token:
         ...
 
     @abstractmethod
@@ -279,14 +279,14 @@ class Step(ABC):
 
 
 class Target(object):
-    __slots__ = ('deployment', 'resources', 'service')
+    __slots__ = ('deployment', 'locations', 'service')
 
     def __init__(self,
                  deployment: DeploymentConfig,
-                 resources: int = 1,
+                 locations: int = 1,
                  service: Optional[str] = None):
         self.deployment: DeploymentConfig = deployment
-        self.resources: int = resources
+        self.locations: int = locations
         self.service: Optional[str] = service
 
 

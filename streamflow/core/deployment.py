@@ -6,7 +6,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from streamflow.core.scheduling import Resource
+    from streamflow.core.scheduling import Location
     from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
 
 
@@ -19,9 +19,9 @@ class Connector(ABC):
     async def copy(self,
                    src: str,
                    dst: str,
-                   resources: MutableSequence[str],
+                   locations: MutableSequence[str],
                    kind: ConnectorCopyKind,
-                   source_remote: Optional[str] = None,
+                   source_location: Optional[str] = None,
                    read_only: bool = False) -> None:
         ...
 
@@ -30,12 +30,12 @@ class Connector(ABC):
         ...
 
     @abstractmethod
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
         ...
 
     @abstractmethod
     async def run(self,
-                  resource: str,
+                  location: str,
                   command: MutableSequence[str],
                   environment: MutableMapping[str, str] = None,
                   workdir: Optional[str] = None,

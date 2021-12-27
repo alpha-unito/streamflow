@@ -13,9 +13,9 @@ from abc import ABC
 from asyncio.subprocess import STDOUT
 from typing import Union, Optional, List, Any, IO, MutableMapping, MutableSequence
 
-from streamflow.core.data import LOCAL_RESOURCE
+from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
-from streamflow.core.utils import get_path_processor, flatten_list, get_resources, get_connector
+from streamflow.core.utils import get_path_processor, flatten_list, get_locations, get_connector
 from streamflow.core.workflow import Step, Command, Job, CommandOutput, Token, Status, TokenProcessor, Port
 from streamflow.cwl import utils
 from streamflow.cwl.token_processor import CWLMapTokenProcessor, CWLTokenProcessor
@@ -79,11 +79,11 @@ async def _check_cwl_output(job: Job, result: Any) -> Any:
     path_processor = get_path_processor(job.step)
     cwl_output_path = path_processor.join(job.output_directory, 'cwl.output.json')
     connector = get_connector(job, job.step.context)
-    resources = get_resources(job)
-    for resource in resources:
-        if await remotepath.exists(connector, resource, cwl_output_path):
+    locations = get_locations(job)
+    for location in locations:
+        if await remotepath.exists(connector, location, cwl_output_path):
             # If file exists, use its contents as token value
-            result = json.loads(await remotepath.read(connector, resource, cwl_output_path))
+            result = json.loads(await remotepath.read(connector, location, cwl_output_path))
             # Update step output ports at runtime if needed
             if isinstance(result, MutableMapping):
                 workflow = job.step.workflow
@@ -405,7 +405,7 @@ class CWLBaseCommand(Command, ABC):
                                 writable: bool = False) -> None:
         path_processor = get_path_processor(job.step)
         connector = get_connector(job, self.step.context)
-        resources = get_resources(job)
+        locations = get_locations(job)
         # Initialize base path to job output directory if present
         base_path = base_path or job.output_directory
         # If current element is a string, it must be an expression
@@ -437,8 +437,8 @@ class CWLBaseCommand(Command, ABC):
                     if dest_path is None:
                         basename = path_processor.basename(src_path)
                         dest_path = path_processor.join(base_path, basename)
-                    for resource in resources:
-                        if await remotepath.exists(connector, resource, src_path):
+                    for location in locations:
+                        if await remotepath.exists(connector, location, src_path):
                             await self.step.context.data_manager.transfer_data(
                                 src=src_path,
                                 src_job=job,
@@ -459,7 +459,7 @@ class CWLBaseCommand(Command, ABC):
                     if src_path is not None:
                         dest_path = path_processor.join(dest_path, path_processor.basename(src_path))
                     if listing['class'] == 'Directory':
-                        await remotepath.mkdir(connector, resources, dest_path)
+                        await remotepath.mkdir(connector, locations, dest_path)
                     else:
                         await self._write_remote_file(
                             job=job,
@@ -470,7 +470,7 @@ class CWLBaseCommand(Command, ABC):
                 if 'listing' in listing:
                     if 'basename' in listing:
                         folder_path = path_processor.join(base_path, listing['basename'])
-                        await remotepath.mkdir(connector, resources, folder_path)
+                        await remotepath.mkdir(connector, locations, folder_path)
                     else:
                         folder_path = dest_path or base_path
                     await asyncio.gather(*(asyncio.create_task(
@@ -653,13 +653,13 @@ class CWLCommand(CWLBaseCommand):
             parsed_env['TMPDIR'] = job.tmp_directory
         # Get execution target
         connector = get_connector(job, self.step.context)
-        resources = get_resources(job)
+        locations = get_locations(job)
         cmd_string = ' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
                                     if self.is_shell_command else cmd)
-        logger.info('Executing job {job} {resource} into directory {outdir}:\n{command}'.format(
+        logger.info('Executing job {job} {location} into directory {outdir}:\n{command}'.format(
             job=job.name,
-            resource="locally" if resources[0] == LOCAL_RESOURCE else "on resource {res}".format(
-                res=resources[0]),
+            location="locally" if locations[0] == LOCAL_LOCATION else "on location {loc}".format(
+                loc=locations[0]),
             outdir=job.output_directory,
             command=cmd_string))
         # Persist command
@@ -670,10 +670,10 @@ class CWLCommand(CWLBaseCommand):
         if self.is_shell_command:
             cmd = ["/bin/sh", "-c", "\"$(echo {command} | base64 -d)\"".format(
                 command=base64.b64encode(" ".join(cmd).encode('utf-8')).decode('utf-8'))]
-        # If step is assigned to multiple resources, add the STREAMFLOW_HOSTS environment variable
-        if len(resources) > 1:
-            available_resources = await connector.get_available_resources(self.step.target.service)
-            hosts = {k: v.hostname for k, v in available_resources.items() if k in resources}
+        # If step is assigned to multiple locations, add the STREAMFLOW_HOSTS environment variable
+        if len(locations) > 1:
+            available_locations = await connector.get_available_locations(self.step.target.service)
+            hosts = {k: v.hostname for k, v in available_locations.items() if k in locations}
             parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
         # Process streams
         stdin = eval_expression(
@@ -697,7 +697,7 @@ class CWLCommand(CWLBaseCommand):
         start_time = time.time_ns()
         result, exit_code = await asyncio.wait_for(
             connector.run(
-                resources[0] if resources else None,
+                locations[0] if locations else None,
                 cmd,
                 environment=parsed_env,
                 workdir=job.output_directory,
@@ -724,7 +724,7 @@ class CWLCommand(CWLBaseCommand):
             "start_time": start_time,
             "end_time": end_time
         })
-        # Check if file `cwl.output.json` exists either locally on at least one resource
+        # Check if file `cwl.output.json` exists either locally on at least one location
         result = await _check_cwl_output(job, result)
         return CWLCommandOutput(value=result, status=status, exit_code=exit_code)
 

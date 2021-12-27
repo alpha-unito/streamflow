@@ -11,10 +11,10 @@ import cwltool.builder
 from cwltool.utils import CONTENT_LIMIT
 from rdflib import Graph
 
-from streamflow.core.data import FileType, LOCAL_RESOURCE, DataLocationType
+from streamflow.core.data import FileType, LOCAL_LOCATION, DataType
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException, \
     UnrecoverableTokenException
-from streamflow.core.utils import get_path_processor, random_name, flatten_list, get_tag, get_connector, get_resources, \
+from streamflow.core.utils import get_path_processor, random_name, flatten_list, get_tag, get_connector, get_locations, \
     get_local_target
 from streamflow.core.workflow import Port, InputPort, Job, Token, Status, TokenProcessor, CommandOutput
 from streamflow.cwl import utils
@@ -32,50 +32,50 @@ if TYPE_CHECKING:
 
 async def _check_glob_path(job: Job,
                            connector: Optional[Connector],
-                           resource: Optional[str],
+                           location: Optional[str],
                            path: str) -> None:
     # Cannot glob outside the job output folder
-    effective_path = await remotepath.follow_symlink(connector, resource, path)
+    effective_path = await remotepath.follow_symlink(connector, location, path)
     context = job.step.context
     if not (effective_path.startswith(job.output_directory) or
             effective_path.startswith(job.input_directory) or
-            context.data_manager.get_data_locations(resource, path)):
+            context.data_manager.get_data_locations(location, path)):
         path_processor = get_path_processor(job.step)
-        input_dirs = await remotepath.listdir(connector, resource, job.input_directory, FileType.DIRECTORY)
+        input_dirs = await remotepath.listdir(connector, location, job.input_directory, FileType.DIRECTORY)
         for input_dir in input_dirs:
-            inner_dirs = await remotepath.listdir(connector, resource, input_dir, FileType.DIRECTORY)
+            inner_dirs = await remotepath.listdir(connector, location, input_dir, FileType.DIRECTORY)
             for inner_dir in inner_dirs:
                 input_path = path_processor.join(inner_dir, path_processor.relpath(path, job.output_directory))
-                if await remotepath.exists(connector, resource, input_path):
+                if await remotepath.exists(connector, location, input_path):
                     return
         raise WorkflowDefinitionException("Globs outside the job's output folder are not allowed")
 
 
 async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
     connector = get_connector(job, context)
-    resources = get_resources(job)
+    locations = get_locations(job)
     try:
-        return await remotepath.download(connector, resources, url, job.input_directory)
+        return await remotepath.download(connector, locations, url, job.input_directory)
     except Exception:
         raise WorkflowExecutionException("Error downloading file from " + url)
 
 
 async def _expand_glob(job: Job,
                        connector: Optional[Connector],
-                       resource: Optional[str],
+                       location: Optional[str],
                        path: str) -> MutableSequence[str]:
-    paths = await remotepath.resolve(connector, resource, path) or []
+    paths = await remotepath.resolve(connector, location, path) or []
     await asyncio.gather(*(asyncio.create_task(
-        _check_glob_path(job, connector, resource, p)
+        _check_glob_path(job, connector, location, p)
     ) for p in paths))
     return paths
 
 
 async def _get_class_from_path(path: str, job: Job, context: StreamFlowContext) -> str:
     connector = get_connector(job, context)
-    for resource in get_resources(job):
-        t_path = await remotepath.follow_symlink(connector, resource, path)
-        return 'File' if await remotepath.isfile(connector, resource, t_path) else 'Directory'
+    for location in get_locations(job):
+        t_path = await remotepath.follow_symlink(connector, location, path)
+        return 'File' if await remotepath.isfile(connector, location, t_path) else 'Directory'
 
 
 async def _get_file_token(
@@ -88,7 +88,7 @@ async def _get_file_token(
         load_contents: bool = False,
         load_listing: Optional[LoadListing] = None) -> MutableMapping[str, Any]:
     connector = job.step.get_connector()
-    resources = get_resources(job)
+    locations = get_locations(job)
     path_processor = get_path_processor(job.step)
     basename = basename or path_processor.basename(filepath)
     location = ''.join(['file://', filepath])
@@ -103,22 +103,22 @@ async def _get_file_token(
         if file_format:
             token['format'] = file_format
         token['nameroot'], token['nameext'] = path_processor.splitext(basename)
-        for resource in resources:
-            if await remotepath.exists(connector, resource, filepath):
-                token['size'] = await remotepath.size(connector, resource, filepath)
+        for location in locations:
+            if await remotepath.exists(connector, location, filepath):
+                token['size'] = await remotepath.size(connector, location, filepath)
                 if load_contents:
                     if token['size'] > CONTENT_LIMIT:
                         raise WorkflowExecutionException(
                             "Cannot read contents from files larger than {limit}kB".format(limit=CONTENT_LIMIT / 1024))
                     token['contents'] = await remotepath.head(
-                        connector, resource, filepath, CONTENT_LIMIT)
-                filepath = await remotepath.follow_symlink(connector, resource, filepath)
+                        connector, location, filepath, CONTENT_LIMIT)
+                filepath = await remotepath.follow_symlink(connector, location, filepath)
                 token['checksum'] = 'sha1${checksum}'.format(
-                    checksum=await remotepath.checksum(context, connector, resource, filepath))
+                    checksum=await remotepath.checksum(context, connector, location, filepath))
                 break
     elif token_class == 'Directory' and load_listing != LoadListing.no_listing:
-        for resource in resources:
-            if await remotepath.exists(connector, resource, filepath):
+        for location in locations:
+            if await remotepath.exists(connector, location, filepath):
                 token['listing'] = await _get_listing(
                     context=context,
                     job=job,
@@ -137,9 +137,9 @@ async def _get_listing(
         recursive: bool) -> MutableSequence[MutableMapping[str, Any]]:
     listing_tokens = {}
     connector = job.step.get_connector()
-    resources = get_resources(job)
-    for resource in resources:
-        directories = await remotepath.listdir(connector, resource, dirpath, FileType.DIRECTORY)
+    locations = get_locations(job)
+    for location in locations:
+        directories = await remotepath.listdir(connector, location, dirpath, FileType.DIRECTORY)
         for directory in directories:
             if directory not in listing_tokens:
                 load_listing = LoadListing.deep_listing if recursive else LoadListing.no_listing
@@ -150,7 +150,7 @@ async def _get_listing(
                     filepath=directory,
                     load_contents=load_contents,
                     load_listing=load_listing))
-        files = await remotepath.listdir(connector, resource, dirpath, FileType.FILE)
+        files = await remotepath.listdir(connector, location, dirpath, FileType.FILE)
         for file in files:
             if file not in listing_tokens:
                 listing_tokens[file] = asyncio.create_task(_get_file_token(
@@ -372,7 +372,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         context = utils.build_context(job)
         path_processor = get_path_processor(self.port.step)
         connector = get_connector(job, self.get_context())
-        resources = get_resources(job)
+        locations = get_locations(job)
         token_value = command_output.value
         # If `token_value` is a dictionary, directly extract the token value from it
         if isinstance(token_value, MutableMapping) and self.port.name in token_value:
@@ -393,16 +393,16 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 globpath = self.glob
             # Resolve glob
             resolve_tasks = []
-            for resource in resources:
+            for location in locations:
                 if isinstance(globpath, MutableSequence):
                     for path in globpath:
                         if not path_processor.isabs(path):
                             path = path_processor.join(job.output_directory, path)
-                        resolve_tasks.append(_expand_glob(job, connector, resource, path))
+                        resolve_tasks.append(_expand_glob(job, connector, location, path))
                 else:
                     if not path_processor.isabs(globpath):
                         globpath = path_processor.join(job.output_directory, globpath)
-                    resolve_tasks.append(_expand_glob(job, connector, resource, globpath))
+                    resolve_tasks.append(_expand_glob(job, connector, location, globpath))
             paths = flatten_list(await asyncio.gather(*resolve_tasks))
             # Get token class from paths
             class_tasks = [asyncio.create_task(_get_class_from_path(p, job, self.get_context())) for p in paths]
@@ -452,8 +452,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         elif isinstance(secondary_file, MutableMapping):
             connector = get_connector(job, self.get_context())
             filepath = utils.get_path_from_token(secondary_file)
-            for resource in get_resources(job):
-                if await remotepath.exists(connector, resource, filepath):
+            for location in get_locations(job):
+                if await remotepath.exists(connector, location, filepath):
                     return await _get_file_token(
                         context=context,
                         job=job,
@@ -472,11 +472,11 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             if not path_processor.isabs(filepath):
                 filepath = path_processor.join(path_processor.dirname(get_path_from_token(token_value)), filepath)
             if filepath not in existing_sf:
-                # Search file in job resources and build token value
+                # Search file in job locations and build token value
                 connector = get_connector(job, self.get_context())
-                for resource in get_resources(job):
-                    if await remotepath.exists(connector, resource, filepath):
-                        token_class = 'File' if await remotepath.isfile(connector, resource, filepath) else 'Directory'
+                for location in get_locations(job):
+                    if await remotepath.exists(connector, location, filepath):
+                        token_class = 'File' if await remotepath.isfile(connector, location, filepath) else 'Directory'
                         return await _get_file_token(
                             context=context,
                             job=job,
@@ -565,43 +565,43 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     async def _recover_path(self,
                             job: Job,
-                            resources: MutableSequence[str],
+                            locations: MutableSequence[str],
                             token: Token,
                             path: str) -> Optional[str]:
         context = self.get_context()
         connector = self.port.step.get_connector()
-        job_resources = get_resources(job)
-        # Check if path is already present in actual job's resources
-        for resource in job_resources:
-            if await remotepath.exists(connector, resource, path):
+        job_locations = get_locations(job)
+        # Check if path is already present in actual job's locations
+        for location in job_locations:
+            if await remotepath.exists(connector, location, path):
                 return path
         # Otherwise, get the list of other file locations from DataManager
         data_locations = set()
-        for resource in resources:
-            data_locations.update(context.data_manager.get_data_locations(resource, path, DataLocationType.PRIMARY))
-        # Check if path is still present in original resources
+        for location in locations:
+            data_locations.update(context.data_manager.get_data_locations(location, path, DataType.PRIMARY))
+        # Check if path is still present in original locations
         for location in data_locations:
-            if location.resource in job_resources:
-                if await remotepath.exists(connector, location.resource, path):
+            if location.location in job_locations:
+                if await remotepath.exists(connector, location.location, path):
                     return path
                 else:
-                    context.data_manager.invalidate_location(location.resource, path)
+                    context.data_manager.invalidate_location(location.location, path)
         # Check if files are saved locally
         for location in data_locations:
-            if location.resource == LOCAL_RESOURCE:
+            if location.location == LOCAL_LOCATION:
                 return await self._transfer_file(None, job, location.path)
         # If not, check if files are stored elsewhere
         for location in data_locations:
-            if location.resource not in job_resources and location.resource != LOCAL_RESOURCE:
+            if location.location not in job_locations and location.location != LOCAL_LOCATION:
                 location_job = context.scheduler.get_job(location.job)
                 location_connector = get_connector(location_job, self.get_context())
-                available_resources = await location_connector.get_available_resources(
+                available_locations = await location_connector.get_available_locations(
                     location_job.step.target.service)
-                if (location.resource in available_resources and
-                        await remotepath.exists(location_connector, location.resource, location.path)):
+                if (location.location in available_locations and
+                        await remotepath.exists(location_connector, location.location, location.path)):
                     return await self._transfer_file(location_job, job, location.path)
                 else:
-                    context.data_manager.invalidate_location(location.resource, location.path)
+                    context.data_manager.invalidate_location(location.location, location.path)
         # If file has been lost, raise an exception
         message = "Failed to recover path {path} for token {token} from job {job}".format(
             path=path, token=token.name, job=token.job)
@@ -610,27 +610,27 @@ class CWLTokenProcessor(DefaultTokenProcessor):
 
     async def _recover_token(self,
                              job: Job,
-                             resources: MutableSequence[str],
+                             locations: MutableSequence[str],
                              token: Token) -> Token:
         if isinstance(token.value, MutableSequence):
             elements = []
             for t in token.value:
-                elements.append(await self._recover_token_value(job, resources, token, t))
+                elements.append(await self._recover_token_value(job, locations, token, t))
             return token.update(elements)
         else:
-            return token.update(await self._recover_token_value(job, resources, token, token.value))
+            return token.update(await self._recover_token_value(job, locations, token, token.value))
 
     async def _recover_token_value(self,
                                    job: Job,
-                                   resources: MutableSequence[str],
+                                   locations: MutableSequence[str],
                                    token: Token,
                                    token_value: Any) -> Any:
         new_token_value = {'class': token_value['class']}
         if 'path' in token_value and token_value['path'] is not None:
-            path = await self._recover_path(job, resources, token, token_value['path'])
+            path = await self._recover_path(job, locations, token, token_value['path'])
             new_token_value['path'] = path[7:] if path.startswith('file://') else path
         elif 'location' in token_value and token_value['location'] is not None:
-            path = await self._recover_path(job, resources, token, token_value['location'])
+            path = await self._recover_path(job, locations, token, token_value['location'])
             new_token_value['location'] = path[7:] if path.startswith('file://') else path
         elif 'listing' in token_value:
             if 'basename' in token_value:
@@ -640,7 +640,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             for listing in token_value['listing']:
                 path = listing['path'] if 'path' in listing else listing['location']
                 path = path[7:] if path.startswith('file://') else path
-                recovered_path = await self._recover_path(job, resources, token, path)
+                recovered_path = await self._recover_path(job, locations, token, path)
                 new_token_value['listing'].append(await _get_file_token(
                     context=context,
                     job=job,
@@ -649,7 +649,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                     file_format=listing.get('format')))
         secondary_files = []
         if 'secondaryFiles' in token_value:
-            sf_tasks = [asyncio.create_task(self._recover_path(job, resources, token, get_path_from_token(sf))) for sf
+            sf_tasks = [asyncio.create_task(self._recover_path(job, locations, token, get_path_from_token(sf))) for sf
                         in token_value['secondaryFiles']]
             secondary_files = [{'class': sf['class'], 'path': p}
                                for p, sf in zip(await asyncio.gather(*sf_tasks), token_value['secondaryFiles'])]
@@ -685,8 +685,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             paths = [p[7:] if p.startswith('file://') else p for p in paths]
             # Register paths to the `DataManager`
             for path in paths:
-                for resource in get_resources(job):
-                    context.data_manager.register_path(job, resource, path)
+                for location in get_locations(job):
+                    context.data_manager.register_path(job, location, path)
 
     async def _transfer_file(self,
                              src_job: Optional[Job],
@@ -731,13 +731,13 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             dest_path = path_processor.join(dest_path, token_value['basename'])
         # Get connectors
         src_connector = get_connector(src_job, context)
-        src_resources = get_resources(src_job)
+        src_locations = get_locations(src_job)
         dst_connector = get_connector(job, context)
-        dst_resources = get_resources(job)
+        dst_locations = get_locations(job)
         # Check if source file exists
         src_found = False
-        for src_resource in src_resources:
-            if await remotepath.exists(src_connector, src_resource, location):
+        for src_location in src_locations:
+            if await remotepath.exists(src_connector, src_location, location):
                 src_found = True
                 break
         # If source_path exists and destination does not, transfer file in task's input folder
@@ -746,8 +746,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             dst_found = False
             if check_destination:
                 dst_found = False
-                for dst_resource in dst_resources:
-                    if await remotepath.exists(dst_connector, dst_resource, filepath):
+                for dst_location in dst_locations:
+                    if await remotepath.exists(dst_connector, dst_location, filepath):
                         dst_found = True
                         break
             if not dst_found:
@@ -761,8 +761,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         else:
             # Check if destination file exists
             dst_found = False
-            for dst_resource in dst_resources:
-                if await remotepath.exists(dst_connector, dst_resource, location):
+            for dst_location in dst_locations:
+                if await remotepath.exists(dst_connector, dst_location, location):
                     dst_found = True
                     break
             # If it exists remotely, keep the same location
@@ -772,21 +772,21 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             else:
                 filepath = dest_path or self._get_dest_path(src_job, location, job)
                 if token_value['class'] == 'Directory':
-                    await remotepath.mkdir(dst_connector, dst_resources, filepath)
+                    await remotepath.mkdir(dst_connector, dst_locations, filepath)
                 else:
                     path_processor = get_path_processor(job.step)
-                    await remotepath.mkdir(dst_connector, dst_resources, path_processor.dirname(filepath))
+                    await remotepath.mkdir(dst_connector, dst_locations, path_processor.dirname(filepath))
                     await asyncio.gather(*(asyncio.create_task(
                         remotepath.write(
                             dst_connector,
-                            dst_resource,
+                            dst_location,
                             filepath,
-                            token_value.get('contents', ''))) for dst_resource in dst_resources))
+                            token_value.get('contents', ''))) for dst_location in dst_locations))
         new_token_value = {'class': token_value['class'], 'path': filepath}
         # Propagate format if present
         if 'format' in token_value:
             new_token_value['format'] = token_value['format']
-        # Check for secondary files on the source resources
+        # Check for secondary files on the source locations
         sf_map = {get_path_from_token(sf): sf for sf in token_value.get('secondaryFiles', [])}
         if src_job:
             sf_context = utils.build_context(job)
@@ -909,9 +909,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 tag=get_tag(job.inputs),
                 weight=weight)
 
-    def get_related_resources(self, token: Token) -> Set[str]:
+    def get_related_locations(self, token: Token) -> Set[str]:
         if isinstance(token.job, MutableSequence):
-            return super().get_related_resources(token)
+            return super().get_related_locations(token)
         if self.port_type in ['File', 'Directory']:
             context = self.get_context()
             # If the token is actually an aggregate of multiple tokens, consider each token separately
@@ -922,21 +922,21 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                         paths.append(path)
             elif token.value and (path := get_path_from_token(token.value)):
                 paths.append(path)
-            resources = get_resources(context.scheduler.get_job(token.job))
+            locations = get_locations(context.scheduler.get_job(token.job))
             data_locations = set()
-            for resource in resources:
+            for location in locations:
                 for path in paths:
                     data_locations.update(context.data_manager.get_data_locations(
-                        resource, path, DataLocationType.PRIMARY))
-            return set(loc.resource for loc in filter(lambda l: l.resource not in resources, data_locations))
+                        location, path, DataType.PRIMARY))
+            return set(loc.location for loc in filter(lambda l: l.location not in locations, data_locations))
         else:
             return set()
 
-    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
+    async def recover_token(self, job: Job, locations: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence) or self.port_type not in ['File', 'Directory']:
-            return await super().recover_token(job, resources, token)
+            return await super().recover_token(job, locations, token)
         else:
-            return await self._recover_token(job, resources, token)
+            return await self._recover_token(job, locations, token)
 
     async def update_token(self, job: Job, token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
@@ -981,9 +981,9 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             return weight
         else:
             connector = get_connector(job, self.get_context())
-            resources = get_resources(job)
-            for resource in resources:
-                return await remotepath.size(connector, resource, _get_paths(token_value))
+            locations = get_locations(job)
+            for location in locations:
+                return await remotepath.size(connector, location, _get_paths(token_value))
 
 
 class CWLMapTokenProcessor(MapTokenProcessor):

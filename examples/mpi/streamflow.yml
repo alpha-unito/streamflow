@@ -14,7 +14,7 @@ workflows:
       - step: /execute
         target:
           deployment: dc-mpi
-          resources: 2
+          locations: 2
           service: openmpi
 deployments:
   dc-mpi:

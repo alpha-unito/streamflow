@@ -71,14 +71,14 @@ class DefaultFailureManager(FailureManager):
             # Update version
             self.jobs[job.name].version += 1
             try:
-                resources = utils.get_resources(job)
+                locations = utils.get_locations(job)
                 # Manage job rescheduling
                 connector = utils.get_connector(job, self.context)
-                available_resources = await connector.get_available_resources(job.step.target.service)
-                active_resources = job.get_resources([Status.RUNNING])
-                # If some resources are dead, notify job failure and schedule it on new resources
-                if not active_resources or not all(res in available_resources for res in active_resources):
-                    if active_resources:
+                available_locations = await connector.get_available_locations(job.step.target.service)
+                active_locations = job.get_locations([Status.RUNNING])
+                # If some locations are dead, notify job failure and schedule it on new locations
+                if not active_locations or not all(res in available_locations for res in active_locations):
+                    if active_locations:
                         await self.context.scheduler.notify_status(job.name, Status.FAILED)
                     await self.context.scheduler.schedule(job)
                 # Initialize directories
@@ -90,7 +90,7 @@ class DefaultFailureManager(FailureManager):
                     version = 0
                     while True:
                         try:
-                            recovered_tokens.append(await token_processor.recover_token(job, resources, token))
+                            recovered_tokens.append(await token_processor.recover_token(job, locations, token))
                             break
                         except UnrecoverableTokenException as e:
                             version += 1

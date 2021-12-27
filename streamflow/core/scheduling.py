@@ -9,15 +9,15 @@ if TYPE_CHECKING:
 
 
 class JobAllocation(object):
-    __slots__ = ('job', 'resources', 'status', 'hardware')
+    __slots__ = ('job', 'locations', 'status', 'hardware')
 
     def __init__(self,
                  job: Job,
-                 resources: MutableSequence[str],
+                 locations: MutableSequence[str],
                  status: Status,
                  hardware: Hardware):
         self.job: Job = job
-        self.resources: MutableSequence[str] = resources
+        self.locations: MutableSequence[str] = locations
         self.status: Status = status
         self.hardware: Hardware = hardware
 
@@ -25,11 +25,11 @@ class JobAllocation(object):
 class Policy(ABC):
 
     @abstractmethod
-    def get_resource(self,
+    def get_location(self,
                      job: Job,
-                     available_resources: MutableMapping[str, Resource],
+                     available_locations: MutableMapping[str, Location],
                      jobs: MutableMapping[str, JobAllocation],
-                     resources: MutableMapping[str, ResourceAllocation]) -> Optional[str]: ...
+                     locations: MutableMapping[str, LocationAllocation]) -> Optional[str]: ...
 
 
 class Hardware(object):
@@ -88,7 +88,7 @@ class Hardware(object):
                 self.disk < other.disk)
 
 
-class Resource(object):
+class Location(object):
     __slots__ = ('name', 'hostname', 'hardware', 'slots')
 
     def __init__(self,
@@ -102,7 +102,7 @@ class Resource(object):
         self.hardware: Optional[Hardware] = hardware
 
 
-class ResourceAllocation(object):
+class LocationAllocation(object):
     __slots__ = ('name', 'deployment', 'jobs')
 
     def __init__(self,
@@ -117,17 +117,17 @@ class Scheduler(ABC):
 
     def __init__(self):
         self.job_allocations: MutableMapping[str, JobAllocation] = {}
-        self.resource_allocations: MutableMapping[str, ResourceAllocation] = {}
+        self.location_allocations: MutableMapping[str, LocationAllocation] = {}
 
     def get_job(self, job_name: str) -> Optional[Job]:
         job = self.job_allocations.get(job_name, None)
         return job.job if job is not None else None
 
-    def get_resources(self,
+    def get_locations(self,
                       job_name: str,
                       statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[str]:
         job = self.job_allocations.get(job_name, None)
-        return job.resources if job is not None and (statuses is None or job.status in statuses) else []
+        return job.locations if job is not None and (statuses is None or job.status in statuses) else []
 
     @abstractmethod
     async def notify_status(self,

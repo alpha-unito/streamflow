@@ -8,7 +8,7 @@ import asyncssh
 from ruamel.yaml import YAML
 
 from streamflow.core import utils
-from streamflow.core.scheduling import Resource
+from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
 
@@ -38,167 +38,167 @@ class OccamConnector(SSHConnector):
             self.env_description = yaml.load(f)
         self.jobs_table: MutableMapping[str, MutableSequence[str]] = {}
 
-    def _get_effective_resources(self,
-                                 resources: MutableSequence[str],
+    def _get_effective_locations(self,
+                                 locations: MutableSequence[str],
                                  dest_path: str,
-                                 source_remote: Optional[str] = None) -> MutableSequence[str]:
-        # If destination path is in a shared location, transfer only on the first resource
+                                 source_location: Optional[str] = None) -> MutableSequence[str]:
+        # If destination path is in a shared location, transfer only on the first location
         for shared_path in self.sharedPaths:
             if dest_path.startswith(shared_path):
-                if source_remote in resources:
-                    return [source_remote]
+                if source_location in locations:
+                    return [source_location]
                 else:
-                    return [resources[0]]
-        # Otherwise, check if some resources share bind mounts to the same shared local path
+                    return [locations[0]]
+        # Otherwise, check if some locations share bind mounts to the same shared local path
         common_paths = {}
-        effective_resources = []
-        for resource in resources:
-            shared_path = self._get_shared_path(resource, dest_path)
+        effective_locations = []
+        for location in locations:
+            shared_path = self._get_shared_path(location, dest_path)
             if shared_path is not None:
                 if shared_path not in common_paths:
-                    common_paths[shared_path] = resource
-                    effective_resources.append(resource)
-                elif resource == source_remote:
-                    effective_resources.remove(common_paths[shared_path])
-                    common_paths[shared_path] = resource
-                    effective_resources.append(resource)
+                    common_paths[shared_path] = location
+                    effective_locations.append(location)
+                elif location == source_location:
+                    effective_locations.remove(common_paths[shared_path])
+                    common_paths[shared_path] = location
+                    effective_locations.append(location)
             else:
-                effective_resources.append(resource)
+                effective_locations.append(location)
 
-        return effective_resources
+        return effective_locations
 
-    def _get_shared_path(self, resource: str, path: str) -> Optional[str]:
+    def _get_shared_path(self, location: str, path: str) -> Optional[str]:
         for shared_path in self.sharedPaths:
             if path.startswith(shared_path):
                 return path
-        volumes = self._get_volumes(resource)
+        volumes = self._get_volumes(location)
         for volume in volumes:
             local, remote = volume.split(':')
             if path.startswith(remote):
                 return posixpath.normpath(posixpath.join(local, posixpath.relpath(path, remote)))
         return None
 
-    async def _get_tmpdir(self, resource: str):
+    async def _get_tmpdir(self, location: str):
         scratch_home = '/scratch/home/{username}'.format(username=self.username)
         temp_dir = posixpath.join(scratch_home, 'streamflow', "".join(utils.random_name()))
-        async with self._get_ssh_client(resource) as ssh_client:
+        async with self._get_ssh_client(location) as ssh_client:
             await ssh_client.run('mkdir -p {dir}'.format(dir=temp_dir))
         return temp_dir
 
-    def _get_volumes(self, resource: str) -> MutableSequence[str]:
+    def _get_volumes(self, location: str) -> MutableSequence[str]:
         for name in self.jobs_table:
-            if resource in self.jobs_table[name]:
+            if location in self.jobs_table[name]:
                 service = name
                 return self.env_description[service].get('volumes', [])
 
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     resources: MutableSequence[str],
-                                     source_remote: str,
+                                     locations: MutableSequence[str],
+                                     source_location: str,
                                      read_only: bool = False) -> None:
-        effective_resources = self._get_effective_resources(resources, dst, source_remote)
+        effective_locations = self._get_effective_locations(locations, dst, source_location)
         # Check for the need of a temporary copy
         temp_dir = None
-        for resource in effective_resources:
-            if source_remote != resource:
-                temp_dir = await self._get_tmpdir(resource)
+        for location in effective_locations:
+            if source_location != location:
+                temp_dir = await self._get_tmpdir(location)
                 copy1_command = ['/bin/cp', '-rf', src, temp_dir]
-                await self.run(source_remote, copy1_command)
+                await self.run(source_location, copy1_command)
                 break
         # Perform the actual copies
         await asyncio.gather(*(asyncio.create_task(
             self._copy_remote_to_remote_single(
                 src=src,
                 dst=dst,
-                resource=resource,
-                source_remote=source_remote,
+                location=location,
+                source_location=source_location,
                 temp_dir=temp_dir,
                 read_only=read_only)
-        ) for resource in effective_resources))
+        ) for location in effective_locations))
         # If a temporary location was created, delete it
         if temp_dir is not None:
-            for resource in effective_resources:
-                async with self._get_ssh_client(resource) as ssh_client:
+            for location in effective_locations:
+                async with self._get_ssh_client(location) as ssh_client:
                     await ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
 
     async def _copy_remote_to_remote_single(self,
                                             src: str,
                                             dst: str,
-                                            resource: str,
-                                            source_remote: str,
+                                            location: str,
+                                            source_location: str,
                                             temp_dir: Optional[str],
                                             read_only: bool = False) -> None:
-        if source_remote == resource:
+        if source_location == location:
             command = ['/bin/cp', "-rf", src, dst]
-            await self.run(resource, command)
+            await self.run(location, command)
         else:
             copy2_command = ['/bin/cp', '-rf', temp_dir + "/*", dst]
-            await self.run(resource, copy2_command)
+            await self.run(location, copy2_command)
 
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
-                                    resources: MutableSequence[str],
+                                    locations: MutableSequence[str],
                                     read_only: bool = False) -> None:
-        effective_resources = self._get_effective_resources(resources, dst)
+        effective_locations = self._get_effective_locations(locations, dst)
         # Check for the need of a temporary copy
         temp_dir = None
-        for resource in effective_resources:
-            shared_path = self._get_shared_path(resource, dst)
+        for location in effective_locations:
+            shared_path = self._get_shared_path(location, dst)
             if shared_path is None:
-                temp_dir = await self._get_tmpdir(resource)
-                async with self._get_ssh_client(resource) as ssh_client:
+                temp_dir = await self._get_tmpdir(location)
+                async with self._get_ssh_client(location) as ssh_client:
                     await asyncssh.scp(src, (ssh_client, temp_dir), preserve=True, recurse=True)
                 break
         # Perform the actual copies
         copy_tasks = []
-        for resource in effective_resources:
+        for location in effective_locations:
             copy_tasks.append(asyncio.create_task(
                 self._copy_local_to_remote_single(
                     src=src,
                     dst=dst,
-                    resource=resource,
+                    location=location,
                     temp_dir=temp_dir,
                     read_only=read_only)))
         await asyncio.gather(*copy_tasks)
         # If a temporary location was created, delete it
         if temp_dir is not None:
-            for resource in effective_resources:
-                async with self._get_ssh_client(resource) as ssh_client:
+            for location in effective_locations:
+                async with self._get_ssh_client(location) as ssh_client:
                     await ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
 
     async def _copy_local_to_remote_single(self,
                                            src: str,
                                            dst: str,
-                                           resource: str,
+                                           location: str,
                                            temp_dir: Optional[str],
                                            read_only: bool = False) -> None:
-        shared_path = self._get_shared_path(resource, dst)
+        shared_path = self._get_shared_path(location, dst)
         if shared_path is not None:
-            async with self._get_ssh_client(resource) as ssh_client:
+            async with self._get_ssh_client(location) as ssh_client:
                 await asyncssh.scp(src, (ssh_client, shared_path), preserve=True, recurse=True)
         else:
             copy_command = ['/bin/cp', "-rf", temp_dir + "/*", dst]
-            await self.run(resource, copy_command)
+            await self.run(location, copy_command)
 
     async def _copy_remote_to_local(self,
                                     src: str,
                                     dst: str,
-                                    resource: str,
+                                    location: str,
                                     read_only: bool = False) -> None:
-        shared_path = self._get_shared_path(resource, src)
+        shared_path = self._get_shared_path(location, src)
         if shared_path is not None:
-            async with self._get_ssh_client(resource) as ssh_client:
+            async with self._get_ssh_client(location) as ssh_client:
                 await asyncssh.scp((ssh_client, shared_path), dst, preserve=True, recurse=True)
         else:
-            temp_dir = await self._get_tmpdir(resource)
+            temp_dir = await self._get_tmpdir(location)
             copy_command = ['/bin/cp', "-rf", src, temp_dir, '&&',
                             'find', temp_dir, '-maxdepth', '1', '-mindepth', '1', '-exec', 'basename', '{}', '\\;']
-            contents, _ = await self.run(resource, copy_command, capture_output=True)
+            contents, _ = await self.run(location, copy_command, capture_output=True)
             contents = contents.split()
             scp_tasks = []
-            async with self._get_ssh_client(resource) as ssh_client:
+            async with self._get_ssh_client(location) as ssh_client:
                 for content in contents:
                     scp_tasks.append(asyncio.create_task(asyncssh.scp(
                         (ssh_client, posixpath.join(temp_dir, content)),
@@ -208,7 +208,7 @@ class OccamConnector(SSHConnector):
                     )))
                 await asyncio.gather(*scp_tasks)
             delete_command = ['rm', '-rf', temp_dir]
-            await self.run(resource, delete_command)
+            await self.run(location, delete_command)
 
     async def _deploy_node(self, name: str, service: MutableMapping[str, Any], node: str):
         deploy_command = "".join([
@@ -242,7 +242,7 @@ class OccamConnector(SSHConnector):
             if name not in self.jobs_table:
                 self.jobs_table[name] = []
             self.jobs_table[name].append(search_result[0])
-            logger.info("Deployed {name} on {resource}".format(name=name, resource=search_result[0]))
+            logger.info("Deployed {name} on {location}".format(name=name, location=search_result[0]))
         else:
             raise Exception
 
@@ -256,7 +256,7 @@ class OccamConnector(SSHConnector):
         logger.debug("Executing {command}".format(command=undeploy_command))
         async with self._get_ssh_client(name) as ssh_client:
             await ssh_client.run(undeploy_command)
-        logger.info("Killed {resource}".format(resource=job_id))
+        logger.info("Killed {location}".format(location=job_id))
 
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
@@ -268,9 +268,9 @@ class OccamConnector(SSHConnector):
                     deploy_tasks.append(asyncio.create_task(self._deploy_node(name, service, node)))
             await asyncio.gather(*deploy_tasks)
 
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
         nodes = self.jobs_table.get(service, []) if service else utils.flatten_list(self.jobs_table.values())
-        return {n: Resource(name=n, hostname=n.split('-')[0]) for n in nodes}
+        return {n: Location(name=n, hostname=n.split('-')[0]) for n in nodes}
 
     async def undeploy(self, external: bool) -> None:
         if not external:
@@ -285,7 +285,7 @@ class OccamConnector(SSHConnector):
         await super().undeploy(external)
 
     async def _run(self,
-                   resource: str,
+                   location: str,
                    command: MutableSequence[str],
                    environment: MutableMapping[str, str] = None,
                    workdir: Optional[str] = None,
@@ -298,7 +298,7 @@ class OccamConnector(SSHConnector):
                    interactive: bool = False,
                    stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
         command = self._get_command(
-            resource=resource,
+            location=location,
             command=command,
             environment=environment,
             workdir=workdir,
@@ -309,12 +309,12 @@ class OccamConnector(SSHConnector):
             job_name=job_name)
         occam_command = "".join(
             "occam-exec "
-            "{resource} "
+            "{location} "
             "sh -c '{command}'"
         ).format(
-            resource=resource,
+            location=location,
             command=command)
-        async with self._get_ssh_client(resource) as ssh_client:
+        async with self._get_ssh_client(location) as ssh_client:
             result = await ssh_client.run(occam_command)
         if capture_output:
             lines = (line for line in result.stdout.split('\n'))

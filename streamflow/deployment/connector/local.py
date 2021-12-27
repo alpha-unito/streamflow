@@ -6,8 +6,8 @@ from typing import MutableMapping, MutableSequence, Optional, Union, Tuple, Any
 
 import psutil
 
-from streamflow.core.data import LOCAL_RESOURCE
-from streamflow.core.scheduling import Resource, Hardware
+from streamflow.core.data import LOCAL_LOCATION
+from streamflow.core.scheduling import Location, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 
 
@@ -22,15 +22,15 @@ class LocalConnector(BaseConnector):
 
     def _get_run_command(self,
                          command: str,
-                         resource: str,
+                         location: str,
                          interactive: bool = False):
         return "sh -c '{command}'".format(command=command)
 
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     resources: MutableSequence[str],
-                                     source_remote: str,
+                                     locations: MutableSequence[str],
+                                     source_location: str,
                                      read_only: bool = False) -> None:
         if os.path.isdir(src):
             os.makedirs(dst, exist_ok=True)
@@ -41,11 +41,11 @@ class LocalConnector(BaseConnector):
     async def deploy(self, external: bool) -> None:
         os.makedirs(os.path.join(tempfile.gettempdir(), 'streamflow'), exist_ok=True)
 
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
         if service:
             os.makedirs(service, exist_ok=True)
-        return {LOCAL_RESOURCE: Resource(
-            name=LOCAL_RESOURCE,
+        return {LOCAL_LOCATION: Location(
+            name=LOCAL_LOCATION,
             hostname='localhost',
             slots=1,
             hardware=Hardware(

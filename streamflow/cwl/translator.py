@@ -16,7 +16,7 @@ import cwltool.docker_id
 import cwltool.load_tool
 import cwltool.process
 import cwltool.workflow
-from rdflib import Graph
+from rdflib import Graph, logger
 from ruamel.yaml.comments import CommentedSeq
 
 from streamflow.config.config import WorkflowConfig
@@ -861,16 +861,23 @@ class CWLTranslator(object):
                     target_deployment = self.workflow_config.deplyoments[step_target['deployment']]
                 else:
                     target_deployment = self.workflow_config.deplyoments[step_target['model']]
-                    from streamflow.log_handler import logger
                     logger.warn("The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                                 "Use `deployment` instead.")
+                locations = step_target.get('locations', None)
+                if locations is None:
+                    locations = step_target.get('resources')
+                    if locations is not None:
+                        logger.warn("The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                                    "Use `locations` instead.")
+                    else:
+                        locations = 1
                 step.target = Target(
                     deployment=DeploymentConfig(
                         name=target_deployment['name'],
                         connector_type=target_deployment['type'],
                         config=target_deployment['config'],
                         external=target_deployment.get('external', False)),
-                    resources=step_target.get('resources', 1),
+                    locations=locations,
                     service=step_target.get('service'))
             elif step.target is None:
                 step.target = get_local_target(step_workdir)

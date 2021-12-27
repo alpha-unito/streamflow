@@ -26,4 +26,4 @@ To provide enough flexibility, StreamFlow adopts a three-layered hierarchical re
 
 * A **deployment** is an entire multi-agent infrastructure and constitutes the *unit of deployment*, i.e., all its components are always co-allocated while executing a step.
 * A **service** is a single agent type in a deployment and constitutes the *unit of binding*, i.e., each step of a workflow can be offloaded to a single service for execution.
-* A **resource** is a single instance of a potentially replicated service and constitutes the *unit of scheduling*, i.e., each step of a workflow is offloaded to a configurable number of service resources to be processed.
+* A **location** is a single instance of a potentially replicated service and constitutes the *unit of scheduling*, i.e., each step of a workflow is offloaded to a configurable number of service locations to be processed.

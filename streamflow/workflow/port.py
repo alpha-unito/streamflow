@@ -46,15 +46,15 @@ class DefaultTokenProcessor(TokenProcessor):
     def get_context(self) -> StreamFlowContext:
         return self.port.step.context
 
-    def get_related_resources(self, token: Token) -> Set[str]:
+    def get_related_locations(self, token: Token) -> Set[str]:
         if isinstance(token.job, MutableSequence):
-            return set().union(*(self.get_related_resources(t) for t in token.value))
+            return set().union(*(self.get_related_locations(t) for t in token.value))
         return set()
 
-    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
+    async def recover_token(self, job: Job, locations: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             return token.update(await asyncio.gather(*(asyncio.create_task(
-                self.recover_token(job, resources, t)
+                self.recover_token(job, locations, t)
             ) for t in token.value)))
         return token
 
@@ -94,24 +94,24 @@ class ListTokenProcessor(DefaultTokenProcessor):
                 output_tasks.append(asyncio.create_task(processor.collect_output(partial_token, output_dir)))
         return token.update([t.value for t in await asyncio.gather(*output_tasks)])
 
-    def get_related_resources(self, token: Token) -> Set[str]:
+    def get_related_locations(self, token: Token) -> Set[str]:
         self._check_list(token.value)
-        related_resources = set()
+        related_locations = set()
         for i, processor in enumerate(self.processors):
             if i < len(token.value):
                 partial_token = token.update(token.value[i])
-                related_resources.update(processor.get_related_resources(partial_token))
-        return related_resources
+                related_locations.update(processor.get_related_locations(partial_token))
+        return related_locations
 
-    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
+    async def recover_token(self, job: Job, locations: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
-            return await super().recover_token(job, resources, token)
+            return await super().recover_token(job, locations, token)
         self._check_list(token.value)
         token_tasks = []
         for i, processor in enumerate(self.processors):
             if i < len(token.value):
                 partial_token = token.update(token.value[i])
-                token_tasks.append(asyncio.create_task(processor.recover_token(job, resources, partial_token)))
+                token_tasks.append(asyncio.create_task(processor.recover_token(job, locations, partial_token)))
         return token.update([t.value for t in await asyncio.gather(*token_tasks)])
 
     async def update_token(self, job: Job, token: Token) -> Token:
@@ -174,25 +174,25 @@ class MapTokenProcessor(DefaultTokenProcessor):
                            token.value)
         return token
 
-    def get_related_resources(self, token: Token) -> Set[str]:
+    def get_related_locations(self, token: Token) -> Set[str]:
         if isinstance(token.job, MutableSequence):
-            return set().union(*(self.processor.get_related_resources(t) for t in token.value))
+            return set().union(*(self.processor.get_related_locations(t) for t in token.value))
         self._check_list(token.value)
-        related_resources = set()
+        related_locations = set()
         for v in token.value:
-            related_resources.update(self.processor.get_related_resources(token.update(v)))
-        return related_resources
+            related_locations.update(self.processor.get_related_locations(token.update(v)))
+        return related_locations
 
-    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
+    async def recover_token(self, job: Job, locations: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
             recover_tasks = []
             for t in token.value:
-                recover_tasks.append(asyncio.create_task(self.processor.recover_token(job, resources, t)))
+                recover_tasks.append(asyncio.create_task(self.processor.recover_token(job, locations, t)))
             return token.update(await asyncio.gather(*recover_tasks))
         self._check_list(token.value)
         token_tasks = []
         for i, v in enumerate(token.value):
-            token_tasks.append(asyncio.create_task(self.processor.recover_token(job, resources, token.update(v))))
+            token_tasks.append(asyncio.create_task(self.processor.recover_token(job, locations, token.update(v))))
         return token.update([t.value for t in await asyncio.gather(*token_tasks)])
 
     async def update_token(self, job: Job, token: Token) -> Token:
@@ -279,24 +279,24 @@ class ObjectTokenProcessor(DefaultTokenProcessor):
                 job=job.name,
                 tag=get_tag(job.inputs))
 
-    def get_related_resources(self, token: Token) -> Set[str]:
+    def get_related_locations(self, token: Token) -> Set[str]:
         self._check_dict(token.value)
-        related_resources = set()
+        related_locations = set()
         for key, processor in self.processors.items():
             if key in token.value:
                 partial_token = token.update(token.value[key])
-                related_resources.update(processor.get_related_resources(partial_token))
-        return related_resources
+                related_locations.update(processor.get_related_locations(partial_token))
+        return related_locations
 
-    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
+    async def recover_token(self, job: Job, locations: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
-            return await super().recover_token(job, resources, token)
+            return await super().recover_token(job, locations, token)
         self._check_dict(token.value)
         token_tasks = {}
         for key, processor in self.processors.items():
             if key in token.value:
                 partial_token = token.update(token.value[key])
-                token_tasks[key] = asyncio.create_task(processor.recover_token(job, resources, partial_token))
+                token_tasks[key] = asyncio.create_task(processor.recover_token(job, locations, partial_token))
         return token.update(
             dict(zip(token_tasks.keys(), [t.value for t in await asyncio.gather(*token_tasks.values())])))
 
@@ -377,15 +377,15 @@ class UnionTokenProcessor(DefaultTokenProcessor):
         processor = self.get_processor(token.value)
         return await processor.collect_output(token, output_dir)
 
-    def get_related_resources(self, token: Token) -> Set[str]:
+    def get_related_locations(self, token: Token) -> Set[str]:
         processor = self.get_processor(token.value)
-        return processor.get_related_resources(token)
+        return processor.get_related_locations(token)
 
-    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
+    async def recover_token(self, job: Job, locations: MutableSequence[str], token: Token) -> Token:
         if isinstance(token.job, MutableSequence):
-            return await super().recover_token(job, resources, token)
+            return await super().recover_token(job, locations, token)
         processor = self.get_processor(token.value)
-        return await processor.recover_token(job, resources, token)
+        return await processor.recover_token(job, locations, token)
 
     async def update_token(self, job: Job, token: Token) -> Token:
         if isinstance(token.job, MutableSequence):

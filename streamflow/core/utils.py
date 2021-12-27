@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any, Set
 
-from streamflow.core.data import LOCAL_RESOURCE
+from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.deployment import DeploymentConfig
 from streamflow.core.workflow import Target, TerminationToken, Token
 
@@ -121,17 +121,17 @@ def encode_command(command: str):
 
 
 def get_connector(job: Optional[Job], context: StreamFlowContext) -> Connector:
-    return job.step.get_connector() if job is not None else context.deployment_manager.get_connector(LOCAL_RESOURCE)
+    return job.step.get_connector() if job is not None else context.deployment_manager.get_connector(LOCAL_LOCATION)
 
 
 def get_local_target(workdir: Optional[str] = None) -> Target:
     return Target(
         deployment=DeploymentConfig(
-            name=LOCAL_RESOURCE,
+            name=LOCAL_LOCATION,
             connector_type='local',
             config={},
             external=True),
-        resources=1,
+        locations=1,
         service=workdir or os.path.join(tempfile.gettempdir(), 'streamflow'))
 
 
@@ -142,8 +142,8 @@ def get_path_processor(step: Step):
         return os.path
 
 
-def get_resources(job: Optional[Job]) -> MutableSequence[str]:
-    return job.get_resources() or [LOCAL_RESOURCE] if job is not None else [LOCAL_RESOURCE]
+def get_locations(job: Optional[Job]) -> MutableSequence[str]:
+    return job.get_locations() or [LOCAL_LOCATION] if job is not None else [LOCAL_LOCATION]
 
 
 def get_size(path):

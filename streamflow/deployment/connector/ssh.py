@@ -18,7 +18,7 @@ from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.deployment import ConnectorCopyKind
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Resource, Hardware
+from streamflow.core.scheduling import Location, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -102,7 +102,7 @@ class SSHConfig(object):
 class SSHConnector(BaseConnector):
 
     @staticmethod
-    def _get_command(resource: str,
+    def _get_command(location: str,
                      command: MutableSequence[str],
                      environment: MutableMapping[str, str] = None,
                      workdir: Optional[str] = None,
@@ -118,9 +118,9 @@ class SSHConnector(BaseConnector):
             stdin=stdin,
             stdout=stdout,
             stderr=stderr)
-        logger.debug("Executing command {command} on {resource} {job}".format(
+        logger.debug("Executing command {command} on {location} {job}".format(
             command=command,
-            resource=resource,
+            location=location,
             job="for job {job}".format(job=job_name) if job_name else ""))
         return utils.encode_command(command) if encode else command
 
@@ -163,7 +163,7 @@ class SSHConnector(BaseConnector):
 
     async def _build_helper_file(self,
                                  command: str,
-                                 resource: str,
+                                 location: str,
                                  environment: MutableMapping[str, str] = None,
                                  workdir: str = None) -> str:
         helper_file = tempfile.mktemp()
@@ -177,24 +177,24 @@ class SSHConnector(BaseConnector):
         await self._copy_local_to_remote(
             src=helper_file,
             dst=remote_path,
-            resources=[resource])
+            locations=[location])
         return remote_path
 
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
-                                    resources: MutableSequence[str],
+                                    locations: MutableSequence[str],
                                     read_only: bool = False):
         await asyncio.gather(*(asyncio.create_task(
-            self._scp(src=src, dst=dst, resource=resource, kind=ConnectorCopyKind.LOCAL_TO_REMOTE)
-        ) for resource in resources))
+            self._scp(src=src, dst=dst, location=location, kind=ConnectorCopyKind.LOCAL_TO_REMOTE)
+        ) for location in locations))
 
     async def _copy_remote_to_local(self,
                                     src: str,
                                     dst: str,
-                                    resource: str,
+                                    location: str,
                                     read_only: bool = False) -> None:
-        await self._scp(src=src, dst=dst, resource=resource, kind=ConnectorCopyKind.REMOTE_TO_LOCAL)
+        await self._scp(src=src, dst=dst, location=location, kind=ConnectorCopyKind.REMOTE_TO_LOCAL)
 
     def _get_config(self,
                     node: Union[str, MutableMapping[str, Any]]):
@@ -215,39 +215,39 @@ class SSHConnector(BaseConnector):
                     self.tunnel if hasattr(self, 'tunnel') else
                     None))
 
-    def _get_data_transfer_client(self, resource: str):
+    def _get_data_transfer_client(self, location: str):
         if self.dataTransferConfig:
-            if resource not in self.data_transfer_contexts:
-                self.data_transfer_contexts[resource] = SSHContext(
+            if location not in self.data_transfer_contexts:
+                self.data_transfer_contexts[location] = SSHContext(
                     streamflow_config_dir=self.streamflow_config_dir,
                     config=self.dataTransferConfig,
                     max_concurrent_sessions=self.maxConcurrentSessions)
-            return self.data_transfer_contexts[resource]
+            return self.data_transfer_contexts[location]
         else:
-            return self._get_ssh_client(resource)
+            return self._get_ssh_client(location)
 
     def _get_run_command(self,
                          command: str,
-                         resource: str,
+                         location: str,
                          interactive: bool = False):
         return "".join([
             "ssh ",
-            "{resource} ",
+            "{location} ",
             "{command}"
         ]).format(
-            resource=resource,
+            location=location,
             command=command)
 
-    def _get_ssh_client(self, resource: str):
-        if resource not in self.ssh_contexts:
-            self.ssh_contexts[resource] = SSHContext(
+    def _get_ssh_client(self, location: str):
+        if location not in self.ssh_contexts:
+            self.ssh_contexts[location] = SSHContext(
                 streamflow_config_dir=self.streamflow_config_dir,
-                config=self.nodes[resource],
+                config=self.nodes[location],
                 max_concurrent_sessions=self.maxConcurrentSessions)
-        return self.ssh_contexts[resource]
+        return self.ssh_contexts[location]
 
     async def _run(self,
-                   resource: str,
+                   location: str,
                    command: MutableSequence[str],
                    environment: MutableMapping[str, str] = None,
                    workdir: Optional[str] = None,
@@ -260,7 +260,7 @@ class SSHConnector(BaseConnector):
                    interactive: bool = False,
                    stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
         command = self._get_command(
-            resource=resource,
+            location=location,
             command=command,
             environment=environment,
             workdir=workdir,
@@ -270,11 +270,11 @@ class SSHConnector(BaseConnector):
             encode=encode,
             job_name=job_name)
         if job_name is not None and self.template is not None:
-            helper_file = await self._build_helper_file(command, resource, environment, workdir)
-            async with self._get_ssh_client(resource) as ssh_client:
+            helper_file = await self._build_helper_file(command, location, environment, workdir)
+            async with self._get_ssh_client(location) as ssh_client:
                 result = await ssh_client.run(helper_file, stderr=STDOUT)
         else:
-            async with self._get_ssh_client(resource) as ssh_client:
+            async with self._get_ssh_client(location) as ssh_client:
                 result = await ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT)
         if capture_output:
             return result.stdout.strip(), result.returncode
@@ -282,17 +282,17 @@ class SSHConnector(BaseConnector):
     async def _scp(self,
                    src: str,
                    dst: str,
-                   resource: str,
+                   location: str,
                    kind: ConnectorCopyKind):
-        async with self._get_data_transfer_client(resource) as ssh_client:
+        async with self._get_data_transfer_client(location) as ssh_client:
             if kind == ConnectorCopyKind.REMOTE_TO_LOCAL:
                 await asyncssh.scp((ssh_client, src), dst, preserve=True, recurse=True)
             elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
                 await asyncssh.scp(src, (ssh_client, dst), preserve=True, recurse=True)
 
     @cachedmethod(lambda self: self.hardwareCache)
-    async def _get_resource_hardware(self, resource: str) -> Hardware:
-        async with self._get_ssh_client(resource) as ssh_client:
+    async def _get_location_hardware(self, location: str) -> Hardware:
+        async with self._get_ssh_client(location) as ssh_client:
             cores, memory, disk = await asyncio.gather(
                 ssh_client.run("nproc", stderr=STDOUT),
                 ssh_client.run("free | grep Mem | awk '{print $2}'", stderr=STDOUT),
@@ -304,26 +304,26 @@ class SSHConnector(BaseConnector):
                     disk=float(disk.stdout.strip()) / 2 ** 10)
             else:
                 raise WorkflowExecutionException(
-                    "Impossible to retrieve resources for {resource}".format(resource=resource))
+                    "Impossible to retrieve locations for {location}".format(location=location))
 
     async def deploy(self, external: bool) -> None:
         pass
 
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
-        resources = {}
-        for resource_obj in self.nodes.values():
-            hardware = await self._get_resource_hardware(resource_obj.hostname)
-            resources[resource_obj.hostname] = Resource(
-                name=resource_obj.hostname,
-                hostname=resource_obj.hostname,
+    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
+        locations = {}
+        for location_obj in self.nodes.values():
+            hardware = await self._get_location_hardware(location_obj.hostname)
+            locations[location_obj.hostname] = Location(
+                name=location_obj.hostname,
+                hostname=location_obj.hostname,
                 hardware=hardware)
             logger.debug(
-                "Resource {resource} available with {cores} cores, {mem}MiB memory and {disk}MiB disk space".format(
-                    resource=resource_obj.hostname,
+                "Location {location} available with {cores} cores, {mem}MiB memory and {disk}MiB disk space".format(
+                    location=location_obj.hostname,
                     cores=hardware.cores,
                     mem=hardware.memory,
                     disk=hardware.disk))
-        return resources
+        return locations
 
     async def undeploy(self, external: bool) -> None:
         for ssh_context in self.ssh_contexts.values():

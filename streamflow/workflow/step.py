@@ -59,7 +59,7 @@ class BaseJob(Job):
         self.tmp_directory = self._init_dir() if self.tmp_directory is None else self.tmp_directory
         await remotepath.mkdirs(
             connector=self.step.get_connector(),
-            resources=self.get_resources(),
+            locations=self.get_locations(),
             paths=[self.input_directory, self.output_directory, self.tmp_directory])
 
     async def run(self):
