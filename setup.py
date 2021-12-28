@@ -50,7 +50,7 @@ setup(
         "kubernetes_asyncio",
         "pandas"
     ],
-    extra_requires={
+    extras_require={
         "report": [
             "plotly",
             "kaleido"
@@ -76,7 +76,8 @@ setup(
         "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
-        "Operating System :: OS Independent",
+        "Operating System :: POSIX",
+        "Operating System :: MacOS",
         "Programming Language :: Python :: 3.8",
         "Topic :: Scientific/Engineering",
         "Topic :: System :: Distributed Computing",

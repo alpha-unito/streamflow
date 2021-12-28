@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import uuid
 from abc import ABC
+from pathlib import Path
 from shutil import which
 from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
 from urllib.parse import urlencode
@@ -42,8 +43,6 @@ async def _get_helm_version():
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL)
     stdout, _ = await proc.communicate()
-    print(stdout)
-    exit(1)
     return stdout.decode().strip()
 
 
@@ -106,7 +105,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     def __init__(self,
                  streamflow_config_dir: str,
                  inCluster: Optional[bool] = False,
-                 kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
+                 kubeconfig: Optional[str] = os.path.join(str(Path.home()), ".kube", "config"),
                  namespace: Optional[str] = None,
                  resourcesCacheTTL: int = 10,
                  transferBufferSize: int = (2 ** 25) - 1,
@@ -366,7 +365,7 @@ class BaseHelmConnector(BaseKubernetesConnector, ABC):
     def __init__(self,
                  streamflow_config_dir: str,
                  inCluster: Optional[bool] = False,
-                 kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
+                 kubeconfig: Optional[str] = os.path.join(str(Path.home()), ".kube", "config"),
                  namespace: Optional[str] = None,
                  releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
                  resourcesCacheTTL: int = 10,
@@ -411,7 +410,7 @@ class Helm2Connector(BaseHelmConnector):
                  streamflow_config_dir: str,
                  chart: str,
                  debug: Optional[bool] = False,
-                 home: Optional[str] = os.path.join(os.environ['HOME'], ".helm"),
+                 home: Optional[str] = os.path.join(str(Path.home()), ".helm"),
                  kubeContext: Optional[str] = None,
                  kubeconfig: Optional[str] = None,
                  tillerConnectionTimeout: Optional[int] = None,
@@ -673,9 +672,9 @@ class Helm3Connector(BaseHelmConnector):
                  repo: Optional[str] = None,
                  commandLineValues: Optional[MutableSequence[str]] = None,
                  fileValues: Optional[MutableSequence[str]] = None,
-                 registryConfig: Optional[str] = os.path.join(os.environ['HOME'], ".config/helm/registry.json"),
-                 repositoryCache: Optional[str] = os.path.join(os.environ['HOME'], ".cache/helm/repository"),
-                 repositoryConfig: Optional[str] = os.path.join(os.environ['HOME'], ".config/helm/repositories.yaml"),
+                 registryConfig: Optional[str] = os.path.join(str(Path.home()), ".config/helm/registry.json"),
+                 repositoryCache: Optional[str] = os.path.join(str(Path.home()), ".cache/helm/repository"),
+                 repositoryConfig: Optional[str] = os.path.join(str(Path.home()), ".config/helm/repositories.yaml"),
                  resourcesCacheTTL: int = 10,
                  stringValues: Optional[MutableSequence[str]] = None,
                  skipCrds: Optional[bool] = False,

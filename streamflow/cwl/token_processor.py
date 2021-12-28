@@ -5,7 +5,7 @@ import os
 import posixpath
 import urllib.parse
 from enum import Enum, auto
-from typing import Optional, Any, List, Union, MutableMapping, Set, cast, MutableSequence, TYPE_CHECKING
+from typing import Optional, Any, Union, MutableMapping, Set, cast, MutableSequence, TYPE_CHECKING
 
 import cwltool.builder
 from cwltool.utils import CONTENT_LIMIT
@@ -723,7 +723,7 @@ class CWLTokenProcessor(DefaultTokenProcessor):
             location = location[7:]
         # If basename is explicitly stated in the token, use it as destination path
         if 'basename' in token_value:
-            path_processor = get_path_processor(self.port.step)
+            path_processor = get_path_processor(job.step)
             dest_path = dest_path or path_processor.join(
                 job.input_directory,
                 self.port.name,

@@ -136,7 +136,7 @@ def get_local_target(workdir: Optional[str] = None) -> Target:
 
 
 def get_path_processor(step: Step):
-    if step is not None and step.target != 'local':
+    if step is not None and step.target.model.name != LOCAL_RESOURCE:
         return posixpath
     else:
         return os.path
