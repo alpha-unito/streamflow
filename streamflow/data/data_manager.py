@@ -5,7 +5,7 @@ import os
 import posixpath
 import shutil
 import tempfile
-from pathlib import Path, PosixPath
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from streamflow.core import utils
@@ -285,7 +285,7 @@ class RemotePathMapper(object):
         node = self._filesystems.get(location)
         if not node:
             return set()
-        path = Path(path) if location == LOCAL_LOCATION else PosixPath(path)
+        path = Path(path) if location == LOCAL_LOCATION else PurePosixPath(path)
         for token in path.parts:
             if token in node.children:
                 node = node.children[token]
@@ -305,7 +305,7 @@ class RemotePathMapper(object):
     def put(self, location: str, path: str, data_locations: Set[DataLocation]) -> None:
         location = self._process_location(location)
         node = self._filesystems[location]
-        path = Path(path) if location == LOCAL_LOCATION else PosixPath(path)
+        path = Path(path) if location == LOCAL_LOCATION else PurePosixPath(path)
         for token in path.parts:
             if token not in node.children:
                 node.children[token] = RemotePathNode()

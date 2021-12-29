@@ -9,6 +9,7 @@ import tarfile
 import tempfile
 import uuid
 from abc import ABC
+from pathlib import Path
 from shutil import which
 from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
 from urllib.parse import urlencode
@@ -31,12 +32,15 @@ SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/name
 
 
 def _check_helm_installed():
-    if which("helm") is not None:
+    if which("helm") is None:
         raise WorkflowExecutionException("Helm must be installed on the system to use the Helm connector.")
 
 
 async def _get_helm_version():
-    proc = await asyncio.create_subprocess_exec("helm version --template '{{.Version}}'")
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split("helm version --template '{{.Version}}'"),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL)
     stdout, _ = await proc.communicate()
     return stdout.decode().strip()
 
@@ -73,14 +77,10 @@ class PatchedWsApiClient(WsApiClient):
             headers = {}
         if 'sec-websocket-protocol' not in headers:
             headers['sec-websocket-protocol'] = 'v4.channel.k8s.io'
-
         if query_params:
             url += '?' + urlencode(query_params)
-
         url = ws_client.get_websocket_url(url)
-
         if _preload_content:
-
             resp_all = ''
             async with self.rest_client.pool_manager.ws_connect(
                     url,
@@ -94,11 +94,8 @@ class PatchedWsApiClient(WsApiClient):
                         if data:
                             if channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
                                 resp_all += data
-
             return ws_client.WsResponse(resp_all.encode('utf-8'))
-
         else:
-
             return await self.rest_client.pool_manager.ws_connect(url, headers=headers, heartbeat=30)
 
 
@@ -107,7 +104,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     def __init__(self,
                  streamflow_config_dir: str,
                  inCluster: Optional[bool] = False,
-                 kubeconfig: Optional[str] = os.path.join(os.environ['HOME'], ".kube", "config"),
+                 kubeconfig: Optional[str] = os.path.join(str(Path.home()), ".kube", "config"),
                  namespace: Optional[str] = None,
                  locationsCacheTTL: int = None,
                  resourcesCacheTTL: int = None,
@@ -397,10 +394,10 @@ class Helm3Connector(BaseKubernetesConnector):
                  commandLineValues: Optional[MutableSequence[str]] = None,
                  fileValues: Optional[MutableSequence[str]] = None,
                  stringValues: Optional[MutableSequence[str]] = None,
-                 registryConfig: Optional[str] = os.path.join(os.environ['HOME'], ".config/helm/registry.json"),
+                 registryConfig: Optional[str] = os.path.join(str(Path.home()), ".config/helm/registry.json"),
                  releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
-                 repositoryCache: Optional[str] = os.path.join(os.environ['HOME'], ".cache/helm/repository"),
-                 repositoryConfig: Optional[str] = os.path.join(os.environ['HOME'], ".config/helm/repositories.yaml"),
+                 repositoryCache: Optional[str] = os.path.join(str(Path.home()), ".cache/helm/repository"),
+                 repositoryConfig: Optional[str] = os.path.join(str(Path.home()), ".config/helm/repositories.yaml"),
                  resourcesCacheTTL: int = None,
                  skipCrds: Optional[bool] = False,
                  timeout: Optional[str] = "1000m",

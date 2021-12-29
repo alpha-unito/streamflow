@@ -5,7 +5,7 @@ asyncio.
 import functools
 import inspect
 
-__all__ = ["cached"]
+__all__ = ["cached", "cachedmethod"]
 
 import cachetools
 

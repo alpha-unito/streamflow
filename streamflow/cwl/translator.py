@@ -5,6 +5,7 @@ import copy
 import json
 import os
 import posixpath
+import sys
 import tempfile
 from enum import Enum
 from pathlib import PurePosixPath

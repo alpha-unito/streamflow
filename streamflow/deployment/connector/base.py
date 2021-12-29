@@ -8,7 +8,7 @@ import shlex
 import shutil
 import tarfile
 import tempfile
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, MutableSequence, Tuple, cast
 
 from streamflow.core import utils
@@ -159,11 +159,11 @@ class BaseConnector(Connector, ABC):
                         read_only=read_only)))
             await asyncio.gather(*copy_tasks)
 
+    @abstractmethod
     def _get_run_command(self,
                          command: str,
                          location: str,
-                         interactive: bool = False):
-        raise NotImplementedError
+                         interactive: bool = False) -> str: ...
 
     async def _run(self,
                    location: str,
