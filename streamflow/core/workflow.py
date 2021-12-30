@@ -146,7 +146,6 @@ class Port(ABC):
                  step: Optional[Step] = None):
         self.name: str = name
         self.step: Optional[Step] = step
-        self.token_processor: Optional[TokenProcessor] = None
 
 
 class InputPort(Port, ABC):
@@ -255,8 +254,10 @@ class Step(ABC):
         self.hardware_requirement: Optional[HardwareRequirement] = None
         self.input_combinator: Optional[InputCombinator] = None
         self.input_ports: MutableMapping[str, InputPort] = {}
+        self.input_token_processors: MutableMapping[str, TokenProcessor] = {}
         self.name: str = name
         self.output_ports: MutableMapping[str, OutputPort] = {}
+        self.output_token_processors: MutableMapping[str, TokenProcessor] = {}
         self.persistent_id: Optional[int] = None
         self.scheduling_group: Optional[str] = None
         self.status: Status = Status.WAITING

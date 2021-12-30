@@ -453,7 +453,7 @@ class ScatterInputPort(DefaultInputPort):
 
     async def _build_token(self, job_name: str, token_value: Any, count: int) -> Token:
         job = self.step.context.scheduler.get_job(job_name)
-        weight = await self.token_processor.weight_token(job, token_value)
+        weight = await self.step.input_token_processors[self.name].weight_token(job, token_value)
         return Token(
             name=self.name,
             value=token_value,

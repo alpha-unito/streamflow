@@ -53,7 +53,7 @@ class DataLocalityPolicy(Policy):
             for j in (token.job if isinstance(token.job, MutableSequence) else [token.job]):
                 if j in jobs:
                     related_locations.update(r for r in jobs[j].locations)
-            token_processor = job.step.input_ports[token.name].token_processor
+            token_processor = job.step.input_token_processors[token.name]
             related_locations.update(token_processor.get_related_locations(token))
             # Check if one of the related locations is free
             for current_location in related_locations:

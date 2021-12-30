@@ -942,11 +942,14 @@ class CWLTokenProcessor(DefaultTokenProcessor):
         if isinstance(token.job, MutableSequence):
             return await super().update_token(job, token)
         if self.port_type == 'Any' or self.port_type is None:
-            if (isinstance(self.port, InputPort) and
-                    isinstance(self.port.dependee.token_processor, CWLTokenProcessor) and
-                    self.port.dependee.token_processor.port_type != 'Any' and
-                    self.port.dependee.token_processor.port_type is not None):
-                self.port_type = self.port.dependee.token_processor.port_type
+            if isinstance(self.port, InputPort):
+                token_processor = self.port.dependee.step.output_token_processors[self.port.dependee.name]
+                if (isinstance(token_processor, CWLTokenProcessor) and
+                        token_processor.port_type != 'Any' and
+                        token_processor.port_type is not None):
+                    self.port_type = token_processor.port_type
+                else:
+                    self.port_type = utils.infer_type_from_token(token.value)
             else:
                 self.port_type = utils.infer_type_from_token(token.value)
         if isinstance(token.value, MutableMapping) and token.value.get('class') in ['File', 'Directory']:

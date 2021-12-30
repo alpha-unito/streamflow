@@ -64,7 +64,8 @@ class StreamFlowExecutor(Executor):
                     self.closed = True
             else:
                 # Collect outputs
-                token_processor = self.workflow.output_ports[task_name].token_processor
+                output_port = self.workflow.output_ports[task_name]
+                token_processor = output_port.step.output_token_processors[output_port.name]
                 token = await token_processor.collect_output(token, output_dir)
                 output_tokens[task_name] = utils.get_token_value(token)
                 # Create a new task in place of the completed one if not terminated

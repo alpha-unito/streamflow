@@ -5,7 +5,7 @@ import os
 import posixpath
 import tempfile
 from asyncio import CancelledError
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast, MutableSequence
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException, FailureHandlingException
@@ -16,7 +16,7 @@ from streamflow.log_handler import logger
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
     from streamflow.core.workflow import OutputPort
-    from typing import Optional, MutableSequence
+    from typing import Optional
 
 
 def _get_step_status(statuses: MutableSequence[Status]):
@@ -36,7 +36,7 @@ async def _retrieve_output(
         job: Job,
         output_port: OutputPort,
         command_output: CommandOutput) -> None:
-    token = await output_port.token_processor.compute_token(job, command_output)
+    token = await job.step.output_token_processors[output_port.name].compute_token(job, command_output)
     if token is not None:
         output_port.put(token)
 
@@ -120,7 +120,7 @@ class BaseStep(Step):
                 await job.initialize()
                 # Update tokens after target assignment
                 job.inputs = await asyncio.gather(*(asyncio.create_task(
-                    self.input_ports[token.name].token_processor.update_token(job, token)
+                    self.input_token_processors[token.name].update_token(job, token)
                 ) for token in inputs))
                 # Run job
                 command_output = await job.run()
@@ -200,7 +200,7 @@ class BaseStep(Step):
                 self._run_job([]),
                 name=utils.random_name()))
         # Wait for jobs termination
-        statuses = await asyncio.gather(*jobs)
+        statuses = cast(MutableSequence[Status], await asyncio.gather(*jobs))
         # Terminate step
         self.terminate(_get_step_status(statuses))
 

@@ -5,7 +5,6 @@ import copy
 import json
 import os
 import posixpath
-import sys
 import tempfile
 from enum import Enum
 from pathlib import PurePosixPath
@@ -172,9 +171,9 @@ async def _create_default_port(port: Port,
     default_port = DefaultOutputPort(
         name="-".join([port.name, "default"]),
         step=port.step)
-    default_port.token_processor = _infer_token_processor(
+    port.step.output_token_processors["-".join([port.name, "default"])] = _infer_token_processor(
         port=default_port,
-        token_processor=port.token_processor)
+        token_processor=port.step.input_token_processors[port.name])
     await _inject_input(
         outdir=os.getcwd(),
         port=default_port,
@@ -193,7 +192,7 @@ async def _create_input_port(
         context: MutableMapping[str, Any]) -> InputPort:
     # Create port
     port = DefaultInputPort(name=port_name, step=port_step)
-    port.token_processor = _create_token_processor(
+    port.step.input_token_processors[port_name] = _create_token_processor(
         port=port,
         port_type=port_description['type'],
         port_description=port_description,
@@ -219,18 +218,20 @@ def _create_output_combinator(name: str,
         ports=ports,
         step=step,
         merge_strategy=merge_strategy)
-    combinator.token_processor = DefaultTokenProcessor(port=combinator)
+    if name not in step.output_token_processors:
+        step.output_token_processors[name] = DefaultTokenProcessor(port=combinator)
     return combinator
 
 
 def _create_output_port(
         port_name: str,
+        step: Step,
         port_description: MutableMapping,
         schema_def_types: MutableMapping[str, Any],
         format_graph: Graph,
         context: MutableMapping[str, Any]) -> OutputPort:
-    port = DefaultOutputPort(port_name)
-    port.token_processor = _create_token_processor(
+    port = DefaultOutputPort(name=port_name, step=step)
+    step.output_token_processors[port_name] = _create_token_processor(
         port=port,
         port_type=port_description['type'],
         port_description=port_description,
@@ -246,15 +247,15 @@ def _create_skip_link(port: OutputPort,
     skip_port = DefaultOutputPort(
         name=skip_port_name,
         step=step)
-    skip_port.token_processor = CWLSkipTokenProcessor(port=skip_port)
+    step.output_token_processors[skip_port_name] = CWLSkipTokenProcessor(port=skip_port)
     step.output_ports[skip_port_name] = skip_port
     combinator = NondeterminateMergeOutputCombinator(
         name=random_name(),
         step=step,
         ports={p.name: p for p in [port, skip_port]})
-    combinator.token_processor = CWLUnionTokenProcessor(
+    step.output_token_processors[combinator.name] = CWLUnionTokenProcessor(
         port=combinator,
-        processors=[port.token_processor, skip_port.token_processor])
+        processors=[port.step.output_token_processors[port.name], step.output_token_processors[skip_port_name]])
     return combinator
 
 
@@ -750,11 +751,12 @@ async def _inject_input(outdir: str,
             context=port.step.context,
             target=get_local_target()),
         inputs=[])
+    input_injector.step.output_token_processors = port.step.output_token_processors
     input_injector.output_directory = outdir
     try:
         await port.step.context.scheduler.schedule(input_injector)
         port.step = input_injector.step
-        port.put(await port.token_processor.compute_token(
+        port.put(await port.step.output_token_processors[port.name].compute_token(
             job=input_injector,
             command_output=CWLCommandOutput(value, Status.COMPLETED, 0)))
         port.put(TerminationToken(name=port.name))
@@ -1028,7 +1030,8 @@ class CWLTranslator(object):
                     # Create dependee
                     port = DefaultOutputPort(random_name())
                     port.step = BaseStep(name=random_name(), context=self.context)
-                    port.token_processor = _infer_token_processor(port, input_port.token_processor)
+                    port.step.output_token_processors[port.name] = _infer_token_processor(
+                        port, input_port.step.input_token_processors[input_port.name])
                     input_port.dependee = _build_dependee(
                         default_map=self.default_map,
                         global_name=posixpath.join(root_prefix, input_port.name),
@@ -1104,20 +1107,23 @@ class CWLTranslator(object):
                             global_name=global_name,
                             output_port=source_port)
                         # Percolate secondary files
-                        current_processor = port.token_processor
+                        current_processor = step.input_token_processors[port.name]
                         if isinstance(current_processor, CWLTokenProcessor) and current_processor.secondary_files:
                             if isinstance(source_port, DotProductOutputCombinator):
                                 for src_port in source_port.ports.values():
+                                    src_token_processor = src_port.step.output_token_processors[src_port.name]
                                     if (isinstance(src_port.step.command, CWLStepCommand) and
-                                            isinstance(src_port.token_processor, CWLTokenProcessor)):
-                                        port.token_processor.secondary_files = list(set(
+                                            isinstance(src_token_processor, CWLTokenProcessor)):
+                                        current_processor.secondary_files = list(set(
                                             (current_processor.secondary_files or []) +
-                                            (src_port.token_processor.secondary_files or [])))
-                            elif (isinstance(source_port.step.command, CWLStepCommand) and
-                                  isinstance(source_port.token_processor, CWLTokenProcessor)):
-                                port.token_processor.secondary_files = list(set(
-                                    (current_processor.secondary_files or []) +
-                                    (source_port.token_processor.secondary_files or [])))
+                                            (src_token_processor.secondary_files or [])))
+                            else:
+                                src_token_processor = source_port.step.output_token_processors[source_port.name]
+                                if (isinstance(source_port.step.command, CWLStepCommand) and
+                                        isinstance(src_token_processor, CWLTokenProcessor)):
+                                    current_processor.secondary_files = list(set(
+                                        (current_processor.secondary_files or []) +
+                                        (src_token_processor.secondary_files or [])))
 
     async def _recursive_translate(self,
                                    workflow: Workflow,
@@ -1183,11 +1189,11 @@ class CWLTranslator(object):
             port_name = posixpath.relpath(global_name, name_prefix)
             port = _create_output_port(
                 port_name=port_name,
+                step=step,
                 port_description=element_output,
                 schema_def_types=schema_def_types,
                 format_graph=self.loading_context.loader.graph,
                 context=context)
-            port.step = step
             self.output_ports[global_name] = port
             step.output_ports[port_name] = port
         # Process DockerRequirement
@@ -1258,11 +1264,11 @@ class CWLTranslator(object):
             # Create output port
             output_port = _create_output_port(
                 port_name=port_name,
+                step=input_step,
                 port_description=element_input,
                 schema_def_types=schema_def_types,
                 format_graph=self.loading_context.loader.graph,
                 context=context)
-            output_port.step = input_step
             input_step.output_ports[port_name] = output_port
             # Process dependencies
             local_deps = resolve_dependencies(
@@ -1480,7 +1486,8 @@ class CWLTranslator(object):
                     # Create scatter input port into the scatter step
                     scatter_port_names.append(port_name)
                     port = ScatterInputPort(name=port_name, step=scatter_step)
-                    port.token_processor = CWLTokenProcessor(port=port, port_type=element_input['type'])
+                    scatter_step.input_token_processors[port_name] = CWLTokenProcessor(
+                        port=port, port_type=element_input['type'])
                     scatter_step.input_ports[port_name] = port
                     # Save default value
                     if 'default' in element_input:
@@ -1493,22 +1500,23 @@ class CWLTranslator(object):
                     empty_scatter_port = DefaultInputPort(
                         name=port_name, step=empty_scatter_step)
                     empty_scatter_step.input_ports[port_name] = empty_scatter_port
-                    empty_scatter_step.input_ports[port_name].token_processor = CWLMapTokenProcessor(
-                        port=empty_scatter_port, token_processor=port.token_processor)
+                    empty_scatter_step.input_token_processors[port_name] = CWLMapTokenProcessor(
+                        port=empty_scatter_port, token_processor=scatter_step.input_token_processors[port_name])
                     # Create output on the scatter step
                     scatter_output = DefaultOutputPort(name=port_name, step=scatter_step)
-                    scatter_output.token_processor = CWLTokenProcessor(port=port, port_type=element_input['type'])
+                    scatter_step.output_token_processors[port_name] = CWLTokenProcessor(
+                        port=port, port_type=element_input['type'])
                     scatter_step.output_ports[port_name] = scatter_output
                     # Add to scatter dependencies
                     self.input_dependencies[scatter_step.name].add(input_name)
                 # Create output port
                 output_port = _create_output_port(
                     port_name=port_name,
+                    step=input_step,
                     port_description=element_input,
                     schema_def_types=schema_def_types,
                     format_graph=self.loading_context.loader.graph,
                     context=context)
-                output_port.step = input_step
                 input_step.output_ports[port_name] = output_port
                 # Process local dependencies
                 local_deps = resolve_dependencies(
@@ -1533,7 +1541,7 @@ class CWLTranslator(object):
                 if scatter:
                     element_input = {**element_input, **{'type': _get_type_from_array(element_input['type'])}}
                     port = DefaultInputPort(name=port_name, step=input_step)
-                    port.token_processor = _create_token_processor(
+                    input_step.input_token_processors[port_name] = _create_token_processor(
                         port=port,
                         port_type=element_input['type'],
                         port_description=element_input,
@@ -1574,9 +1582,9 @@ class CWLTranslator(object):
                         global_name=global_name,
                         output_port=input_step.output_ports[port_name])
                     # Percolate secondary files
-                    inner_processor = inner_step.input_ports[port_name].token_processor
+                    inner_processor = inner_step.input_token_processors[port_name]
                     if isinstance(inner_processor, CWLTokenProcessor) and inner_processor.secondary_files:
-                        current_processor = cast(CWLTokenProcessor, input_step.input_ports[port_name].token_processor)
+                        current_processor = cast(CWLTokenProcessor, input_step.input_token_processors[port_name])
                         current_processor.secondary_files = list(set(
                             (current_processor.secondary_files or []) + (inner_processor.secondary_files or [])))
             # Add input step to workflow
@@ -1637,7 +1645,7 @@ class CWLTranslator(object):
                 self.gather_map[gather_step.name] = scatter_step.name
                 # Create input port
                 input_port = DefaultInputPort(port_name, gather_step)
-                input_port.token_processor = _create_token_processor(
+                gather_step.input_token_processors[port_name] = _create_token_processor(
                     port=input_port,
                     port_type=_get_type_from_array(port_type) if scatter_method == 'nested_crossproduct' else port_type,
                     port_description=element_output,
@@ -1690,7 +1698,7 @@ class CWLTranslator(object):
                             value=token_list)]
 
                     output_port.merge_strategy = merge_strategy
-                output_port.token_processor = _create_token_processor(
+                gather_step.output_token_processors[port_name] = _create_token_processor(
                     port=output_port,
                     port_type=_get_type_from_array(port_type) if scatter_method == 'nested_crossproduct' else port_type,
                     port_description=element_output,
@@ -1701,13 +1709,14 @@ class CWLTranslator(object):
                 # Create the empty version of output port
                 empty_scatter_step.output_ports[port_name] = DefaultOutputPort(
                     name=port_name, step=empty_scatter_step)
-                empty_scatter_step.output_ports[port_name].token_processor = output_port.token_processor
+                empty_scatter_step.output_token_processors[port_name] = gather_step.output_token_processors[port_name]
                 combinator = NondeterminateMergeOutputCombinator(
                     name=random_name(),
                     step=output_port.step,
                     ports={output_port.name: output_port,
                            output_port.name + '-empty': empty_scatter_step.output_ports[port_name]})
-                combinator.token_processor = output_port.token_processor
+                output_port.step.output_token_processors[combinator.name] = output_port.step.output_token_processors[
+                    output_port.name]
                 # Remap output port
                 gather_name = _get_name(gather_step.name, element_output['id'], last_element_only=True)
                 self.output_ports[gather_name] = combinator

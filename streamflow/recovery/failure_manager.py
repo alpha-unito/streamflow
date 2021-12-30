@@ -86,7 +86,7 @@ class DefaultFailureManager(FailureManager):
                 # Recover input tokens
                 recovered_tokens = []
                 for token in job.inputs:
-                    token_processor = job.step.input_ports[token.name].token_processor
+                    token_processor = job.step.input_token_processors[token.name]
                     version = 0
                     while True:
                         try:
@@ -151,11 +151,11 @@ class DefaultFailureManager(FailureManager):
                 finally:
                     await self.context.scheduler.notify_status(target_job.name, command_output.status)
                 # Retrieve output
-                output_ports = target_job.step.output_ports.values()
+                output_ports = target_job.step.output_ports
                 output_tasks = []
                 for output_port in output_ports:
                     output_tasks.append(asyncio.create_task(
-                        output_port.token_processor.compute_token(target_job, command_output)))
+                        target_job.step.output_token_processors[output_port].compute_token(target_job, command_output)))
                 self.replay_cache[target_job.name].outputs = {port.name: token for (port, token) in
                                                               zip(output_ports, await asyncio.gather(*output_tasks))}
                 wait_queue.notify_all()

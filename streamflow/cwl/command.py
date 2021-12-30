@@ -90,7 +90,7 @@ async def _check_cwl_output(job: Job, result: Any) -> Any:
                 for out_name, out in result.items():
                     if out_name not in job.step.output_ports:
                         out_port = DefaultOutputPort(name=out_name, step=job.step)
-                        out_port.token_processor = _infer_token_processor(out_port, out)
+                        job.step.output_token_processors[out_name] = _infer_token_processor(out_port, out)
                         job.step.output_ports[out_name] = out_port
                         # Update workflow outputs if needed
                         if job.step.name in workflow.root_steps and out_name not in workflow.output_ports:
