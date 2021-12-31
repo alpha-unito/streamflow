@@ -5,18 +5,13 @@ import os
 import posixpath
 import tempfile
 from asyncio import CancelledError
-from typing import TYPE_CHECKING, cast, MutableSequence
+from typing import cast, MutableSequence
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException, FailureHandlingException
-from streamflow.core.workflow import Step, Job, Token, TerminationToken, CommandOutput, Status
+from streamflow.core.workflow import Step, Job, Token, TerminationToken, CommandOutput, Status, OutputPort
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
-
-if TYPE_CHECKING:
-    from streamflow.core.deployment import Connector
-    from streamflow.core.workflow import OutputPort
-    from typing import Optional
 
 
 def _get_step_status(statuses: MutableSequence[Status]):
@@ -158,7 +153,7 @@ class BaseStep(Step):
         if not self.terminated:
             try:
                 await asyncio.gather(*(asyncio.create_task(
-                    _retrieve_output(job, output_port, command_output)
+                    _retrieve_output(job, cast(OutputPort, self.workflow.ports[output_port]), command_output)
                 ) for output_port in self.output_ports.values()))
             except BaseException as e:
                 logger.exception(e)
@@ -172,9 +167,6 @@ class BaseStep(Step):
         self.status = status
         if self.persistent_id is not None:
             self.context.persistence_manager.db.update_step(self.persistent_id, {"status": status.value})
-
-    def get_connector(self) -> Optional[Connector]:
-        return self.context.deployment_manager.get_connector(self.target.deployment.name)
 
     async def run(self) -> None:
         jobs = []
@@ -207,8 +199,8 @@ class BaseStep(Step):
     def terminate(self, status: Status):
         if not self.terminated:
             # Add a TerminationToken to each output port
-            for port in self.output_ports.values():
-                port.put(TerminationToken(name=port.name))
+            for port_name, global_port_name in self.output_ports.items():
+                self.workflow.ports[global_port_name].put(TerminationToken(name=port_name))
             self._set_status(status)
             self.terminated = True
             logger.info("Step {name} terminated with status {status}".format(name=self.name, status=status.name))

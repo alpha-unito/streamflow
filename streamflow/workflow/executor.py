@@ -64,16 +64,17 @@ class StreamFlowExecutor(Executor):
                     self.closed = True
             else:
                 # Collect outputs
-                output_port = self.workflow.output_ports[task_name]
+                output_port = self.workflow.ports[task_name]
                 token_processor = output_port.step.output_token_processors[output_port.name]
                 token = await token_processor.collect_output(token, output_dir)
                 output_tokens[task_name] = utils.get_token_value(token)
                 # Create a new task in place of the completed one if not terminated
                 if task_name not in self.received:
                     self.output_tasks[task_name] = asyncio.create_task(
-                        self.workflow.output_ports[task_name].get(output_consumer), name=task_name)
+                        self.workflow.ports[task_name].get(output_consumer), name=task_name)
         # Check if new output ports have been created
-        for port_name, port in self.workflow.output_ports.items():
+        for port_name in self.workflow.output_ports:
+            port = self.workflow.ports[port_name]
             if port_name not in self.output_tasks and port_name not in self.received:
                 self.output_tasks[port_name] = asyncio.create_task(port.get(output_consumer), name=port_name)
                 self.closed = False
@@ -90,7 +91,8 @@ class StreamFlowExecutor(Executor):
         if self.workflow.output_ports:
             # Retreive output tokens
             output_consumer = utils.random_name()
-            for port_name, port in self.workflow.output_ports.items():
+            for port_name in self.workflow.output_ports:
+                port = self.workflow.ports[port_name]
                 self.output_tasks[port_name] = asyncio.create_task(port.get(output_consumer), name=port_name)
             while not self.closed:
                 output_tokens = await self._wait_outputs(output_consumer, output_dir, output_tokens)

@@ -96,7 +96,7 @@ class DefaultFailureManager(FailureManager):
                             version += 1
                             reply_response = await self.replay_job(
                                 ReplayRequest(job.name, e.token.job, version))
-                            input_port = job.step.input_ports[token.name]
+                            input_port = job.step.workflow.ports[job.step.input_ports[token.name]]
                             recovered_token = reply_response.outputs[input_port.dependee.name]
                             token = await _replace_token(job, token_processor, token, recovered_token)
                             token.name = input_port.name

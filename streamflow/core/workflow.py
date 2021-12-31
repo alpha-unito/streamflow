@@ -253,10 +253,10 @@ class Step(ABC):
         self.condition: Optional[Condition] = None
         self.hardware_requirement: Optional[HardwareRequirement] = None
         self.input_combinator: Optional[InputCombinator] = None
-        self.input_ports: MutableMapping[str, InputPort] = {}
+        self.input_ports: MutableMapping[str, str] = {}
         self.input_token_processors: MutableMapping[str, TokenProcessor] = {}
         self.name: str = name
-        self.output_ports: MutableMapping[str, OutputPort] = {}
+        self.output_ports: MutableMapping[str, str] = {}
         self.output_token_processors: MutableMapping[str, TokenProcessor] = {}
         self.persistent_id: Optional[int] = None
         self.scheduling_group: Optional[str] = None
@@ -266,9 +266,8 @@ class Step(ABC):
         self.workdir: Optional[str] = None
         self.workflow: Optional[Workflow] = workflow
 
-    @abstractmethod
     def get_connector(self) -> Optional[Connector]:
-        ...
+        return self.context.deployment_manager.get_connector(self.target.deployment.name)
 
     @abstractmethod
     async def run(self):
@@ -296,8 +295,9 @@ class Workflow(object):
     def __init__(self):
         super().__init__()
         self.steps: MutableMapping[str, Step] = {}
+        self.ports: MutableMapping[str, Port] = {}
         self.root_steps: MutableSequence[str] = []
-        self.output_ports: MutableMapping[str, OutputPort] = {}
+        self.output_ports: MutableSequence[str] = []
 
     def add_step(self, step: Step):
         self.steps[step.name] = step
