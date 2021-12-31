@@ -83,7 +83,7 @@ def test_cwl11():
 @pytest.mark.cwl12
 def test_cwl12():
     with tempfile.TemporaryDirectory() as outdir:
-        commit = 'beb4cb65e672e0652c19da070e19688c412b0551'
+        commit = '60a963508acafee8d6b024dcb9b0eaca255a49d5'
         url = 'cwl-v1.2/archive/{}.zip'.format(commit)
         spec = _download_spec(url, outdir, 'cwl-v1.2-{}'.format(commit))
         returncode = _run_conformance(
