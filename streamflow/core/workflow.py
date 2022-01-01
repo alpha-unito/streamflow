@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, MutableSequence
 
+from streamflow.log_handler import logger
+
 if TYPE_CHECKING:
     from streamflow.deployment.deployment_manager import DeploymentConfig
     from streamflow.core.context import StreamFlowContext
@@ -244,27 +246,23 @@ class Step(ABC):
     def __init__(self,
                  name: str,
                  context: StreamFlowContext,
-                 command: Optional[Command] = None,
-                 target: Optional[Target] = None,
-                 workflow: Optional[Workflow] = None):
+                 target: Target,
+                 workflow: Workflow):
         super().__init__()
         self.context: StreamFlowContext = context
-        self.command: Optional[Command] = command
-        self.condition: Optional[Condition] = None
-        self.hardware_requirement: Optional[HardwareRequirement] = None
-        self.input_combinator: Optional[InputCombinator] = None
         self.input_ports: MutableMapping[str, str] = {}
-        self.input_token_processors: MutableMapping[str, TokenProcessor] = {}
         self.name: str = name
         self.output_ports: MutableMapping[str, str] = {}
-        self.output_token_processors: MutableMapping[str, TokenProcessor] = {}
         self.persistent_id: Optional[int] = None
-        self.scheduling_group: Optional[str] = None
         self.status: Status = Status.WAITING
-        self.target: Optional[Target] = target
+        self.target: Target = target
         self.terminated: bool = False
-        self.workdir: Optional[str] = None
-        self.workflow: Optional[Workflow] = workflow
+        self.workflow: Workflow = workflow
+
+    def _set_status(self, status: Status):
+        self.status = status
+        if self.persistent_id is not None:
+            self.context.persistence_manager.db.update_step(self.persistent_id, {"status": status.value})
 
     def get_connector(self) -> Optional[Connector]:
         return self.context.deployment_manager.get_connector(self.target.deployment.name)
@@ -273,9 +271,14 @@ class Step(ABC):
     async def run(self):
         ...
 
-    @abstractmethod
     def terminate(self, status: Status):
-        ...
+        if not self.terminated:
+            # Add a TerminationToken to each output port
+            for port_name, global_port_name in self.output_ports.items():
+                self.workflow.ports[global_port_name].put(TerminationToken(name=port_name))
+            self._set_status(status)
+            self.terminated = True
+            logger.info("Step {name} terminated with status {status}".format(name=self.name, status=status.name))
 
 
 class Target(object):

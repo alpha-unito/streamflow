@@ -14,8 +14,8 @@ from rdflib import Graph
 from streamflow.core.data import FileType, LOCAL_LOCATION, DataType
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException, \
     UnrecoverableTokenException
-from streamflow.core.utils import get_path_processor, random_name, flatten_list, get_tag, get_connector, get_locations, \
-    get_local_target
+from streamflow.core.utils import get_path_processor, random_name, flatten_list, get_tag, get_connector, \
+    get_locations, get_local_target
 from streamflow.core.workflow import Port, InputPort, Job, Token, Status, TokenProcessor, CommandOutput
 from streamflow.cwl import utils
 from streamflow.cwl.utils import get_path_from_token
@@ -873,7 +873,8 @@ class CWLTokenProcessor(DefaultTokenProcessor):
                 step=BaseStep(
                     name=random_name(),
                     context=context,
-                    target=get_local_target()),
+                    target=get_local_target(),
+                    workflow=self.port.step.workflow),
                 inputs=[],
                 input_directory=output_dir)
             return token.update(await self._update_file_token(

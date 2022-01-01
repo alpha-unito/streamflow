@@ -5,11 +5,13 @@ import os
 import posixpath
 import tempfile
 from asyncio import CancelledError
-from typing import cast, MutableSequence
+from typing import cast, MutableSequence, Optional, MutableMapping
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException, FailureHandlingException
-from streamflow.core.workflow import Step, Job, Token, TerminationToken, CommandOutput, Status, OutputPort
+from streamflow.core.workflow import Step, Job, Token, TerminationToken, CommandOutput, Status, OutputPort, Target, \
+    Workflow, Command, Condition, HardwareRequirement, InputCombinator, TokenProcessor
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
 
@@ -31,7 +33,7 @@ async def _retrieve_output(
         job: Job,
         output_port: OutputPort,
         command_output: CommandOutput) -> None:
-    token = await job.step.output_token_processors[output_port.name].compute_token(job, command_output)
+    token = await cast(BaseStep, job.step).output_token_processors[output_port.name].compute_token(job, command_output)
     if token is not None:
         output_port.put(token)
 
@@ -41,10 +43,10 @@ class BaseJob(Job):
     def _init_dir(self) -> str:
         if self.step.target != 'local':
             path_processor = posixpath
-            workdir = self.step.workdir or path_processor.join('/tmp', 'streamflow')
+            workdir = cast(BaseStep, self.step).workdir or path_processor.join('/tmp', 'streamflow')
         else:
             path_processor = os.path
-            workdir = self.step.workdir or path_processor.join(tempfile.gettempdir(), 'streamflow')
+            workdir = cast(BaseStep, self.step).workdir or path_processor.join(tempfile.gettempdir(), 'streamflow')
         dir_path = path_processor.join(workdir, utils.random_name())
         return dir_path
 
@@ -65,7 +67,7 @@ class BaseJob(Job):
             if not self.step.terminated:
                 self.step.status = Status.RUNNING
             await self.step.context.scheduler.notify_status(self.name, Status.RUNNING)
-            command_output = await self.step.command.execute(self)
+            command_output = await cast(BaseStep, self.step).command.execute(self)
             if command_output.status == Status.FAILED:
                 logger.error("Job {name} failed {error}".format(
                     name=self.name,
@@ -94,6 +96,21 @@ class BaseJob(Job):
 
 
 class BaseStep(Step):
+
+    def __init__(self,
+                 name: str,
+                 context: StreamFlowContext,
+                 target: Target,
+                 workflow: Workflow):
+        super().__init__(name, context, target, workflow)
+        self.command: Optional[Command] = None
+        self.condition: Optional[Condition] = None
+        self.hardware_requirement: Optional[HardwareRequirement] = None
+        self.input_combinator: Optional[InputCombinator] = None
+        self.input_token_processors: MutableMapping[str, TokenProcessor] = {}
+        self.output_token_processors: MutableMapping[str, TokenProcessor] = {}
+        self.scheduling_group: Optional[str] = None
+        self.workdir: Optional[str] = None
 
     async def _run_job(self, inputs: MutableSequence[Token]) -> Status:
         # Create job
@@ -163,11 +180,6 @@ class BaseStep(Step):
             name=job.name, status=command_output.status.name))
         return command_output.status
 
-    def _set_status(self, status: Status):
-        self.status = status
-        if self.persistent_id is not None:
-            self.context.persistence_manager.db.update_step(self.persistent_id, {"status": status.value})
-
     async def run(self) -> None:
         jobs = []
         # If there are input ports create jobs until termination token are received
@@ -195,12 +207,3 @@ class BaseStep(Step):
         statuses = cast(MutableSequence[Status], await asyncio.gather(*jobs))
         # Terminate step
         self.terminate(_get_step_status(statuses))
-
-    def terminate(self, status: Status):
-        if not self.terminated:
-            # Add a TerminationToken to each output port
-            for port_name, global_port_name in self.output_ports.items():
-                self.workflow.ports[global_port_name].put(TerminationToken(name=port_name))
-            self._set_status(status)
-            self.terminated = True
-            logger.info("Step {name} terminated with status {status}".format(name=self.name, status=status.name))
