@@ -45,7 +45,7 @@ class SSHContext(object):
         self._sem: Semaphore = Semaphore(max_concurrent_sessions)
 
     async def __aenter__(self):
-        with await self._connection_lock:
+        async with self._connection_lock:
             if self._ssh_connection is None:
                 self._ssh_connection = await self._get_connection(self._config)
         await self._sem.acquire()
@@ -125,6 +125,7 @@ class SSHConnector(BaseConnector):
         return utils.encode_command(command) if encode else command
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  nodes: MutableSequence[Any],
                  username: str,
@@ -139,6 +140,7 @@ class SSHConnector(BaseConnector):
                  tunnel: Optional[MutableMapping[str, Any]] = None,
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         if file is not None:
@@ -291,17 +293,29 @@ class SSHConnector(BaseConnector):
                 await asyncssh.scp(src, (ssh_client, dst), preserve=True, recurse=True)
 
     @cachedmethod(lambda self: self.hardwareCache)
-    async def _get_location_hardware(self, location: str) -> Hardware:
+    async def _get_location_hardware(self,
+                                     location: str,
+                                     input_directory: str,
+                                     output_directory: str,
+                                     tmp_directory: str) -> Hardware:
         async with self._get_ssh_client(location) as ssh_client:
-            cores, memory, disk = await asyncio.gather(
+            cores, memory, input_directory, output_directory, tmp_directory = await asyncio.gather(
                 ssh_client.run("nproc", stderr=STDOUT),
                 ssh_client.run("free | grep Mem | awk '{print $2}'", stderr=STDOUT),
-                ssh_client.run("df / | tail -n 1 | awk '{print $2}'", stderr=STDOUT))
-            if cores.returncode == 0 and memory.returncode == 0 and disk.returncode == 0:
+                ssh_client.run("df {} | tail -n 1 | awk '{{print $2}}'".format(input_directory), stderr=STDOUT),
+                ssh_client.run("df {} | tail -n 1 | awk '{{print $2}}'".format(output_directory), stderr=STDOUT),
+                ssh_client.run("df {} | tail -n 1 | awk '{{print $2}}'".format(tmp_directory), stderr=STDOUT))
+            if (cores.returncode == 0 and
+                    memory.returncode == 0 and
+                    input_directory.returncode == 0 and
+                    output_directory.returncode == 0 and
+                    tmp_directory.returncode == 0):
                 return Hardware(
                     cores=float(cores.stdout.strip()),
                     memory=float(memory.stdout.strip()) / 2 ** 10,
-                    disk=float(disk.stdout.strip()) / 2 ** 10)
+                    input_directory=float(input_directory.stdout.strip()) / 2 ** 10,
+                    output_directory=float(output_directory.stdout.strip()) / 2 ** 10,
+                    tmp_directory=float(tmp_directory.stdout.strip()) / 2 ** 10)
             else:
                 raise WorkflowExecutionException(
                     "Impossible to retrieve locations for {location}".format(location=location))
@@ -309,20 +323,19 @@ class SSHConnector(BaseConnector):
     async def deploy(self, external: bool) -> None:
         pass
 
-    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
         locations = {}
         for location_obj in self.nodes.values():
-            hardware = await self._get_location_hardware(location_obj.hostname)
+            hardware = await self._get_location_hardware(
+                location_obj.hostname, input_directory, output_directory, tmp_directory)
             locations[location_obj.hostname] = Location(
                 name=location_obj.hostname,
                 hostname=location_obj.hostname,
                 hardware=hardware)
-            logger.debug(
-                "Location {location} available with {cores} cores, {mem}MiB memory and {disk}MiB disk space".format(
-                    location=location_obj.hostname,
-                    cores=hardware.cores,
-                    mem=hardware.memory,
-                    disk=hardware.disk))
         return locations
 
     async def undeploy(self, external: bool) -> None:

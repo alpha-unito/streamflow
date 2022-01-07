@@ -40,9 +40,10 @@ class BaseConnector(Connector, ABC):
             raise TypeError("Unsupported value type")
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  transferBufferSize: int):
-        super().__init__(streamflow_config_dir)
+        super().__init__(deployment_name, streamflow_config_dir)
         self.transferBufferSize: int = transferBufferSize
 
     async def _copy_local_to_remote(self,
@@ -163,7 +164,8 @@ class BaseConnector(Connector, ABC):
     def _get_run_command(self,
                          command: str,
                          location: str,
-                         interactive: bool = False) -> str: ...
+                         interactive: bool = False) -> str:
+        ...
 
     async def _run(self,
                    location: str,

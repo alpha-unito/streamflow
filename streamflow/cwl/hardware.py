@@ -1,23 +1,10 @@
 import math
 from typing import MutableSequence, Union, Optional, MutableMapping, Any
 
-from streamflow.core.scheduling import Hardware
+from streamflow.core.scheduling import Hardware, HardwareRequirement
 from streamflow.core.utils import get_token_value
-from streamflow.core.workflow import HardwareRequirement, Token
+from streamflow.core.workflow import Token
 from streamflow.cwl.utils import eval_expression
-
-
-class CWLHardware(Hardware):
-    __slots__ = ('cores', 'memory', 'disk', 'tmpdir', 'outdir')
-
-    def __init__(self,
-                 cores: float = 0.0,
-                 memory: float = 0.0,
-                 tmpdir: float = 0.0,
-                 outdir: float = 0.0):
-        super().__init__(cores, memory, math.ceil((tmpdir + outdir) / 1024))
-        self.tmpdir: float = tmpdir
-        self.outdir: float = outdir
 
 
 class CWLHardwareRequirement(HardwareRequirement):
@@ -45,12 +32,10 @@ class CWLHardwareRequirement(HardwareRequirement):
             full_js=self.full_js,
             expression_lib=self.expression_lib))
 
-    def eval(self, inputs: MutableSequence[Token]) -> Hardware:
-        context = {
-            'inputs': {t.name: get_token_value(t) for t in inputs}
-        }
-        return CWLHardware(
+    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware:
+        context = {'inputs': {name: get_token_value(t) for name, t in inputs.items()}}
+        return Hardware(
             cores=self._process_requirement(self.cores, context),
             memory=self._process_requirement(self.memory, context),
-            tmpdir=self._process_requirement(self.tmpdir, context),
-            outdir=self._process_requirement(self.outdir, context))
+            tmp_directory=self._process_requirement(self.tmpdir, context),
+            output_directory=self._process_requirement(self.outdir, context))

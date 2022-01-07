@@ -58,10 +58,11 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     # Transpile CWL workflow to the StreamFlow representation
     translator = CWLTranslator(
         context=context,
+        output_directory=args.outdir,
         cwl_definition=cwl_definition,
         cwl_inputs=cwl_inputs,
         workflow_config=workflow_config,
         loading_context=loading_context)
     workflow = await translator.translate()
     executor = StreamFlowExecutor(context, workflow)
-    await executor.run(output_dir=args.outdir)
+    await executor.run()

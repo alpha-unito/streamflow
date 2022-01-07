@@ -317,7 +317,7 @@ def serializedATN():
 
 class MuteErrorStrategy(DefaultErrorStrategy):
 
-    def reportError(self, recognizer:Parser, e:RecognitionException):
+    def reportError(self, recognizer: Parser, e: RecognitionException):
         pass
 
 

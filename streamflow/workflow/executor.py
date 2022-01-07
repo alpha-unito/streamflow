@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-from asyncio import FIRST_COMPLETED, Task
+from asyncio import FIRST_COMPLETED, Task, CancelledError
 from typing import TYPE_CHECKING, cast, MutableSequence
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.workflow import Executor, TerminationToken, Status
+from streamflow.core.workflow import Executor, Status
 from streamflow.log_handler import logger
+from streamflow.workflow.token import TerminationToken
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.workflow import Workflow
-    from typing import Any, MutableMapping, Optional
+    from typing import Any, MutableMapping
 
 
 class StreamFlowExecutor(Executor):
@@ -29,23 +29,24 @@ class StreamFlowExecutor(Executor):
         self.received: MutableSequence[str] = []
         self.closed: bool = False
 
-    async def _execute(self, step: str):
+    def _handle_exception(self, task: Task):
         try:
-            await self.workflow.steps[step].run()
-        except Exception as e:
-            logger.exception(e)
-            self._shutdown()
+            if exc := task.exception():
+                logger.exception(exc, exc_info=exc)
+                if not self.closed:
+                    self._shutdown()
+        except CancelledError:
+            pass
 
     def _shutdown(self):
         # Terminate all steps
         for step in self.workflow.steps.values():
-            step.terminate(Status.SKIPPED)
+            step.terminate(Status.CANCELLED)
         # Mark the executor as closed
         self.closed = True
 
     async def _wait_outputs(self,
                             output_consumer: str,
-                            output_dir: str,
                             output_tokens: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
         finished, unfinished = await asyncio.wait(self.output_tasks.values(), return_when=FIRST_COMPLETED)
         self.output_tasks = {t.get_name(): t for t in unfinished}
@@ -63,45 +64,49 @@ class StreamFlowExecutor(Executor):
                 if len(self.received) == len(self.workflow.output_ports):
                     self.closed = True
             else:
-                # Collect outputs
-                output_port = self.workflow.ports[task_name]
-                token_processor = output_port.step.output_token_processors[output_port.name]
-                token = await token_processor.collect_output(token, output_dir)
+                # Collect result
                 output_tokens[task_name] = utils.get_token_value(token)
                 # Create a new task in place of the completed one if not terminated
                 if task_name not in self.received:
                     self.output_tasks[task_name] = asyncio.create_task(
-                        self.workflow.ports[task_name].get(output_consumer), name=task_name)
+                        self.workflow.get_output_port(task_name).get(output_consumer), name=task_name)
+                    self.output_tasks[task_name].add_done_callback(self._handle_exception)
         # Check if new output ports have been created
-        for port_name in self.workflow.output_ports:
-            port = self.workflow.ports[port_name]
+        for port_name, port in self.workflow.get_output_ports().items():
             if port_name not in self.output_tasks and port_name not in self.received:
                 self.output_tasks[port_name] = asyncio.create_task(port.get(output_consumer), name=port_name)
+                self.output_tasks[port_name].add_done_callback(self._handle_exception)
                 self.closed = False
         # Return output tokens
         return output_tokens
 
-    async def run(self, output_dir: Optional[str] = os.getcwd()):
-        output_tokens = {}
-        # Execute workflow
-        for step in self.workflow.steps:
-            execution = asyncio.create_task(self._execute(step), name=step)
-            self.executions.append(execution)
-        # If workflow has output ports
-        if self.workflow.output_ports:
-            # Retreive output tokens
-            output_consumer = utils.random_name()
-            for port_name in self.workflow.output_ports:
-                port = self.workflow.ports[port_name]
-                self.output_tasks[port_name] = asyncio.create_task(port.get(output_consumer), name=port_name)
-            while not self.closed:
-                output_tokens = await self._wait_outputs(output_consumer, output_dir, output_tokens)
-        # Otherwise simply wait for all tasks to finish
-        else:
-            await asyncio.gather(*self.executions)
-        # Check if workflow terminated properly
-        for step in self.workflow.steps.values():
-            if step.status == Status.FAILED:
-                raise WorkflowExecutionException("Workflow execution failed")
-        # Print output tokens
-        print(json.dumps(output_tokens, sort_keys=True, indent=4))
+    async def run(self):
+        try:
+            output_tokens = {}
+            # Execute workflow
+            for step in self.workflow.steps.values():
+                execution = asyncio.create_task(step.run(), name=step.name)
+                execution.add_done_callback(self._handle_exception)
+                self.executions.append(execution)
+            # If workflow has output ports
+            if self.workflow.output_ports:
+                # Retreive output tokens
+                output_consumer = utils.random_name()
+                for port_name, port in self.workflow.get_output_ports().items():
+                    self.output_tasks[port_name] = asyncio.create_task(port.get(output_consumer), name=port_name)
+                    self.output_tasks[port_name].add_done_callback(self._handle_exception)
+                while not self.closed:
+                    output_tokens = await self._wait_outputs(output_consumer, output_tokens)
+            # Otherwise simply wait for all tasks to finish
+            else:
+                await asyncio.gather(*self.executions)
+            # Check if workflow terminated properly
+            for step in self.workflow.steps.values():
+                if step.status in [Status.FAILED, Status.CANCELLED]:
+                    raise WorkflowExecutionException("Workflow execution failed")
+            # Print output tokens
+            print(json.dumps(output_tokens, sort_keys=True, indent=4))
+        except BaseException:
+            if not self.closed:
+                self._shutdown()
+            raise

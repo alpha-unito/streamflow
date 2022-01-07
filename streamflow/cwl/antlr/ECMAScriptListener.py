@@ -1,5 +1,6 @@
 # Generated from ECMAScript.g4 by ANTLR 4.9.2
 from antlr4 import *
+
 from streamflow.cwl.antlr.ECMAScriptParser import ECMAScriptParser
 
 

@@ -1,33 +1,13 @@
 import asyncio
 from asyncio import Condition
-from typing import Optional, MutableMapping, MutableSequence
+from typing import Optional, MutableMapping
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException
+from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException, WorkflowException
 from streamflow.core.recovery import FailureManager, JobVersion, ReplayRequest, ReplayResponse
-from streamflow.core.workflow import Status, Job, CommandOutput, Token, TokenProcessor
+from streamflow.core.workflow import Status, Job, CommandOutput
 from streamflow.log_handler import logger
-from streamflow.workflow.port import ListTokenProcessor, MapTokenProcessor
-
-
-async def _replace_token(job: Job, token_processor: TokenProcessor, old_token: Token, new_token: Token):
-    if isinstance(old_token.job, MutableSequence):
-        token_value = []
-        if isinstance(token_processor, ListTokenProcessor):
-            for (t, tp) in zip(old_token.value, token_processor.processors):
-                token_value.append(await _replace_token(job, tp, t, new_token))
-        elif isinstance(token_processor, MapTokenProcessor):
-            for t in old_token.value:
-                token_value.append(await _replace_token(job, token_processor.processor, t, new_token))
-        else:
-            for t in old_token.value:
-                token_value.append(await _replace_token(job, token_processor, t, new_token))
-        return old_token.update(token_value)
-    elif new_token.job == old_token.job:
-        return await token_processor.update_token(job, new_token)
-    else:
-        return old_token
 
 
 class DummyFailureManager(FailureManager):
@@ -85,8 +65,8 @@ class DefaultFailureManager(FailureManager):
                 await job.initialize()
                 # Recover input tokens
                 recovered_tokens = []
-                for token in job.inputs:
-                    token_processor = job.step.input_token_processors[token.name]
+                for token_name, token in job.inputs.items():
+                    token_processor = job.step.input_token_processors[token_name]
                     version = 0
                     while True:
                         try:
@@ -97,7 +77,7 @@ class DefaultFailureManager(FailureManager):
                             reply_response = await self.replay_job(
                                 ReplayRequest(job.name, e.token.job, version))
                             input_port = job.step.workflow.ports[job.step.input_ports[token.name]]
-                            recovered_token = reply_response.outputs[input_port.dependee.name]
+                            recovered_token = reply_response.outputs[input_port.name]
                             token = await _replace_token(job, token_processor, token, recovered_token)
                             token.name = input_port.name
                 job.inputs = recovered_tokens
@@ -110,6 +90,10 @@ class DefaultFailureManager(FailureManager):
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
+            # When receiving a WorkflowException, simply print the error
+            except WorkflowException as e:
+                logger.error(e)
+                return await self.handle_exception(job, e)
             except BaseException as e:
                 logger.exception(e)
                 return await self.handle_exception(job, e)

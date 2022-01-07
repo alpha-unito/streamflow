@@ -16,14 +16,16 @@ from streamflow.log_handler import logger
 class OccamConnector(SSHConnector):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  file: str,
                  sshKey: str,
                  username: str,
                  sshKeyPassphraseFile: Optional[str] = None,
                  hostname: Optional[str] = "occam.c3s.unito.it",
-                 transferBufferSize: int = 2**16) -> None:
+                 transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             nodes=[hostname],
             sshKey=sshKey,
@@ -268,7 +270,11 @@ class OccamConnector(SSHConnector):
                     deploy_tasks.append(asyncio.create_task(self._deploy_node(name, service, node)))
             await asyncio.gather(*deploy_tasks)
 
-    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
         nodes = self.jobs_table.get(service, []) if service else utils.flatten_list(self.jobs_table.values())
         return {n: Location(name=n, hostname=n.split('-')[0]) for n in nodes}
 

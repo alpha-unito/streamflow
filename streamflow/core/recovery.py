@@ -17,7 +17,8 @@ class CheckpointManager(ABC):
 
     @abstractmethod
     def register_path(self,
-                      job: Optional[Job],
+                      deployment: str,
+                      location: str,
                       path: str) -> None:
         ...
 

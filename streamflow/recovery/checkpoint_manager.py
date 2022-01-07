@@ -16,7 +16,10 @@ if TYPE_CHECKING:
 
 class DummyCheckpointManager(CheckpointManager):
 
-    def register_path(self, job: Optional[Job], path: str) -> None:
+    def register_path(self,
+                      deployment: str,
+                      location: str,
+                      path: str) -> None:
         pass
 
 
@@ -35,5 +38,8 @@ class DefaultCheckpointManager(CheckpointManager):
         local_path = os.path.join(parent_directory, os.path.basename(remote_path))
         await self.context.data_manager.transfer_data(remote_path, job, local_path, None, False)
 
-    def register_path(self, job: Optional[Job], path: str) -> None:
-        self.copy_tasks.append(asyncio.create_task(self._async_local_copy(job, path)))
+    def register_path(self,
+                      deployment: str,
+                      location: str,
+                      path: str) -> None:
+        self.copy_tasks.append(asyncio.create_task(self._async_local_copy(deployment, location, path)))

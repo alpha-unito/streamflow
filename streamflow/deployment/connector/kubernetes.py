@@ -102,6 +102,7 @@ class PatchedWsApiClient(WsApiClient):
 class BaseKubernetesConnector(BaseConnector, ABC):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  inCluster: Optional[bool] = False,
                  kubeconfig: Optional[str] = os.path.join(str(Path.home()), ".kube", "config"),
@@ -111,6 +112,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                  transferBufferSize: int = (2 ** 25) - 1,
                  maxConcurrentConnections: int = 4096):
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         self.inCluster = inCluster
@@ -370,6 +372,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 
 class Helm3Connector(BaseKubernetesConnector):
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  chart: str,
                  debug: Optional[bool] = False,
@@ -408,14 +411,14 @@ class Helm3Connector(BaseKubernetesConnector):
                  chartVersion: Optional[str] = None,
                  wait: Optional[bool] = True):
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             inCluster=inCluster,
             kubeconfig=kubeconfig,
             namespace=namespace,
             locationsCacheTTL=locationsCacheTTL,
             resourcesCacheTTL=resourcesCacheTTL,
-            transferBufferSize=transferBufferSize
-        )
+            transferBufferSize=transferBufferSize)
         self.chart: str = os.path.join(streamflow_config_dir, chart)
         self.debug: bool = debug
         self.kubeContext: Optional[str] = kubeContext
@@ -537,7 +540,11 @@ class Helm3Connector(BaseKubernetesConnector):
             await proc.wait()
 
     @cachedmethod(lambda self: self.locationsCache)
-    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
         pods = await self.client.list_namespaced_pod(
             namespace=self.namespace or 'default',
             label_selector="app.kubernetes.io/instance={}".format(self.releaseName),

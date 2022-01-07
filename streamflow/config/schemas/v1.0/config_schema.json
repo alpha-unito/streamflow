@@ -197,6 +197,11 @@
           "type": "boolean",
           "description": "If set, StreamFlow does not manage the lifecycle of the execution environment. This means that all required services must be up and running when the workflow starts",
           "default": false
+        },
+        "lazy": {
+          "type": "boolean",
+          "description": "If true, a model is deployed only when it becomes necessary for transfers or executions. If false, a DeployStep will deploy its related model as soon as it becomes fireable",
+          "default": true
         }
       },
       "allOf": [

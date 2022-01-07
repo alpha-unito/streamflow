@@ -218,6 +218,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
 class DockerConnector(DockerBaseConnector):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  image: str,
                  addHost: Optional[MutableSequence[str]] = None,
@@ -313,6 +314,7 @@ class DockerConnector(DockerBaseConnector):
                  volumesFrom: Optional[MutableSequence[str]] = None,
                  workdir: Optional[str] = None):
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         self.image: str = image
@@ -651,7 +653,11 @@ class DockerConnector(DockerBaseConnector):
                     raise WorkflowExecutionException(stderr.decode().strip())
 
     @cachedmethod(lambda self: self.locationsCache)
-    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
         return {container_id: await self._get_location(container_id) for container_id in self.containerIds}
 
     async def undeploy(self, external: bool) -> None:
@@ -676,6 +682,7 @@ class DockerConnector(DockerBaseConnector):
 class DockerComposeConnector(DockerBaseConnector):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  files: MutableSequence[str],
                  projectName: Optional[str] = None,
@@ -706,6 +713,7 @@ class DockerComposeConnector(DockerBaseConnector):
                  locationsCacheTTL: int = None,
                  resourcesCacheTTL: int = None) -> None:
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         self.files = [os.path.join(streamflow_config_dir, file) for file in files]
@@ -801,7 +809,11 @@ class DockerComposeConnector(DockerBaseConnector):
             await proc.wait()
 
     @cachedmethod(lambda self: self.locationsCache)
-    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
         ps_command = self.base_command() + "".join([
             "ps ",
             "{filter}"
@@ -839,9 +851,11 @@ class DockerComposeConnector(DockerBaseConnector):
 class SingularityBaseConnector(ContainerConnector, ABC):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  transferBufferSize: int):
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
 
@@ -891,6 +905,7 @@ class SingularityBaseConnector(ContainerConnector, ABC):
 class SingularityConnector(SingularityBaseConnector):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  image: str,
                  transferBufferSize: int = 2 ** 16,
@@ -938,6 +953,7 @@ class SingularityConnector(SingularityBaseConnector):
                  writable: bool = False,
                  writableTmpfs: bool = False):
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         self.image: str = image
@@ -1096,7 +1112,11 @@ class SingularityConnector(SingularityBaseConnector):
                     raise WorkflowExecutionException(stderr.decode().strip())
 
     @cachedmethod(lambda self: self.locationsCache)
-    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
         location_tasks = {}
         for instance_name in self.instanceNames:
             location_tasks[instance_name] = asyncio.create_task(self._get_location(instance_name))

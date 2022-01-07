@@ -2,14 +2,13 @@ import argparse
 import asyncio
 import logging
 import os
-import platform
 import sys
 
 import streamflow.cwl.main
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
+from streamflow.core.deployment import LocalTarget
 from streamflow.core.exception import WorkflowException, WorkflowDefinitionException
-from streamflow.core.utils import get_local_target
 from streamflow.log_handler import logger
 from streamflow.main import build_context
 
@@ -60,8 +59,6 @@ async def _async_main(args: argparse.Namespace):
     workflow_config = WorkflowConfig(workflow_name, streamflow_config)
     context = build_context(os.getcwd(), streamflow_config, args.outdir)
     try:
-        local_target = get_local_target()
-        await context.deployment_manager.deploy(local_target.deployment)
         await streamflow.cwl.main.main(
             workflow_config=workflow_config,
             context=context,

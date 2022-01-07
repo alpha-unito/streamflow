@@ -18,6 +18,7 @@ from streamflow.log_handler import logger
 class QueueManagerConnector(SSHConnector, ABC):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  file: str,
                  hostname: str,
@@ -29,8 +30,9 @@ class QueueManagerConnector(SSHConnector, ABC):
                  pollingInterval: int = 5,
                  sshKey: Optional[str] = None,
                  sshKeyPassphraseFile: Optional[str] = None,
-                 transferBufferSize: int = 2**16) -> None:
+                 transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             checkHostKey=checkHostKey,
             dataTransferConnection=dataTransferConnection,
@@ -144,7 +146,11 @@ class QueueManagerConnector(SSHConnector, ABC):
                 interactive=interactive,
                 stream=stream)
 
-    async def get_available_locations(self, service: str) -> MutableMapping[str, Location]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
         return {self.hostname: Location(
             name=self.hostname,
             hostname=self.hostname,

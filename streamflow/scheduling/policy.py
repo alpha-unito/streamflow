@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, MutableSequence
+import asyncio
+from typing import TYPE_CHECKING
 
-from streamflow.core.scheduling import Policy, Hardware
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import DataType
+from streamflow.core.scheduling import Policy, Hardware, JobAllocation
 from streamflow.core.workflow import Status
+from streamflow.workflow.token import FileToken
 
 if TYPE_CHECKING:
-    from streamflow.core.scheduling import JobAllocation, Location, LocationAllocation
+    from streamflow.core.scheduling import Job, Location, LocationAllocation
     from streamflow.core.workflow import Job
     from typing import MutableMapping, Optional
 
 
 def _is_valid(current_location: str,
-              job: Job,
+              hardware_requirement: Hardware,
               available_locations: MutableMapping[str, Location],
               jobs: MutableMapping[str, JobAllocation],
               locations: MutableMapping[str, LocationAllocation]) -> bool:
@@ -21,9 +25,9 @@ def _is_valid(current_location: str,
         filter(lambda x: jobs[x].status == Status.RUNNING,
                locations[current_location].jobs)) if current_location in locations else []
     # If location is segmentable and job provides requirements, compute the used amount of locations
-    if location_obj.hardware is not None and job.hardware is not None:
-        used_hardware = sum((jobs[j].hardware for j in running_jobs), start=Hardware())
-        if (location_obj.hardware - used_hardware) >= job.hardware:
+    if location_obj.hardware is not None and hardware_requirement is not None:
+        used_hardware = sum((jobs[j].hardware for j in running_jobs), start=hardware_requirement.__class__())
+        if (location_obj.hardware - used_hardware) >= hardware_requirement:
             return True
         else:
             return False
@@ -32,35 +36,36 @@ def _is_valid(current_location: str,
         return True
     # Otherwise, simply compute the number of allocated slots
     else:
-        if len(running_jobs) < available_locations[current_location].slots:
-            return True
-        else:
-            return False
+        return len(running_jobs) < available_locations[current_location].slots
 
 
 class DataLocalityPolicy(Policy):
 
-    def get_location(self,
-                     job: Job,
-                     available_locations: MutableMapping[str, Location],
-                     jobs: MutableMapping[str, JobAllocation],
-                     locations: MutableMapping[str, LocationAllocation]) -> Optional[str]:
+    async def get_location(self,
+                           context: StreamFlowContext,
+                           job: Job,
+                           deployment: str,
+                           hardware_requirement: Hardware,
+                           available_locations: MutableMapping[str, Location],
+                           jobs: MutableMapping[str, JobAllocation],
+                           locations: MutableMapping[str, LocationAllocation]) -> Optional[str]:
         valid_locations = list(available_locations.keys())
         # For each input token sorted by weight
-        for token in sorted(job.inputs, key=lambda x: x.weight, reverse=True):
-            # Get related locations
+        weights = {k: v for k, v in zip(job.inputs, await asyncio.gather(*(
+            asyncio.create_task(t.get_weight(context)) for t in job.inputs.values())))}
+        for name, token in sorted(job.inputs.items(), key=lambda item: weights[item[0]], reverse=True):
             related_locations = set()
-            for j in (token.job if isinstance(token.job, MutableSequence) else [token.job]):
-                if j in jobs:
-                    related_locations.update(r for r in jobs[j].locations)
-            token_processor = job.step.input_token_processors[token.name]
-            related_locations.update(token_processor.get_related_locations(token))
+            # For FileTokens, retrieve related locations
+            if isinstance(token, FileToken):
+                for path in await token.get_paths(context):
+                    related_locations.update([loc.location for loc in context.data_manager.get_data_locations(
+                        path, deployment, DataType.PRIMARY)])
             # Check if one of the related locations is free
             for current_location in related_locations:
                 if current_location in valid_locations:
                     if _is_valid(
                             current_location=current_location,
-                            job=job,
+                            hardware_requirement=hardware_requirement,
                             available_locations=available_locations,
                             jobs=jobs,
                             locations=locations):
@@ -71,7 +76,7 @@ class DataLocalityPolicy(Policy):
         for location in valid_locations:
             if _is_valid(
                     current_location=location,
-                    job=job,
+                    hardware_requirement=hardware_requirement,
                     available_locations=available_locations,
                     jobs=jobs,
                     locations=locations):

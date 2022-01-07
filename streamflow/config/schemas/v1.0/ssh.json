@@ -19,15 +19,24 @@
           "description": "The hostname[:port] or address[:port] to connect to."
         },
         "passwordFile": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Path to a file containing the password to use for authentication"
         },
         "sshKey": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Path to the SSH key needed to connect with Slurm environment"
         },
         "sshKeyPassphraseFile": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Path to a file containing the passphrase protecting the SSH key"
         },
         "tunnel": {
@@ -43,7 +52,10 @@
           "description": "External SSH connection parameters for tunneling"
         },
         "username": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Username needed to connect with the SSH environment"
         }
       },

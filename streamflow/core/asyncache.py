@@ -20,6 +20,7 @@ def cached(cache, key=cachetools.keys.hashkey, lock=None):
     the cache when gets updated. If it wraps a coroutine, ``lock``
     must implement ``__aenter__`` and ``__aexit__``.
     """
+
     def decorator(func):
         if inspect.iscoroutinefunction(func):
             if cache is None:
@@ -56,6 +57,7 @@ def cached(cache, key=cachetools.keys.hashkey, lock=None):
             return functools.update_wrapper(wrapper, func)
         else:
             raise NotImplementedError("Use cachetools.cached for non-async functions")
+
     return decorator
 
 
@@ -108,4 +110,5 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
             return functools.update_wrapper(wrapper, method)
         else:
             raise NotImplementedError("Use cachetools.cachedmethod for non-async methods")
+
     return decorator
