@@ -45,7 +45,7 @@ class SSHContext(object):
         self._sem: Semaphore = Semaphore(max_concurrent_sessions)
 
     async def __aenter__(self):
-        with await self._connection_lock:
+        async with self._connection_lock:
             if self._ssh_connection is None:
                 self._ssh_connection = await self._get_connection(self._config)
         await self._sem.acquire()

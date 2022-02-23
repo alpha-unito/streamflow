@@ -254,7 +254,7 @@ async def resolve(
     else:
         result, status = await connector.run(
             resource=resource,
-            command=["printf", "\"%s\\0\"", pattern, "|", "xargs", "-0", "-n1", "-I{}",
+            command=["printf", "\"%s\\0\"", pattern, "|", "xargs", "-0", "-I{}",
                      "sh", "-c", "\"if [ -e \\\"{}\\\" ]; then echo \\\"{}\\\"; fi\"", "|", "sort"],
             capture_output=True)
         _check_status(result, status)
