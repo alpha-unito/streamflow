@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections import MutableMapping
-from typing import TYPE_CHECKING, MutableSequence, Set
+from typing import TYPE_CHECKING, MutableSequence, Set, MutableMapping
 
 import cwltool.expression
 
