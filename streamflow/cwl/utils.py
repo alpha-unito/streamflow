@@ -9,7 +9,7 @@ import cwltool.expression
 from cwltool.utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import FileType, DataType, DataLocation
+from streamflow.core.data import FileType, DataType, DataLocation, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.scheduling import Hardware
@@ -17,6 +17,7 @@ from streamflow.core.utils import get_token_value, get_path_processor, random_na
 from streamflow.core.workflow import Workflow, Job, Token
 from streamflow.cwl.expression import interpolate
 from streamflow.data import remotepath
+from streamflow.log_handler import logger
 
 
 async def _check_glob_path(job: Job,
@@ -29,8 +30,7 @@ async def _check_glob_path(job: Job,
     if not (effective_path.startswith(job.output_directory) or
             effective_path.startswith(job.input_directory) or
             workflow.context.data_manager.get_data_locations(path)):
-        allocation = workflow.context.scheduler.get_allocation(job.name)
-        connector = workflow.context.deployment_manager.get_connector(allocation.deployment)
+        connector = workflow.context.scheduler.get_connector(job.name)
         path_processor = get_path_processor(connector)
         input_dirs = await remotepath.listdir(connector, location, job.input_directory, FileType.DIRECTORY)
         for input_dir in input_dirs:
@@ -62,7 +62,7 @@ async def _process_secondary_file(context: StreamFlowContext,
                     context=context,
                     connector=connector,
                     locations=locations,
-                    token_class=secondary_file['class'],
+                    token_class=get_token_class(secondary_file),
                     filepath=filepath,
                     file_format=secondary_file.get('format'),
                     basename=secondary_file.get('basename'),
@@ -203,8 +203,8 @@ async def build_token_value(context: StreamFlowContext,
                 load_contents=load_contents,
                 load_listing=load_listing)))
         return await asyncio.gather(*value_tasks)
-    elif (isinstance(token_value, MutableMapping)
-          and token_value.get('class', token_value.get('type')) in ['File', 'Directory']):
+    elif isinstance(token_value, MutableMapping) and (
+            token_class := get_token_class(token_value)) in ['File', 'Directory']:
         path_processor = get_path_processor(connector)
         # Get filepath
         filepath = get_path_from_token(token_value)
@@ -221,7 +221,7 @@ async def build_token_value(context: StreamFlowContext,
                         context=context,
                         connector=connector,
                         locations=locations,
-                        token_class=sf['class'],
+                        token_class=get_token_class(sf),
                         filepath=sf_path,
                         file_format=sf.get('format'),
                         basename=sf.get('basename'),
@@ -233,7 +233,7 @@ async def build_token_value(context: StreamFlowContext,
                 context=context,
                 connector=connector,
                 locations=locations,
-                token_class=token_value.get('class', token_value.get('type')),
+                token_class=token_class,
                 filepath=filepath,
                 file_format=token_value.get('format'),
                 basename=token_value.get('basename'),
@@ -265,7 +265,7 @@ async def build_token_value(context: StreamFlowContext,
                 context=context,
                 connector=connector,
                 locations=locations,
-                token_class=token_value.get('class', token_value.get('type')),
+                token_class=token_class,
                 filepath=filepath,
                 file_format=token_value.get('format'),
                 basename=token_value.get('basename'),
@@ -297,7 +297,7 @@ async def build_token_value(context: StreamFlowContext,
                 context=context,
                 connector=connector,
                 locations=locations,
-                token_class=token_value.get('class', token_value.get('type')),
+                token_class=token_class,
                 filepath=filepath,
                 file_format=token_value.get('format'),
                 basename=token_value.get('basename'),
@@ -364,9 +364,9 @@ async def expand_glob(job: Job,
 
 
 async def get_class_from_path(path: str, job: Job, context: StreamFlowContext) -> str:
-    allocation = context.scheduler.get_allocation(job.name)
-    connector = context.deployment_manager.get_connector(allocation.deployment)
-    for location in allocation.locations:
+    connector = context.scheduler.get_connector(job.name)
+    locations = context.scheduler.get_locations(job.name)
+    for location in locations:
         t_path = await remotepath.follow_symlink(connector, location, path)
         return 'File' if await remotepath.isfile(connector, location, t_path) else 'Directory'
 
@@ -464,12 +464,16 @@ def get_path_from_token(token_value: MutableMapping[str, Any]) -> Optional[str]:
     return location
 
 
+def get_token_class(token_value: Any) -> Optional[str]:
+    if isinstance(token_value, MutableMapping):
+        return token_value.get('class', token_value.get('type'))
+    else:
+        return None
+
+
 def infer_type_from_token(token_value: Any) -> str:
     if isinstance(token_value, MutableMapping):
-        if 'class' in token_value:
-            return token_value['class']
-        else:
-            return 'record'
+        return get_token_class(token_value) or 'record'
     elif isinstance(token_value, MutableSequence):
         return 'array'
     elif isinstance(token_value, str):
@@ -580,7 +584,7 @@ async def register_data(context: StreamFlowContext,
         await asyncio.gather(*(asyncio.create_task(
             register_data(context, connector, locations, base_path, t)) for t in token_value))
     # Otherwise, if token value is a dictionary and it refers to a File or a Directory, register the path
-    elif isinstance(token_value, MutableMapping) and token_value.get('class') in ['File', 'Directory']:
+    elif get_token_class(token_value) in ['File', 'Directory']:
         # Extract paths from token
         paths = []
         if 'path' in token_value and token_value['path'] is not None:
@@ -705,7 +709,7 @@ async def update_file_token(context: StreamFlowContext,
         elif not load_contents and 'contents' in token_value:
             token_value = {k: token_value[k] for k in token_value if k != 'contents'}
     # Process listings
-    if token_value['class'] == 'Directory' and load_listing is not None:
+    if get_token_class(token_value) == 'Directory' and load_listing is not None:
         # If load listing is set to `no_listing`, remove the listing entries in present
         if load_listing == LoadListing.no_listing:
             if 'listing' in token_value:
@@ -736,6 +740,10 @@ async def write_remote_file(context: StreamFlowContext,
     path_processor = get_path_processor(connector)
     for location in locations:
         if not await remotepath.exists(connector, location, path):
+            logger.info("Creating {path} {location}".format(
+                path=path,
+                location=("on local file-system" if location == LOCAL_LOCATION else
+                          "on location {res}".format(res=location))))
             await remotepath.write(connector, location, path, content)
             context.data_manager.register_path(
                 deployment=connector.deployment_name,

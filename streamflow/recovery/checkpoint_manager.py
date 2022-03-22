@@ -6,21 +6,13 @@ import tempfile
 from typing import TYPE_CHECKING
 
 from streamflow.core import utils
+from streamflow.core.data import LOCAL_LOCATION, DataLocation
 from streamflow.core.recovery import CheckpointManager
-from streamflow.core.workflow import Job
+from streamflow.core.utils import random_name
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from typing import Optional, MutableSequence
-
-
-class DummyCheckpointManager(CheckpointManager):
-
-    def register_path(self,
-                      deployment: str,
-                      location: str,
-                      path: str) -> None:
-        pass
 
 
 class DefaultCheckpointManager(CheckpointManager):
@@ -33,13 +25,23 @@ class DefaultCheckpointManager(CheckpointManager):
             tempfile.gettempdir(), 'streamflow', 'checkpoint', utils.random_name())
         self.copy_tasks: MutableSequence = []
 
-    async def _async_local_copy(self, job: Job, remote_path: str):
-        parent_directory = os.path.join(self.checkpoint_dir, *job.name.split("/"))
-        local_path = os.path.join(parent_directory, os.path.basename(remote_path))
-        await self.context.data_manager.transfer_data(remote_path, job, local_path, None, False)
+    async def _async_local_copy(self, data_location: DataLocation):
+        parent_directory = os.path.join(self.checkpoint_dir, random_name())
+        local_path = os.path.join(parent_directory, data_location.relpath)
+        await self.context.data_manager.transfer_data(
+            src_deployment=data_location.deployment,
+            src_locations=[data_location.location],
+            src_path=data_location.path,
+            dst_deployment=LOCAL_LOCATION,
+            dst_locations=[LOCAL_LOCATION],
+            dst_path=local_path)
 
-    def register_path(self,
-                      deployment: str,
-                      location: str,
-                      path: str) -> None:
-        self.copy_tasks.append(asyncio.create_task(self._async_local_copy(deployment, location, path)))
+    def register(self, data_location: DataLocation) -> None:
+        self.copy_tasks.append(asyncio.create_task(
+            self._async_local_copy(data_location)))
+
+
+class DummyCheckpointManager(CheckpointManager):
+
+    def register(self, data_location: DataLocation) -> None:
+        pass

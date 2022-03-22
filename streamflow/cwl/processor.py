@@ -139,7 +139,7 @@ class CWLTokenProcessor(TokenProcessor):
                 enum_symbols=self.enum_symbols,
                 optional=self.optional)
         # Process token
-        if isinstance(token.value, MutableMapping) and token.value.get('class') in ['File', 'Directory']:
+        if utils.get_token_class(token.value) in ['File', 'Directory']:
             return token.update(await self._process_file_token(inputs, token.value))
         else:
             return token
@@ -181,7 +181,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                            context: MutableMapping[str, Any],
                            token_value: Any) -> Token:
         if isinstance(token_value, MutableMapping):
-            if token_value.get('class') in ['File', 'Directory']:
+            if utils.get_token_class(token_value) in ['File', 'Directory']:
                 connector = self.workflow.context.scheduler.get_connector(job.name)
                 locations = self.workflow.context.scheduler.get_locations(job.name)
                 # Register path

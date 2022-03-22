@@ -33,30 +33,30 @@ class DefaultScheduler(Scheduler):
     def _allocate_job(self,
                       job: Job,
                       hardware: Hardware,
-                      deployment_name: str,
-                      service: Optional[str],
-                      selected_locations: MutableSequence[str]):
+                      selected_locations: MutableSequence[str],
+                      target: Target):
         if len(selected_locations) == 1:
-            logger.info(
+            logger.debug(
                 "Job {name} allocated {location}".format(
                     name=job.name,
                     location=("locally" if selected_locations[0] == LOCAL_LOCATION else
                               "on location {loc}".format(loc=selected_locations[0]))))
         else:
-            logger.info(
+            logger.debug(
                 "Job {name} allocated on locations {locations}".format(
                     name=job.name,
                     locations=', '.join(selected_locations)))
         self.job_allocations[job.name] = JobAllocation(
             job=job.name,
-            deployment=deployment_name,
-            service=service,
+            target=target,
             locations=selected_locations,
             status=Status.FIREABLE,
             hardware=hardware or Hardware())
         for selected_location in selected_locations:
             if selected_location not in self.location_allocations:
-                self.location_allocations[selected_location] = LocationAllocation(selected_location, deployment_name)
+                self.location_allocations[selected_location] = LocationAllocation(
+                    name=selected_location,
+                    deployment=target.deployment.name)
             self.location_allocations[selected_location].jobs.append(job.name)
 
     def _deallocate_job(self, job: str):
@@ -108,7 +108,7 @@ class DefaultScheduler(Scheduler):
             if job_name in self.job_allocations:
                 if status != self.job_allocations[job_name].status:
                     self.job_allocations[job_name].status = status
-                    logger.info(
+                    logger.debug(
                         "Job {name} changed status to {status}".format(name=job_name, status=status.name))
                 if status in [Status.COMPLETED, Status.FAILED]:
                     self.wait_queue.notify_all()
@@ -146,9 +146,8 @@ class DefaultScheduler(Scheduler):
                                 self._allocate_job(
                                     job=j,
                                     hardware=hardware_requirement,
-                                    deployment_name=target.deployment.name,
-                                    service=target.service,
-                                    selected_locations=selected_locations)
+                                    selected_locations=selected_locations,
+                                    target=target)
                                 allocated_jobs.append(j)
                             if len(allocated_jobs) < group_size:
                                 for j in allocated_jobs:
@@ -167,9 +166,8 @@ class DefaultScheduler(Scheduler):
                             self._allocate_job(
                                 job=job,
                                 hardware=hardware_requirement,
-                                deployment_name=target.deployment.name,
-                                service=target.service,
-                                selected_locations=selected_locations)
+                                selected_locations=selected_locations,
+                                target=target)
                             return
                 try:
                     await asyncio.wait_for(self.wait_queue.wait(), timeout=self.retry_interval)

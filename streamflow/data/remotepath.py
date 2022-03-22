@@ -16,7 +16,6 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import FileType
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector.local import LocalConnector
-from streamflow.log_handler import profile
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
@@ -66,7 +65,6 @@ def _listdir_local(path: str, file_type: FileType) -> MutableSequence[str]:
     return content
 
 
-@profile
 async def checksum(context: StreamFlowContext,
                    connector: Connector,
                    location: Optional[str],
@@ -77,7 +75,6 @@ async def checksum(context: StreamFlowContext,
         raise Exception("Checksum for folders is not implemented yet")
 
 
-@profile
 async def download(
         connector: Connector,
         locations: Optional[MutableSequence[str]],
@@ -112,7 +109,6 @@ async def download(
     return filepath
 
 
-@profile
 async def exists(connector: Connector, location: Optional[str], path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.exists(path)
@@ -127,7 +123,6 @@ async def exists(connector: Connector, location: Optional[str], path: str) -> bo
             return not status
 
 
-@profile
 async def follow_symlink(connector: Connector, location: Optional[str], path: str) -> str:
     if isinstance(connector, LocalConnector):
         return os.path.realpath(path)
@@ -140,7 +135,6 @@ async def follow_symlink(connector: Connector, location: Optional[str], path: st
         return result.strip()
 
 
-@profile
 async def head(connector: Connector, location: Optional[str], path: str, num_bytes: int) -> str:
     if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
@@ -154,7 +148,6 @@ async def head(connector: Connector, location: Optional[str], path: str, num_byt
         return result.strip()
 
 
-@profile
 async def isdir(connector: Connector, location: Optional[str], path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.isdir(path)
@@ -169,7 +162,6 @@ async def isdir(connector: Connector, location: Optional[str], path: str) -> boo
             return not status
 
 
-@profile
 async def isfile(connector: Connector, location: Optional[str], path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.isfile(path)
@@ -184,7 +176,6 @@ async def isfile(connector: Connector, location: Optional[str], path: str) -> bo
             return not status
 
 
-@profile
 async def listdir(connector: Connector,
                   location: Optional[str],
                   path: str,
@@ -206,7 +197,6 @@ async def listdir(connector: Connector,
         return content.split('\n') if content else []
 
 
-@profile
 async def mkdir(
         connector: Connector,
         locations: Optional[MutableSequence[str]],
@@ -214,7 +204,6 @@ async def mkdir(
     return await mkdirs(connector, locations, [path])
 
 
-@profile
 async def mkdirs(
         connector: Connector,
         locations: Optional[MutableSequence[str]],
@@ -230,7 +219,6 @@ async def mkdirs(
         ) for location in locations))
 
 
-@profile
 async def read(connector: Connector, location: Optional[str], path: str) -> str:
     if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
@@ -244,7 +232,6 @@ async def read(connector: Connector, location: Optional[str], path: str) -> str:
         return result.strip()
 
 
-@profile
 async def resolve(
         connector: Connector,
         location: Optional[str],
@@ -261,7 +248,6 @@ async def resolve(
         return result.split()
 
 
-@profile
 async def rm(
         connector: Connector,
         location: Optional[str],
@@ -284,7 +270,6 @@ async def rm(
             command=[''.join(["rm -rf ", path])])
 
 
-@profile
 async def size(
         connector: Connector,
         location: Optional[str],
@@ -315,7 +300,6 @@ async def size(
         return int(result) if result.isdigit() else 0
 
 
-@profile
 async def symlink(connector: Connector, location: Optional[str], src: str, path: str) -> None:
     if isinstance(connector, LocalConnector):
         try:
@@ -327,7 +311,6 @@ async def symlink(connector: Connector, location: Optional[str], src: str, path:
         await connector.run(location=location, command=["ln", "-snf", src, path])
 
 
-@profile
 async def write(connector: Connector, location: Optional[str], path: str, content: str) -> None:
     if isinstance(connector, LocalConnector):
         with open(path, "w") as f:

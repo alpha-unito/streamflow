@@ -94,7 +94,7 @@ class PatchedWsApiClient(WsApiClient):
                         if data:
                             if channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
                                 resp_all += data
-            return ws_client.WsResponse(resp_all.encode('utf-8'))
+            return ws_client.WsResponse(200, resp_all.encode('utf-8'))
         else:
             return await self.rest_client.pool_manager.ws_connect(url, headers=headers, heartbeat=30)
 

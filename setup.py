@@ -47,7 +47,7 @@ setup(
         "Jinja2",
         "jsonref",
         "jsonschema",
-        "kubernetes_asyncio",
+        "kubernetes_asyncio>=22.6.2",
         "pandas"
     ],
     extras_require={

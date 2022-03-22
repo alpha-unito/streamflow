@@ -1,7 +1,7 @@
 from typing import MutableMapping, Optional, MutableSequence
 
 from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
-from streamflow.core.utils import get_tag, check_termination
+from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Token, Workflow, TokenProcessor, Port
 from streamflow.cwl import utils
 from streamflow.workflow.token import ListToken
@@ -128,18 +128,24 @@ class ValueFromTransformer(ManyToOneTransformer):
                  name: str,
                  workflow: Workflow,
                  port_name: str,
-                 value_from: Optional[str] = None,
+                 processor: TokenProcessor,
+                 value_from: str,
                  expression_lib: Optional[MutableSequence[str]] = None,
                  full_js: bool = False):
         super().__init__(name, workflow)
         self.port_name: str = port_name
+        self.processor: TokenProcessor = processor
         self.value_from: str = value_from
         self.expression_lib: Optional[MutableSequence[str]] = expression_lib
         self.full_js: bool = full_js
 
     async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
+        if self.get_output_name() in inputs:
+            inputs = {
+                **inputs,
+                **{self.get_output_name(): await self.processor.process(inputs, inputs[self.get_output_name()])}}
         context = utils.build_context(inputs)
-        context = {**context, **{'self': context['inputs'].get(next(iter(self.output_ports.keys())))}}
+        context = {**context, **{'self': context['inputs'].get(self.get_output_name())}}
         return {self.get_output_name(): Token(
             tag=get_tag(inputs.values()),
             value=utils.eval_expression(

@@ -57,18 +57,16 @@ class HardwareRequirement(ABC):
 
 
 class JobAllocation(object):
-    __slots__ = ('job', 'deployment', 'service', 'locations', 'status', 'hardware')
+    __slots__ = ('job', 'target', 'locations', 'status', 'hardware')
 
     def __init__(self,
                  job: str,
-                 deployment: str,
-                 service: Optional[str],
+                 target: Target,
                  locations: MutableSequence[str],
                  status: Status,
                  hardware: Hardware):
         self.job: str = job
-        self.deployment: str = deployment
-        self.service: Optional[str] = service
+        self.target: Target = target
         self.locations: MutableSequence[str] = locations
         self.status: Status = status
         self.hardware: Hardware = hardware
@@ -128,7 +126,7 @@ class Scheduler(ABC):
 
     def get_connector(self, job_name: str) -> Optional[Connector]:
         allocation = self.get_allocation(job_name)
-        return self.context.deployment_manager.get_connector(allocation.deployment) if allocation else None
+        return self.context.deployment_manager.get_connector(allocation.target.deployment.name) if allocation else None
 
     def get_locations(self,
                       job_name: str,
@@ -139,7 +137,7 @@ class Scheduler(ABC):
 
     def get_service(self, job_name: str) -> Optional[str]:
         allocation = self.get_allocation(job_name)
-        return allocation.service if allocation else None
+        return allocation.target.service if allocation else None
 
     @abstractmethod
     async def notify_status(self,

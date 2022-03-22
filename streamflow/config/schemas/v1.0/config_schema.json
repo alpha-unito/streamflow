@@ -150,32 +150,32 @@
         "helm3": {
           "$id": "#/definitions/deployment/definitions/helm3",
           "type": "object",
-          "$ref": "helm3.json#"
+          "$ref": "helm3.json"
         },
         "pbs": {
           "$id": "#/definitions/deployment/definitions/pbs",
           "type": "object",
-          "$ref": "queue_manager.json#"
+          "$ref": "queue_manager.json"
         },
         "occam": {
           "$id": "#/definitions/deployment/definitions/occam",
           "type": "object",
-          "$ref": "occam.json#"
+          "$ref": "occam.json"
         },
         "singularity": {
           "$id": "#/definitions/deployment/definitions/singularity",
           "type": "object",
-          "$ref": "singularity.json#"
+          "$ref": "singularity.json"
         },
         "slurm": {
           "$id": "#/definitions/deployment/definitions/slurm",
           "type": "object",
-          "$ref": "queue_manager.json#"
+          "$ref": "queue_manager.json"
         },
         "ssh": {
           "$id": "#/definitions/deployment/definitions/ssh",
           "type": "object",
-          "$ref": "ssh.json#"
+          "$ref": "ssh.json"
         }
       },
       "properties": {

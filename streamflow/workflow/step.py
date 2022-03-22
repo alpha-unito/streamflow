@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import posixpath
 from abc import ABC, abstractmethod
 from asyncio import CancelledError, FIRST_COMPLETED, Task
-from typing import cast, MutableSequence, Optional, MutableMapping, AsyncIterable, Set
+from typing import cast, MutableSequence, Optional, MutableMapping, AsyncIterable, Set, Any
 
 from streamflow.core import utils
 from streamflow.core.deployment import Target, DeploymentConfig
@@ -37,6 +38,12 @@ def _get_step_status(statuses: MutableSequence[Status]):
 
 class BaseStep(Step, ABC):
 
+    def __init__(self,
+                 name: str,
+                 workflow: Workflow):
+        super().__init__(name, workflow)
+        self._log_level: int = logging.DEBUG
+
     async def _get_inputs(self,
                           input_ports: MutableMapping[str, Port]):
         return {k: v for k, v in zip(input_ports, await asyncio.gather(*(
@@ -53,7 +60,8 @@ class BaseStep(Step, ABC):
                 port.put(TerminationToken())
             self._set_status(status)
             self.terminated = True
-            logger.info("Step {name} terminated with status {status}".format(name=self.name, status=status.name))
+            logger.log(self._log_level, "Step {name} terminated with status {status}".format(
+                name=self.name, status=status.name))
 
 
 class Combinator(ABC):
@@ -260,9 +268,9 @@ class ExecuteStep(BaseStep):
                  workflow: Workflow,
                  job_port: JobPort):
         super().__init__(name, workflow)
+        self._log_level: int = logging.INFO
         self.command: Optional[Command] = None
         self.output_processors: MutableMapping[str, CommandOutputProcessor] = {}
-        self.workdir: Optional[str] = None
         self.add_input_port("__job__", job_port)
 
     async def _retrieve_output(self,
@@ -284,7 +292,7 @@ class ExecuteStep(BaseStep):
             input_directory=job.input_directory,
             output_directory=job.output_directory,
             tmp_directory=job.tmp_directory)
-        logger.info("Job {name} started".format(name=job.name))
+        logger.debug("Job {name} started".format(name=job.name))
         # Initialise command output with defualt values
         command_output = CommandOutput(value=None, status=Status.FAILED)
         try:
@@ -297,7 +305,7 @@ class ExecuteStep(BaseStep):
                 logger.error("Job {name} failed {error}".format(
                     name=self.name,
                     error="with error:\n\t{error}".format(error=command_output.value)))
-                command_output = await self.workflow.context.failure_manager.handle_failure(job, command_output)
+                command_output = await self.workflow.context.failure_manager.handle_failure(job, self, command_output)
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
@@ -317,7 +325,7 @@ class ExecuteStep(BaseStep):
             else:
                 logger.exception(e)
             try:
-                command_output = await self.workflow.context.failure_manager.handle_exception(job, e)
+                command_output = await self.workflow.context.failure_manager.handle_exception(job, self, e)
             # If failure cannot be recovered, simply fail
             except BaseException as ie:
                 if ie != e:
@@ -340,7 +348,7 @@ class ExecuteStep(BaseStep):
                 logger.exception(e)
                 command_output.status = Status.FAILED
         # Return job status
-        logger.info("Job {name} terminated with status {status}".format(
+        logger.debug("Job {name} terminated with status {status}".format(
             name=job.name, status=command_output.status.name))
         return command_output.status
 
@@ -421,6 +429,50 @@ class GatherStep(BaseStep):
                 if key not in self.token_map:
                     self.token_map[key] = []
                 self.token_map[key].append(token)
+        # Terminate step
+        self.terminate(Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED)
+
+
+class InputInjectorStep(BaseStep, ABC):
+
+    def __init__(self,
+                 name: str,
+                 workflow: Workflow,
+                 job_port: JobPort):
+        super().__init__(name, workflow)
+        self.add_input_port("__job__", job_port)
+
+    def add_output_port(self, name: str, port: Port) -> None:
+        if not self.output_ports or port.name in self.output_ports:
+            super().add_output_port(name, port)
+        else:
+            raise WorkflowDefinitionException("{} step must contain a single output port.".format(self.name))
+
+    @abstractmethod
+    async def process_input(self,
+                            job: Job,
+                            token_value: Any) -> Token:
+        ...
+
+    async def run(self):
+        input_ports = {k: v for k, v in self.get_input_ports().items() if k != "__job__"}
+        if len(input_ports) != 1:
+            raise WorkflowDefinitionException("{} step must contain a single input port.".format(self.name))
+        if len(self.output_ports) != 1:
+            raise WorkflowDefinitionException("{} step must contain a single output port.".format(self.name))
+        if input_ports:
+            while True:
+                # Retrieve input token
+                token = next(iter((await self._get_inputs(input_ports)).values()))
+                # Check for termination
+                if utils.check_termination(token):
+                    break
+                # Retrieve job
+                job = await cast(JobPort, self.get_input_port("__job__")).get_job(self.name)
+                if job is None:
+                    raise WorkflowExecutionException("Step {} received a null job".format(self.name))
+                # Process value and inject token in the output port
+                self.get_output_port().put(await self.process_input(job, token.value))
         # Terminate step
         self.terminate(Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED)
 

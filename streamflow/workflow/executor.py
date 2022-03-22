@@ -12,18 +12,14 @@ from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
 if TYPE_CHECKING:
-    from streamflow.core.context import StreamFlowContext
     from streamflow.core.workflow import Workflow
     from typing import Any, MutableMapping
 
 
 class StreamFlowExecutor(Executor):
 
-    def __init__(self,
-                 context: StreamFlowContext,
-                 workflow: Workflow):
+    def __init__(self, workflow: Workflow):
         super().__init__(workflow)
-        self.context: StreamFlowContext = context
         self.executions: MutableSequence[Task] = []
         self.output_tasks: MutableMapping[str, Task] = {}
         self.received: MutableSequence[str] = []

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import copy
 import os
 import posixpath
@@ -33,8 +32,7 @@ from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import CWLTokenProcessor, CWLCommandOutputProcessor, CWLObjectCommandOutputProcessor, \
     CWLUnionCommandOutputProcessor, CWLMapCommandOutputProcessor, CWLUnionTokenProcessor, CWLObjectTokenProcessor, \
     CWLMapTokenProcessor
-from streamflow.cwl.step import CWLTransferStep, CWLConditionalStep, CWLEmptyScatterConditionalStep, \
-    CWLInputInjectorStep
+from streamflow.cwl.step import CWLTransferStep, CWLConditionalStep, CWLEmptyScatterConditionalStep, CWLInputInjectorStep
 from streamflow.cwl.transformer import FirstNonNullTransformer, OnlyNonNullTransformer, ListToElementTransformer, \
     CWLTokenTransformer, AllNonNullTransformer, ValueFromTransformer, CWLDefaultTransformer
 from streamflow.cwl.utils import resolve_dependencies, LoadListing, SecondaryFile
@@ -870,12 +868,12 @@ class CWLTranslator(object):
                 deployment_config=target.deployment)
         return self.deployment_map[target.deployment.name]
 
-    async def _get_input_port(self,
-                              workflow: Workflow,
-                              cwl_element: cwltool.workflow.Process,
-                              element_input: MutableMapping[str, Any],
-                              global_name: str,
-                              port_name: str) -> Port:
+    def _get_input_port(self,
+                        workflow: Workflow,
+                        cwl_element: cwltool.workflow.Process,
+                        element_input: MutableMapping[str, Any],
+                        global_name: str,
+                        port_name: str) -> Port:
         # Retrieve or create input port
         if global_name not in self.input_ports:
             self.input_ports[global_name] = workflow.create_port()
@@ -885,7 +883,7 @@ class CWLTranslator(object):
             # Insert default port
             transformer_suffix = ('-wf-default-transformer' if isinstance(cwl_element, cwltool.workflow.Workflow)
                                   else '-cmd-default-transformer')
-            input_port = await self._handle_default_port(
+            input_port = self._handle_default_port(
                 global_name=global_name,
                 port_name=port_name,
                 transformer_suffix=transformer_suffix,
@@ -935,18 +933,18 @@ class CWLTranslator(object):
         else:
             return LocalTarget(workdir=workdir)
 
-    async def _handle_default_port(self,
-                                   global_name: str,
-                                   port_name: str,
-                                   transformer_suffix: str,
-                                   port: Optional[Port],
-                                   workflow: Workflow,
-                                   value: Any) -> Port:
+    def _handle_default_port(self,
+                             global_name: str,
+                             port_name: str,
+                             transformer_suffix: str,
+                             port: Optional[Port],
+                             workflow: Workflow,
+                             value: Any) -> Port:
         # Check output directory
         path = _get_path(self.cwl_definition.tool['id'])
         # Build default port
         default_port = workflow.create_port()
-        await self._inject_input(
+        self._inject_input(
             workflow=workflow,
             port_name="-".join([port_name, "default"]),
             global_name=global_name + transformer_suffix,
@@ -965,13 +963,13 @@ class CWLTranslator(object):
         else:
             return default_port
 
-    async def _inject_input(self,
-                            workflow: Workflow,
-                            global_name: str,
-                            port_name,
-                            port: Port,
-                            output_directory: str,
-                            value: Any) -> None:
+    def _inject_input(self,
+                      workflow: Workflow,
+                      global_name: str,
+                      port_name,
+                      port: Port,
+                      output_directory: str,
+                      value: Any) -> None:
         # Retrieve a local DeployStep
         target = LocalTarget()
         deploy_step = self._get_deploy_step(target, workflow)
@@ -997,9 +995,8 @@ class CWLTranslator(object):
         injector_step.add_input_port(port_name, input_port)
         injector_step.add_output_port(port_name, port)
 
-    async def _inject_inputs(self,
-                             workflow: Workflow):
-        inject_tasks = []
+    def _inject_inputs(self,
+                       workflow: Workflow):
         output_directory = None
         if self.cwl_inputs:
             # Compute output directory path
@@ -1008,38 +1005,34 @@ class CWLTranslator(object):
         # Compute suffix
         default_suffix = ('-wf-default-transformer' if isinstance(self.cwl_definition, cwltool.workflow.Workflow)
                           else '-cmd-default-transformer')
-        transformer_suffix = ('-wf-token-transformer' if isinstance(self.cwl_definition, cwltool.workflow.Workflow)
-                              else '-cmd-token-transformer')
         # Process externally provided inputs
         for global_name in self.input_ports:
             if (step := workflow.steps.get(
-                    global_name + default_suffix, workflow.steps.get(global_name + transformer_suffix))):
+                    global_name + default_suffix, workflow.steps.get(global_name + "-token-transformer"))):
                 step_name = posixpath.dirname(global_name)
                 port_name = posixpath.relpath(global_name, step_name)
                 input_port = step.get_input_port(port_name)
                 # If an input is given for port, inject it
                 if step_name == posixpath.sep and port_name in self.cwl_inputs:
-                    inject_tasks.append(asyncio.create_task(self._inject_input(
+                    self._inject_input(
                         workflow=workflow,
                         global_name=global_name,
                         port_name=port_name,
                         port=input_port,
                         output_directory=output_directory,
-                        value=self.cwl_inputs[port_name])))
-        # Wait for inject tasks to terminate
-        await asyncio.gather(*inject_tasks)
+                        value=self.cwl_inputs[port_name])
         # Search empty unbound input ports
         for input_port in workflow.ports.values():
             if input_port.empty() and not input_port.get_input_steps():
                 input_port.put(Token(value=None))
                 input_port.put(TerminationToken())
 
-    async def _recursive_translate(self,
-                                   workflow: Workflow,
-                                   cwl_element: cwltool.process.Process,
-                                   context: MutableMapping[str, Any],
-                                   name_prefix: str,
-                                   cwl_name_prefix: str):
+    def _recursive_translate(self,
+                             workflow: Workflow,
+                             cwl_element: cwltool.process.Process,
+                             context: MutableMapping[str, Any],
+                             name_prefix: str,
+                             cwl_name_prefix: str):
         # Update context
         current_context = copy.deepcopy(context)
         for hint in cwl_element.hints:
@@ -1053,28 +1046,28 @@ class CWLTranslator(object):
                 current_context['requirements'] = {req['class']: req for req in self.cwl_inputs[req_string]}
         # Dispatch element
         if isinstance(cwl_element, cwltool.workflow.Workflow):
-            await self._translate_workflow(
+            self._translate_workflow(
                 workflow=workflow,
                 cwl_element=cwl_element,
                 context=current_context,
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix)
         elif isinstance(cwl_element, cwltool.workflow.WorkflowStep):
-            await self._translate_workflow_step(
+            self._translate_workflow_step(
                 workflow=workflow,
                 cwl_element=cwl_element,
                 context=current_context,
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix)
         elif isinstance(cwl_element, cwltool.command_line_tool.CommandLineTool):
-            await self._translate_command_line_tool(
+            self._translate_command_line_tool(
                 workflow=workflow,
                 cwl_element=cwl_element,
                 context=current_context,
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix)
         elif isinstance(cwl_element, cwltool.command_line_tool.ExpressionTool):
-            await self._translate_command_line_tool(
+            self._translate_command_line_tool(
                 workflow=workflow,
                 cwl_element=cwl_element,
                 context=current_context,
@@ -1084,13 +1077,14 @@ class CWLTranslator(object):
             raise WorkflowDefinitionException(
                 "Definition of type " + type(cwl_element).__class__.__name__ + " not supported")
 
-    async def _translate_command_line_tool(self,
-                                           workflow: Workflow,
-                                           cwl_element: Union[cwltool.command_line_tool.CommandLineTool,
-                                                              cwltool.command_line_tool.ExpressionTool],
-                                           context: MutableMapping[str, Any],
-                                           name_prefix: str,
-                                           cwl_name_prefix: str):
+    def _translate_command_line_tool(self,
+                                     workflow: Workflow,
+                                     cwl_element: Union[cwltool.command_line_tool.CommandLineTool,
+                                                        cwltool.command_line_tool.ExpressionTool],
+                                     context: MutableMapping[str, Any],
+                                     name_prefix: str,
+                                     cwl_name_prefix: str):
+        logger.debug("Translating {} {}".format(cwl_element.tool.__class__.__name__, name_prefix))
         # Extract custom types if present
         requirements = {**context['hints'], **context['requirements']}
         schema_def_types = _get_schema_def_types(requirements)
@@ -1113,7 +1107,7 @@ class CWLTranslator(object):
         # Create a schedule step and connect it to the DeployStep
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
-            name=posixpath.join(name_prefix, "__schedule__"),
+            name=posixpath.join(name_prefix, '__schedule__'),
             connector_port=deploy_step.get_output_port(),
             target=target,
             hardware_requirement=_get_hardware_requirement(requirements, expression_lib, full_js),
@@ -1131,7 +1125,7 @@ class CWLTranslator(object):
                 name_prefix, cwl_name_prefix, element_input['id'])
             port_name = posixpath.relpath(global_name, name_prefix)
             # Retrieve or create input port
-            input_port = await self._get_input_port(
+            input_port = self._get_input_port(
                 workflow=workflow,
                 cwl_element=cwl_element,
                 element_input=element_input,
@@ -1139,7 +1133,7 @@ class CWLTranslator(object):
                 port_name=port_name)
             # Add a token transformer step to process inputs
             token_transformer = _create_token_transformer(
-                name=global_name + "-cmd-token-transformer",
+                name=global_name + "-token-transformer",
                 port_name=port_name,
                 workflow=workflow,
                 cwl_element=element_input,
@@ -1218,13 +1212,14 @@ class CWLTranslator(object):
             name=posixpath.join(posixpath.sep, *[s for s in step.name.split(posixpath.sep) if s != 'run']),
             status=step.status.value)
 
-    async def _translate_workflow(self,
-                                  workflow: Workflow,
-                                  cwl_element: cwltool.workflow.Workflow,
-                                  context: MutableMapping[str, Any],
-                                  name_prefix: str,
-                                  cwl_name_prefix: str):
+    def _translate_workflow(self,
+                            workflow: Workflow,
+                            cwl_element: cwltool.workflow.Workflow,
+                            context: MutableMapping[str, Any],
+                            name_prefix: str,
+                            cwl_name_prefix: str):
         step_name = name_prefix
+        logger.debug("Translating Workflow {}".format(step_name))
         # Extract custom types if present
         requirements = {**context['hints'], **context['requirements']}
         schema_def_types = _get_schema_def_types(requirements)
@@ -1238,7 +1233,7 @@ class CWLTranslator(object):
             global_name = _get_name(step_name, cwl_name_prefix, element_input['id'])
             port_name = posixpath.relpath(global_name, step_name)
             # Retrieve or create input port
-            input_ports[global_name] = await self._get_input_port(
+            input_ports[global_name] = self._get_input_port(
                 workflow=workflow,
                 cwl_element=cwl_element,
                 element_input=element_input,
@@ -1246,7 +1241,7 @@ class CWLTranslator(object):
                 port_name=port_name)
             # Create token transformer step
             token_transformers[global_name] = _create_token_transformer(
-                name=global_name + "-wf-token-transformer",
+                name=global_name + "-token-transformer",
                 port_name=port_name,
                 workflow=workflow,
                 cwl_element=element_input,
@@ -1335,23 +1330,23 @@ class CWLTranslator(object):
                     else:
                         self.output_ports[source_name] = self._get_source_port(workflow, global_name)
         # Process steps
-        await asyncio.gather(*(asyncio.create_task(
+        for step in cwl_element.steps:
             self._recursive_translate(
                 workflow=workflow,
                 cwl_element=step,
                 context=context,
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix)
-        ) for step in cwl_element.steps))
 
-    async def _translate_workflow_step(self,
-                                       workflow: Workflow,
-                                       cwl_element: cwltool.workflow.WorkflowStep,
-                                       context: MutableMapping[str, Any],
-                                       name_prefix: str,
-                                       cwl_name_prefix: str):
+    def _translate_workflow_step(self,
+                                 workflow: Workflow,
+                                 cwl_element: cwltool.workflow.WorkflowStep,
+                                 context: MutableMapping[str, Any],
+                                 name_prefix: str,
+                                 cwl_name_prefix: str):
         # Process content
         step_name = _get_name(name_prefix, cwl_name_prefix, cwl_element.id)
+        logger.debug("Translating WorkflowStep {}".format(step_name))
         cwl_step_name = _get_name(
             name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True)
         # Extract requirements
@@ -1373,7 +1368,6 @@ class CWLTranslator(object):
                               for n in cwl_element.tool.get('scatter', [])]
         # Process inputs
         input_ports = {}
-        token_transformers = {}
         value_from_transformers = {}
         input_dependencies = {}
         for element_input in cwl_element.tool['inputs']:
@@ -1383,23 +1377,22 @@ class CWLTranslator(object):
             # Adjust type to handle scatter
             if global_name in scatter_inputs:
                 element_input = {**element_input, **{'type': element_input['type']['items']}}
-            # Create token transformer
-            token_transformers[global_name] = _create_token_transformer(
-                name=global_name + "-step-token-transformer",
-                port_name=port_name,
-                workflow=workflow,
-                cwl_element=element_input,
-                cwl_name_prefix=posixpath.join(cwl_step_name, port_name),
-                schema_def_types=schema_def_types,
-                format_graph=self.loading_context.loader.graph,
-                context=context,
-                check_type=False)
             # If element contains `valueFrom` directive
             if 'valueFrom' in element_input:
                 # Create a ValueFromTransformer
                 value_from_transformers[global_name] = workflow.create_step(
                     cls=ValueFromTransformer,
                     name=global_name + "-value-from-transformer",
+                    processor=_create_token_processor(
+                        port_name=port_name,
+                        workflow=workflow,
+                        port_type=element_input['type'],
+                        cwl_element=element_input,
+                        cwl_name_prefix=posixpath.join(cwl_step_name, port_name),
+                        schema_def_types=schema_def_types,
+                        format_graph=self.loading_context.loader.graph,
+                        context=context,
+                        check_type=False),
                     port_name=port_name,
                     expression_lib=expression_lib,
                     full_js=full_js,
@@ -1427,7 +1420,7 @@ class CWLTranslator(object):
                         # If there is a default value, construct a default port block
                         if 'default' in element_input:
                             # Insert default port
-                            source_port = await self._handle_default_port(
+                            source_port = self._handle_default_port(
                                 global_name=global_name,
                                 port_name=port_name,
                                 transformer_suffix="-step-default-transformer",
@@ -1457,7 +1450,7 @@ class CWLTranslator(object):
                     # If there is a default value, construct a default port block
                     if 'default' in element_input:
                         # Insert default port
-                        source_port = await self._handle_default_port(
+                        source_port = self._handle_default_port(
                             global_name=global_name,
                             port_name=port_name,
                             transformer_suffix="-step-default-transformer",
@@ -1468,7 +1461,7 @@ class CWLTranslator(object):
                     input_ports[global_name] = source_port
             # Otherwise, search for default values
             elif 'default' in element_input:
-                input_ports[global_name] = await self._handle_default_port(
+                input_ports[global_name] = self._handle_default_port(
                     global_name=global_name,
                     port_name=port_name,
                     transformer_suffix="-step-default-transformer",
@@ -1548,16 +1541,11 @@ class CWLTranslator(object):
         input_ports = _process_transformers(
             step_name=step_name,
             input_ports=input_ports,
-            transformers=token_transformers,
-            input_dependencies={name: {name} for name in token_transformers})
-        input_ports = _process_transformers(
-            step_name=step_name,
-            input_ports=input_ports,
             transformers=value_from_transformers,
             input_dependencies=input_dependencies)
         # Save input ports in the global map
-        for input_name in token_transformers:
-            self.input_ports[input_name] = input_ports[input_name]
+        for input_name, input_port in input_ports.items():
+            self.input_ports[input_name] = input_port
         # Process condition
         conditional_step = None
         if 'when' in cwl_element.tool:
@@ -1630,7 +1618,7 @@ class CWLTranslator(object):
         else:
             inner_cwl_name_prefix = (_get_name(posixpath.sep, posixpath.sep, cwl_element.embedded_tool.tool['id'])
                                      if '#' in cwl_element.embedded_tool.tool['id'] else posixpath.sep)
-        await self._recursive_translate(
+        self._recursive_translate(
             workflow=workflow,
             cwl_element=cwl_element.embedded_tool,
             context=context,
@@ -1639,7 +1627,7 @@ class CWLTranslator(object):
         # Update output ports with the external ones
         self.output_ports = {**self.output_ports, **external_output_ports}
 
-    async def translate(self) -> Workflow:
+    def translate(self) -> Workflow:
         workflow = Workflow(self.context)
         # Create context
         context = _create_context()
@@ -1662,14 +1650,14 @@ class CWLTranslator(object):
                 path=path,
                 relpath=os.path.basename(path))
         # Build workflow graph
-        await self._recursive_translate(
+        self._recursive_translate(
             workflow=workflow,
             cwl_element=self.cwl_definition,
             context=context,
             name_prefix=posixpath.sep,
             cwl_name_prefix=cwl_root_prefix)
         # Inject initial inputs
-        await self._inject_inputs(workflow)
+        self._inject_inputs(workflow)
         # Extract requirements
         for hint in self.cwl_definition.hints:
             context['hints'][hint['class']] = hint

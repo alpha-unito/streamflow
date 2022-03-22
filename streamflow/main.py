@@ -12,7 +12,7 @@ from streamflow.config.validator import SfValidator
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowException
 from streamflow.cwl.main import main as cwl_main
-from streamflow.log_handler import logger, profile
+from streamflow.log_handler import logger
 from streamflow.parser import parser
 from streamflow.scheduling.policy import DataLocalityPolicy
 
@@ -32,7 +32,6 @@ _DISABLED = {
 }
 
 
-@profile
 async def _async_main(args: argparse.Namespace):
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
     context = build_context(os.path.dirname(args.streamflow_file), streamflow_config, args.outdir)

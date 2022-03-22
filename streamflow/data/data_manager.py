@@ -212,7 +212,7 @@ class DefaultDataManager(DataManager):
             data_type=data_type,
             available=True)
         self.path_mapper.put(path, data_location)
-        self.context.checkpoint_manager.register_path(deployment, location, path)
+        self.context.checkpoint_manager.register(data_location)
         return data_location
 
     def register_relation(self,

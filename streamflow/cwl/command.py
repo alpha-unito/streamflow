@@ -26,18 +26,18 @@ def _adjust_inputs(inputs: MutableSequence[MutableMapping[str, Any]],
                    src_path: str,
                    dest_path: str) -> MutableSequence[MutableMapping[str, Any]]:
     for inp in inputs:
-        if isinstance(inp, MutableMapping) and inp.get('class') in ('File', 'Directory'):
+        if (token_class := utils.get_token_class(inp)) in ('File', 'Directory'):
             path = utils.get_path_from_token(inp)
             if path == src_path:
                 inp['path'] = dest_path
                 dirname, basename = path_processor.split(dest_path)
                 inp['dirname'] = dirname
                 inp['basename'] = basename
-                if inp['class'] == 'File':
+                if token_class == 'File':
                     nameroot, nameext = path_processor.splitext(basename)
                     inp['nameroot'] = nameroot
                     inp['nameext'] = nameext
-            elif inp['class'] == 'Directory' and src_path.startswith(path) and 'listing' in inp:
+            elif token_class == 'Directory' and src_path.startswith(path) and 'listing' in inp:
                 inp['listing'] = _adjust_inputs(inp['listing'], path_processor, src_path, dest_path)
     return inputs
 
@@ -72,11 +72,11 @@ def _check_command_token(command_token: CWLCommandToken, input_value: Any) -> bo
 
 
 async def _check_cwl_output(job: Job, step: Step, result: Any) -> Any:
-    allocation = step.workflow.context.scheduler.get_allocation(job.name)
-    connector = step.workflow.context.deployment_manager.get_connector(allocation.deployment)
+    connector = step.workflow.context.scheduler.get_connector(job.name)
+    locations = step.workflow.context.scheduler.get_locations(job.name)
     path_processor = get_path_processor(connector)
     cwl_output_path = path_processor.join(job.output_directory, 'cwl.output.json')
-    for location in allocation.locations:
+    for location in locations:
         if await remotepath.exists(connector, location, cwl_output_path):
             # If file exists, use its contents as token value
             result = json.loads(await remotepath.read(connector, location, cwl_output_path))
@@ -224,7 +224,7 @@ class CWLBaseCommand(Command, ABC):
         # If listing is a dictionary, it could be a File, a Directory, a Dirent or some other object
         elif isinstance(listing, MutableMapping):
             # If it is a File or Directory element, put the correspnding file in the output directory
-            if 'class' in listing and listing['class'] in ['File', 'Directory']:
+            if (listing_class := utils.get_token_class(listing)) in ['File', 'Directory']:
                 src_path = utils.get_path_from_token(listing)
                 # If a compatible source location exists, simply transfer data
                 if (src_path is not None and (selected_location := await _get_source_location(
@@ -249,7 +249,7 @@ class CWLBaseCommand(Command, ABC):
                         dest_path = base_path
                     if src_path is not None:
                         dest_path = path_processor.join(dest_path, path_processor.basename(src_path))
-                    if listing['class'] == 'Directory':
+                    if listing_class == 'Directory':
                         await remotepath.mkdir(connector, locations, dest_path)
                     else:
                         await utils.write_remote_file(
@@ -318,7 +318,7 @@ class CWLBaseCommand(Command, ABC):
                 # If entry is a list
                 elif isinstance(entry, MutableSequence):
                     # If all elements are Files or Directories, each of them must be processed independently
-                    if all('class' in t and t['class'] in ['File', 'Directory'] for t in entry):
+                    if all(utils.get_token_class(t) in ['File', 'Directory'] for t in entry):
                         await self._prepare_work_dir(
                             job=job,
                             context=context,
@@ -336,7 +336,7 @@ class CWLBaseCommand(Command, ABC):
                 # If entry is a dict
                 elif isinstance(entry, MutableMapping):
                     # If it is a File or Directory, it must be put in the destination path
-                    if 'class' in entry and entry['class'] in ['File', 'Directory']:
+                    if utils.get_token_class(entry) in ['File', 'Directory']:
                         await self._prepare_work_dir(
                             job=job,
                             context=context,
@@ -447,7 +447,8 @@ class CWLCommand(CWLBaseCommand):
         locations = self.step.workflow.context.scheduler.get_locations(job.name)
         cmd_string = ' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
                                     if self.is_shell_command else cmd)
-        logger.info('Executing job {job} {location} into directory {outdir}:\n{command}'.format(
+        logger.info('Executing step {step} (job {job}) {location} into directory {outdir}:\n{command}'.format(
+            step=self.step.name,
             job=job.name,
             location="locally" if locations[0] == LOCAL_LOCATION else "on location {loc}".format(
                 loc=locations[0]),
@@ -765,7 +766,8 @@ class CWLExpressionCommand(CWLBaseCommand):
             hardware=self.step.workflow.context.scheduler.get_hardware(job.name))
         if self.initial_work_dir is not None:
             await self._prepare_work_dir(job, context, self.initial_work_dir)
-        logger.info('Evaluating expression for job {job}'.format(job=job.name))
+        logger.info('Evaluating expression for step {step} (job {job})'.format(
+            step=self.step.name, job=job.name))
         # Persist command
         command_id = self.step.workflow.context.persistence_manager.db.add_command(
             self.step.persistent_id,
