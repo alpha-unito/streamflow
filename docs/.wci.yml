@@ -1,0 +1,24 @@
+name: StreamFlow
+icon: https://raw.githubusercontent.com/alpha-unito/streamflow/master/docs/logo.png
+headline: "Towards Cloud-HPC Continuum"
+description: "The StreamFlow framework is a container-native Workflow Management System (WMS) written in Python 3 and based on the Common Workflow Language (CWL) open standard. It has been designed around two main principles: allow the execution of tasks in multi-container environments, in order to support concurrent execution of multiple communicating tasks in a multi-agent ecosystem, and relax the requirement of a single shared data space, in order to allow for hybrid workflow executions on top of multi-cloud or hybrid cloud/HPC infrastructures."
+language: Python
+documentation:
+  general: https://streamflow.di.unito.it/documentation/latest/
+  installation: https://streamflow.di.unito.it/documentation/latest/install.html
+  tutorial: https://streamflow.di.unito.it/documentation/latest/operations.html
+execution_environment:
+  interfaces:
+   - CommandLine
+  resource_managers:
+   - Local
+   - SSH
+   - Kubernetes
+   - Docker
+   - Docker Compose
+   - Singularity
+   - SLURM
+   - PBS
+  transfer_protocols:
+   - SCP
+   - WebSocket (Kubernetes)
