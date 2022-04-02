@@ -30,9 +30,11 @@ parser.add_argument('--streamflow-file', type=str,
 
 async def _async_main(args: argparse.Namespace):
     validator = SfValidator()
+    config_dir = os.getcwd()
     if args.streamflow_file:
         with open(args.streamflow_file) as f:
             streamflow_config = validator.yaml.load(f)
+        config_dir = os.path.dirname(args.streamflow_file)
         workflows = streamflow_config.get('workflows', {})
         if len(workflows) == 1:
             workflow_name = list(workflows.keys())[0]
@@ -58,7 +60,7 @@ async def _async_main(args: argparse.Namespace):
         streamflow_config['workflows'][workflow_name]['config']['settings'] = args.jobfile
     validator.validate(streamflow_config)
     workflow_config = WorkflowConfig(workflow_name, streamflow_config)
-    context = build_context(os.getcwd(), streamflow_config, args.outdir)
+    context = build_context(config_dir, streamflow_config, args.outdir)
     try:
         local_target = get_local_target()
         await context.deployment_manager.deploy(local_target.model)

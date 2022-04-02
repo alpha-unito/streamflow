@@ -14,11 +14,20 @@ from streamflow.cwl.translator import CWLTranslator
 from streamflow.workflow.executor import StreamFlowExecutor
 
 
+def _parse_arg(path: str, context: StreamFlowContext):
+    if '://' in path:
+        return [path]
+    elif os.path.isabs(path):
+        return [os.path.join(context.config_dir, path)]
+    else:
+        return [path]
+
+
 def _parse_args(workflow_config: WorkflowConfig, context: StreamFlowContext):
     cwl_config = workflow_config.config
-    args = [os.path.join(context.config_dir, cwl_config['file'])]
+    args = _parse_arg(cwl_config['file'], context)
     if 'settings' in cwl_config:
-        args.append(os.path.join(context.config_dir, cwl_config['settings']))
+        args.extend(_parse_arg(cwl_config['settings'], context))
     return args
 
 
