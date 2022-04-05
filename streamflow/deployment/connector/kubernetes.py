@@ -176,6 +176,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         location_buffer = io.BufferedReader(tar_buffer.raw)
         pod, container = location.split(':')
         command = ["tar", "xf", "-", "-C", "/"]
+        # noinspection PyUnresolvedReferences
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -199,6 +200,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                                     read_only: bool = False):
         pod, container = location.split(':')
         command = ["tar", "chf", "-", "-C", "/", posixpath.relpath(src, '/')]
+        # noinspection PyUnresolvedReferences
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',
@@ -329,6 +331,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         if encode:
             command = utils.encode_command(command)
         pod, container = location.split(':')
+        # noinspection PyUnresolvedReferences
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
             namespace=self.namespace or 'default',

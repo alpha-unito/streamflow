@@ -13,13 +13,13 @@ class FileToken(Token, ABC):
         ...
 
 
-class ListToken(Token, ABC):
+class ListToken(Token):
 
     async def get_weight(self, context: StreamFlowContext):
         return sum(await asyncio.gather(*(asyncio.create_task(t.get_weight(context)) for t in self.value)))
 
 
-class ObjectToken(Token, ABC):
+class ObjectToken(Token):
 
     async def get_weight(self, context: StreamFlowContext):
         return sum(await asyncio.gather(*(asyncio.create_task(t.get_weight(context)) for t in self.value.values())))

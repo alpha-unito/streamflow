@@ -58,7 +58,7 @@ class Executor(ABC):
         self.workflow: Workflow = workflow
 
     @abstractmethod
-    async def run(self):
+    async def run(self) -> MutableMapping[str, Any]:
         ...
 
 
@@ -103,9 +103,11 @@ class Port(object):
     async def get(self, consumer: str) -> Token:
         if consumer not in self.queues:
             self._init_consumer(consumer)
+            return await self.queues[consumer].get()
         else:
+            token = await self.queues[consumer].get()
             self.queues[consumer].task_done()
-        return await self.queues[consumer].get()
+            return token
 
     def get_input_steps(self) -> MutableSequence[Step]:
         return [s for s in self.workflow.steps.values() if self.name in s.output_ports.values()]

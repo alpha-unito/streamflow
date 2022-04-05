@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from asyncio import FIRST_COMPLETED, Task, CancelledError
 from typing import TYPE_CHECKING, cast, MutableSequence
 
@@ -76,7 +75,7 @@ class StreamFlowExecutor(Executor):
         # Return output tokens
         return output_tokens
 
-    async def run(self):
+    async def run(self) -> MutableMapping[str, Any]:
         try:
             output_tokens = {}
             # Execute workflow
@@ -101,7 +100,7 @@ class StreamFlowExecutor(Executor):
                 if step.status in [Status.FAILED, Status.CANCELLED]:
                     raise WorkflowExecutionException("Workflow execution failed")
             # Print output tokens
-            print(json.dumps(output_tokens, sort_keys=True, indent=4))
+            return output_tokens
         except BaseException:
             if not self.closed:
                 self._shutdown()

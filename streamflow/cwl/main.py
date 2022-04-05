@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import os
 
@@ -74,4 +75,5 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
         loading_context=loading_context)
     workflow = translator.translate()
     executor = StreamFlowExecutor(workflow)
-    await executor.run()
+    output_tokens = await executor.run()
+    print(json.dumps(output_tokens, sort_keys=True, indent=4))
