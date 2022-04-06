@@ -10,7 +10,7 @@ from streamflow.core.workflow import Status
 from streamflow.workflow.token import FileToken
 
 if TYPE_CHECKING:
-    from streamflow.core.scheduling import Job, Location, LocationAllocation
+    from streamflow.core.scheduling import Location, LocationAllocation
     from streamflow.core.workflow import Job
     from typing import MutableMapping, Optional
 
@@ -22,7 +22,7 @@ def _is_valid(current_location: str,
               locations: MutableMapping[str, LocationAllocation]) -> bool:
     location_obj = available_locations[current_location]
     running_jobs = list(
-        filter(lambda x: jobs[x].status == Status.RUNNING,
+        filter(lambda x: jobs[x].status == Status.RUNNING or jobs[x].status == Status.FIREABLE,
                locations[current_location].jobs)) if current_location in locations else []
     # If location is segmentable and job provides requirements, compute the used amount of locations
     if location_obj.hardware is not None and hardware_requirement is not None:
