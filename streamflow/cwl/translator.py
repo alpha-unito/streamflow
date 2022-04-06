@@ -464,7 +464,7 @@ def _create_token_processor(port_name: str,
                 format_graph=format_graph,
                 full_js=full_js,
                 load_contents=cwl_element.get(
-                    'loadContents', cwl_element.get('outputBinding', {}).get('loadContents')),
+                    'loadContents', cwl_element.get('inputBinding', {}).get('loadContents')),
                 load_listing=(LoadListing.deep_listing if force_deep_listing else
                               _get_load_listing(cwl_element, context)),
                 only_propagate_secondary_files=only_propagate_secondary_files,
@@ -484,7 +484,7 @@ def _create_token_processor(port_name: str,
                 expression_lib=expression_lib,
                 full_js=full_js,
                 load_contents=cwl_element.get(
-                    'loadContents', cwl_element.get('outputBinding', {}).get('loadContents')),
+                    'loadContents', cwl_element.get('inputBinding', {}).get('loadContents')),
                 load_listing=(LoadListing.deep_listing if force_deep_listing else
                               _get_load_listing(cwl_element, context)),
                 optional=optional)
