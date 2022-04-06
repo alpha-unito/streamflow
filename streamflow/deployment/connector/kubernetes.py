@@ -11,14 +11,13 @@ import uuid
 from abc import ABC
 from pathlib import Path
 from shutil import which
-from typing import MutableMapping, MutableSequence, Optional, Any, Tuple, Union
-from urllib.parse import urlencode
+from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import yaml
 from cachetools import Cache, TTLCache
 from kubernetes_asyncio import client
-from kubernetes_asyncio.client import Configuration, ApiClient, V1Container
-from kubernetes_asyncio.config import incluster_config, ConfigException, load_kube_config
+from kubernetes_asyncio.client import ApiClient, Configuration, V1Container
+from kubernetes_asyncio.config import ConfigException, load_incluster_config, load_kube_config
 from kubernetes_asyncio.stream import WsApiClient, ws_client
 
 from streamflow.core import utils
@@ -43,60 +42,6 @@ async def _get_helm_version():
         stderr=asyncio.subprocess.DEVNULL)
     stdout, _ = await proc.communicate()
     return stdout.decode().strip()
-
-
-class PatchedInClusterConfigLoader(incluster_config.InClusterConfigLoader):
-
-    def load_and_set(self, configuration: Optional[Configuration] = None):
-        self._load_config()
-        self._set_config(configuration)
-
-    def _set_config(self, configuration: Optional[Configuration] = None):
-        if configuration is None:
-            super()._set_config()
-        configuration.host = self.host
-        configuration.ssl_ca_cert = self.ssl_ca_cert
-        configuration.api_key['authorization'] = "bearer " + self.token
-
-
-class PatchedWsApiClient(WsApiClient):
-
-    async def request(self, method, url, query_params=None, headers=None,
-                      post_params=None, body=None, _preload_content=True,
-                      _request_timeout=None):
-        if query_params:
-            new_query_params = []
-            for key, value in query_params:
-                if key == 'command' and isinstance(value, list):
-                    for command in value:
-                        new_query_params.append((key, command))
-                else:
-                    new_query_params.append((key, value))
-            query_params = new_query_params
-        if headers is None:
-            headers = {}
-        if 'sec-websocket-protocol' not in headers:
-            headers['sec-websocket-protocol'] = 'v4.channel.k8s.io'
-        if query_params:
-            url += '?' + urlencode(query_params)
-        url = ws_client.get_websocket_url(url)
-        if _preload_content:
-            resp_all = ''
-            async with self.rest_client.pool_manager.ws_connect(
-                    url,
-                    headers=headers,
-                    heartbeat=30) as ws:
-                async for msg in ws:
-                    msg = msg.data.decode('utf-8')
-                    if len(msg) > 1:
-                        channel = ord(msg[0])
-                        data = msg[1:]
-                        if data:
-                            if channel in [ws_client.STDOUT_CHANNEL, ws_client.STDERR_CHANNEL]:
-                                resp_all += data
-            return ws_client.WsResponse(200, resp_all.encode('utf-8'))
-        else:
-            return await self.rest_client.pool_manager.ws_connect(url, headers=headers, heartbeat=30)
 
 
 class BaseKubernetesConnector(BaseConnector, ABC):
@@ -236,9 +181,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         if self.configuration is None:
             self.configuration = Configuration()
             if self.inCluster:
-                loader = PatchedInClusterConfigLoader(token_filename=incluster_config.SERVICE_TOKEN_FILENAME,
-                                                      cert_filename=incluster_config.SERVICE_CERT_FILENAME)
-                loader.load_and_set(configuration=self.configuration)
+                load_incluster_config(client_configuration=self.configuration)
                 self._configure_incluster_namespace()
             else:
                 await load_kube_config(config_file=self.kubeconfig, client_configuration=self.configuration)
@@ -305,7 +248,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         # Init WebSocket client
         configuration = await self._get_configuration()
         configuration.connection_pool_maxsize = self.maxConcurrentConnections
-        ws_api_client = PatchedWsApiClient(configuration=configuration)
+        ws_api_client = WsApiClient(configuration=configuration, heartbeat=30)
         ws_api_client.set_default_header('Connection', 'upgrade,keep-alive')
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
 

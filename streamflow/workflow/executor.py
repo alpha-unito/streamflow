@@ -98,7 +98,7 @@ class StreamFlowExecutor(Executor):
             # Check if workflow terminated properly
             for step in self.workflow.steps.values():
                 if step.status in [Status.FAILED, Status.CANCELLED]:
-                    raise WorkflowExecutionException("Workflow execution failed")
+                    raise WorkflowExecutionException("Workflow execution terminated with status FAILED")
             # Print output tokens
             return output_tokens
         except BaseException:
