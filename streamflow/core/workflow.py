@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import copy
 import sys
 import uuid
 from abc import ABC, abstractmethod
 from asyncio import Queue
 from enum import Enum
-from typing import TYPE_CHECKING, MutableSequence, Type, TypeVar
+from typing import MutableSequence, TYPE_CHECKING, Type, TypeVar
 
 from streamflow.core.exception import WorkflowExecutionException
 
@@ -91,7 +90,7 @@ class Port(object):
     def _init_consumer(self, consumer: str):
         self.queues[consumer] = Queue()
         for t in self.token_list:
-            self.queues[consumer].put_nowait(copy.deepcopy(t))
+            self.queues[consumer].put_nowait(t)
 
     def close(self, consumer: str):
         if consumer in self.queues:
@@ -118,7 +117,7 @@ class Port(object):
     def put(self, token: Token):
         self.token_list.append(token)
         for q in self.queues.values():
-            q.put_nowait(copy.deepcopy(token))
+            q.put_nowait(token)
 
 
 class Status(Enum):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import TYPE_CHECKING
 
 from jsonref import loads
@@ -38,7 +39,7 @@ class SfValidator(object):
 
     def __init__(self) -> None:
         super().__init__()
-        self.yaml = YAML(typ='safe')
+        self.yaml = YAML(typ='base')
 
     def validate_file(self, streamflow_file: str) -> MutableMapping[str, Any]:
         with open(streamflow_file) as f:
