@@ -36,7 +36,7 @@ class OccamConnector(SSHConnector):
             transferBufferSize=transferBufferSize,
             username=username)
         with open(os.path.join(streamflow_config_dir, file)) as f:
-            yaml = YAML(typ='base')
+            yaml = YAML(typ='safe')
             self.env_description = yaml.load(f)
         self.jobs_table: MutableMapping[str, MutableSequence[str]] = {}
 

@@ -7,6 +7,7 @@ import logging
 import posixpath
 import shlex
 import time
+import re
 from abc import ABC
 from asyncio.subprocess import STDOUT
 from typing import Union, Optional, List, Any, IO, MutableMapping, MutableSequence
@@ -145,10 +146,16 @@ def _escape_value(value: Any) -> Any:
     else:
         return shlex.quote(str(value))
 
+def alphanumeric_sorting(list):
+    regex = '(-{0,1}[0-9]+)'
+    convert = lambda text: int(text) if re.match(regex, text) else text
+    alphanum_key = lambda key: [ convert(c) for c in re.split(regex, key) ]
+    return sorted(list, key = alphanum_key)
+
 
 def _merge_tokens(bindings_map: MutableMapping[str, MutableSequence[Any]]) -> MutableSequence[Any]:
     command = []
-    for binding_position in sorted(bindings_map.keys()):
+    for binding_position in alphanumeric_sorting(bindings_map.keys()):
         for binding in bindings_map[binding_position]:
             command.extend(flatten_list(binding))
     return [str(token) for token in command]

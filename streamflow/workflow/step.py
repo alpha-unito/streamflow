@@ -329,7 +329,7 @@ class ExecuteStep(BaseStep):
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
                 logger.error("Job {name} failed {error}".format(
-                    name=self.name,
+                    name=job.name,
                     error="with error:\n\t{error}".format(error=command_output.value)))
                 command_output = await self.workflow.context.failure_manager.handle_failure(job, self, command_output)
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
