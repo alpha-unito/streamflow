@@ -39,7 +39,7 @@ setup(
     long_description_content_type="text/markdown",
     install_requires=[
         "aiohttp",
-        "antlr4-python3-runtime",
+        "antlr4-python3-runtime<4.10",
         "asyncssh",
         "bcrypt",
         "cachetools",
