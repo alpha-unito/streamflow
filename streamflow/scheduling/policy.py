@@ -1,80 +1,85 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, MutableSequence
+import asyncio
+from typing import TYPE_CHECKING
 
-from streamflow.core.scheduling import Policy, Hardware
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import DataType
+from streamflow.core.scheduling import Policy, Hardware, JobAllocation
 from streamflow.core.workflow import Status
+from streamflow.workflow.token import FileToken
 
 if TYPE_CHECKING:
-    from streamflow.core.scheduling import JobAllocation, Resource, ResourceAllocation
+    from streamflow.core.scheduling import Location, LocationAllocation
     from streamflow.core.workflow import Job
     from typing import MutableMapping, Optional
 
 
-def _is_valid(current_resource: str,
-              job: Job,
-              available_resources: MutableMapping[str, Resource],
+def _is_valid(current_location: str,
+              hardware_requirement: Hardware,
+              available_locations: MutableMapping[str, Location],
               jobs: MutableMapping[str, JobAllocation],
-              resources: MutableMapping[str, ResourceAllocation]) -> bool:
-    resource_obj = available_resources[current_resource]
+              locations: MutableMapping[str, LocationAllocation]) -> bool:
+    location_obj = available_locations[current_location]
     running_jobs = list(
-        filter(lambda x: jobs[x].status == Status.RUNNING,
-               resources[current_resource].jobs)) if current_resource in resources else []
-    # If resource is segmentable and job provides requirements, compute the used amount of resources
-    if resource_obj.hardware is not None and job.hardware is not None:
-        used_hardware = sum((jobs[j].hardware for j in running_jobs), start=Hardware())
-        if (resource_obj.hardware - used_hardware) >= job.hardware:
+        filter(lambda x: jobs[x].status == Status.RUNNING or jobs[x].status == Status.FIREABLE,
+               locations[current_location].jobs)) if current_location in locations else []
+    # If location is segmentable and job provides requirements, compute the used amount of locations
+    if location_obj.hardware is not None and hardware_requirement is not None:
+        used_hardware = sum((jobs[j].hardware for j in running_jobs), start=hardware_requirement.__class__())
+        if (location_obj.hardware - used_hardware) >= hardware_requirement:
             return True
         else:
             return False
-    # If resource is segmentable but job does not provide requirements, treat it as null-weighted
-    elif resource_obj.hardware is not None:
+    # If location is segmentable but job does not provide requirements, treat it as null-weighted
+    elif location_obj.hardware is not None:
         return True
     # Otherwise, simply compute the number of allocated slots
     else:
-        if len(running_jobs) < available_resources[current_resource].slots:
-            return True
-        else:
-            return False
+        return len(running_jobs) < available_locations[current_location].slots
 
 
 class DataLocalityPolicy(Policy):
 
-    def get_resource(self,
-                     job: Job,
-                     available_resources: MutableMapping[str, Resource],
-                     jobs: MutableMapping[str, JobAllocation],
-                     resources: MutableMapping[str, ResourceAllocation]) -> Optional[str]:
-        valid_resources = list(available_resources.keys())
+    async def get_location(self,
+                           context: StreamFlowContext,
+                           job: Job,
+                           deployment: str,
+                           hardware_requirement: Hardware,
+                           available_locations: MutableMapping[str, Location],
+                           jobs: MutableMapping[str, JobAllocation],
+                           locations: MutableMapping[str, LocationAllocation]) -> Optional[str]:
+        valid_locations = list(available_locations.keys())
         # For each input token sorted by weight
-        for token in sorted(job.inputs, key=lambda x: x.weight, reverse=True):
-            # Get related resources
-            related_resources = set()
-            for j in (token.job if isinstance(token.job, MutableSequence) else [token.job]):
-                if j in jobs:
-                    related_resources.update(r for r in jobs[j].resources)
-            token_processor = job.step.input_ports[token.name].token_processor
-            related_resources.update(token_processor.get_related_resources(token))
-            # Check if one of the related resources is free
-            for current_resource in related_resources:
-                if current_resource in valid_resources:
+        weights = {k: v for k, v in zip(job.inputs, await asyncio.gather(*(
+            asyncio.create_task(t.get_weight(context)) for t in job.inputs.values())))}
+        for name, token in sorted(job.inputs.items(), key=lambda item: weights[item[0]], reverse=True):
+            related_locations = set()
+            # For FileTokens, retrieve related locations
+            if isinstance(token, FileToken):
+                for path in await token.get_paths(context):
+                    related_locations.update([loc.location for loc in context.data_manager.get_data_locations(
+                        path, deployment, DataType.PRIMARY)])
+            # Check if one of the related locations is free
+            for current_location in related_locations:
+                if current_location in valid_locations:
                     if _is_valid(
-                            current_resource=current_resource,
-                            job=job,
-                            available_resources=available_resources,
+                            current_location=current_location,
+                            hardware_requirement=hardware_requirement,
+                            available_locations=available_locations,
                             jobs=jobs,
-                            resources=resources):
-                        return current_resource
+                            locations=locations):
+                        return current_location
                     else:
-                        valid_resources.remove(current_resource)
-        # If a data-related allocation is not possible, assign a resource among the remaining free ones
-        for resource in valid_resources:
+                        valid_locations.remove(current_location)
+        # If a data-related allocation is not possible, assign a location among the remaining free ones
+        for location in valid_locations:
             if _is_valid(
-                    current_resource=resource,
-                    job=job,
-                    available_resources=available_resources,
+                    current_location=location,
+                    hardware_requirement=hardware_requirement,
+                    available_locations=available_locations,
                     jobs=jobs,
-                    resources=resources):
-                return resource
-        # If there are no available resources, return None
+                    locations=locations):
+                return location
+        # If there are no available locations, return None
         return None

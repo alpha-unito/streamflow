@@ -33,14 +33,3 @@ jobs:
           tags: |
             alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-base
             alphaunito/streamflow:latest
-      - name: "Build Helm 2 image"
-        id: docker-helm
-        if: ${{ env.NEW_IMAGE }}
-        uses: docker/build-push-action@v2
-        with:
-          file: helm/docker/helm2/Dockerfile
-          build-args: |
-            BASE_IMAGE=alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-base
-            HELM_VERSION=v2.17.0
-          push: true
-          tags: alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-helm2

@@ -2,23 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import itertools
 import os
 import posixpath
-import random
-import string
 import tarfile
-import tempfile
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any, Set
 
-from streamflow.core.data import LOCAL_RESOURCE
-from streamflow.core.deployment import ModelConfig
-from streamflow.core.workflow import Target, TerminationToken, Token
+from streamflow.core.data import LOCAL_LOCATION
+from streamflow.core.workflow import Token
+from streamflow.workflow.token import ListToken, TerminationToken, ObjectToken
 
 if TYPE_CHECKING:
-    from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import Connector
-    from streamflow.core.workflow import Job, Step
     from typing import Iterable
 
 
@@ -92,6 +89,13 @@ def create_command(command: MutableSequence[str],
     return command
 
 
+def dict_product(**kwargs) -> MutableMapping[Any, Any]:
+    keys = kwargs.keys()
+    vals = kwargs.values()
+    for instance in itertools.product(*vals):
+        yield dict(zip(keys, list(instance)))
+
+
 def extract_tar_stream(tar: tarfile.TarFile,
                        src: str,
                        dst: str) -> None:
@@ -120,30 +124,8 @@ def encode_command(command: str):
         command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
 
 
-def get_connector(job: Optional[Job], context: StreamFlowContext) -> Connector:
-    return job.step.get_connector() if job is not None else context.deployment_manager.get_connector(LOCAL_RESOURCE)
-
-
-def get_local_target(workdir: Optional[str] = None) -> Target:
-    return Target(
-        model=ModelConfig(
-            name=LOCAL_RESOURCE,
-            connector_type='local',
-            config={},
-            external=True),
-        resources=1,
-        service=workdir or os.path.join(tempfile.gettempdir(), 'streamflow'))
-
-
-def get_path_processor(step: Step):
-    if step is not None and step.target.model.name != LOCAL_RESOURCE:
-        return posixpath
-    else:
-        return os.path
-
-
-def get_resources(job: Optional[Job]) -> MutableSequence[str]:
-    return job.get_resources() or [LOCAL_RESOURCE] if job is not None else [LOCAL_RESOURCE]
+def get_path_processor(connector: Connector):
+    return posixpath if connector is not None and connector.deployment_name != LOCAL_LOCATION else os.path
 
 
 def get_size(path):
@@ -158,7 +140,7 @@ def get_size(path):
         return total_size
 
 
-def get_tag(tokens: MutableSequence[Token]) -> str:
+def get_tag(tokens: Iterable[Token]) -> str:
     output_tag = '0'
     for tag in [t.tag for t in tokens]:
         if len(tag) > len(output_tag):
@@ -167,8 +149,12 @@ def get_tag(tokens: MutableSequence[Token]) -> str:
 
 
 def get_token_value(token: Token) -> Any:
-    if isinstance(token.job, MutableSequence):
+    if isinstance(token, ListToken):
         return [get_token_value(t) for t in token.value]
+    elif isinstance(token, ObjectToken):
+        return {k: get_token_value(v) for k, v in token.value.items()}
+    elif isinstance(token.value, Token):
+        return get_token_value(token.value)
     else:
         return token.value
 
@@ -186,4 +172,4 @@ def flatten_list(hierarchical_list):
 
 
 def random_name() -> str:
-    return ''.join([random.choice(string.ascii_letters) for _ in range(6)])
+    return str(uuid.uuid4())

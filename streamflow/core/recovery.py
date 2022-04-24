@@ -3,9 +3,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from streamflow.core.data import DataLocation
+
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from streamflow.core.workflow import Job, CommandOutput
+    from streamflow.core.workflow import Job, CommandOutput, Token, Step
     from typing import Optional, MutableMapping, Any
 
 
@@ -16,9 +18,7 @@ class CheckpointManager(ABC):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    def register_path(self,
-                      job: Optional[Job],
-                      path: str) -> None:
+    def register(self, data_location: DataLocation) -> None:
         ...
 
 
@@ -28,24 +28,25 @@ class FailureManager(ABC):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def handle_exception(self, job: Job, exception: BaseException) -> CommandOutput:
+    async def handle_exception(self,
+                               job: Job,
+                               step: Step,
+                               exception: BaseException) -> CommandOutput:
         ...
 
     @abstractmethod
-    async def handle_failure(self, job: Job, command_output: CommandOutput) -> CommandOutput:
+    async def handle_failure(self,
+                             job: Job,
+                             step: Step,
+                             command_output: CommandOutput) -> CommandOutput:
         ...
 
     @abstractmethod
-    async def replay_job(self, replay_request: ReplayRequest) -> ReplayResponse:
+    def register_job(self,
+                     job: Job,
+                     step: Step,
+                     outputs: MutableMapping[str, Token]):
         ...
-
-
-class JobVersion(object):
-    __slots__ = ('job', 'version')
-
-    def __init__(self, job: str, version: int = 1):
-        self.job: str = job
-        self.version: int = version
 
 
 class ReplayRequest(object):

@@ -81,7 +81,7 @@ StreamFlow relies on external specification and tools to describe and orchestrat
 
 This feature allows users to stick with the technologies they already know, or at least with production grade tools that are solid, maintained and well documented. Moreover, it adheres to the `infrastructure-as-code <https://en.wikipedia.org/wiki/Infrastructure_as_code>`_ principle, making execution environments easily portable and self-documented.
 
-The lifecycle management of each StreamFlow model is demanded to a specific implementation of the ``Connector`` interface. Connectors provided by default in the StreamFlow codebase are reported in the table below, but users can add new connectors to the list by simply creating their own implementation of the ``Connector`` interface.
+The lifecycle management of each StreamFlow deployment is demanded to a specific implementation of the ``Connector`` interface. Connectors provided by default in the StreamFlow codebase are reported in the table below, but users can add new connectors to the list by simply creating their own implementation of the ``Connector`` interface.
 
 =======================================================     ================================================================
 Name                                                        Class
@@ -89,7 +89,6 @@ Name                                                        Class
 :ref:`docker <DockerConnector>`                             streamflow.deployment.connector.docker.DockerConnector
 :ref:`docker-compose <DockerComposeConnector>`              streamflow.deployment.connector.docker.DockerComposeConnector
 :ref:`helm <Helm3Connector>`                                streamflow.deployment.connector.kubernetes.Helm3Connector
-:ref:`helm2 <Helm2Connector (Deprecated)>` (Deprecated)     streamflow.deployment.connector.kubernetes.Helm2Connector
 :ref:`helm3 <Helm3Connector>`                               streamflow.deployment.connector.kubernetes.Helm3Connector
 :ref:`occam <OccamConnector>`                               streamflow.deployment.connector.occam.OccamConnector
 :ref:`pbs <PBSConnector>`                                   streamflow.deployment.connector.queue_manager.PBSConnector
@@ -103,30 +102,30 @@ Put it all together
 
 The entrypoint of each StreamFlow execution is a YAML file, conventionally called ``streamflow.yml``. The role of such file is to link each task in a workflow with the service that should execute it.
 
-A valid StreamFlow file contains the ``version`` number (currently ``v1.0``) and two main sections: ``workflows`` and ``models``. The ``workflows`` section consists of a dictionary with uniquely named workflows to be executed in the current run, while the ``models`` section contains a dictionary of uniquely named model specifications.
+A valid StreamFlow file contains the ``version`` number (currently ``v1.0``) and two main sections: ``workflows`` and ``deployments``. The ``workflows`` section consists of a dictionary with uniquely named workflows to be executed in the current run, while the ``deployments`` section contains a dictionary of uniquely named deployment specifications.
 
-Describing models
+Describing deployments
 -----------------
 
-Each model entry contains two main sections. The ``type`` field identifies which ``Connector`` implementation should be used for its creation, destruction and management. It should refer to one of the StreamFlow connectors described :ref:`above <Import your environment>`. The ``config`` field instead contains a dictionary of configuration parameters which are specific to each ``Connector`` class.
+Each deployment entry contains two main sections. The ``type`` field identifies which ``Connector`` implementation should be used for its creation, destruction and management. It should refer to one of the StreamFlow connectors described :ref:`above <Import your environment>`. The ``config`` field instead contains a dictionary of configuration parameters which are specific to each ``Connector`` class.
 
 Describing workflows
 --------------------
 
-Each workflow entry contains three main sections. The ``type`` field identifies which language has been used to describe it (currently the only supported value is ``cwl``), the ``config`` field includes the paths to the files containing such description, and the ``bindings`` section is a list of step-model associations that specifies where the execution of a specific step should be offloaded.
+Each workflow entry contains three main sections. The ``type`` field identifies which language has been used to describe it (currently the only supported value is ``cwl``), the ``config`` field includes the paths to the files containing such description, and the ``bindings`` section is a list of step-deployment associations that specifies where the execution of a specific step should be offloaded.
 
 In particular, CWL workflows ``config`` contain a mandatory ``file`` entry that points to the workflow description file (usually a ``*.cwl`` file similar to the example reported :ref:`above <Write your workflow>`) and an optional ``settings`` entry that points to a secondary file, containing the initial inputs of the workflow.
 
-Binding steps and models
-------------------------
+Binding steps and deployments
+-----------------------------
 
-Each entry in the ``bindings`` contains a ``step`` directive referring to a specific step in the workflow, and a ``target`` directive refering to a model entry in the ``models`` section of the StreamFlow file.
+Each entry in the ``bindings`` contains a ``step`` directive referring to a specific step in the workflow, and a ``target`` directive refering to a deployment entry in the ``deployments`` section of the StreamFlow file.
 
 Each step can refer to either a single command or a nested sub-workflow. Steps are uniquely identified by means of a Posix-like path, where each simple task is mapped to a file and each sub-workflow is mapped to a folder. In partiuclar, the most external workflow description is always mapped to the root folder ``/``. Considering the example reported :ref:`above <Write your workflow>`, you should specify ``/compile`` in the ``step`` directive to identify the ``compile`` step, or ``/`` to identify the entire workflow.
 
-The ``target`` directive binds the step with a specific service in a StreamFlow model. As discussed in the :doc:`architecture section <architecture>`, complex models can contain multple services, which represent the unit of binding in StreamFlow. The best way to identify services in a model strictly depends on the model specification itself. For example, in DockerCompose it is quite straightforward to uniquely identify each service by using its key in the ``services`` dictionary. Conversely, in Kubernetes we explicitly require users to label containers in a Pod with a unique identifier through the ``name`` attribute, in order to unambiguously identify them at deploy time.
+The ``target`` directive binds the step with a specific service in a StreamFlow deployment. As discussed in the :doc:`architecture section <architecture>`, complex deployments can contain multple services, which represent the unit of binding in StreamFlow. The best way to identify services in a deployment strictly depends on the deployment specification itself. For example, in DockerCompose it is quite straightforward to uniquely identify each service by using its key in the ``services`` dictionary. Conversely, in Kubernetes we explicitly require users to label containers in a Pod with a unique identifier through the ``name`` attribute, in order to unambiguously identify them at deploy time.
 
-Simpler models like single Docker or Singularity containers do not need a service layer, since the model contains a single service that is automatically uniquely identified.
+Simpler deployments like single Docker or Singularity containers do not need a service layer, since the deployment contains a single service that is automatically uniquely identified.
 
 Example
 -------
@@ -145,9 +144,9 @@ The following snippet contains an example of a minimal ``streamflow.yml`` file, 
        bindings:
         - step: /compile
           target:
-            model: docker-openjdk
+            deployment: docker-openjdk
 
-   models:
+   deployments:
      docker-openjdk:
        type: docker
        config:

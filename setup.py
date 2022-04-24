@@ -39,7 +39,7 @@ setup(
     long_description_content_type="text/markdown",
     install_requires=[
         "aiohttp",
-        "antlr4-python3-runtime<4.10",
+        "antlr4-python3-runtime>=4.10",
         "asyncssh",
         "bcrypt",
         "cachetools",
@@ -47,7 +47,7 @@ setup(
         "Jinja2",
         "jsonref",
         "jsonschema",
-        "kubernetes_asyncio>=22.6.2",
+        "kubernetes_asyncio>=22.6.3",
         "pandas"
     ],
     extras_require={

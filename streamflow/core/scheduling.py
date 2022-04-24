@@ -3,92 +3,76 @@ from __future__ import annotations
 from abc import abstractmethod, ABC
 from typing import TYPE_CHECKING
 
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.deployment import Target, Connector
+
 if TYPE_CHECKING:
-    from streamflow.core.workflow import Job, Status
+    from streamflow.core.workflow import Job, Status, Token
     from typing import MutableSequence, MutableMapping, Optional
 
 
-class JobAllocation(object):
-    __slots__ = ('job', 'resources', 'status', 'hardware')
-
-    def __init__(self,
-                 job: Job,
-                 resources: MutableSequence[str],
-                 status: Status,
-                 hardware: Hardware):
-        self.job: Job = job
-        self.resources: MutableSequence[str] = resources
-        self.status: Status = status
-        self.hardware: Hardware = hardware
-
-
-class Policy(ABC):
-
-    @abstractmethod
-    def get_resource(self,
-                     job: Job,
-                     available_resources: MutableMapping[str, Resource],
-                     jobs: MutableMapping[str, JobAllocation],
-                     resources: MutableMapping[str, ResourceAllocation]) -> Optional[str]: ...
-
-
 class Hardware(object):
-    __slots__ = ('cores', 'memory', 'disk')
-
     def __init__(self,
                  cores: float = 0.0,
                  memory: float = 0.0,
-                 disk: float = 0.0):
+                 input_directory: float = 0.0,
+                 output_directory: float = 0.0,
+                 tmp_directory: float = 0.0):
         self.cores: float = cores
         self.memory: float = memory
-        self.disk: float = disk
+        self.input_directory: float = input_directory
+        self.output_directory: float = output_directory
+        self.tmp_directory: float = tmp_directory
 
     def __add__(self, other):
         if not isinstance(other, Hardware):
             return NotImplemented
-        return Hardware(
-            cores=self.cores + other.cores,
-            memory=self.memory + other.memory,
-            disk=self.disk + other.disk)
+        return self.__class__(**{k: vars(self).get(k, 0.0) + vars(other).get(k, 0.0)
+                                 for k in vars(self).keys()})
 
     def __sub__(self, other):
         if not isinstance(other, Hardware):
             return NotImplemented
-        return Hardware(
-            cores=self.cores - other.cores,
-            memory=self.memory - other.memory,
-            disk=self.disk - other.disk)
+        return self.__class__(**{k: vars(self).get(k, 0.0) - vars(other).get(k, 0.0)
+                                 for k in vars(self).keys()})
 
     def __ge__(self, other):
         if not isinstance(other, Hardware):
             return NotImplemented
-        return (self.cores >= other.cores and
-                self.memory >= other.memory and
-                self.disk >= other.disk)
-
-    def __gt__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplemented
-        return (self.cores > other.cores and
-                self.memory > other.memory and
-                self.disk > other.disk)
+        return all((vars(self).get(k, 0.0) >= vars(other).get(k, 0.0)
+                    for k in set().union(vars(self).keys(), vars(other).keys())))
 
     def __le__(self, other):
         if not isinstance(other, Hardware):
             return NotImplemented
-        return (self.cores <= other.cores and
-                self.memory <= other.memory and
-                self.disk <= other.disk)
-
-    def __lt__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplemented
-        return (self.cores < other.cores and
-                self.memory < other.memory and
-                self.disk < other.disk)
+        return all((vars(self).get(k, 0.0) <= vars(other).get(k, 0.0)
+                    for k in set().union(vars(self).keys(), vars(other).keys())))
 
 
-class Resource(object):
+class HardwareRequirement(ABC):
+
+    @abstractmethod
+    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware:
+        ...
+
+
+class JobAllocation(object):
+    __slots__ = ('job', 'target', 'locations', 'status', 'hardware')
+
+    def __init__(self,
+                 job: str,
+                 target: Target,
+                 locations: MutableSequence[str],
+                 status: Status,
+                 hardware: Hardware):
+        self.job: str = job
+        self.target: Target = target
+        self.locations: MutableSequence[str] = locations
+        self.status: Status = status
+        self.hardware: Hardware = hardware
+
+
+class Location(object):
     __slots__ = ('name', 'hostname', 'hardware', 'slots')
 
     def __init__(self,
@@ -102,32 +86,58 @@ class Resource(object):
         self.hardware: Optional[Hardware] = hardware
 
 
-class ResourceAllocation(object):
-    __slots__ = ('name', 'model', 'jobs')
+class LocationAllocation(object):
+    __slots__ = ('name', 'deployment', 'jobs')
 
     def __init__(self,
                  name: str,
-                 model: str):
+                 deployment: str):
         self.name: str = name
-        self.model: str = model
+        self.deployment: str = deployment
         self.jobs: MutableSequence[str] = []
+
+
+class Policy(ABC):
+
+    @abstractmethod
+    async def get_location(self,
+                           context: StreamFlowContext,
+                           job: Job,
+                           deployment: str,
+                           hardware_requirement: Hardware,
+                           available_locations: MutableMapping[str, Location],
+                           jobs: MutableMapping[str, JobAllocation],
+                           locations: MutableMapping[str, LocationAllocation]) -> Optional[str]: ...
 
 
 class Scheduler(ABC):
 
-    def __init__(self):
+    def __init__(self, context: StreamFlowContext):
+        self.context: StreamFlowContext = context
         self.job_allocations: MutableMapping[str, JobAllocation] = {}
-        self.resource_allocations: MutableMapping[str, ResourceAllocation] = {}
+        self.location_allocations: MutableMapping[str, LocationAllocation] = {}
 
-    def get_job(self, job_name: str) -> Optional[Job]:
-        job = self.job_allocations.get(job_name, None)
-        return job.job if job is not None else None
+    def get_allocation(self, job_name: str) -> Optional[JobAllocation]:
+        return self.job_allocations.get(job_name)
 
-    def get_resources(self,
+    def get_hardware(self, job_name: str) -> Optional[Hardware]:
+        allocation = self.get_allocation(job_name)
+        return allocation.hardware if allocation else None
+
+    def get_connector(self, job_name: str) -> Optional[Connector]:
+        allocation = self.get_allocation(job_name)
+        return self.context.deployment_manager.get_connector(allocation.target.deployment.name) if allocation else None
+
+    def get_locations(self,
                       job_name: str,
                       statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[str]:
-        job = self.job_allocations.get(job_name, None)
-        return job.resources if job is not None and (statuses is None or job.status in statuses) else []
+        allocation = self.get_allocation(job_name)
+        return allocation.locations if allocation is not None and (
+                statuses is None or allocation.status in statuses) else []
+
+    def get_service(self, job_name: str) -> Optional[str]:
+        allocation = self.get_allocation(job_name)
+        return allocation.target.service if allocation else None
 
     @abstractmethod
     async def notify_status(self,
@@ -138,5 +148,6 @@ class Scheduler(ABC):
     @abstractmethod
     async def schedule(self,
                        job: Job,
-                       scheduling_policy: Policy = None):
+                       target: Target,
+                       hardware_requirement: Hardware) -> None:
         ...

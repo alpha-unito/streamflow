@@ -4,6 +4,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, MutableSequence
 
 from streamflow.core import utils
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import MutableMapping, Any, Optional
@@ -25,10 +26,16 @@ class WorkflowConfig(object):
         workflow_config = streamflow_config['workflows'][workflow_name]
         self.type = workflow_config['type']
         self.config = workflow_config['config']
-        self.models = streamflow_config.get('models', {})
+        self.deplyoments = streamflow_config.get('deployments', {})
+        if not self.deplyoments:
+            self.deplyoments = streamflow_config.get('models', {})
+            if self.deplyoments:
+                logger.warn(
+                    "The `models` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                    "Use `deployments` instead.")
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
-        for name, model in self.models.items():
-            model['name'] = name
+        for name, deployment in self.deplyoments.items():
+            deployment['name'] = name
         self.filesystem = {'children': {}}
         for binding in workflow_config.get('bindings', []):
             if isinstance(binding, MutableSequence):

@@ -1,6 +1,10 @@
-# Generated from ECMAScript.g4 by ANTLR 4.9.2
+# Generated from ECMAScript.g4 by ANTLR 4.10
 from antlr4 import *
-from streamflow.cwl.antlr.ECMAScriptParser import ECMAScriptParser
+
+if __name__ is not None and "." in __name__:
+    from .ECMAScriptParser import ECMAScriptParser
+else:
+    from ECMAScriptParser import ECMAScriptParser
 
 
 # This class defines a complete listener for a parse tree produced by ECMAScriptParser.
@@ -86,12 +90,12 @@ class ECMAScriptListener(ParseTreeListener):
     def exitInitialiser(self, ctx: ECMAScriptParser.InitialiserContext):
         pass
 
-    # Enter a parse tree produced by ECMAScriptParser#emptyStatement.
-    def enterEmptyStatement(self, ctx: ECMAScriptParser.EmptyStatementContext):
+    # Enter a parse tree produced by ECMAScriptParser#emptyStatement_.
+    def enterEmptyStatement_(self, ctx: ECMAScriptParser.EmptyStatement_Context):
         pass
 
-    # Exit a parse tree produced by ECMAScriptParser#emptyStatement.
-    def exitEmptyStatement(self, ctx: ECMAScriptParser.EmptyStatementContext):
+    # Exit a parse tree produced by ECMAScriptParser#emptyStatement_.
+    def exitEmptyStatement_(self, ctx: ECMAScriptParser.EmptyStatement_Context):
         pass
 
     # Enter a parse tree produced by ECMAScriptParser#expressionStatement.

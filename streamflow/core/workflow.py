@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import sys
+import uuid
 from abc import ABC, abstractmethod
+from asyncio import Queue
 from enum import Enum
-from typing import TYPE_CHECKING, MutableSequence
+from typing import MutableSequence, TYPE_CHECKING, Type, TypeVar
+
+from streamflow.core.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:
-    from streamflow.deployment.deployment_manager import ModelConfig
     from streamflow.core.context import StreamFlowContext
-    from streamflow.core.deployment import Connector
-    from streamflow.core.scheduling import Hardware
-    from typing import Optional, MutableMapping, Any, Set, Union
+    from typing import Optional, MutableMapping, Any
 
 
 class Command(ABC):
@@ -21,11 +23,6 @@ class Command(ABC):
     @abstractmethod
     async def execute(self, job: Job) -> CommandOutput:
         ...
-
-    async def skip(self, job: Job) -> CommandOutput:
-        return CommandOutput(
-            value=None,
-            status=Status.SKIPPED)
 
 
 class CommandOutput(object):
@@ -41,61 +38,17 @@ class CommandOutput(object):
         return CommandOutput(value=value, status=self.status)
 
 
-class Condition(ABC):
-
-    def __init__(self, step: Step):
-        self.step: Step = step
-
-    @abstractmethod
-    async def eval(self, job: Job) -> bool:
-        ...
-
-
-class HardwareRequirement(ABC):
-
-    @abstractmethod
-    def eval(self, inputs: MutableSequence[Token]) -> Hardware:
-        ...
-
-
-class Token(object):
-    __slots__ = ('name', 'value', 'job', 'tag', 'weight')
+class CommandOutputProcessor(ABC):
 
     def __init__(self,
                  name: str,
-                 value: Any,
-                 job: Optional[Union[str, MutableSequence[str]]] = None,
-                 tag: str = '0',
-                 weight: int = 0):
-        self.name = name
-        self.value: Any = value
-        self.job: Optional[Union[str, MutableSequence[str]]] = job
-        self.tag: str = tag
-        self.weight: int = weight
+                 workflow: Workflow):
+        self.name: str = name
+        self.workflow: Workflow = workflow
 
-    def update(self, value: Any) -> Token:
-        return Token(name=self.name, job=self.job, tag=self.tag, weight=self.weight, value=value)
-
-    def rename(self, name: str) -> Token:
-        return Token(name=name, job=self.job, tag=self.tag, weight=self.weight, value=self.value)
-
-    def retag(self, tag: str) -> Token:
-        return Token(name=self.name, job=self.job, tag=tag, weight=self.weight, value=self.value)
-
-
-class TerminationToken(Token):
-
-    def __init__(self, name: str):
-        super().__init__(name, None)
-
-    def update(self, value: Any) -> Token:
-        raise NotImplementedError()
-
-    def rename(self, name: str) -> Token:
-        return TerminationToken(name=name)
-
-    def retag(self, tag: str) -> Token:
-        raise NotImplementedError()
+    @abstractmethod
+    async def process(self, job: Job, command_output: CommandOutput) -> Optional[Token]:
+        ...
 
 
 class Executor(ABC):
@@ -104,131 +57,67 @@ class Executor(ABC):
         self.workflow: Workflow = workflow
 
     @abstractmethod
-    async def run(self):
+    async def run(self) -> MutableMapping[str, Any]:
         ...
 
 
-class Job(ABC):
-    __slots__ = ('name', 'step', 'inputs', 'input_directory', 'output_directory', 'tmp_directory', 'hardware')
+class Job(object):
+    __slots__ = ('name', 'inputs', 'input_directory', 'output_directory', 'tmp_directory')
 
     def __init__(self,
                  name: str,
-                 step: Step,
-                 inputs: MutableSequence[Token],
-                 input_directory: Optional[str] = None,
-                 output_directory: Optional[str] = None,
-                 tmp_directory: Optional[str] = None,
-                 hardware: Optional[Hardware] = None):
+                 inputs: MutableMapping[str, Token],
+                 input_directory: str,
+                 output_directory: str,
+                 tmp_directory: str):
         self.name: str = name
-        self.step = step
-        self.inputs: MutableSequence[Token] = inputs
-        self.input_directory: Optional[str] = input_directory
-        self.output_directory: Optional[str] = output_directory
-        self.tmp_directory: Optional[str] = tmp_directory
-        self.hardware: Optional[Hardware] = hardware
-
-    def get_resources(self, statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[str]:
-        return self.step.context.scheduler.get_resources(self.name, statuses)
-
-    @abstractmethod
-    async def initialize(self):
-        ...
-
-    @abstractmethod
-    async def run(self):
-        ...
+        self.inputs: MutableMapping[str, Token] = inputs
+        self.input_directory: str = input_directory
+        self.output_directory: str = output_directory
+        self.tmp_directory: str = tmp_directory
 
 
-class Port(ABC):
+class Port(object):
 
     def __init__(self,
-                 name: str,
-                 step: Optional[Step] = None):
+                 workflow: Workflow,
+                 name: str):
+        self.queues: MutableMapping[str, Queue] = {}
         self.name: str = name
-        self.step: Optional[Step] = step
-        self.token_processor: Optional[TokenProcessor] = None
+        self.token_list: MutableSequence[Token] = []
+        self.workflow: Workflow = workflow
 
+    def _init_consumer(self, consumer: str):
+        self.queues[consumer] = Queue()
+        for t in self.token_list:
+            self.queues[consumer].put_nowait(t)
 
-class InputPort(Port, ABC):
+    def close(self, consumer: str):
+        if consumer in self.queues:
+            self.queues[consumer].task_done()
 
-    def __init__(self,
-                 name: str,
-                 step: Optional[Step] = None):
-        super().__init__(name, step)
-        self.dependee: Optional[OutputPort] = None
-
-    @abstractmethod
-    async def get(self) -> Union[Token, MutableSequence[Token]]:
-        ...
-
-
-class InputCombinator(InputPort, ABC):
-
-    def __init__(self,
-                 name: str,
-                 step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[str, InputPort]] = None):
-        super().__init__(name, step)
-        self.ports: MutableMapping[str, InputPort] = ports or {}
-
-    @abstractmethod
-    async def get(self) -> MutableSequence[Token]:
-        ...
-
-
-class OutputPort(Port, ABC):
-
-    @abstractmethod
     def empty(self) -> bool:
-        ...
+        return not self.token_list
 
-    @abstractmethod
     async def get(self, consumer: str) -> Token:
-        ...
+        if consumer not in self.queues:
+            self._init_consumer(consumer)
+            return await self.queues[consumer].get()
+        else:
+            token = await self.queues[consumer].get()
+            self.queues[consumer].task_done()
+            return token
 
-    @abstractmethod
+    def get_input_steps(self) -> MutableSequence[Step]:
+        return [s for s in self.workflow.steps.values() if self.name in s.output_ports.values()]
+
+    def get_output_steps(self) -> MutableSequence[Step]:
+        return [s for s in self.workflow.steps.values() if self.name in s.input_ports.values()]
+
     def put(self, token: Token):
-        ...
-
-
-class OutputCombinator(OutputPort, ABC):
-
-    def __init__(self,
-                 name: str,
-                 step: Optional[Step] = None,
-                 ports: Optional[MutableMapping[str, OutputPort]] = None):
-        super().__init__(name, step)
-        self.ports: MutableMapping[str, OutputPort] = ports or {}
-
-
-class TokenProcessor(ABC):
-
-    def __init__(self, port: Port):
-        self.port: Port = port
-
-    @abstractmethod
-    async def collect_output(self, token: Token, output_dir: str) -> Token:
-        ...
-
-    @abstractmethod
-    async def compute_token(self, job: Job, command_output: CommandOutput) -> Token:
-        ...
-
-    @abstractmethod
-    def get_related_resources(self, token: Token) -> Set[str]:
-        ...
-
-    @abstractmethod
-    async def recover_token(self, job: Job, resources: MutableSequence[str], token: Token) -> Token:
-        ...
-
-    @abstractmethod
-    async def update_token(self, job: Job, token: Token) -> Token:
-        ...
-
-    @abstractmethod
-    async def weight_token(self, job: Job, token_value: Any) -> int:
-        ...
+        self.token_list.append(token)
+        for q in self.queues.values():
+            q.put_nowait(token)
 
 
 class Status(Enum):
@@ -238,36 +127,63 @@ class Status(Enum):
     SKIPPED = 3
     COMPLETED = 4
     FAILED = 5
+    CANCELLED = 6
 
 
 class Step(ABC):
 
     def __init__(self,
                  name: str,
-                 context: StreamFlowContext,
-                 command: Optional[Command] = None,
-                 target: Optional[Target] = None,
-                 workflow: Optional[Workflow] = None):
+                 workflow: Workflow):
         super().__init__()
-        self.context: StreamFlowContext = context
-        self.command: Optional[Command] = command
-        self.condition: Optional[Condition] = None
-        self.hardware_requirement: Optional[HardwareRequirement] = None
-        self.input_combinator: Optional[InputCombinator] = None
-        self.input_ports: MutableMapping[str, InputPort] = {}
+        self.input_ports: MutableMapping[str, str] = {}
         self.name: str = name
-        self.output_ports: MutableMapping[str, OutputPort] = {}
+        self.output_ports: MutableMapping[str, str] = {}
         self.persistent_id: Optional[int] = None
-        self.scheduling_group: Optional[str] = None
         self.status: Status = Status.WAITING
-        self.target: Optional[Target] = target
         self.terminated: bool = False
-        self.workdir: Optional[str] = None
-        self.workflow: Optional[Workflow] = workflow
+        self.workflow: Workflow = workflow
 
-    @abstractmethod
-    def get_connector(self) -> Optional[Connector]:
-        ...
+    def _set_status(self, status: Status):
+        self.status = status
+        if self.persistent_id is not None:
+            self.workflow.context.persistence_manager.db.update_step(self.persistent_id, {"status": status.value})
+
+    def add_input_port(self, name: str, port: Port) -> None:
+        if port.name not in self.workflow.ports:
+            self.workflow.ports[port.name] = port
+        self.input_ports[name] = port.name
+
+    def add_output_port(self, name: str, port: Port) -> None:
+        if port.name not in self.workflow.ports:
+            self.workflow.ports[port.name] = port
+        self.output_ports[name] = port.name
+
+    def get_input_port(self, name: Optional[str] = None) -> Port:
+        if name is None:
+            if len(self.input_ports) == 1:
+                return self.workflow.ports.get(next(iter(self.input_ports.values())))
+            else:
+                raise WorkflowExecutionException(
+                    "Cannot retrieve default input port as step {step} contains multiple input ports.".format(
+                        step=self.name))
+        return self.workflow.ports.get(self.input_ports[name]) if name in self.input_ports else None
+
+    def get_input_ports(self) -> MutableMapping[str, Port]:
+        return {k: self.workflow.ports[v] for k, v in self.input_ports.items()}
+
+    def get_output_port(self, name: Optional[str] = None) -> Port:
+        if name is None:
+            if len(self.output_ports) == 1:
+                return self.workflow.ports.get(next(iter(self.output_ports.values())))
+            else:
+                raise WorkflowExecutionException(
+                    "Cannot retrieve default output port as step {step} contains multiple output ports.".format(
+                        step=self.name))
+        return self.workflow.ports.get(self.output_ports[name]) if name in self.output_ports else None
+
+    def get_output_ports(self) -> MutableMapping[str, Port]:
+        return {k: self.workflow.ports[v] for k, v in self.output_ports.items()}
 
     @abstractmethod
     async def run(self):
@@ -278,26 +194,75 @@ class Step(ABC):
         ...
 
 
-class Target(object):
-    __slots__ = ('model', 'resources', 'service')
+class Token(object):
+    __slots__ = ('value', 'tag')
 
     def __init__(self,
-                 model: ModelConfig,
-                 resources: int = 1,
-                 service: Optional[str] = None):
-        self.model: ModelConfig = model
-        self.resources: int = resources
-        self.service: Optional[str] = service
+                 value: Any,
+                 tag: str = '0'):
+        self.value: Any = value
+        self.tag: str = tag
+
+    async def get_weight(self, context: StreamFlowContext):
+        return sys.getsizeof(self.value)
+
+    def update(self, value: Any) -> Token:
+        return self.__class__(tag=self.tag, value=value)
+
+    def retag(self, tag: str) -> Token:
+        return self.__class__(tag=tag, value=self.value)
+
+
+class TokenProcessor(ABC):
+
+    def __init__(self,
+                 name: str,
+                 workflow: Workflow):
+        self.name: str = name
+        self.workflow: Workflow = workflow
+
+    @abstractmethod
+    async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
+        ...
+
+
+if TYPE_CHECKING:
+    J = TypeVar('J', bound=Job)
+    P = TypeVar('P', bound=Port)
+    S = TypeVar('S', bound=Step)
 
 
 class Workflow(object):
 
-    def __init__(self):
+    def __init__(self, context: StreamFlowContext):
         super().__init__()
+        self.context: StreamFlowContext = context
         self.steps: MutableMapping[str, Step] = {}
-        self.root_steps: MutableSequence[str] = []
-        self.output_ports: MutableMapping[str, OutputPort] = {}
+        self.ports: MutableMapping[str, Port] = {}
+        self.output_ports: MutableMapping[str, str] = {}
 
-    def add_step(self, step: Step):
-        self.steps[step.name] = step
-        step.workflow = self
+    def create_port(self,
+                    cls: Type[P] = Port,
+                    name: str = None,
+                    **kwargs) -> P:
+        if name is None:
+            name = str(uuid.uuid4())
+        port = cls(workflow=self, name=name, **kwargs)
+        self.ports[name] = port
+        return port
+
+    def create_step(self,
+                    cls: Type[S],
+                    name: str = None,
+                    **kwargs) -> S:
+        if name is None:
+            name = str(uuid.uuid4())
+        step = cls(name=name, workflow=self, **kwargs)
+        self.steps[name] = step
+        return step
+
+    def get_output_port(self, name: str) -> Port:
+        return self.ports[self.output_ports[name]]
+
+    def get_output_ports(self) -> MutableMapping[str, Port]:
+        return {name: self.ports[p] for name, p in self.output_ports.items()}

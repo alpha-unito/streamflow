@@ -14,62 +14,62 @@ from cachetools import Cache, TTLCache
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Resource
+from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
 class ContainerConnector(BaseConnector, ABC):
 
-    async def _check_effective_resource(self,
+    async def _check_effective_location(self,
                                         common_paths: MutableMapping[str, Any],
-                                        effective_resources: MutableSequence[str],
-                                        resource: str,
+                                        effective_locations: MutableSequence[str],
+                                        location: str,
                                         path: str,
-                                        source_remote: Optional[str] = None
+                                        source_location: Optional[str] = None
                                         ) -> Tuple[MutableMapping[str, Any], MutableSequence[str]]:
         # Get all container mounts
-        volumes = await self._get_volumes(resource)
+        volumes = await self._get_volumes(location)
         for volume in volumes:
             # If path is in a persistent volume
             if path.startswith(volume['Destination']):
                 if path not in common_paths:
                     common_paths[path] = []
-                # Check if path is shared with another resource that has been already processed
+                # Check if path is shared with another location that has been already processed
                 for i, common_path in enumerate(common_paths[path]):
                     if common_path['source'] == volume['Source']:
-                        # If path has already been processed, but the current resource is the source, substitute it
-                        if resource == source_remote:
-                            effective_resources.remove(common_path['resource'])
-                            common_path['resource'] = resource
+                        # If path has already been processed, but the current location is the source, substitute it
+                        if location == source_location:
+                            effective_locations.remove(common_path['location'])
+                            common_path['location'] = location
                             common_paths[path][i] = common_path
-                            effective_resources.append(resource)
-                            return common_paths, effective_resources
-                        # Otherwise simply skip current resource
+                            effective_locations.append(location)
+                            return common_paths, effective_locations
+                        # Otherwise simply skip current location
                         else:
-                            return common_paths, effective_resources
-                # If this is the first resource encountered with the persistent path, add it to the list
-                effective_resources.append(resource)
-                common_paths[path].append({'source': volume['Source'], 'resource': resource})
-                return common_paths, effective_resources
-        # If path is not in a persistent volume, add the current resource to the list
-        effective_resources.append(resource)
-        return common_paths, effective_resources
+                            return common_paths, effective_locations
+                # If this is the first location encountered with the persistent path, add it to the list
+                effective_locations.append(location)
+                common_paths[path].append({'source': volume['Source'], 'location': location})
+                return common_paths, effective_locations
+        # If path is not in a persistent volume, add the current location to the list
+        effective_locations.append(location)
+        return common_paths, effective_locations
 
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
-                                    resources: MutableSequence[str],
+                                    locations: MutableSequence[str],
                                     read_only: bool = False) -> None:
-        effective_resources = await self._get_effective_resources(resources, dst)
+        effective_locations = await self._get_effective_locations(locations, dst)
         created_tar_buffer = False
         copy_tasks = []
         with tempfile.TemporaryFile() as tar_buffer:
-            for resource in effective_resources:
-                if read_only and await self._is_bind_transfer(resource, src, dst):
+            for location in effective_locations:
+                if read_only and await self._is_bind_transfer(location, src, dst):
                     copy_tasks.append(asyncio.create_task(
                         self.run(
-                            resource=resource,
+                            location=location,
                             command=["ln", "-snf", posixpath.abspath(src), dst])))
                     continue
                 if not created_tar_buffer:
@@ -83,7 +83,7 @@ class ContainerConnector(BaseConnector, ABC):
                     created_tar_buffer = True
                 copy_tasks.append(asyncio.create_task(
                     self._copy_local_to_remote_single(
-                        resource=resource,
+                        location=location,
                         tar_buffer=cast(io.BufferedRandom, tar_buffer),
                         read_only=read_only)))
             await asyncio.gather(*copy_tasks)
@@ -91,68 +91,68 @@ class ContainerConnector(BaseConnector, ABC):
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     resources: MutableSequence[str],
-                                     source_remote: str,
+                                     locations: MutableSequence[str],
+                                     source_location: str,
                                      read_only: bool = False) -> None:
-        effective_resources = await self._get_effective_resources(resources, dst, source_remote)
-        non_bind_resources = []
-        if read_only and await self._is_bind_transfer(source_remote, src, src):
-            for resource in effective_resources:
-                if await self._is_bind_transfer(resource, dst, dst):
+        effective_locations = await self._get_effective_locations(locations, dst, source_location)
+        non_bind_locations = []
+        if read_only and await self._is_bind_transfer(source_location, src, src):
+            for location in effective_locations:
+                if await self._is_bind_transfer(location, dst, dst):
                     await self.run(
-                        resource=resource,
+                        location=location,
                         command=["ln", "-snf", posixpath.abspath(src), dst])
                     continue
-                non_bind_resources.append(resource)
+                non_bind_locations.append(location)
             await super()._copy_remote_to_remote(
                 src=src,
                 dst=dst,
-                resources=non_bind_resources,
-                source_remote=source_remote,
+                locations=non_bind_locations,
+                source_location=source_location,
                 read_only=read_only)
         else:
             await super()._copy_remote_to_remote(
                 src=src,
                 dst=dst,
-                resources=effective_resources,
-                source_remote=source_remote,
+                locations=effective_locations,
+                source_location=source_location,
                 read_only=read_only)
 
-    async def _get_effective_resources(self,
-                                       resources: MutableSequence[str],
+    async def _get_effective_locations(self,
+                                       locations: MutableSequence[str],
                                        dest_path: str,
-                                       source_remote: Optional[str] = None) -> MutableSequence[str]:
+                                       source_location: Optional[str] = None) -> MutableSequence[str]:
         common_paths = {}
-        effective_resources = []
-        for resource in resources:
-            common_paths, effective_resources = await self._check_effective_resource(
+        effective_locations = []
+        for location in locations:
+            common_paths, effective_locations = await self._check_effective_location(
                 common_paths,
-                effective_resources,
-                resource,
+                effective_locations,
+                location,
                 dest_path,
-                source_remote)
-        return effective_resources
+                source_location)
+        return effective_locations
 
     @abstractmethod
     async def _get_bind_mounts(self,
-                               resource: str) -> MutableSequence[MutableMapping[str, str]]:
+                               location: str) -> MutableSequence[MutableMapping[str, str]]:
         ...
 
     @abstractmethod
-    async def _get_resource(self,
-                            resource_name: str) -> Optional[Resource]:
+    async def _get_location(self,
+                            location_name: str) -> Optional[Location]:
         ...
 
     @abstractmethod
     async def _get_volumes(self,
-                           resource: str) -> MutableSequence[MutableMapping[str, str]]:
+                           location: str) -> MutableSequence[MutableMapping[str, str]]:
         ...
 
     async def _is_bind_transfer(self,
-                                resource: str,
+                                location: str,
                                 host_path: str,
                                 instance_path: str) -> bool:
-        bind_mounts = await self._get_bind_mounts(resource)
+        bind_mounts = await self._get_bind_mounts(location)
         host_binds = [b['Source'] for b in bind_mounts]
         instance_binds = [b['Destination'] for b in bind_mounts]
         for host_bind in host_binds:
@@ -166,47 +166,47 @@ class ContainerConnector(BaseConnector, ABC):
 class DockerBaseConnector(ContainerConnector, ABC):
 
     async def _get_bind_mounts(self,
-                               resource: str) -> MutableSequence[MutableMapping[str, str]]:
-        return [v for v in await self._get_volumes(resource) if v['Type'] == 'bind']
+                               location: str) -> MutableSequence[MutableMapping[str, str]]:
+        return [v for v in await self._get_volumes(location) if v['Type'] == 'bind']
 
-    async def _get_resource(self,
-                            resource_name: str) -> Resource:
+    async def _get_location(self,
+                            location_name: str) -> Location:
         inspect_command = "".join([
             "docker ",
             "inspect ",
             "--format ",
             "'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ",
-            resource_name])
+            location_name])
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(inspect_command),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE)
         stdout, _ = await proc.communicate()
-        return Resource(name=resource_name, hostname=stdout.decode().strip())
+        return Location(name=location_name, hostname=stdout.decode().strip())
 
     def _get_run_command(self,
                          command: str,
-                         resource: str,
+                         location: str,
                          interactive: bool = False):
         return "".join([
             "docker "
             "exec ",
             "-i " if interactive else "",
-            "{resource} ",
+            "{location} ",
             "sh -c '{command}'"
         ]).format(
-            resource=resource,
+            location=location,
             command=command
         )
 
     async def _get_volumes(self,
-                           resource: str) -> MutableSequence[MutableMapping[str, str]]:
+                           location: str) -> MutableSequence[MutableMapping[str, str]]:
         inspect_command = "".join([
             "docker ",
             "inspect ",
             "--format ",
             "'{{json .Mounts }}' ",
-            resource])
+            location])
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(inspect_command),
             stdout=asyncio.subprocess.PIPE,
@@ -218,6 +218,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
 class DockerConnector(DockerBaseConnector):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  image: str,
                  addHost: Optional[MutableSequence[str]] = None,
@@ -270,6 +271,7 @@ class DockerConnector(DockerBaseConnector):
                  labelFile: Optional[MutableSequence[str]] = None,
                  link: Optional[MutableSequence[str]] = None,
                  linkLocalIP: Optional[MutableSequence[str]] = None,
+                 locationsCacheTTL: int = None,
                  logDriver: Optional[str] = None,
                  logOpts: Optional[MutableSequence[str]] = None,
                  macAddress: Optional[str] = None,
@@ -290,7 +292,7 @@ class DockerConnector(DockerBaseConnector):
                  publishAll: bool = False,
                  readOnly: bool = False,
                  replicas: int = 1,
-                 resourcesCacheTTL: int = 10,
+                 resourcesCacheTTL: int = None,
                  restart: Optional[str] = None,
                  rm: bool = True,
                  runtime: Optional[str] = None,
@@ -302,7 +304,7 @@ class DockerConnector(DockerBaseConnector):
                  storageOpts: Optional[MutableSequence[str]] = None,
                  sysctl: Optional[MutableSequence[str]] = None,
                  tmpfs: Optional[MutableSequence[str]] = None,
-                 transferBufferSize: int = 2**16,
+                 transferBufferSize: int = 2 ** 16,
                  ulimit: Optional[MutableSequence[str]] = None,
                  user: Optional[str] = None,
                  userns: Optional[str] = None,
@@ -312,6 +314,7 @@ class DockerConnector(DockerBaseConnector):
                  volumesFrom: Optional[MutableSequence[str]] = None,
                  workdir: Optional[str] = None):
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         self.image: str = image
@@ -385,7 +388,15 @@ class DockerConnector(DockerBaseConnector):
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
         self.replicas: int = replicas
-        self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
+        cacheTTL = locationsCacheTTL
+        if cacheTTL is None:
+            cacheTTL = resourcesCacheTTL
+            if cacheTTL is not None:
+                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `locationsCacheTTL` instead.")
+            else:
+                cacheTTL = 10
+        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.restart: Optional[str] = restart
         self.rm: bool = rm
         self.runtime: Optional[str] = runtime
@@ -641,9 +652,13 @@ class DockerConnector(DockerBaseConnector):
                 else:
                     raise WorkflowExecutionException(stderr.decode().strip())
 
-    @cachedmethod(lambda self: self.resourcesCache)
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
-        return {container_id: await self._get_resource(container_id) for container_id in self.containerIds}
+    @cachedmethod(lambda self: self.locationsCache)
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
+        return {container_id: await self._get_location(container_id) for container_id in self.containerIds}
 
     async def undeploy(self, external: bool) -> None:
         if not external and self.containerIds:
@@ -667,6 +682,7 @@ class DockerConnector(DockerBaseConnector):
 class DockerComposeConnector(DockerBaseConnector):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  files: MutableSequence[str],
                  projectName: Optional[str] = None,
@@ -690,12 +706,14 @@ class DockerComposeConnector(DockerBaseConnector):
                  noStart: Optional[bool] = False,
                  build: Optional[bool] = False,
                  timeout: Optional[int] = None,
-                 transferBufferSize: int = 2**16,
+                 transferBufferSize: int = 2 ** 16,
                  renewAnonVolumes: Optional[bool] = False,
                  removeOrphans: Optional[bool] = False,
                  removeVolumes: Optional[bool] = False,
-                 resourcesCacheTTL: int = 10) -> None:
+                 locationsCacheTTL: int = None,
+                 resourcesCacheTTL: int = None) -> None:
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         self.files = [os.path.join(streamflow_config_dir, file) for file in files]
@@ -714,7 +732,15 @@ class DockerComposeConnector(DockerBaseConnector):
         self.renewAnonVolumes = renewAnonVolumes
         self.removeOrphans = removeOrphans
         self.removeVolumes = removeVolumes
-        self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
+        cacheTTL = locationsCacheTTL
+        if cacheTTL is None:
+            cacheTTL = resourcesCacheTTL
+            if cacheTTL is not None:
+                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `locationsCacheTTL` instead.")
+            else:
+                cacheTTL = 10
+        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.skipHostnameCheck = skipHostnameCheck
         self.projectDirectory = projectDirectory
         self.compatibility = compatibility
@@ -782,8 +808,12 @@ class DockerComposeConnector(DockerBaseConnector):
             proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
             await proc.wait()
 
-    @cachedmethod(lambda self: self.resourcesCache)
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
+    @cachedmethod(lambda self: self.locationsCache)
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
         ps_command = self.base_command() + "".join([
             "ps ",
             "{filter}"
@@ -796,14 +826,14 @@ class DockerComposeConnector(DockerBaseConnector):
             stderr=asyncio.subprocess.PIPE)
         stdout, _ = await proc.communicate()
         lines = (line for line in stdout.decode().strip().split('\n'))
-        resources = {}
+        locations = {}
         for line in lines:
             if line.startswith("---------"):
                 break
         for line in lines:
-            resource_name = line.split()[0].strip()
-            resources[resource_name] = await self._get_resource(resource_name)
-        return resources
+            location_name = line.split()[0].strip()
+            locations[location_name] = await self._get_location(location_name)
+        return locations
 
     async def undeploy(self, external: bool) -> None:
         if not external:
@@ -821,16 +851,18 @@ class DockerComposeConnector(DockerBaseConnector):
 class SingularityBaseConnector(ContainerConnector, ABC):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  transferBufferSize: int):
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
 
-    async def _get_bind_mounts(self, resource: str) -> MutableSequence[MutableMapping[str, str]]:
-        return await self._get_volumes(resource)
+    async def _get_bind_mounts(self, location: str) -> MutableSequence[MutableMapping[str, str]]:
+        return await self._get_volumes(location)
 
-    async def _get_resource(self, resource_name: str) -> Optional[Resource]:
+    async def _get_location(self, location_name: str) -> Optional[Location]:
         inspect_command = "singularity instance list --json"
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(inspect_command),
@@ -840,29 +872,29 @@ class SingularityBaseConnector(ContainerConnector, ABC):
         if stdout:
             json_out = json.loads(stdout)
             for instance in json_out["instances"]:
-                if instance["instance"] == resource_name:
-                    return Resource(name=resource_name, hostname=instance["ip"])
+                if instance["instance"] == location_name:
+                    return Location(name=location_name, hostname=instance["ip"])
         else:
             return None
 
     def _get_run_command(self,
                          command: str,
-                         resource: str,
+                         location: str,
                          interactive: bool = False):
         return "".join([
             "singularity "
             "exec ",
-            "instance://{resource} "
+            "instance://{location} "
             "sh -c '{command}'"
         ]).format(
-            resource=resource,
+            location=location,
             command=command
         )
 
     async def _get_volumes(self,
-                           resource: str) -> MutableSequence[MutableMapping[str, str]]:
+                           location: str) -> MutableSequence[MutableMapping[str, str]]:
         bind_mounts, _ = await self.run(
-            resource=resource,
+            location=location,
             command=["cat", "/proc/1/mountinfo", "|", "awk", "'{print $9,$4,$5}'"],
             capture_output=True)
         # Exclude `overlay` and `tmpfs` mounts
@@ -873,6 +905,7 @@ class SingularityBaseConnector(ContainerConnector, ABC):
 class SingularityConnector(SingularityBaseConnector):
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  image: str,
                  transferBufferSize: int = 2 ** 16,
@@ -895,6 +928,7 @@ class SingularityConnector(SingularityBaseConnector):
                  hostname: Optional[str] = None,
                  instanceNames: Optional[MutableSequence[str]] = None,
                  keepPrivs: bool = False,
+                 locationsCacheTTL: int = None,
                  net: bool = False,
                  network: Optional[str] = None,
                  networkArgs: Optional[MutableSequence[str]] = None,
@@ -909,7 +943,7 @@ class SingularityConnector(SingularityBaseConnector):
                  pemPath: Optional[str] = None,
                  pidFile: Optional[str] = None,
                  replicas: int = 1,
-                 resourcesCacheTTL: int = 10,
+                 resourcesCacheTTL: int = None,
                  rocm: bool = False,
                  scratch: Optional[MutableSequence[str]] = None,
                  security: Optional[MutableSequence[str]] = None,
@@ -919,6 +953,7 @@ class SingularityConnector(SingularityBaseConnector):
                  writable: bool = False,
                  writableTmpfs: bool = False):
         super().__init__(
+            deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         self.image: str = image
@@ -955,7 +990,15 @@ class SingularityConnector(SingularityBaseConnector):
         self.pemPath: Optional[str] = pemPath
         self.pidFile: Optional[str] = pidFile
         self.replicas: int = replicas
-        self.resourcesCache: Cache = TTLCache(maxsize=10, ttl=resourcesCacheTTL)
+        cacheTTL = locationsCacheTTL
+        if cacheTTL is None:
+            cacheTTL = resourcesCacheTTL
+            if cacheTTL is not None:
+                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `locationsCacheTTL` instead.")
+            else:
+                cacheTTL = 10
+        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.rocm: bool = rocm
         self.scratch: Optional[MutableSequence[str]] = scratch
         self.security: Optional[MutableSequence[str]] = security
@@ -1068,12 +1111,16 @@ class SingularityConnector(SingularityBaseConnector):
                 else:
                     raise WorkflowExecutionException(stderr.decode().strip())
 
-    @cachedmethod(lambda self: self.resourcesCache)
-    async def get_available_resources(self, service: str) -> MutableMapping[str, Resource]:
-        resource_tasks = {}
+    @cachedmethod(lambda self: self.locationsCache)
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
+        location_tasks = {}
         for instance_name in self.instanceNames:
-            resource_tasks[instance_name] = asyncio.create_task(self._get_resource(instance_name))
-        return {k: v for k, v in zip(resource_tasks.keys(), await asyncio.gather(*resource_tasks.values()))
+            location_tasks[instance_name] = asyncio.create_task(self._get_location(instance_name))
+        return {k: v for k, v in zip(location_tasks.keys(), await asyncio.gather(*location_tasks.values()))
                 if v is not None}
 
     async def undeploy(self, external: bool) -> None:

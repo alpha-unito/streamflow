@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import os
 
@@ -11,6 +12,7 @@ from cwltool.resolver import tool_resolver
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.translator import CWLTranslator
+from streamflow.log_handler import logger
 from streamflow.workflow.executor import StreamFlowExecutor
 
 
@@ -67,10 +69,16 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     # Transpile CWL workflow to the StreamFlow representation
     translator = CWLTranslator(
         context=context,
+        output_directory=args.outdir,
         cwl_definition=cwl_definition,
         cwl_inputs=cwl_inputs,
         workflow_config=workflow_config,
         loading_context=loading_context)
-    workflow = await translator.translate()
-    executor = StreamFlowExecutor(context, workflow)
-    await executor.run(output_dir=args.outdir)
+    logger.info("Building workflow execution plan")
+    workflow = translator.translate()
+    logger.info("Building of workflow execution plan terminated with status COMPLETED")
+    executor = StreamFlowExecutor(workflow)
+    logger.info("Running workflow")
+    output_tokens = await executor.run()
+    logger.info("Workflow execution terminated with status COMPLETED")
+    print(json.dumps(output_tokens, sort_keys=True, indent=4))

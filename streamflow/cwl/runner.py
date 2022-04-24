@@ -2,14 +2,12 @@ import argparse
 import asyncio
 import logging
 import os
-import platform
 import sys
 
 import streamflow.cwl.main
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
 from streamflow.core.exception import WorkflowException, WorkflowDefinitionException
-from streamflow.core.utils import get_local_target
 from streamflow.log_handler import logger
 from streamflow.main import build_context
 
@@ -25,7 +23,7 @@ parser.add_argument('--quiet', action='store_true', help='No diagnostic output')
 parser.add_argument('--version', action='store_true',
                     help='Report the name and version, then quit without further processing')
 parser.add_argument('--streamflow-file', type=str,
-                    help='The path to a StreamFlow file specifying models and bindings for the workflow steps.')
+                    help='The path to a StreamFlow file specifying deployments and bindings for the workflow steps.')
 
 
 async def _async_main(args: argparse.Namespace):
@@ -62,8 +60,6 @@ async def _async_main(args: argparse.Namespace):
     workflow_config = WorkflowConfig(workflow_name, streamflow_config)
     context = build_context(config_dir, streamflow_config, args.outdir)
     try:
-        local_target = get_local_target()
-        await context.deployment_manager.deploy(local_target.model)
         await streamflow.cwl.main.main(
             workflow_config=workflow_config,
             context=context,

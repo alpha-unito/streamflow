@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, MutableSequence, Tuple, cast
 
 from streamflow.core import utils
-from streamflow.core.data import LOCAL_RESOURCE
+from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.deployment import Connector, ConnectorCopyKind
 from streamflow.log_handler import logger
 
@@ -40,15 +40,16 @@ class BaseConnector(Connector, ABC):
             raise TypeError("Unsupported value type")
 
     def __init__(self,
+                 deployment_name: str,
                  streamflow_config_dir: str,
                  transferBufferSize: int):
-        super().__init__(streamflow_config_dir)
+        super().__init__(deployment_name, streamflow_config_dir)
         self.transferBufferSize: int = transferBufferSize
 
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
-                                    resources: MutableSequence[str],
+                                    locations: MutableSequence[str],
                                     read_only: bool = False) -> None:
         with tempfile.TemporaryFile() as tar_buffer:
             with tarfile.open(
@@ -60,24 +61,24 @@ class BaseConnector(Connector, ABC):
             tar_buffer.seek(0)
             await asyncio.gather(*(asyncio.create_task(
                 self._copy_local_to_remote_single(
-                    resource=resource,
+                    location=location,
                     tar_buffer=cast(io.BufferedRandom, tar_buffer),
                     read_only=read_only)
-            ) for resource in resources))
+            ) for location in locations))
 
     async def _copy_local_to_remote_single(self,
-                                           resource: str,
+                                           location: str,
                                            tar_buffer: io.BufferedRandom,
                                            read_only: bool = False) -> None:
-        resource_buffer = io.BufferedReader(tar_buffer.raw)
+        location_buffer = io.BufferedReader(tar_buffer.raw)
         proc = await self._run(
-            resource=resource,
+            location=location,
             command=["tar", "xf", "-", "-C", "/"],
             encode=False,
             interactive=True,
             stream=True
         )
-        while content := resource_buffer.read(self.transferBufferSize):
+        while content := location_buffer.read(self.transferBufferSize):
             proc.stdin.write(content)
             await proc.stdin.drain()
         proc.stdin.close()
@@ -86,10 +87,10 @@ class BaseConnector(Connector, ABC):
     async def _copy_remote_to_local(self,
                                     src: str,
                                     dst: str,
-                                    resource: str,
+                                    location: str,
                                     read_only: bool = False) -> None:
         proc = await self._run(
-            resource=resource,
+            location=location,
             command=["tar", "chf", "-", "-C", "/", posixpath.relpath(src, '/')],
             capture_output=True,
             encode=False,
@@ -107,29 +108,29 @@ class BaseConnector(Connector, ABC):
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     resources: MutableSequence[str],
-                                     source_remote: str,
+                                     locations: MutableSequence[str],
+                                     source_location: str,
                                      read_only: bool = False) -> None:
         # Check for the need of a temporary copy
         temp_dir = None
-        for resource in resources:
-            if source_remote != resource:
+        for location in locations:
+            if source_location != location:
                 temp_dir = tempfile.mkdtemp()
                 await self._copy_remote_to_local(
                     src=src,
                     dst=temp_dir,
-                    resource=source_remote,
+                    location=source_location,
                     read_only=read_only)
                 break
         # Perform the actual copies
         copy_tasks = []
-        for resource in resources:
+        for location in locations:
             copy_tasks.append(asyncio.create_task(
                 self._copy_remote_to_remote_single(
                     src=src,
                     dst=dst,
-                    resource=resource,
-                    source_remote=source_remote,
+                    location=location,
+                    source_location=source_location,
                     temp_dir=temp_dir,
                     read_only=read_only)))
         await asyncio.gather(*copy_tasks)
@@ -140,14 +141,14 @@ class BaseConnector(Connector, ABC):
     async def _copy_remote_to_remote_single(self,
                                             src: str,
                                             dst: str,
-                                            resource: str,
-                                            source_remote: str,
+                                            location: str,
+                                            source_location: str,
                                             temp_dir: Optional[str],
                                             read_only: bool = False) -> None:
-        if source_remote == resource:
+        if source_location == location:
             if src != dst:
                 command = ['/bin/cp', "-rf", src, dst]
-                await self.run(resource, command)
+                await self.run(location, command)
         else:
             copy_tasks = []
             for element in os.listdir(temp_dir):
@@ -155,18 +156,19 @@ class BaseConnector(Connector, ABC):
                     self._copy_local_to_remote(
                         src=os.path.join(temp_dir, element),
                         dst=dst,
-                        resources=[resource],
+                        locations=[location],
                         read_only=read_only)))
             await asyncio.gather(*copy_tasks)
 
     @abstractmethod
     def _get_run_command(self,
                          command: str,
-                         resource: str,
-                         interactive: bool = False) -> str: ...
+                         location: str,
+                         interactive: bool = False) -> str:
+        ...
 
     async def _run(self,
-                   resource: str,
+                   location: str,
                    command: MutableSequence[str],
                    environment: MutableMapping[str, str] = None,
                    workdir: Optional[str] = None,
@@ -180,13 +182,13 @@ class BaseConnector(Connector, ABC):
                    stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
-        logger.debug("Executing command {command} on {resource} {job}".format(
+        logger.debug("Executing command {command} on {location} {job}".format(
             command=command,
-            resource=resource,
+            location=location,
             job="for job {job}".format(job=job_name) if job_name else ""))
         if encode:
             command = utils.encode_command(command)
-        run_command = self._get_run_command(command, resource, interactive=interactive)
+        run_command = self._get_run_command(command, location, interactive=interactive)
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(run_command),
             stdin=asyncio.subprocess.PIPE if interactive else None,
@@ -203,75 +205,72 @@ class BaseConnector(Connector, ABC):
     async def copy(self,
                    src: str,
                    dst: str,
-                   resources: MutableSequence[str],
+                   locations: MutableSequence[str],
                    kind: ConnectorCopyKind,
-                   source_remote: Optional[str] = None,
+                   source_location: Optional[str] = None,
                    read_only: bool = False) -> None:
         if kind == ConnectorCopyKind.REMOTE_TO_REMOTE:
-            if source_remote is None:
-                raise Exception("Source resource is mandatory for remote to remote copy")
-            if len(resources) > 1:
-                logger.info("Copying {src} {source_remote} to {dst} on resources:\n\t{resources}".format(
-                    source_remote=("on local file-system" if source_remote == LOCAL_RESOURCE else
-                                   "on resource {res}".format(res=source_remote)),
+            if source_location is None:
+                raise Exception("Source location is mandatory for remote to remote copy")
+            if len(locations) > 1:
+                logger.info("Copying {src} {source_location} to {dst} on locations:\n\t{locations}".format(
+                    source_location=("on local file-system" if source_location == LOCAL_LOCATION else
+                                     "on location {res}".format(res=source_location)),
                     src=src,
                     dst=dst,
-                    resources='\n\t'.join(resources)
+                    locations='\n\t'.join(locations)
                 ))
             else:
-                logger.info("Copying {src} {source_remote} to {dst} {resource}".format(
-                    source_remote=("on local file-system" if source_remote == LOCAL_RESOURCE else
-                                   "on resource {res}".format(res=source_remote)),
+                logger.info("Copying {src} {source_location} to {dst} {location}".format(
+                    source_location=("on local file-system" if source_location == LOCAL_LOCATION else
+                                     "on location {res}".format(res=source_location)),
                     src=src,
                     dst=dst,
-                    resource=("on local file-system" if resources[0] == LOCAL_RESOURCE else
-                              "on resource {res}".format(res=resources[0]))
+                    location=("on local file-system" if locations[0] == LOCAL_LOCATION else
+                              "on location {res}".format(res=locations[0]))
                 ))
             await self._copy_remote_to_remote(
                 src=src,
                 dst=dst,
-                resources=resources,
-                source_remote=source_remote,
+                locations=locations,
+                source_location=source_location,
                 read_only=read_only)
         elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
-            if len(resources) > 1:
-                logger.info("Copying {src} on local file-system to {dst} on resources:\n\t{resources}".format(
-                    source_remote=source_remote,
+            if len(locations) > 1:
+                logger.info("Copying {src} on local file-system to {dst} on locations:\n\t{locations}".format(
                     src=src,
                     dst=dst,
-                    resources='\n\t'.join(resources)
+                    locations='\n\t'.join(locations)
                 ))
             else:
-                logger.info("Copying {src} on local file-system to {dst} on resource {resource}".format(
-                    source_remote=source_remote,
+                logger.info("Copying {src} on local file-system to {dst} on location {location}".format(
                     src=src,
                     dst=dst,
-                    resource=resources[0]
+                    location=locations[0]
                 ))
             await self._copy_local_to_remote(
                 src=src,
                 dst=dst,
-                resources=resources,
+                locations=locations,
                 read_only=read_only)
         elif kind == ConnectorCopyKind.REMOTE_TO_LOCAL:
-            if len(resources) > 1:
-                raise Exception("Copy from multiple resources is not supported")
-            logger.info("Copying {src} on resource {resource} to {dst} on local file-system".format(
-                source_remote=source_remote,
+            if len(locations) > 1:
+                raise Exception("Copy from multiple locations is not supported")
+            logger.info("Copying {src} on location {location} to {dst} on local file-system".format(
                 src=src,
                 dst=dst,
-                resource=resources[0]
+                location=locations[0]
             ))
             await self._copy_remote_to_local(
                 src=src,
                 dst=dst,
-                resource=resources[0],
+                location=locations[0],
                 read_only=read_only)
         else:
             raise NotImplementedError
 
     async def run(self,
-                  resource: str,
+                  location: str,
                   command: MutableSequence[str],
                   environment: MutableMapping[str, str] = None,
                   workdir: Optional[str] = None,
@@ -281,7 +280,7 @@ class BaseConnector(Connector, ABC):
                   capture_output: bool = False,
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         return await self._run(
-            resource=resource,
+            location=location,
             command=command,
             environment=environment,
             workdir=workdir,

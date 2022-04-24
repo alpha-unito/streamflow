@@ -14,10 +14,18 @@
           "$id": "#/definitions/workflow/properties/bindings/",
           "type": "object",
           "properties": {
+            "deployment": {
+              "type": "string"
+            },
             "model": {
               "type": "string"
             },
             "resources": {
+              "type": "integer",
+              "description": "(**Deprecated.** Use locations.) If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
+              "default": 1
+            },
+            "locations": {
               "type": "integer",
               "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
               "default": 1
@@ -29,8 +37,17 @@
               "type": "string"
             }
           },
-          "required": [
-            "model"
+          "oneOf": [
+            {
+              "required": [
+                "deployment"
+              ]
+            },
+            {
+              "required": [
+                "model"
+              ]
+            }
           ],
           "additionalProperties": false
         },
@@ -116,54 +133,49 @@
         "config"
       ]
     },
-    "model": {
-      "$id": "#/definitions/model",
+    "deployment": {
+      "$id": "#/definitions/deployment",
       "type": "object",
       "definitions": {
         "docker": {
-          "$id": "#/definitions/model/definitions/docker",
+          "$id": "#/definitions/deployment/definitions/docker",
           "type": "object",
           "$ref": "docker.json"
         },
         "docker-compose": {
-          "$id": "#/definitions/model/definitions/docker-compose",
+          "$id": "#/definitions/deployment/definitions/docker-compose",
           "type": "object",
           "$ref": "docker-compose.json"
         },
-        "helm2": {
-          "$id": "#/definitions/model/definitions/helm2",
-          "type": "object",
-          "$ref": "helm2.json#"
-        },
         "helm3": {
-          "$id": "#/definitions/model/definitions/helm3",
+          "$id": "#/definitions/deployment/definitions/helm3",
           "type": "object",
-          "$ref": "helm3.json#"
+          "$ref": "helm3.json"
         },
         "pbs": {
-          "$id": "#/definitions/model/definitions/pbs",
+          "$id": "#/definitions/deployment/definitions/pbs",
           "type": "object",
-          "$ref": "queue_manager.json#"
+          "$ref": "queue_manager.json"
         },
         "occam": {
-          "$id": "#/definitions/model/definitions/occam",
+          "$id": "#/definitions/deployment/definitions/occam",
           "type": "object",
-          "$ref": "occam.json#"
+          "$ref": "occam.json"
         },
         "singularity": {
-          "$id": "#/definitions/model/definitions/singularity",
+          "$id": "#/definitions/deployment/definitions/singularity",
           "type": "object",
-          "$ref": "singularity.json#"
+          "$ref": "singularity.json"
         },
         "slurm": {
-          "$id": "#/definitions/model/definitions/slurm",
+          "$id": "#/definitions/deployment/definitions/slurm",
           "type": "object",
-          "$ref": "queue_manager.json#"
+          "$ref": "queue_manager.json"
         },
         "ssh": {
-          "$id": "#/definitions/model/definitions/ssh",
+          "$id": "#/definitions/deployment/definitions/ssh",
           "type": "object",
-          "$ref": "ssh.json#"
+          "$ref": "ssh.json"
         }
       },
       "properties": {
@@ -173,7 +185,6 @@
             "docker",
             "docker-compose",
             "helm",
-            "helm2",
             "helm3",
             "pbs",
             "occam",
@@ -186,6 +197,11 @@
           "type": "boolean",
           "description": "If set, StreamFlow does not manage the lifecycle of the execution environment. This means that all required services must be up and running when the workflow starts",
           "default": false
+        },
+        "lazy": {
+          "type": "boolean",
+          "description": "If true, a model is deployed only when it becomes necessary for transfers or executions. If false, a DeployStep will deploy its related model as soon as it becomes fireable",
+          "default": true
         }
       },
       "allOf": [
@@ -200,9 +216,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/docker"
+                "$ref": "#/definitions/deployment/definitions/docker"
               }
             }
           }
@@ -218,27 +234,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/docker-compose"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "helm2"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/model/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/model/definitions/helm2"
+                "$ref": "#/definitions/deployment/definitions/docker-compose"
               }
             }
           }
@@ -254,9 +252,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/helm3"
+                "$ref": "#/definitions/deployment/definitions/helm3"
               }
             }
           }
@@ -272,9 +270,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/occam"
+                "$ref": "#/definitions/deployment/definitions/occam"
               }
             }
           }
@@ -290,9 +288,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/slurm"
+                "$ref": "#/definitions/deployment/definitions/slurm"
               }
             }
           }
@@ -308,9 +306,9 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/model/properties/config",
+                "$id": "#/definitions/deployment/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/model/definitions/ssh"
+                "$ref": "#/definitions/deployment/definitions/ssh"
               }
             }
           }
@@ -424,11 +422,21 @@
       }
     },
     "models": {
-      "$id": "#/properties/models",
+      "$id": "#/properties/deployments",
       "type": "object",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
-          "$ref": "#/definitions/model"
+          "$ref": "#/definitions/deployment"
+        }
+      },
+      "additionalProperties": false
+    },
+    "deployments": {
+      "$id": "#/properties/deployments",
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "$ref": "#/definitions/deployment"
         }
       },
       "additionalProperties": false

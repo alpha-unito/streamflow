@@ -16,7 +16,6 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import FileType
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector.local import LocalConnector
-from streamflow.log_handler import profile
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
@@ -29,8 +28,8 @@ def _check_status(result: str, status: int):
 
 
 async def _file_checksum(context: StreamFlowContext,
-                         connector: Optional[Connector],
-                         resource: Optional[str],
+                         connector: Connector,
+                         location: Optional[str],
                          path: str) -> str:
     if isinstance(connector, LocalConnector):
         loop = asyncio.get_running_loop()
@@ -40,7 +39,7 @@ async def _file_checksum(context: StreamFlowContext,
             path)
     else:
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=["sha1sum {path} | awk '{{print $1}}'".format(path=path)],
             capture_output=True)
         _check_status(result, status)
@@ -66,23 +65,21 @@ def _listdir_local(path: str, file_type: FileType) -> MutableSequence[str]:
     return content
 
 
-@profile
 async def checksum(context: StreamFlowContext,
-                   connector: Optional[Connector],
-                   resource: Optional[str],
+                   connector: Connector,
+                   location: Optional[str],
                    path: str) -> str:
-    if await isfile(connector, resource, path):
-        return await _file_checksum(context, connector, resource, path)
+    if await isfile(connector, location, path):
+        return await _file_checksum(context, connector, location, path)
     else:
         raise Exception("Checksum for folders is not implemented yet")
 
 
-@profile
 async def download(
-        connector: Optional[Connector],
-        resources: Optional[MutableSequence[str]],
+        connector: Connector,
+        locations: Optional[MutableSequence[str]],
         url: str, parent_dir: str) -> str:
-    await mkdir(connector, resources, parent_dir)
+    await mkdir(connector, locations, parent_dir)
     if isinstance(connector, LocalConnector):
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
@@ -101,9 +98,9 @@ async def download(
                     _, params = cgi.parse_header(response.headers.get('Content-Disposition', ''))
                     filepath = posixpath.join(parent_dir, params['filename'])
         download_tasks = []
-        for resource in resources:
+        for location in locations:
             download_tasks.append(asyncio.create_task(connector.run(
-                resource=resource,
+                location=location,
                 command=["if [ command -v curl ]; curl -L -o \"{path}\"; else wget -P \"{dir}\" {url}; fi".format(
                     dir=parent_dir,
                     path=filepath,
@@ -112,13 +109,12 @@ async def download(
     return filepath
 
 
-@profile
-async def exists(connector: Optional[Connector], resource: Optional[str], path: str) -> bool:
+async def exists(connector: Connector, location: Optional[str], path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.exists(path)
     else:
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=["test -e \"{path}\"".format(path=path)],
             capture_output=True)
         if status > 1:
@@ -127,40 +123,37 @@ async def exists(connector: Optional[Connector], resource: Optional[str], path: 
             return not status
 
 
-@profile
-async def follow_symlink(connector: Optional[Connector], resource: Optional[str], path: str) -> str:
+async def follow_symlink(connector: Connector, location: Optional[str], path: str) -> str:
     if isinstance(connector, LocalConnector):
         return os.path.realpath(path)
     else:
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=["readlink -f \"{path}\"".format(path=path)],
             capture_output=True)
         _check_status(result, status)
         return result.strip()
 
 
-@profile
-async def head(connector: Optional[Connector], resource: Optional[str], path: str, num_bytes: int) -> str:
+async def head(connector: Connector, location: Optional[str], path: str, num_bytes: int) -> str:
     if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
             return f.read(num_bytes).decode('utf-8')
     else:
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=["head", "-c", str(num_bytes), path],
             capture_output=True)
         _check_status(result, status)
         return result.strip()
 
 
-@profile
-async def isdir(connector: Optional[Connector], resource: Optional[str], path: str):
+async def isdir(connector: Connector, location: Optional[str], path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.isdir(path)
     else:
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=["test -d \"{path}\"".format(path=path)],
             capture_output=True)
         if status > 1:
@@ -169,13 +162,12 @@ async def isdir(connector: Optional[Connector], resource: Optional[str], path: s
             return not status
 
 
-@profile
-async def isfile(connector: Optional[Connector], resource: Optional[str], path: str):
+async def isfile(connector: Connector, location: Optional[str], path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.isfile(path)
     else:
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=["test -f \"{path}\"".format(path=path)],
             capture_output=True)
         if status > 1:
@@ -184,9 +176,8 @@ async def isfile(connector: Optional[Connector], resource: Optional[str], path: 
             return not status
 
 
-@profile
-async def listdir(connector: Optional[Connector],
-                  resource: Optional[str],
+async def listdir(connector: Connector,
+                  location: Optional[str],
                   path: str,
                   file_type: FileType) -> MutableSequence[str]:
     if isinstance(connector, LocalConnector):
@@ -198,7 +189,7 @@ async def listdir(connector: Optional[Connector],
                 type="d" if file_type == FileType.DIRECTORY else "f") if file_type is not None else ""
         ).split()
         content, status = await connector.run(
-            resource=resource,
+            location=location,
             command=command,
             capture_output=True)
         _check_status(content, status)
@@ -206,18 +197,16 @@ async def listdir(connector: Optional[Connector],
         return content.split('\n') if content else []
 
 
-@profile
 async def mkdir(
-        connector: Optional[Connector],
-        resources: Optional[MutableSequence[str]],
+        connector: Connector,
+        locations: Optional[MutableSequence[str]],
         path: str) -> None:
-    return await mkdirs(connector, resources, [path])
+    return await mkdirs(connector, locations, [path])
 
 
-@profile
 async def mkdirs(
-        connector: Optional[Connector],
-        resources: Optional[MutableSequence[str]],
+        connector: Connector,
+        locations: Optional[MutableSequence[str]],
         paths: MutableSequence[str]) -> None:
     if isinstance(connector, LocalConnector):
         for path in paths:
@@ -226,34 +215,32 @@ async def mkdirs(
         command = ["mkdir", "-p"]
         command.extend(paths)
         await asyncio.gather(*(asyncio.create_task(
-            connector.run(resource=resource, command=command)
-        ) for resource in resources))
+            connector.run(location=location, command=command)
+        ) for location in locations))
 
 
-@profile
-async def read(connector: Optional[Connector], resource: Optional[str], path: str) -> str:
+async def read(connector: Connector, location: Optional[str], path: str) -> str:
     if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
             return f.read().decode('utf-8')
     else:
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=["cat", path],
             capture_output=True)
         _check_status(result, status)
         return result.strip()
 
 
-@profile
 async def resolve(
-        connector: Optional[Connector],
-        resource: Optional[str],
+        connector: Connector,
+        location: Optional[str],
         pattern: str) -> Optional[MutableSequence[str]]:
     if isinstance(connector, LocalConnector):
         return sorted(glob.glob(pattern))
     else:
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=["printf", "\"%s\\0\"", pattern, "|", "xargs", "-0", "-I{}",
                      "sh", "-c", "\"if [ -e \\\"{}\\\" ]; then echo \\\"{}\\\"; fi\"", "|", "sort"],
             capture_output=True)
@@ -261,10 +248,9 @@ async def resolve(
         return result.split()
 
 
-@profile
 async def rm(
-        connector: Optional[Connector],
-        resource: Optional[str],
+        connector: Connector,
+        location: Optional[str],
         path: Union[str, MutableSequence[str]]) -> None:
     if isinstance(connector, LocalConnector):
         if isinstance(path, MutableSequence):
@@ -280,14 +266,13 @@ async def rm(
         else:
             path = "\"{path}\"".format(path=path)
         await connector.run(
-            resource=resource,
+            location=location,
             command=[''.join(["rm -rf ", path])])
 
 
-@profile
 async def size(
-        connector: Optional[Connector],
-        resource: Optional[str],
+        connector: Connector,
+        location: Optional[str],
         path: Union[str, MutableSequence[str]]) -> int:
     if not path:
         return 0
@@ -305,7 +290,7 @@ async def size(
         else:
             path = "\"{path}\"".format(path=path)
         result, status = await connector.run(
-            resource=resource,
+            location=location,
             command=[''.join([
                 "find -L ", path, " -type f -exec ls -ln {} \\+ | ",
                 "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; "])],
@@ -315,8 +300,7 @@ async def size(
         return int(result) if result.isdigit() else 0
 
 
-@profile
-async def symlink(connector: Optional[Connector], resource: Optional[str], src: str, path: str) -> None:
+async def symlink(connector: Connector, location: Optional[str], src: str, path: str) -> None:
     if isinstance(connector, LocalConnector):
         try:
             os.symlink(os.path.abspath(src), path, target_is_directory=os.path.isdir(path))
@@ -324,18 +308,17 @@ async def symlink(connector: Optional[Connector], resource: Optional[str], src: 
             if not e.errno == errno.EEXIST:
                 raise
     else:
-        await connector.run(resource=resource, command=["ln", "-snf", src, path])
+        await connector.run(location=location, command=["ln", "-snf", src, path])
 
 
-@profile
-async def write(connector: Optional[Connector], resource: Optional[str], path: str, content: str) -> None:
+async def write(connector: Connector, location: Optional[str], path: str, content: str) -> None:
     if isinstance(connector, LocalConnector):
         with open(path, "w") as f:
             f.write(content)
     else:
         result, status = await connector.run(
-            resource=resource,
-            command=["printf", "\"{content}\"".format(content=content)],
+            location=location,
+            command=["printf", "\"{content}\"".format(content=content.replace('"', '\\"'))],
             stdout=path,
             capture_output=True)
         _check_status(result, status)

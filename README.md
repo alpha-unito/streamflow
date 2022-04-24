@@ -2,7 +2,7 @@
 
 [![CWL Conformance](https://github.com/alpha-unito/streamflow/actions/workflows/cwl-conformance.yaml/badge.svg?branch=master)](https://github.com/alpha-unito/streamflow/actions/workflows/cwl-conformance.yaml)
 
-The StreamFlow framework is a container-native *Workflow Management System (WMS)* written in Python 3.
+The [StreamFlow](https://streamflow.di.unito.it/) framework is a container-native *Workflow Management System (WMS)* written in Python 3.
 It has been designed around two main principles:
 * Allow the execution of tasks in **multi-container environments**, in order to support concurrent execution
 of multiple communicating tasks in a multi-agent ecosystem.
@@ -28,9 +28,9 @@ streamflow run /path/to/streamflow.yml
 #### Docker
 
 StreamFlow Docker images are available on [Docker Hub](https://hub.docker.com/r/alphaunito/streamflow). In order to run
-a workflow inside the StreaFlow image
+a workflow inside the StreamFlow image
  - A StreamFlow project, containing a `streamflow.yml` file and all the other relevant dependencies (e.g. a CWL
-   description of the workflow steps and a Helm description of the execution environment) need to be mounted as a volume
+   description of the workflow steps and a Helm description of the execution environment) needs to be mounted as a volume
    inside the container, for example in the `/streamflow/project` folder
  - Workflow outputs, if any, will be stored in the `/streamflow/results` folder. Therefore, it is necessary to mount
    such location as a volume in order to persist the results
@@ -52,13 +52,13 @@ docker run -d \
 #### Kubernetes
 
 It is also possible to execute the StreamFlow container as a `Job` in [Kubernetes](https://kubernetes.io/).
-In this case, StreamFlow is able to deploy `Helm` models directly on the parent cluster through the
+In this case, StreamFlow is able to deploy `Helm` charts directly on the parent cluster through the
 `ServiceAccount` credentials. In order to do that, the `inCluster` option must be set to `true` for each
 involved module on the `streamflow.yml` file
 
 ```yaml
-models:
-  helm-model:
+deployments:
+  helm-deployment:
     type: helm
     config:
       inCluster: true
