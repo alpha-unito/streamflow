@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+from streamflow.core import utils
 from streamflow.core.data import DataManager, DataLocation, LOCAL_LOCATION, DataType
 from streamflow.core.deployment import Connector
 from streamflow.data import remotepath
@@ -71,7 +72,7 @@ class DefaultDataManager(DataManager):
 
     def __init__(self, context: StreamFlowContext):
         super().__init__(context)
-        self.path_mapper = RemotePathMapper()
+        self.path_mapper = RemotePathMapper(context)
 
     async def _transfer_from_location(self,
                                       src_connector: Connector,
@@ -270,8 +271,10 @@ class RemotePathNode(object):
 
 class RemotePathMapper(object):
 
-    def __init__(self):
+    def __init__(self,
+                 context: StreamFlowContext):
         self._filesystem: RemotePathNode = RemotePathNode()
+        self.context: StreamFlowContext = context
 
     def _remove_node(self, location: DataLocation, node: RemotePathNode):
         node.locations.remove(location)
@@ -321,13 +324,34 @@ class RemotePathMapper(object):
 
     def put(self, path: str, data_location: DataLocation) -> DataLocation:
         path = PurePosixPath(Path(path).as_posix())
+        path_processor = utils.get_path_processor(
+            self.context.deployment_manager.get_connector(data_location.deployment))
         node = self._filesystem
-        for token in path.parts:
-            if token not in node.children:
-                node.children[token] = RemotePathNode()
-            node.locations.add(data_location)
-            node = node.children[token]
-        node.locations.add(data_location)
+        nodes = {}
+        # Create or navigate hierarchy
+        for i, token in enumerate(path.parts):
+            node = node.children.setdefault(token, RemotePathNode())
+            nodes[path_processor.join(*path.parts[:i+1])] = node
+        # Process hierarchy bottom-up to add parent locations
+        relpath = data_location.relpath
+        for node_path in reversed(nodes):
+            node = nodes[node_path]
+            if node_path == path:
+                location = data_location
+            else:
+                location = DataLocation(
+                    path=node_path,
+                    relpath=relpath if relpath and node_path.endswith(relpath) else path_processor.basename(node_path),
+                    deployment=data_location.deployment,
+                    data_type=DataType.PRIMARY,
+                    location=data_location.location,
+                    available=True)
+            if location in node.locations:
+                break
+            else:
+                node.locations.add(location)
+                relpath = path_processor.dirname(relpath)
+        # Return location
         return data_location
 
     def remove_location(self, location: str):
