@@ -8,6 +8,7 @@ import tarfile
 import tempfile
 from asyncio import Semaphore, Lock
 from asyncio.subprocess import STDOUT
+from pathlib import PurePosixPath
 from typing import MutableSequence, Optional, MutableMapping, Tuple, Any, Union
 
 import asyncssh
@@ -191,7 +192,7 @@ class SSHConnector(BaseConnector):
                                            location: str,
                                            read_only: bool = False):
         async with self._get_ssh_client(location) as ssh_client:
-            async with ssh_client.create_process() as proc:
+            async with ssh_client.create_process("tar xf - -C /", encoding=None) as proc:
                 with aiotar.open(
                         fileobj=proc.stdin,
                         format=tarfile.GNU_FORMAT,
@@ -235,6 +236,18 @@ class SSHConnector(BaseConnector):
             return self.data_transfer_contexts[location]
         else:
             return self._get_ssh_client(location)
+
+    async def _get_existing_parent(self, location: str, directory: str):
+        command_template = "test -e \"{path}\""
+        async with self._get_ssh_client(location) as ssh_client:
+            while True:
+                result = await ssh_client.run(command_template.format(path=directory), stderr=STDOUT)
+                if result.returncode == 0:
+                    return directory
+                elif result.returncode == 1:
+                    directory = PurePosixPath(directory).parent
+                else:
+                    raise WorkflowExecutionException(result.stdout.strip())
 
     def _get_run_command(self,
                          command: str,
@@ -338,8 +351,15 @@ class SSHConnector(BaseConnector):
                                       tmp_directory: str) -> MutableMapping[str, Location]:
         locations = {}
         for location_obj in self.nodes.values():
+            inpdir, outdir, tmpdir = await asyncio.gather(
+                self._get_existing_parent(location_obj.hostname, input_directory),
+                self._get_existing_parent(location_obj.hostname, output_directory),
+                self._get_existing_parent(location_obj.hostname, tmp_directory))
             hardware = await self._get_location_hardware(
-                location_obj.hostname, input_directory, output_directory, tmp_directory)
+                location=location_obj.hostname,
+                input_directory=inpdir,
+                output_directory=outdir,
+                tmp_directory=tmpdir)
             locations[location_obj.hostname] = Location(
                 name=location_obj.hostname,
                 hostname=location_obj.hostname,
