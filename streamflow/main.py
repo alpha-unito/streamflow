@@ -85,7 +85,7 @@ def build_context(config_dir: str,
     context.data_manager = _get_instance_from_config(
         streamflow_config, 'dataManager', {'context': context})
     context.deployment_manager = _get_instance_from_config(
-        streamflow_config, 'deploymentManager', {'streamflow_config_dir': config_dir})
+        streamflow_config, 'deploymentManager', {'context': context})
     context.failure_manager = _get_instance_from_config(
         streamflow_config, 'failureManager', {'context': context}, enabled_by_default=False)
     context.persistence_manager = _get_instance_from_config(

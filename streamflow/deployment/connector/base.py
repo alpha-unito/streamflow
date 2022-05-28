@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import os
 import posixpath
 import shlex
@@ -9,11 +8,13 @@ import shutil
 import tarfile
 import tempfile
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, MutableSequence, Tuple, cast
+from typing import MutableSequence, TYPE_CHECKING, Tuple
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.deployment import Connector, ConnectorCopyKind
+from streamflow.data import aiotar
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
@@ -41,9 +42,9 @@ class BaseConnector(Connector, ABC):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  transferBufferSize: int):
-        super().__init__(deployment_name, streamflow_config_dir)
+        super().__init__(deployment_name, context)
         self.transferBufferSize: int = transferBufferSize
 
     async def _copy_local_to_remote(self,
@@ -51,36 +52,31 @@ class BaseConnector(Connector, ABC):
                                     dst: str,
                                     locations: MutableSequence[str],
                                     read_only: bool = False) -> None:
-        with tempfile.TemporaryFile() as tar_buffer:
-            with tarfile.open(
-                    fileobj=tar_buffer,
-                    format=tarfile.GNU_FORMAT,
-                    mode='w|',
-                    dereference=True) as tar:
-                tar.add(src, arcname=dst)
-            tar_buffer.seek(0)
-            await asyncio.gather(*(asyncio.create_task(
-                self._copy_local_to_remote_single(
-                    location=location,
-                    tar_buffer=cast(io.BufferedRandom, tar_buffer),
-                    read_only=read_only)
-            ) for location in locations))
+        await asyncio.gather(*(asyncio.create_task(
+            self._copy_local_to_remote_single(
+                src=src,
+                dst=dst,
+                location=location,
+                read_only=read_only)
+        ) for location in locations))
 
     async def _copy_local_to_remote_single(self,
+                                           src: str,
+                                           dst: str,
                                            location: str,
-                                           tar_buffer: io.BufferedRandom,
                                            read_only: bool = False) -> None:
-        location_buffer = io.BufferedReader(tar_buffer.raw)
         proc = await self._run(
             location=location,
             command=["tar", "xf", "-", "-C", "/"],
             encode=False,
             interactive=True,
-            stream=True
-        )
-        while content := location_buffer.read(self.transferBufferSize):
-            proc.stdin.write(content)
-            await proc.stdin.drain()
+            stream=True)
+        with aiotar.open(
+                fileobj=proc.stdin,
+                format=tarfile.GNU_FORMAT,
+                mode='w|',
+                dereference=True) as tar:
+            await tar.add(src, arcname=dst)
         proc.stdin.close()
         await proc.wait()
 

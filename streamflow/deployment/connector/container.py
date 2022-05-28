@@ -1,18 +1,17 @@
 import asyncio
-import io
 import json
 import os
 import posixpath
 import shlex
-import tarfile
 import tempfile
 from abc import ABC, abstractmethod
-from typing import MutableSequence, MutableMapping, Any, Tuple, Optional, cast
+from typing import Any, MutableMapping, MutableSequence, Optional, Tuple
 
 from cachetools import Cache, TTLCache
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.base import BaseConnector
@@ -62,7 +61,6 @@ class ContainerConnector(BaseConnector, ABC):
                                     locations: MutableSequence[str],
                                     read_only: bool = False) -> None:
         effective_locations = await self._get_effective_locations(locations, dst)
-        created_tar_buffer = False
         copy_tasks = []
         with tempfile.TemporaryFile() as tar_buffer:
             for location in effective_locations:
@@ -72,19 +70,11 @@ class ContainerConnector(BaseConnector, ABC):
                             location=location,
                             command=["ln", "-snf", posixpath.abspath(src), dst])))
                     continue
-                if not created_tar_buffer:
-                    with tarfile.open(
-                            fileobj=tar_buffer,
-                            format=tarfile.GNU_FORMAT,
-                            mode='w|',
-                            dereference=True) as tar:
-                        tar.add(src, arcname=dst)
-                    tar_buffer.seek(0)
-                    created_tar_buffer = True
                 copy_tasks.append(asyncio.create_task(
                     self._copy_local_to_remote_single(
+                        src=src,
+                        dst=dst,
                         location=location,
-                        tar_buffer=cast(io.BufferedRandom, tar_buffer),
                         read_only=read_only)))
             await asyncio.gather(*copy_tasks)
 
@@ -219,7 +209,7 @@ class DockerConnector(DockerBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  image: str,
                  addHost: Optional[MutableSequence[str]] = None,
                  blkioWeight: Optional[int] = None,
@@ -315,7 +305,7 @@ class DockerConnector(DockerBaseConnector):
                  workdir: Optional[str] = None):
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             transferBufferSize=transferBufferSize)
         self.image: str = image
         self.addHost: Optional[MutableSequence[str]] = addHost
@@ -683,7 +673,7 @@ class DockerComposeConnector(DockerBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  files: MutableSequence[str],
                  projectName: Optional[str] = None,
                  verbose: Optional[bool] = False,
@@ -714,9 +704,9 @@ class DockerComposeConnector(DockerBaseConnector):
                  resourcesCacheTTL: int = None) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             transferBufferSize=transferBufferSize)
-        self.files = [os.path.join(streamflow_config_dir, file) for file in files]
+        self.files = [os.path.join(context.config_dir, file) for file in files]
         self.projectName = projectName
         self.verbose = verbose
         self.logLevel = logLevel

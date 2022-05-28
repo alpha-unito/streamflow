@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from streamflow.core.data import LOCAL_LOCATION
 
 if TYPE_CHECKING:
+    from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import Location
     from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
 
@@ -26,9 +27,9 @@ class Connector(ABC):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str):
+                 context: StreamFlowContext):
         self.deployment_name: str = deployment_name
-        self.streamflow_config_dir: str = streamflow_config_dir
+        self.context: StreamFlowContext = context
 
     @abstractmethod
     async def copy(self,
@@ -79,8 +80,8 @@ class ConnectorCopyKind(Enum):
 class DeploymentManager(ABC):
 
     def __init__(self,
-                 streamflow_config_dir: str) -> None:
-        self.streamflow_config_dir: str = streamflow_config_dir
+                 context: StreamFlowContext) -> None:
+        self.context: StreamFlowContext = context
 
     @abstractmethod
     async def deploy(self, deployment_config: DeploymentConfig):

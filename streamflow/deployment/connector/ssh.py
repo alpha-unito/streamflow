@@ -4,6 +4,7 @@ import asyncio
 import os
 import posixpath
 import stat
+import tarfile
 import tempfile
 from asyncio import Semaphore, Lock
 from asyncio.subprocess import STDOUT
@@ -16,9 +17,11 @@ from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ConnectorCopyKind
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location, Hardware
+from streamflow.data import aiotar
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -126,7 +129,7 @@ class SSHConnector(BaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  nodes: MutableSequence[Any],
                  username: str,
                  checkHostKey: bool = True,
@@ -141,10 +144,10 @@ class SSHConnector(BaseConnector):
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             transferBufferSize=transferBufferSize)
         if file is not None:
-            with open(os.path.join(streamflow_config_dir, file)) as f:
+            with open(os.path.join(context.config_dir, file)) as f:
                 self.template: Optional[Template] = Template(f.read())
         else:
             self.template: Optional[Template] = None
@@ -182,14 +185,19 @@ class SSHConnector(BaseConnector):
             locations=[location])
         return remote_path
 
-    async def _copy_local_to_remote(self,
-                                    src: str,
-                                    dst: str,
-                                    locations: MutableSequence[str],
-                                    read_only: bool = False):
-        await asyncio.gather(*(asyncio.create_task(
-            self._scp(src=src, dst=dst, location=location, kind=ConnectorCopyKind.LOCAL_TO_REMOTE)
-        ) for location in locations))
+    async def _copy_local_to_remote_single(self,
+                                           src: str,
+                                           dst: str,
+                                           location: str,
+                                           read_only: bool = False):
+        async with self._get_ssh_client(location) as ssh_client:
+            async with ssh_client.create_process() as proc:
+                with aiotar.open(
+                        fileobj=proc.stdin,
+                        format=tarfile.GNU_FORMAT,
+                        mode='w|',
+                        dereference=True) as tar:
+                    await tar.add(src, arcname=dst)
 
     async def _copy_remote_to_local(self,
                                     src: str,
@@ -221,7 +229,7 @@ class SSHConnector(BaseConnector):
         if self.dataTransferConfig:
             if location not in self.data_transfer_contexts:
                 self.data_transfer_contexts[location] = SSHContext(
-                    streamflow_config_dir=self.streamflow_config_dir,
+                    streamflow_config_dir=self.context.config_dir,
                     config=self.dataTransferConfig,
                     max_concurrent_sessions=self.maxConcurrentSessions)
             return self.data_transfer_contexts[location]
@@ -243,7 +251,7 @@ class SSHConnector(BaseConnector):
     def _get_ssh_client(self, location: str):
         if location not in self.ssh_contexts:
             self.ssh_contexts[location] = SSHContext(
-                streamflow_config_dir=self.streamflow_config_dir,
+                streamflow_config_dir=self.context.config_dir,
                 config=self.nodes[location],
                 max_concurrent_sessions=self.maxConcurrentSessions)
         return self.ssh_contexts[location]

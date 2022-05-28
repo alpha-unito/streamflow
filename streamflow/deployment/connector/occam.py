@@ -8,6 +8,7 @@ import asyncssh
 from ruamel.yaml import YAML
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
@@ -17,7 +18,7 @@ class OccamConnector(SSHConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  file: str,
                  sshKey: str,
                  username: str,
@@ -26,7 +27,7 @@ class OccamConnector(SSHConnector):
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             nodes=[hostname],
             sshKey=sshKey,
             sshKeyPassphraseFile=sshKeyPassphraseFile,
@@ -35,7 +36,7 @@ class OccamConnector(SSHConnector):
                 '/scratch/home/{username}'.format(username=username)],
             transferBufferSize=transferBufferSize,
             username=username)
-        with open(os.path.join(streamflow_config_dir, file)) as f:
+        with open(os.path.join(context.config_dir, file)) as f:
             yaml = YAML(typ='safe')
             self.env_description = yaml.load(f)
         self.jobs_table: MutableMapping[str, MutableSequence[str]] = {}

@@ -15,6 +15,7 @@ from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
+    from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import DeploymentConfig
     from typing import MutableMapping, Optional, Any
 
@@ -35,8 +36,8 @@ connector_classes = {
 class DefaultDeploymentManager(DeploymentManager):
 
     def __init__(self,
-                 streamflow_config_dir: str) -> None:
-        super().__init__(streamflow_config_dir)
+                 context: StreamFlowContext) -> None:
+        super().__init__(context)
         self.config_map: MutableMapping[str, Any] = {}
         self.events_map: MutableMapping[str, Event] = {}
         self.deployments_map: MutableMapping[str, Connector] = {}
@@ -51,7 +52,7 @@ class DefaultDeploymentManager(DeploymentManager):
                 if deployment_config.lazy:
                     connector = FutureConnector(
                         name=deployment_name,
-                        streamflow_config_dir=self.streamflow_config_dir,
+                        context=self.context,
                         connector_type=connector_classes[deployment_config.connector_type],
                         external=deployment_config.external,
                         **deployment_config.config)
@@ -59,7 +60,7 @@ class DefaultDeploymentManager(DeploymentManager):
                     self.events_map[deployment_name].set()
                 else:
                     connector = connector_classes[deployment_config.connector_type](
-                        deployment_name, self.streamflow_config_dir, **deployment_config.config)
+                        deployment_name, self.context, **deployment_config.config)
                     self.deployments_map[deployment_name] = connector
                     if not deployment_config.external:
                         logger.info("Deploying {}".format(deployment_name))
@@ -105,11 +106,11 @@ class FutureConnector(Connector):
 
     def __init__(self,
                  name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  connector_type: Type[Connector],
                  external: bool,
                  **kwargs):
-        super().__init__(name, streamflow_config_dir)
+        super().__init__(name, context)
         self.connector_type: Type[Connector] = connector_type
         self.external: bool = external
         self.parameters: MutableMapping[str, Any] = kwargs
@@ -136,7 +137,7 @@ class FutureConnector(Connector):
                      external: bool) -> None:
         # noinspection PyArgumentList
         connector = self.connector_type(
-            self.deployment_name, self.streamflow_config_dir, **self.parameters)
+            self.deployment_name, self.context, **self.parameters)
         if not external:
             logger.info("Deploying {}".format(self.deployment_name))
         await connector.deploy(external)

@@ -22,6 +22,7 @@ from kubernetes_asyncio.stream import WsApiClient, ws_client
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.base import BaseConnector
@@ -48,7 +49,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  inCluster: Optional[bool] = False,
                  kubeconfig: Optional[str] = os.path.join(str(Path.home()), ".kube", "config"),
                  namespace: Optional[str] = None,
@@ -58,7 +59,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                  maxConcurrentConnections: int = 4096):
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             transferBufferSize=transferBufferSize)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
@@ -115,10 +116,10 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             read_only=read_only)
 
     async def _copy_local_to_remote_single(self,
+                                           src: str,
+                                           dst: str,
                                            location: str,
-                                           tar_buffer: io.BufferedRandom,
                                            read_only: bool = False) -> None:
-        location_buffer = io.BufferedReader(tar_buffer.raw)
         pod, container = location.split(':')
         command = ["tar", "xf", "-", "-C", "/"]
         # noinspection PyUnresolvedReferences
@@ -319,7 +320,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 class Helm3Connector(BaseKubernetesConnector):
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  chart: str,
                  debug: Optional[bool] = False,
                  kubeContext: Optional[str] = None,
@@ -358,14 +359,14 @@ class Helm3Connector(BaseKubernetesConnector):
                  wait: Optional[bool] = True):
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             inCluster=inCluster,
             kubeconfig=kubeconfig,
             namespace=namespace,
             locationsCacheTTL=locationsCacheTTL,
             resourcesCacheTTL=resourcesCacheTTL,
             transferBufferSize=transferBufferSize)
-        self.chart: str = os.path.join(streamflow_config_dir, chart)
+        self.chart: str = os.path.join(context.config_dir, chart)
         self.debug: bool = debug
         self.kubeContext: Optional[str] = kubeContext
         self.atomic: bool = atomic

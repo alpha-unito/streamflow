@@ -7,6 +7,7 @@ from typing import MutableMapping, MutableSequence
 
 import psutil
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.scheduling import Location, Hardware
 from streamflow.deployment.connector.base import BaseConnector
@@ -22,9 +23,9 @@ class LocalConnector(BaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  transferBufferSize: int = 2 ** 16):
-        super().__init__(deployment_name, streamflow_config_dir, transferBufferSize)
+        super().__init__(deployment_name, context, transferBufferSize)
         self.cores = float(psutil.cpu_count())
         self.memory = float(psutil.virtual_memory().available / 2 ** 20)
 

@@ -3,13 +3,14 @@ from abc import ABC, abstractmethod
 from asyncio import Lock
 from asyncio.subprocess import STDOUT
 from functools import partial
-from typing import Optional, MutableSequence, MutableMapping, Tuple, Any, Union
+from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import cachetools
 from cachetools import Cache, TTLCache
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
@@ -19,7 +20,7 @@ class QueueManagerConnector(SSHConnector, ABC):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  file: str,
                  hostname: str,
                  username: str,
@@ -33,7 +34,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             checkHostKey=checkHostKey,
             dataTransferConnection=dataTransferConnection,
             file=file,
