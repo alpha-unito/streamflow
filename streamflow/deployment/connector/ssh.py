@@ -68,6 +68,13 @@ class SSHContext(object):
         password = self._get_param_from_file(config.password_file) if config.password_file else None
         return await asyncssh.connect(
             client_keys=config.client_keys,
+            compression_algs=None,
+            encryption_algs=[
+                "aes128-gcm@openssh.com",
+                "aes256-ctr",
+                "aes192-ctr",
+                "aes128-ctr"
+            ],
             known_hosts=() if config.check_host_key else None,
             host=hostname,
             passphrase=passphrase,
@@ -192,7 +199,9 @@ class SSHConnector(BaseConnector):
                                            location: str,
                                            read_only: bool = False):
         async with self._get_ssh_client(location) as ssh_client:
-            async with ssh_client.create_process("tar xf - -C /", encoding=None) as proc:
+            async with ssh_client.create_process(
+                    "tar xf - -C /",
+                    encoding=None) as proc:
                 with aiotar.open(
                         fileobj=proc.stdin,
                         format=tarfile.GNU_FORMAT,
