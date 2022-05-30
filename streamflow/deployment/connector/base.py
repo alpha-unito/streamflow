@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import posixpath
 import shlex
-import shutil
 import tarfile
-import tempfile
 from abc import ABC, abstractmethod
 from typing import MutableSequence, TYPE_CHECKING, Tuple
 
@@ -14,7 +11,9 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.deployment import Connector, ConnectorCopyKind
-from streamflow.data import aiotar
+from streamflow.core.exception import WorkflowExecutionException
+from streamflow.data import aiotarstream
+from streamflow.data.aiotarstream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
@@ -71,14 +70,20 @@ class BaseConnector(Connector, ABC):
             encode=False,
             interactive=True,
             stream=True)
-        with aiotar.open(
-                fileobj=proc.stdin,
-                format=tarfile.GNU_FORMAT,
-                mode='w|',
-                dereference=True) as tar:
-            await tar.add(src, arcname=dst)
-        proc.stdin.close()
-        await proc.wait()
+        try:
+            async with aiotarstream.open(
+                    stream=StreamWriterWrapper(proc.stdin),
+                    format=tarfile.GNU_FORMAT,
+                    mode='w',
+                    dereference=True,
+                    copybufsize=self.transferBufferSize) as tar:
+                await tar.add(src, arcname=dst)
+        except tarfile.TarError as e:
+            raise WorkflowExecutionException("Error copying {} to {} on location {}: {}".format(
+                src, dst, location, str(e))) from e
+        finally:
+            proc.stdin.close()
+            await proc.wait()
 
     async def _copy_remote_to_local(self,
                                     src: str,
@@ -91,15 +96,17 @@ class BaseConnector(Connector, ABC):
             capture_output=True,
             encode=False,
             stream=True)
-        with tempfile.TemporaryFile() as tar_buffer:
-            while data := await proc.stdout.read(self.transferBufferSize):
-                tar_buffer.write(data)
+        try:
+            async with aiotarstream.open(
+                    stream=StreamReaderWrapper(proc.stdout),
+                    mode='r',
+                    copybufsize=self.transferBufferSize) as tar:
+                await utils.extract_tar_stream(tar, src, dst, self.transferBufferSize)
+        except tarfile.TarError as e:
+            raise WorkflowExecutionException("Error copying {} from location {} to {}: {}".format(
+                src, location, dst, str(e))) from e
+        finally:
             await proc.wait()
-            tar_buffer.seek(0)
-            with tarfile.open(
-                    fileobj=tar_buffer,
-                    mode='r|') as tar:
-                utils.extract_tar_stream(tar, src, dst)
 
     async def _copy_remote_to_remote(self,
                                      src: str,
@@ -107,54 +114,38 @@ class BaseConnector(Connector, ABC):
                                      locations: MutableSequence[str],
                                      source_location: str,
                                      read_only: bool = False) -> None:
-        # Check for the need of a temporary copy
-        temp_dir = None
-        for location in locations:
-            if source_location != location:
-                temp_dir = tempfile.mkdtemp()
-                await self._copy_remote_to_local(
-                    src=src,
-                    dst=temp_dir,
-                    location=source_location,
-                    read_only=read_only)
-                break
-        # Perform the actual copies
-        copy_tasks = []
-        for location in locations:
-            copy_tasks.append(asyncio.create_task(
-                self._copy_remote_to_remote_single(
-                    src=src,
-                    dst=dst,
-                    location=location,
-                    source_location=source_location,
-                    temp_dir=temp_dir,
-                    read_only=read_only)))
-        await asyncio.gather(*copy_tasks)
-        # If a temporary location was created, delete it
-        if temp_dir is not None:
-            shutil.rmtree(temp_dir)
-
-    async def _copy_remote_to_remote_single(self,
-                                            src: str,
-                                            dst: str,
-                                            location: str,
-                                            source_location: str,
-                                            temp_dir: Optional[str],
-                                            read_only: bool = False) -> None:
-        if source_location == location:
+        if source_location in locations:
             if src != dst:
                 command = ['/bin/cp', "-rf", src, dst]
-                await self.run(location, command)
-        else:
-            copy_tasks = []
-            for element in os.listdir(temp_dir):
-                copy_tasks.append(asyncio.create_task(
-                    self._copy_local_to_remote(
-                        src=os.path.join(temp_dir, element),
-                        dst=dst,
-                        locations=[location],
-                        read_only=read_only)))
-            await asyncio.gather(*copy_tasks)
+                await self.run(source_location, command)
+                locations.remove(source_location)
+        if locations:
+            # Open source StreamReader
+            dirname, basename = posixpath.split(src)
+            reader = await self._run(
+                location=source_location,
+                command=["tar", "chf", "-", "-C", dirname, basename],
+                capture_output=True,
+                encode=False,
+                stream=True)
+            # Open a target StreamWriter for each location
+            writers = await asyncio.gather(*(asyncio.create_task(self._run(
+                location=location,
+                command=["tar", "xf", "-", "-C", posixpath.dirname(dst)],
+                encode=False,
+                interactive=True,
+                stream=True)) for location in locations))
+            # Multiplex the reader output to all the writers
+            while content := await reader.stdout.read(self.transferBufferSize):
+                for writer in writers:
+                    writer.stdin.write(content)
+                await asyncio.gather(*(asyncio.create_task(writer.stdin.drain()) for writer in writers))
+            # Wait for reader to finish
+            await reader.wait()
+            # Close all writers
+            for wrtier in writers:
+                wrtier.stdin.close()
+            await asyncio.gather(*(asyncio.create_task(writer.wait()) for writer in writers))
 
     @abstractmethod
     def _get_run_command(self,

@@ -806,9 +806,7 @@ class DockerComposeConnector(DockerBaseConnector):
                                       tmp_directory: str) -> MutableMapping[str, Location]:
         ps_command = self.base_command() + "".join([
             "ps ",
-            "{filter}"
-        ]).format(
-            filter=("--filter \"com.docker.compose.service\"=\"{service}\"".format(service=service) if service else ""))
+            service or ""])
         logger.debug("Executing command {command}".format(command=ps_command))
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(ps_command),

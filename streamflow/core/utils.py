@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Uni
 
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.workflow import Token
+from streamflow.data import aiotarstream
 from streamflow.workflow.token import ListToken, TerminationToken, ObjectToken
 
 if TYPE_CHECKING:
@@ -96,27 +97,29 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
         yield dict(zip(keys, list(instance)))
 
 
-def extract_tar_stream(tar: tarfile.TarFile,
-                       src: str,
-                       dst: str) -> None:
-    for member in tar:
+async def extract_tar_stream(tar: aiotarstream.AioTarStream,
+                             src: str,
+                             dst: str,
+                             transferBufferSize: Optional[int] = None) -> None:
+    async for member in tar:
         if os.path.isdir(dst):
             if posixpath.join('/', member.path) == src:
                 member.path = posixpath.basename(member.path)
-                tar.extract(member, dst)
+                await tar.extract(member, dst)
                 if member.isdir():
                     dst = os.path.join(dst, member.path)
             else:
                 member.path = posixpath.relpath(posixpath.join('/', member.path), src)
-                tar.extract(member, dst)
+                await tar.extract(member, dst)
         elif member.isfile():
-            with tar.extractfile(member) as inputfile:
+            async with await tar.extractfile(member) as inputfile:
                 with open(dst, 'wb') as outputfile:
-                    outputfile.write(inputfile.read())
+                    while content := await inputfile.read(transferBufferSize):
+                        outputfile.write(content)
         else:
             parent_dir = str(Path(dst).parent)
             member.path = posixpath.basename(member.path)
-            tar.extract(member, parent_dir)
+            await tar.extract(member, parent_dir)
 
 
 def encode_command(command: str):

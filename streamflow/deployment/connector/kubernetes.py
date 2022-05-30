@@ -6,7 +6,6 @@ import os
 import posixpath
 import shlex
 import tarfile
-import tempfile
 import uuid
 from abc import ABC
 from pathlib import Path
@@ -25,6 +24,8 @@ from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location
+from streamflow.data import aiotarstream
+from streamflow.data.aiotarstream import BaseStreamWrapper
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -43,6 +44,22 @@ async def _get_helm_version():
         stderr=asyncio.subprocess.DEVNULL)
     stdout, _ = await proc.communicate()
     return stdout.decode().strip()
+
+
+class KubernetesResponseWrapper(BaseStreamWrapper):
+
+    async def read(self, size: Optional[int] = None):
+        while not self.stream.closed:
+            async for msg in self.stream:
+                channel = msg.data[0]
+                data = msg.data[1:]
+                if data and channel == ws_client.STDOUT_CHANNEL:
+                    return data
+
+    async def write(self, data: Any):
+        channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
+        payload = channel_prefix + data
+        await self.stream.send_bytes(payload)
 
 
 class BaseKubernetesConnector(BaseConnector, ABC):
@@ -89,20 +106,6 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 if not self.namespace:
                     raise ConfigException("Namespace file exists but empty.")
 
-    async def _copy_remote_to_remote(self,
-                                     src: str,
-                                     dst: str,
-                                     locations: MutableSequence[str],
-                                     source_location: str,
-                                     read_only: bool = False) -> None:
-        effective_locations = await self._get_effective_locations(locations, dst)
-        await super()._copy_remote_to_remote(
-            src=src,
-            dst=dst,
-            locations=effective_locations,
-            source_location=source_location,
-            read_only=read_only)
-
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
@@ -133,11 +136,19 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             stdout=False,
             tty=False,
             _preload_content=False)
-        while content := location_buffer.read(self.transferBufferSize):
-            channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
-            payload = channel_prefix + content
-            await response.send_bytes(payload)
-        await response.close()
+        try:
+            async with aiotarstream.open(
+                    stream=KubernetesResponseWrapper(response),
+                    format=tarfile.GNU_FORMAT,
+                    mode='w',
+                    dereference=True,
+                    copybufsize=self.transferBufferSize) as tar:
+                await tar.add(src, arcname=dst)
+        except tarfile.TarError as e:
+            raise WorkflowExecutionException("Error copying {} to {} on location {}: {}".format(
+                src, dst, location, str(e))) from e
+        finally:
+            await response.close()
 
     async def _copy_remote_to_local(self,
                                     src: str,
@@ -157,19 +168,60 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             stdout=True,
             tty=False,
             _preload_content=False)
-        with tempfile.TemporaryFile() as tar_buffer:
-            while not response.closed:
-                async for msg in response:
-                    channel = msg.data[0]
-                    data = msg.data[1:]
-                    if data and channel == ws_client.STDOUT_CHANNEL:
-                        tar_buffer.write(data)
+        try:
+            async with aiotarstream.open(
+                    stream=KubernetesResponseWrapper(response),
+                    mode='r',
+                    copybufsize=self.transferBufferSize) as tar:
+                await utils.extract_tar_stream(tar, src, dst, self.transferBufferSize)
+        except tarfile.TarError as e:
+            raise WorkflowExecutionException("Error copying {} from location {} to {}: {}".format(
+                src, location, dst, str(e))) from e
+        finally:
             await response.close()
-            tar_buffer.seek(0)
-            with tarfile.open(
-                    fileobj=tar_buffer,
-                    mode='r|') as tar:
-                utils.extract_tar_stream(tar, src, dst)
+
+    async def _copy_remote_to_remote(self,
+                                     src: str,
+                                     dst: str,
+                                     locations: MutableSequence[str],
+                                     source_location: str,
+                                     read_only: bool = False) -> None:
+        locations = await self._get_effective_locations(locations, dst)
+        if source_location in locations:
+            if src != dst:
+                command = ['/bin/cp', "-rf", src, dst]
+                await self.run(source_location, command)
+                locations.remove(source_location)
+        if locations:
+            # Open source response
+            pod, container = source_location.split(':')
+            # noinspection PyUnresolvedReferences
+            dirname, basename = posixpath.split(src)
+            reader = KubernetesResponseWrapper(await self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or 'default',
+                container=container,
+                command=["tar", "chf", "-", "-C", dirname, basename],
+                stderr=False,
+                stdin=True,
+                stdout=False,
+                tty=False,
+                _preload_content=False))
+            # Open a target response for each location
+            writers = [KubernetesResponseWrapper(w) for w in await asyncio.gather(*(asyncio.create_task(
+                self.client_ws.connect_get_namespaced_pod_exec(
+                    name=location.split(':')[0],
+                    namespace=self.namespace or 'default',
+                    container=location.split(':')[1],
+                    command=["tar", "xf", "-", "-C", posixpath.dirname(dst)],
+                    stderr=True,
+                    stdin=False,
+                    stdout=True,
+                    tty=False,
+                    _preload_content=False)) for location in locations))]
+            # Multiplex the reader output to all the writers
+            while content := await reader.read(self.transferBufferSize):
+                await asyncio.gather(*(asyncio.create_task(writer.write(content)) for writer in writers))
 
     async def _get_container(self, location: str) -> Tuple[str, V1Container]:
         pod_name, container_name = location.split(':')

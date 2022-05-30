@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import posixpath
 import stat
@@ -19,10 +20,10 @@ from jinja2 import Template
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import ConnectorCopyKind
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location, Hardware
-from streamflow.data import aiotar
+from streamflow.data import aiotarstream
+from streamflow.data.aiotarstream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -202,19 +203,71 @@ class SSHConnector(BaseConnector):
             async with ssh_client.create_process(
                     "tar xf - -C /",
                     encoding=None) as proc:
-                with aiotar.open(
-                        fileobj=proc.stdin,
-                        format=tarfile.GNU_FORMAT,
-                        mode='w|',
-                        dereference=True) as tar:
-                    await tar.add(src, arcname=dst)
+                try:
+                    async with aiotarstream.open(
+                            stream=StreamWriterWrapper(proc.stdin),
+                            format=tarfile.GNU_FORMAT,
+                            mode='w',
+                            dereference=True,
+                            copybufsize=self.transferBufferSize) as tar:
+                        await tar.add(src, arcname=dst)
+                except tarfile.TarError as e:
+                    raise WorkflowExecutionException("Error copying {} to {} on location {}: {}".format(
+                        src, dst, location, str(e))) from e
 
     async def _copy_remote_to_local(self,
                                     src: str,
                                     dst: str,
                                     location: str,
                                     read_only: bool = False) -> None:
-        await self._scp(src=src, dst=dst, location=location, kind=ConnectorCopyKind.REMOTE_TO_LOCAL)
+        async with self._get_ssh_client(location) as ssh_client:
+            async with ssh_client.create_process(
+                    "tar chf - -C / " + posixpath.relpath(src, '/'),
+                    stdin=asyncio.subprocess.DEVNULL,
+                    encoding=None) as proc:
+                try:
+                    async with aiotarstream.open(
+                            stream=StreamReaderWrapper(proc.stdout),
+                            mode='r',
+                            copybufsize=self.transferBufferSize) as tar:
+                        await utils.extract_tar_stream(tar, src, dst, self.transferBufferSize)
+                except tarfile.TarError as e:
+                    raise WorkflowExecutionException("Error copying {} from location {} to {}: {}".format(
+                        src, location, dst, str(e))) from e
+
+    async def _copy_remote_to_remote(self,
+                                     src: str,
+                                     dst: str,
+                                     locations: MutableSequence[str],
+                                     source_location: str,
+                                     read_only: bool = False) -> None:
+        if source_location in locations:
+            if src != dst:
+                command = ['/bin/cp', "-rf", src, dst]
+                await self.run(source_location, command)
+                locations.remove(source_location)
+        if locations:
+            with contextlib.AsyncExitStack() as exit_stack:
+                reader_client = await exit_stack.enter_async_context(self._get_ssh_client(source_location))
+                # Open source StreamReader
+                dirname, basename = posixpath.split(src)
+                async with reader_client.create_process(
+                        "tar chf - -C {} {}".format(dirname, basename),
+                        stdin=asyncio.subprocess.DEVNULL,
+                        encoding=None) as reader:
+                    # Open a target StreamWriter for each location
+                    writer_clients = await asyncio.gather(*(asyncio.create_task(
+                        exit_stack.enter_async_context(location)) for location in locations))
+                    with contextlib.AsyncExitStack() as writers_stack:
+                        writers = await asyncio.gather(*(asyncio.create_task(
+                            writers_stack.enter_async_context(
+                                client.create_process("tar xf - -C " + posixpath.dirname(dst), encoding=None))
+                            for client in writer_clients)))
+                        # Multiplex the reader output to all the writers
+                        while content := await reader.stdout.read(self.transferBufferSize):
+                            for writer in writers:
+                                writer.stdin.write(content)
+                            await asyncio.gather(*(asyncio.create_task(writer.stdin.drain()) for writer in writers))
 
     def _get_config(self,
                     node: Union[str, MutableMapping[str, Any]]):
@@ -310,17 +363,6 @@ class SSHConnector(BaseConnector):
                 result = await ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT)
         if capture_output:
             return result.stdout.strip(), result.returncode
-
-    async def _scp(self,
-                   src: str,
-                   dst: str,
-                   location: str,
-                   kind: ConnectorCopyKind):
-        async with self._get_data_transfer_client(location) as ssh_client:
-            if kind == ConnectorCopyKind.REMOTE_TO_LOCAL:
-                await asyncssh.scp((ssh_client, src), dst, preserve=True, recurse=True)
-            elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
-                await asyncssh.scp(src, (ssh_client, dst), preserve=True, recurse=True)
 
     @cachedmethod(lambda self: self.hardwareCache)
     async def _get_location_hardware(self,
