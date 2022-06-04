@@ -291,19 +291,16 @@ class OccamConnector(SSHConnector):
         # Close connection
         await super().undeploy(external)
 
-    async def _run(self,
-                   location: str,
-                   command: MutableSequence[str],
-                   environment: MutableMapping[str, str] = None,
-                   workdir: Optional[str] = None,
-                   stdin: Optional[Union[int, str]] = None,
-                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[str] = None,
-                   capture_output: bool = False,
-                   encode: bool = True,
-                   interactive: bool = False,
-                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+    async def run(self,
+                  location: str,
+                  command: MutableSequence[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: Optional[str] = None,
+                  stdin: Optional[Union[int, str]] = None,
+                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False,
+                  job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = self._get_command(
             location=location,
             command=command,
@@ -312,7 +309,6 @@ class OccamConnector(SSHConnector):
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            encode=encode,
             job_name=job_name)
         occam_command = "".join(
             "occam-exec "

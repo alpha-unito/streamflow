@@ -3,13 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import posixpath
-import shutil
-import tempfile
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from streamflow.core import utils
-from streamflow.core.data import DataManager, DataLocation, LOCAL_LOCATION, DataType
+from streamflow.core.data import DataLocation, DataManager, DataType, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
 from streamflow.data import remotepath
 from streamflow.deployment.connector.base import ConnectorCopyKind
@@ -28,15 +26,7 @@ async def _copy(src_connector: Optional[Connector],
                 dst_locations: Optional[MutableSequence[str]],
                 dst: str,
                 writable: False) -> None:
-    if src_connector == dst_connector:
-        await dst_connector.copy(
-            src=src,
-            dst=dst,
-            locations=dst_locations,
-            kind=ConnectorCopyKind.REMOTE_TO_REMOTE,
-            source_location=src_location,
-            read_only=not writable)
-    elif isinstance(src_connector, LocalConnector):
+    if isinstance(src_connector, LocalConnector):
         await dst_connector.copy(
             src=src,
             dst=dst,
@@ -51,21 +41,14 @@ async def _copy(src_connector: Optional[Connector],
             kind=ConnectorCopyKind.REMOTE_TO_LOCAL,
             read_only=not writable)
     else:
-        temp_dir = tempfile.mkdtemp()
-        await src_connector.copy(
+        await dst_connector.copy(
             src=src,
-            dst=temp_dir,
-            locations=[src_location],
-            kind=ConnectorCopyKind.REMOTE_TO_LOCAL,
-            read_only=not writable)
-        await asyncio.gather(*(asyncio.create_task(dst_connector.copy(
-            src=os.path.join(temp_dir, element),
             dst=dst,
             locations=dst_locations,
-            kind=ConnectorCopyKind.LOCAL_TO_REMOTE,
-            read_only=not writable
-        )) for element in os.listdir(temp_dir)))
-        shutil.rmtree(temp_dir)
+            kind=ConnectorCopyKind.REMOTE_TO_REMOTE,
+            source_connector=src_connector,
+            source_location=src_location,
+            read_only=not writable)
 
 
 class DefaultDataManager(DataManager):

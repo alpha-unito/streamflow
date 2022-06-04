@@ -5,15 +5,14 @@ import base64
 import itertools
 import os
 import posixpath
-import tarfile
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any, Set
+from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Union
 
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.workflow import Token
 from streamflow.data import aiotarstream
-from streamflow.workflow.token import ListToken, TerminationToken, ObjectToken
+from streamflow.workflow.token import ListToken, ObjectToken, TerminationToken
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector

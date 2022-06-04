@@ -10,7 +10,7 @@ import uuid
 from abc import ABC
 from pathlib import Path
 from shutil import which
-from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
+from typing import Any, Coroutine, MutableMapping, MutableSequence, Optional, Tuple, Union, cast
 
 import yaml
 from cachetools import Cache, TTLCache
@@ -22,6 +22,8 @@ from kubernetes_asyncio.stream import WsApiClient, ws_client
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import StreamWrapperContext
+from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location
 from streamflow.data import aiotarstream
@@ -60,6 +62,23 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
         channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
         payload = channel_prefix + data
         await self.stream.send_bytes(payload)
+
+
+class KubernetesResponseWrapperContext(StreamWrapperContext):
+
+    def __init__(self,
+                 coro: Coroutine):
+        self.coro: Coroutine = coro
+        self.response: Optional[KubernetesResponseWrapper] = None
+
+    async def __aenter__(self):
+        response = await self.coro
+        self.response = KubernetesResponseWrapper(response)
+        return self.response
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.response:
+            await self.response.close()
 
 
 class BaseKubernetesConnector(BaseConnector, ABC):
@@ -185,43 +204,32 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                                      dst: str,
                                      locations: MutableSequence[str],
                                      source_location: str,
+                                     source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
+        source_connector = source_connector or self
         locations = await self._get_effective_locations(locations, dst)
-        if source_location in locations:
+        if source_connector == self and source_location in locations:
             if src != dst:
                 command = ['/bin/cp', "-rf", src, dst]
                 await self.run(source_location, command)
                 locations.remove(source_location)
         if locations:
-            # Open source response
-            pod, container = source_location.split(':')
-            # noinspection PyUnresolvedReferences
-            dirname, basename = posixpath.split(src)
-            reader = KubernetesResponseWrapper(await self.client_ws.connect_get_namespaced_pod_exec(
-                name=pod,
-                namespace=self.namespace or 'default',
-                container=container,
-                command=["tar", "chf", "-", "-C", dirname, basename],
-                stderr=False,
-                stdin=True,
-                stdout=False,
-                tty=False,
-                _preload_content=False))
-            # Open a target response for each location
-            writers = [KubernetesResponseWrapper(w) for w in await asyncio.gather(*(asyncio.create_task(
-                self.client_ws.connect_get_namespaced_pod_exec(
-                    name=location.split(':')[0],
-                    namespace=self.namespace or 'default',
-                    container=location.split(':')[1],
-                    command=["tar", "xf", "-", "-C", posixpath.dirname(dst)],
-                    stderr=True,
-                    stdin=False,
-                    stdout=True,
-                    tty=False,
-                    _preload_content=False)) for location in locations))]
-            # Multiplex the reader output to all the writers
-            while content := await reader.read(self.transferBufferSize):
-                await asyncio.gather(*(asyncio.create_task(writer.write(content)) for writer in writers))
+            async with source_connector._get_stream_reader(source_location, src) as reader:
+                # Open a target response for each location
+                writers = [KubernetesResponseWrapper(w) for w in await asyncio.gather(*(asyncio.create_task(
+                    cast(Coroutine, self.client_ws.connect_get_namespaced_pod_exec(
+                        name=location.split(':')[0],
+                        namespace=self.namespace or 'default',
+                        container=location.split(':')[1],
+                        command=["tar", "xf", "-", "-C", posixpath.dirname(dst)],
+                        stderr=True,
+                        stdin=False,
+                        stdout=True,
+                        tty=False,
+                        _preload_content=False))) for location in locations))]
+                # Multiplex the reader output to all the writers
+                while content := await reader.read(source_connector.transferBufferSize):
+                    await asyncio.gather(*(asyncio.create_task(writer.write(content)) for writer in writers))
 
     async def _get_container(self, location: str) -> Tuple[str, V1Container]:
         pod_name, container_name = location.split(':')
@@ -293,6 +301,23 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             container=self.get_option("container", container),
             command=command)
 
+    def _get_stream_reader(self,
+                           location: str,
+                           src: str) -> StreamWrapperContext:
+        pod, container = location.split(':')
+        dirname, basename = posixpath.split(src)
+        return KubernetesResponseWrapperContext(
+            coro=cast(Coroutine, self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or 'default',
+                container=container,
+                command=["tar", "chf", "-", "-C", dirname, basename],
+                stderr=False,
+                stdin=True,
+                stdout=False,
+                tty=False,
+                _preload_content=False)))
+
     async def deploy(self, external: bool):
         # Init standard client
         configuration = await self._get_configuration()
@@ -305,27 +330,23 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         ws_api_client.set_default_header('Connection', 'upgrade,keep-alive')
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
 
-    async def _run(self,
-                   location: str,
-                   command: MutableSequence[str],
-                   environment: MutableMapping[str, str] = None,
-                   workdir: Optional[str] = None,
-                   stdin: Optional[Union[int, str]] = None,
-                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[str] = None,
-                   capture_output: bool = False,
-                   encode: bool = True,
-                   interactive: bool = False,
-                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+    async def run(self,
+                  location: str,
+                  command: MutableSequence[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: Optional[str] = None,
+                  stdin: Optional[Union[int, str]] = None,
+                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False,
+                  job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
         logger.debug("Executing command {command} on {location} {job}".format(
             command=command,
             location=location,
             job="for job {job}".format(job=job_name) if job_name else ""))
-        if encode:
-            command = utils.encode_command(command)
+        command = utils.encode_command(command)
         pod, container = location.split(':')
         # noinspection PyUnresolvedReferences
         response = await self.client_ws.connect_get_namespaced_pod_exec(

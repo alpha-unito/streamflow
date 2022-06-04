@@ -84,19 +84,26 @@ class QueueManagerConnector(SSHConnector, ABC):
                                  stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
         ...
 
-    async def _run(self,
-                   location: str,
-                   command: MutableSequence[str],
-                   environment: MutableMapping[str, str] = None,
-                   workdir: Optional[str] = None,
-                   stdin: Optional[Union[int, str]] = None,
-                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[str] = None,
-                   capture_output: bool = False,
-                   encode: bool = True,
-                   interactive: bool = False,
-                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: str,
+                                      output_directory: str,
+                                      tmp_directory: str) -> MutableMapping[str, Location]:
+        return {self.hostname: Location(
+            name=self.hostname,
+            hostname=self.hostname,
+            slots=self.maxConcurrentJobs)}
+
+    async def run(self,
+                  location: str,
+                  command: MutableSequence[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: Optional[str] = None,
+                  stdin: Optional[Union[int, str]] = None,
+                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False,
+                  job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         # TODO: find a smarter way to identify detachable jobs when implementing stacked connectors
         if job_name:
             command = utils.create_command(
@@ -133,7 +140,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 await self._get_output(job_id, location) if stdout == STDOUT else None,
                 await self._get_returncode(job_id, location))
         else:
-            return await super()._run(
+            return await super().run(
                 location=location,
                 command=command,
                 environment=environment,
@@ -142,20 +149,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 stdout=stdout,
                 stderr=stderr,
                 job_name=job_name,
-                capture_output=capture_output,
-                encode=encode,
-                interactive=interactive,
-                stream=stream)
-
-    async def get_available_locations(self,
-                                      service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
-        return {self.hostname: Location(
-            name=self.hostname,
-            hostname=self.hostname,
-            slots=self.maxConcurrentJobs)}
+                capture_output=capture_output)
 
     async def undeploy(self, external: bool) -> None:
         await self._remove_jobs(self.hostname)

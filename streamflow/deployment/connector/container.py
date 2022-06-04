@@ -3,7 +3,6 @@ import json
 import os
 import posixpath
 import shlex
-import tempfile
 from abc import ABC, abstractmethod
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple
 
@@ -12,10 +11,44 @@ from cachetools import Cache, TTLCache
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
+
+
+async def _exists_docker_image(image_name: str) -> bool:
+    exists_command = "".join(
+        "docker "
+        "image "
+        "inspect "
+        "{image_name}"
+    ).format(
+        image_name=image_name
+    )
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split(exists_command),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE)
+    await proc.wait()
+    return proc.returncode == 0
+
+
+async def _pull_docker_image(image_name: str) -> None:
+    exists_command = "".join(
+        "docker "
+        "pull "
+        "--quiet "
+        "{image_name}"
+    ).format(
+        image_name=image_name
+    )
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split(exists_command),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL)
+    await proc.wait()
 
 
 class ContainerConnector(BaseConnector, ABC):
@@ -62,31 +95,32 @@ class ContainerConnector(BaseConnector, ABC):
                                     read_only: bool = False) -> None:
         effective_locations = await self._get_effective_locations(locations, dst)
         copy_tasks = []
-        with tempfile.TemporaryFile() as tar_buffer:
-            for location in effective_locations:
-                if read_only and await self._is_bind_transfer(location, src, dst):
-                    copy_tasks.append(asyncio.create_task(
-                        self.run(
-                            location=location,
-                            command=["ln", "-snf", posixpath.abspath(src), dst])))
-                    continue
+        for location in effective_locations:
+            if read_only and await self._is_bind_transfer(location, src, dst):
                 copy_tasks.append(asyncio.create_task(
-                    self._copy_local_to_remote_single(
-                        src=src,
-                        dst=dst,
+                    self.run(
                         location=location,
-                        read_only=read_only)))
-            await asyncio.gather(*copy_tasks)
+                        command=["ln", "-snf", posixpath.abspath(src), dst])))
+                continue
+            copy_tasks.append(asyncio.create_task(
+                self._copy_local_to_remote_single(
+                    src=src,
+                    dst=dst,
+                    location=location,
+                    read_only=read_only)))
+        await asyncio.gather(*copy_tasks)
 
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
                                      locations: MutableSequence[str],
                                      source_location: str,
+                                     source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
+        source_connector = source_connector or self
         effective_locations = await self._get_effective_locations(locations, dst, source_location)
         non_bind_locations = []
-        if read_only and await self._is_bind_transfer(source_location, src, src):
+        if read_only and source_connector == self and await self._is_bind_transfer(source_location, src, src):
             for location in effective_locations:
                 if await self._is_bind_transfer(location, dst, dst):
                     await self.run(
@@ -98,6 +132,7 @@ class ContainerConnector(BaseConnector, ABC):
                 src=src,
                 dst=dst,
                 locations=non_bind_locations,
+                source_connector=source_connector,
                 source_location=source_location,
                 read_only=read_only)
         else:
@@ -105,6 +140,7 @@ class ContainerConnector(BaseConnector, ABC):
                 src=src,
                 dst=dst,
                 locations=effective_locations,
+                source_connector=source_connector,
                 source_location=source_location,
                 read_only=read_only)
 
@@ -407,44 +443,11 @@ class DockerConnector(DockerBaseConnector):
         self.volumesFrom: Optional[MutableSequence[str]] = volumesFrom
         self.workdir: Optional[str] = workdir
 
-    async def _exists_image(self,
-                            image_name: str) -> bool:
-        exists_command = "".join(
-            "docker "
-            "image "
-            "inspect "
-            "{image_name}"
-        ).format(
-            image_name=image_name
-        )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(exists_command),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE)
-        await proc.wait()
-        return proc.returncode == 0
-
-    async def _pull_image(self,
-                          image_name: str) -> None:
-        exists_command = "".join(
-            "docker "
-            "pull "
-            "--quiet "
-            "{image_name}"
-        ).format(
-            image_name=image_name
-        )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(exists_command),
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL)
-        await proc.wait()
-
     async def deploy(self, external: bool) -> None:
         if not external:
             # Pull image if it doesn't exist
-            if not await self._exists_image(self.image):
-                await self._pull_image(self.image)
+            if not await _exists_docker_image(self.image):
+                await _pull_docker_image(self.image)
             # Deploy the Docker container
             for _ in range(0, self.replicas):
                 deploy_command = "".join([

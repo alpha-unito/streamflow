@@ -11,9 +11,12 @@ import struct
 import sys
 import tarfile
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 from builtins import open as bltn_open
 from typing import Any, Optional
+
+from streamflow.core.data import StreamWrapper
+from streamflow.data.stream import BaseStreamWrapper
 
 
 async def copyfileobj(src, dst, length=None, bufsize=None):
@@ -36,37 +39,6 @@ async def write(src, dst, bufsize):
         buf = await src.read(bufsize) if isinstance(src, StreamWrapper) else src.read(bufsize)
         bufsize -= len(buf)
         await dst.write(buf) if isinstance(dst, StreamWrapper) else dst.write(buf)
-
-
-class StreamWrapper(ABC):
-
-    def __init__(self, stream):
-        self.stream = stream
-        self.closed = False
-
-    @abstractmethod
-    async def close(self): ...
-
-    @abstractmethod
-    async def read(self, size: Optional[int] = None): ...
-
-    @abstractmethod
-    async def write(self, data: Any): ...
-
-
-class BaseStreamWrapper(StreamWrapper):
-
-    async def close(self):
-        if self.closed:
-            return
-        self.closed = True
-        await self.stream.close()
-
-    async def read(self, size: Optional[int] = None):
-        return await self.stream.read(size)
-
-    async def write(self, data: Any):
-        return await self.stream.write(data)
 
 
 class CompressionStreamWrapper(BaseStreamWrapper, ABC):
@@ -261,32 +233,6 @@ class FileStreamReaderWrapper(StreamWrapper):
 
     async def write(self, data: Any):
         raise NotImplementedError
-
-
-class StreamReaderWrapper(StreamWrapper):
-
-    async def close(self):
-        pass
-
-    async def read(self, size: Optional[int] = None):
-        return await self.stream.read(size)
-
-    async def write(self, data: Any):
-        raise NotImplementedError
-
-
-class StreamWriterWrapper(StreamWrapper):
-
-    async def close(self):
-        self.stream.close()
-        await self.stream.wait_closed()
-
-    async def read(self, size: Optional[int] = None):
-        raise NotImplementedError
-
-    async def write(self, data: Any):
-        self.stream.write(data)
-        await self.stream.drain()
 
 
 class AioTarInfo(tarfile.TarInfo):

@@ -4,7 +4,7 @@ import asyncio
 import os
 import posixpath
 import tempfile
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -37,6 +37,7 @@ class Connector(ABC):
                    dst: str,
                    locations: MutableSequence[str],
                    kind: ConnectorCopyKind,
+                   source_connector: Optional[Connector] = None,
                    source_location: Optional[str] = None,
                    read_only: bool = False) -> None:
         ...

@@ -3,12 +3,13 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import MutableMapping, MutableSequence
+from typing import MutableMapping, MutableSequence, Optional
 
 import psutil
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import LOCAL_LOCATION
+from streamflow.core.deployment import Connector
 from streamflow.core.scheduling import Location, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 
@@ -43,12 +44,23 @@ class LocalConnector(BaseConnector):
                                      dst: str,
                                      locations: MutableSequence[str],
                                      source_location: str,
+                                     source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
-        if os.path.isdir(src):
-            os.makedirs(dst, exist_ok=True)
-            shutil.copytree(src, dst, dirs_exist_ok=True)
+        source_connector = source_connector or self
+        if source_connector == self:
+            if os.path.isdir(src):
+                os.makedirs(dst, exist_ok=True)
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            else:
+                shutil.copy(src, dst)
         else:
-            shutil.copy(src, dst)
+            await super()._copy_remote_to_remote(
+                src=src,
+                dst=dst,
+                locations=locations,
+                source_connector=source_connector,
+                source_location=source_location,
+                read_only=read_only)
 
     async def deploy(self, external: bool) -> None:
         os.makedirs(os.path.join(tempfile.gettempdir(), 'streamflow'), exist_ok=True)

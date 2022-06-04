@@ -7,23 +7,26 @@ import posixpath
 import stat
 import tarfile
 import tempfile
-from asyncio import Semaphore, Lock
+from asyncio import Lock, Semaphore
 from asyncio.subprocess import STDOUT
 from pathlib import PurePosixPath
-from typing import MutableSequence, Optional, MutableMapping, Tuple, Any, Union
+from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import asyncssh
 from asyncssh import SSHClientConnection
+from asyncssh.process import SSHProcess
 from cachetools import Cache, LRUCache
 from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import StreamWrapperContext
+from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Location, Hardware
+from streamflow.core.scheduling import Hardware, Location
 from streamflow.data import aiotarstream
-from streamflow.data.aiotarstream import StreamReaderWrapper, StreamWriterWrapper
+from streamflow.data.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -92,6 +95,35 @@ class SSHContext(object):
             return f.read().strip()
 
 
+class SSHStreamWrapperContext(StreamWrapperContext):
+
+    def __init__(self,
+                 src: str,
+                 ssh_context: SSHContext):
+        super().__init__()
+        self.src: str = src
+        self.ssh_context: SSHContext = ssh_context
+        self.ssh_process: Optional[SSHProcess] = None
+        self.stream: Optional[StreamReaderWrapper] = None
+
+    async def __aenter__(self):
+        ssh_client = await self.ssh_context.__aenter__()
+        dirname, basename = posixpath.split(self.src)
+        self.ssh_process = await (await ssh_client.create_process(
+            "tar chf - -C {} {}".format(dirname, basename),
+            stdin=asyncio.subprocess.DEVNULL,
+            encoding=None)).__aenter__()
+        self.stream = StreamReaderWrapper(self.ssh_process.stdout)
+        return self.stream
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.stream:
+            await self.stream.close()
+        if self.ssh_process:
+            await self.ssh_process.__aexit__(exc_type, exc_val, exc_tb)
+        await self.ssh_context.__aexit__(exc_type, exc_val, exc_tb)
+
+
 class SSHConfig(object):
 
     def __init__(self,
@@ -121,8 +153,7 @@ class SSHConnector(BaseConnector):
                      stdin: Optional[Union[int, str]] = None,
                      stdout: Union[int, str] = asyncio.subprocess.STDOUT,
                      stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-                     job_name: Optional[str] = None,
-                     encode: bool = True):
+                     job_name: Optional[str] = None):
         command = utils.create_command(
             command=command,
             environment=environment,
@@ -134,7 +165,7 @@ class SSHConnector(BaseConnector):
             command=command,
             location=location,
             job="for job {job}".format(job=job_name) if job_name else ""))
-        return utils.encode_command(command) if encode else command
+        return utils.encode_command(command)
 
     def __init__(self,
                  deployment_name: str,
@@ -199,9 +230,11 @@ class SSHConnector(BaseConnector):
                                            dst: str,
                                            location: str,
                                            read_only: bool = False):
-        async with self._get_ssh_client(location) as ssh_client:
+        async with self._get_data_transfer_client(location) as ssh_client:
             async with ssh_client.create_process(
                     "tar xf - -C /",
+                    stderr=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.DEVNULL,
                     encoding=None) as proc:
                 try:
                     async with aiotarstream.open(
@@ -220,7 +253,7 @@ class SSHConnector(BaseConnector):
                                     dst: str,
                                     location: str,
                                     read_only: bool = False) -> None:
-        async with self._get_ssh_client(location) as ssh_client:
+        async with self._get_data_transfer_client(location) as ssh_client:
             async with ssh_client.create_process(
                     "tar chf - -C / " + posixpath.relpath(src, '/'),
                     stdin=asyncio.subprocess.DEVNULL,
@@ -240,31 +273,32 @@ class SSHConnector(BaseConnector):
                                      dst: str,
                                      locations: MutableSequence[str],
                                      source_location: str,
+                                     source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
-        if source_location in locations:
+        source_connector = source_connector or self
+        if source_connector == self and source_location in locations:
             if src != dst:
                 command = ['/bin/cp', "-rf", src, dst]
                 await self.run(source_location, command)
                 locations.remove(source_location)
         if locations:
-            with contextlib.AsyncExitStack() as exit_stack:
-                reader_client = await exit_stack.enter_async_context(self._get_ssh_client(source_location))
-                # Open source StreamReader
-                dirname, basename = posixpath.split(src)
-                async with reader_client.create_process(
-                        "tar chf - -C {} {}".format(dirname, basename),
-                        stdin=asyncio.subprocess.DEVNULL,
-                        encoding=None) as reader:
+            async with source_connector._get_stream_reader(source_location, src) as reader:
+                async with contextlib.AsyncExitStack() as exit_stack:
                     # Open a target StreamWriter for each location
                     writer_clients = await asyncio.gather(*(asyncio.create_task(
-                        exit_stack.enter_async_context(location)) for location in locations))
-                    with contextlib.AsyncExitStack() as writers_stack:
+                        exit_stack.enter_async_context(self._get_data_transfer_client(location))
+                    ) for location in locations))
+                    async with contextlib.AsyncExitStack() as writers_stack:
                         writers = await asyncio.gather(*(asyncio.create_task(
                             writers_stack.enter_async_context(
-                                client.create_process("tar xf - -C " + posixpath.dirname(dst), encoding=None))
-                            for client in writer_clients)))
+                                client.create_process(
+                                    "tar xf - -C " + posixpath.dirname(dst),
+                                    stderr=asyncio.subprocess.DEVNULL,
+                                    stdout=asyncio.subprocess.DEVNULL,
+                                    encoding=None)
+                            )) for client in writer_clients))
                         # Multiplex the reader output to all the writers
-                        while content := await reader.stdout.read(self.transferBufferSize):
+                        while content := await reader.read(source_connector.transferBufferSize):
                             for writer in writers:
                                 writer.stdin.write(content)
                             await asyncio.gather(*(asyncio.create_task(writer.stdin.drain()) for writer in writers))
@@ -331,39 +365,6 @@ class SSHConnector(BaseConnector):
                 max_concurrent_sessions=self.maxConcurrentSessions)
         return self.ssh_contexts[location]
 
-    async def _run(self,
-                   location: str,
-                   command: MutableSequence[str],
-                   environment: MutableMapping[str, str] = None,
-                   workdir: Optional[str] = None,
-                   stdin: Optional[Union[int, str]] = None,
-                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[str] = None,
-                   capture_output: bool = False,
-                   encode: bool = True,
-                   interactive: bool = False,
-                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
-        command = self._get_command(
-            location=location,
-            command=command,
-            environment=environment,
-            workdir=workdir,
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
-            encode=encode,
-            job_name=job_name)
-        if job_name is not None and self.template is not None:
-            helper_file = await self._build_helper_file(command, location, environment, workdir)
-            async with self._get_ssh_client(location) as ssh_client:
-                result = await ssh_client.run(helper_file, stderr=STDOUT)
-        else:
-            async with self._get_ssh_client(location) as ssh_client:
-                result = await ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT)
-        if capture_output:
-            return result.stdout.strip(), result.returncode
-
     @cachedmethod(lambda self: self.hardwareCache)
     async def _get_location_hardware(self,
                                      location: str,
@@ -392,6 +393,13 @@ class SSHConnector(BaseConnector):
                 raise WorkflowExecutionException(
                     "Impossible to retrieve locations for {location}".format(location=location))
 
+    def _get_stream_reader(self,
+                           location: str,
+                           src: str) -> StreamWrapperContext:
+        return SSHStreamWrapperContext(
+            src=src,
+            ssh_context=self._get_data_transfer_client(location))
+
     async def deploy(self, external: bool) -> None:
         pass
 
@@ -416,6 +424,35 @@ class SSHConnector(BaseConnector):
                 hostname=location_obj.hostname,
                 hardware=hardware)
         return locations
+
+    async def run(self,
+                  location: str,
+                  command: MutableSequence[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: Optional[str] = None,
+                  stdin: Optional[Union[int, str]] = None,
+                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False,
+                  job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
+        command = self._get_command(
+            location=location,
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            job_name=job_name)
+        if job_name is not None and self.template is not None:
+            helper_file = await self._build_helper_file(command, location, environment, workdir)
+            async with self._get_ssh_client(location) as ssh_client:
+                result = await ssh_client.run(helper_file, stderr=STDOUT)
+        else:
+            async with self._get_ssh_client(location) as ssh_client:
+                result = await ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT)
+        if capture_output:
+            return result.stdout.strip(), result.returncode
 
     async def undeploy(self, external: bool) -> None:
         for ssh_context in self.ssh_contexts.values():
