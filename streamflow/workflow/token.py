@@ -6,6 +6,21 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Token
 
 
+class IterationTerminationToken(Token):
+
+    def __init__(self, tag: str):
+        super().__init__(None, tag)
+
+    def get_weight(self, context: StreamFlowContext):
+        return 0
+
+    def update(self, value: Any) -> Token:
+        raise NotImplementedError()
+
+    def retag(self, tag: str) -> Token:
+        raise NotImplementedError()
+
+
 class FileToken(Token, ABC):
 
     @abstractmethod

@@ -1,19 +1,22 @@
 import asyncio
 import urllib.parse
 from abc import ABC
-from typing import MutableMapping, MutableSequence, Any, Optional
+from typing import Any, MutableMapping, MutableSequence, Optional
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
-from streamflow.core.utils import random_name, get_tag
-from streamflow.core.workflow import Token, Job, Workflow, Port
+from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
+from streamflow.core.utils import get_tag, random_name
+from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import LoadListing
 from streamflow.data import remotepath
+from streamflow.log_handler import logger
 from streamflow.workflow.port import JobPort
-from streamflow.workflow.step import TransferStep, ConditionalStep, InputInjectorStep
-from streamflow.workflow.token import ListToken, ObjectToken
+from streamflow.workflow.step import (
+    ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep
+)
+from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
 
 async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
@@ -76,6 +79,35 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
             port.put(Token(value=None, tag=get_tag(inputs.values())))
+
+
+class CWLLoopConditionalStep(CWLConditionalStep):
+
+    async def _eval(self, inputs: MutableMapping[str, Token]):
+        context = utils.build_context(inputs)
+        condition = utils.eval_expression(
+            expression=self.expression,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib)
+        if condition is True or condition is False:
+            return condition
+        else:
+            raise WorkflowDefinitionException("Conditional 'when' must evaluate to 'true' or 'false'")
+
+    async def _on_true(self, inputs: MutableMapping[str, Token]):
+        logger.debug("Step {} condition evaluated true on inputs {}".format(
+            self.name, [t.tag for t in inputs.values()]))
+        # Next iteration: propagate outputs to the loop
+        for port_name, port in self.get_output_ports().items():
+            port.put(inputs[port_name])
+
+    async def _on_false(self, inputs: MutableMapping[str, Token]):
+        logger.debug("Step {} condition evaluated false on inputs {}".format(
+            self.name, [t.tag for t in inputs.values()]))
+        # Loop termination: propagate outputs outside the loop
+        for port_name, port in self.get_skip_ports().items():
+            port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
 
 
 class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
@@ -160,6 +192,22 @@ class CWLInputInjectorStep(InputInjectorStep):
                 return ObjectToken(value=dict(zip(token_tasks.keys(), await asyncio.gather(*token_tasks.values()))))
         else:
             return Token(value=token_value)
+
+
+class CWLLoopOutputAllStep(LoopOutputStep):
+
+    async def _process_output(self, tag: str) -> Token:
+        return ListToken(
+            tag=tag,
+            value=sorted(self.token_map.get(tag, []), key=lambda t: int(t.tag.split('.')[-1])))
+
+
+class CWLLoopOutputLastStep(LoopOutputStep):
+
+    async def _process_output(self, tag: str) -> Token:
+        return Token(
+            tag=tag,
+            value=sorted(self.token_map.get(tag, [Token(value=None)]), key=lambda t: int(t.tag.split('.')[-1]))[-1])
 
 
 class CWLTransferStep(TransferStep):
@@ -292,10 +340,10 @@ class CWLTransferStep(TransferStep):
             else:
                 await remotepath.mkdir(dst_connector, dst_locations, path_processor.dirname(filepath))
                 await utils.write_remote_file(
-                        context=self.workflow.context,
-                        job=job,
-                        content=token_value.get('contents', ''),
-                        path=filepath)
+                    context=self.workflow.context,
+                    job=job,
+                    content=token_value.get('contents', ''),
+                    path=filepath)
             # Build file token
             new_token_value = await utils.get_file_token(
                 context=self.workflow.context,

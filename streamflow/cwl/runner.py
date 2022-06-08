@@ -19,6 +19,7 @@ parser.add_argument('jobfile', nargs='?', type=str,
                     help='The input job document')
 parser.add_argument('--outdir', default=os.getcwd(), type=str,
                     help='Output directory, defaults to the current directory')
+parser.add_argument('--debug', action='store_true', help='Debug-level diagnostic output')
 parser.add_argument('--quiet', action='store_true', help='No diagnostic output')
 parser.add_argument('--version', action='store_true',
                     help='Report the name and version, then quit without further processing')
@@ -82,6 +83,8 @@ def main(args):
         return
     if args.quiet:
         logger.setLevel(logging.WARN)
+    elif args.debug:
+        logger.setLevel(logging.DEBUG)
     asyncio.run(_async_main(args))
 
 

@@ -103,6 +103,8 @@ def main(args):
     elif args.context == "run":
         if args.quiet:
             logger.setLevel(logging.WARN)
+        elif args.debug:
+            logger.setLevel(logging.DEBUG)
         asyncio.run(_async_main(args))
     elif args.context == "report":
         report.create_report(args)

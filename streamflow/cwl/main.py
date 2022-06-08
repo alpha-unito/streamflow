@@ -6,6 +6,7 @@ import os
 import cwltool.context
 import cwltool.load_tool
 import cwltool.loghandler
+import cwltool.main
 import cwltool.utils
 from cwltool.resolver import tool_resolver
 
@@ -46,6 +47,7 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     loading_context.loader = cwltool.load_tool.default_loader(
         loading_context.fetcher_constructor)
     loading_context, workflowobj, uri = cwltool.load_tool.fetch_document(cwl_args[0], loading_context)
+    cwltool.main.setup_schema(argparse.Namespace(enable_ext=True), None)
     loading_context, uri = cwltool.load_tool.resolve_and_validate_document(
         loading_context, workflowobj, uri
     )

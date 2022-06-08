@@ -7,12 +7,12 @@ import os
 import posixpath
 import uuid
 from pathlib import Path
-from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Union
+from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Type, Union
 
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.workflow import Token
 from streamflow.data import aiotarstream
-from streamflow.workflow.token import ListToken, ObjectToken, TerminationToken
+from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken, TerminationToken
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
@@ -50,15 +50,23 @@ class NamesStack(object):
         return False
 
 
+def check_iteration_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
+    return check_token_class(inputs, IterationTerminationToken)
+
+
 def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
+    return check_token_class(inputs, TerminationToken)
+
+
+def check_token_class(inputs: Union[Token, Iterable[Token]], cls: Type[Token]):
     if isinstance(inputs, Token):
-        return isinstance(inputs, TerminationToken)
+        return isinstance(inputs, cls)
     else:
         for token in inputs:
             if isinstance(token, MutableSequence):
-                if check_termination(token):
+                if check_token_class(token, cls):
                     return True
-            elif isinstance(token, TerminationToken):
+            elif isinstance(token, cls):
                 return True
         return False
 

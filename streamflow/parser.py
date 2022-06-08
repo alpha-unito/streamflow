@@ -12,6 +12,8 @@ run_parser.add_argument('--outdir', default=os.getcwd(), type=str,
                         help='Output directory in which to store final results of the workflow.')
 run_parser.add_argument('--quiet', action='store_true',
                         help='Only prints results, warnings and errors.')
+run_parser.add_argument('--debug', action='store_true',
+                        help='Prints debug-level diagnostic output')
 
 # streamflow report
 report_parser = subparsers.add_parser('report')

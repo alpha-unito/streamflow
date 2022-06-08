@@ -1,4 +1,4 @@
-from typing import MutableMapping, MutableSequence, Any, AsyncIterable
+from typing import Any, AsyncIterable, MutableMapping, MutableSequence
 
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Token, Workflow

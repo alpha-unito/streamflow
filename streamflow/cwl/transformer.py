@@ -82,6 +82,12 @@ class FirstNonNullTransformer(OneToOneTransformer):
         return {self.get_output_name(): self._transform(*next(iter(inputs.items())))}
 
 
+class ForwardTransformer(OneToOneTransformer):
+
+    async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
+        return {self.get_output_name(): next(iter(inputs.values()))}
+
+
 class ListToElementTransformer(OneToOneTransformer):
 
     def _transform(self, token: Token) -> Token:
