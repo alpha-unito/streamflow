@@ -7,7 +7,7 @@ import tempfile
 import urllib.parse
 from enum import Enum
 from pathlib import PurePosixPath
-from typing import Any, MutableMapping, MutableSequence, Optional, Set, Union, cast
+from typing import Any, MutableMapping, MutableSequence, Optional, Set, Type, Union, cast
 
 import cwltool.command_line_tool
 import cwltool.context
@@ -40,7 +40,7 @@ from streamflow.cwl.step import (
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer, CWLDefaultTransformer, CWLTokenTransformer, FirstNonNullTransformer, ForwardTransformer,
-    ListToElementTransformer, OnlyNonNullTransformer, ValueFromTransformer
+    ListToElementTransformer, LoopValueFromTransformer, OnlyNonNullTransformer, ValueFromTransformer
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
 from streamflow.log_handler import logger
@@ -852,6 +852,26 @@ def _process_javascript_requirement(requirements: MutableMapping[str, Any]) -> (
     return expression_lib, full_js
 
 
+def _process_loop_transformers(step_name: str,
+                               input_ports: MutableMapping[str, Port],
+                               loop_input_ports: MutableMapping[str, Port],
+                               transformers: MutableMapping[str, LoopValueFromTransformer],
+                               input_dependencies: MutableMapping[str, Set[str]]):
+    new_input_ports = {}
+    for input_name, token_transformer in transformers.items():
+        # Process inputs to attach ports
+        for dep_name in input_dependencies[input_name]:
+            if dep_name in input_ports:
+                token_transformer.add_loop_input_port(
+                    posixpath.relpath(dep_name, step_name), input_ports[dep_name])
+        if input_name in loop_input_ports:
+            token_transformer.add_loop_source_port(
+                posixpath.relpath(input_name, step_name), loop_input_ports[input_name])
+        # Put transformer output ports in input ports map
+        new_input_ports[input_name] = token_transformer.get_output_port()
+    return {**input_ports, **new_input_ports}
+
+
 def _process_transformers(step_name: str,
                           input_ports: MutableMapping[str, Port],
                           transformers: MutableMapping[str, Transformer],
@@ -1651,11 +1671,13 @@ class CWLTranslator(object):
                     input_ports=loop_input_ports,
                     value_from_transformers=loop_value_from_transformers,
                     input_dependencies=loop_input_dependencies,
-                    inner_steps_prefix='-loop')
+                    inner_steps_prefix='-loop',
+                    value_from_transformer_cls=LoopValueFromTransformer)
             # Process inputs again to attach ports to transformers
-            loop_input_ports = _process_transformers(
+            loop_input_ports = _process_loop_transformers(
                 step_name=step_name,
-                input_ports=loop_input_ports,
+                input_ports=input_ports,
+                loop_input_ports=loop_input_ports,
                 transformers=loop_value_from_transformers,
                 input_dependencies=loop_input_dependencies)
             # Connect loop outputs to loop inputs
@@ -1711,7 +1733,8 @@ class CWLTranslator(object):
                                        input_ports: MutableMapping[str, Port],
                                        value_from_transformers: MutableMapping[str, ValueFromTransformer],
                                        input_dependencies: MutableMapping[str, Any],
-                                       inner_steps_prefix: str = ''):
+                                       inner_steps_prefix: str = '',
+                                       value_from_transformer_cls: Type[ValueFromTransformer] = ValueFromTransformer):
         # Extract custom types if present
         schema_def_types = _get_schema_def_types(requirements)
         # Extract JavaScript requirements
@@ -1730,7 +1753,7 @@ class CWLTranslator(object):
         if 'valueFrom' in element_input:
             # Create a ValueFromTransformer
             value_from_transformers[global_name] = workflow.create_step(
-                cls=ValueFromTransformer,
+                cls=value_from_transformer_cls,
                 name=global_name + inner_steps_prefix + "-value-from-transformer",
                 processor=_create_token_processor(
                     port_name=port_name,

@@ -155,3 +155,40 @@ class ValueFromTransformer(ManyToOneTransformer):
                 context=context,
                 full_js=self.full_js,
                 expression_lib=self.expression_lib))}
+
+
+class LoopValueFromTransformer(ValueFromTransformer):
+
+    def __init__(self,
+                 name: str,
+                 workflow: Workflow,
+                 port_name: str,
+                 processor: TokenProcessor,
+                 value_from: str,
+                 expression_lib: Optional[MutableSequence[str]] = None,
+                 full_js: bool = False):
+        super().__init__(name, workflow, port_name, processor, value_from, expression_lib, full_js)
+        self.loop_input_ports: MutableSequence[str] = []
+        self.loop_source_port: Optional[str] = None
+
+    def add_loop_input_port(self, name: str, port: Port):
+        self.add_input_port(name + "-in", port)
+        self.loop_input_ports.append(name)
+
+    def add_loop_source_port(self, name: str, port: Port):
+        self.add_input_port(name + "-out", port)
+        self.loop_source_port = name
+
+    async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
+        loop_inputs = {k: inputs[k + "-in"] for k in self.loop_input_ports}
+        self_token = (await self.processor.process(loop_inputs, inputs[self.loop_source_port + "-out"])
+                      if self.loop_source_port else None)
+        context = utils.build_context(loop_inputs)
+        context = {**context, **{'self': utils.get_token_value(self_token)}}
+        return {self.get_output_name(): Token(
+            tag=get_tag(inputs.values()),
+            value=utils.eval_expression(
+                expression=self.value_from,
+                context=context,
+                full_js=self.full_js,
+                expression_lib=self.expression_lib))}
