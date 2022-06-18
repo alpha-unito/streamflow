@@ -214,6 +214,14 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 await self.run(source_location, command)
                 locations.remove(source_location)
         if locations:
+            # Get write command
+            write_command = await utils.get_remote_to_remote_write_command(
+                src_connector=source_connector,
+                src_location=source_location,
+                src=src,
+                dst_connector=self,
+                dst_locations=locations,
+                dst=dst)
             async with source_connector._get_stream_reader(source_location, src) as reader:
                 # Open a target response for each location
                 writers = [KubernetesResponseWrapper(w) for w in await asyncio.gather(*(asyncio.create_task(
@@ -221,7 +229,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                         name=location.split(':')[0],
                         namespace=self.namespace or 'default',
                         container=location.split(':')[1],
-                        command=["tar", "xf", "-", "-C", posixpath.dirname(dst)],
+                        command=write_command,
                         stderr=True,
                         stdin=False,
                         stdout=True,

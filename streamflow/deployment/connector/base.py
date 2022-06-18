@@ -125,12 +125,20 @@ class BaseConnector(Connector, ABC):
                 await self.run(source_location, command)
                 locations.remove(source_location)
         if locations:
+            # Get write command
+            write_command = " ".join(await utils.get_remote_to_remote_write_command(
+                src_connector=source_connector,
+                src_location=source_location,
+                src=src,
+                dst_connector=self,
+                dst_locations=locations,
+                dst=dst))
             # Open source StreamReader
             async with source_connector._get_stream_reader(source_location, src) as reader:
                 # Open a target StreamWriter for each location
                 writers = await asyncio.gather(*(asyncio.create_task(asyncio.create_subprocess_exec(
                     *shlex.split(self._get_run_command(
-                        command="tar xf - -C " + posixpath.dirname(dst),
+                        command=write_command,
                         location=location,
                         interactive=True)),
                     stdin=asyncio.subprocess.PIPE,

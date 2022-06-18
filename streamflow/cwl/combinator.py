@@ -3,7 +3,7 @@ from typing import Any, AsyncIterable, MutableMapping, MutableSequence
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Token, Workflow
 from streamflow.workflow.combinator import DotProductCombinator
-from streamflow.workflow.token import ListToken
+from streamflow.workflow.token import IterationTerminationToken, ListToken
 
 
 def _flatten_token_list(outputs: MutableSequence[Token]):
@@ -33,11 +33,12 @@ class ListMergeCombinator(DotProductCombinator):
     async def combine(self,
                       port_name: str,
                       token: Token) -> AsyncIterable[MutableMapping[str, Token]]:
-        async for schema in super().combine(port_name, token):
-            outputs = [schema[name] for name in self.input_names]
-            # Flatten if needed
-            if self.flatten:
-                outputs = _flatten_token_list(outputs)
-            yield {self.output_name: ListToken(
-                value=outputs,
-                tag=get_tag(outputs))}
+        if not isinstance(token, IterationTerminationToken):
+            async for schema in super().combine(port_name, token):
+                outputs = [schema[name] for name in self.input_names]
+                # Flatten if needed
+                if self.flatten:
+                    outputs = _flatten_token_list(outputs)
+                yield {self.output_name: ListToken(
+                    value=outputs,
+                    tag=get_tag(outputs))}

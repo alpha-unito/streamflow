@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Type, Union
 
 from streamflow.core.data import LOCAL_LOCATION
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Token
 from streamflow.data import aiotarstream
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken, TerminationToken
@@ -136,6 +137,32 @@ def encode_command(command: str):
 
 def get_path_processor(connector: Connector):
     return posixpath if connector is not None and connector.deployment_name != LOCAL_LOCATION else os.path
+
+
+async def get_remote_to_remote_write_command(src_connector: Connector,
+                                             src_location: str,
+                                             src: str,
+                                             dst_connector: Connector,
+                                             dst_locations: MutableSequence[str],
+                                             dst: str) -> MutableSequence[str]:
+    if posixpath.basename(src) != posixpath.basename(dst):
+        result, status = await src_connector.run(
+            location=src_location,
+            command=["test -d \"{path}\"".format(path=src)],
+            capture_output=True)
+        if status > 1:
+            raise WorkflowExecutionException(result)
+        # If is a directory
+        elif status == 0:
+            await asyncio.gather(*(asyncio.create_task(
+                dst_connector.run(location=dst_location, command=["mkdir", "-p", dst])
+            ) for dst_location in dst_locations))
+            return ["tar", "xf", "-", "-C", dst, "--strip-components", "1"]
+        # If is a file
+        else:
+            return ["tar", "xf", "-", "-O", ">", dst]
+    else:
+        return ["tar", "xf", "-", "-C", posixpath.dirname(dst)]
 
 
 def get_size(path):

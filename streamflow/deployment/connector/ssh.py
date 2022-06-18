@@ -281,6 +281,13 @@ class SSHConnector(BaseConnector):
                 command = ['/bin/cp', "-rf", src, dst]
                 await self.run(source_location, command)
                 locations.remove(source_location)
+        write_command = " ".join(await utils.get_remote_to_remote_write_command(
+            src_connector=source_connector,
+            src_location=source_location,
+            src=src,
+            dst_connector=self,
+            dst_locations=locations,
+            dst=dst))
         if locations:
             async with source_connector._get_stream_reader(source_location, src) as reader:
                 async with contextlib.AsyncExitStack() as exit_stack:
@@ -292,7 +299,7 @@ class SSHConnector(BaseConnector):
                         writers = await asyncio.gather(*(asyncio.create_task(
                             writers_stack.enter_async_context(
                                 client.create_process(
-                                    "tar xf - -C " + posixpath.dirname(dst),
+                                    write_command,
                                     stderr=asyncio.subprocess.DEVNULL,
                                     stdout=asyncio.subprocess.DEVNULL,
                                     encoding=None)

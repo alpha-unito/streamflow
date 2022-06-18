@@ -1,11 +1,11 @@
-from typing import MutableMapping, Optional, MutableSequence
+from typing import MutableMapping, MutableSequence, Optional
 
-from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
+from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.utils import get_tag
-from streamflow.core.workflow import Token, Workflow, TokenProcessor, Port
+from streamflow.core.workflow import Port, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
 from streamflow.workflow.token import ListToken
-from streamflow.workflow.transformer import OneToOneTransformer, ManyToOneTransformer
+from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
 
 
 class AllNonNullTransformer(OneToOneTransformer):
@@ -29,25 +29,21 @@ class CWLDefaultTransformer(ManyToOneTransformer):
                  workflow: Workflow,
                  default_port: Port):
         super().__init__(name, workflow)
-        self.add_input_port('__default__', default_port)
-
-    def add_input_port(self, name: str, port: Port) -> None:
-        input_ports = {k: p for k, p in self.input_ports .items()if k != '__default__'}
-        if not input_ports:
-            super().add_input_port(name, port)
-        else:
-            raise WorkflowDefinitionException("{} step must contain a single input port.".format(self.name))
+        self.default_port: Port = default_port
+        self.default_token: Optional[Token] = None
 
     async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
-        if len(inputs) != 2:
+        if len(inputs) != 1:
             raise WorkflowDefinitionException("{} step must contain a single input port.".format(self.name))
-        if '__default__' not in inputs:
+        if not self.default_port:
             raise WorkflowDefinitionException("{} step must contain a default port.".format(self.name))
-        primary_token = next(iter(inputs[k] for k in inputs if k != '__default__'))
+        primary_token = next(iter(inputs[k] for k in inputs))
         if utils.get_token_value(primary_token) is not None:
             return {self.get_output_name(): primary_token}
         else:
-            return {self.get_output_name(): inputs['__default__']}
+            if not self.default_token:
+                self.default_token = (await self._get_inputs({'__default__': self.default_port}))['__default__']
+            return {self.get_output_name(): self.default_token.retag(primary_token.tag)}
 
 
 class CWLTokenTransformer(ManyToOneTransformer):

@@ -295,11 +295,17 @@ class CWLTransferStep(TransferStep):
                 # Perform remote checksum
                 original_checksum = token_value['checksum']
                 for location in dst_locations:
-                    checksum = 'sha1${}'.format(await remotepath.checksum(
-                        self.workflow.context, dst_connector, location, filepath))
-                    if checksum != original_checksum:
-                        raise WorkflowExecutionException("Error transferring file {} to location {}".format(
-                            filepath, location))
+                    if await remotepath.exists(dst_connector, location, filepath):
+                        checksum = 'sha1${}'.format(await remotepath.checksum(
+                            self.workflow.context, dst_connector, location, filepath))
+                        if checksum != original_checksum:
+                            raise WorkflowExecutionException(
+                                "Error transferring file {} in location {} to {} in location {}".format(
+                                    selected_location.path, selected_location.location, filepath, location))
+                    else:
+                        raise WorkflowExecutionException(
+                            "Error transferring file {} in location {} to {} in location {}".format(
+                                selected_location.path, selected_location.location, filepath, location))
                 # Add size, checksum and format fields
                 new_token_value = {**new_token_value, **{
                     'nameroot': token_value['nameroot'],
