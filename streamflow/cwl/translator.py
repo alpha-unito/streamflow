@@ -1446,9 +1446,9 @@ class CWLTranslator(object):
             if scatter_inputs:
                 raise WorkflowDefinitionException(
                     'cwltool:Loop requirement is not compatible with the `scatter` directive')
-            if 'loop_when' not in loop_requirement:
+            if 'loopWhen' not in loop_requirement:
                 raise WorkflowDefinitionException(
-                    'The `loop_when` is required for cwltool:Loop requirement')
+                    'The `loopWhen` is required for cwltool:Loop requirement')
             # Build combinator
             loop_combinator = LoopCombinator(
                 workflow=workflow,
@@ -1477,7 +1477,7 @@ class CWLTranslator(object):
             loop_conditional_step = workflow.create_step(
                 cls=CWLLoopConditionalStep,
                 name=step_name + "-loop-when",
-                expression=loop_requirement['loop_when'],
+                expression=loop_requirement['loopWhen'],
                 expression_lib=expression_lib,
                 full_js=full_js)
             # Add inputs to conditional step
@@ -1657,8 +1657,8 @@ class CWLTranslator(object):
             loop_value_from_transformers = {}
             loop_input_dependencies = {}
             for loop_input in loop_requirement.get('loop', []):
-                # Pre-process the `loop_source` field to avoid inconsistencies
-                loop_input['source'] = loop_input.get('loop_source', loop_input['id'])
+                # Pre-process the `loopSource` field to avoid inconsistencies
+                loop_input['source'] = loop_input.get('loopSource', loop_input['id'])
                 self._translate_workflow_step_input(
                     workflow=workflow,
                     context=context,
