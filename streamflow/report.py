@@ -3,7 +3,6 @@ import os.path
 
 import pandas as pd
 
-from streamflow.persistence.persistence_manager import DefaultPersistenceManager
 from streamflow.persistence.sqlite import SqliteDatabase
 
 
@@ -20,9 +19,8 @@ def _export_to_file(fig, args: argparse.Namespace, default_name: str) -> None:
 def create_report(args: argparse.Namespace):
     import plotly.express as px
     # Retrieve data
-    database = SqliteDatabase(os.path.join(args.outdir, ".streamflow", "sqlite.db"), reset_db=False)
-    persistence_manager = DefaultPersistenceManager(db=database, output_dir=args.outdir)
-    df = persistence_manager.db.get_report()
+    database = SqliteDatabase(os.path.join(args.outdir, ".streamflow", "sqlite.db"))
+    df = database.get_report(args.workflow)
     # If output format is csv, print DataFrame and exit
     if args.format == 'csv':
         df.to_csv(args.name or "report.csv", index=False)

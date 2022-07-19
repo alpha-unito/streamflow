@@ -69,8 +69,10 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     else:
         cwl_inputs = {}
     # Transpile CWL workflow to the StreamFlow representation
+    logger.info("Processing workflow {}".format(args.name))
     translator = CWLTranslator(
         context=context,
+        name=args.name,
         output_directory=args.outdir,
         cwl_definition=cwl_definition,
         cwl_inputs=cwl_inputs,

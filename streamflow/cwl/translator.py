@@ -283,6 +283,9 @@ def _create_list_merger(name: str,
     for port_name, port in ports.items():
         combinator.add_input_port(port_name, port)
         combinator.combinator.add_item(port_name)
+    workflow.context.database.update_step(
+        step_id=combinator.persistent_id,
+        updates={'params': combinator.save()})
     if pick_value == 'first_non_null':
         combinator.add_output_port(name, workflow.create_port())
         transformer = workflow.create_step(
@@ -801,7 +804,9 @@ def _percolate_port(port_name: str, *args) -> Port:
                 return _percolate_port(port, *args)
 
 
-def _process_docker_requirement(target: Target,
+def _process_docker_requirement(name: str,
+                                workflow: Workflow,
+                                target: Target,
                                 context: MutableMapping[str, Any],
                                 docker_requirement: MutableMapping[str, Any],
                                 network_access: bool) -> Target:
@@ -831,13 +836,25 @@ def _process_docker_requirement(target: Target,
             host=local_dir,
             container=docker_config['workdir']))
     # Build step target
-    return Target(
-        deployment=DeploymentConfig(
-            name='docker-requirement-{id}'.format(id=random_name()),
-            connector_type='docker',
-            config=docker_config),
+    deployment = DeploymentConfig(
+        name=name,
+        connector_type='docker',
+        config=docker_config)
+    deployment.persistent_id = workflow.context.database.add_deployment(
+        name=name,
+        connector_type='docker',
+        external=False,
+        params=deployment.save())
+    step_target = Target(
+        deployment=deployment,
         service=image_name,
         workdir=target.workdir)
+    step_target.persistent_id = workflow.context.database.add_target(
+        deployment=deployment.persistent_id,
+        locations=1,
+        service=step_target.service,
+        workdir=step_target.workdir)
+    return step_target
 
 
 def _process_javascript_requirement(requirements: MutableMapping[str, Any]) -> (Optional[MutableSequence[Any]], bool):
@@ -892,12 +909,14 @@ class CWLTranslator(object):
 
     def __init__(self,
                  context: StreamFlowContext,
+                 name: str,
                  output_directory: str,
                  cwl_definition: cwltool.process.Process,
                  cwl_inputs: MutableMapping[str, Any],
                  workflow_config: WorkflowConfig,
                  loading_context: cwltool.context.LoadingContext):
         self.context: StreamFlowContext = context
+        self.name: str = name
         self.output_directory: str = output_directory
         self.cwl_definition: cwltool.process.Process = cwl_definition
         self.cwl_inputs: MutableMapping[str, Any] = cwl_inputs
@@ -972,16 +991,28 @@ class CWLTranslator(object):
                                 "Use `locations` instead.")
                 else:
                     locations = 1
-            return Target(
-                deployment=DeploymentConfig(
-                    name=target_deployment['name'],
-                    connector_type=target_deployment['type'],
-                    config=target_deployment['config'],
-                    external=target_deployment.get('external', False),
-                    lazy=target_deployment.get('lazy', True)),
+            deployment = DeploymentConfig(
+                name=target_deployment['name'],
+                connector_type=target_deployment['type'],
+                config=target_deployment['config'],
+                external=target_deployment.get('external', False),
+                lazy=target_deployment.get('lazy', True))
+            deployment.persistent_id = self.context.database.add_deployment(
+                name=deployment.name,
+                connector_type=deployment.connector_type,
+                external=False,
+                params=deployment.save())
+            target = Target(
+                deployment=deployment,
                 locations=locations,
                 service=step_target.get('service'),
                 workdir=workdir)
+            target.persistent_id = self.context.database.add_target(
+                deployment=deployment.persistent_id,
+                locations=locations,
+                service=target.service,
+                workdir=workdir)
+            return target
         else:
             return LocalTarget(workdir=workdir)
 
@@ -1150,6 +1181,8 @@ class CWLTranslator(object):
                               else False)
             if target.deployment.name == LOCAL_LOCATION:
                 target = _process_docker_requirement(
+                    name=posixpath.join(name_prefix, 'docker-requirement'),
+                    workflow=workflow,
                     target=target,
                     context=context,
                     docker_requirement=requirements['DockerRequirement'],
@@ -1259,10 +1292,6 @@ class CWLTranslator(object):
             step.command.stdout = cwl_element.tool['stdout']
         if 'stderr' in cwl_element.tool:
             step.command.stderr = cwl_element.tool['stderr']
-        # Persist step
-        step.persistent_id = self.context.persistence_manager.db.add_step(
-            name=posixpath.join(posixpath.sep, *[s for s in step.name.split(posixpath.sep) if s != 'run']),
-            status=step.status.value)
 
     def _translate_workflow(self,
                             workflow: Workflow,
@@ -1652,6 +1681,9 @@ class CWLTranslator(object):
                 loop_output_step.add_output_port(port_name, external_output_ports[global_name])
                 loop_terminator_step.add_input_port(port_name, external_output_ports[global_name])
                 loop_terminator_combinator.add_item(port_name)
+            self.context.database.update_step(
+                step_id=loop_terminator_step.persistent_id,
+                updates={'params': loop_terminator_step.save()})
             # Process inputs
             loop_input_ports = {}
             loop_value_from_transformers = {}
@@ -1845,7 +1877,7 @@ class CWLTranslator(object):
             input_ports[global_name] = workflow.create_port()
 
     def translate(self) -> Workflow:
-        workflow = Workflow(self.context)
+        workflow = Workflow(self.context, name=self.name)
         # Create context
         context = _create_context()
         # Compute root prefix

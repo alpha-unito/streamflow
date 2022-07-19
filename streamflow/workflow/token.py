@@ -1,4 +1,5 @@
 import asyncio
+import json
 from abc import ABC, abstractmethod
 from typing import MutableSequence, Any
 
@@ -28,16 +29,28 @@ class FileToken(Token, ABC):
         ...
 
 
+class JobToken(Token):
+
+    def save(self):
+        return json.dumps(self.value.name)
+
+
 class ListToken(Token):
 
     async def get_weight(self, context: StreamFlowContext):
         return sum(await asyncio.gather(*(asyncio.create_task(t.get_weight(context)) for t in self.value)))
+
+    def save(self):
+        return json.dumps([json.loads(t.save()) for t in self.value])
 
 
 class ObjectToken(Token):
 
     async def get_weight(self, context: StreamFlowContext):
         return sum(await asyncio.gather(*(asyncio.create_task(t.get_weight(context)) for t in self.value.values())))
+
+    def save(self):
+        return json.dumps({k: json.loads(t.save()) for k, t in self.value})
 
 
 class TerminationToken(Token):

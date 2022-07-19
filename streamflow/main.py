@@ -11,6 +11,7 @@ from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowException
+from streamflow.core.workflow import Status
 from streamflow.cwl.main import main as cwl_main
 from streamflow.log_handler import logger
 from streamflow.parser import parser
@@ -22,7 +23,6 @@ _DEFAULTS = {
     'db': 'streamflow.persistence.sqlite.SqliteDatabase',
     'deploymentManager': 'streamflow.deployment.deployment_manager.DefaultDeploymentManager',
     'failureManager': 'streamflow.recovery.failure_manager.DefaultFailureManager',
-    'persistenceManager': 'streamflow.persistence.persistence_manager.DefaultPersistenceManager',
     'scheduler': 'streamflow.scheduling.scheduler.DefaultScheduler'
 }
 
@@ -64,12 +64,6 @@ def _get_instance_from_config(
         kwargs = {**kwargs, **config.get('config', {})}
     else:
         class_name = _DEFAULTS[instance_type] if enabled_by_default else _DISABLED[instance_type]
-    if instance_type == 'persistenceManager':
-        del kwargs['context']
-        kwargs['db'] = _get_instance_from_config(
-            config or {},
-            'db',
-            {'connection': os.path.join(kwargs['output_dir'], '.streamflow', 'sqlite.db')})
     module_name, _, class_simplename = class_name.rpartition('.')
     module = importlib.import_module(module_name)
     class_ = getattr(module, class_simplename)
@@ -82,14 +76,14 @@ def build_context(config_dir: str,
     context = StreamFlowContext(config_dir)
     context.checkpoint_manager = _get_instance_from_config(
         streamflow_config, 'checkpointManager', {'context': context}, enabled_by_default=False)
+    context.database = _get_instance_from_config(
+        streamflow_config, 'db', {'connection': os.path.join(output_dir, '.streamflow', 'sqlite.db')})
     context.data_manager = _get_instance_from_config(
         streamflow_config, 'dataManager', {'context': context})
     context.deployment_manager = _get_instance_from_config(
         streamflow_config, 'deploymentManager', {'context': context})
     context.failure_manager = _get_instance_from_config(
         streamflow_config, 'failureManager', {'context': context}, enabled_by_default=False)
-    context.persistence_manager = _get_instance_from_config(
-        streamflow_config, 'persistenceManager', {'context': context, 'output_dir': output_dir})
     context.scheduler = _get_instance_from_config(
         streamflow_config, 'scheduler', {'context': context, 'default_policy': DataLocalityPolicy()})
     return context
@@ -100,6 +94,12 @@ def main(args):
     if args.context == "version":
         from streamflow.version import VERSION
         print("StreamFlow version {version}".format(version=VERSION))
+    elif args.context == "list":
+        db = _get_instance_from_config(
+            {}, 'db', {'connection': os.path.join(args.dir, '.streamflow', 'sqlite.db')})
+        workflows = db.get_workflows()
+        workflows['status'] = workflows['status'].transform(lambda x: Status(x).name)
+        print(workflows.to_string(index=False))
     elif args.context == "run":
         if args.quiet:
             logger.setLevel(logging.WARN)

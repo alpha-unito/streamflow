@@ -10,7 +10,7 @@ import time
 import re
 from abc import ABC
 from asyncio.subprocess import STDOUT
-from typing import Union, Optional, List, Any, IO, MutableMapping, MutableSequence
+from typing import Iterable, Union, Optional, List, Any, IO, MutableMapping, MutableSequence
 
 from streamflow.core.data import LOCAL_LOCATION, DataLocation
 from streamflow.core.deployment import Connector
@@ -146,11 +146,10 @@ def _escape_value(value: Any) -> Any:
     else:
         return shlex.quote(str(value))
 
-def alphanumeric_sorting(list):
+
+def alphanumeric_sorting(list_to_sort: Iterable) -> Iterable:
     regex = '(-{0,1}[0-9]+)'
-    convert = lambda text: int(text) if re.match(regex, text) else text
-    alphanum_key = lambda key: [ convert(c) for c in re.split(regex, key) ]
-    return sorted(list, key = alphanum_key)
+    return sorted(list_to_sort, key=lambda key: [int(c) if re.match(regex, c) else c for c in re.split(regex, key)])
 
 
 def _merge_tokens(bindings_map: MutableMapping[str, MutableSequence[Any]]) -> MutableSequence[Any]:
@@ -462,7 +461,7 @@ class CWLCommand(CWLBaseCommand):
             outdir=job.output_directory,
             command=cmd_string))
         # Persist command
-        command_id = self.step.workflow.context.persistence_manager.db.add_command(
+        command_id = self.step.workflow.context.database.add_command(
             step_id=self.step.persistent_id,
             cmd=cmd_string)
         # Escape shell command when needed
@@ -522,7 +521,7 @@ class CWLCommand(CWLBaseCommand):
         else:
             status = Status.FAILED
         # Update command persistence
-        self.step.workflow.context.persistence_manager.db.update_command(command_id, {
+        self.step.workflow.context.database.update_command(command_id, {
             "status": status.value,
             "output": str(result),
             "start_time": start_time,
@@ -776,7 +775,7 @@ class CWLExpressionCommand(CWLBaseCommand):
         logger.info('Evaluating expression for step {step} (job {job})'.format(
             step=self.step.name, job=job.name))
         # Persist command
-        command_id = self.step.workflow.context.persistence_manager.db.add_command(
+        command_id = self.step.workflow.context.database.add_command(
             self.step.persistent_id,
             self.expression)
         # Execute command
@@ -788,7 +787,7 @@ class CWLExpressionCommand(CWLBaseCommand):
             expression_lib=self.expression_lib)
         end_time = time.time_ns()
         # Update command persistence
-        self.step.workflow.context.persistence_manager.db.update_command(command_id, {
+        self.step.workflow.context.database.update_command(command_id, {
             "status": Status.COMPLETED.value,
             "output": str(result),
             "start_time": start_time,

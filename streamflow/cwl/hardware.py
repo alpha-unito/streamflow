@@ -1,3 +1,4 @@
+import json
 import math
 from typing import MutableSequence, Union, Optional, MutableMapping, Any
 
@@ -39,3 +40,12 @@ class CWLHardwareRequirement(HardwareRequirement):
             memory=self._process_requirement(self.memory, context),
             tmp_directory=self._process_requirement(self.tmpdir, context),
             output_directory=self._process_requirement(self.outdir, context))
+
+    def save(self):
+        return {
+            'cores': self.cores,
+            'memory': self.memory,
+            'tmpdir': self.tmpdir,
+            'outdir': self.outdir,
+            'full_js': self.full_js,
+            'expression_lib': self.expression_lib}

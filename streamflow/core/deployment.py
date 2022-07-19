@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import posixpath
 import tempfile
@@ -9,6 +10,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from streamflow.core.data import LOCAL_LOCATION
+from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -105,7 +107,7 @@ class DeploymentManager(ABC):
         ...
 
 
-class DeploymentConfig(object):
+class DeploymentConfig(PersistableEntity):
 
     def __init__(self,
                  name: str,
@@ -113,14 +115,18 @@ class DeploymentConfig(object):
                  config: MutableMapping[str, Any],
                  external: bool = False,
                  lazy: bool = True) -> None:
+        super().__init__()
         self.name: str = name
         self.connector_type: str = connector_type
         self.config: MutableMapping[str, Any] = config
         self.external = external
         self.lazy: bool = lazy
 
+    def save(self):
+        return json.dumps(self.config)
 
-class Target(object):
+
+class Target(PersistableEntity):
 
     def __init__(self,
                  deployment: DeploymentConfig,
@@ -129,12 +135,16 @@ class Target(object):
                  scheduling_group: Optional[str] = None,
                  scheduling_policy: Optional[str] = None,
                  workdir: Optional[str] = None):
+        super().__init__()
         self.deployment: DeploymentConfig = deployment
         self.locations: int = locations
         self.service: Optional[str] = service
         self.scheduling_group: Optional[str] = scheduling_group
         self.scheduling_policy: Optional[str] = scheduling_policy
         self.workdir: str = workdir or _init_workdir(deployment.name)
+
+    def save(self) -> str:
+        return json.dumps({})
 
 
 class LocalTarget(Target):

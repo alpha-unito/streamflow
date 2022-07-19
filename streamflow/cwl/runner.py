@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import sys
+import uuid
 
 import streamflow.cwl.main
 from streamflow.config.config import WorkflowConfig
@@ -17,6 +18,8 @@ parser.add_argument('processfile', nargs='?', type=str,
                          'Optional if the jobfile has a `cwl:tool` field to indicate which process description to run.')
 parser.add_argument('jobfile', nargs='?', type=str,
                     help='The input job document')
+parser.add_argument('--name', default=str(uuid.uuid4()), type=str,
+                    help='Name of the current workflow. Will be used for search and indexing.')
 parser.add_argument('--outdir', default=os.getcwd(), type=str,
                     help='Output directory, defaults to the current directory')
 parser.add_argument('--debug', action='store_true', help='Debug-level diagnostic output')

@@ -55,6 +55,10 @@ class HardwareRequirement(ABC):
     def eval(self, inputs: MutableMapping[str, Token]) -> Hardware:
         ...
 
+    @abstractmethod
+    def save(self):
+        ...
+
 
 class JobAllocation(object):
     __slots__ = ('job', 'target', 'locations', 'status', 'hardware')
