@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "batch.json",
+  "type": "object",
+  "properties": {
+    "attempts": {
+      "type": "integer",
+      "description": "The number of retry attempts for the Batch job"
+    },
+    "image": {
+      "type": "string",
+      "description": "Image for the Batch job (if no job definition was provided). Use '' to indicate that it will be substituted in by a CWL dockerPull requirement"
+    },
+    "jobDefinition": {
+      "type": "string",
+      "description": "The name of the Batch job definition"
+    },
+    "jobQueue": {
+      "type": "string",
+      "description": "The name of the Batch job queue"
+    },
+    "jobName": {
+      "type": "string",
+      "description": "The name of the Batch job to be created"
+    },
+    "memory": {
+      "type": "integer",
+      "description": "Amount of memory for the Batch job, in MiB"
+    },
+    "profileName": {
+      "type": "string",
+      "description": "AWS profile to use"
+    },
+    "regionName": {
+      "type": "string",
+      "description": "The name of the region that Batch runs in"
+    },
+    "pollingInterval": {
+      "type": "integer",
+      "description": "Time interval (in seconds) between consecutive termination checks",
+      "default": 5
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "Time for Batch job to run before timing out"
+    },
+    "transferBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": "16kiB"
+    },
+    "vcpus": {
+      "type": "integer",
+      "description": "The number of vcpus for the Batch job"
+    }
+  },
+  "anyOf": [
+    { "required": [ "jobDefinition" ] },
+    { "required": [ "image", "memory", "vcpus" ] }
+  ],
+  "required": [
+    "jobQueue"
+  ],
+  "additionalProperties": false
+}

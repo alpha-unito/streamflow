@@ -769,10 +769,7 @@ def _percolate_port(port_name: str, *args) -> Port:
                 return _percolate_port(port, *args)
 
 
-def _process_docker_requirement(target: Target,
-                                context: MutableMapping[str, Any],
-                                docker_requirement: MutableMapping[str, Any],
-                                network_access: bool) -> Target:
+def _process_docker_image(docker_requirement: MutableMapping[str, Any]) -> str:
     # Retrieve image
     if 'dockerPull' in docker_requirement:
         image_name = docker_requirement['dockerPull']
@@ -781,6 +778,14 @@ def _process_docker_requirement(target: Target,
     else:
         raise WorkflowDefinitionException(
             "DockerRequirements without `dockerPull` or `dockerImageId` are not supported yet")
+    return image_name
+
+
+def _process_docker_requirement(target: Target,
+                                context: MutableMapping[str, Any],
+                                docker_requirement: MutableMapping[str, Any],
+                                network_access: bool) -> Target:
+    image_name = _process_docker_image(docker_requirement=docker_requirement)
     # Build configuration
     docker_config = {
         'image': image_name,
@@ -1102,6 +1107,12 @@ class CWLTranslator(object):
                     context=context,
                     docker_requirement=requirements['DockerRequirement'],
                     network_access=network_access)
+            else:
+                image_name = _process_docker_image(docker_requirement=requirements['DockerRequirement'])
+                if 'image' not in target.deployment.config or target.deployment.config['image'] == '':
+                    target.deployment.config['image'] = image_name
+        if target.deployment.connector_type == 'batch':
+            target.scheduling_policy = 'managed'
         # Create DeployStep to initialise the execution environment
         deploy_step = self._get_deploy_step(target, workflow)
         # Create a schedule step and connect it to the DeployStep
@@ -1189,6 +1200,9 @@ class CWLTranslator(object):
                 schema_def_types=schema_def_types,
                 context=context,
                 step=step)
+            # Let Batch parameters be passed unescaped
+            if target.deployment.connector_type == 'batch':
+                step.command.is_shell_command = False
             # Process ToolTimeLimit
             if 'ToolTimeLimit' in requirements:
                 step.command.time_limit = requirements['ToolTimeLimit']['timelimit']

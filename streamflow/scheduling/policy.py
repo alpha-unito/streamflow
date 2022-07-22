@@ -4,7 +4,7 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataType
+from streamflow.core.data import MANAGED_LOCATION, DataType
 from streamflow.core.scheduling import Policy, Hardware, JobAllocation
 from streamflow.core.workflow import Status
 from streamflow.workflow.token import FileToken
@@ -83,3 +83,16 @@ class DataLocalityPolicy(Policy):
                 return location
         # If there are no available locations, return None
         return None
+
+
+class ManagedPolicy(Policy):
+
+    async def get_location(self,
+                           context: StreamFlowContext,
+                           job: Job,
+                           deployment: str,
+                           hardware_requirement: Hardware,
+                           available_locations: MutableMapping[str, Location],
+                           jobs: MutableMapping[str, JobAllocation],
+                           locations: MutableMapping[str, LocationAllocation]) -> Optional[str]:
+        return MANAGED_LOCATION if MANAGED_LOCATION in available_locations else None

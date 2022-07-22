@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, MutableSequence, Union, Tuple, Type
 
 from streamflow.core.deployment import Connector, DeploymentManager, ConnectorCopyKind
 from streamflow.core.scheduling import Location
+from streamflow.deployment.connector.batch import AWSBatchConnector
 from streamflow.deployment.connector.container import DockerConnector, DockerComposeConnector, SingularityConnector
 from streamflow.deployment.connector.kubernetes import Helm3Connector
 from streamflow.deployment.connector.local import LocalConnector
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from typing import MutableMapping, Optional, Any
 
 connector_classes = {
+    'batch': AWSBatchConnector,
     'docker': DockerConnector,
     'docker-compose': DockerComposeConnector,
     'helm': Helm3Connector,
