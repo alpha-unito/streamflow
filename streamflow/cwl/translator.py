@@ -1200,9 +1200,6 @@ class CWLTranslator(object):
                 schema_def_types=schema_def_types,
                 context=context,
                 step=step)
-            # Let Batch parameters be passed unescaped
-            if target.deployment.connector_type == 'batch':
-                step.command.is_shell_command = False
             # Process ToolTimeLimit
             if 'ToolTimeLimit' in requirements:
                 step.command.time_limit = requirements['ToolTimeLimit']['timelimit']

@@ -128,7 +128,8 @@ class AWSBatchConnector(BaseConnector):
                    encode: bool = True,
                    interactive: bool = False,
                    stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
-        command = " ".join(command)
+        command = utils.create_command(
+            command, environment, workdir, stdin, stdout, stderr)
         logger.debug("Executing command {command} on {location} {job}".format(
             command=command,
             location=location,
@@ -143,7 +144,7 @@ class AWSBatchConnector(BaseConnector):
                 'attemptDurationSeconds': self.timeout
             }
         jobContainerOverrides = {
-            'command': shlex.split(command)
+            'command': utils.wrap_command(command)
         }
         if self.vcpus is not None:
             jobContainerOverrides['vcpus'] = self.vcpus
@@ -194,7 +195,7 @@ class AWSBatchConnector(BaseConnector):
                 nextToken=nextToken)
             previousToken = nextToken
         if logs:
-            logs = logs[:-2]
+            logs = logs[:-1]
         return (logs, job_results[job_id]['exitCode'])
 
     async def deploy(self, external: bool) -> None:

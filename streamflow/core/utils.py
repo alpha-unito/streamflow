@@ -124,6 +124,10 @@ def encode_command(command: str):
         command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
 
 
+def wrap_command(command: str):
+    return ["/bin/sh", "-c", "{command}".format(command=command)]
+
+
 def get_path_processor(connector: Connector):
     return posixpath if connector is not None and connector.deployment_name != LOCAL_LOCATION else os.path
 
