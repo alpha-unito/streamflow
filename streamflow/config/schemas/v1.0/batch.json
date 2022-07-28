@@ -27,6 +27,14 @@
       "type": "integer",
       "description": "Amount of memory for the Batch job, in MiB"
     },
+    "mountPoints": {
+      "type": "array",
+      "properties": {
+        "containerPath": { "type": "string" },
+        "readOnly": { "type": "boolean" },
+        "sourceVolume": { "type": "string" }
+      }
+    },
     "profileName": {
       "type": "string",
       "description": "AWS profile to use"
@@ -52,6 +60,34 @@
     "vcpus": {
       "type": "integer",
       "description": "The number of vcpus for the Batch job"
+    },
+    "volumes": {
+      "type": "array",
+      "properties": {
+        "host": {
+          "type": "object",
+          "properties": {
+            "sourcePath": { "type": "string" }
+          }
+        },
+        "name": { "type": "string" },
+        "efsVolumeConfiguration": {
+          "type": "object",
+          "properties": {
+            "fileSystemId": { "type": "string" },
+            "rootDirectory": { "type": "string" },
+            "transitEncryption": { "type": "string" },
+            "transitEncryptionPort": { "type": "integer" },
+            "authorizationConfig": {
+              "type": "object",
+              "properties": {
+                "accessPointId": { "type": "string" },
+                "iam": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "anyOf": [

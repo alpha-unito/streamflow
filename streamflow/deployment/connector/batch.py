@@ -25,22 +25,30 @@ class AWSBatchConnector(BaseConnector):
                  jobDefinition: Optional[str] = None,
                  jobName: Optional[str] = None,
                  memory: Optional[int] = None,
+                 mountPoints: Optional[MutableSequence[Any]] = None,
                  pollingInterval: int = 15,
                  profileName: Optional[str] = None,
                  regionName: Optional[str] = None,
                  timeout: Optional[int] = None,
                  transferBufferSize: int = 2 ** 16,
-                 vcpus: Optional[int] = None) -> None:
+                 vcpus: Optional[int] = None,
+                 volumes: Optional[MutableSequence[Any]] = None) -> None:
         super().__init__(
             deployment_name=deployment_name,
             streamflow_config_dir=streamflow_config_dir,
             transferBufferSize=transferBufferSize)
         self.attempts: Optional[int] = attempts
         self.image: Optional[str] = image
-        if jobDefinition is not None and image is not None:
-            logger.info("Image supplied, but could be overridden by job definition")
-        if jobDefinition is None and (image is None or vcpus is None or memory is None):
-            raise Exception('Job specifications not defined')
+        if jobDefinition is not None:
+            if image is not None:
+                logger.info("Image supplied, but could be overridden by job definition")
+            if mountPoints is not None or volumes is not None:
+                logger.info("Volumes have been supplied but will be ignored")
+        if jobDefinition is None:
+            if image is None or vcpus is None or memory is None:
+                raise Exception('Job specifications not defined')
+            if mountPoints is not None and volumes is None:
+                raise Exception("Must provide mounted volume definitions")
         self.jobDefinition: Optional[str] = jobDefinition
         self.jobName: str = jobName if jobName is not None else deployment_name
         self.jobQueue: str = jobQueue
@@ -55,9 +63,11 @@ class AWSBatchConnector(BaseConnector):
             self.client = boto3.client('batch', **self.clientKwargs)
         self.profileName: Optional[str] = profileName
         self.memory: Optional[int] = memory
+        self.mountPoints: Optional[MutableSequence[Any]] = mountPoints
         self.pollingInterval: int = pollingInterval
         self.timeout: Optional[int] = timeout
         self.vcpus: Optional[int] = vcpus
+        self.volumes: Optional[MutableSequence[Any]] = volumes
         self.scheduledJobs: MutableSequence[str] = []
         self.jobsCache: TTLCache = TTLCache(maxsize=1, ttl=self.pollingInterval)
 
@@ -190,17 +200,21 @@ class AWSBatchConnector(BaseConnector):
     async def deploy(self, external: bool) -> None:
         if self.jobDefinition is None:
             self.jobDefinition = str(uuid.uuid4())
+            containerProperties = {
+                'image': self.image,
+                'vcpus': self.vcpus,
+                'memory': self.memory
+            }
+            if self.mountPoints is not None and self.volumes is not None:
+                containerProperties['mountPoints'] = self.mountPoints
+                containerProperties['volumes'] = self.volumes
             response = self.client.register_job_definition(
                 jobDefinitionName=self.jobDefinition,
                 type='container',
                 # parameters={
                 #     'string': 'string'
                 # },
-                containerProperties={
-                    'image': self.image,
-                    'vcpus': self.vcpus,
-                    'memory': self.memory,
-                },
+                containerProperties=containerProperties
             )
             logger.info("Created job definition {jobDef}".format(jobDef=self.jobDefinition))
 
