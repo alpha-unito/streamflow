@@ -1,5 +1,3 @@
-import shlex
-import uuid
 import boto3
 
 import asyncio
@@ -70,6 +68,7 @@ class AWSBatchConnector(BaseConnector):
         self.volumes: Optional[MutableSequence[Any]] = volumes
         self.scheduledJobs: MutableSequence[str] = []
         self.jobsCache: TTLCache = TTLCache(maxsize=1, ttl=self.pollingInterval)
+        self.commandsCache: MutableMapping[str, MutableMapping[str, str]] = {}
 
     def _get_run_command(self,
                          command: str,
@@ -128,6 +127,12 @@ class AWSBatchConnector(BaseConnector):
                    encode: bool = True,
                    interactive: bool = False,
                    stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+        cmd = " ".join(command)
+        if job_name is None and location in self.commandsCache:
+            if cmd in self.commandsCache[location]:
+                return self.commandsCache[location][cmd], 0
+        else:
+            self.commandsCache[location] = {}
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
         logger.debug("Executing command {command} on {location} {job}".format(
@@ -167,7 +172,6 @@ class AWSBatchConnector(BaseConnector):
             job_id=job_id))
         self.scheduledJobs.append(job_id)
         while True:
-            logger.info("checking status...")
             job_results = self._get_job_results()
             if job_id in job_results.keys():
                 self.scheduledJobs.remove(job_id)
@@ -196,11 +200,13 @@ class AWSBatchConnector(BaseConnector):
             previousToken = nextToken
         if logs:
             logs = logs[:-1]
+        if job_results[job_id]['exitCode'] == 0:
+            self.commandsCache[location][cmd] = logs
         return (logs, job_results[job_id]['exitCode'])
 
     async def deploy(self, external: bool) -> None:
         if self.jobDefinition is None:
-            self.jobDefinition = str(uuid.uuid4())
+            self.jobDefinition = utils.random_name()
             containerProperties = {
                 'image': self.image,
                 'vcpus': self.vcpus,
@@ -224,10 +230,17 @@ class AWSBatchConnector(BaseConnector):
                                       input_directory: str,
                                       output_directory: str,
                                       tmp_directory: str) -> MutableMapping[str, Location]:
-        return {MANAGED_LOCATION: Location(
-            name=MANAGED_LOCATION,
+        instance_names = [utils.random_name()]
+        if self.jobDefinition:
+            response = self.client.describe_job_definitions(jobDefinitionName=self.jobDefinition)
+            if response['jobDefinitions'] and response['jobDefinitions'][0]['containerProperties']['volumes']:
+                instance_names = [volume['efsVolumeConfiguration']['fileSystemId']
+                                    for volume in response['jobDefinitions'][0]['containerProperties']['volumes']
+                                    if 'efsVolumeConfiguration' in volume]
+        return {instance_name: Location(
+            name=instance_name,
             hostname='aws',
-            slots=1)}
+            slots=1) for instance_name in instance_names}
 
     async def undeploy(self, external: bool) -> None:
         self._remove_jobs()
