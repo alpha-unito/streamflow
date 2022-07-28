@@ -7,7 +7,6 @@ from typing import MutableSequence, MutableMapping, Any, Tuple, Optional, Union
 from cachetools import TTLCache
 
 from streamflow.core import utils
-from streamflow.core.data import MANAGED_LOCATION
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.base import BaseConnector

@@ -10,7 +10,6 @@ if TYPE_CHECKING:
     from typing import Optional, Set
 
 LOCAL_LOCATION = '__LOCAL__'
-MANAGED_LOCATION = '__MANAGED__'
 
 
 class DataType(Enum):
