@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from asyncio import FIRST_COMPLETED, Task, CancelledError
-from typing import TYPE_CHECKING, cast, MutableSequence
+from asyncio import CancelledError, FIRST_COMPLETED, Task
+from typing import MutableSequence, TYPE_CHECKING, cast
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException

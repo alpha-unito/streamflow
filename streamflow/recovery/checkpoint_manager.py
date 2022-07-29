@@ -5,8 +5,10 @@ import os
 import tempfile
 from typing import TYPE_CHECKING
 
+import pkg_resources
+
 from streamflow.core import utils
-from streamflow.core.data import LOCAL_LOCATION, DataLocation
+from streamflow.core.data import DataLocation, LOCAL_LOCATION
 from streamflow.core.recovery import CheckpointManager
 from streamflow.core.utils import random_name
 
@@ -36,12 +38,22 @@ class DefaultCheckpointManager(CheckpointManager):
             dst_locations=[LOCAL_LOCATION],
             dst_path=local_path)
 
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'default_checkpoint_manager.json'))
+
     def register(self, data_location: DataLocation) -> None:
         self.copy_tasks.append(asyncio.create_task(
             self._async_local_copy(data_location)))
 
 
 class DummyCheckpointManager(CheckpointManager):
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'dummy_checkpoint_manager.json'))
 
     def register(self, data_location: DataLocation) -> None:
         pass

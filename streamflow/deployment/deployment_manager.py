@@ -1,36 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from asyncio import Event
 from typing import MutableSequence, TYPE_CHECKING, Tuple, Type, Union
 
+import pkg_resources
+
 from streamflow.core.deployment import Connector, ConnectorCopyKind, DeploymentManager
 from streamflow.core.scheduling import Location
-from streamflow.deployment.connector.container import DockerComposeConnector, DockerConnector, SingularityConnector
-from streamflow.deployment.connector.kubernetes import Helm3Connector
-from streamflow.deployment.connector.local import LocalConnector
-from streamflow.deployment.connector.occam import OccamConnector
-from streamflow.deployment.connector.queue_manager import PBSConnector, SlurmConnector
-from streamflow.deployment.connector.ssh import SSHConnector
+from streamflow.deployment.connector import connector_classes
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import DeploymentConfig
     from typing import MutableMapping, Optional, Any
-
-connector_classes = {
-    'docker': DockerConnector,
-    'docker-compose': DockerComposeConnector,
-    'helm': Helm3Connector,
-    'helm3': Helm3Connector,
-    'local': LocalConnector,
-    'occam': OccamConnector,
-    'pbs': PBSConnector,
-    'singularity': SingularityConnector,
-    'slurm': SlurmConnector,
-    'ssh': SSHConnector
-}
 
 
 class DefaultDeploymentManager(DeploymentManager):
@@ -53,13 +38,13 @@ class DefaultDeploymentManager(DeploymentManager):
                     connector = FutureConnector(
                         name=deployment_name,
                         context=self.context,
-                        connector_type=connector_classes[deployment_config.connector_type],
+                        type=connector_classes[deployment_config.type],
                         external=deployment_config.external,
                         **deployment_config.config)
                     self.deployments_map[deployment_name] = connector
                     self.events_map[deployment_name].set()
                 else:
-                    connector = connector_classes[deployment_config.connector_type](
+                    connector = connector_classes[deployment_config.type](
                         deployment_name, self.context, **deployment_config.config)
                     self.deployments_map[deployment_name] = connector
                     if not deployment_config.external:
@@ -76,6 +61,11 @@ class DefaultDeploymentManager(DeploymentManager):
 
     def get_connector(self, deployment_name: str) -> Optional[Connector]:
         return self.deployments_map.get(deployment_name, None)
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'deployment_manager.json'))
 
     def is_deployed(self, deployment_name: str):
         return deployment_name in self.deployments_map
@@ -107,11 +97,11 @@ class FutureConnector(Connector):
     def __init__(self,
                  name: str,
                  context: StreamFlowContext,
-                 connector_type: Type[Connector],
+                 type: Type[Connector],
                  external: bool,
                  **kwargs):
         super().__init__(name, context)
-        self.connector_type: Type[Connector] = connector_type
+        self.type: Type[Connector] = type
         self.external: bool = external
         self.parameters: MutableMapping[str, Any] = kwargs
         self.deploying: bool = False
@@ -146,7 +136,7 @@ class FutureConnector(Connector):
     async def deploy(self,
                      external: bool) -> None:
         # noinspection PyArgumentList
-        connector = self.connector_type(
+        connector = self.type(
             self.deployment_name, self.context, **self.parameters)
         if not external:
             logger.info("Deploying {}".format(self.deployment_name))
@@ -172,6 +162,9 @@ class FutureConnector(Connector):
             input_directory=input_directory,
             output_directory=output_directory,
             tmp_directory=tmp_directory)
+
+    def get_schema(self) -> str:
+        return self.type.get_schema()
 
     async def run(self,
                   location: str,

@@ -149,16 +149,16 @@ class Step(PersistableEntity, ABC):
         self.terminated: bool = False
         self.workflow: Workflow = workflow
 
-    def _add_port(self, name: str, port: Port, dep_type: DependencyType):
+    def _add_port(self, name: str, port: Port, type: DependencyType):
         if port.name not in self.workflow.ports:
             self.workflow.ports[port.name] = port
-        if dep_type == DependencyType.INPUT:
+        if type == DependencyType.INPUT:
             self.input_ports[name] = port.name
         else:
             self.output_ports[name] = port.name
         if self.persistent_id:
             self.workflow.context.database.add_dependency(
-                step=self.persistent_id, port=port.persistent_id, dep_type=dep_type, name=name)
+                step=self.persistent_id, port=port.persistent_id, type=type, name=name)
 
     def _set_status(self, status: Status):
         self.status = status
@@ -267,7 +267,7 @@ class Workflow(PersistableEntity):
         self.steps: MutableMapping[str, Step] = {}
         if persist:
             self.persistent_id: Optional[int] = self.context.database.add_workflow(
-                name=name, status=Status.WAITING.value, wf_type='cwl')
+                name=name, status=Status.WAITING.value, type='cwl')
 
     def create_port(self,
                     cls: Type[P] = Port,
@@ -282,7 +282,7 @@ class Workflow(PersistableEntity):
             port.persistent_id = self.context.database.add_port(
                 name=name,
                 workflow_id=self.persistent_id,
-                port_type=cls,
+                type=cls,
                 params=port.save())
         return port
 
@@ -300,7 +300,7 @@ class Workflow(PersistableEntity):
                 name=name,
                 workflow_id=self.persistent_id,
                 status=step.status.value,
-                step_type=cls,
+                type=cls,
                 params=step.save())
         return step
 

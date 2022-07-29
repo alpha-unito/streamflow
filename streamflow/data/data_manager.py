@@ -6,6 +6,8 @@ import posixpath
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+import pkg_resources
+
 from streamflow.core import utils
 from streamflow.core.data import DataLocation, DataManager, DataType, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
@@ -158,6 +160,11 @@ class DefaultDataManager(DataManager):
         if deployment is not None:
             data_locations = {loc for loc in data_locations if loc.deployment == deployment}
         return data_locations
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'data_manager.json'))
 
     def get_source_location(self,
                             path: str,

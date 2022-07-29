@@ -5,12 +5,13 @@ import tempfile
 from pathlib import Path
 from typing import MutableMapping, MutableSequence, Optional
 
+import pkg_resources
 import psutil
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.deployment import Connector
-from streamflow.core.scheduling import Location, Hardware
+from streamflow.core.scheduling import Hardware, Location
 from streamflow.deployment.connector.base import BaseConnector
 
 
@@ -80,6 +81,11 @@ class LocalConnector(BaseConnector):
                 input_directory=_get_disk_usage(Path(input_directory)),
                 output_directory=_get_disk_usage(Path(output_directory)),
                 tmp_directory=_get_disk_usage(Path(tmp_directory))))}
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'local.json'))
 
     async def undeploy(self, external: bool) -> None:
         pass

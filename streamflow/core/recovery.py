@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from streamflow.core.config import SchemaEntity
 from streamflow.core.data import DataLocation
 
 if TYPE_CHECKING:
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
     from typing import Optional, MutableMapping, Any
 
 
-class CheckpointManager(ABC):
+class CheckpointManager(SchemaEntity):
 
     def __init__(self,
                  context: StreamFlowContext):
@@ -22,7 +23,7 @@ class CheckpointManager(ABC):
         ...
 
 
-class FailureManager(ABC):
+class FailureManager(SchemaEntity):
 
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context

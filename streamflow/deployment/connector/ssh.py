@@ -13,6 +13,7 @@ from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import asyncssh
+import pkg_resources
 from asyncssh import SSHClientConnection
 from asyncssh.process import SSHProcess
 from cachetools import Cache, LRUCache
@@ -431,6 +432,11 @@ class SSHConnector(BaseConnector):
                 hostname=location_obj.hostname,
                 hardware=hardware)
         return locations
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'ssh.json'))
 
     async def run(self,
                   location: str,

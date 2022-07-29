@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from asyncio import Condition
-from typing import Optional, MutableMapping
+from typing import MutableMapping, Optional
+
+import pkg_resources
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException, WorkflowException
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
-from streamflow.core.workflow import Status, Job, CommandOutput, Token, Step
+from streamflow.core.workflow import CommandOutput, Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
 
@@ -100,6 +103,11 @@ class DefaultFailureManager(FailureManager):
                 name=job.name, version=self.jobs[job.name].version))
             raise FailureHandlingException()
 
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'default_failure_manager.json'))
+
     async def handle_exception(self, job: Job, step: Step, exception: BaseException) -> CommandOutput:
         logger.info("Handling {exception} failure for job {job}".format(
             job=job.name, exception=type(exception).__name__))
@@ -153,6 +161,11 @@ class DefaultFailureManager(FailureManager):
 
 
 class DummyFailureManager(FailureManager):
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'dummy_failure_manager.json'))
 
     async def handle_exception(self,
                                job: Job,

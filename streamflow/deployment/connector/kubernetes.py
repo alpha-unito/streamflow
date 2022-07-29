@@ -12,6 +12,7 @@ from pathlib import Path
 from shutil import which
 from typing import Any, Coroutine, MutableMapping, MutableSequence, Optional, Tuple, Union, cast
 
+import pkg_resources
 import yaml
 from cachetools import Cache, TTLCache
 from kubernetes_asyncio import client
@@ -594,6 +595,11 @@ class Helm3Connector(BaseKubernetesConnector):
                         valid_targets[location_name] = Location(name=location_name, hostname=pod.status.pod_ip)
                         break
         return valid_targets
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'helm3.json'))
 
     async def undeploy(self, external: bool) -> None:
         if not external:

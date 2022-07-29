@@ -74,7 +74,7 @@ class BaseStep(Step, ABC):
         token.persistent_id = self.workflow.context.database.add_token(
             port=port.persistent_id,
             tag=token.tag,
-            token_type=type(token),
+            type=type(token),
             value=token.save())
         if inputs:
             self.workflow.context.database.add_provenance(

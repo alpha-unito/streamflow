@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from asyncio import Condition
-from typing import TYPE_CHECKING, MutableSequence, Optional
+from typing import MutableSequence, Optional, TYPE_CHECKING
 
+import pkg_resources
+
+from streamflow.core.config import Config
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.deployment import Target
-from streamflow.core.scheduling import LocationAllocation, Scheduler, Hardware, JobAllocation
-from streamflow.core.workflow import Status, Job
+from streamflow.core.scheduling import Hardware, JobAllocation, LocationAllocation, Policy, Scheduler
+from streamflow.core.workflow import Job, Status
 from streamflow.log_handler import logger
+from streamflow.scheduling.policy import policy_classes
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import Location
-    from streamflow.scheduling.policy import Policy
     from typing import MutableMapping
 
 
@@ -21,13 +25,12 @@ class DefaultScheduler(Scheduler):
 
     def __init__(self,
                  context: StreamFlowContext,
-                 default_policy: Policy,
                  retry_delay: Optional[int] = None) -> None:
         super().__init__(context)
         self.allocation_groups: MutableMapping[str, MutableSequence[Job]] = {}
-        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
-        self.default_policy: Policy = default_policy
+        self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: Optional[int] = retry_delay
+        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         self.wait_queue: Condition = Condition()
 
     def _allocate_job(self,
@@ -99,9 +102,15 @@ class DefaultScheduler(Scheduler):
                 return None
         return selected_locations
 
-    def _get_policy(self, policy_name: str):
-        # TODO: implement custom policy hook
-        return self.default_policy
+    def _get_policy(self, policy_config: Config):
+        if policy_config.name not in self.policy_map:
+            self.policy_map[policy_config.name] = policy_classes[policy_config.type](**policy_config.config)
+        return self.policy_map[policy_config.name]
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'scheduler.json'))
 
     async def notify_status(self, job_name: str, status: Status) -> None:
         async with self.wait_queue:

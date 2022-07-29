@@ -6,16 +6,22 @@ import itertools
 import os
 import posixpath
 import uuid
+from json import loads
 from pathlib import Path
 from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Type, Union
 
+from importlib_metadata import entry_points
+
 from streamflow.core.data import LOCAL_LOCATION
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.exception import InvalidPluginException, WorkflowExecutionException
 from streamflow.core.workflow import Token
 from streamflow.data import aiotarstream
+from streamflow.ext import StreamFlowPlugin
+from streamflow.log_handler import logger
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken, TerminationToken
 
 if TYPE_CHECKING:
+    from streamflow.core.config import SchemaEntity
     from streamflow.core.deployment import Connector
     from typing import Iterable
 
@@ -135,6 +141,22 @@ def encode_command(command: str):
         command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
 
 
+def flatten_list(hierarchical_list):
+    if not hierarchical_list:
+        return hierarchical_list
+    flat_list = []
+    for el in hierarchical_list:
+        if isinstance(el, MutableSequence):
+            flat_list.extend(flatten_list(el))
+        else:
+            flat_list.append(el)
+    return flat_list
+
+
+def get_class_fullname(cls: Type):
+    return cls.__class__.__module__ + '.' + cls.__class__.__qualname__
+
+
 def get_path_processor(connector: Connector):
     return posixpath if connector is not None and connector.deployment_name != LOCAL_LOCATION else os.path
 
@@ -196,16 +218,33 @@ def get_token_value(token: Token) -> Any:
         return token.value
 
 
-def flatten_list(hierarchical_list):
-    if not hierarchical_list:
-        return hierarchical_list
-    flat_list = []
-    for el in hierarchical_list:
-        if isinstance(el, MutableSequence):
-            flat_list.extend(flatten_list(el))
+def inject_schema(schema: MutableMapping[str, Any],
+                  classes: MutableMapping[str, Type[SchemaEntity]],
+                  definition_name: str):
+    for name, entity in classes.items():
+        if entity_schema := entity.get_schema():
+            with open(entity_schema, "r") as f:
+                entity_schema = loads(
+                    f.read(),
+                    base_uri='file://{}/'.format(os.path.dirname(entity_schema)),
+                    jsonschema=True)
+            schema['definitions'][definition_name]['properties']['type'].setdefault('enum', []).append(name)
+            schema['definitions'][definition_name]['definitions'][name] = entity_schema
+            schema['definitions'][definition_name].setdefault('allOf', []).append({
+                'if': {'properties': {'type': {'const': name}}},
+                'then': {'properties': {'config': entity_schema}}})
+
+
+def load_extensions():
+    plugins = entry_points(group='unito.streamflow.plugin')
+    for plugin in plugins:
+        plugin = (plugin.load())()
+        if isinstance(plugin, StreamFlowPlugin):
+            plugin.register()
+            logger.info("Succesfully registered plugin {}".format(
+                plugin.__class__.__module__ + '.' + plugin.__class__.__name__))
         else:
-            flat_list.append(el)
-    return flat_list
+            raise InvalidPluginException("StreamFlow plugins must extend the streamflow.ext.StreamFlowPlugin class")
 
 
 def random_name() -> str:

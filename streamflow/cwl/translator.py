@@ -838,11 +838,11 @@ def _process_docker_requirement(name: str,
     # Build step target
     deployment = DeploymentConfig(
         name=name,
-        connector_type='docker',
+        type='docker',
         config=docker_config)
     deployment.persistent_id = workflow.context.database.add_deployment(
         name=name,
-        connector_type='docker',
+        type='docker',
         external=False,
         params=deployment.save())
     step_target = Target(
@@ -993,13 +993,13 @@ class CWLTranslator(object):
                     locations = 1
             deployment = DeploymentConfig(
                 name=target_deployment['name'],
-                connector_type=target_deployment['type'],
+                type=target_deployment['type'],
                 config=target_deployment['config'],
                 external=target_deployment.get('external', False),
                 lazy=target_deployment.get('lazy', True))
             deployment.persistent_id = self.context.database.add_deployment(
                 name=deployment.name,
-                connector_type=deployment.connector_type,
+                type=deployment.type,
                 external=False,
                 params=deployment.save())
             target = Target(

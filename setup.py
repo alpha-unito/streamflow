@@ -23,11 +23,17 @@ setup(
         "streamflow.persistence",
         "streamflow.recovery",
         "streamflow.scheduling",
+        "streamflow.scheduling.policy",
         "streamflow.workflow"
     ],
     package_data={
         "streamflow.config": ["schemas/v1.0/*.json"],
-        "streamflow.persistence": ["schemas/*.sql"]
+        "streamflow.data": ["schemas/*.json"],
+        "streamflow.deployment": ["schemas/*.json"],
+        "streamflow.deployment.connector": ["schemas/*.json"],
+        "streamflow.persistence": ["schemas/*.sql", "schemas/*.json"],
+        "streamflow.recovery": ["schemas/*.json"],
+        "streamflow.scheduling.policy": ["schemas/*.json"]
     },
     include_package_data=True,
     url="https://github.com/alpha-unito/streamflow",
@@ -44,6 +50,7 @@ setup(
         "bcrypt",
         "cachetools",
         "cwltool",
+        "importlib_metadata",
         "Jinja2",
         "jsonref",
         "jsonschema",

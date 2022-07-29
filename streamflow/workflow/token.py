@@ -1,7 +1,7 @@
 import asyncio
 import json
 from abc import ABC, abstractmethod
-from typing import MutableSequence, Any
+from typing import Any, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Token
@@ -50,7 +50,7 @@ class ObjectToken(Token):
         return sum(await asyncio.gather(*(asyncio.create_task(t.get_weight(context)) for t in self.value.values())))
 
     def save(self):
-        return json.dumps({k: json.loads(t.save()) for k, t in self.value})
+        return json.dumps({k: json.loads(t.save()) for k, t in self.value.items()})
 
 
 class TerminationToken(Token):

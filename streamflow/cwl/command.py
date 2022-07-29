@@ -5,18 +5,18 @@ import base64
 import json
 import logging
 import posixpath
+import re
 import shlex
 import time
-import re
 from abc import ABC
 from asyncio.subprocess import STDOUT
-from typing import Iterable, Union, Optional, List, Any, IO, MutableMapping, MutableSequence
+from typing import Any, IO, Iterable, List, MutableMapping, MutableSequence, Optional, Union
 
-from streamflow.core.data import LOCAL_LOCATION, DataLocation
+from streamflow.core.data import DataLocation, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
-from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
-from streamflow.core.utils import get_path_processor, flatten_list
-from streamflow.core.workflow import Step, Command, Job, CommandOutput, Token, Status, Workflow
+from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
+from streamflow.core.utils import flatten_list, get_path_processor
+from streamflow.core.workflow import Command, CommandOutput, Job, Status, Step, Token, Workflow
 from streamflow.cwl import utils
 from streamflow.data import remotepath
 from streamflow.log_handler import logger

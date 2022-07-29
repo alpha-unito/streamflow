@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-
 import asyncio
 import urllib.parse
-from enum import auto, Enum
-from typing import MutableSequence, Set, cast, Union, MutableMapping, Optional, Any
+from enum import Enum, auto
+from typing import Any, MutableMapping, MutableSequence, Optional, Set, Tuple, Union, cast
 
 import cwltool.expression
 from cwltool.utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import FileType, DataType, DataLocation, LOCAL_LOCATION
+from streamflow.core.data import DataLocation, DataType, FileType, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.scheduling import Hardware
-from streamflow.core.utils import get_token_value, get_path_processor, random_name
-from streamflow.core.workflow import Workflow, Job, Token
+from streamflow.core.utils import get_path_processor, get_token_value, random_name
+from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import interpolate
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
@@ -23,11 +22,10 @@ from streamflow.log_handler import logger
 
 async def _check_glob_path(job: Job,
                            workflow: Workflow,
-                           connector: Optional[Connector],
                            location: Optional[str],
-                           path: str) -> None:
+                           path: str,
+                           effective_path: str) -> None:
     # Cannot glob outside the job output folder
-    effective_path = await remotepath.follow_symlink(connector, location, path)
     if not (effective_path.startswith(job.output_directory) or
             effective_path.startswith(job.input_directory) or
             workflow.context.data_manager.get_data_locations(path)):
@@ -356,20 +354,22 @@ async def expand_glob(job: Job,
                       workflow: Workflow,
                       connector: Optional[Connector],
                       location: Optional[str],
-                      path: str) -> MutableSequence[str]:
+                      path: str) -> MutableSequence[Tuple[str, str]]:
     paths = await remotepath.resolve(connector, location, path) or []
-    await asyncio.gather(*(asyncio.create_task(
-        _check_glob_path(job, workflow, connector, location, p)
+    effective_paths = await asyncio.gather(*(asyncio.create_task(
+        remotepath.follow_symlink(connector, location, p)
     ) for p in paths))
-    return paths
+    await asyncio.gather(*(asyncio.create_task(
+        _check_glob_path(job, workflow, location, p, ep)
+    ) for p, ep in zip(paths, effective_paths)))
+    return list(zip(paths, effective_paths))
 
 
 async def get_class_from_path(path: str, job: Job, context: StreamFlowContext) -> str:
     connector = context.scheduler.get_connector(job.name)
     locations = context.scheduler.get_locations(job.name)
     for location in locations:
-        t_path = await remotepath.follow_symlink(connector, location, path)
-        return 'File' if await remotepath.isfile(connector, location, t_path) else 'Directory'
+        return 'File' if await remotepath.isfile(connector, location, path) else 'Directory'
 
 
 async def get_file_token(

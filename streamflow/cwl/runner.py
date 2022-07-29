@@ -8,7 +8,8 @@ import uuid
 import streamflow.cwl.main
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
-from streamflow.core.exception import WorkflowException, WorkflowDefinitionException
+from streamflow.core import utils
+from streamflow.core.exception import WorkflowDefinitionException, WorkflowException
 from streamflow.log_handler import logger
 from streamflow.main import build_context
 
@@ -34,6 +35,7 @@ async def _async_main(args: argparse.Namespace):
     validator = SfValidator()
     config_dir = os.getcwd()
     if args.streamflow_file:
+        utils.load_extensions()
         with open(args.streamflow_file) as f:
             streamflow_config = validator.yaml.load(f)
         config_dir = os.path.dirname(args.streamflow_file)

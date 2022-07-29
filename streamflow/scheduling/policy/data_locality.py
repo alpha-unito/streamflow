@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import TYPE_CHECKING
+
+import pkg_resources
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
-from streamflow.core.scheduling import Policy, Hardware, JobAllocation
+from streamflow.core.scheduling import Hardware, JobAllocation, Policy
 from streamflow.core.workflow import Status
 from streamflow.workflow.token import FileToken
 
@@ -83,3 +86,8 @@ class DataLocalityPolicy(Policy):
                 return location
         # If there are no available locations, return None
         return None
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'data_locality.json'))

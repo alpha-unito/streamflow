@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional, MutableSequence, MutableMapping, Any, Type, Callable, cast
+from typing import Any, Callable, MutableMapping, MutableSequence, Optional, Type, cast
 
 import cwltool.builder
 from networkx import Graph
@@ -9,9 +9,8 @@ from schema_salad.exceptions import ValidationException
 
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
-from streamflow.core.utils import get_path_processor, flatten_list, get_tag
-from streamflow.core.workflow import Workflow, TokenProcessor, Token, CommandOutput, Job, CommandOutputProcessor, \
-    Status
+from streamflow.core.utils import flatten_list, get_path_processor, get_tag
+from streamflow.core.workflow import CommandOutput, CommandOutputProcessor, Job, Status, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
 from streamflow.cwl.command import CWLCommandOutput
 from streamflow.cwl.token import CWLFileToken
@@ -264,9 +263,11 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     if not path_processor.isabs(globpath):
                         globpath = path_processor.join(job.output_directory, globpath)
                     resolve_tasks.append(utils.expand_glob(job, self.workflow, connector, location, globpath))
-            paths = flatten_list(await asyncio.gather(*resolve_tasks))
+            paths, effective_paths = ([list(x) for x in zip(*flatten_list(await asyncio.gather(*resolve_tasks)))]
+                                      or [[], []])
             # Get token class from paths
-            class_tasks = [asyncio.create_task(utils.get_class_from_path(p, job, self.workflow.context)) for p in paths]
+            class_tasks = [asyncio.create_task(utils.get_class_from_path(p, job, self.workflow.context))
+                           for p in effective_paths]
             paths = [{'path': p, 'class': c} for p, c in zip(paths, await asyncio.gather(*class_tasks))]
             # If evaluation is not needed, simply return paths as token value
             if self.output_eval is None:

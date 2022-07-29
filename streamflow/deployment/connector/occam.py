@@ -2,9 +2,10 @@ import asyncio
 import os
 import posixpath
 import re
-from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
+from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import asyncssh
+import pkg_resources
 from ruamel.yaml import YAML
 
 from streamflow.core import utils
@@ -278,6 +279,11 @@ class OccamConnector(SSHConnector):
                                       tmp_directory: str) -> MutableMapping[str, Location]:
         nodes = self.jobs_table.get(service, []) if service else utils.flatten_list(self.jobs_table.values())
         return {n: Location(name=n, hostname=n.split('-')[0]) for n in nodes}
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'occam.json'))
 
     async def undeploy(self, external: bool) -> None:
         if not external:

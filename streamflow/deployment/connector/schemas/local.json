@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "local.json",
+  "type": "object",
+  "properties": {
+    "transferBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": "64kiB"
+    }
+  },
+  "additionalProperties": false
+}

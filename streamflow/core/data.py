@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import MutableSequence, TYPE_CHECKING
 
+from streamflow.core.config import SchemaEntity
+
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from typing import Any, Optional, Set
@@ -49,7 +51,7 @@ class DataLocation(object):
         return hash((self.path, self.deployment, self.location))
 
 
-class DataManager(ABC):
+class DataManager(SchemaEntity):
 
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context

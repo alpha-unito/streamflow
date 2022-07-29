@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import Any, MutableMapping, MutableSequence, Optional, TYPE_CHECKING, Type, TypeVar
+from typing import Any, MutableMapping, MutableSequence, Optional, Type
 
 import pandas as pd
+import pkg_resources
 
+from streamflow.core import utils
 from streamflow.core.persistence import Database, DependencyType
 from streamflow.core.workflow import Port, Step, Token
-
-if TYPE_CHECKING:
-    P = TypeVar('P', bound=Port)
-    S = TypeVar('S', bound=Step)
-    T = TypeVar('T', bound=Token)
 
 
 class SqliteDatabase(Database):
@@ -39,8 +36,14 @@ class SqliteDatabase(Database):
         if hasattr(self, 'connection') and self.connection:
             self.connection.close()
 
+    @classmethod
+    def get_schema(cls):
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'sqlite.json'))
+
     def _init_db(self):
-        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schemas', 'sqlite.sql')
+        schema_path = pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'sqlite.sql'))
         with open(schema_path, "r") as f:
             with self.connection as db:
                 db.cursor().executescript(f.read())
@@ -48,13 +51,13 @@ class SqliteDatabase(Database):
     def add_workflow(self,
                      name: str,
                      status: int,
-                     wf_type: str) -> int:
+                     type: str) -> int:
         with self.connection as db:
             cursor = db.cursor()
             cursor.execute("INSERT INTO workflow(name, status, type) VALUES(:name, :status, :type)", {
                 "name": name,
                 "status": status,
-                "type": wf_type})
+                "type": type})
             return cursor.lastrowid
 
     def update_workflow(self,
@@ -73,7 +76,7 @@ class SqliteDatabase(Database):
                  name: str,
                  workflow_id: int,
                  status: int,
-                 step_type: Type[S],
+                 type: Type[Step],
                  params: str) -> int:
         with self.connection as db:
             cursor = db.cursor()
@@ -83,7 +86,7 @@ class SqliteDatabase(Database):
                     "name": name,
                     "workflow": workflow_id,
                     "status": status,
-                    "type": step_type.__module__ + '.' + step_type.__qualname__,
+                    "type": utils.get_class_fullname(type),
                     "params": params})
             return cursor.lastrowid
 
@@ -106,7 +109,7 @@ class SqliteDatabase(Database):
     def add_port(self,
                  name: str,
                  workflow_id: int,
-                 port_type: Type[P],
+                 type: Type[Port],
                  params: str) -> int:
         with self.connection as db:
             cursor = db.cursor()
@@ -115,7 +118,7 @@ class SqliteDatabase(Database):
                 "VALUES(:name, :workflow, :type, :params)", {
                     "name": name,
                     "workflow": workflow_id,
-                    "type": port_type.__module__ + '.' + port_type.__qualname__,
+                    "type": utils.get_class_fullname(type),
                     "params": params})
             return cursor.lastrowid
 
@@ -138,7 +141,7 @@ class SqliteDatabase(Database):
     def add_dependency(self,
                        step: int,
                        port: int,
-                       dep_type: DependencyType,
+                       type: DependencyType,
                        name: str) -> None:
         with self.connection as db:
             cursor = db.cursor()
@@ -147,7 +150,7 @@ class SqliteDatabase(Database):
                 "VALUES(:step, :port, :type, :name)", {
                     "step": step,
                     "port": port,
-                    "type": dep_type.value,
+                    "type": type.value,
                     "name": name})
 
     def add_command(self,
@@ -172,7 +175,7 @@ class SqliteDatabase(Database):
     def add_token(self,
                   port: int,
                   tag: str,
-                  token_type: Type[T],
+                  type: Type[Token],
                   value: Any):
         with self.connection as db:
             cursor = db.cursor()
@@ -180,7 +183,7 @@ class SqliteDatabase(Database):
                 "INSERT INTO token(port, type, tag, value) "
                 "VALUES(:port, :type, :tag, :value)", {
                     "port": port,
-                    "type": token_type.__module__ + '.' + token_type.__qualname__,
+                    "type": utils.get_class_fullname(type),
                     "tag": tag,
                     "value": value})
             return cursor.lastrowid
@@ -204,7 +207,7 @@ class SqliteDatabase(Database):
 
     def add_deployment(self,
                        name: str,
-                       connector_type: str,
+                       type: str,
                        external: bool,
                        params: str) -> int:
         with self.connection as db:
@@ -213,7 +216,7 @@ class SqliteDatabase(Database):
                 "INSERT INTO deployment(name, type, params, external) "
                 "VALUES (:name, :type, :params, :external)", {
                     "name": name,
-                    "type": connector_type,
+                    "type": type,
                     "params": params,
                     "external": external})
             return cursor.lastrowid

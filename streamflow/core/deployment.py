@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from streamflow.core.config import Config, SchemaEntity
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.persistence import PersistableEntity
 
@@ -25,7 +26,7 @@ def _init_workdir(deployment_name: str) -> str:
         return os.path.join(tempfile.gettempdir(), 'streamflow')
 
 
-class Connector(ABC):
+class Connector(SchemaEntity):
 
     def __init__(self,
                  deployment_name: str,
@@ -80,7 +81,7 @@ class ConnectorCopyKind(Enum):
     REMOTE_TO_REMOTE = 3
 
 
-class DeploymentManager(ABC):
+class DeploymentManager(SchemaEntity):
 
     def __init__(self,
                  context: StreamFlowContext) -> None:
@@ -107,20 +108,20 @@ class DeploymentManager(ABC):
         ...
 
 
-class DeploymentConfig(PersistableEntity):
+class DeploymentConfig(Config, PersistableEntity):
+    __slots__ = ('name', 'type', 'config', 'external', 'lazy', 'workdir')
 
     def __init__(self,
                  name: str,
-                 connector_type: str,
+                 type: str,
                  config: MutableMapping[str, Any],
                  external: bool = False,
-                 lazy: bool = True) -> None:
-        super().__init__()
-        self.name: str = name
-        self.connector_type: str = connector_type
-        self.config: MutableMapping[str, Any] = config
+                 lazy: bool = True,
+                 workdir: Optional[str] = None) -> None:
+        super().__init__(name, type, config)
         self.external = external
         self.lazy: bool = lazy
+        self.workdir: Optional[str] = workdir
 
     def save(self):
         return json.dumps(self.config)
@@ -133,15 +134,16 @@ class Target(PersistableEntity):
                  locations: int = 1,
                  service: Optional[str] = None,
                  scheduling_group: Optional[str] = None,
-                 scheduling_policy: Optional[str] = None,
+                 scheduling_policy: Optional[Config] = None,
                  workdir: Optional[str] = None):
         super().__init__()
         self.deployment: DeploymentConfig = deployment
         self.locations: int = locations
         self.service: Optional[str] = service
         self.scheduling_group: Optional[str] = scheduling_group
-        self.scheduling_policy: Optional[str] = scheduling_policy
-        self.workdir: str = workdir or _init_workdir(deployment.name)
+        self.scheduling_policy: Optional[Config] = (
+                scheduling_policy or Config(name='__DEFAULT__', type='data_locality', config={}))
+        self.workdir: str = workdir or self.deployment.workdir or _init_workdir(deployment.name)
 
     def save(self) -> str:
         return json.dumps({})
@@ -152,7 +154,7 @@ class LocalTarget(Target):
     def __init__(self, workdir: Optional[str] = None):
         deployment = DeploymentConfig(
             name=LOCAL_LOCATION,
-            connector_type='local',
+            type='local',
             config={},
             external=True,
             lazy=False)

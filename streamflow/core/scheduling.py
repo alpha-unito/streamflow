@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from abc import abstractmethod, ABC
+import json
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from streamflow.core.config import Config, SchemaEntity
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Target, Connector
+from streamflow.core.deployment import Connector, Target
+from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status, Token
@@ -101,7 +104,13 @@ class LocationAllocation(object):
         self.jobs: MutableSequence[str] = []
 
 
-class Policy(ABC):
+class PolicyConfig(Config, PersistableEntity):
+
+    def save(self):
+        return json.dumps(self.config)
+
+
+class Policy(SchemaEntity):
 
     @abstractmethod
     async def get_location(self,
@@ -114,7 +123,7 @@ class Policy(ABC):
                            locations: MutableMapping[str, LocationAllocation]) -> Optional[str]: ...
 
 
-class Scheduler(ABC):
+class Scheduler(SchemaEntity):
 
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context

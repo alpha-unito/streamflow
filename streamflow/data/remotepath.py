@@ -7,7 +7,7 @@ import glob
 import os
 import posixpath
 from hashlib import sha1
-from typing import TYPE_CHECKING, MutableSequence
+from typing import MutableSequence, TYPE_CHECKING
 
 import aiohttp
 

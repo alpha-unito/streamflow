@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "default_checkpoint_manager.json",
+  "type": "object",
+  "properties": {
+    "checkpoint_dir": {
+      "type": "string",
+      "description": "Directory where checkpoint data must be placed",
+      "default": "$TMPDIR/streamflow/checkpoint/$RANDOM_NAME"
+    }
+  },
+  "additionalProperties": false
+}

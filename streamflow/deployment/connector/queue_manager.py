@@ -1,4 +1,5 @@
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from asyncio import Lock
 from asyncio.subprocess import STDOUT
@@ -6,6 +7,7 @@ from functools import partial
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import cachetools
+import pkg_resources
 from cachetools import Cache, TTLCache
 
 from streamflow.core import utils
@@ -27,6 +29,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                  checkHostKey: bool = True,
                  dataTransferConnection: Optional[Union[str, MutableMapping[str, Any]]] = None,
                  maxConcurrentJobs: Optional[int] = 1,
+                 maxConcurrentSessions: Optional[int] = 10,
                  passwordFile: Optional[str] = None,
                  pollingInterval: int = 5,
                  sshKey: Optional[str] = None,
@@ -38,6 +41,7 @@ class QueueManagerConnector(SSHConnector, ABC):
             checkHostKey=checkHostKey,
             dataTransferConnection=dataTransferConnection,
             file=file,
+            maxConcurrentSessions=maxConcurrentSessions,
             nodes=[hostname],
             passwordFile=passwordFile,
             sshKey=sshKey,
@@ -93,6 +97,11 @@ class QueueManagerConnector(SSHConnector, ABC):
             name=self.hostname,
             hostname=self.hostname,
             slots=self.maxConcurrentJobs)}
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'queue_manager.json'))
 
     async def run(self,
                   location: str,

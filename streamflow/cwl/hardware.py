@@ -1,6 +1,5 @@
-import json
 import math
-from typing import MutableSequence, Union, Optional, MutableMapping, Any
+from typing import Any, MutableMapping, MutableSequence, Optional, Union
 
 from streamflow.core.scheduling import Hardware, HardwareRequirement
 from streamflow.core.utils import get_token_value

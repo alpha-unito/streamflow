@@ -1,8 +1,8 @@
 import json
 import re
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, MutableMapping, Any, Mapping, MutableSequence, Set
+from typing import Any, Mapping, MutableMapping, MutableSequence, Optional, Set
 
 import antlr4
 import cwltool.sandboxjs

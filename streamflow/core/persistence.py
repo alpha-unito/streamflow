@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from enum import Enum
-from typing import Any, MutableMapping, MutableSequence, Optional, TYPE_CHECKING, Type, TypeVar
+from typing import Any, MutableMapping, MutableSequence, Optional, TYPE_CHECKING, Type
 
 import pandas as pd
 
+from streamflow.core.config import SchemaEntity
+
 if TYPE_CHECKING:
     from streamflow.core.workflow import Port, Step, Token
-
-    P = TypeVar('P', bound=Port)
-    S = TypeVar('S', bound=Step)
-    T = TypeVar('T', bound=Token)
 
 
 class PersistableEntity(object):
@@ -29,13 +27,13 @@ class DependencyType(Enum):
     OUTPUT = 1
 
 
-class Database(ABC):
+class Database(SchemaEntity):
 
     @abstractmethod
     def add_workflow(self,
                      name: str,
                      status: int,
-                     wf_type: str) -> int:
+                     type: str) -> int:
         ...
 
     @abstractmethod
@@ -53,7 +51,7 @@ class Database(ABC):
                  name: str,
                  workflow_id: int,
                  status: int,
-                 step_type: Type[S],
+                 type: Type[Step],
                  params: str) -> int:
         ...
 
@@ -72,7 +70,7 @@ class Database(ABC):
     def add_port(self,
                  name: str,
                  workflow_id: int,
-                 port_type: Type[P],
+                 type: Type[Port],
                  params: str) -> int:
         ...
 
@@ -91,7 +89,7 @@ class Database(ABC):
     def add_dependency(self,
                        step: int,
                        port: int,
-                       dep_type: DependencyType, name: str) -> None:
+                       type: DependencyType, name: str) -> None:
         ...
 
     @abstractmethod
@@ -110,7 +108,7 @@ class Database(ABC):
     def add_token(self,
                   port: int,
                   tag: str,
-                  token_type: Type[T],
+                  type: Type[Token],
                   value: Any) -> int:
         ...
 
@@ -128,7 +126,7 @@ class Database(ABC):
     @abstractmethod
     def add_deployment(self,
                        name: str,
-                       connector_type: str,
+                       type: str,
                        external: bool,
                        params: str) -> int:
         ...
@@ -152,7 +150,6 @@ class Database(ABC):
                       target_id: str,
                       updates: MutableMapping[str, Any]) -> int:
         ...
-
 
     @abstractmethod
     def get_report(self,

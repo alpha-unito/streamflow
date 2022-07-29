@@ -6,6 +6,7 @@ import shlex
 from abc import ABC, abstractmethod
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple
 
+import pkg_resources
 from cachetools import Cache, TTLCache
 
 from streamflow.core import utils
@@ -653,6 +654,11 @@ class DockerConnector(DockerBaseConnector):
                                       tmp_directory: str) -> MutableMapping[str, Location]:
         return {container_id: await self._get_location(container_id) for container_id in self.containerIds}
 
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'docker.json'))
+
     async def undeploy(self, external: bool) -> None:
         if not external and self.containerIds:
             for container_id in self.containerIds:
@@ -825,6 +831,11 @@ class DockerComposeConnector(DockerBaseConnector):
             location_name = line.split()[0].strip()
             locations[location_name] = await self._get_location(location_name)
         return locations
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'docker-compose.json'))
 
     async def undeploy(self, external: bool) -> None:
         if not external:
@@ -1113,6 +1124,11 @@ class SingularityConnector(SingularityBaseConnector):
             location_tasks[instance_name] = asyncio.create_task(self._get_location(instance_name))
         return {k: v for k, v in zip(location_tasks.keys(), await asyncio.gather(*location_tasks.values()))
                 if v is not None}
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'singularity.json'))
 
     async def undeploy(self, external: bool) -> None:
         if not external and self.instanceNames:
