@@ -137,11 +137,6 @@
       "$id": "#/definitions/deployment",
       "type": "object",
       "definitions": {
-        "batch": {
-          "$id": "#/definitions/deployment/definitions/batch",
-          "type": "object",
-          "$ref": "batch.json"
-        },
         "docker": {
           "$id": "#/definitions/deployment/definitions/docker",
           "type": "object",
@@ -187,7 +182,6 @@
         "type": {
           "type": "string",
           "enum": [
-            "batch",
             "docker",
             "docker-compose",
             "helm",
@@ -211,24 +205,6 @@
         }
       },
       "allOf": [
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "batch"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/deployment/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/deployment/definitions/batch"
-              }
-            }
-          }
-        },
         {
           "if": {
             "properties": {

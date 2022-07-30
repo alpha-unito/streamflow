@@ -1107,12 +1107,10 @@ class CWLTranslator(object):
                     context=context,
                     docker_requirement=requirements['DockerRequirement'],
                     network_access=network_access)
-            else:
+            elif 'image' in target.deployment.config and target.deployment.config['image'] == '':
+                # Overwite image configuration
                 image_name = _process_docker_image(docker_requirement=requirements['DockerRequirement'])
-                if 'image' not in target.deployment.config or target.deployment.config['image'] == '':
-                    target.deployment.config['image'] = image_name
-        if target.deployment.connector_type == 'batch':
-            target.scheduling_policy = 'managed'
+                target.deployment.config['image'] = image_name
         # Create DeployStep to initialise the execution environment
         deploy_step = self._get_deploy_step(target, workflow)
         # Create a schedule step and connect it to the DeployStep
