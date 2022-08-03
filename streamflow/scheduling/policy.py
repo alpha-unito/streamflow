@@ -83,16 +83,3 @@ class DataLocalityPolicy(Policy):
                 return location
         # If there are no available locations, return None
         return None
-
-
-class ManagedPolicy(Policy):
-
-    async def get_location(self,
-                           context: StreamFlowContext,
-                           job: Job,
-                           deployment: str,
-                           hardware_requirement: Hardware,
-                           available_locations: MutableMapping[str, Location],
-                           jobs: MutableMapping[str, JobAllocation],
-                           locations: MutableMapping[str, LocationAllocation]) -> Optional[str]:
-        return list(available_locations.keys())[0] if available_locations else None

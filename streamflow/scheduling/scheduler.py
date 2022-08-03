@@ -9,7 +9,6 @@ from streamflow.core.deployment import Target
 from streamflow.core.scheduling import LocationAllocation, Scheduler, Hardware, JobAllocation
 from streamflow.core.workflow import Status, Job
 from streamflow.log_handler import logger
-from streamflow.scheduling.policy import DataLocalityPolicy, ManagedPolicy
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -17,10 +16,6 @@ if TYPE_CHECKING:
     from streamflow.scheduling.policy import Policy
     from typing import MutableMapping
 
-policy_classes = {
-    'locality': DataLocalityPolicy,
-    'managed': ManagedPolicy
-}
 
 class DefaultScheduler(Scheduler):
 
@@ -106,8 +101,6 @@ class DefaultScheduler(Scheduler):
 
     def _get_policy(self, policy_name: str):
         # TODO: implement custom policy hook
-        if policy_name in policy_classes:
-            return policy_classes[policy_name]()
         return self.default_policy
 
     async def notify_status(self, job_name: str, status: Status) -> None:
