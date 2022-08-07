@@ -227,6 +227,8 @@ class CWLTransferStep(TransferStep):
                 selected_location.relpath)
             # Perform and transfer
             src_connector = self.workflow.context.deployment_manager.get_connector(selected_location.deployment)
+            if token_class == 'Directory':
+                await remotepath.mkdir(dst_connector, dst_locations, filepath)
             await self.workflow.context.data_manager.transfer_data(
                 src_deployment=src_connector.deployment_name,
                 src_locations=[selected_location.location],
