@@ -283,9 +283,6 @@ def _create_list_merger(name: str,
     for port_name, port in ports.items():
         combinator.add_input_port(port_name, port)
         combinator.combinator.add_item(port_name)
-    workflow.context.database.update_step(
-        step_id=combinator.persistent_id,
-        updates={'params': combinator.save()})
     if pick_value == 'first_non_null':
         combinator.add_output_port(name, workflow.create_port())
         transformer = workflow.create_step(
@@ -840,20 +837,10 @@ def _process_docker_requirement(name: str,
         name=name,
         type='docker',
         config=docker_config)
-    deployment.persistent_id = workflow.context.database.add_deployment(
-        name=name,
-        type='docker',
-        external=False,
-        params=deployment.save())
     step_target = Target(
         deployment=deployment,
         service=image_name,
         workdir=target.workdir)
-    step_target.persistent_id = workflow.context.database.add_target(
-        deployment=deployment.persistent_id,
-        locations=1,
-        service=step_target.service,
-        workdir=step_target.workdir)
     return step_target
 
 
@@ -997,20 +984,10 @@ class CWLTranslator(object):
                 config=target_deployment['config'],
                 external=target_deployment.get('external', False),
                 lazy=target_deployment.get('lazy', True))
-            deployment.persistent_id = self.context.database.add_deployment(
-                name=deployment.name,
-                type=deployment.type,
-                external=False,
-                params=deployment.save())
             target = Target(
                 deployment=deployment,
                 locations=locations,
                 service=step_target.get('service'),
-                workdir=workdir)
-            target.persistent_id = self.context.database.add_target(
-                deployment=deployment.persistent_id,
-                locations=locations,
-                service=target.service,
                 workdir=workdir)
             return target
         else:
@@ -1681,9 +1658,6 @@ class CWLTranslator(object):
                 loop_output_step.add_output_port(port_name, external_output_ports[global_name])
                 loop_terminator_step.add_input_port(port_name, external_output_ports[global_name])
                 loop_terminator_combinator.add_item(port_name)
-            self.context.database.update_step(
-                step_id=loop_terminator_step.persistent_id,
-                updates={'params': loop_terminator_step.save()})
             # Process inputs
             loop_input_ports = {}
             loop_value_from_transformers = {}
@@ -1877,7 +1851,10 @@ class CWLTranslator(object):
             input_ports[global_name] = workflow.create_port()
 
     def translate(self) -> Workflow:
-        workflow = Workflow(self.context, name=self.name)
+        workflow = Workflow(
+            context=self.context,
+            type='cwl',
+            name=self.name)
         # Create context
         context = _create_context()
         # Compute root prefix

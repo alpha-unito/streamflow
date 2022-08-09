@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from collections import deque
 from typing import Any, AsyncIterable, MutableMapping, MutableSequence, Union, cast
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Token, Workflow
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import IterationTerminationToken
@@ -49,6 +53,16 @@ class CartesianProductCombinator(Combinator):
         self.depth: int = depth
         self.token_values: MutableMapping[str, MutableMapping[str, MutableSequence[Any]]] = {}
 
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> CartesianProductCombinator:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            depth=row['depth'])
+
     async def _product(self,
                        port_name: str,
                        token: Union[Token, MutableSequence[Token]]) -> AsyncIterable[MutableMapping[str, Token]]:
@@ -87,6 +101,10 @@ class CartesianProductCombinator(Combinator):
         # Otherwise throw Exception
         else:
             raise WorkflowExecutionException("No item to combine for token '{}'.".format(port_name))
+
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'depth': self.depth}}
 
 
 class DotProductCombinator(Combinator):

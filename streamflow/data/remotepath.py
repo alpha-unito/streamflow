@@ -54,13 +54,13 @@ def _file_checksum_local(path: str) -> str:
         return sha1_checksum.hexdigest()
 
 
-def _listdir_local(path: str, file_type: FileType) -> MutableSequence[str]:
+def _listdir_local(path: str, file_type: Optional[FileType]) -> MutableSequence[str]:
     content = []
     dir_content = os.listdir(path)
-    check = os.path.isfile if file_type == FileType.FILE else os.path.isdir
+    check = (os.path.isfile if file_type == FileType.FILE else os.path.isdir) if file_type is not None else None
     for element in dir_content:
         element_path = os.path.join(path, element)
-        if check(element_path):
+        if check and check(element_path):
             content.append(element_path)
     return content
 
@@ -179,7 +179,7 @@ async def isfile(connector: Connector, location: Optional[str], path: str) -> bo
 async def listdir(connector: Connector,
                   location: Optional[str],
                   path: str,
-                  file_type: FileType) -> MutableSequence[str]:
+                  file_type: Optional[FileType] = None) -> MutableSequence[str]:
     if isinstance(connector, LocalConnector):
         return _listdir_local(path, file_type)
     else:

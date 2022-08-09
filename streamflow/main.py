@@ -9,10 +9,8 @@ from streamflow import report
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
 from streamflow.core import utils
-from streamflow.core.config import Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowException
-from streamflow.core.workflow import Status
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
@@ -21,6 +19,28 @@ from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
+
+
+async def _async_list(args: argparse.Namespace):
+    if os.path.exists(args.streamflow_file):
+        streamflow_config = SfValidator().validate_file(args.streamflow_file)
+        context = build_context(os.path.dirname(args.streamflow_file), streamflow_config, args.outdir)
+    else:
+        context = build_context(os.getcwd(), {}, args.outdir)
+    try:
+        workflows = await context.database.list_workflows()
+        if workflows:
+            max_sizes = {k: len(max(w[k] for w in workflows)) for k in workflows[0].keys()}
+            format_string = ("{:<" + str(max(max_sizes['name'], 4)) + "} " +
+                             "{:<" + str(max(max_sizes['type'], 4)) + "} " +
+                             "{:<" + str(max(max_sizes['status'], 6)) + "}")
+            print(format_string.format('NAME', 'TYPE', 'STATUS'))
+            for w in workflows:
+                print(format_string.format(w['name'], w['type'], w['status']))
+        else:
+            print("No workflow objects found.")
+    finally:
+        await context.close()
 
 
 async def _async_main(args: argparse.Namespace):
@@ -41,7 +61,19 @@ async def _async_main(args: argparse.Namespace):
         logger.exception(e)
         sys.exit(1)
     finally:
-        await context.deployment_manager.undeploy_all()
+        await context.close()
+
+
+async def _async_report(args: argparse.Namespace):
+    if os.path.exists(args.streamflow_file):
+        streamflow_config = SfValidator().validate_file(args.streamflow_file)
+        context = build_context(os.path.dirname(args.streamflow_file), streamflow_config, args.outdir)
+    else:
+        context = build_context(os.getcwd(), {}, args.outdir)
+    try:
+        await report.create_report(context, args)
+    finally:
+        await context.close()
 
 
 def _get_instance_from_config(
@@ -63,14 +95,14 @@ def _get_instance_from_config(
 
 def build_context(config_dir: str,
                   streamflow_config: MutableMapping[str, Any],
-                  output_dir: Optional[str]) -> StreamFlowContext:
+                  output_dir: Optional[str] = os.getcwd()) -> StreamFlowContext:
     context = StreamFlowContext(config_dir)
     context.checkpoint_manager = _get_instance_from_config(
         streamflow_config, checkpoint_manager_classes, 'checkpointManager',
         {'context': context}, enabled_by_default=False)
     context.database = _get_instance_from_config(
         streamflow_config, database_classes, 'database',
-        {'connection': os.path.join(output_dir, '.streamflow', 'sqlite.db')})
+        {'context': context, 'connection': os.path.join(output_dir, '.streamflow', 'sqlite.db')})
     context.data_manager = _get_instance_from_config(
         streamflow_config, data_manager_classes, 'dataManager', {'context': context})
     context.deployment_manager = _get_instance_from_config(
@@ -90,19 +122,15 @@ def main(args):
         from streamflow.version import VERSION
         print("StreamFlow version {version}".format(version=VERSION))
     elif args.context == "list":
-        db = _get_instance_from_config(
-            {}, database_classes, 'database', {'connection': os.path.join(args.dir, '.streamflow', 'sqlite.db')})
-        workflows = db.get_workflows()
-        workflows['status'] = workflows['status'].transform(lambda x: Status(x).name)
-        print(workflows.to_string(index=False))
+        asyncio.run(_async_list(args))
+    elif args.context == "report":
+        asyncio.run(_async_report(args))
     elif args.context == "run":
         if args.quiet:
             logger.setLevel(logging.WARN)
         elif args.debug:
             logger.setLevel(logging.DEBUG)
         asyncio.run(_async_main(args))
-    elif args.context == "report":
-        report.create_report(args)
     else:
         raise Exception
 

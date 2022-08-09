@@ -38,6 +38,9 @@ class DefaultCheckpointManager(CheckpointManager):
             dst_locations=[LOCAL_LOCATION],
             dst_path=local_path)
 
+    async def close(self):
+        pass
+
     @classmethod
     def get_schema(cls) -> str:
         return pkg_resources.resource_filename(
@@ -49,6 +52,9 @@ class DefaultCheckpointManager(CheckpointManager):
 
 
 class DummyCheckpointManager(CheckpointManager):
+
+    async def close(self):
+        pass
 
     @classmethod
     def get_schema(cls) -> str:

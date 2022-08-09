@@ -34,9 +34,10 @@ class StreamFlowExecutor(Executor):
             pass
 
     def _shutdown(self):
+        loop = asyncio.get_event_loop()
         # Terminate all steps
         for step in self.workflow.steps.values():
-            step.terminate(Status.CANCELLED)
+            loop.run_until_complete(step.terminate(Status.CANCELLED))
         # Mark the executor as closed
         self.closed = True
 
@@ -84,7 +85,7 @@ class StreamFlowExecutor(Executor):
                 execution.add_done_callback(self._handle_exception)
                 self.executions.append(execution)
             if self.workflow.persistent_id:
-                self.workflow.context.database.update_workflow(
+                await self.workflow.context.database.update_workflow(
                     self.workflow.persistent_id, {'status': Status.RUNNING.value})
             # If workflow has output ports
             if self.workflow.output_ports:
@@ -103,13 +104,13 @@ class StreamFlowExecutor(Executor):
                 if step.status in [Status.FAILED, Status.CANCELLED]:
                     raise WorkflowExecutionException("Workflow execution terminated with status FAILED")
             if self.workflow.persistent_id:
-                self.workflow.context.database.update_workflow(
+                await self.workflow.context.database.update_workflow(
                     self.workflow.persistent_id, {'status': Status.COMPLETED.value})
             # Print output tokens
             return output_tokens
         except BaseException:
             if self.workflow.persistent_id:
-                self.workflow.context.database.update_workflow(
+                await self.workflow.context.database.update_workflow(
                     self.workflow.persistent_id, {'status': Status.FAILED.value})
             if not self.closed:
                 self._shutdown()

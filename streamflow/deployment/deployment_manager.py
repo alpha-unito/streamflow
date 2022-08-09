@@ -27,6 +27,9 @@ class DefaultDeploymentManager(DeploymentManager):
         self.events_map: MutableMapping[str, Event] = {}
         self.deployments_map: MutableMapping[str, Connector] = {}
 
+    async def close(self):
+        await self.undeploy_all()
+
     async def deploy(self, deployment_config: DeploymentConfig):
         deployment_name = deployment_config.name
         while True:

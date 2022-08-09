@@ -5,13 +5,13 @@ import json
 import os
 import posixpath
 import tempfile
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING
 
 from streamflow.core.config import Config, SchemaEntity
 from streamflow.core.data import LOCAL_LOCATION
-from streamflow.core.persistence import PersistableEntity
+from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -88,6 +88,10 @@ class DeploymentManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
+    async def close(self):
+        ...
+
+    @abstractmethod
     async def deploy(self, deployment_config: DeploymentConfig):
         ...
 
@@ -123,8 +127,33 @@ class DeploymentConfig(Config, PersistableEntity):
         self.lazy: bool = lazy
         self.workdir: Optional[str] = workdir
 
-    def save(self):
-        return json.dumps(self.config)
+    @classmethod
+    async def load(cls,
+                   context: StreamFlowContext,
+                   persistent_id: int,
+                   loading_context: DatabaseLoadingContext) -> DeploymentConfig:
+        row = await context.database.get_deployment(persistent_id)
+        obj = cls(
+            name=row['name'],
+            type=row['type'],
+            config=row['config'],
+            external=row['external'],
+            lazy=row['lazy'],
+            workdir=row['workdir'])
+        obj.persistent_id = persistent_id
+        loading_context.add_deployment(persistent_id, obj)
+        return obj
+
+    async def save(self, context: StreamFlowContext) -> None:
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_deployment(
+                    name=self.name,
+                    type=self.type,
+                    config=json.dumps(self.config),
+                    external=self.external,
+                    lazy=self.lazy,
+                    workdir=self.workdir)
 
 
 class Target(PersistableEntity):
@@ -145,20 +174,53 @@ class Target(PersistableEntity):
                 scheduling_policy or Config(name='__DEFAULT__', type='data_locality', config={}))
         self.workdir: str = workdir or self.deployment.workdir or _init_workdir(deployment.name)
 
-    def save(self) -> str:
-        return json.dumps({})
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {}
+
+    @classmethod
+    async def load(cls,
+                   context: StreamFlowContext,
+                   persistent_id: int,
+                   loading_context: DatabaseLoadingContext) -> Target:
+        row = await context.database.get_target(persistent_id)
+        obj = cls(
+            deployment=await DeploymentConfig.load(context, row['deployment'], loading_context),
+            locations=row['locations'],
+            service=row['service'],
+            workdir=row['workdir'])
+        obj.persistent_id = persistent_id
+        loading_context.add_target(persistent_id, obj)
+        return obj
+
+    async def save(self, context: StreamFlowContext) -> None:
+        await self.deployment.save(context)
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_target(
+                    deployment=self.deployment.persistent_id,
+                    type=type(self),
+                    params=json.dumps(await self._save_additional_params(context)),
+                    locations=self.locations,
+                    service=self.service,
+                    workdir=self.workdir)
 
 
 class LocalTarget(Target):
+    __deployment_config = None
 
     def __init__(self, workdir: Optional[str] = None):
-        deployment = DeploymentConfig(
-            name=LOCAL_LOCATION,
-            type='local',
-            config={},
-            external=True,
-            lazy=False)
         super().__init__(
-            deployment=deployment,
+            deployment=self._get_deployment_config(),
             locations=1,
             workdir=workdir)
+
+    @classmethod
+    def _get_deployment_config(cls):
+        if not cls.__deployment_config:
+            cls.__deployment_config = DeploymentConfig(
+                name=LOCAL_LOCATION,
+                type='local',
+                config={},
+                external=True,
+                lazy=False)
+        return cls.__deployment_config

@@ -28,11 +28,13 @@ deployments:
 
 failureManager:
   enabled: True
+  type: default
   config:
     max_retries: 50
     retry_delay: 5
 
 scheduler:
+  type: default
   config:
     retry_delay: 10
 

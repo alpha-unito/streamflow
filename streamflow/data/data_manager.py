@@ -151,6 +151,9 @@ class DefaultDataManager(DataManager):
         for data_location in data_locations:
             data_location.available.set()
 
+    async def close(self):
+        pass
+
     def get_data_locations(self,
                            path: str,
                            deployment: Optional[str] = None,

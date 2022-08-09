@@ -75,10 +75,19 @@
         }
       },
       "$comment": "The `config` property is injected by each CheckpointManager extension",
-      "required": [
-        "type",
-        "config"
-      ]
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "type",
+          "config"
+        ]
+      }
     },
     "database": {
       "$id": "#/definitions/database",
@@ -175,10 +184,19 @@
         }
       },
       "$comment": "The `config` property is injected by each FailureManager extension",
-      "required": [
-        "type",
-        "config"
-      ]
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "type",
+          "config"
+        ]
+      }
     },
     "policy": {
       "$id": "#/definitions/policy",

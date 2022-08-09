@@ -4,18 +4,29 @@ import asyncio
 from typing import Any, Callable, MutableMapping, MutableSequence, Optional, Type, cast
 
 import cwltool.builder
-from networkx import Graph
+from rdflib import Graph
 from schema_salad.exceptions import ValidationException
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
-from streamflow.core.utils import flatten_list, get_path_processor, get_tag
+from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.utils import flatten_list, get_class_fullname, get_path_processor, get_tag
 from streamflow.core.workflow import CommandOutput, CommandOutputProcessor, Job, Status, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
 from streamflow.cwl.command import CWLCommandOutput
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.workflow.token import ListToken, ObjectToken
+
+
+async def _save_processors_dict(context: StreamFlowContext,
+                                processors: MutableMapping[str, Any]):
+    return {k: {'type': get_class_fullname(type(p)), 'params': v} for k, p, v in zip(
+        processors.keys(),
+        processors.values(),
+        await asyncio.gather(
+            *(asyncio.create_task(v.save(context)) for v in processors.values())))}
 
 
 class CWLTokenProcessor(TokenProcessor):
@@ -48,8 +59,32 @@ class CWLTokenProcessor(TokenProcessor):
         self.load_listing: Optional[LoadListing] = load_listing
         self.only_propagate_secondary_files: bool = only_propagate_secondary_files
         self.optional: bool = optional
-        self.secondary_files: Optional[MutableSequence[SecondaryFile]] = secondary_files
+        self.secondary_files: MutableSequence[SecondaryFile] = secondary_files or []
         self.streamable: bool = streamable
+
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> CWLTokenProcessor:
+        format_graph = Graph()
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            token_type=row['token_type'],
+            check_type=row['check_type'],
+            enum_symbols=row['enum_symbols'],
+            expression_lib=row['expression_lib'],
+            file_format=row['file_format'],
+            format_graph=(format_graph.parse(data=row['format_graph']) if row['format_graph'] is not None
+                          else format_graph),
+            full_js=row['full_js'],
+            load_contents=row['load_contents'],
+            load_listing=LoadListing(row['load_listing']) if row['load_listing'] is not None else None,
+            only_propagate_secondary_files=row['only_propagate_secondary_files'],
+            optional=row['optional'],
+            secondary_files=[SecondaryFile(sf['pattern'], sf['required']) for sf in row['secondary_files']],
+            streamable=row['streamable'])
 
     async def _process_file_token(self, inputs: MutableMapping[str, Token], token_value: Any):
         # Build context
@@ -143,6 +178,23 @@ class CWLTokenProcessor(TokenProcessor):
         else:
             return token
 
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'token_type': self.token_type,
+                   'check_type': self.check_type,
+                   'enum_symbols': self.enum_symbols,
+                   'expression_lib': self.expression_lib,
+                   'file_format': self.file_format,
+                   'format_graph': self.format_graph.serialize() if self.format_graph else None,
+                   'full_js': self.full_js,
+                   'load_contents': self.load_contents,
+                   'load_listing': self.load_listing.value if self.load_listing else None,
+                   'only_propagate_secondary_files': self.only_propagate_secondary_files,
+                   'optional': self.optional,
+                   'secondary_files': await asyncio.gather(*(asyncio.create_task(s.save(context))
+                                                             for s in self.secondary_files)),
+                   'streamable': self.streamable}}
+
 
 class CWLCommandOutputProcessor(CommandOutputProcessor):
 
@@ -172,7 +224,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self.load_listing: LoadListing = load_listing
         self.optional: bool = optional
         self.output_eval: Optional[str] = output_eval
-        self.secondary_files: Optional[MutableSequence[SecondaryFile]] = secondary_files
+        self.secondary_files: MutableSequence[SecondaryFile] = secondary_files or []
         self.streamable: bool = streamable
 
     async def _build_token(self,
@@ -343,6 +395,22 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             return await self._build_token(
                 job, context, await self._process_command_output(job, command_output, context))
 
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'token_type': self.token_type,
+                   'enum_symbols': self.enum_symbols,
+                   'expression_lib': self.expression_lib,
+                   'file_format': self.file_format,
+                   'full_js': self.full_js,
+                   'glob': self.glob,
+                   'load_contents': self.load_contents,
+                   'load_listing': self.load_listing.value if self.load_listing else None,
+                   'optional': self.optional,
+                   'output_eval': self.output_eval,
+                   'secondary_files': await asyncio.gather(*(asyncio.create_task(s.save(context))
+                                                             for s in self.secondary_files)),
+                   'streamable': self.streamable}}
+
 
 class CWLMapTokenProcessor(TokenProcessor):
 
@@ -352,6 +420,16 @@ class CWLMapTokenProcessor(TokenProcessor):
                  processor: TokenProcessor):
         super().__init__(name, workflow)
         self.processor: TokenProcessor = processor
+
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> CWLMapTokenProcessor:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            processor=await TokenProcessor.load(context, row['processor'], loading_context))
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
         # If value is token, propagate the process call
@@ -364,6 +442,11 @@ class CWLMapTokenProcessor(TokenProcessor):
         # Propagate evaluation to the inner processor
         return token.update(await asyncio.gather(*(asyncio.create_task(
             self.processor.process(inputs, v)) for v in token.value)))
+
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'processor': {'type': get_class_fullname(type(self.processor)),
+                                 'params': await self.processor.save(context)}}}
 
 
 class CWLMapCommandOutputProcessor(CommandOutputProcessor):
@@ -392,7 +475,12 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
             token = ListToken(
                 value=[token],
                 tag=token.tag)
-        return token
+        return token.update(token.value)
+
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'processor': {'type': get_class_fullname(type(self.processor)),
+                                 'params': await self.processor.save(context)}}}
 
 
 class CWLObjectTokenProcessor(TokenProcessor):
@@ -403,6 +491,19 @@ class CWLObjectTokenProcessor(TokenProcessor):
                  processors: MutableMapping[str, TokenProcessor]):
         super().__init__(name, workflow)
         self.processors: MutableMapping[str, TokenProcessor] = processors
+
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> CWLObjectTokenProcessor:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            processors={k: v for k, v in zip(
+                row['processors'].keys(),
+                await asyncio.gather(*(asyncio.create_task(TokenProcessor.load(context, v, loading_context))
+                                       for v in row['processors'].values())))})
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
         # If value is token, propagate the process call
@@ -415,6 +516,10 @@ class CWLObjectTokenProcessor(TokenProcessor):
         # Propagate evaluation to the inner processors
         return token.update(dict(zip(token.value, [t.value for t in await asyncio.gather(*(asyncio.create_task(
             self.processors[k].process(inputs, token.update(v))) for k, v in token.value.items()))])))
+
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'processors': await _save_processors_dict(context, self.processors)}}
 
 
 class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
@@ -464,6 +569,13 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
                     zip(token_tasks.keys(), await asyncio.gather(*token_tasks.values()))),
                 tag=get_tag(job.inputs.values()))
 
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'processors': await _save_processors_dict(context, self.processors),
+                   'expression_lib': self.expression_lib,
+                   'full_js': self.full_js,
+                   'output_eval': self.output_eval}}
+
 
 class CWLUnionTokenProcessor(TokenProcessor):
 
@@ -505,6 +617,17 @@ class CWLUnionTokenProcessor(TokenProcessor):
     def _check_union_processor(self, processor: CWLUnionTokenProcessor, token_value: Any):
         return any(self.check_processor[type(p)](p, token_value) for p in processor.processors)
 
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> CWLUnionTokenProcessor:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            processors=cast(MutableSequence[TokenProcessor], await asyncio.gather(*(asyncio.create_task(
+                TokenProcessor.load(context, p, loading_context)) for p in row['processors']))))
+
     def get_processor(self, token_value: Any) -> TokenProcessor:
         for processor in self.processors:
             if self.check_processor[type(processor)](processor, token_value):
@@ -519,6 +642,11 @@ class CWLUnionTokenProcessor(TokenProcessor):
         processor = self.get_processor(token.value)
         # Propagate evaluation to the selected processor
         return await processor.process(inputs, token)
+
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'processors': await asyncio.gather(*(asyncio.create_task(v.save(context))
+                                                        for v in self.processors))}}
 
 
 class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
@@ -535,7 +663,6 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
             CWLMapCommandOutputProcessor: self._check_map_processor,
             CWLUnionCommandOutputProcessor: self._check_union_processor}
 
-    # noinspection PyMethodMayBeStatic
     def _check_default_processor(self, processor: CWLCommandOutputProcessor, token_value: Any):
         try:
             utils.check_token_type(
@@ -548,6 +675,7 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
         except WorkflowExecutionException:
             return False
 
+    # noinspection PyMethodMayBeStatic
     def _check_map_processor(self, processor: CWLMapCommandOutputProcessor, token_value: Any):
         return isinstance(token_value, MutableSequence) and self.check_processor[type(processor.processor)](
             processor.processor, token_value[0])
@@ -573,3 +701,8 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
         if isinstance(token_value, MutableMapping) and self.name in token_value:
             token_value = token_value[self.name]
         return await self.get_processor(token_value).process(job, command_output)
+
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'processors': await asyncio.gather(*(asyncio.create_task(v.save(context))
+                                                        for v in self.processors))}}

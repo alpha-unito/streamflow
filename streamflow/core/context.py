@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING
 
@@ -24,3 +25,13 @@ class StreamFlowContext(object):
         self.failure_manager: Optional[FailureManager] = None
         self.process_executor: ProcessPoolExecutor = ProcessPoolExecutor()
         self.scheduler: Optional[Scheduler] = None
+
+    async def close(self):
+        await asyncio.gather(
+            self.checkpoint_manager.close(),
+            self.database.close(),
+            self.data_manager.close(),
+            self.deployment_manager.close(),
+            self.failure_manager.close(),
+            self.scheduler.close())
+        self.process_executor.shutdown()

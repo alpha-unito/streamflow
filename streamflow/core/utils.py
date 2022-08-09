@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import importlib
 import itertools
 import os
 import posixpath
 import uuid
-from json import loads
 from pathlib import Path
 from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Type, Union
 
 from importlib_metadata import entry_points
+from jsonref import loads
 
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.exception import InvalidPluginException, WorkflowExecutionException
@@ -154,7 +155,12 @@ def flatten_list(hierarchical_list):
 
 
 def get_class_fullname(cls: Type):
-    return cls.__class__.__module__ + '.' + cls.__class__.__qualname__
+    return cls.__module__ + '.' + cls.__qualname__
+
+
+def get_class_from_name(name: str) -> Type:
+    module_name, class_name = name.rsplit('.', 1)
+    return getattr(importlib.import_module(module_name), class_name)
 
 
 def get_path_processor(connector: Connector):
@@ -242,7 +248,7 @@ def load_extensions():
         if isinstance(plugin, StreamFlowPlugin):
             plugin.register()
             logger.info("Succesfully registered plugin {}".format(
-                plugin.__class__.__module__ + '.' + plugin.__class__.__name__))
+                get_class_fullname(type(plugin))))
         else:
             raise InvalidPluginException("StreamFlow plugins must extend the streamflow.ext.StreamFlowPlugin class")
 

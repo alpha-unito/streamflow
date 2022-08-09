@@ -2,6 +2,7 @@ CREATE TABLE workflow
 (
     id     INTEGER PRIMARY KEY,
     name   TEXT UNIQUE,
+    params TEXT,
     status INTEGER,
     type   TEXT
 );
@@ -13,7 +14,7 @@ CREATE TABLE step
     workflow INTEGER,
     status   INTEGER,
     type     TEXT,
-    params   BLOB,
+    params   TEXT,
     FOREIGN KEY (workflow) REFERENCES workflow (id)
 );
 
@@ -23,7 +24,7 @@ CREATE TABLE port
     name     TEXT,
     workflow INTEGER,
     type     TEXT,
-    params   BLOB,
+    params   TEXT,
     FOREIGN KEY (workflow) REFERENCES workflow (id)
 );
 
@@ -55,11 +56,11 @@ CREATE TABLE command
 
 CREATE TABLE token
 (
-    id    INTEGER PRIMARY KEY,
-    port  INTEGER,
-    tag   TEXT,
-    type  TEXT,
-    value BLOB,
+    id     INTEGER PRIMARY KEY,
+    port   INTEGER,
+    tag    TEXT,
+    type   TEXT,
+    value  BLOB,
     FOREIGN KEY (port) REFERENCES port (id)
 );
 
@@ -79,8 +80,10 @@ CREATE table deployment
     id       INTEGER PRIMARY KEY,
     name     TEXT,
     type     TEXT,
-    params   BLOB,
-    external INTEGER
+    config   TEXT,
+    external INTEGER,
+    lazy     INTEGER,
+    workdir  TEXT
 );
 
 
@@ -88,8 +91,10 @@ CREATE table target
 (
     id         INTEGER PRIMARY KEY,
     deployment INTEGER,
+    type       TEXT,
     locations  INTEGER,
     service    TEXT,
     workdir    TEXT,
+    params     TEXT,
     FOREIGN KEY (deployment) REFERENCES deployment (id)
 );

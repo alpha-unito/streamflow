@@ -77,7 +77,7 @@ async def _async_main(args: argparse.Namespace):
         logger.exception(e)
         sys.exit(1)
     finally:
-        await context.deployment_manager.undeploy_all()
+        await context.close()
 
 
 def main(args):

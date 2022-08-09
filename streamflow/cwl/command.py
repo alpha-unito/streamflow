@@ -461,7 +461,7 @@ class CWLCommand(CWLBaseCommand):
             outdir=job.output_directory,
             command=cmd_string))
         # Persist command
-        command_id = self.step.workflow.context.database.add_command(
+        command_id = await self.step.workflow.context.database.add_command(
             step_id=self.step.persistent_id,
             cmd=cmd_string)
         # Escape shell command when needed
@@ -521,12 +521,11 @@ class CWLCommand(CWLBaseCommand):
         else:
             status = Status.FAILED
         # Update command persistence
-        self.step.workflow.context.database.update_command(command_id, {
+        await self.step.workflow.context.database.update_command(command_id, {
             "status": status.value,
             "output": str(result),
             "start_time": start_time,
-            "end_time": end_time
-        })
+            "end_time": end_time})
         # Check if file `cwl.output.json` exists either locally on at least one location
         result = await _check_cwl_output(job, self.step, result)
         return CWLCommandOutput(value=result, status=status, exit_code=exit_code)
@@ -775,7 +774,7 @@ class CWLExpressionCommand(CWLBaseCommand):
         logger.info('Evaluating expression for step {step} (job {job})'.format(
             step=self.step.name, job=job.name))
         # Persist command
-        command_id = self.step.workflow.context.database.add_command(
+        command_id = await self.step.workflow.context.database.add_command(
             self.step.persistent_id,
             self.expression)
         # Execute command
@@ -787,12 +786,11 @@ class CWLExpressionCommand(CWLBaseCommand):
             expression_lib=self.expression_lib)
         end_time = time.time_ns()
         # Update command persistence
-        self.step.workflow.context.database.update_command(command_id, {
+        await self.step.workflow.context.database.update_command(command_id, {
             "status": Status.COMPLETED.value,
             "output": str(result),
             "start_time": start_time,
-            "end_time": end_time
-        })
+            "end_time": end_time})
         # Return result
         return CWLCommandOutput(value=result, status=Status.COMPLETED, exit_code=0)
 

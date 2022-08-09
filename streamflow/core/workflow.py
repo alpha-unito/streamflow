@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import uuid
 from abc import ABC, abstractmethod
 from asyncio import Queue
 from enum import Enum
-from typing import MutableSequence, TYPE_CHECKING, Type, TypeVar
+from typing import MutableMapping, MutableSequence, TYPE_CHECKING, Type, TypeVar, cast
 
+from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.persistence import DependencyType, PersistableEntity
+from streamflow.core.persistence import DatabaseLoadingContext, DependencyType, PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Optional, MutableMapping, Any
+    from typing import Optional, Any
 
 
 class Command(ABC):
@@ -51,6 +53,10 @@ class CommandOutputProcessor(ABC):
     @abstractmethod
     async def process(self, job: Job, command_output: CommandOutput) -> Optional[Token]:
         ...
+
+    async def save(self, context: StreamFlowContext):
+        return {'name': self.name,
+                'workflow': self.workflow.persistent_id}
 
 
 class Executor(ABC):
@@ -95,6 +101,18 @@ class Port(PersistableEntity):
         for t in self.token_list:
             self.queues[consumer].put_nowait(t)
 
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> Port:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']))
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {}
+
     def close(self, consumer: str):
         if consumer in self.queues:
             self.queues[consumer].task_done()
@@ -117,13 +135,31 @@ class Port(PersistableEntity):
     def get_output_steps(self) -> MutableSequence[Step]:
         return [s for s in self.workflow.steps.values() if self.name in s.input_ports.values()]
 
+    @classmethod
+    async def load(cls,
+                   context: StreamFlowContext,
+                   persistent_id: int,
+                   loading_context: DatabaseLoadingContext) -> Port:
+        row = await context.database.get_port(persistent_id)
+        type = cast(Type[Port], utils.get_class_from_name(row['type']))
+        port = await type._load(context, row, loading_context)
+        port.persistent_id = persistent_id
+        loading_context.add_port(persistent_id, port)
+        return port
+
     def put(self, token: Token):
         self.token_list.append(token)
         for q in self.queues.values():
             q.put_nowait(token)
 
-    def save(self) -> str:
-        return json.dumps({})
+    async def save(self, context: StreamFlowContext) -> None:
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_port(
+                    name=self.name,
+                    workflow_id=self.workflow.persistent_id,
+                    type=type(self),
+                    params=json.dumps(await self._save_additional_params(context)))
 
 
 class Status(Enum):
@@ -149,21 +185,33 @@ class Step(PersistableEntity, ABC):
         self.terminated: bool = False
         self.workflow: Workflow = workflow
 
-    def _add_port(self, name: str, port: Port, type: DependencyType):
+    def _add_port(self,
+                  name: str,
+                  port: Port,
+                  type: DependencyType):
         if port.name not in self.workflow.ports:
             self.workflow.ports[port.name] = port
         if type == DependencyType.INPUT:
             self.input_ports[name] = port.name
         else:
             self.output_ports[name] = port.name
-        if self.persistent_id:
-            self.workflow.context.database.add_dependency(
-                step=self.persistent_id, port=port.persistent_id, type=type, name=name)
 
-    def _set_status(self, status: Status):
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext):
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']))
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {}
+
+    async def _set_status(self, status: Status):
         self.status = status
         if self.persistent_id is not None:
-            self.workflow.context.database.update_step(self.persistent_id, {"status": status.value})
+            await self.workflow.context.database.update_step(self.persistent_id, {"status": status.value})
 
     def add_input_port(self, name: str, port: Port) -> None:
         self._add_port(name, port, DependencyType.INPUT)
@@ -197,15 +245,58 @@ class Step(PersistableEntity, ABC):
     def get_output_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.output_ports.items()}
 
+    @classmethod
+    async def load(cls,
+                   context: StreamFlowContext,
+                   persistent_id: int,
+                   loading_context: DatabaseLoadingContext) -> Step:
+        row = await context.database.get_step(persistent_id)
+        type = cast(Type[Step], utils.get_class_from_name(row['type']))
+        step = await type._load(context, row, loading_context)
+        step.persistent_id = persistent_id
+        step.status = Status(row['status'])
+        step.terminated = step.status in [Status.COMPLETED, Status.FAILED, Status.SKIPPED]
+        ports = await context.database.get_input_ports(persistent_id)
+        step.input_ports = {k: v for k, v in zip(
+            [p['name'] for p in ports],
+            await asyncio.gather(*(asyncio.create_task(loading_context.load_port(context, p['port'])) for p in ports)))}
+        ports = await context.database.get_output_ports(persistent_id)
+        step.output_ports = {k: v for k, v in zip(
+            [p['name'] for p in ports],
+            await asyncio.gather(*(asyncio.create_task(loading_context.load_port(context, p['port'])) for p in ports)))}
+        loading_context.add_step(persistent_id, step)
+        return step
+
     @abstractmethod
     async def run(self):
         ...
 
-    def save(self) -> str:
-        return json.dumps({})
+    async def save(self, context: StreamFlowContext) -> None:
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_step(
+                    name=self.name,
+                    workflow_id=self.workflow.persistent_id,
+                    status=cast(int, self.status.value),
+                    type=type(self),
+                    params=json.dumps(await self._save_additional_params(context)))
+        save_tasks = []
+        for name, port in self.get_input_ports().items():
+            save_tasks.append(asyncio.create_task(self.workflow.context.database.add_dependency(
+                step=self.persistent_id,
+                port=port.persistent_id,
+                type=DependencyType.INPUT,
+                name=name)))
+        for name, port in self.get_output_ports().items():
+            save_tasks.append(asyncio.create_task(self.workflow.context.database.add_dependency(
+                step=self.persistent_id,
+                port=port.persistent_id,
+                type=DependencyType.OUTPUT,
+                name=name)))
+        await asyncio.gather(*save_tasks)
 
     @abstractmethod
-    def terminate(self, status: Status):
+    async def terminate(self, status: Status):
         ...
 
 
@@ -219,20 +310,61 @@ class Token(PersistableEntity):
         self.value: Any = value
         self.tag: str = tag
 
-    async def get_weight(self, context: StreamFlowContext):
-        return sys.getsizeof(self.value)
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> Token:
+        value = json.loads(row['value'])
+        if isinstance(value, MutableMapping) and 'token' in value:
+            value = await loading_context.load_token(context, value['token'])
+        return cls(
+            tag=row['tag'],
+            value=value)
 
-    def update(self, value: Any) -> Token:
-        return self.__class__(tag=self.tag, value=value)
+    async def _save_value(self, context: StreamFlowContext):
+        return {'token': self.value.persistent_id} if isinstance(self.value, Token) else self.value
+
+    async def get_weight(self, context: StreamFlowContext):
+        if isinstance(self.value, Token):
+            return await self.value.get_weight(context)
+        else:
+            return sys.getsizeof(self.value)
+
+    @classmethod
+    async def load(cls,
+                   context: StreamFlowContext,
+                   persistent_id: int,
+                   loading_context: DatabaseLoadingContext) -> Token:
+        row = await context.database.get_token(persistent_id)
+        type = cast(Type[Token], utils.get_class_from_name(row['type']))
+        token = await type._load(context, row, loading_context)
+        token.persistent_id = persistent_id
+        loading_context.add_token(persistent_id, token)
+        return token
+
+    async def is_available(self, context: StreamFlowContext):
+        if isinstance(self.value, Token):
+            return await self.value.is_available(context)
+        else:
+            return True
 
     def retag(self, tag: str) -> Token:
         return self.__class__(tag=tag, value=self.value)
 
-    def save(self):
-        if isinstance(self.value, Token):
-            return json.dumps({'token': json.loads(self.value.save())})
-        else:
-            return json.dumps(self.value)
+    async def save(self,
+                   context: StreamFlowContext,
+                   port_id: Optional[int] = None):
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_token(
+                    port=port_id,
+                    tag=self.tag,
+                    type=type(self),
+                    value=json.dumps(await self._save_value(context)))
+
+    def update(self, value: Any) -> Token:
+        return self.__class__(tag=self.tag, value=value)
 
 
 class TokenProcessor(ABC):
@@ -243,9 +375,31 @@ class TokenProcessor(ABC):
         self.name: str = name
         self.workflow: Workflow = workflow
 
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> TokenProcessor:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']))
+
+    @classmethod
+    async def load(cls,
+                   context: StreamFlowContext,
+                   row: MutableMapping[str, Any],
+                   loading_context: DatabaseLoadingContext):
+        type = utils.get_class_from_name(row['type'])
+        return await cast(Type[TokenProcessor], type)._load(context, row['params'], loading_context)
+
     @abstractmethod
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
         ...
+
+    async def save(self, context: StreamFlowContext):
+        return {
+            'name': self.name,
+            'workflow': self.workflow.persistent_id}
 
 
 if TYPE_CHECKING:
@@ -258,50 +412,37 @@ class Workflow(PersistableEntity):
 
     def __init__(self,
                  context: StreamFlowContext,
-                 name: str = str(uuid.uuid4()),
-                 persist: bool = True):
+                 type: str,
+                 name: str = str(uuid.uuid4())):
         super().__init__()
         self.context: StreamFlowContext = context
-        self.ports: MutableMapping[str, Port] = {}
+        self.type: str = type
+        self.name: str = name
         self.output_ports: MutableMapping[str, str] = {}
+        self.ports: MutableMapping[str, Port] = {}
         self.steps: MutableMapping[str, Step] = {}
-        if persist:
-            self.persistent_id: Optional[int] = self.context.database.add_workflow(
-                name=name, status=Status.WAITING.value, type='cwl')
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {}
 
     def create_port(self,
                     cls: Type[P] = Port,
                     name: str = None,
-                    persist: bool = True,
                     **kwargs) -> P:
         if name is None:
             name = str(uuid.uuid4())
         port = cls(workflow=self, name=name, **kwargs)
         self.ports[name] = port
-        if persist:
-            port.persistent_id = self.context.database.add_port(
-                name=name,
-                workflow_id=self.persistent_id,
-                type=cls,
-                params=port.save())
         return port
 
     def create_step(self,
                     cls: Type[S],
                     name: str = None,
-                    persist: bool = True,
                     **kwargs) -> S:
         if name is None:
             name = str(uuid.uuid4())
         step = cls(name=name, workflow=self, **kwargs)
         self.steps[name] = step
-        if persist:
-            step.persistent_id = self.context.database.add_step(
-                name=name,
-                workflow_id=self.persistent_id,
-                status=step.status.value,
-                type=cls,
-                params=step.save())
         return step
 
     def get_output_port(self, name: str) -> Port:
@@ -310,5 +451,37 @@ class Workflow(PersistableEntity):
     def get_output_ports(self) -> MutableMapping[str, Port]:
         return {name: self.ports[p] for name, p in self.output_ports.items()}
 
-    def save(self) -> str:
-        return json.dumps({})
+    @classmethod
+    async def load(cls,
+                   context: StreamFlowContext,
+                   persistent_id: int,
+                   loading_context: DatabaseLoadingContext) -> Workflow:
+        row = await context.database.get_workflow(persistent_id)
+        workflow = cls(
+            context=context,
+            type=row['type'],
+            name=row['name'])
+        workflow.persistent_id = row['id']
+        loading_context.add_workflow(persistent_id, workflow)
+        rows = await context.database.get_workflow_ports(persistent_id)
+        workflow.ports = {r['name']: v for r, v in zip(
+            rows,
+            await asyncio.gather(*(asyncio.create_task(
+                loading_context.load_port(context, row['id'])) for row in rows)))}
+        rows = await context.database.get_workflow_steps(persistent_id)
+        workflow.steps = {r['name']: v for r, v in zip(
+            rows,
+            await asyncio.gather(*(asyncio.create_task(
+                loading_context.load_step(context, row['id'])) for row in rows)))}
+        return workflow
+
+    async def save(self, context: StreamFlowContext) -> None:
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await self.context.database.add_workflow(
+                    name=self.name,
+                    params=json.dumps(await self._save_additional_params(context)),
+                    status=Status.WAITING.value,
+                    type=self.type)
+        await asyncio.gather(*(asyncio.create_task(port.save(context)) for port in self.ports.values()))
+        await asyncio.gather(*(asyncio.create_task(step.save(context)) for step in self.steps.values()))

@@ -57,6 +57,10 @@ class DataManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
+    async def close(self):
+        ...
+
+    @abstractmethod
     def get_data_locations(self,
                            path: str,
                            deployment: Optional[str] = None,

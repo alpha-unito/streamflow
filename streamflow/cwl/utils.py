@@ -691,6 +691,9 @@ class SecondaryFile(object):
     def __hash__(self):
         return hash(self.pattern)
 
+    async def save(self, context: StreamFlowContext):
+        return {'pattern': self.pattern, 'required': self.required}
+
 
 async def update_file_token(context: StreamFlowContext,
                             connector: Connector,

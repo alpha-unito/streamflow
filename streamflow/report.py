@@ -1,9 +1,8 @@
 import argparse
-import os.path
+import csv
+import datetime
 
-import pandas as pd
-
-from streamflow.persistence.sqlite import SqliteDatabase
+from streamflow.core.context import StreamFlowContext
 
 
 def _export_to_file(fig, args: argparse.Namespace, default_name: str) -> None:
@@ -16,22 +15,30 @@ def _export_to_file(fig, args: argparse.Namespace, default_name: str) -> None:
         pio.write_image(fig, format=args.format, file=args.name or "{}.{}".format(default_name, args.format))
 
 
-def create_report(args: argparse.Namespace):
+def _timestamp_to_datetime(timestamp):
+    dt = datetime.datetime.fromtimestamp(timestamp / 1e9)
+    return '{}{:03.0f}'.format(dt.strftime('%Y-%m-%dT%H:%M:%S.%f'), timestamp % 1e3)
+
+
+async def create_report(context: StreamFlowContext,
+                        args: argparse.Namespace):
     import plotly.express as px
     # Retrieve data
-    database = SqliteDatabase(os.path.join(args.outdir, ".streamflow", "sqlite.db"))
-    df = database.get_report(args.workflow)
+    report = await context.database.get_report(args.workflow)
     # If output format is csv, print DataFrame and exit
     if args.format == 'csv':
-        df.to_csv(args.name or "report.csv", index=False)
-        return
+        with open(args.name or "report.csv", 'w') as f:
+            writer = csv.DictWriter(f, report[0].keys())
+            writer.writeheader()
+            writer.writerows(report)
+            return
     # Pre-process data
-    df["id"] = df["id"].map(str)
-    df["start_time"] = pd.to_datetime(df["start_time"])
-    df["end_time"] = pd.to_datetime(df["end_time"])
+    for r in report:
+        r['start_time'] = _timestamp_to_datetime(r['start_time'])
+        r['end_time'] = _timestamp_to_datetime(r['end_time'])
     # Create chart
     fig = px.timeline(
-        df,
+        report,
         x_start="start_time",
         x_end="end_time",
         y="name" if args.group_by_step else "id",

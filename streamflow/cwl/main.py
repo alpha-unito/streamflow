@@ -12,8 +12,10 @@ from cwltool.resolver import tool_resolver
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.workflow import Workflow
 from streamflow.cwl.translator import CWLTranslator
 from streamflow.log_handler import logger
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.workflow.executor import StreamFlowExecutor
 
 
@@ -80,9 +82,10 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
         loading_context=loading_context)
     logger.info("Building workflow execution plan")
     workflow = translator.translate()
+    await workflow.save(context)
     logger.info("Building of workflow execution plan terminated with status COMPLETED")
     executor = StreamFlowExecutor(workflow)
-    logger.info("Running workflow")
+    logger.info("Running workflow {}".format(args.name))
     output_tokens = await executor.run()
     logger.info("Workflow execution terminated with status COMPLETED")
     print(json.dumps(output_tokens, sort_keys=True, indent=4))

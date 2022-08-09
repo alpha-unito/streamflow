@@ -6,6 +6,7 @@ from typing import Any, MutableMapping, MutableSequence, Optional
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
+from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag, random_name
 from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.cwl import utils
@@ -37,6 +38,10 @@ class CWLBaseConditionalStep(ConditionalStep, ABC):
         super().__init__(name, workflow)
         self.skip_ports: MutableMapping[str, str] = {}
 
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'skip_ports': {k: p.persistent_id for k, p in self.get_skip_ports().items()}}}
+
     def add_skip_port(self, name: str, port: Port) -> None:
         if port.name not in self.workflow.ports:
             self.workflow.ports[port.name] = port
@@ -44,9 +49,6 @@ class CWLBaseConditionalStep(ConditionalStep, ABC):
 
     def get_skip_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.skip_ports.items()}
-
-    def save(self) -> str:
-        return json.dumps({'skip_ports': {k: p.persistent_id for k, p in self.get_skip_ports().items()}})
 
 
 class CWLConditionalStep(CWLBaseConditionalStep):
@@ -84,11 +86,11 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         for port in self.get_skip_ports().values():
             port.put(Token(value=None, tag=get_tag(inputs.values())))
 
-    def save(self) -> str:
-        return json.dumps({**json.loads(super().save()), **{
-            'expression': self.expression,
-            'expression_lib': self.expression_lib,
-            'full_js': self.full_js}})
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'expression': self.expression,
+                   'expression_lib': self.expression_lib,
+                   'full_js': self.full_js}}
 
 
 class CWLLoopConditionalStep(CWLConditionalStep):
@@ -132,6 +134,17 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
     async def _eval(self, inputs: MutableMapping[str, Token]):
         return all(isinstance(i, ListToken) and len(i.value) > 0 for i in inputs.values())
 
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext):
+        params = json.loads(row['params'])
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            scatter_method=params['scatter_method'])
+
     async def _on_true(self, inputs: MutableMapping[str, Token]):
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
@@ -147,8 +160,9 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         for port in self.get_skip_ports().values():
             port.put(ListToken(value=token_value, tag=get_tag(inputs.values())))
 
-    def save(self) -> str:
-        return json.dumps({**json.loads(super().save()), **{'scatter_method': self.scatter_method}})
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'scatter_method': self.scatter_method}}
 
 
 class CWLInputInjectorStep(InputInjectorStep):
@@ -232,6 +246,10 @@ class CWLTransferStep(TransferStep):
                  writable: bool = False):
         super().__init__(name, workflow, job_port)
         self.writable: bool = writable
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'writable': self.writable}}
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
         if isinstance(token_value, Token):
@@ -382,9 +400,6 @@ class CWLTransferStep(TransferStep):
                     )) for t in token_value['listing']))
             # Return the new token value
             return new_token_value
-
-    def save(self) -> str:
-        return json.dumps({**json.loads(super().save()), **{'writable': self.writable}})
 
     async def transfer(self, job: Job, token: Token) -> Token:
         return token.update(await self._transfer_value(job, token.value))

@@ -107,6 +107,9 @@ class DefaultScheduler(Scheduler):
             self.policy_map[policy_config.name] = policy_classes[policy_config.type](**policy_config.config)
         return self.policy_map[policy_config.name]
 
+    async def close(self):
+        pass
+
     @classmethod
     def get_schema(cls) -> str:
         return pkg_resources.resource_filename(

@@ -1,7 +1,10 @@
-from typing import MutableMapping, MutableSequence, Optional
+import json
+from typing import Any, MutableMapping, MutableSequence, Optional, cast
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
-from streamflow.core.utils import get_tag
+from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.utils import get_class_from_name, get_class_fullname, get_tag
 from streamflow.core.workflow import Port, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
 from streamflow.workflow.token import ListToken
@@ -32,6 +35,10 @@ class CWLDefaultTransformer(ManyToOneTransformer):
         self.default_port: Port = default_port
         self.default_token: Optional[Token] = None
 
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'default_port': self.default_port.persistent_id}}
+
     async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
         if len(inputs) != 1:
             raise WorkflowDefinitionException("{} step must contain a single input port.".format(self.name))
@@ -56,6 +63,24 @@ class CWLTokenTransformer(ManyToOneTransformer):
         super().__init__(name, workflow)
         self.port_name: str = port_name
         self.processor: TokenProcessor = processor
+
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext):
+        params = json.loads(row['params'])
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            port_name=params['port_name'],
+            processor=await TokenProcessor.load(context, params['processor'], loading_context))
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'port_name': self.port_name,
+                   'processor': {'type': get_class_fullname(type(self.processor)),
+                                 'params': await self.processor.save(context)}}}
 
     async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
         return {self.get_output_name(): await self.processor.process(inputs, inputs[self.port_name])}
@@ -91,11 +116,11 @@ class ListToElementTransformer(OneToOneTransformer):
             if len(token.value) == 1:
                 return token.value[0]
             else:
-                return token
+                return token.update(token.value)
         elif isinstance(token.value, Token):
             return token.update(self._transform(token.value))
         else:
-            return token
+            return token.value()
 
     async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
         return {self.get_output_name(): self._transform(next(iter(inputs.values())))}
@@ -140,6 +165,15 @@ class ValueFromTransformer(ManyToOneTransformer):
         self.value_from: str = value_from
         self.expression_lib: Optional[MutableSequence[str]] = expression_lib
         self.full_js: bool = full_js
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'port_name': self.port_name,
+                   'processor': {'type': get_class_fullname(type(self.processor)),
+                                 'params': await self.processor.save(context)},
+                   'value_from': self.value_from,
+                   'expression_lib': self.expression_lib,
+                   'full_js': self.full_js}}
 
     async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
         if self.get_output_name() in inputs:

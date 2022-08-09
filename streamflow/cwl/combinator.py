@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 from typing import Any, AsyncIterable, MutableMapping, MutableSequence
 
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Token, Workflow
 from streamflow.workflow.combinator import DotProductCombinator
@@ -30,6 +34,18 @@ class ListMergeCombinator(DotProductCombinator):
         self.output_name: str = output_name
         self.token_values: MutableMapping[str, MutableMapping[str, Any]] = {}
 
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> ListMergeCombinator:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            input_names=row['input_names'],
+            output_name=row['output_name'],
+            flatten=row['flatten'])
+
     async def combine(self,
                       port_name: str,
                       token: Token) -> AsyncIterable[MutableMapping[str, Token]]:
@@ -42,3 +58,9 @@ class ListMergeCombinator(DotProductCombinator):
                 yield {self.output_name: ListToken(
                     value=outputs,
                     tag=get_tag(outputs))}
+
+    async def save(self, context: StreamFlowContext):
+        return {**await super().save(context),
+                **{'input_names': self.input_names,
+                   'output_name': self.output_name,
+                   'flatten': self.flatten}}
