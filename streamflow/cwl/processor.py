@@ -9,9 +9,10 @@ from schema_salad.exceptions import ValidationException
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import LOCAL_LOCATION
+from streamflow.core.deployment import Connector, Target
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import flatten_list, get_class_fullname, get_path_processor, get_tag
+from streamflow.core.utils import flatten_list, get_path_processor, get_tag
 from streamflow.core.workflow import CommandOutput, CommandOutputProcessor, Job, Status, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
 from streamflow.cwl.command import CWLCommandOutput
@@ -20,13 +21,17 @@ from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.workflow.token import ListToken, ObjectToken
 
 
-async def _save_processors_dict(context: StreamFlowContext,
-                                processors: MutableMapping[str, Any]):
-    return {k: {'type': get_class_fullname(type(p)), 'params': v} for k, p, v in zip(
-        processors.keys(),
-        processors.values(),
-        await asyncio.gather(
-            *(asyncio.create_task(v.save(context)) for v in processors.values())))}
+def _check_default_processor(processor: CWLCommandOutputProcessor, token_value: Any):
+    try:
+        utils.check_token_type(
+            name=processor.name,
+            token_value=token_value,
+            token_type=processor.token_type,
+            enum_symbols=processor.enum_symbols,
+            optional=processor.optional)
+        return True
+    except WorkflowExecutionException:
+        return False
 
 
 class CWLTokenProcessor(TokenProcessor):
@@ -160,6 +165,23 @@ class CWLTokenProcessor(TokenProcessor):
         # Return token value
         return token_value
 
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'token_type': self.token_type,
+                   'check_type': self.check_type,
+                   'enum_symbols': self.enum_symbols,
+                   'expression_lib': self.expression_lib,
+                   'file_format': self.file_format,
+                   'format_graph': self.format_graph.serialize() if self.format_graph else None,
+                   'full_js': self.full_js,
+                   'load_contents': self.load_contents,
+                   'load_listing': self.load_listing.value if self.load_listing else None,
+                   'only_propagate_secondary_files': self.only_propagate_secondary_files,
+                   'optional': self.optional,
+                   'secondary_files': await asyncio.gather(*(asyncio.create_task(s.save(context))
+                                                             for s in self.secondary_files)),
+                   'streamable': self.streamable}}
+
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
         # If value is token, propagate the process call
         if isinstance(token.value, Token):
@@ -178,29 +200,13 @@ class CWLTokenProcessor(TokenProcessor):
         else:
             return token
 
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'token_type': self.token_type,
-                   'check_type': self.check_type,
-                   'enum_symbols': self.enum_symbols,
-                   'expression_lib': self.expression_lib,
-                   'file_format': self.file_format,
-                   'format_graph': self.format_graph.serialize() if self.format_graph else None,
-                   'full_js': self.full_js,
-                   'load_contents': self.load_contents,
-                   'load_listing': self.load_listing.value if self.load_listing else None,
-                   'only_propagate_secondary_files': self.only_propagate_secondary_files,
-                   'optional': self.optional,
-                   'secondary_files': await asyncio.gather(*(asyncio.create_task(s.save(context))
-                                                             for s in self.secondary_files)),
-                   'streamable': self.streamable}}
-
 
 class CWLCommandOutputProcessor(CommandOutputProcessor):
 
     def __init__(self,
                  name: str,
                  workflow: Workflow,
+                 target: Optional[Target] = None,
                  token_type: Optional[str] = None,
                  enum_symbols: Optional[MutableSequence[str]] = None,
                  expression_lib: Optional[MutableSequence[str]] = None,
@@ -213,7 +219,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                  output_eval: Optional[str] = None,
                  secondary_files: Optional[MutableSequence[SecondaryFile]] = None,
                  streamable: bool = False):
-        super().__init__(name, workflow)
+        super().__init__(name, workflow, target)
         self.token_type: str = token_type
         self.enum_symbols: Optional[MutableSequence[str]] = enum_symbols
         self.expression_lib: Optional[MutableSequence[str]] = expression_lib
@@ -229,19 +235,20 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
 
     async def _build_token(self,
                            job: Job,
+                           connector: Optional[Connector],
                            context: MutableMapping[str, Any],
                            token_value: Any) -> Token:
         if isinstance(token_value, MutableMapping):
             if utils.get_token_class(token_value) in ['File', 'Directory']:
-                connector = self.workflow.context.scheduler.get_connector(job.name)
-                locations = self.workflow.context.scheduler.get_locations(job.name)
+                connector = self._get_connector(connector, job)
+                locations = await self._get_locations(connector, job)
                 # Register path
                 await utils.register_data(
                     context=self.workflow.context,
                     connector=connector,
                     locations=locations,
                     token_value=token_value,
-                    base_path=job.output_directory)
+                    base_path=(self.target.workdir if self.target else job.output_directory))
                 # Process file format
                 if self.file_format:
                     context = {**context, **{'self': token_value}}
@@ -255,14 +262,14 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     tag=get_tag(job.inputs.values()))
             else:
                 token_tasks = {k: asyncio.create_task(
-                    self._build_token(job, context, v)) for k, v in token_value.items()}
+                    self._build_token(job, connector, context, v)) for k, v in token_value.items()}
                 return ObjectToken(
                     value=dict(zip(token_tasks.keys(), await asyncio.gather(*token_tasks.values()))),
                     tag=get_tag(job.inputs.values()))
         elif isinstance(token_value, MutableSequence):
             return ListToken(
                 value=await asyncio.gather(*(asyncio.create_task(
-                    self._build_token(job, context, t)) for t in token_value)),
+                    self._build_token(job, connector, context, t)) for t in token_value)),
                 tag=get_tag(job.inputs.values()))
         else:
             return Token(
@@ -272,10 +279,11 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     async def _process_command_output(self,
                                       job: Job,
                                       command_output: CWLCommandOutput,
-                                      context: MutableMapping[str, Any]):
-        scheduler = self.workflow.context.scheduler
-        connector = scheduler.get_connector(job.name)
-        locations = scheduler.get_locations(job.name)
+                                      connector: Optional[Connector],
+                                      context: MutableMapping[str, Any],
+                                      output_directory: str):
+        connector = self._get_connector(connector, job)
+        locations = await self._get_locations(connector, job)
         path_processor = get_path_processor(connector)
         token_value = command_output.value
         # If `token_value` is a dictionary, directly extract the token value from it
@@ -306,15 +314,17 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             # Resolve glob
             resolve_tasks = []
             for location in locations:
-                if isinstance(globpath, MutableSequence):
-                    for path in globpath:
-                        if not path_processor.isabs(path):
-                            path = path_processor.join(job.output_directory, path)
-                        resolve_tasks.append(utils.expand_glob(job, self.workflow, connector, location, path))
-                else:
-                    if not path_processor.isabs(globpath):
-                        globpath = path_processor.join(job.output_directory, globpath)
-                    resolve_tasks.append(utils.expand_glob(job, self.workflow, connector, location, globpath))
+                globpath = globpath if isinstance(globpath, MutableSequence) else [globpath]
+                for path in globpath:
+                    resolve_tasks.append(utils.expand_glob(
+                        connector=connector,
+                        workflow=self.workflow,
+                        location=location,
+                        input_directory=self.target.workdir if self.target else job.input_directory,
+                        output_directory=self.target.workdir if self.target else job.output_directory,
+                        tmp_directory=self.target.workdir if self.target else job.tmp_directory,
+                        path=(path_processor.join(output_directory, path) if not path_processor.isabs(path)
+                              else path)))
             paths, effective_paths = ([list(x) for x in zip(*flatten_list(await asyncio.gather(*resolve_tasks)))]
                                       or [[], []])
             # Get token class from paths
@@ -382,21 +392,8 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             load_contents=self.load_contents,
             load_listing=self.load_listing)
 
-    async def process(self, job: Job, command_output: CWLCommandOutput) -> Optional[Token]:
-        if command_output.status == Status.SKIPPED:
-            return None
-        else:
-            # Retrieve token value
-            context = utils.build_context(
-                inputs=job.inputs,
-                output_directory=job.output_directory,
-                tmp_directory=job.tmp_directory,
-                hardware=self.workflow.context.scheduler.get_hardware(job.name))
-            return await self._build_token(
-                job, context, await self._process_command_output(job, command_output, context))
-
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
                 **{'token_type': self.token_type,
                    'enum_symbols': self.enum_symbols,
                    'expression_lib': self.expression_lib,
@@ -410,6 +407,26 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                    'secondary_files': await asyncio.gather(*(asyncio.create_task(s.save(context))
                                                              for s in self.secondary_files)),
                    'streamable': self.streamable}}
+
+    async def process(self,
+                      job: Job,
+                      command_output: CWLCommandOutput,
+                      connector: Optional[Connector] = None) -> Optional[Token]:
+        if command_output.status == Status.SKIPPED:
+            return None
+        else:
+            # Remap output and tmp directories when target is specified
+            output_directory = self.target.workdir if self.target else job.output_directory
+            tmp_directory = self.target.workdir if self.target else job.tmp_directory
+            # Retrieve token value
+            context = utils.build_context(
+                inputs=job.inputs,
+                output_directory=output_directory,
+                tmp_directory=tmp_directory,
+                hardware=self.workflow.context.scheduler.get_hardware(job.name))
+            return await self._build_token(
+                job, connector, context, await self._process_command_output(
+                    job, command_output, connector, context, output_directory))
 
 
 class CWLMapTokenProcessor(TokenProcessor):
@@ -431,6 +448,10 @@ class CWLMapTokenProcessor(TokenProcessor):
             workflow=await loading_context.load_workflow(context, row['workflow']),
             processor=await TokenProcessor.load(context, row['processor'], loading_context))
 
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'processor': await self.processor.save(context)}}
+
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
         # If value is token, propagate the process call
         if isinstance(token.value, Token):
@@ -443,11 +464,6 @@ class CWLMapTokenProcessor(TokenProcessor):
         return token.update(await asyncio.gather(*(asyncio.create_task(
             self.processor.process(inputs, v)) for v in token.value)))
 
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'processor': {'type': get_class_fullname(type(self.processor)),
-                                 'params': await self.processor.save(context)}}}
-
 
 class CWLMapCommandOutputProcessor(CommandOutputProcessor):
 
@@ -458,7 +474,20 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
         super().__init__(name, workflow)
         self.processor: CommandOutputProcessor = processor
 
-    async def process(self, job: Job, command_output: CommandOutput) -> Optional[Token]:
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> CommandOutputProcessor:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            processor=await CommandOutputProcessor.load(context, row['processor'], loading_context))
+
+    async def process(self,
+                      job: Job,
+                      command_output: CommandOutput,
+                      connector: Optional[Connector] = None) -> Optional[Token]:
         if isinstance(command_output.value, MutableMapping) and self.name in command_output.value:
             value = command_output.value[self.name]
             command_output = (command_output.update([{self.name: v} for v in value])
@@ -466,21 +495,20 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
         if isinstance(command_output.value, MutableSequence):
             token = ListToken(
                 value=await asyncio.gather(*(asyncio.create_task(
-                    self.processor.process(job, command_output.update(value))
+                    self.processor.process(job, command_output.update(value), connector)
                 ) for value in command_output.value)),
                 tag=get_tag(job.inputs.values()))
         else:
-            token = await self.processor.process(job, command_output)
+            token = await self.processor.process(job, command_output, connector)
         if not isinstance(token, ListToken):
             token = ListToken(
                 value=[token],
                 tag=token.tag)
         return token.update(token.value)
 
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'processor': {'type': get_class_fullname(type(self.processor)),
-                                 'params': await self.processor.save(context)}}}
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'processor': await self.processor.save(context)}}
 
 
 class CWLObjectTokenProcessor(TokenProcessor):
@@ -505,6 +533,13 @@ class CWLObjectTokenProcessor(TokenProcessor):
                 await asyncio.gather(*(asyncio.create_task(TokenProcessor.load(context, v, loading_context))
                                        for v in row['processors'].values())))})
 
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'processors': {k: v for k, v in zip(
+                    self.processors.keys(),
+                    await asyncio.gather(*(asyncio.create_task(p.save(context))
+                                           for p in self.processors.values())))}}}
+
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
         # If value is token, propagate the process call
         if isinstance(token.value, Token):
@@ -516,10 +551,6 @@ class CWLObjectTokenProcessor(TokenProcessor):
         # Propagate evaluation to the inner processors
         return token.update(dict(zip(token.value, [t.value for t in await asyncio.gather(*(asyncio.create_task(
             self.processors[k].process(inputs, token.update(v))) for k, v in token.value.items()))])))
-
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'processors': await _save_processors_dict(context, self.processors)}}
 
 
 class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
@@ -537,13 +568,29 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         self.full_js: bool = full_js
         self.output_eval: Optional[str] = output_eval
 
-    async def process(self, job: Job, command_output: CommandOutput) -> Optional[Token]:
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'processors': {k: v for k, v in zip(
+                    self.processors.keys(),
+                    await asyncio.gather(*(asyncio.create_task(p.save(context))
+                                           for p in self.processors.values())))},
+                   'expression_lib': self.expression_lib,
+                   'full_js': self.full_js,
+                   'output_eval': self.output_eval}}
+
+    async def process(self,
+                      job: Job,
+                      command_output: CommandOutput,
+                      connector: Optional[Connector] = None) -> Optional[Token]:
+        # Remap output and tmp directories when target is specified
+        output_directory = self.target.workdir if self.target else job.output_directory
+        tmp_directory = self.target.workdir if self.target else job.tmp_directory
         if self.output_eval:
             # Build context and fill it with exit code
             context = utils.build_context(
                 inputs=job.inputs,
-                output_directory=job.output_directory,
-                tmp_directory=job.tmp_directory,
+                output_directory=output_directory,
+                tmp_directory=tmp_directory,
                 hardware=self.workflow.context.scheduler.get_hardware(job.name))
             context['runtime']['exitCode'] = cast(CWLCommandOutput, command_output).exit_code
             # Evaluate output
@@ -554,27 +601,23 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
                 expression_lib=self.expression_lib))
         if isinstance(command_output.value, MutableMapping):
             if self.name in command_output.value:
-                return await self.process(job, command_output.update(command_output.value[self.name]))
+                return await self.process(
+                    job, command_output.update(command_output.value[self.name]), connector)
             else:
-                token_tasks = {k: asyncio.create_task(p.process(job, command_output.update(command_output.value[k])))
-                               for k, p in self.processors.items() if k in command_output.value}
+                token_tasks = {k: asyncio.create_task(p.process(
+                    job, command_output.update(command_output.value[k]), connector))
+                    for k, p in self.processors.items() if k in command_output.value}
                 return ObjectToken(
                     value=dict(
                         zip(token_tasks.keys(), await asyncio.gather(*token_tasks.values()))),
                     tag=get_tag(job.inputs.values()))
         else:
-            token_tasks = {k: asyncio.create_task(p.process(job, command_output)) for k, p in self.processors.items()}
+            token_tasks = {k: asyncio.create_task(p.process(job, command_output, connector))
+                           for k, p in self.processors.items()}
             return ObjectToken(
                 value=dict(
                     zip(token_tasks.keys(), await asyncio.gather(*token_tasks.values()))),
                 tag=get_tag(job.inputs.values()))
-
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'processors': await _save_processors_dict(context, self.processors),
-                   'expression_lib': self.expression_lib,
-                   'full_js': self.full_js,
-                   'output_eval': self.output_eval}}
 
 
 class CWLUnionTokenProcessor(TokenProcessor):
@@ -628,6 +671,11 @@ class CWLUnionTokenProcessor(TokenProcessor):
             processors=cast(MutableSequence[TokenProcessor], await asyncio.gather(*(asyncio.create_task(
                 TokenProcessor.load(context, p, loading_context)) for p in row['processors']))))
 
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'processors': await asyncio.gather(*(asyncio.create_task(v.save(context))
+                                                        for v in self.processors))}}
+
     def get_processor(self, token_value: Any) -> TokenProcessor:
         for processor in self.processors:
             if self.check_processor[type(processor)](processor, token_value):
@@ -643,11 +691,6 @@ class CWLUnionTokenProcessor(TokenProcessor):
         # Propagate evaluation to the selected processor
         return await processor.process(inputs, token)
 
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'processors': await asyncio.gather(*(asyncio.create_task(v.save(context))
-                                                        for v in self.processors))}}
-
 
 class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
 
@@ -658,22 +701,10 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
         super().__init__(name, workflow)
         self.processors: MutableSequence[CommandOutputProcessor] = processors
         self.check_processor: MutableMapping[Type[CommandOutputProcessor], Callable] = {
-            CWLCommandOutputProcessor: self._check_default_processor,
+            CWLCommandOutputProcessor: _check_default_processor,
             CWLObjectCommandOutputProcessor: self._check_object_processor,
             CWLMapCommandOutputProcessor: self._check_map_processor,
             CWLUnionCommandOutputProcessor: self._check_union_processor}
-
-    def _check_default_processor(self, processor: CWLCommandOutputProcessor, token_value: Any):
-        try:
-            utils.check_token_type(
-                name=processor.name,
-                token_value=token_value,
-                token_type=processor.token_type,
-                enum_symbols=processor.enum_symbols,
-                optional=processor.optional)
-            return True
-        except WorkflowExecutionException:
-            return False
 
     # noinspection PyMethodMayBeStatic
     def _check_map_processor(self, processor: CWLMapCommandOutputProcessor, token_value: Any):
@@ -689,20 +720,34 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
     def _check_union_processor(self, processor: CWLUnionCommandOutputProcessor, token_value: Any):
         return any(self.check_processor[type(p)](p, token_value) for p in processor.processors)
 
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'processors': await asyncio.gather(*(asyncio.create_task(v.save(context))
+                                                        for v in self.processors))}}
+
     def get_processor(self, token_value: Any) -> CommandOutputProcessor:
         for processor in self.processors:
             if self.check_processor[type(processor)](processor, token_value):
                 return processor
         raise WorkflowDefinitionException("No suitable token processors for value " + str(token_value))
 
-    async def process(self, job: Job, command_output: CommandOutput) -> Optional[Token]:
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext) -> CommandOutputProcessor:
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            processors=cast(MutableSequence[CommandOutputProcessor], await asyncio.gather(*(asyncio.create_task(
+                CommandOutputProcessor.load(context, p, loading_context)) for p in row['processors']))))
+
+    async def process(self,
+                      job: Job,
+                      command_output: CommandOutput,
+                      connector: Optional[Connector] = None) -> Optional[Token]:
         token_value = command_output.value
         # If `token_value` is a dictionary, directly extract the token value from it
         if isinstance(token_value, MutableMapping) and self.name in token_value:
             token_value = token_value[self.name]
-        return await self.get_processor(token_value).process(job, command_output)
-
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'processors': await asyncio.gather(*(asyncio.create_task(v.save(context))
-                                                        for v in self.processors))}}
+        return await self.get_processor(token_value).process(job, command_output, connector)

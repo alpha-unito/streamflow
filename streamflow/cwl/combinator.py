@@ -46,6 +46,12 @@ class ListMergeCombinator(DotProductCombinator):
             output_name=row['output_name'],
             flatten=row['flatten'])
 
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'input_names': self.input_names,
+                   'output_name': self.output_name,
+                   'flatten': self.flatten}}
+
     async def combine(self,
                       port_name: str,
                       token: Token) -> AsyncIterable[MutableMapping[str, Token]]:
@@ -58,9 +64,3 @@ class ListMergeCombinator(DotProductCombinator):
                 yield {self.output_name: ListToken(
                     value=outputs,
                     tag=get_tag(outputs))}
-
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'input_names': self.input_names,
-                   'output_name': self.output_name,
-                   'flatten': self.flatten}}

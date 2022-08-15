@@ -5,7 +5,6 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, MutableMapping, MutableSequence
 
-from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Token
@@ -78,7 +77,7 @@ class ObjectToken(Token):
                                        for v in value.values())))})
 
     async def _save_value(self, context: StreamFlowContext):
-        await asyncio.gather(*(asyncio.create_task(t.save(context)) for t in self.value))
+        await asyncio.gather(*(asyncio.create_task(t.save(context)) for t in self.value.values()))
         return {k: t.persistent_id for k, t in self.value.items()}
 
     async def get_weight(self, context: StreamFlowContext):

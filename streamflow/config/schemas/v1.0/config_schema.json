@@ -5,60 +5,42 @@
   "definitions": {
     "binding": {
       "$id": "#/definitions/binding",
-      "type": "object",
-      "properties": {
-        "step": {
-          "type": "string"
-        },
-        "target": {
-          "$id": "#/definitions/workflow/properties/bindings/",
+      "oneOf": [
+        {
           "type": "object",
           "properties": {
-            "deployment": {
+            "step": {
               "type": "string"
             },
-            "model": {
-              "type": "string"
-            },
-            "resources": {
-              "type": "integer",
-              "description": "(**Deprecated.** Use locations.) If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
-              "default": 1
-            },
-            "locations": {
-              "type": "integer",
-              "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
-              "default": 1
-            },
-            "policy": {
-              "type": "string",
-              "description": "The scheduling policy to be used with this target. Overrides the deployment policy when present.",
-              "default": "data_locality"
-            },
-            "service": {
-              "type": "string"
-            },
-            "workdir": {
-              "type": "string",
-              "description": "Path to the working directory. It overrides the deployment-level setting.",
-              "default": "${TMPDIR}/streamflow"
+            "target": {
+              "type": "object",
+              "$ref": "#/definitions/target"
             }
           },
-          "oneOf": [
-            {
-              "required": [
-                "deployment"
-              ]
+          "required": [
+            "step",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "string"
             },
-            {
-              "required": [
-                "model"
-              ]
+            "target": {
+              "type": "object",
+              "$ref": "#/definitions/target"
             }
+          },
+          "required": [
+            "port",
+            "target"
           ],
           "additionalProperties": false
         }
-      }
+      ]
     },
     "checkpointManager": {
       "$id": "#/definitions/checkpointManager",
@@ -228,6 +210,54 @@
         "config"
       ]
     },
+    "target": {
+      "$id": "#/definitions/target",
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "resources": {
+          "type": "integer",
+          "description": "(**Deprecated.** Use locations.) If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
+          "default": 1
+        },
+        "locations": {
+          "type": "integer",
+          "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
+          "default": 1
+        },
+        "policy": {
+          "type": "string",
+          "description": "The scheduling policy to be used with this target. Overrides the deployment policy when present.",
+          "default": "data_locality"
+        },
+        "service": {
+          "type": "string"
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Path to the working directory. It overrides the deployment-level setting.",
+          "default": "${TMPDIR}/streamflow"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "deployment"
+          ]
+        },
+        {
+          "required": [
+            "model"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
     "workflow": {
       "$id": "#/definitions/workflow",
       "type": "object",
@@ -261,7 +291,7 @@
           "$id": "#/definitions/workflow/properties/bindings",
           "type": "array",
           "items": {
-            "anyOf": [
+            "oneOf": [
               {
                 "type": "object",
                 "$ref": "#/definitions/binding"

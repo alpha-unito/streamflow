@@ -1,10 +1,10 @@
 import json
-from typing import Any, MutableMapping, MutableSequence, Optional, cast
+from typing import Any, MutableMapping, MutableSequence, Optional
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import get_class_from_name, get_class_fullname, get_tag
+from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Port, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
 from streamflow.workflow.token import ListToken
@@ -79,8 +79,7 @@ class CWLTokenTransformer(ManyToOneTransformer):
     async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {**await super()._save_additional_params(context),
                 **{'port_name': self.port_name,
-                   'processor': {'type': get_class_fullname(type(self.processor)),
-                                 'params': await self.processor.save(context)}}}
+                   'processor': await self.processor.save(context)}}
 
     async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
         return {self.get_output_name(): await self.processor.process(inputs, inputs[self.port_name])}
@@ -169,8 +168,7 @@ class ValueFromTransformer(ManyToOneTransformer):
     async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {**await super()._save_additional_params(context),
                 **{'port_name': self.port_name,
-                   'processor': {'type': get_class_fullname(type(self.processor)),
-                                 'params': await self.processor.save(context)},
+                   'processor': await self.processor.save(context),
                    'value_from': self.value_from,
                    'expression_lib': self.expression_lib,
                    'full_js': self.full_js}}

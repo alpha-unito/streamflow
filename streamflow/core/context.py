@@ -5,6 +5,7 @@ from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING
 
 from streamflow.core.recovery import CheckpointManager, FailureManager
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.data import DataManager
@@ -27,11 +28,14 @@ class StreamFlowContext(object):
         self.scheduler: Optional[Scheduler] = None
 
     async def close(self):
-        await asyncio.gather(
-            self.checkpoint_manager.close(),
-            self.database.close(),
-            self.data_manager.close(),
-            self.deployment_manager.close(),
-            self.failure_manager.close(),
-            self.scheduler.close())
-        self.process_executor.shutdown()
+        try:
+            await asyncio.gather(
+                self.checkpoint_manager.close(),
+                self.data_manager.close(),
+                self.deployment_manager.close(),
+                self.failure_manager.close(),
+                self.scheduler.close())
+        except BaseException as e:
+            logger.exception(e)
+        finally:
+            await self.database.close()

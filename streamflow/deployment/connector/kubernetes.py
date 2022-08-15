@@ -90,7 +90,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                  inCluster: Optional[bool] = False,
                  kubeconfig: Optional[str] = os.path.join(str(Path.home()), ".kube", "config"),
                  namespace: Optional[str] = None,
+                 locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
+                 resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None,
                  transferBufferSize: int = (2 ** 25) - 1,
                  maxConcurrentConnections: int = 4096):
@@ -101,6 +103,14 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
         self.namespace = namespace
+        cacheSize = locationsCacheSize
+        if cacheSize is None:
+            cacheSize = resourcesCacheSize
+            if cacheSize is not None:
+                logger.warn("The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `locationsCacheSize` instead.")
+            else:
+                cacheSize = 10
         cacheTTL = locationsCacheTTL
         if cacheTTL is None:
             cacheTTL = resourcesCacheTTL
@@ -109,7 +119,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                             "Use `locationsCacheTTL` instead.")
             else:
                 cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
+        self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
         self.configuration: Optional[Configuration] = None
         self.client: Optional[client.CoreV1Api] = None
         self.client_ws: Optional[client.CoreV1Api] = None
@@ -416,6 +426,7 @@ class Helm3Connector(BaseKubernetesConnector):
                  keepHistory: Optional[bool] = False,
                  keyFile: Optional[str] = None,
                  keyring: Optional[str] = None,
+                 locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
                  nameTemplate: Optional[str] = None,
                  namespace: Optional[str] = None,
@@ -430,6 +441,7 @@ class Helm3Connector(BaseKubernetesConnector):
                  releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
                  repositoryCache: Optional[str] = os.path.join(str(Path.home()), ".cache/helm/repository"),
                  repositoryConfig: Optional[str] = os.path.join(str(Path.home()), ".config/helm/repositories.yaml"),
+                 resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None,
                  skipCrds: Optional[bool] = False,
                  timeout: Optional[str] = "1000m",
@@ -445,7 +457,9 @@ class Helm3Connector(BaseKubernetesConnector):
             inCluster=inCluster,
             kubeconfig=kubeconfig,
             namespace=namespace,
+            locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
+            resourcesCacheSize=resourcesCacheSize,
             resourcesCacheTTL=resourcesCacheTTL,
             transferBufferSize=transferBufferSize)
         self.chart: str = os.path.join(context.config_dir, chart)
@@ -565,15 +579,18 @@ class Helm3Connector(BaseKubernetesConnector):
                 chart="\"{chart}\"".format(chart=self.chart)
             )
             logger.debug("Executing {command}".format(command=deploy_command))
-            proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
+            proc = await asyncio.create_subprocess_exec(
+                *shlex.split(deploy_command),
+                stderr=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL)
             await proc.wait()
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         pods = await self.client.list_namespaced_pod(
             namespace=self.namespace or 'default',
             label_selector="app.kubernetes.io/instance={}".format(self.releaseName),

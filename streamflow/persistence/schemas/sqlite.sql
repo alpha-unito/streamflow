@@ -56,11 +56,11 @@ CREATE TABLE command
 
 CREATE TABLE token
 (
-    id     INTEGER PRIMARY KEY,
-    port   INTEGER,
-    tag    TEXT,
-    type   TEXT,
-    value  BLOB,
+    id    INTEGER PRIMARY KEY,
+    port  INTEGER,
+    tag   TEXT,
+    type  TEXT,
+    value BLOB,
     FOREIGN KEY (port) REFERENCES port (id)
 );
 

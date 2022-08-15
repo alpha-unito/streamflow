@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 
 def set_targets(current_node, target):
     for node in current_node['children'].values():
-        if 'target' not in node:
-            node['target'] = target
-        set_targets(node, node['target'])
+        if 'step' not in node:
+            node['step'] = target
+        set_targets(node, node['step'])
 
 
 class WorkflowConfig(object):
@@ -60,15 +60,16 @@ class WorkflowConfig(object):
         return current_node
 
     def _process_binding(self, binding: MutableMapping[str, Any]):
-        current_config = self._build_config(PurePosixPath(binding['step']))
-        if 'target' in binding:
-            policy = binding['target'].get(
-                'policy', self.deplyoments[binding['target'].get('deployment', binding['target'].get('model', {}))].get(
-                    'policy', '__DEFAULT__'))
-            if policy not in self.policies:
-                raise WorkflowDefinitionException("Policy {} is not defined".format(policy))
-            binding['target']['policy'] = self.policies[policy]
-            current_config['target'] = binding['target']
+        current_config = self._build_config(PurePosixPath(
+            binding['step'] if 'step' in binding else binding['port']))
+        policy = binding['target'].get(
+            'policy', self.deplyoments[binding['target'].get('deployment', binding['target'].get('model', {}))].get(
+                'policy', '__DEFAULT__'))
+        if policy not in self.policies:
+            raise WorkflowDefinitionException("Policy {} is not defined".format(policy))
+        binding['target']['policy'] = self.policies[policy]
+        target_type = 'step' if 'step' in binding else 'port'
+        current_config[target_type] = binding['target']
 
     def get(self, path: PurePosixPath, name: str, default: Optional[Any] = None) -> Optional[Any]:
         current_node = self.filesystem

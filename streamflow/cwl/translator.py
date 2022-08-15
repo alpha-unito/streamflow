@@ -111,6 +111,7 @@ def _create_command(
 
 def _create_command_output_processor(port_name: str,
                                      workflow: Workflow,
+                                     port_target: Optional[Target],
                                      port_type: Any,
                                      cwl_element: MutableMapping[str, Any],
                                      cwl_name_prefix: str,
@@ -127,6 +128,7 @@ def _create_command_output_processor(port_name: str,
                     processor=_create_command_output_processor(
                         port_name=port_name,
                         workflow=workflow,
+                        port_target=port_target,
                         port_type=port_type['items'],
                         cwl_element=cwl_element,
                         cwl_name_prefix=cwl_name_prefix,
@@ -144,6 +146,7 @@ def _create_command_output_processor(port_name: str,
                 return CWLCommandOutputProcessor(
                     name=port_name,
                     workflow=workflow,
+                    target=port_target,
                     token_type=port_type['type'],
                     enum_symbols=[posixpath.relpath(_get_name(posixpath.sep, posixpath.sep, s), enum_prefix)
                                   for s in port_type['symbols']],
@@ -162,6 +165,7 @@ def _create_command_output_processor(port_name: str,
                     workflow=workflow,
                     processors={_get_name('', record_name_prefix, port_type['name']): _create_command_output_processor(
                         port_name=port_name,
+                        port_target=port_target,
                         workflow=workflow,
                         port_type=port_type['type'],
                         cwl_element=port_type,
@@ -187,6 +191,7 @@ def _create_command_output_processor(port_name: str,
             return _create_command_output_processor(
                 port_name=port_name,
                 workflow=workflow,
+                port_target=port_target,
                 port_type=types[0],
                 cwl_element=cwl_element,
                 cwl_name_prefix=cwl_name_prefix,
@@ -201,6 +206,7 @@ def _create_command_output_processor(port_name: str,
                 processors=[_create_command_output_processor(
                     port_name=port_name,
                     workflow=workflow,
+                    port_target=port_target,
                     port_type=port_type,
                     cwl_element=cwl_element,
                     cwl_name_prefix=cwl_name_prefix,
@@ -212,6 +218,7 @@ def _create_command_output_processor(port_name: str,
         return _create_command_output_processor(
             port_name=port_name,
             workflow=workflow,
+            port_target=port_target,
             port_type=schema_def_types[port_type],
             cwl_element=cwl_element,
             cwl_name_prefix=cwl_name_prefix,
@@ -228,6 +235,7 @@ def _create_command_output_processor(port_name: str,
             return CWLCommandOutputProcessor(
                 name=port_name,
                 workflow=workflow,
+                target=port_target,
                 token_type=port_type,
                 expression_lib=expression_lib,
                 file_format=cwl_element.get('format'),
@@ -246,6 +254,7 @@ def _create_command_output_processor(port_name: str,
             return CWLCommandOutputProcessor(
                 name=port_name,
                 workflow=workflow,
+                target=port_target,
                 token_type=port_type,
                 expression_lib=expression_lib,
                 full_js=full_js,
@@ -959,20 +968,20 @@ class CWLTranslator(object):
         else:
             return self.input_ports[source_name]
 
-    def _get_target(self, step_name: str):
-        step_path = PurePosixPath(step_name)
-        step_target = self.workflow_config.propagate(step_path, 'target')
-        workdir = self.workflow_config.propagate(step_path, 'workdir')
-        if step_target is not None:
-            if 'deployment' in step_target:
-                target_deployment = self.workflow_config.deplyoments[step_target['deployment']]
+    def _get_target(self, name: str, target_type: str):
+        path = PurePosixPath(name)
+        target_config = self.workflow_config.propagate(path, target_type)
+        workdir = target_config.get('workdir') if target_config is not None else None
+        if target_config is not None:
+            if 'deployment' in target_config:
+                target_deployment = self.workflow_config.deplyoments[target_config['deployment']]
             else:
-                target_deployment = self.workflow_config.deplyoments[step_target['model']]
+                target_deployment = self.workflow_config.deplyoments[target_config['model']]
                 logger.warn("The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                             "Use `deployment` instead.")
-            locations = step_target.get('locations', None)
+            locations = target_config.get('locations', None)
             if locations is None:
-                locations = step_target.get('resources')
+                locations = target_config.get('resources')
                 if locations is not None:
                     logger.warn("The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                                 "Use `locations` instead.")
@@ -983,11 +992,12 @@ class CWLTranslator(object):
                 type=target_deployment['type'],
                 config=target_deployment['config'],
                 external=target_deployment.get('external', False),
-                lazy=target_deployment.get('lazy', True))
+                lazy=target_deployment.get('lazy', True),
+                workdir=target_deployment.get('workdir'))
             target = Target(
                 deployment=deployment,
                 locations=locations,
-                service=step_target.get('service'),
+                service=target_config.get('service'),
                 workdir=workdir)
             return target
         else:
@@ -1031,7 +1041,7 @@ class CWLTranslator(object):
                       output_directory: str,
                       value: Any) -> None:
         # Retrieve a local DeployStep
-        target = LocalTarget()
+        target = self._get_target(global_name, 'port')
         deploy_step = self._get_deploy_step(target, workflow)
         # Create a schedule step and connect it to the local DeployStep
         schedule_step = workflow.create_step(
@@ -1151,7 +1161,7 @@ class CWLTranslator(object):
         # Process InlineJavascriptRequirement
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Retrieve target
-        target = self._get_target(name_prefix)
+        target = self._get_target(name_prefix, 'step')
         # Process DockerRequirement
         if 'DockerRequirement' in requirements:
             network_access = (requirements['NetworkAccess']['networkAccess'] if 'NetworkAccess' in requirements
@@ -1231,6 +1241,14 @@ class CWLTranslator(object):
             if global_name not in self.output_ports:
                 self.output_ports[global_name] = workflow.create_port()
             output_port = self.output_ports[global_name]
+            # If the port is bound to a remote target, add the connector dependency
+            if self.workflow_config.propagate(PurePosixPath(global_name), 'port'):
+                port_target = self._get_target(global_name, 'port')
+                output_deploy_step = self._get_deploy_step(port_target, workflow)
+                step.add_input_port(port_name + '__connector__', output_deploy_step.get_output_port())
+                step.output_connectors[port_name] = port_name + '__connector__'
+            else:
+                port_target = None
             # Add output port to ExecuteStep
             step.add_output_port(
                 name=port_name,
@@ -1238,6 +1256,7 @@ class CWLTranslator(object):
                 output_processor=_create_command_output_processor(
                     port_name=port_name,
                     workflow=workflow,
+                    port_target=port_target,
                     port_type=element_output['type'],
                     cwl_element=element_output,
                     cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),

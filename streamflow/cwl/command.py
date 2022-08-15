@@ -472,10 +472,7 @@ class CWLCommand(CWLBaseCommand):
         if len(locations) > 1:
             service = self.step.workflow.context.scheduler.get_service(job.name)
             available_locations = await connector.get_available_locations(
-                service=service,
-                input_directory=job.input_directory,
-                output_directory=job.output_directory,
-                tmp_directory=job.tmp_directory)
+                service=service)
             hosts = {k: v.hostname for k, v in available_locations.items() if k in locations}
             parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
         # Process streams

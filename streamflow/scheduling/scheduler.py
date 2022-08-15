@@ -31,7 +31,7 @@ class DefaultScheduler(Scheduler):
         self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: Optional[int] = retry_delay
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
-        self.wait_queue: Condition = Condition()
+        self.wait_queues: MutableMapping[str, Condition] = {}
 
     def _allocate_job(self,
                       job: Job,
@@ -116,27 +116,36 @@ class DefaultScheduler(Scheduler):
             __name__, os.path.join('schemas', 'scheduler.json'))
 
     async def notify_status(self, job_name: str, status: Status) -> None:
-        async with self.wait_queue:
-            if job_name in self.job_allocations:
-                if status != self.job_allocations[job_name].status:
-                    self.job_allocations[job_name].status = status
-                    logger.debug(
-                        "Job {name} changed status to {status}".format(name=job_name, status=status.name))
-                if status in [Status.COMPLETED, Status.FAILED]:
-                    self.wait_queue.notify_all()
+        connector = self.get_connector(job_name)
+        if connector:
+            if connector.deployment_name in self.wait_queues:
+                async with self.wait_queues[connector.deployment_name]:
+                    if job_name in self.job_allocations:
+                        if status != self.job_allocations[job_name].status:
+                            self.job_allocations[job_name].status = status
+                            logger.debug(
+                                "Job {name} changed status to {status}".format(name=job_name, status=status.name))
+                        if status in [Status.COMPLETED, Status.FAILED]:
+                            self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(self,
                        job: Job,
                        target: Target,
                        hardware_requirement: Hardware):
-        async with self.wait_queue:
+        deployment = target.deployment.name
+        if deployment not in self.wait_queues:
+            self.wait_queues[deployment] = Condition()
+        async with self.wait_queues[deployment]:
             while True:
                 connector = self.context.deployment_manager.get_connector(target.deployment.name)
+                logger.debug("Retreiving available locations for job {}".format(job.name))
                 available_locations = dict(await connector.get_available_locations(
                     service=target.service,
                     input_directory=job.input_directory,
                     output_directory=job.output_directory,
                     tmp_directory=job.tmp_directory))
+                logger.debug("Available locations for job {} are {}".format(
+                    job.name, {k: l.hostname for k, l in available_locations.items()}))
                 if available_locations:
                     if target.scheduling_group is not None:
                         if target.scheduling_group not in self.allocation_groups:
@@ -182,6 +191,6 @@ class DefaultScheduler(Scheduler):
                                 target=target)
                             return
                 try:
-                    await asyncio.wait_for(self.wait_queue.wait(), timeout=self.retry_interval)
+                    await asyncio.wait_for(self.wait_queues[deployment].wait(), timeout=self.retry_interval)
                 except asyncio.TimeoutError:
                     pass

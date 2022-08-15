@@ -84,6 +84,10 @@ class CartesianProductCombinator(Combinator):
                 schema = {k: t.retag('.'.join(t.tag.split('.')[:-1] + suffix)) for k, t in schema.items()}
                 yield schema
 
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {**await super()._save_additional_params(context),
+                **{'depth': self.depth}}
+
     async def combine(self,
                       port_name: str,
                       token: Token) -> AsyncIterable[MutableMapping[str, Token]]:
@@ -101,10 +105,6 @@ class CartesianProductCombinator(Combinator):
         # Otherwise throw Exception
         else:
             raise WorkflowExecutionException("No item to combine for token '{}'.".format(port_name))
-
-    async def save(self, context: StreamFlowContext):
-        return {**await super().save(context),
-                **{'depth': self.depth}}
 
 
 class DotProductCombinator(Combinator):

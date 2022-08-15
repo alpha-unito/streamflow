@@ -67,10 +67,7 @@ class DefaultFailureManager(FailureManager):
                 connector = self.context.scheduler.get_connector(job.name)
                 locations = self.context.scheduler.get_locations(job.name)
                 available_locations = await connector.get_available_locations(
-                    service=allocation.target.service,
-                    input_directory=job.input_directory,
-                    output_directory=job.output_directory,
-                    tmp_directory=job.tmp_directory)
+                    service=allocation.target.service)
                 active_locations = self.context.scheduler.get_locations(job.name, [Status.RUNNING])
                 # If there are active locations, the job just failed
                 if active_locations:

@@ -251,7 +251,6 @@ class AioTarInfo(tarfile.TarInfo):
             offset += self._block(self.size)
         tarstream.offset = offset
         self._apply_pax_info(tarstream.pax_headers, tarstream.encoding, tarstream.errors)
-
         return self
 
     async def _proc_gnulong(self, tarstream):
@@ -265,6 +264,7 @@ class AioTarInfo(tarfile.TarInfo):
             next.name = tarfile.nts(buf, tarstream.encoding, tarstream.errors)
         elif self.type == tarfile.GNUTYPE_LONGLINK:
             next.linkname = tarfile.nts(buf, tarstream.encoding, tarstream.errors)
+        return next
 
     async def _proc_gnusparse_10(self, next, tarstream):
         sparse = []
@@ -361,6 +361,7 @@ class AioTarInfo(tarfile.TarInfo):
         self.offset_data = tarstream.offset
         tarstream.offset = self.offset_data + self._block(self.size)
         self.size = origsize
+        return self
 
 
 class AioTarStream(object):

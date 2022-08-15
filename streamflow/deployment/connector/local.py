@@ -68,9 +68,9 @@ class LocalConnector(BaseConnector):
 
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         return {LOCAL_LOCATION: Location(
             name=LOCAL_LOCATION,
             hostname='localhost',
@@ -78,9 +78,9 @@ class LocalConnector(BaseConnector):
             hardware=Hardware(
                 cores=self.cores,
                 memory=self.memory,
-                input_directory=_get_disk_usage(Path(input_directory)),
-                output_directory=_get_disk_usage(Path(output_directory)),
-                tmp_directory=_get_disk_usage(Path(tmp_directory))))}
+                input_directory=_get_disk_usage(Path(input_directory)) if input_directory else float('inf'),
+                output_directory=_get_disk_usage(Path(output_directory)) if output_directory else float('inf'),
+                tmp_directory=_get_disk_usage(Path(tmp_directory)) if tmp_directory else float('inf')))}
 
     @classmethod
     def get_schema(cls) -> str:

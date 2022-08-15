@@ -32,6 +32,17 @@ from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
+async def _get_disk_usage(ssh_client: SSHClientConnection, directory: str) -> float:
+    if directory:
+        result = await ssh_client.run("df {} | tail -n 1 | awk '{{print $2}}'".format(directory), stderr=STDOUT)
+        if result.returncode == 0:
+            return float(result.stdout.strip()) / 2 ** 10
+        else:
+            raise WorkflowExecutionException(result.returncode)
+    else:
+        return float('inf')
+
+
 def _parse_hostname(hostname):
     if ':' in hostname:
         hostname, port = hostname.split(':')
@@ -342,6 +353,8 @@ class SSHConnector(BaseConnector):
             return self._get_ssh_client(location)
 
     async def _get_existing_parent(self, location: str, directory: str):
+        if directory is None:
+            return None
         command_template = "test -e \"{path}\""
         async with self._get_ssh_client(location) as ssh_client:
             while True:
@@ -352,6 +365,35 @@ class SSHConnector(BaseConnector):
                     directory = PurePosixPath(directory).parent
                 else:
                     raise WorkflowExecutionException(result.stdout.strip())
+
+    @cachedmethod(lambda self: self.hardwareCache)
+    async def _get_location_hardware(self,
+                                     location: str,
+                                     input_directory: str,
+                                     output_directory: str,
+                                     tmp_directory: str) -> Hardware:
+        try:
+            async with self._get_ssh_client(location) as ssh_client:
+                cores, memory, input_directory, output_directory, tmp_directory = await asyncio.gather(
+                    asyncio.create_task(ssh_client.run("nproc", stderr=STDOUT)),
+                    asyncio.create_task(ssh_client.run("free | grep Mem | awk '{print $2}'", stderr=STDOUT)),
+                    asyncio.create_task(_get_disk_usage(ssh_client, input_directory)),
+                    asyncio.create_task(_get_disk_usage(ssh_client, output_directory)),
+                    asyncio.create_task(_get_disk_usage(ssh_client, tmp_directory)))
+                if (cores.returncode == 0 and
+                        memory.returncode == 0):
+                    return Hardware(
+                        cores=float(cores.stdout.strip()),
+                        memory=float(memory.stdout.strip()) / 2 ** 10,
+                        input_directory=input_directory,
+                        output_directory=output_directory,
+                        tmp_directory=tmp_directory)
+                else:
+                    raise WorkflowExecutionException(
+                        "Impossible to retrieve locations for {location}".format(location=location))
+        except WorkflowExecutionException:
+            raise WorkflowExecutionException(
+                "Impossible to retrieve locations for {location}".format(location=location))
 
     def _get_run_command(self,
                          command: str,
@@ -373,34 +415,6 @@ class SSHConnector(BaseConnector):
                 max_concurrent_sessions=self.maxConcurrentSessions)
         return self.ssh_contexts[location]
 
-    @cachedmethod(lambda self: self.hardwareCache)
-    async def _get_location_hardware(self,
-                                     location: str,
-                                     input_directory: str,
-                                     output_directory: str,
-                                     tmp_directory: str) -> Hardware:
-        async with self._get_ssh_client(location) as ssh_client:
-            cores, memory, input_directory, output_directory, tmp_directory = await asyncio.gather(
-                ssh_client.run("nproc", stderr=STDOUT),
-                ssh_client.run("free | grep Mem | awk '{print $2}'", stderr=STDOUT),
-                ssh_client.run("df {} | tail -n 1 | awk '{{print $2}}'".format(input_directory), stderr=STDOUT),
-                ssh_client.run("df {} | tail -n 1 | awk '{{print $2}}'".format(output_directory), stderr=STDOUT),
-                ssh_client.run("df {} | tail -n 1 | awk '{{print $2}}'".format(tmp_directory), stderr=STDOUT))
-            if (cores.returncode == 0 and
-                    memory.returncode == 0 and
-                    input_directory.returncode == 0 and
-                    output_directory.returncode == 0 and
-                    tmp_directory.returncode == 0):
-                return Hardware(
-                    cores=float(cores.stdout.strip()),
-                    memory=float(memory.stdout.strip()) / 2 ** 10,
-                    input_directory=float(input_directory.stdout.strip()) / 2 ** 10,
-                    output_directory=float(output_directory.stdout.strip()) / 2 ** 10,
-                    tmp_directory=float(tmp_directory.stdout.strip()) / 2 ** 10)
-            else:
-                raise WorkflowExecutionException(
-                    "Impossible to retrieve locations for {location}".format(location=location))
-
     def _get_stream_reader(self,
                            location: str,
                            src: str) -> StreamWrapperContext:
@@ -413,15 +427,15 @@ class SSHConnector(BaseConnector):
 
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         locations = {}
         for location_obj in self.nodes.values():
             inpdir, outdir, tmpdir = await asyncio.gather(
-                self._get_existing_parent(location_obj.hostname, input_directory),
-                self._get_existing_parent(location_obj.hostname, output_directory),
-                self._get_existing_parent(location_obj.hostname, tmp_directory))
+                asyncio.create_task(self._get_existing_parent(location_obj.hostname, input_directory)),
+                asyncio.create_task(self._get_existing_parent(location_obj.hostname, output_directory)),
+                asyncio.create_task(self._get_existing_parent(location_obj.hostname, tmp_directory)))
             hardware = await self._get_location_hardware(
                 location=location_obj.hostname,
                 input_directory=inpdir,

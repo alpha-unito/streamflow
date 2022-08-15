@@ -20,20 +20,23 @@ from streamflow.data import remotepath
 from streamflow.log_handler import logger
 
 
-async def _check_glob_path(job: Job,
+async def _check_glob_path(connector: Connector,
                            workflow: Workflow,
                            location: Optional[str],
+                           input_directory: str,
+                           output_directory: str,
+                           tmp_directory: str,
                            path: str,
                            effective_path: str) -> None:
     # Cannot glob outside the job output folder
-    if not (effective_path.startswith(job.output_directory) or
-            effective_path.startswith(job.input_directory) or
+    if not (effective_path.startswith(output_directory) or
+            effective_path.startswith(input_directory) or
+            effective_path.startswith(tmp_directory) or
             workflow.context.data_manager.get_data_locations(path)):
-        connector = workflow.context.scheduler.get_connector(job.name)
         path_processor = get_path_processor(connector)
-        input_dirs = await remotepath.listdir(connector, location, job.input_directory, FileType.DIRECTORY)
+        input_dirs = await remotepath.listdir(connector, location, input_directory, FileType.DIRECTORY)
         for input_dir in input_dirs:
-            input_path = path_processor.join(input_dir, path_processor.relpath(path, job.output_directory))
+            input_path = path_processor.join(input_dir, path_processor.relpath(path, output_directory))
             if await remotepath.exists(connector, location, input_path):
                 return
         raise WorkflowDefinitionException("Globs outside the job's output folder are not allowed")
@@ -350,17 +353,27 @@ def eval_expression(expression: str,
         return expression
 
 
-async def expand_glob(job: Job,
+async def expand_glob(connector: Connector,
                       workflow: Workflow,
-                      connector: Optional[Connector],
                       location: Optional[str],
+                      input_directory: str,
+                      output_directory: str,
+                      tmp_directory: str,
                       path: str) -> MutableSequence[Tuple[str, str]]:
     paths = await remotepath.resolve(connector, location, path) or []
     effective_paths = await asyncio.gather(*(asyncio.create_task(
         remotepath.follow_symlink(connector, location, p)
     ) for p in paths))
     await asyncio.gather(*(asyncio.create_task(
-        _check_glob_path(job, workflow, location, p, ep)
+        _check_glob_path(
+            connector=connector,
+            workflow=workflow,
+            location=location,
+            input_directory=input_directory,
+            output_directory=output_directory,
+            tmp_directory=tmp_directory,
+            path=p,
+            effective_path=ep)
     ) for p, ep in zip(paths, effective_paths)))
     return list(zip(paths, effective_paths))
 

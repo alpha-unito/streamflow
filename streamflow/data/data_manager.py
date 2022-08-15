@@ -324,7 +324,7 @@ class RemotePathMapper(object):
         # Create or navigate hierarchy
         for i, token in enumerate(path.parts):
             node = node.children.setdefault(token, RemotePathNode())
-            nodes[path_processor.join(*path.parts[:i+1])] = node
+            nodes[path_processor.join(*path.parts[:i + 1])] = node
         # Process hierarchy bottom-up to add parent locations
         relpath = data_location.relpath
         for node_path in reversed(nodes):

@@ -61,7 +61,7 @@ class BaseStep(Step, ABC):
 
     async def _get_inputs(self,
                           input_ports: MutableMapping[str, Port]):
-        inputs = {k: v for k, v in zip(input_ports, await asyncio.gather(*(
+        inputs = {k: v for k, v in zip(input_ports.keys(), await asyncio.gather(*(
             asyncio.create_task(p.get(posixpath.join(self.name, port_name)))
             for port_name, p in input_ports.items())))}
         if utils.check_termination(inputs):
@@ -82,6 +82,7 @@ class BaseStep(Step, ABC):
 
     async def terminate(self, status: Status):
         if not self.terminated:
+            self.terminated = True
             # If not explicitly cancelled, close input ports
             if status != Status.CANCELLED:
                 for port_name, port in self.get_input_ports().items():
@@ -89,8 +90,8 @@ class BaseStep(Step, ABC):
             # Add a TerminationToken to each output port
             for port in self.get_output_ports().values():
                 port.put(TerminationToken())
+            # Set termination status
             await self._set_status(status)
-            self.terminated = True
             logger.log(self._log_level, "Step {name} terminated with status {status}".format(
                 name=self.name, status=status.name))
 
@@ -114,6 +115,17 @@ class Combinator(ABC):
         return cls(
             name=row['name'],
             workflow=await loading_context.load_workflow(context, row['workflow']))
+
+    async def _save_additional_params(self, context: StreamFlowContext):
+        return {
+            "name": self.name,
+            "combinators": {k: v for k, v in zip(
+                self.combinators.keys(),
+                await asyncio.gather(*(asyncio.create_task(comb.save(context))
+                                       for comb in self.combinators.values())))},
+            "combinators_map": self.combinators_map,
+            "items": self.items,
+            "workflow": self.workflow.persistent_id}
 
     def add_combinator(self, combinator: Combinator, items: Set[str]) -> None:
         self.combinators[combinator.name] = combinator
@@ -154,16 +166,8 @@ class Combinator(ABC):
         return combinator
 
     async def save(self, context: StreamFlowContext):
-        return {
-            "name": self.name,
-            "combinators": {k: {'type': utils.get_class_fullname(type(c)), 'params': p} for k, c, p in zip(
-                self.combinators.keys(),
-                self.combinators.values(),
-                await asyncio.gather(*(asyncio.create_task(comb.save(context))
-                                       for comb in self.combinators.values())))},
-            "combinators_map": self.combinators_map,
-            "items": self.items,
-            "workflow": self.workflow.persistent_id}
+        return {'type': utils.get_class_fullname(type(self)),
+                'params': await self._save_additional_params(context)}
 
 
 class CombinatorStep(BaseStep):
@@ -188,9 +192,7 @@ class CombinatorStep(BaseStep):
 
     async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {**await super()._save_additional_params(context),
-                **{'combinator': {
-                    'type': utils.get_class_fullname(type(self.combinator)),
-                    'params': await self.combinator.save(context)}}}
+                **{'combinator': await self.combinator.save(context)}}
 
     async def run(self):
         # Set default status to SKIPPED
@@ -298,7 +300,10 @@ class ConditionalStep(BaseStep):
 
 class DefaultCommandOutputProcessor(CommandOutputProcessor):
 
-    async def process(self, job: Job, command_output: CommandOutput) -> Optional[Token]:
+    async def process(self,
+                      job: Job,
+                      command_output: CommandOutput,
+                      connector: Optional[Connector] = None) -> Optional[Token]:
         return Token(
             tag=utils.get_tag(job.inputs.values()),
             value=command_output.value)
@@ -400,6 +405,7 @@ class ExecuteStep(BaseStep):
         super().__init__(name, workflow)
         self._log_level: int = logging.INFO
         self.command: Optional[Command] = None
+        self.output_connectors: MutableMapping[str, str] = {}
         self.output_processors: MutableMapping[str, CommandOutputProcessor] = {}
         self.add_input_port("__job__", job_port)
 
@@ -409,23 +415,32 @@ class ExecuteStep(BaseStep):
                     row: MutableMapping[str, Any],
                     loading_context: DatabaseLoadingContext) -> ExecuteStep:
         params = json.loads(row['params'])
-        return cls(
+        step = cls(
             name=row['name'],
             workflow=await loading_context.load_workflow(context, row['workflow']),
             job_port=cast(JobPort, await loading_context.load_port(context, params['job_port'])))
+        step.output_connectors = params['output_connectors']
+        step.output_processors = {k: v for k, v in zip(
+            params['output_processors'].keys(),
+            await asyncio.gather(*(asyncio.create_task(CommandOutputProcessor.load(context, p, loading_context))
+                                   for p in params['output_processors'].values())))}
+        return step
 
     async def _retrieve_output(self,
                                job: Job,
                                output_name: str,
                                output_port: Port,
-                               command_output: CommandOutput) -> None:
-        if (token := await self.output_processors[output_name].process(job, command_output)) is not None:
+                               command_output: CommandOutput,
+                               connector: Optional[Connector] = None) -> None:
+        if (token := await self.output_processors[output_name].process(job, command_output, connector)) is not None:
             output_port.put(await self._persist_token(
                 token=token,
                 port=output_port,
                 inputs=job.inputs.values()))
 
-    async def _run_job(self, inputs: MutableMapping[str, Token]) -> Status:
+    async def _run_job(self,
+                       inputs: MutableMapping[str, Token],
+                       connectors: MutableMapping[str, Connector]) -> Status:
         # Update job
         job = await cast(JobPort, self.get_input_port("__job__")).get_job(self.name)
         if job is None:
@@ -439,11 +454,12 @@ class ExecuteStep(BaseStep):
         logger.debug("Job {name} started".format(name=job.name))
         # Initialise command output with defualt values
         command_output = CommandOutput(value=None, status=Status.FAILED)
+        # TODO: Trigger location deployment in case of lazy environments
         try:
             # Execute job
             if not self.terminated:
                 self.status = Status.RUNNING
-            await self.workflow.context.scheduler.notify_status(self.name, Status.RUNNING)
+            await self.workflow.context.scheduler.notify_status(job.name, Status.RUNNING)
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
                 logger.error("Job {name} failed {error}".format(
@@ -486,7 +502,12 @@ class ExecuteStep(BaseStep):
         if not self.terminated:
             try:
                 await asyncio.gather(*(asyncio.create_task(
-                    self._retrieve_output(job, output_name, self.workflow.ports[output_port], command_output)
+                    self._retrieve_output(
+                        job=job,
+                        output_name=output_name,
+                        output_port=self.workflow.ports[output_port],
+                        command_output=command_output,
+                        connector=connectors.get(output_name))
                 ) for output_name, output_port in self.output_ports.items()))
             except BaseException as e:
                 logger.exception(e)
@@ -498,7 +519,12 @@ class ExecuteStep(BaseStep):
 
     async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {**await super()._save_additional_params(context),
-                **{'job_port': self.get_input_port('__job__').persistent_id}}
+                **{'job_port': self.get_input_port('__job__').persistent_id,
+                   'output_connectors': self.output_connectors,
+                   'output_processors': {k: v for k, v in zip(
+                       self.output_processors.keys(),
+                       await asyncio.gather(*(asyncio.create_task(p.save(context))
+                                              for p in self.output_processors.values())))}}}
 
     def add_output_port(self,
                         name: str,
@@ -509,8 +535,15 @@ class ExecuteStep(BaseStep):
 
     async def run(self) -> None:
         jobs = []
+        # If there are input connector ports, retrieve connectors
+        connector_ports = {k: self.get_input_port(v) for k, v in self.output_connectors.items()
+                           if isinstance(self.get_input_port(v), ConnectorPort)}
+        connectors = {k: v for k, v in zip(connector_ports.keys(), await asyncio.gather(*(
+            asyncio.create_task(p.get_connector(posixpath.join(self.name, port_name)))
+            for port_name, p in connector_ports.items())))}
         # If there are input ports create jobs until termination token are received
-        input_ports = {k: v for k, v in self.get_input_ports().items() if k != "__job__"}
+        input_ports = {k: v for k, v in self.get_input_ports().items()
+                       if k != "__job__" and not isinstance(v, ConnectorPort)}
         if input_ports:
             inputs_map = {}
             while True:
@@ -529,15 +562,19 @@ class ExecuteStep(BaseStep):
                         await self._set_status(Status.FIREABLE)
                         # Run job
                         jobs.append(asyncio.create_task(
-                            self._run_job(inputs),
+                            self._run_job(inputs, connectors),
                             name=utils.random_name()))
         # Otherwise simply run job
         else:
             jobs.append(asyncio.create_task(
-                self._run_job({}),
+                self._run_job({}, connectors),
                 name=utils.random_name()))
         # Wait for jobs termination
         statuses = cast(MutableSequence[Status], await asyncio.gather(*jobs))
+        # If there are connector ports, retrieve termination tokens from them
+        await asyncio.gather(*(
+            asyncio.create_task(p.get(posixpath.join(self.name, port_name)))
+            for port_name, p in connector_ports.items()))
         # Terminate step
         await self.terminate(_get_step_status(statuses))
 

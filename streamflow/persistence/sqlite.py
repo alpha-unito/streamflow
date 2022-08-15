@@ -4,7 +4,7 @@ import asyncio
 import os
 import sys
 from abc import ABC
-from typing import Any, MutableMapping, MutableSequence, Optional, Type, cast
+from typing import Any, MutableMapping, MutableSequence, Optional, Type
 
 import aiosqlite
 import pkg_resources
@@ -13,9 +13,9 @@ from cachetools import Cache, LRUCache
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import DeploymentConfig, Target
+from streamflow.core.deployment import Target
 from streamflow.core.persistence import Database, DependencyType
-from streamflow.core.workflow import Port, Status, Step, Token, Workflow
+from streamflow.core.workflow import Port, Status, Step, Token
 
 
 class CachedDatabase(Database, ABC):
@@ -34,15 +34,19 @@ class SqliteConnection(object):
 
     def __init__(self,
                  connection: str,
+                 timeout: int,
                  init_db: bool):
         self.connection: str = connection
+        self.timeout: int = timeout
         self.init_db: bool = init_db
         self._connection: Optional[aiosqlite.Connection] = None
         self.__row_factory = None
 
     async def __aenter__(self):
         if not self._connection:
-            self._connection = await aiosqlite.connect(self.connection)
+            self._connection = await aiosqlite.connect(
+                database=self.connection,
+                timeout=self.timeout)
             if self.init_db:
                 schema_path = pkg_resources.resource_filename(
                     __name__, os.path.join('schemas', 'sqlite.sql'))
@@ -67,6 +71,7 @@ class SqliteDatabase(CachedDatabase):
     def __init__(self,
                  context: StreamFlowContext,
                  connection: str,
+                 timeout: int = 20,
                  reset_db: bool = False):
         super().__init__(context)
         # If needed, reset the database
@@ -76,9 +81,12 @@ class SqliteDatabase(CachedDatabase):
         os.makedirs(os.path.dirname(connection), exist_ok=True)
         self.connection: SqliteConnection = SqliteConnection(
             connection=connection,
+            timeout=timeout,
             init_db=reset_db or not os.path.exists(connection))
 
     async def close(self):
+        async with self.connection as db:
+            await db.commit()
         await self.connection.close()
 
     @classmethod
@@ -110,7 +118,6 @@ class SqliteDatabase(CachedDatabase):
                     "port": port,
                     "type": type.value,
                     "name": name})
-            await db.commit()
 
     async def add_deployment(self,
                              name: str,
@@ -129,7 +136,6 @@ class SqliteDatabase(CachedDatabase):
                         "external": external,
                         "lazy": lazy,
                         "workdir": workdir}) as cursor:
-                await db.commit()
                 return cursor.lastrowid
 
     async def add_port(self,
@@ -145,7 +151,6 @@ class SqliteDatabase(CachedDatabase):
                         "workflow": workflow_id,
                         "type": utils.get_class_fullname(type),
                         "params": params}) as cursor:
-                await db.commit()
                 return cursor.lastrowid
 
     async def add_provenance(self,
@@ -156,7 +161,6 @@ class SqliteDatabase(CachedDatabase):
             await asyncio.gather(*(asyncio.create_task(db.execute(
                 "INSERT OR IGNORE INTO provenance(dependee, depender) "
                 "VALUES(:dependee, :depender)", prov)) for prov in provenance))
-            await db.commit()
 
     async def add_step(self,
                        name: str,
@@ -173,7 +177,6 @@ class SqliteDatabase(CachedDatabase):
                         "status": status,
                         "type": utils.get_class_fullname(type),
                         "params": params}) as cursor:
-                await db.commit()
                 return cursor.lastrowid
 
     async def add_target(self,
@@ -193,7 +196,6 @@ class SqliteDatabase(CachedDatabase):
                         "locations": locations,
                         "service": service,
                         "workdir": workdir}) as cursor:
-                await db.commit()
                 return cursor.lastrowid
 
     async def add_token(self,
@@ -209,7 +211,6 @@ class SqliteDatabase(CachedDatabase):
                         "type": utils.get_class_fullname(type),
                         "tag": tag,
                         "value": value}) as cursor:
-                await db.commit()
                 return cursor.lastrowid
 
     async def add_workflow(self,
@@ -225,7 +226,6 @@ class SqliteDatabase(CachedDatabase):
                         "params": params,
                         "status": status,
                         "type": type}) as cursor:
-                await db.commit()
                 return cursor.lastrowid
 
     @cachedmethod(lambda self: self.deployment_cache)
@@ -239,16 +239,16 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM dependency WHERE step = :step AND type = :type", {
-                    "step": step_id,
-                    "type": DependencyType.INPUT.value}) as cursor:
+                "step": step_id,
+                "type": DependencyType.INPUT.value}) as cursor:
                 return await cursor.fetchall()
 
     async def get_output_ports(self, step_id: int) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM dependency WHERE step = :step AND type = :type", {
-                    "step": step_id,
-                    "type": DependencyType.OUTPUT.value}) as cursor:
+                "step": step_id,
+                "type": DependencyType.OUTPUT.value}) as cursor:
                 return await cursor.fetchall()
 
     @cachedmethod(lambda self: self.port_cache)
@@ -326,7 +326,6 @@ class SqliteDatabase(CachedDatabase):
             await db.execute("UPDATE command SET {} WHERE id = :id".format(
                 ", ".join(["{} = :{}".format(k, k) for k in updates])
             ), {**updates, **{"id": command_id}})
-            await db.commit()
             return command_id
 
     async def update_deployment(self,
@@ -336,7 +335,6 @@ class SqliteDatabase(CachedDatabase):
             await db.execute("UPDATE deployment SET {} WHERE id = :id".format(
                 ", ".join(["{} = :{}".format(k, k) for k in updates])
             ), {**updates, **{"id": deployment_id}})
-            await db.commit()
             self.deployment_cache.pop(deployment_id, None)
             return deployment_id
 
@@ -347,7 +345,6 @@ class SqliteDatabase(CachedDatabase):
             await db.execute("UPDATE port SET {} WHERE id = :id".format(
                 ", ".join(["{} = :{}".format(k, k) for k in updates])
             ), {**updates, **{"id": port_id}})
-            await db.commit()
             self.port_cache.pop(port_id, None)
             return port_id
 
@@ -358,7 +355,6 @@ class SqliteDatabase(CachedDatabase):
             await db.execute("UPDATE step SET {} WHERE id = :id".format(
                 ", ".join(["{} = :{}".format(k, k) for k in updates])
             ), {**updates, **{"id": step_id}})
-            await db.commit()
             self.step_cache.pop(step_id, None)
             return step_id
 
@@ -369,7 +365,6 @@ class SqliteDatabase(CachedDatabase):
             await db.execute("UPDATE target SET {} WHERE id = :id".format(
                 ", ".join(["{} = :{}".format(k, k) for k in updates])
             ), {**updates, **{"id": target_id}})
-            await db.commit()
             self.target_cache.pop(target_id, None)
             return target_id
 
@@ -380,6 +375,5 @@ class SqliteDatabase(CachedDatabase):
             await db.execute("UPDATE workflow SET {} WHERE id = :id".format(
                 ", ".join(["{} = :{}".format(k, k) for k in updates])),
                 {**updates, **{"id": workflow_id}})
-            await db.commit()
             self.workflow_cache.pop(workflow_id, None)
             return workflow_id

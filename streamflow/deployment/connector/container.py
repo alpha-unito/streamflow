@@ -54,6 +54,33 @@ async def _pull_docker_image(image_name: str) -> None:
 
 class ContainerConnector(BaseConnector, ABC):
 
+    def __init__(self,
+                 deployment_name: str,
+                 context: StreamFlowContext,
+                 transferBufferSize: int,
+                 locationsCacheSize: int = None,
+                 locationsCacheTTL: int = None,
+                 resourcesCacheSize: int = None,
+                 resourcesCacheTTL: int = None):
+        super().__init__(deployment_name, context, transferBufferSize)
+        cacheSize = locationsCacheSize
+        if cacheSize is None:
+            cacheSize = resourcesCacheSize
+            if cacheSize is not None:
+                logger.warn("The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `locationsCacheSize` instead.")
+            else:
+                cacheSize = 10
+        cacheTTL = locationsCacheTTL
+        if cacheTTL is None:
+            cacheTTL = resourcesCacheTTL
+            if cacheTTL is not None:
+                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `locationsCacheTTL` instead.")
+            else:
+                cacheTTL = 10
+        self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
+
     async def _check_effective_location(self,
                                         common_paths: MutableMapping[str, Any],
                                         effective_locations: MutableSequence[str],
@@ -298,6 +325,7 @@ class DockerConnector(DockerBaseConnector):
                  labelFile: Optional[MutableSequence[str]] = None,
                  link: Optional[MutableSequence[str]] = None,
                  linkLocalIP: Optional[MutableSequence[str]] = None,
+                 locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
                  logDriver: Optional[str] = None,
                  logOpts: Optional[MutableSequence[str]] = None,
@@ -319,6 +347,7 @@ class DockerConnector(DockerBaseConnector):
                  publishAll: bool = False,
                  readOnly: bool = False,
                  replicas: int = 1,
+                 resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None,
                  restart: Optional[str] = None,
                  rm: bool = True,
@@ -343,7 +372,11 @@ class DockerConnector(DockerBaseConnector):
         super().__init__(
             deployment_name=deployment_name,
             context=context,
-            transferBufferSize=transferBufferSize)
+            transferBufferSize=transferBufferSize,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL)
         self.image: str = image
         self.addHost: Optional[MutableSequence[str]] = addHost
         self.blkioWeight: Optional[int] = blkioWeight
@@ -415,15 +448,6 @@ class DockerConnector(DockerBaseConnector):
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
         self.replicas: int = replicas
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `locationsCacheTTL` instead.")
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.restart: Optional[str] = restart
         self.rm: bool = rm
         self.runtime: Optional[str] = runtime
@@ -649,9 +673,9 @@ class DockerConnector(DockerBaseConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         return {container_id: await self._get_location(container_id) for container_id in self.containerIds}
 
     @classmethod
@@ -709,12 +733,18 @@ class DockerComposeConnector(DockerBaseConnector):
                  renewAnonVolumes: Optional[bool] = False,
                  removeOrphans: Optional[bool] = False,
                  removeVolumes: Optional[bool] = False,
+                 locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
+                 resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None) -> None:
         super().__init__(
             deployment_name=deployment_name,
             context=context,
-            transferBufferSize=transferBufferSize)
+            transferBufferSize=transferBufferSize,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL)
         self.files = [os.path.join(context.config_dir, file) for file in files]
         self.projectName = projectName
         self.verbose = verbose
@@ -731,15 +761,6 @@ class DockerComposeConnector(DockerBaseConnector):
         self.renewAnonVolumes = renewAnonVolumes
         self.removeOrphans = removeOrphans
         self.removeVolumes = removeVolumes
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `locationsCacheTTL` instead.")
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.skipHostnameCheck = skipHostnameCheck
         self.projectDirectory = projectDirectory
         self.compatibility = compatibility
@@ -810,9 +831,9 @@ class DockerComposeConnector(DockerBaseConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         ps_command = self.base_command() + "".join([
             "ps ",
             service or ""])
@@ -851,15 +872,6 @@ class DockerComposeConnector(DockerBaseConnector):
 
 
 class SingularityBaseConnector(ContainerConnector, ABC):
-
-    def __init__(self,
-                 deployment_name: str,
-                 streamflow_config_dir: str,
-                 transferBufferSize: int):
-        super().__init__(
-            deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
-            transferBufferSize=transferBufferSize)
 
     async def _get_bind_mounts(self, location: str) -> MutableSequence[MutableMapping[str, str]]:
         return await self._get_volumes(location)
@@ -908,7 +920,7 @@ class SingularityConnector(SingularityBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  image: str,
                  transferBufferSize: int = 2 ** 16,
                  addCaps: Optional[str] = None,
@@ -930,6 +942,7 @@ class SingularityConnector(SingularityBaseConnector):
                  hostname: Optional[str] = None,
                  instanceNames: Optional[MutableSequence[str]] = None,
                  keepPrivs: bool = False,
+                 locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
                  net: bool = False,
                  network: Optional[str] = None,
@@ -945,6 +958,7 @@ class SingularityConnector(SingularityBaseConnector):
                  pemPath: Optional[str] = None,
                  pidFile: Optional[str] = None,
                  replicas: int = 1,
+                 resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None,
                  rocm: bool = False,
                  scratch: Optional[MutableSequence[str]] = None,
@@ -956,8 +970,12 @@ class SingularityConnector(SingularityBaseConnector):
                  writableTmpfs: bool = False):
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
-            transferBufferSize=transferBufferSize)
+            context=context,
+            transferBufferSize=transferBufferSize,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL)
         self.image: str = image
         self.addCaps: Optional[str] = addCaps
         self.allowSetuid: bool = allowSetuid
@@ -992,15 +1010,6 @@ class SingularityConnector(SingularityBaseConnector):
         self.pemPath: Optional[str] = pemPath
         self.pidFile: Optional[str] = pidFile
         self.replicas: int = replicas
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `locationsCacheTTL` instead.")
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.rocm: bool = rocm
         self.scratch: Optional[MutableSequence[str]] = scratch
         self.security: Optional[MutableSequence[str]] = security
@@ -1116,9 +1125,9 @@ class SingularityConnector(SingularityBaseConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         location_tasks = {}
         for instance_name in self.instanceNames:
             location_tasks[instance_name] = asyncio.create_task(self._get_location(instance_name))

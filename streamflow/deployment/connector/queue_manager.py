@@ -90,9 +90,9 @@ class QueueManagerConnector(SSHConnector, ABC):
 
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         return {self.hostname: Location(
             name=self.hostname,
             hostname=self.hostname,
@@ -123,6 +123,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 command=command,
                 location=location,
                 job="for job {job}".format(job=job_name) if job_name else ""))
+            command = utils.encode_command(command)
             helper_file = await self._build_helper_file(command, location, environment, workdir)
             job_id = await self._run_batch_command(
                 helper_file=helper_file,

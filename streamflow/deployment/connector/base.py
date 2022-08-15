@@ -45,6 +45,7 @@ class BaseConnector(Connector, ABC):
                  transferBufferSize: int):
         super().__init__(deployment_name, context)
         self.transferBufferSize: int = transferBufferSize
+        self.is_deployed: bool = False
 
     async def _copy_local_to_remote(self,
                                     src: str,
