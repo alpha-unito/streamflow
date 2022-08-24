@@ -119,7 +119,7 @@ class ListToElementTransformer(OneToOneTransformer):
         elif isinstance(token.value, Token):
             return token.update(self._transform(token.value))
         else:
-            return token.value()
+            return token.value
 
     async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
         return {self.get_output_name(): self._transform(next(iter(inputs.values())))}

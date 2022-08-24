@@ -70,9 +70,6 @@ async def _async_main(args: argparse.Namespace):
             workflow_config=workflow_config,
             context=context,
             args=args)
-    except WorkflowException as e:
-        logger.error(e)
-        sys.exit(1)
     except BaseException as e:
         logger.exception(e)
         sys.exit(1)

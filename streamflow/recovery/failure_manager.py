@@ -9,7 +9,7 @@ import pkg_resources
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector
-from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException, WorkflowException
+from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
 from streamflow.core.workflow import CommandOutput, Job, Status, Step
 from streamflow.data import remotepath
@@ -116,10 +116,6 @@ class DefaultFailureManager(FailureManager):
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
-            # When receiving a WorkflowException, simply print the error
-            except WorkflowException as e:
-                logger.error(e)
-                return await self.handle_exception(job, job_version.step, e)
             except BaseException as e:
                 logger.exception(e)
                 return await self.handle_exception(job, job_version.step, e)

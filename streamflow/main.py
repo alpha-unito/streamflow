@@ -54,9 +54,6 @@ async def _async_main(args: argparse.Namespace):
             if workflow_config.type == 'cwl':
                 workflow_tasks.append(asyncio.create_task(cwl_main(workflow_config, context, args)))
             await asyncio.gather(*workflow_tasks)
-    except WorkflowException as e:
-        logger.error(e)
-        sys.exit(1)
     except BaseException as e:
         logger.exception(e)
         sys.exit(1)

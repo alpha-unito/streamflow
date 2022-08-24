@@ -599,6 +599,7 @@ async def register_data(context: StreamFlowContext,
             register_data(context, connector, locations, base_path, t)) for t in token_value))
     # Otherwise, if token value is a dictionary and it refers to a File or a Directory, register the path
     elif get_token_class(token_value) in ['File', 'Directory']:
+        path_processor = get_path_processor(connector)
         # Extract paths from token
         paths = []
         if 'path' in token_value and token_value['path'] is not None:
@@ -613,7 +614,6 @@ async def register_data(context: StreamFlowContext,
         # Remove `file` protocol if present
         paths = [urllib.parse.unquote(p[7:]) if p.startswith('file://') else p for p in paths]
         # Register paths to the `DataManager`
-        path_processor = get_path_processor(connector)
         for path in (path_processor.normpath(p) for p in paths):
             relpath = (path_processor.relpath(path, base_path) if base_path and path.startswith(base_path)
                        else path_processor.basename(path))

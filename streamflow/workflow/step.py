@@ -12,8 +12,7 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, DeploymentConfig, Target
 from streamflow.core.exception import (
-    FailureHandlingException, WorkflowDefinitionException, WorkflowException,
-    WorkflowExecutionException
+    FailureHandlingException, WorkflowDefinitionException, WorkflowExecutionException
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
@@ -289,10 +288,6 @@ class ConditionalStep(BaseStep):
         # When receiving a CancelledError, mark the step as Cancelled
         except CancelledError:
             await self.terminate(Status.CANCELLED)
-        # When receiving a WorkflowException, simply print the error
-        except WorkflowException as e:
-            logger.error(e)
-            await self.terminate(Status.FAILED)
         except BaseException as e:
             logger.exception(e)
             await self.terminate(Status.FAILED)
@@ -387,10 +382,6 @@ class DeployStep(BaseStep):
         # When receiving a CancelledError, mark the step as Cancelled
         except CancelledError:
             await self.terminate(Status.CANCELLED)
-        # When reseiving a WorkflowException, simply print the error
-        except WorkflowException as e:
-            logger.error(e)
-            await self.terminate(Status.FAILED)
         except BaseException as e:
             logger.exception(e)
             await self.terminate(Status.FAILED)
@@ -479,20 +470,13 @@ class ExecuteStep(BaseStep):
             await self.terminate(command_output.status)
         # When receiving a generic exception, try to handle it
         except BaseException as e:
-            # When receiving a WorkflowException, simply print the error
-            if isinstance(e, WorkflowException):
-                logger.error(e)
-            else:
-                logger.exception(e)
+            logger.exception(e)
             try:
                 command_output = await self.workflow.context.failure_manager.handle_exception(job, self, e)
             # If failure cannot be recovered, simply fail
             except BaseException as ie:
                 if ie != e:
-                    if isinstance(ie, WorkflowException):
-                        logger.error(ie)
-                    else:
-                        logger.exception(ie)
+                    logger.exception(ie)
                 command_output.status = Status.FAILED
                 await self.terminate(command_output.status)
         finally:
@@ -696,11 +680,16 @@ class InputInjectorStep(BaseStep, ABC):
                 job = await cast(JobPort, self.get_input_port("__job__")).get_job(self.name)
                 if job is None:
                     raise WorkflowExecutionException("Step {} received a null job".format(self.name))
-                # Process value and inject token in the output port
-                self.get_output_port().put(await self._persist_token(
-                    token=await self.process_input(job, token.value),
-                    port=self.get_output_port(),
-                    inputs=[token]))
+                try:
+                    await self.workflow.context.scheduler.notify_status(job.name, Status.RUNNING)
+                    # Process value and inject token in the output port
+                    self.get_output_port().put(await self._persist_token(
+                        token=await self.process_input(job, token.value),
+                        port=self.get_output_port(),
+                        inputs=[token]))
+                finally:
+                    # Notify completion to scheduler
+                    await self.workflow.context.scheduler.notify_status(job.name, Status.COMPLETED)
         # Terminate step
         await self.terminate(Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED)
 
@@ -957,10 +946,6 @@ class ScheduleStep(BaseStep):
         # When receiving a CancelledError, mark the step as Cancelled
         except CancelledError:
             await self.terminate(Status.CANCELLED)
-        # When receiving a WorkflowException, simply print the error
-        except WorkflowException as e:
-            logger.error(e)
-            await self.terminate(Status.FAILED)
         except BaseException as e:
             logger.exception(e)
             await self.terminate(Status.FAILED)
@@ -1072,10 +1057,6 @@ class TransferStep(BaseStep, ABC):
             # When receiving a CancelledError, mark the step as Cancelled
             except CancelledError:
                 await self.terminate(Status.CANCELLED)
-            # When receiving a WorkflowException, simply print the error
-            except WorkflowException as e:
-                logger.error(e)
-                await self.terminate(Status.FAILED)
             except BaseException as e:
                 logger.exception(e)
                 await self.terminate(Status.FAILED)
@@ -1139,10 +1120,6 @@ class Transformer(BaseStep, ABC):
         # When receiving a CancelledError, mark the step as Cancelled
         except CancelledError:
             await self.terminate(Status.CANCELLED)
-        # When receiving a WorkflowException, simply print the error
-        except WorkflowException as e:
-            logger.error(e)
-            await self.terminate(Status.FAILED)
         except BaseException as e:
             logger.exception(e)
             await self.terminate(Status.FAILED)

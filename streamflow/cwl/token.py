@@ -20,10 +20,10 @@ async def _get_file_token_weight(context: StreamFlowContext,
                 path=path,
                 location_type=DataType.PRIMARY)
             if data_locations:
-                connector = context.deployment_manager.get_connector(list(data_locations)[0].deployment)
-                location = list(data_locations)[0].location
-                real_path = await remotepath.follow_symlink(connector, location, path)
-                weight = await remotepath.size(connector, location, real_path)
+                location = list(data_locations)[0]
+                connector = context.deployment_manager.get_connector(location.deployment)
+                real_path = await remotepath.follow_symlink(connector, location.location, location.path)
+                weight = await remotepath.size(connector, location.location, real_path)
     if 'secondaryFiles' in value:
         weight += sum(await asyncio.gather(*(asyncio.create_task(
             _get_file_token_weight(

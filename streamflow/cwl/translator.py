@@ -882,7 +882,7 @@ def _process_loop_transformers(step_name: str,
                 posixpath.relpath(input_name, step_name), loop_input_ports[input_name])
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
-    return {**input_ports, **new_input_ports}
+    return {**input_ports, **loop_input_ports, **new_input_ports}
 
 
 def _process_transformers(step_name: str,
@@ -899,6 +899,23 @@ def _process_transformers(step_name: str,
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
     return {**input_ports, **new_input_ports}
+
+
+def _remap_path(path_processor,
+                path: str,
+                old_dir: str,
+                new_dir: str) -> str:
+    if ':/' in path:
+        scheme = urllib.parse.urlsplit(path).scheme
+        if scheme == 'file':
+            return 'file://{}'.format(
+                path_processor.join(new_dir, *os.path.relpath(
+                    urllib.parse.unquote(path[7:]), old_dir).split(os.path.sep)))
+        else:
+            return path
+    else:
+        return path_processor.join(new_dir, *os.path.relpath(
+            urllib.parse.unquote(path[7:]), old_dir).split(os.path.sep))
 
 
 class CWLTranslator(object):
@@ -1043,14 +1060,32 @@ class CWLTranslator(object):
         # Retrieve a local DeployStep
         target = self._get_target(global_name, 'port')
         deploy_step = self._get_deploy_step(target, workflow)
+        # Remap path if target's workdir is defined
+        connector = self.context.deployment_manager.get_connector(target.deployment.name)
+        path_processor = utils.get_path_processor(connector)
+        if isinstance(value, MutableMapping) and utils.get_token_class(value) in ['File', 'Directory']:
+            target_config = self.workflow_config.propagate(PurePosixPath(global_name), 'port')
+            if target_config:
+                if 'location' in value:
+                    value['location'] = _remap_path(
+                        path_processor=path_processor,
+                        path=value['location'],
+                        old_dir=output_directory,
+                        new_dir=target.workdir)
+                if 'path' in value:
+                    value['path'] = _remap_path(
+                        path_processor=path_processor,
+                        path=value['path'],
+                        old_dir=output_directory,
+                        new_dir=target.workdir)
         # Create a schedule step and connect it to the local DeployStep
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
             name=posixpath.join(global_name + "-injector", "__schedule__"),
             connector_port=deploy_step.get_output_port(),
-            input_directory=os.getcwd(),
-            output_directory=output_directory,
-            tmp_directory=os.getcwd(),
+            input_directory=target.workdir or output_directory,
+            output_directory=target.workdir or output_directory,
+            tmp_directory=target.workdir or output_directory,
             target=target)
         # Create a CWLInputInjector step to process the input
         injector_step = workflow.create_step(
@@ -1405,7 +1440,9 @@ class CWLTranslator(object):
                         self.output_ports[global_name] = self.input_ports[source_name]
                     # Otherwise, simply propagate the output port
                     else:
-                        self.output_ports[source_name] = self._get_source_port(workflow, global_name)
+                        if global_name not in self.output_ports:
+                            self.output_ports[global_name] = workflow.create_port()
+                        self.output_ports[source_name] = self.output_ports[global_name]
         # Process steps
         for step in cwl_element.steps:
             self._recursive_translate(
@@ -1711,7 +1748,7 @@ class CWLTranslator(object):
                 port_name = posixpath.relpath(global_name, step_name)
                 loop_forwarder = workflow.create_step(
                     cls=ForwardTransformer,
-                    name=global_name + "-output-forward-transformer")
+                    name=global_name + "-back-propagation-transformer")
                 loop_forwarder.add_input_port(
                     port_name, loop_input_ports.get(global_name, loop_conditional_step.get_output_port(port_name)))
                 loop_forwarder.add_output_port(port_name, combinator_step.get_input_port(port_name))
@@ -1801,8 +1838,8 @@ class CWLTranslator(object):
                 full_js=full_js,
                 expression_lib=expression_lib)
             input_dependencies[global_name] = set.union(
-                {global_name},
-                {posixpath.join(step_name, d) for d in local_deps})
+                {global_name} if 'source' in element_input or 'default' in element_input else set(),
+                {posixpath.join(step_name, d) for d in local_deps}) or {global_name}
         # If `source` entry is present, process output dependencies
         if 'source' in element_input:
             # If source element is a list, the input element can depend on multiple ports
@@ -1962,6 +1999,7 @@ class CWLTranslator(object):
                         cls=ScheduleStep,
                         name=posixpath.join(port_name + "-collector", "__schedule__"),
                         connector_port=deploy_step.get_output_port(),
+                        input_directory=self.output_directory,
                         target=target)
                     # Add the port as an input of the schedule step
                     schedule_step.add_input_port(port_name, transformer_step.get_output_port())

@@ -69,6 +69,9 @@ class WorkflowConfig(object):
             raise WorkflowDefinitionException("Policy {} is not defined".format(policy))
         binding['target']['policy'] = self.policies[policy]
         target_type = 'step' if 'step' in binding else 'port'
+        if target_type == 'port' and 'workdir' not in binding['target']:
+            raise WorkflowDefinitionException(
+                "The `workdir` option is mandatory when specifying a `port` target.")
         current_config[target_type] = binding['target']
 
     def get(self, path: PurePosixPath, name: str, default: Optional[Any] = None) -> Optional[Any]:

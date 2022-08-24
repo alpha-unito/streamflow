@@ -82,7 +82,7 @@ class DefaultDataManager(DataManager):
             # Check if a primary copy of the source path is already present on the destination location
             found_existing_loc = False
             for primary_loc in primary_locations:
-                if primary_loc.location == (dst_location or LOCAL_LOCATION):
+                if primary_loc.location == dst_location:
                     # Wait for the source location to be available on the destination path
                     await primary_loc.available.wait()
                     # If yes, perform a symbolic link if possible
@@ -182,10 +182,18 @@ class DefaultDataManager(DataManager):
                         return loc
                 return list(same_connector_locations)[0]
             else:
-                for loc in data_locations:
-                    if loc.data_type == DataType.PRIMARY:
-                        return loc
-                return list(data_locations)[0]
+                local_locations = {loc for loc in data_locations if isinstance(
+                                   self.context.deployment_manager.get_connector(loc.deployment), LocalConnector)}
+                if local_locations:
+                    for loc in local_locations:
+                        if loc.data_type == DataType.PRIMARY:
+                            return loc
+                    return list(local_locations)[0]
+                else:
+                    for loc in data_locations:
+                        if loc.data_type == DataType.PRIMARY:
+                            return loc
+                    return list(data_locations)[0]
         else:
             return None
 
@@ -205,7 +213,10 @@ class DefaultDataManager(DataManager):
             location=location or LOCAL_LOCATION,
             data_type=data_type,
             available=True)
-        self.path_mapper.put(path, data_location)
+        self.path_mapper.put(
+            path=path,
+            data_location=data_location,
+            recursive=True)
         self.context.checkpoint_manager.register(data_location)
         return data_location
 
@@ -315,7 +326,7 @@ class RemotePathMapper(object):
             if loc.location == location:
                 loc.data_type = DataType.INVALID
 
-    def put(self, path: str, data_location: DataLocation) -> DataLocation:
+    def put(self, path: str, data_location: DataLocation, recursive: bool = False) -> DataLocation:
         path = PurePosixPath(Path(path).as_posix())
         path_processor = utils.get_path_processor(
             self.context.deployment_manager.get_connector(data_location.deployment))
@@ -324,12 +335,15 @@ class RemotePathMapper(object):
         # Create or navigate hierarchy
         for i, token in enumerate(path.parts):
             node = node.children.setdefault(token, RemotePathNode())
-            nodes[path_processor.join(*path.parts[:i + 1])] = node
+            if recursive:
+                nodes[path_processor.join(*path.parts[:i + 1])] = node
+        if not recursive:
+            nodes[str(path)] = node
         # Process hierarchy bottom-up to add parent locations
         relpath = data_location.relpath
         for node_path in reversed(nodes):
             node = nodes[node_path]
-            if node_path == path:
+            if node_path == str(path):
                 location = data_location
             else:
                 location = DataLocation(

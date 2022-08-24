@@ -60,6 +60,7 @@ setup(
     ],
     extras_require={
         "report": [
+            "pandas",
             "plotly",
             "kaleido"
         ],

@@ -409,7 +409,7 @@ class CWLCommand(CWLBaseCommand):
         # Process tokens
         for command_token in self.command_tokens:
             if command_token.name is not None:
-                context['self'] = context['inputs'][command_token.name]
+                context['self'] = context['inputs'].get(command_token.name)
                 # If input is None, skip the command token
                 if context['self'] is None:
                     continue
@@ -822,7 +822,7 @@ class CWLStepCommand(CWLBaseCommand):
         # Process expressions
         processed_inputs = {}
         for k, v in self.input_expressions.items():
-            context = {**context, **{'self': context['inputs'][k]}}
+            context = {**context, **{'self': context['inputs'].get(k)}}
             processed_inputs[k] = utils.eval_expression(
                 expression=v,
                 context=context,

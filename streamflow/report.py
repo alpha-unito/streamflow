@@ -33,12 +33,14 @@ async def create_report(context: StreamFlowContext,
             writer.writerows(report)
             return
     # Pre-process data
-    for r in report:
-        r['start_time'] = _timestamp_to_datetime(r['start_time'])
-        r['end_time'] = _timestamp_to_datetime(r['end_time'])
+    import pandas as pd
+    df = pd.DataFrame(data=report)
+    df["id"] = df["id"].map(str)
+    df["start_time"] = pd.to_datetime(df["start_time"])
+    df["end_time"] = pd.to_datetime(df["end_time"])
     # Create chart
     fig = px.timeline(
-        report,
+        df,
         x_start="start_time",
         x_end="end_time",
         y="name" if args.group_by_step else "id",

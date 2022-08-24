@@ -22,9 +22,10 @@ if TYPE_CHECKING:
     from typing import Union, Optional
 
 
-def _check_status(result: str, status: int):
+def _check_status(command: MutableSequence[str], location: str, result: str, status: int):
     if status != 0:
-        raise WorkflowExecutionException(result)
+        raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
+            ' '.join(command), location, status, result))
 
 
 async def _file_checksum(context: StreamFlowContext,
@@ -38,11 +39,12 @@ async def _file_checksum(context: StreamFlowContext,
             _file_checksum_local,
             path)
     else:
+        command = ["sha1sum {path} | awk '{{print $1}}'".format(path=path)]
         result, status = await connector.run(
             location=location,
-            command=["sha1sum {path} | awk '{{print $1}}'".format(path=path)],
+            command=command,
             capture_output=True)
-        _check_status(result, status)
+        _check_status(command, location, result, status)
         return result.strip()
 
 
@@ -113,12 +115,14 @@ async def exists(connector: Connector, location: Optional[str], path: str) -> bo
     if isinstance(connector, LocalConnector):
         return os.path.exists(path)
     else:
+        command = ["test -e \"{path}\"".format(path=path)]
         result, status = await connector.run(
             location=location,
-            command=["test -e \"{path}\"".format(path=path)],
+            command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException(result)
+            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
+                command, location, status, result))
         else:
             return not status
 
@@ -127,11 +131,12 @@ async def follow_symlink(connector: Connector, location: Optional[str], path: st
     if isinstance(connector, LocalConnector):
         return os.path.realpath(path)
     else:
+        command = ["readlink -f \"{path}\"".format(path=path)]
         result, status = await connector.run(
             location=location,
-            command=["readlink -f \"{path}\"".format(path=path)],
+            command=command,
             capture_output=True)
-        _check_status(result, status)
+        _check_status(command, location, result, status)
         return result.strip()
 
 
@@ -140,11 +145,12 @@ async def head(connector: Connector, location: Optional[str], path: str, num_byt
         with open(path, "rb") as f:
             return f.read(num_bytes).decode('utf-8')
     else:
+        command = ["head", "-c", str(num_bytes), path]
         result, status = await connector.run(
             location=location,
-            command=["head", "-c", str(num_bytes), path],
+            command=command,
             capture_output=True)
-        _check_status(result, status)
+        _check_status(command, location, result, status)
         return result.strip()
 
 
@@ -152,12 +158,14 @@ async def isdir(connector: Connector, location: Optional[str], path: str) -> boo
     if isinstance(connector, LocalConnector):
         return os.path.isdir(path)
     else:
+        command = ["test -d \"{path}\"".format(path=path)]
         result, status = await connector.run(
             location=location,
-            command=["test -d \"{path}\"".format(path=path)],
+            command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException(result)
+            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
+                command, location, status, result))
         else:
             return not status
 
@@ -166,12 +174,14 @@ async def isfile(connector: Connector, location: Optional[str], path: str) -> bo
     if isinstance(connector, LocalConnector):
         return os.path.isfile(path)
     else:
+        command = ["test -f \"{path}\"".format(path=path)]
         result, status = await connector.run(
             location=location,
-            command=["test -f \"{path}\"".format(path=path)],
+            command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException(result)
+            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
+                command, location, status, result))
         else:
             return not status
 
@@ -192,7 +202,7 @@ async def listdir(connector: Connector,
             location=location,
             command=command,
             capture_output=True)
-        _check_status(content, status)
+        _check_status(command, location, content, status)
         content = content.strip(' \n')
         return content.split('\n') if content else []
 
@@ -224,11 +234,12 @@ async def read(connector: Connector, location: Optional[str], path: str) -> str:
         with open(path, "rb") as f:
             return f.read().decode('utf-8')
     else:
+        command = ["cat", path]
         result, status = await connector.run(
             location=location,
-            command=["cat", path],
+            command=command,
             capture_output=True)
-        _check_status(result, status)
+        _check_status(command, location, result, status)
         return result.strip()
 
 
@@ -239,12 +250,13 @@ async def resolve(
     if isinstance(connector, LocalConnector):
         return sorted(glob.glob(pattern))
     else:
+        command = ["printf", "\"%s\\0\"", pattern, "|", "xargs", "-0", "-I{}",
+                   "sh", "-c", "\"if [ -e \\\"{}\\\" ]; then echo \\\"{}\\\"; fi\"", "|", "sort"]
         result, status = await connector.run(
             location=location,
-            command=["printf", "\"%s\\0\"", pattern, "|", "xargs", "-0", "-I{}",
-                     "sh", "-c", "\"if [ -e \\\"{}\\\" ]; then echo \\\"{}\\\"; fi\"", "|", "sort"],
+            command=command,
             capture_output=True)
-        _check_status(result, status)
+        _check_status(command, location, result, status)
         return result.split()
 
 
@@ -289,13 +301,13 @@ async def size(
             path = ' '.join(["\"{path}\"".format(path=p) for p in path])
         else:
             path = "\"{path}\"".format(path=path)
+        command = [''.join(["find -L ", path, " -type f -exec ls -ln {} \\+ | ",
+                            "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; "])]
         result, status = await connector.run(
             location=location,
-            command=[''.join([
-                "find -L ", path, " -type f -exec ls -ln {} \\+ | ",
-                "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; "])],
+            command=command,
             capture_output=True)
-        _check_status(result, status)
+        _check_status(command, location, result, status)
         result = result.strip().strip("'\"")
         return int(result) if result.isdigit() else 0
 
@@ -316,9 +328,10 @@ async def write(connector: Connector, location: Optional[str], path: str, conten
         with open(path, "w") as f:
             f.write(content)
     else:
+        command = ["printf", "\"{content}\"".format(content=content.replace('"', '\\"'))]
         result, status = await connector.run(
             location=location,
-            command=["printf", "\"{content}\"".format(content=content.replace('"', '\\"'))],
+            command=command,
             stdout=path,
             capture_output=True)
-        _check_status(result, status)
+        _check_status(command, location, result, status)
