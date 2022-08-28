@@ -2,19 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import importlib
 import itertools
 import os
 import posixpath
-import tarfile
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, MutableSequence, MutableMapping, Optional, Union, Any, Set
+from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Type, Union
+
+from importlib_metadata import entry_points
+from jsonref import loads
 
 from streamflow.core.data import LOCAL_LOCATION
+from streamflow.core.exception import InvalidPluginException, WorkflowExecutionException
 from streamflow.core.workflow import Token
-from streamflow.workflow.token import ListToken, TerminationToken, ObjectToken
+from streamflow.data import aiotarstream
+from streamflow.ext import StreamFlowPlugin
+from streamflow.log_handler import logger
+from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken, TerminationToken
 
 if TYPE_CHECKING:
+    from streamflow.core.config import SchemaEntity
     from streamflow.core.deployment import Connector
     from typing import Iterable
 
@@ -50,15 +58,23 @@ class NamesStack(object):
         return False
 
 
+def check_iteration_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
+    return check_token_class(inputs, IterationTerminationToken)
+
+
 def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
+    return check_token_class(inputs, TerminationToken)
+
+
+def check_token_class(inputs: Union[Token, Iterable[Token]], cls: Type[Token]):
     if isinstance(inputs, Token):
-        return isinstance(inputs, TerminationToken)
+        return isinstance(inputs, cls)
     else:
         for token in inputs:
             if isinstance(token, MutableSequence):
-                if check_termination(token):
+                if check_token_class(token, cls):
                     return True
-            elif isinstance(token, TerminationToken):
+            elif isinstance(token, cls):
                 return True
         return False
 
@@ -96,27 +112,29 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
         yield dict(zip(keys, list(instance)))
 
 
-def extract_tar_stream(tar: tarfile.TarFile,
-                       src: str,
-                       dst: str) -> None:
-    for member in tar:
+async def extract_tar_stream(tar: aiotarstream.AioTarStream,
+                             src: str,
+                             dst: str,
+                             transferBufferSize: Optional[int] = None) -> None:
+    async for member in tar:
         if os.path.isdir(dst):
             if posixpath.join('/', member.path) == src:
                 member.path = posixpath.basename(member.path)
-                tar.extract(member, dst)
+                await tar.extract(member, dst)
                 if member.isdir():
                     dst = os.path.join(dst, member.path)
             else:
                 member.path = posixpath.relpath(posixpath.join('/', member.path), src)
-                tar.extract(member, dst)
+                await tar.extract(member, dst)
         elif member.isfile():
-            with tar.extractfile(member) as inputfile:
+            async with await tar.extractfile(member) as inputfile:
                 with open(dst, 'wb') as outputfile:
-                    outputfile.write(inputfile.read())
+                    while content := await inputfile.read(transferBufferSize):
+                        outputfile.write(content)
         else:
             parent_dir = str(Path(dst).parent)
             member.path = posixpath.basename(member.path)
-            tar.extract(member, parent_dir)
+            await tar.extract(member, parent_dir)
 
 
 def encode_command(command: str):
@@ -124,12 +142,55 @@ def encode_command(command: str):
         command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
 
 
-def wrap_command(command: str):
-    return ["/bin/sh", "-c", "{command}".format(command=command)]
+def flatten_list(hierarchical_list):
+    if not hierarchical_list:
+        return hierarchical_list
+    flat_list = []
+    for el in hierarchical_list:
+        if isinstance(el, MutableSequence):
+            flat_list.extend(flatten_list(el))
+        else:
+            flat_list.append(el)
+    return flat_list
+
+
+def get_class_fullname(cls: Type):
+    return cls.__module__ + '.' + cls.__qualname__
+
+
+def get_class_from_name(name: str) -> Type:
+    module_name, class_name = name.rsplit('.', 1)
+    return getattr(importlib.import_module(module_name), class_name)
 
 
 def get_path_processor(connector: Connector):
     return posixpath if connector is not None and connector.deployment_name != LOCAL_LOCATION else os.path
+
+
+async def get_remote_to_remote_write_command(src_connector: Connector,
+                                             src_location: str,
+                                             src: str,
+                                             dst_connector: Connector,
+                                             dst_locations: MutableSequence[str],
+                                             dst: str) -> MutableSequence[str]:
+    if posixpath.basename(src) != posixpath.basename(dst):
+        result, status = await src_connector.run(
+            location=src_location,
+            command=["test -d \"{path}\"".format(path=src)],
+            capture_output=True)
+        if status > 1:
+            raise WorkflowExecutionException(result)
+        # If is a directory
+        elif status == 0:
+            await asyncio.gather(*(asyncio.create_task(
+                dst_connector.run(location=dst_location, command=["mkdir", "-p", dst])
+            ) for dst_location in dst_locations))
+            return ["tar", "xf", "-", "-C", dst, "--strip-components", "1"]
+        # If is a file
+        else:
+            return ["tar", "xf", "-", "-O", ">", dst]
+    else:
+        return ["tar", "xf", "-", "-C", posixpath.dirname(dst)]
 
 
 def get_size(path):
@@ -163,17 +224,38 @@ def get_token_value(token: Token) -> Any:
         return token.value
 
 
-def flatten_list(hierarchical_list):
-    if not hierarchical_list:
-        return hierarchical_list
-    flat_list = []
-    for el in hierarchical_list:
-        if isinstance(el, MutableSequence):
-            flat_list.extend(flatten_list(el))
+def inject_schema(schema: MutableMapping[str, Any],
+                  classes: MutableMapping[str, Type[SchemaEntity]],
+                  definition_name: str):
+    for name, entity in classes.items():
+        if entity_schema := entity.get_schema():
+            with open(entity_schema, "r") as f:
+                entity_schema = loads(
+                    f.read(),
+                    base_uri='file://{}/'.format(os.path.dirname(entity_schema)),
+                    jsonschema=True)
+            schema['definitions'][definition_name]['properties']['type'].setdefault('enum', []).append(name)
+            schema['definitions'][definition_name]['definitions'][name] = entity_schema
+            schema['definitions'][definition_name].setdefault('allOf', []).append({
+                'if': {'properties': {'type': {'const': name}}},
+                'then': {'properties': {'config': entity_schema}}})
+
+
+def load_extensions():
+    plugins = entry_points(group='unito.streamflow.plugin')
+    for plugin in plugins:
+        plugin = (plugin.load())()
+        if isinstance(plugin, StreamFlowPlugin):
+            plugin.register()
+            logger.info("Succesfully registered plugin {}".format(
+                get_class_fullname(type(plugin))))
         else:
-            flat_list.append(el)
-    return flat_list
+            raise InvalidPluginException("StreamFlow plugins must extend the streamflow.ext.StreamFlowPlugin class")
 
 
 def random_name() -> str:
     return str(uuid.uuid4())
+
+
+def wrap_command(command: str):
+    return ["/bin/sh", "-c", "{command}".format(command=command)]

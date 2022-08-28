@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, MutableSequence
+from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
+from streamflow.core.config import Config
+from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
@@ -12,9 +14,9 @@ if TYPE_CHECKING:
 
 def set_targets(current_node, target):
     for node in current_node['children'].values():
-        if 'target' not in node:
-            node['target'] = target
-        set_targets(node, node['target'])
+        if 'step' not in node:
+            node['step'] = target
+        set_targets(node, node['step'])
 
 
 class WorkflowConfig(object):
@@ -27,6 +29,9 @@ class WorkflowConfig(object):
         self.type = workflow_config['type']
         self.config = workflow_config['config']
         self.deplyoments = streamflow_config.get('deployments', {})
+        self.policies = {k: Config(name=k, type=v['type'], config=v['config'])
+                         for k, v in streamflow_config.get('scheduling', {}).get('policies', {}).items()}
+        self.policies['__DEFAULT__'] = Config(name='__DEFAULT__', type='data_locality', config={})
         if not self.deplyoments:
             self.deplyoments = streamflow_config.get('models', {})
             if self.deplyoments:
@@ -55,11 +60,19 @@ class WorkflowConfig(object):
         return current_node
 
     def _process_binding(self, binding: MutableMapping[str, Any]):
-        current_config = self._build_config(PurePosixPath(binding['step']))
-        if 'target' in binding:
-            current_config['target'] = binding['target']
-        if 'workdir' in binding:
-            current_config['workdir'] = binding['workdir']
+        current_config = self._build_config(PurePosixPath(
+            binding['step'] if 'step' in binding else binding['port']))
+        policy = binding['target'].get(
+            'policy', self.deplyoments[binding['target'].get('deployment', binding['target'].get('model', {}))].get(
+                'policy', '__DEFAULT__'))
+        if policy not in self.policies:
+            raise WorkflowDefinitionException("Policy {} is not defined".format(policy))
+        binding['target']['policy'] = self.policies[policy]
+        target_type = 'step' if 'step' in binding else 'port'
+        if target_type == 'port' and 'workdir' not in binding['target']:
+            raise WorkflowDefinitionException(
+                "The `workdir` option is mandatory when specifying a `port` target.")
+        current_config[target_type] = binding['target']
 
     def get(self, path: PurePosixPath, name: str, default: Optional[Any] = None) -> Optional[Any]:
         current_node = self.filesystem

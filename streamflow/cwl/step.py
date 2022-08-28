@@ -1,19 +1,24 @@
 import asyncio
+import json
 import urllib.parse
 from abc import ABC
-from typing import MutableMapping, MutableSequence, Any, Optional
+from typing import Any, MutableMapping, MutableSequence, Optional
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
-from streamflow.core.utils import random_name, get_tag
-from streamflow.core.workflow import Token, Job, Workflow, Port
+from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
+from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.utils import get_tag, random_name
+from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import LoadListing
 from streamflow.data import remotepath
+from streamflow.log_handler import logger
 from streamflow.workflow.port import JobPort
-from streamflow.workflow.step import TransferStep, ConditionalStep, InputInjectorStep
-from streamflow.workflow.token import ListToken, ObjectToken
+from streamflow.workflow.step import (
+    ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep
+)
+from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
 
 async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
@@ -32,6 +37,10 @@ class CWLBaseConditionalStep(ConditionalStep, ABC):
                  workflow: Workflow):
         super().__init__(name, workflow)
         self.skip_ports: MutableMapping[str, str] = {}
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'skip_ports': {k: p.persistent_id for k, p in self.get_skip_ports().items()}}}
 
     def add_skip_port(self, name: str, port: Port) -> None:
         if port.name not in self.workflow.ports:
@@ -77,6 +86,41 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         for port in self.get_skip_ports().values():
             port.put(Token(value=None, tag=get_tag(inputs.values())))
 
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'expression': self.expression,
+                   'expression_lib': self.expression_lib,
+                   'full_js': self.full_js}}
+
+
+class CWLLoopConditionalStep(CWLConditionalStep):
+
+    async def _eval(self, inputs: MutableMapping[str, Token]):
+        context = utils.build_context(inputs)
+        condition = utils.eval_expression(
+            expression=self.expression,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib)
+        if condition is True or condition is False:
+            return condition
+        else:
+            raise WorkflowDefinitionException("Conditional 'when' must evaluate to 'true' or 'false'")
+
+    async def _on_true(self, inputs: MutableMapping[str, Token]):
+        logger.debug("Step {} condition evaluated true on inputs {}".format(
+            self.name, [t.tag for t in inputs.values()]))
+        # Next iteration: propagate outputs to the loop
+        for port_name, port in self.get_output_ports().items():
+            port.put(inputs[port_name])
+
+    async def _on_false(self, inputs: MutableMapping[str, Token]):
+        logger.debug("Step {} condition evaluated false on inputs {}".format(
+            self.name, [t.tag for t in inputs.values()]))
+        # Loop termination: propagate outputs outside the loop
+        for port_name, port in self.get_skip_ports().items():
+            port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
+
 
 class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
 
@@ -89,6 +133,17 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
 
     async def _eval(self, inputs: MutableMapping[str, Token]):
         return all(isinstance(i, ListToken) and len(i.value) > 0 for i in inputs.values())
+
+    @classmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext):
+        params = json.loads(row['params'])
+        return cls(
+            name=row['name'],
+            workflow=await loading_context.load_workflow(context, row['workflow']),
+            scatter_method=params['scatter_method'])
 
     async def _on_true(self, inputs: MutableMapping[str, Token]):
         # Propagate output tokens
@@ -104,6 +159,10 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
             port.put(ListToken(value=token_value, tag=get_tag(inputs.values())))
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'scatter_method': self.scatter_method}}
 
 
 class CWLInputInjectorStep(InputInjectorStep):
@@ -162,6 +221,22 @@ class CWLInputInjectorStep(InputInjectorStep):
             return Token(value=token_value)
 
 
+class CWLLoopOutputAllStep(LoopOutputStep):
+
+    async def _process_output(self, tag: str) -> Token:
+        return ListToken(
+            tag=tag,
+            value=sorted(self.token_map.get(tag, []), key=lambda t: int(t.tag.split('.')[-1])))
+
+
+class CWLLoopOutputLastStep(LoopOutputStep):
+
+    async def _process_output(self, tag: str) -> Token:
+        return Token(
+            tag=tag,
+            value=sorted(self.token_map.get(tag, [Token(value=None)]), key=lambda t: int(t.tag.split('.')[-1]))[-1])
+
+
 class CWLTransferStep(TransferStep):
 
     def __init__(self,
@@ -171,6 +246,10 @@ class CWLTransferStep(TransferStep):
                  writable: bool = False):
         super().__init__(name, workflow, job_port)
         self.writable: bool = writable
+
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        return {**await super()._save_additional_params(context),
+                **{'writable': self.writable}}
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
         if isinstance(token_value, Token):
@@ -227,8 +306,6 @@ class CWLTransferStep(TransferStep):
                 selected_location.relpath)
             # Perform and transfer
             src_connector = self.workflow.context.deployment_manager.get_connector(selected_location.deployment)
-            if token_class == 'Directory':
-                await remotepath.mkdir(dst_connector, dst_locations, filepath)
             await self.workflow.context.data_manager.transfer_data(
                 src_deployment=src_connector.deployment_name,
                 src_locations=[selected_location.location],
@@ -249,11 +326,17 @@ class CWLTransferStep(TransferStep):
                 # Perform remote checksum
                 original_checksum = token_value['checksum']
                 for location in dst_locations:
-                    checksum = 'sha1${}'.format(await remotepath.checksum(
-                        self.workflow.context, dst_connector, location, filepath))
-                    if checksum != original_checksum:
-                        raise WorkflowExecutionException("Error transferring file {} to location {}".format(
-                            filepath, location))
+                    if await remotepath.exists(dst_connector, location, filepath):
+                        checksum = 'sha1${}'.format(await remotepath.checksum(
+                            self.workflow.context, dst_connector, location, filepath))
+                        if checksum != original_checksum:
+                            raise WorkflowExecutionException(
+                                "Error transferring file {} in location {} to {} in location {}".format(
+                                    selected_location.path, selected_location.location, filepath, location))
+                    else:
+                        raise WorkflowExecutionException(
+                            "Error transferring file {} in location {} to {} in location {}".format(
+                                selected_location.path, selected_location.location, filepath, location))
                 # Add size, checksum and format fields
                 new_token_value = {**new_token_value, **{
                     'nameroot': token_value['nameroot'],
@@ -294,10 +377,10 @@ class CWLTransferStep(TransferStep):
             else:
                 await remotepath.mkdir(dst_connector, dst_locations, path_processor.dirname(filepath))
                 await utils.write_remote_file(
-                        context=self.workflow.context,
-                        job=job,
-                        content=token_value.get('contents', ''),
-                        path=filepath)
+                    context=self.workflow.context,
+                    job=job,
+                    content=token_value.get('contents', ''),
+                    path=filepath)
             # Build file token
             new_token_value = await utils.get_file_token(
                 context=self.workflow.context,

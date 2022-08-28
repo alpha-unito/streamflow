@@ -1,6 +1,6 @@
 from typing import MutableMapping, Optional
 
-from streamflow.core.workflow import Job, Token, Step
+from streamflow.core.workflow import Job, Step, Token
 
 
 class JobVersion(object):

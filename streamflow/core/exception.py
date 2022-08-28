@@ -23,6 +23,10 @@ class FailureHandlingException(WorkflowException):
     ...
 
 
+class InvalidPluginException(Exception):
+    ...
+
+
 class UnrecoverableTokenException(WorkflowException):
 
     def __init__(self, message: str, token: Optional[Token] = None):

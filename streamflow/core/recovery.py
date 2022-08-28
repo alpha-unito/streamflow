@@ -1,31 +1,40 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import TYPE_CHECKING
 
+from streamflow.core.config import SchemaEntity
 from streamflow.core.data import DataLocation
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from streamflow.core.workflow import Job, CommandOutput, Token, Step
+    from streamflow.core.workflow import Job, CommandOutput, Step
     from typing import Optional, MutableMapping, Any
 
 
-class CheckpointManager(ABC):
+class CheckpointManager(SchemaEntity):
 
     def __init__(self,
                  context: StreamFlowContext):
         self.context: StreamFlowContext = context
 
     @abstractmethod
+    async def close(self):
+        ...
+
+    @abstractmethod
     def register(self, data_location: DataLocation) -> None:
         ...
 
 
-class FailureManager(ABC):
+class FailureManager(SchemaEntity):
 
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
+
+    @abstractmethod
+    async def close(self):
+        ...
 
     @abstractmethod
     async def handle_exception(self,
@@ -39,13 +48,6 @@ class FailureManager(ABC):
                              job: Job,
                              step: Step,
                              command_output: CommandOutput) -> CommandOutput:
-        ...
-
-    @abstractmethod
-    def register_job(self,
-                     job: Job,
-                     step: Step,
-                     outputs: MutableMapping[str, Token]):
         ...
 
 

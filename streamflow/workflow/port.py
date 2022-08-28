@@ -1,7 +1,7 @@
 from typing import Optional
 
 from streamflow.core.deployment import Connector
-from streamflow.core.workflow import Port, Token, Job
+from streamflow.core.workflow import Job, Port, Token
 from streamflow.workflow.token import TerminationToken
 
 

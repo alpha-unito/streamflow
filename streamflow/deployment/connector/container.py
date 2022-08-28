@@ -1,25 +1,85 @@
 import asyncio
-import io
 import json
 import os
 import posixpath
 import shlex
-import tarfile
-import tempfile
 from abc import ABC, abstractmethod
-from typing import MutableSequence, MutableMapping, Any, Tuple, Optional, cast
+from typing import Any, MutableMapping, MutableSequence, Optional, Tuple
 
+import pkg_resources
 from cachetools import Cache, TTLCache
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
+async def _exists_docker_image(image_name: str) -> bool:
+    exists_command = "".join(
+        "docker "
+        "image "
+        "inspect "
+        "{image_name}"
+    ).format(
+        image_name=image_name
+    )
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split(exists_command),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE)
+    await proc.wait()
+    return proc.returncode == 0
+
+
+async def _pull_docker_image(image_name: str) -> None:
+    exists_command = "".join(
+        "docker "
+        "pull "
+        "--quiet "
+        "{image_name}"
+    ).format(
+        image_name=image_name
+    )
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split(exists_command),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL)
+    await proc.wait()
+
+
 class ContainerConnector(BaseConnector, ABC):
+
+    def __init__(self,
+                 deployment_name: str,
+                 context: StreamFlowContext,
+                 transferBufferSize: int,
+                 locationsCacheSize: int = None,
+                 locationsCacheTTL: int = None,
+                 resourcesCacheSize: int = None,
+                 resourcesCacheTTL: int = None):
+        super().__init__(deployment_name, context, transferBufferSize)
+        cacheSize = locationsCacheSize
+        if cacheSize is None:
+            cacheSize = resourcesCacheSize
+            if cacheSize is not None:
+                logger.warn("The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `locationsCacheSize` instead.")
+            else:
+                cacheSize = 10
+        cacheTTL = locationsCacheTTL
+        if cacheTTL is None:
+            cacheTTL = resourcesCacheTTL
+            if cacheTTL is not None:
+                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `locationsCacheTTL` instead.")
+            else:
+                cacheTTL = 10
+        self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
 
     async def _check_effective_location(self,
                                         common_paths: MutableMapping[str, Any],
@@ -62,41 +122,33 @@ class ContainerConnector(BaseConnector, ABC):
                                     locations: MutableSequence[str],
                                     read_only: bool = False) -> None:
         effective_locations = await self._get_effective_locations(locations, dst)
-        created_tar_buffer = False
         copy_tasks = []
-        with tempfile.TemporaryFile() as tar_buffer:
-            for location in effective_locations:
-                if read_only and await self._is_bind_transfer(location, src, dst):
-                    copy_tasks.append(asyncio.create_task(
-                        self.run(
-                            location=location,
-                            command=["ln", "-snf", posixpath.abspath(src), dst])))
-                    continue
-                if not created_tar_buffer:
-                    with tarfile.open(
-                            fileobj=tar_buffer,
-                            format=tarfile.GNU_FORMAT,
-                            mode='w|',
-                            dereference=True) as tar:
-                        tar.add(src, arcname=dst)
-                    tar_buffer.seek(0)
-                    created_tar_buffer = True
+        for location in effective_locations:
+            if read_only and await self._is_bind_transfer(location, src, dst):
                 copy_tasks.append(asyncio.create_task(
-                    self._copy_local_to_remote_single(
+                    self.run(
                         location=location,
-                        tar_buffer=cast(io.BufferedRandom, tar_buffer),
-                        read_only=read_only)))
-            await asyncio.gather(*copy_tasks)
+                        command=["ln", "-snf", posixpath.abspath(src), dst])))
+                continue
+            copy_tasks.append(asyncio.create_task(
+                self._copy_local_to_remote_single(
+                    src=src,
+                    dst=dst,
+                    location=location,
+                    read_only=read_only)))
+        await asyncio.gather(*copy_tasks)
 
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
                                      locations: MutableSequence[str],
                                      source_location: str,
+                                     source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
+        source_connector = source_connector or self
         effective_locations = await self._get_effective_locations(locations, dst, source_location)
         non_bind_locations = []
-        if read_only and await self._is_bind_transfer(source_location, src, src):
+        if read_only and source_connector == self and await self._is_bind_transfer(source_location, src, src):
             for location in effective_locations:
                 if await self._is_bind_transfer(location, dst, dst):
                     await self.run(
@@ -108,6 +160,7 @@ class ContainerConnector(BaseConnector, ABC):
                 src=src,
                 dst=dst,
                 locations=non_bind_locations,
+                source_connector=source_connector,
                 source_location=source_location,
                 read_only=read_only)
         else:
@@ -115,6 +168,7 @@ class ContainerConnector(BaseConnector, ABC):
                 src=src,
                 dst=dst,
                 locations=effective_locations,
+                source_connector=source_connector,
                 source_location=source_location,
                 read_only=read_only)
 
@@ -219,7 +273,7 @@ class DockerConnector(DockerBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  image: str,
                  addHost: Optional[MutableSequence[str]] = None,
                  blkioWeight: Optional[int] = None,
@@ -271,6 +325,7 @@ class DockerConnector(DockerBaseConnector):
                  labelFile: Optional[MutableSequence[str]] = None,
                  link: Optional[MutableSequence[str]] = None,
                  linkLocalIP: Optional[MutableSequence[str]] = None,
+                 locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
                  logDriver: Optional[str] = None,
                  logOpts: Optional[MutableSequence[str]] = None,
@@ -292,6 +347,7 @@ class DockerConnector(DockerBaseConnector):
                  publishAll: bool = False,
                  readOnly: bool = False,
                  replicas: int = 1,
+                 resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None,
                  restart: Optional[str] = None,
                  rm: bool = True,
@@ -315,8 +371,12 @@ class DockerConnector(DockerBaseConnector):
                  workdir: Optional[str] = None):
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
-            transferBufferSize=transferBufferSize)
+            context=context,
+            transferBufferSize=transferBufferSize,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL)
         self.image: str = image
         self.addHost: Optional[MutableSequence[str]] = addHost
         self.blkioWeight: Optional[int] = blkioWeight
@@ -388,15 +448,6 @@ class DockerConnector(DockerBaseConnector):
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
         self.replicas: int = replicas
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `locationsCacheTTL` instead.")
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.restart: Optional[str] = restart
         self.rm: bool = rm
         self.runtime: Optional[str] = runtime
@@ -417,44 +468,11 @@ class DockerConnector(DockerBaseConnector):
         self.volumesFrom: Optional[MutableSequence[str]] = volumesFrom
         self.workdir: Optional[str] = workdir
 
-    async def _exists_image(self,
-                            image_name: str) -> bool:
-        exists_command = "".join(
-            "docker "
-            "image "
-            "inspect "
-            "{image_name}"
-        ).format(
-            image_name=image_name
-        )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(exists_command),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE)
-        await proc.wait()
-        return proc.returncode == 0
-
-    async def _pull_image(self,
-                          image_name: str) -> None:
-        exists_command = "".join(
-            "docker "
-            "pull "
-            "--quiet "
-            "{image_name}"
-        ).format(
-            image_name=image_name
-        )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(exists_command),
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL)
-        await proc.wait()
-
     async def deploy(self, external: bool) -> None:
         if not external:
             # Pull image if it doesn't exist
-            if not await self._exists_image(self.image):
-                await self._pull_image(self.image)
+            if not await _exists_docker_image(self.image):
+                await _pull_docker_image(self.image)
             # Deploy the Docker container
             for _ in range(0, self.replicas):
                 deploy_command = "".join([
@@ -655,10 +673,15 @@ class DockerConnector(DockerBaseConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         return {container_id: await self._get_location(container_id) for container_id in self.containerIds}
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'docker.json'))
 
     async def undeploy(self, external: bool) -> None:
         if not external and self.containerIds:
@@ -683,7 +706,7 @@ class DockerComposeConnector(DockerBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  files: MutableSequence[str],
                  projectName: Optional[str] = None,
                  verbose: Optional[bool] = False,
@@ -710,13 +733,19 @@ class DockerComposeConnector(DockerBaseConnector):
                  renewAnonVolumes: Optional[bool] = False,
                  removeOrphans: Optional[bool] = False,
                  removeVolumes: Optional[bool] = False,
+                 locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
+                 resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
-            transferBufferSize=transferBufferSize)
-        self.files = [os.path.join(streamflow_config_dir, file) for file in files]
+            context=context,
+            transferBufferSize=transferBufferSize,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL)
+        self.files = [os.path.join(context.config_dir, file) for file in files]
         self.projectName = projectName
         self.verbose = verbose
         self.logLevel = logLevel
@@ -732,15 +761,6 @@ class DockerComposeConnector(DockerBaseConnector):
         self.renewAnonVolumes = renewAnonVolumes
         self.removeOrphans = removeOrphans
         self.removeVolumes = removeVolumes
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `locationsCacheTTL` instead.")
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.skipHostnameCheck = skipHostnameCheck
         self.projectDirectory = projectDirectory
         self.compatibility = compatibility
@@ -811,14 +831,12 @@ class DockerComposeConnector(DockerBaseConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         ps_command = self.base_command() + "".join([
             "ps ",
-            "{filter}"
-        ]).format(
-            filter=("--filter \"com.docker.compose.service\"=\"{service}\"".format(service=service) if service else ""))
+            service or ""])
         logger.debug("Executing command {command}".format(command=ps_command))
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(ps_command),
@@ -835,6 +853,11 @@ class DockerComposeConnector(DockerBaseConnector):
             locations[location_name] = await self._get_location(location_name)
         return locations
 
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'docker-compose.json'))
+
     async def undeploy(self, external: bool) -> None:
         if not external:
             undeploy_command = self.base_command() + "".join([
@@ -849,15 +872,6 @@ class DockerComposeConnector(DockerBaseConnector):
 
 
 class SingularityBaseConnector(ContainerConnector, ABC):
-
-    def __init__(self,
-                 deployment_name: str,
-                 streamflow_config_dir: str,
-                 transferBufferSize: int):
-        super().__init__(
-            deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
-            transferBufferSize=transferBufferSize)
 
     async def _get_bind_mounts(self, location: str) -> MutableSequence[MutableMapping[str, str]]:
         return await self._get_volumes(location)
@@ -906,7 +920,7 @@ class SingularityConnector(SingularityBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  image: str,
                  transferBufferSize: int = 2 ** 16,
                  addCaps: Optional[str] = None,
@@ -928,6 +942,7 @@ class SingularityConnector(SingularityBaseConnector):
                  hostname: Optional[str] = None,
                  instanceNames: Optional[MutableSequence[str]] = None,
                  keepPrivs: bool = False,
+                 locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
                  net: bool = False,
                  network: Optional[str] = None,
@@ -943,6 +958,7 @@ class SingularityConnector(SingularityBaseConnector):
                  pemPath: Optional[str] = None,
                  pidFile: Optional[str] = None,
                  replicas: int = 1,
+                 resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None,
                  rocm: bool = False,
                  scratch: Optional[MutableSequence[str]] = None,
@@ -954,8 +970,12 @@ class SingularityConnector(SingularityBaseConnector):
                  writableTmpfs: bool = False):
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
-            transferBufferSize=transferBufferSize)
+            context=context,
+            transferBufferSize=transferBufferSize,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL)
         self.image: str = image
         self.addCaps: Optional[str] = addCaps
         self.allowSetuid: bool = allowSetuid
@@ -990,15 +1010,6 @@ class SingularityConnector(SingularityBaseConnector):
         self.pemPath: Optional[str] = pemPath
         self.pidFile: Optional[str] = pidFile
         self.replicas: int = replicas
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                logger.warn("The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `locationsCacheTTL` instead.")
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=10, ttl=cacheTTL)
         self.rocm: bool = rocm
         self.scratch: Optional[MutableSequence[str]] = scratch
         self.security: Optional[MutableSequence[str]] = security
@@ -1114,14 +1125,19 @@ class SingularityConnector(SingularityBaseConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         location_tasks = {}
         for instance_name in self.instanceNames:
             location_tasks[instance_name] = asyncio.create_task(self._get_location(instance_name))
         return {k: v for k, v in zip(location_tasks.keys(), await asyncio.gather(*location_tasks.values()))
                 if v is not None}
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'singularity.json'))
 
     async def undeploy(self, external: bool) -> None:
         if not external and self.instanceNames:

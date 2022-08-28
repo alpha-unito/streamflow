@@ -1,45 +1,34 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from asyncio import Event
-from typing import TYPE_CHECKING, MutableSequence, Union, Tuple, Type
+from typing import MutableSequence, TYPE_CHECKING, Tuple, Type, Union
 
-from streamflow.core.deployment import Connector, DeploymentManager, ConnectorCopyKind
+import pkg_resources
+
+from streamflow.core.deployment import Connector, ConnectorCopyKind, DeploymentManager
 from streamflow.core.scheduling import Location
-from streamflow.deployment.connector.container import DockerConnector, DockerComposeConnector, SingularityConnector
-from streamflow.deployment.connector.kubernetes import Helm3Connector
-from streamflow.deployment.connector.local import LocalConnector
-from streamflow.deployment.connector.occam import OccamConnector
-from streamflow.deployment.connector.queue_manager import PBSConnector, SlurmConnector
-from streamflow.deployment.connector.ssh import SSHConnector
+from streamflow.deployment.connector import connector_classes
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
+    from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import DeploymentConfig
     from typing import MutableMapping, Optional, Any
-
-connector_classes = {
-    'docker': DockerConnector,
-    'docker-compose': DockerComposeConnector,
-    'helm': Helm3Connector,
-    'helm3': Helm3Connector,
-    'local': LocalConnector,
-    'occam': OccamConnector,
-    'pbs': PBSConnector,
-    'singularity': SingularityConnector,
-    'slurm': SlurmConnector,
-    'ssh': SSHConnector
-}
 
 
 class DefaultDeploymentManager(DeploymentManager):
 
     def __init__(self,
-                 streamflow_config_dir: str) -> None:
-        super().__init__(streamflow_config_dir)
+                 context: StreamFlowContext) -> None:
+        super().__init__(context)
         self.config_map: MutableMapping[str, Any] = {}
         self.events_map: MutableMapping[str, Event] = {}
         self.deployments_map: MutableMapping[str, Connector] = {}
+
+    async def close(self):
+        await self.undeploy_all()
 
     async def deploy(self, deployment_config: DeploymentConfig):
         deployment_name = deployment_config.name
@@ -51,15 +40,15 @@ class DefaultDeploymentManager(DeploymentManager):
                 if deployment_config.lazy:
                     connector = FutureConnector(
                         name=deployment_name,
-                        streamflow_config_dir=self.streamflow_config_dir,
-                        connector_type=connector_classes[deployment_config.connector_type],
+                        context=self.context,
+                        type=connector_classes[deployment_config.type],
                         external=deployment_config.external,
                         **deployment_config.config)
                     self.deployments_map[deployment_name] = connector
                     self.events_map[deployment_name].set()
                 else:
-                    connector = connector_classes[deployment_config.connector_type](
-                        deployment_name, self.streamflow_config_dir, **deployment_config.config)
+                    connector = connector_classes[deployment_config.type](
+                        deployment_name, self.context, **deployment_config.config)
                     self.deployments_map[deployment_name] = connector
                     if not deployment_config.external:
                         logger.info("Deploying {}".format(deployment_name))
@@ -75,6 +64,11 @@ class DefaultDeploymentManager(DeploymentManager):
 
     def get_connector(self, deployment_name: str) -> Optional[Connector]:
         return self.deployments_map.get(deployment_name, None)
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'deployment_manager.json'))
 
     def is_deployed(self, deployment_name: str):
         return deployment_name in self.deployments_map
@@ -105,12 +99,12 @@ class FutureConnector(Connector):
 
     def __init__(self,
                  name: str,
-                 streamflow_config_dir: str,
-                 connector_type: Type[Connector],
+                 context: StreamFlowContext,
+                 type: Type[Connector],
                  external: bool,
                  **kwargs):
-        super().__init__(name, streamflow_config_dir)
-        self.connector_type: Type[Connector] = connector_type
+        super().__init__(name, context)
+        self.type: Type[Connector] = type
         self.external: bool = external
         self.parameters: MutableMapping[str, Any] = kwargs
         self.deploying: bool = False
@@ -122,6 +116,7 @@ class FutureConnector(Connector):
                    dst: str,
                    locations: MutableSequence[str],
                    kind: ConnectorCopyKind,
+                   source_connector: Optional[Connector] = None,
                    source_location: Optional[str] = None,
                    read_only: bool = False) -> None:
         if self.connector is None:
@@ -130,13 +125,22 @@ class FutureConnector(Connector):
                 await self.deploy(self.external)
             else:
                 await self.deploy_event.wait()
-        await self.connector.copy(src, dst, locations, kind, source_location, read_only)
+        if isinstance(source_connector, FutureConnector):
+            source_connector = source_connector.connector
+        await self.connector.copy(
+            src=src,
+            dst=dst,
+            locations=locations,
+            kind=kind,
+            source_connector=source_connector,
+            source_location=source_location,
+            read_only=read_only)
 
     async def deploy(self,
                      external: bool) -> None:
         # noinspection PyArgumentList
-        connector = self.connector_type(
-            self.deployment_name, self.streamflow_config_dir, **self.parameters)
+        connector = self.type(
+            self.deployment_name, self.context, **self.parameters)
         if not external:
             logger.info("Deploying {}".format(self.deployment_name))
         await connector.deploy(external)
@@ -147,9 +151,9 @@ class FutureConnector(Connector):
 
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         if self.connector is None:
             if not self.deploying:
                 self.deploying = True
@@ -157,7 +161,13 @@ class FutureConnector(Connector):
             else:
                 await self.deploy_event.wait()
         return await self.connector.get_available_locations(
-            service, input_directory, output_directory, tmp_directory)
+            service=service,
+            input_directory=input_directory,
+            output_directory=output_directory,
+            tmp_directory=tmp_directory)
+
+    def get_schema(self) -> str:
+        return self.type.get_schema()
 
     async def run(self,
                   location: str,
@@ -176,7 +186,15 @@ class FutureConnector(Connector):
             else:
                 await self.deploy_event.wait()
         return await self.connector.run(
-            location, command, environment, workdir, stdin, stdout, stderr, capture_output, job_name)
+            location=location,
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            capture_output=capture_output,
+            job_name=job_name)
 
     async def undeploy(self, external: bool) -> None:
         if self.connector is not None:

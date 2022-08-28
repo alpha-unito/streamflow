@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from asyncio import Condition
-from typing import Optional, MutableMapping
+from typing import MutableMapping, Optional, cast
+
+import pkg_resources
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException, WorkflowException
+from streamflow.core.deployment import Connector
+from streamflow.core.exception import FailureHandlingException, UnrecoverableTokenException
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
-from streamflow.core.workflow import Status, Job, CommandOutput, Token, Step
+from streamflow.core.workflow import CommandOutput, Job, Status, Step
+from streamflow.data import remotepath
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
+from streamflow.workflow.step import ExecuteStep
+
+
+async def _cleanup_dir(connector: Connector,
+                       location: str,
+                       directory: str) -> None:
+    await remotepath.rm(connector, location, await remotepath.listdir(connector, location, directory))
 
 
 class DefaultFailureManager(FailureManager):
@@ -31,7 +43,12 @@ class DefaultFailureManager(FailureManager):
             await asyncio.sleep(self.retry_delay)
         if job.name not in self.jobs:
             self.jobs[job.name] = JobVersion(
-                job=job,
+                job=Job(
+                    name=job.name,
+                    inputs=dict(job.inputs),
+                    input_directory=job.input_directory,
+                    output_directory=job.output_directory,
+                    tmp_directory=job.tmp_directory),
                 outputs=None,
                 step=step,
                 version=1)
@@ -48,39 +65,50 @@ class DefaultFailureManager(FailureManager):
                 # Manage job rescheduling
                 allocation = self.context.scheduler.get_allocation(job.name)
                 connector = self.context.scheduler.get_connector(job.name)
+                locations = self.context.scheduler.get_locations(job.name)
                 available_locations = await connector.get_available_locations(
-                    service=allocation.target.service,
-                    input_directory=job.input_directory,
-                    output_directory=job.output_directory,
-                    tmp_directory=job.tmp_directory)
+                    service=allocation.target.service)
                 active_locations = self.context.scheduler.get_locations(job.name, [Status.RUNNING])
-                # If some locations are dead, notify job failure and schedule it on new locations
-                if not active_locations or not all(res in available_locations for res in active_locations):
-                    if active_locations:
+                # If there are active locations, the job just failed
+                if active_locations:
+                    # If some locations are dead
+                    if not all(res in available_locations for res in active_locations):
+                        # Notify job failure
                         await self.context.scheduler.notify_status(job.name, Status.FAILED)
-                    await self.context.scheduler.schedule(job, allocation.target, allocation.hardware)
-                # Initialize directories
-                await job.initialize()
-                # Recover input tokens
-                recovered_tokens = []
-                for token_name, token in job.inputs.items():
-                    token_processor = job.step.input_token_processors[token_name]
-                    version = 0
-                    while True:
-                        try:
-                            recovered_tokens.append(await token_processor.recover_token(job, locations, token))
-                            break
-                        except UnrecoverableTokenException as e:
-                            version += 1
-                            reply_response = await self.replay_job(
-                                ReplayRequest(job.name, e.token.job, version))
-                            input_port = job.step.workflow.ports[job.step.input_ports[token.name]]
-                            recovered_token = reply_response.outputs[input_port.name]
-                            token = await _replace_token(job, token_processor, token, recovered_token)
-                            token.name = input_port.name
-                job.inputs = recovered_tokens
-                # Run job
-                return await job.run()
+                        # Invalidate locations
+                        for location in (set(active_locations) - set(available_locations)):
+                            self.context.data_manager.invalidate_location(location, '/')
+                        # TODO
+                    # Otherwise, empty output and tmp folders and re-execute the job
+                    cleanup_tasks = []
+                    for location in locations:
+                        for directory in [job.output_directory, job.tmp_directory]:
+                            cleanup_tasks.append(asyncio.create_task(_cleanup_dir(connector, location, directory)))
+                            self.context.data_manager.invalidate_location(location, directory)
+                    await asyncio.gather(*cleanup_tasks)
+                    # TODO: try to do this in a more general way
+                    return await cast(ExecuteStep, job_version.step).command.execute(job)
+                # Otherwise, the job already completed but must be rescheduled
+                else:
+                    # TODO
+                    # Recover input tokens
+                    recovered_tokens = []
+                    for token_name, token in job.inputs.items():
+                        token_processor = job.step.input_token_processors[token_name]
+                        version = 0
+                        while True:
+                            try:
+                                recovered_tokens.append(await token_processor.recover_token(job, locations, token))
+                                break
+                            except UnrecoverableTokenException as e:
+                                version += 1
+                                reply_response = await self.replay_job(
+                                    ReplayRequest(job.name, e.token.job, version))
+                                input_port = job.step.workflow.ports[job.step.input_ports[token.name]]
+                                recovered_token = reply_response.outputs[input_port.name]
+                                token = await _replace_token(job, token_processor, token, recovered_token)
+                                token.name = input_port.name
+                    job.inputs = recovered_tokens
             # When receiving a FailureHandlingException, simply fail
             except FailureHandlingException as e:
                 logger.exception(e)
@@ -88,10 +116,6 @@ class DefaultFailureManager(FailureManager):
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
-            # When receiving a WorkflowException, simply print the error
-            except WorkflowException as e:
-                logger.error(e)
-                return await self.handle_exception(job, job_version.step, e)
             except BaseException as e:
                 logger.exception(e)
                 return await self.handle_exception(job, job_version.step, e)
@@ -99,6 +123,14 @@ class DefaultFailureManager(FailureManager):
             logger.error("Job {name} failed {version} times. Execution aborted".format(
                 name=job.name, version=self.jobs[job.name].version))
             raise FailureHandlingException()
+
+    async def close(self):
+        pass
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'default_failure_manager.json'))
 
     async def handle_exception(self, job: Job, step: Step, exception: BaseException) -> CommandOutput:
         logger.info("Handling {exception} failure for job {job}".format(
@@ -108,13 +140,6 @@ class DefaultFailureManager(FailureManager):
     async def handle_failure(self, job: Job, step: Step, command_output: CommandOutput) -> CommandOutput:
         logger.info("Handling command failure for job {job}".format(job=job.name))
         return await self._do_handle_failure(job, step)
-
-    def register_job(self, job: Job, step: Step, outputs: MutableMapping[str, Token]):
-        self.jobs[job.name] = JobVersion(
-            job=job,
-            outputs=outputs,
-            step=step,
-            version=1)
 
     async def replay_job(self, replay_request: ReplayRequest) -> ReplayResponse:
         sender_job = replay_request.sender
@@ -154,6 +179,14 @@ class DefaultFailureManager(FailureManager):
 
 class DummyFailureManager(FailureManager):
 
+    async def close(self):
+        ...
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'dummy_failure_manager.json'))
+
     async def handle_exception(self,
                                job: Job,
                                step: Step,
@@ -165,9 +198,3 @@ class DummyFailureManager(FailureManager):
                              step: Step,
                              command_output: CommandOutput) -> CommandOutput:
         return command_output
-
-    def register_job(self,
-                     job: Job,
-                     step: Step,
-                     outputs: MutableMapping[str, Token]):
-        pass

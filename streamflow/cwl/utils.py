@@ -1,41 +1,42 @@
 from __future__ import annotations
 
-
 import asyncio
 import urllib.parse
-from enum import auto, Enum
-from typing import MutableSequence, Set, cast, Union, MutableMapping, Optional, Any
+from enum import Enum, auto
+from typing import Any, MutableMapping, MutableSequence, Optional, Set, Tuple, Union, cast
 
 import cwltool.expression
 from cwltool.utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import FileType, DataType, DataLocation, LOCAL_LOCATION
+from streamflow.core.data import DataLocation, DataType, FileType, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.scheduling import Hardware
-from streamflow.core.utils import get_token_value, get_path_processor, random_name
-from streamflow.core.workflow import Workflow, Job, Token
+from streamflow.core.utils import get_path_processor, get_token_value, random_name
+from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import interpolate
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
 
 
-async def _check_glob_path(job: Job,
+async def _check_glob_path(connector: Connector,
                            workflow: Workflow,
-                           connector: Optional[Connector],
                            location: Optional[str],
-                           path: str) -> None:
+                           input_directory: str,
+                           output_directory: str,
+                           tmp_directory: str,
+                           path: str,
+                           effective_path: str) -> None:
     # Cannot glob outside the job output folder
-    effective_path = await remotepath.follow_symlink(connector, location, path)
-    if not (effective_path.startswith(job.output_directory) or
-            effective_path.startswith(job.input_directory) or
+    if not (effective_path.startswith(output_directory) or
+            effective_path.startswith(input_directory) or
+            effective_path.startswith(tmp_directory) or
             workflow.context.data_manager.get_data_locations(path)):
-        connector = workflow.context.scheduler.get_connector(job.name)
         path_processor = get_path_processor(connector)
-        input_dirs = await remotepath.listdir(connector, location, job.input_directory, FileType.DIRECTORY)
+        input_dirs = await remotepath.listdir(connector, location, input_directory, FileType.DIRECTORY)
         for input_dir in input_dirs:
-            input_path = path_processor.join(input_dir, path_processor.relpath(path, job.output_directory))
+            input_path = path_processor.join(input_dir, path_processor.relpath(path, output_directory))
             if await remotepath.exists(connector, location, input_path):
                 return
         raise WorkflowDefinitionException("Globs outside the job's output folder are not allowed")
@@ -352,24 +353,36 @@ def eval_expression(expression: str,
         return expression
 
 
-async def expand_glob(job: Job,
+async def expand_glob(connector: Connector,
                       workflow: Workflow,
-                      connector: Optional[Connector],
                       location: Optional[str],
-                      path: str) -> MutableSequence[str]:
+                      input_directory: str,
+                      output_directory: str,
+                      tmp_directory: str,
+                      path: str) -> MutableSequence[Tuple[str, str]]:
     paths = await remotepath.resolve(connector, location, path) or []
-    await asyncio.gather(*(asyncio.create_task(
-        _check_glob_path(job, workflow, connector, location, p)
+    effective_paths = await asyncio.gather(*(asyncio.create_task(
+        remotepath.follow_symlink(connector, location, p)
     ) for p in paths))
-    return paths
+    await asyncio.gather(*(asyncio.create_task(
+        _check_glob_path(
+            connector=connector,
+            workflow=workflow,
+            location=location,
+            input_directory=input_directory,
+            output_directory=output_directory,
+            tmp_directory=tmp_directory,
+            path=p,
+            effective_path=ep)
+    ) for p, ep in zip(paths, effective_paths)))
+    return list(zip(paths, effective_paths))
 
 
 async def get_class_from_path(path: str, job: Job, context: StreamFlowContext) -> str:
     connector = context.scheduler.get_connector(job.name)
     locations = context.scheduler.get_locations(job.name)
     for location in locations:
-        t_path = await remotepath.follow_symlink(connector, location, path)
-        return 'File' if await remotepath.isfile(connector, location, t_path) else 'Directory'
+        return 'File' if await remotepath.isfile(connector, location, path) else 'Directory'
 
 
 async def get_file_token(
@@ -586,6 +599,7 @@ async def register_data(context: StreamFlowContext,
             register_data(context, connector, locations, base_path, t)) for t in token_value))
     # Otherwise, if token value is a dictionary and it refers to a File or a Directory, register the path
     elif get_token_class(token_value) in ['File', 'Directory']:
+        path_processor = get_path_processor(connector)
         # Extract paths from token
         paths = []
         if 'path' in token_value and token_value['path'] is not None:
@@ -600,7 +614,6 @@ async def register_data(context: StreamFlowContext,
         # Remove `file` protocol if present
         paths = [urllib.parse.unquote(p[7:]) if p.startswith('file://') else p for p in paths]
         # Register paths to the `DataManager`
-        path_processor = get_path_processor(connector)
         for path in (path_processor.normpath(p) for p in paths):
             relpath = (path_processor.relpath(path, base_path) if base_path and path.startswith(base_path)
                        else path_processor.basename(path))
@@ -690,6 +703,9 @@ class SecondaryFile(object):
 
     def __hash__(self):
         return hash(self.pattern)
+
+    async def save(self, context: StreamFlowContext):
+        return {'pattern': self.pattern, 'required': self.required}
 
 
 async def update_file_token(context: StreamFlowContext,

@@ -2,12 +2,14 @@ import asyncio
 import os
 import posixpath
 import re
-from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
+from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import asyncssh
+import pkg_resources
 from ruamel.yaml import YAML
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
@@ -17,7 +19,7 @@ class OccamConnector(SSHConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  file: str,
                  sshKey: str,
                  username: str,
@@ -26,7 +28,7 @@ class OccamConnector(SSHConnector):
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             nodes=[hostname],
             sshKey=sshKey,
             sshKeyPassphraseFile=sshKeyPassphraseFile,
@@ -35,7 +37,7 @@ class OccamConnector(SSHConnector):
                 '/scratch/home/{username}'.format(username=username)],
             transferBufferSize=transferBufferSize,
             username=username)
-        with open(os.path.join(streamflow_config_dir, file)) as f:
+        with open(os.path.join(context.config_dir, file)) as f:
             yaml = YAML(typ='safe')
             self.env_description = yaml.load(f)
         self.jobs_table: MutableMapping[str, MutableSequence[str]] = {}
@@ -272,11 +274,16 @@ class OccamConnector(SSHConnector):
 
     async def get_available_locations(self,
                                       service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
         nodes = self.jobs_table.get(service, []) if service else utils.flatten_list(self.jobs_table.values())
         return {n: Location(name=n, hostname=n.split('-')[0]) for n in nodes}
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'occam.json'))
 
     async def undeploy(self, external: bool) -> None:
         if not external:
@@ -290,19 +297,16 @@ class OccamConnector(SSHConnector):
         # Close connection
         await super().undeploy(external)
 
-    async def _run(self,
-                   location: str,
-                   command: MutableSequence[str],
-                   environment: MutableMapping[str, str] = None,
-                   workdir: Optional[str] = None,
-                   stdin: Optional[Union[int, str]] = None,
-                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[str] = None,
-                   capture_output: bool = False,
-                   encode: bool = True,
-                   interactive: bool = False,
-                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+    async def run(self,
+                  location: str,
+                  command: MutableSequence[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: Optional[str] = None,
+                  stdin: Optional[Union[int, str]] = None,
+                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False,
+                  job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = self._get_command(
             location=location,
             command=command,
@@ -311,7 +315,6 @@ class OccamConnector(SSHConnector):
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            encode=encode,
             job_name=job_name)
         occam_command = "".join(
             "occam-exec "

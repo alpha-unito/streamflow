@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from asyncio import Condition
-from typing import TYPE_CHECKING, MutableSequence, Optional
+from typing import MutableSequence, Optional, TYPE_CHECKING
 
+import pkg_resources
+
+from streamflow.core.config import Config
 from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.deployment import Target
-from streamflow.core.scheduling import LocationAllocation, Scheduler, Hardware, JobAllocation
-from streamflow.core.workflow import Status, Job
+from streamflow.core.scheduling import Hardware, JobAllocation, LocationAllocation, Policy, Scheduler
+from streamflow.core.workflow import Job, Status
 from streamflow.log_handler import logger
+from streamflow.scheduling.policy import policy_classes
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import Location
-    from streamflow.scheduling.policy import Policy
     from typing import MutableMapping
 
 
@@ -21,14 +25,13 @@ class DefaultScheduler(Scheduler):
 
     def __init__(self,
                  context: StreamFlowContext,
-                 default_policy: Policy,
                  retry_delay: Optional[int] = None) -> None:
         super().__init__(context)
         self.allocation_groups: MutableMapping[str, MutableSequence[Job]] = {}
-        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
-        self.default_policy: Policy = default_policy
+        self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: Optional[int] = retry_delay
-        self.wait_queue: Condition = Condition()
+        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
+        self.wait_queues: MutableMapping[str, Condition] = {}
 
     def _allocate_job(self,
                       job: Job,
@@ -99,32 +102,50 @@ class DefaultScheduler(Scheduler):
                 return None
         return selected_locations
 
-    def _get_policy(self, policy_name: str):
-        # TODO: implement custom policy hook
-        return self.default_policy
+    def _get_policy(self, policy_config: Config):
+        if policy_config.name not in self.policy_map:
+            self.policy_map[policy_config.name] = policy_classes[policy_config.type](**policy_config.config)
+        return self.policy_map[policy_config.name]
+
+    async def close(self):
+        pass
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'scheduler.json'))
 
     async def notify_status(self, job_name: str, status: Status) -> None:
-        async with self.wait_queue:
-            if job_name in self.job_allocations:
-                if status != self.job_allocations[job_name].status:
-                    self.job_allocations[job_name].status = status
-                    logger.debug(
-                        "Job {name} changed status to {status}".format(name=job_name, status=status.name))
-                if status in [Status.COMPLETED, Status.FAILED]:
-                    self.wait_queue.notify_all()
+        connector = self.get_connector(job_name)
+        if connector:
+            if connector.deployment_name in self.wait_queues:
+                async with self.wait_queues[connector.deployment_name]:
+                    if job_name in self.job_allocations:
+                        if status != self.job_allocations[job_name].status:
+                            self.job_allocations[job_name].status = status
+                            logger.debug(
+                                "Job {name} changed status to {status}".format(name=job_name, status=status.name))
+                        if status in [Status.COMPLETED, Status.FAILED]:
+                            self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(self,
                        job: Job,
                        target: Target,
                        hardware_requirement: Hardware):
-        async with self.wait_queue:
+        deployment = target.deployment.name
+        if deployment not in self.wait_queues:
+            self.wait_queues[deployment] = Condition()
+        async with self.wait_queues[deployment]:
             while True:
                 connector = self.context.deployment_manager.get_connector(target.deployment.name)
+                logger.debug("Retreiving available locations for job {}".format(job.name))
                 available_locations = dict(await connector.get_available_locations(
                     service=target.service,
                     input_directory=job.input_directory,
                     output_directory=job.output_directory,
                     tmp_directory=job.tmp_directory))
+                logger.debug("Available locations for job {} are {}".format(
+                    job.name, {k: l.hostname for k, l in available_locations.items()}))
                 if available_locations:
                     if target.scheduling_group is not None:
                         if target.scheduling_group not in self.allocation_groups:
@@ -170,6 +191,6 @@ class DefaultScheduler(Scheduler):
                                 target=target)
                             return
                 try:
-                    await asyncio.wait_for(self.wait_queue.wait(), timeout=self.retry_interval)
+                    await asyncio.wait_for(self.wait_queues[deployment].wait(), timeout=self.retry_interval)
                 except asyncio.TimeoutError:
                     pass

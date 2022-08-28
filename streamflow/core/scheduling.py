@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from abc import abstractmethod, ABC
-from typing import TYPE_CHECKING
+from abc import ABC, abstractmethod
+from typing import Any, TYPE_CHECKING, Type, cast
 
+from streamflow.core import utils
+from streamflow.core.config import Config, SchemaEntity
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Target, Connector
+from streamflow.core.deployment import Connector, Target
+from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status, Token
@@ -51,9 +54,33 @@ class Hardware(object):
 
 class HardwareRequirement(ABC):
 
+    @classmethod
+    @abstractmethod
+    async def _load(cls,
+                    context: StreamFlowContext,
+                    row: MutableMapping[str, Any],
+                    loading_context: DatabaseLoadingContext):
+        ...
+
+    @abstractmethod
+    async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        ...
+
     @abstractmethod
     def eval(self, inputs: MutableMapping[str, Token]) -> Hardware:
         ...
+
+    @classmethod
+    async def load(cls,
+                   context: StreamFlowContext,
+                   row: MutableMapping[str, Any],
+                   loading_context: DatabaseLoadingContext):
+        type = utils.get_class_from_name(row['type'])
+        return await cast(Type[HardwareRequirement], type)._load(context, row['params'], loading_context)
+
+    async def save(self, context: StreamFlowContext):
+        return {'type': utils.get_class_fullname(type(self)),
+                'params': await self._save_additional_params(context)}
 
 
 class JobAllocation(object):
@@ -97,7 +124,14 @@ class LocationAllocation(object):
         self.jobs: MutableSequence[str] = []
 
 
-class Policy(ABC):
+class PolicyConfig(Config, PersistableEntity):
+
+    async def save(self, context: StreamFlowContext):
+        # TODO
+        return self.config
+
+
+class Policy(SchemaEntity):
 
     @abstractmethod
     async def get_location(self,
@@ -110,12 +144,16 @@ class Policy(ABC):
                            locations: MutableMapping[str, LocationAllocation]) -> Optional[str]: ...
 
 
-class Scheduler(ABC):
+class Scheduler(SchemaEntity):
 
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
         self.job_allocations: MutableMapping[str, JobAllocation] = {}
         self.location_allocations: MutableMapping[str, LocationAllocation] = {}
+
+    @abstractmethod
+    async def close(self):
+        ...
 
     def get_allocation(self, job_name: str) -> Optional[JobAllocation]:
         return self.job_allocations.get(job_name)

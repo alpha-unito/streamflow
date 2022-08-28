@@ -6,6 +6,7 @@ import os
 import cwltool.context
 import cwltool.load_tool
 import cwltool.loghandler
+import cwltool.main
 import cwltool.utils
 from cwltool.resolver import tool_resolver
 
@@ -46,6 +47,7 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     loading_context.loader = cwltool.load_tool.default_loader(
         loading_context.fetcher_constructor)
     loading_context, workflowobj, uri = cwltool.load_tool.fetch_document(cwl_args[0], loading_context)
+    cwltool.main.setup_schema(argparse.Namespace(enable_ext=True), None)
     loading_context, uri = cwltool.load_tool.resolve_and_validate_document(
         loading_context, workflowobj, uri
     )
@@ -67,8 +69,10 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     else:
         cwl_inputs = {}
     # Transpile CWL workflow to the StreamFlow representation
+    logger.info("Processing workflow {}".format(args.name))
     translator = CWLTranslator(
         context=context,
+        name=args.name,
         output_directory=args.outdir,
         cwl_definition=cwl_definition,
         cwl_inputs=cwl_inputs,
@@ -76,9 +80,10 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
         loading_context=loading_context)
     logger.info("Building workflow execution plan")
     workflow = translator.translate()
+    await workflow.save(context)
     logger.info("Building of workflow execution plan terminated with status COMPLETED")
     executor = StreamFlowExecutor(workflow)
-    logger.info("Running workflow")
+    logger.info("Running workflow {}".format(args.name))
     output_tokens = await executor.run()
     logger.info("Workflow execution terminated with status COMPLETED")
     print(json.dumps(output_tokens, sort_keys=True, indent=4))

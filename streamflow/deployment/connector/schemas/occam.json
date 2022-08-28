@@ -23,7 +23,7 @@
     "transferBufferSize": {
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",
-      "default": "16kiB"
+      "default": "64kiB"
     },
     "username": {
       "type": "string",

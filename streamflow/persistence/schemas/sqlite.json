@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "sqlite.json",
+  "type": "object",
+  "properties": {
+    "connection": {
+      "type": "string",
+      "description": "The path where the sqlite file resides"
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "The time (in seconds) after which a thread waiting for the database lock raises an exception",
+      "default": 20
+    },
+    "reset_db": {
+      "type": "boolean",
+      "description": "Wether or not to recreate a new (empty) version of the database",
+      "default": false
+    }
+  },
+  "required": [
+    "connection"
+  ],
+  "additionalProperties": false
+}

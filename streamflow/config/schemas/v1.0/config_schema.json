@@ -5,58 +5,258 @@
   "definitions": {
     "binding": {
       "$id": "#/definitions/binding",
-      "type": "object",
-      "properties": {
-        "step": {
-          "type": "string"
-        },
-        "target": {
-          "$id": "#/definitions/workflow/properties/bindings/",
+      "oneOf": [
+        {
           "type": "object",
           "properties": {
-            "deployment": {
+            "step": {
               "type": "string"
             },
-            "model": {
-              "type": "string"
-            },
-            "resources": {
-              "type": "integer",
-              "description": "(**Deprecated.** Use locations.) If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
-              "default": 1
-            },
-            "locations": {
-              "type": "integer",
-              "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
-              "default": 1
-            },
-            "service": {
-              "type": "string"
-            },
-            "workdir": {
-              "type": "string"
+            "target": {
+              "type": "object",
+              "$ref": "#/definitions/target"
             }
           },
-          "oneOf": [
-            {
-              "required": [
-                "deployment"
-              ]
-            },
-            {
-              "required": [
-                "model"
-              ]
-            }
+          "required": [
+            "step",
+            "target"
           ],
           "additionalProperties": false
         },
+        {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "string"
+            },
+            "target": {
+              "type": "object",
+              "$ref": "#/definitions/target"
+            }
+          },
+          "required": [
+            "port",
+            "target"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "checkpointManager": {
+      "$id": "#/definitions/checkpointManager",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable checkpointing service",
+          "default": false
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "$comment": "The `config` property is injected by each CheckpointManager extension",
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "type",
+          "config"
+        ]
+      }
+    },
+    "database": {
+      "$id": "#/definitions/database",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "$comment": "The `config` property is injected by each Database extension",
+      "required": [
+        "type",
+        "config"
+      ]
+    },
+    "dataManager": {
+      "$id": "#/definitions/dataManager",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "$comment": "The `config` property is injected by each DataManager extension",
+      "required": [
+        "type",
+        "config"
+      ]
+    },
+    "deployment": {
+      "$id": "#/definitions/deployment",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "external": {
+          "type": "boolean",
+          "description": "If set, StreamFlow does not manage the lifecycle of the execution environment. This means that all required services must be up and running when the workflow starts",
+          "default": false
+        },
+        "lazy": {
+          "type": "boolean",
+          "description": "If true, a model is deployed only when it becomes necessary for transfers or executions. If false, a DeployStep will deploy its related model as soon as it becomes fireable",
+          "default": true
+        },
+        "policy": {
+          "type": "string",
+          "description": "The scheduling policy to be used with this deployment.",
+          "default": "data_locality"
+        },
+        "type": {
+          "type": "string"
+        },
         "workdir": {
           "type": "string",
-          "description": "Path to the working directory",
+          "description": "Path to the working directory.",
           "default": "${TMPDIR}/streamflow"
         }
+      },
+      "$comment": "The `config` property is injected by each Connector extension",
+      "required": [
+        "type",
+        "config"
+      ]
+    },
+    "deploymentManager": {
+      "$id": "#/definitions/deploymentManager",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "$comment": "The `config` property is injected by each DeploymentManager extension",
+      "required": [
+        "type",
+        "config"
+      ]
+    },
+    "failureManager": {
+      "$id": "#/definitions/failureManager",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable checkpointing service",
+          "default": false
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "$comment": "The `config` property is injected by each FailureManager extension",
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "type",
+          "config"
+        ]
       }
+    },
+    "policy": {
+      "$id": "#/definitions/policy",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "$comment": "The `config` property is injected by each Policy extension",
+      "required": [
+        "type",
+        "config"
+      ]
+    },
+    "scheduler": {
+      "$id": "#/definitions/scheduler",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "$comment": "The `config` property is injected by each Scheduler extension",
+      "required": [
+        "type",
+        "config"
+      ]
+    },
+    "target": {
+      "$id": "#/definitions/target",
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "resources": {
+          "type": "integer",
+          "description": "(**Deprecated.** Use locations.) If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
+          "default": 1
+        },
+        "locations": {
+          "type": "integer",
+          "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
+          "default": 1
+        },
+        "policy": {
+          "type": "string",
+          "description": "The scheduling policy to be used with this target. Overrides the deployment policy when present.",
+          "default": "data_locality"
+        },
+        "service": {
+          "type": "string"
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Path to the working directory. It overrides the deployment-level setting.",
+          "default": "${TMPDIR}/streamflow"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "deployment"
+          ]
+        },
+        {
+          "required": [
+            "model"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "workflow": {
       "$id": "#/definitions/workflow",
@@ -91,7 +291,7 @@
           "$id": "#/definitions/workflow/properties/bindings",
           "type": "array",
           "items": {
-            "anyOf": [
+            "oneOf": [
               {
                 "type": "object",
                 "$ref": "#/definitions/binding"
@@ -132,296 +332,25 @@
         "type",
         "config"
       ]
-    },
-    "deployment": {
-      "$id": "#/definitions/deployment",
-      "type": "object",
-      "definitions": {
-        "docker": {
-          "$id": "#/definitions/deployment/definitions/docker",
-          "type": "object",
-          "$ref": "docker.json"
-        },
-        "docker-compose": {
-          "$id": "#/definitions/deployment/definitions/docker-compose",
-          "type": "object",
-          "$ref": "docker-compose.json"
-        },
-        "helm3": {
-          "$id": "#/definitions/deployment/definitions/helm3",
-          "type": "object",
-          "$ref": "helm3.json"
-        },
-        "pbs": {
-          "$id": "#/definitions/deployment/definitions/pbs",
-          "type": "object",
-          "$ref": "queue_manager.json"
-        },
-        "occam": {
-          "$id": "#/definitions/deployment/definitions/occam",
-          "type": "object",
-          "$ref": "occam.json"
-        },
-        "singularity": {
-          "$id": "#/definitions/deployment/definitions/singularity",
-          "type": "object",
-          "$ref": "singularity.json"
-        },
-        "slurm": {
-          "$id": "#/definitions/deployment/definitions/slurm",
-          "type": "object",
-          "$ref": "queue_manager.json"
-        },
-        "ssh": {
-          "$id": "#/definitions/deployment/definitions/ssh",
-          "type": "object",
-          "$ref": "ssh.json"
-        }
-      },
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "docker",
-            "docker-compose",
-            "helm",
-            "helm3",
-            "pbs",
-            "occam",
-            "singularity",
-            "slurm",
-            "ssh"
-          ]
-        },
-        "external": {
-          "type": "boolean",
-          "description": "If set, StreamFlow does not manage the lifecycle of the execution environment. This means that all required services must be up and running when the workflow starts",
-          "default": false
-        },
-        "lazy": {
-          "type": "boolean",
-          "description": "If true, a model is deployed only when it becomes necessary for transfers or executions. If false, a DeployStep will deploy its related model as soon as it becomes fireable",
-          "default": true
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "docker"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/deployment/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/deployment/definitions/docker"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "docker-compose"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/deployment/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/deployment/definitions/docker-compose"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "pattern": "helm(3)?"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/deployment/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/deployment/definitions/helm3"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "occam"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/deployment/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/deployment/definitions/occam"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "slurm"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/deployment/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/deployment/definitions/slurm"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "ssh"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "config": {
-                "$id": "#/definitions/deployment/properties/config",
-                "type": "object",
-                "$ref": "#/definitions/deployment/definitions/ssh"
-              }
-            }
-          }
-        }
-      ],
-      "required": [
-        "type",
-        "config"
-      ]
     }
   },
   "properties": {
     "checkpointManager": {
       "$id": "#/properties/checkpointManager",
       "type": "object",
-      "properties": {
-        "config": {
-          "type": "object",
-          "patternProperties": {
-            "^[a-z][a-zA-Z0-9._-]*$": {}
-          }
-        },
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable checkpointing service",
-          "default": false
-        },
-        "type": {
-          "type": "string",
-          "description": "Fully qualified class name",
-          "default": "streamflow.recovery.checkpoint_manager.DefaultCheckpointManager"
-        }
-      }
+      "$ref": "#/definitions/checkpointManager"
+    },
+    "database": {
+      "$id": "#/properties/database",
+      "type": "object",
+      "$ref": "#/definitions/database"
     },
     "dataManager": {
       "$id": "#/properties/dataManager",
       "type": "object",
-      "properties": {
-        "config": {
-          "type": "object",
-          "patternProperties": {
-            "^[a-z][a-zA-Z0-9._-]*$": {}
-          }
-        },
-        "type": {
-          "type": "string",
-          "description": "Fully qualified class name",
-          "default": "streamflow.data.data_manager.DefaultDataManager"
-        }
-      }
+      "$ref": "#/definitions/dataManager"
     },
-    "deploymentManager": {
-      "$id": "#/properties/deploymentManager",
-      "type": "object",
-      "properties": {
-        "config": {
-          "type": "object",
-          "patternProperties": {
-            "^[a-z][a-zA-Z0-9._-]*$": {}
-          }
-        },
-        "type": {
-          "type": "string",
-          "description": "Fully qualified class name",
-          "default": "streamflow.deployment.deployment_manager.DefaultDeploymentManager"
-        }
-      }
-    },
-    "failureManager": {
-      "$id": "#/properties/failureManager",
-      "type": "object",
-      "properties": {
-        "config": {
-          "type": "object",
-          "patternProperties": {
-            "^[a-z][a-zA-Z0-9._-]*$": {}
-          }
-        },
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable checkpointing service",
-          "default": false
-        },
-        "type": {
-          "type": "string",
-          "description": "Fully qualified class name",
-          "default": "streamflow.recovery.failure_manager.DefaultFailureManager"
-        }
-      }
-    },
-    "scheduler": {
-      "$id": "#/properties/scheduler",
-      "type": "object",
-      "properties": {
-        "config": {
-          "type": "object",
-          "patternProperties": {
-            "^[a-z][a-zA-Z0-9._-]*$": {}
-          }
-        },
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable checkpointing service",
-          "default": false
-        },
-        "type": {
-          "type": "string",
-          "description": "Fully qualified class name",
-          "default": "streamflow.scheduling.scheduler.DefaultScheduler"
-        }
-      }
-    },
-    "models": {
+    "deployments": {
       "$id": "#/properties/deployments",
       "type": "object",
       "patternProperties": {
@@ -431,7 +360,37 @@
       },
       "additionalProperties": false
     },
-    "deployments": {
+    "deploymentManager": {
+      "$id": "#/properties/deploymentManager",
+      "type": "object",
+      "$ref": "#/definitions/deploymentManager"
+    },
+    "failureManager": {
+      "$id": "#/properties/failureManager",
+      "type": "object",
+      "$ref": "#/definitions/failureManager"
+    },
+    "scheduling": {
+      "$id": "#/properties/scheduling",
+      "type": "object",
+      "properties": {
+        "scheduler": {
+          "$id": "#/properties/scheduling/scheduler",
+          "type": "object",
+          "$ref": "#/definitions/scheduler"
+        },
+        "policies": {
+          "$id": "#/properties/scheduling/policies",
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-zA-Z0-9._-]*$": {
+              "$ref": "#/definitions/policy"
+            }
+          }
+        }
+      }
+    },
+    "models": {
       "$id": "#/properties/deployments",
       "type": "object",
       "patternProperties": {

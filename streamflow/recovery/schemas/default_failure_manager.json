@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "failure_manager.json",
+  "type": "object",
+  "properties": {
+    "max_retries": {
+      "type": "integer",
+      "description": "Number of task retries after a failure, prior to abort the workflow execution.",
+      "default": "infinity"
+    },
+    "retry_delay": {
+      "type": "integer",
+      "description": "Time (in seconds) to wait before scheduling the next retry.",
+      "default": 0
+    }
+  },
+  "additionalProperties": false
+}

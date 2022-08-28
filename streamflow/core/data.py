@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING, MutableSequence
+from typing import MutableSequence, TYPE_CHECKING
+
+from streamflow.core.config import SchemaEntity
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Optional, Set
+    from typing import Any, Optional, Set
 
 LOCAL_LOCATION = '__LOCAL__'
 
@@ -49,10 +51,14 @@ class DataLocation(object):
         return hash((self.path, self.deployment, self.location))
 
 
-class DataManager(ABC):
+class DataManager(SchemaEntity):
 
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
+
+    @abstractmethod
+    async def close(self):
+        ...
 
     @abstractmethod
     def get_data_locations(self,
@@ -103,3 +109,30 @@ class DataManager(ABC):
 class FileType(Enum):
     FILE = 1
     DIRECTORY = 2
+
+
+class StreamWrapper(ABC):
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.closed = False
+
+    @abstractmethod
+    async def close(self): ...
+
+    @abstractmethod
+    async def read(self, size: Optional[int] = None): ...
+
+    @abstractmethod
+    async def write(self, data: Any): ...
+
+
+class StreamWrapperContext(ABC):
+
+    @abstractmethod
+    async def __aenter__(self) -> StreamWrapper:
+        ...
+
+    @abstractmethod
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        ...

@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import os
 import posixpath
-import shutil
-import tempfile
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from streamflow.core.data import DataManager, DataLocation, LOCAL_LOCATION, DataType
+import pkg_resources
+
+from streamflow.core import utils
+from streamflow.core.data import DataLocation, DataManager, DataType, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
 from streamflow.data import remotepath
 from streamflow.deployment.connector.base import ConnectorCopyKind
@@ -27,15 +28,7 @@ async def _copy(src_connector: Optional[Connector],
                 dst_locations: Optional[MutableSequence[str]],
                 dst: str,
                 writable: False) -> None:
-    if src_connector == dst_connector:
-        await dst_connector.copy(
-            src=src,
-            dst=dst,
-            locations=dst_locations,
-            kind=ConnectorCopyKind.REMOTE_TO_REMOTE,
-            source_location=src_location,
-            read_only=not writable)
-    elif isinstance(src_connector, LocalConnector):
+    if isinstance(src_connector, LocalConnector):
         await dst_connector.copy(
             src=src,
             dst=dst,
@@ -50,28 +43,21 @@ async def _copy(src_connector: Optional[Connector],
             kind=ConnectorCopyKind.REMOTE_TO_LOCAL,
             read_only=not writable)
     else:
-        temp_dir = tempfile.mkdtemp()
-        await src_connector.copy(
+        await dst_connector.copy(
             src=src,
-            dst=temp_dir,
-            locations=[src_location],
-            kind=ConnectorCopyKind.REMOTE_TO_LOCAL,
-            read_only=not writable)
-        await asyncio.gather(*(asyncio.create_task(dst_connector.copy(
-            src=os.path.join(temp_dir, element),
             dst=dst,
             locations=dst_locations,
-            kind=ConnectorCopyKind.LOCAL_TO_REMOTE,
-            read_only=not writable
-        )) for element in os.listdir(temp_dir)))
-        shutil.rmtree(temp_dir)
+            kind=ConnectorCopyKind.REMOTE_TO_REMOTE,
+            source_connector=src_connector,
+            source_location=src_location,
+            read_only=not writable)
 
 
 class DefaultDataManager(DataManager):
 
     def __init__(self, context: StreamFlowContext):
         super().__init__(context)
-        self.path_mapper = RemotePathMapper()
+        self.path_mapper = RemotePathMapper(context)
 
     async def _transfer_from_location(self,
                                       src_connector: Connector,
@@ -96,7 +82,7 @@ class DefaultDataManager(DataManager):
             # Check if a primary copy of the source path is already present on the destination location
             found_existing_loc = False
             for primary_loc in primary_locations:
-                if primary_loc.location == (dst_location or LOCAL_LOCATION):
+                if primary_loc.location == dst_location:
                     # Wait for the source location to be available on the destination path
                     await primary_loc.available.wait()
                     # If yes, perform a symbolic link if possible
@@ -165,6 +151,9 @@ class DefaultDataManager(DataManager):
         for data_location in data_locations:
             data_location.available.set()
 
+    async def close(self):
+        pass
+
     def get_data_locations(self,
                            path: str,
                            deployment: Optional[str] = None,
@@ -174,6 +163,11 @@ class DefaultDataManager(DataManager):
         if deployment is not None:
             data_locations = {loc for loc in data_locations if loc.deployment == deployment}
         return data_locations
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'data_manager.json'))
 
     def get_source_location(self,
                             path: str,
@@ -188,10 +182,18 @@ class DefaultDataManager(DataManager):
                         return loc
                 return list(same_connector_locations)[0]
             else:
-                for loc in data_locations:
-                    if loc.data_type == DataType.PRIMARY:
-                        return loc
-                return list(data_locations)[0]
+                local_locations = {loc for loc in data_locations if isinstance(
+                                   self.context.deployment_manager.get_connector(loc.deployment), LocalConnector)}
+                if local_locations:
+                    for loc in local_locations:
+                        if loc.data_type == DataType.PRIMARY:
+                            return loc
+                    return list(local_locations)[0]
+                else:
+                    for loc in data_locations:
+                        if loc.data_type == DataType.PRIMARY:
+                            return loc
+                    return list(data_locations)[0]
         else:
             return None
 
@@ -211,7 +213,10 @@ class DefaultDataManager(DataManager):
             location=location or LOCAL_LOCATION,
             data_type=data_type,
             available=True)
-        self.path_mapper.put(path, data_location)
+        self.path_mapper.put(
+            path=path,
+            data_location=data_location,
+            recursive=True)
         self.context.checkpoint_manager.register(data_location)
         return data_location
 
@@ -270,8 +275,10 @@ class RemotePathNode(object):
 
 class RemotePathMapper(object):
 
-    def __init__(self):
+    def __init__(self,
+                 context: StreamFlowContext):
         self._filesystem: RemotePathNode = RemotePathNode()
+        self.context: StreamFlowContext = context
 
     def _remove_node(self, location: DataLocation, node: RemotePathNode):
         node.locations.remove(location)
@@ -319,15 +326,39 @@ class RemotePathMapper(object):
             if loc.location == location:
                 loc.data_type = DataType.INVALID
 
-    def put(self, path: str, data_location: DataLocation) -> DataLocation:
+    def put(self, path: str, data_location: DataLocation, recursive: bool = False) -> DataLocation:
         path = PurePosixPath(Path(path).as_posix())
+        path_processor = utils.get_path_processor(
+            self.context.deployment_manager.get_connector(data_location.deployment))
         node = self._filesystem
-        for token in path.parts:
-            if token not in node.children:
-                node.children[token] = RemotePathNode()
-            node.locations.add(data_location)
-            node = node.children[token]
-        node.locations.add(data_location)
+        nodes = {}
+        # Create or navigate hierarchy
+        for i, token in enumerate(path.parts):
+            node = node.children.setdefault(token, RemotePathNode())
+            if recursive:
+                nodes[path_processor.join(*path.parts[:i + 1])] = node
+        if not recursive:
+            nodes[str(path)] = node
+        # Process hierarchy bottom-up to add parent locations
+        relpath = data_location.relpath
+        for node_path in reversed(nodes):
+            node = nodes[node_path]
+            if node_path == str(path):
+                location = data_location
+            else:
+                location = DataLocation(
+                    path=node_path,
+                    relpath=relpath if relpath and node_path.endswith(relpath) else path_processor.basename(node_path),
+                    deployment=data_location.deployment,
+                    data_type=DataType.PRIMARY,
+                    location=data_location.location,
+                    available=True)
+            if location in node.locations:
+                break
+            else:
+                node.locations.add(location)
+                relpath = path_processor.dirname(relpath)
+        # Return location
         return data_location
 
     def remove_location(self, location: str):

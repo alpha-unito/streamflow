@@ -5,18 +5,18 @@ import base64
 import json
 import logging
 import posixpath
+import re
 import shlex
 import time
-import re
 from abc import ABC
 from asyncio.subprocess import STDOUT
-from typing import Union, Optional, List, Any, IO, MutableMapping, MutableSequence
+from typing import Any, IO, Iterable, List, MutableMapping, MutableSequence, Optional, Union
 
-from streamflow.core.data import LOCAL_LOCATION, DataLocation
+from streamflow.core.data import DataLocation, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
-from streamflow.core.exception import WorkflowExecutionException, WorkflowDefinitionException
-from streamflow.core.utils import get_path_processor, flatten_list
-from streamflow.core.workflow import Step, Command, Job, CommandOutput, Token, Status, Workflow
+from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
+from streamflow.core.utils import flatten_list, get_path_processor
+from streamflow.core.workflow import Command, CommandOutput, Job, Status, Step, Token, Workflow
 from streamflow.cwl import utils
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
@@ -146,11 +146,10 @@ def _escape_value(value: Any) -> Any:
     else:
         return shlex.quote(str(value))
 
-def alphanumeric_sorting(list):
+
+def alphanumeric_sorting(list_to_sort: Iterable) -> Iterable:
     regex = '(-{0,1}[0-9]+)'
-    convert = lambda text: int(text) if re.match(regex, text) else text
-    alphanum_key = lambda key: [ convert(c) for c in re.split(regex, key) ]
-    return sorted(list, key = alphanum_key)
+    return sorted(list_to_sort, key=lambda key: [int(c) if re.match(regex, c) else c for c in re.split(regex, key)])
 
 
 def _merge_tokens(bindings_map: MutableMapping[str, MutableSequence[Any]]) -> MutableSequence[Any]:
@@ -410,7 +409,7 @@ class CWLCommand(CWLBaseCommand):
         # Process tokens
         for command_token in self.command_tokens:
             if command_token.name is not None:
-                context['self'] = context['inputs'][command_token.name]
+                context['self'] = context['inputs'].get(command_token.name)
                 # If input is None, skip the command token
                 if context['self'] is None:
                     continue
@@ -462,7 +461,7 @@ class CWLCommand(CWLBaseCommand):
             outdir=job.output_directory,
             command=cmd_string))
         # Persist command
-        command_id = self.step.workflow.context.persistence_manager.db.add_command(
+        command_id = await self.step.workflow.context.database.add_command(
             step_id=self.step.persistent_id,
             cmd=cmd_string)
         # Escape shell command when needed
@@ -473,10 +472,7 @@ class CWLCommand(CWLBaseCommand):
         if len(locations) > 1:
             service = self.step.workflow.context.scheduler.get_service(job.name)
             available_locations = await connector.get_available_locations(
-                service=service,
-                input_directory=job.input_directory,
-                output_directory=job.output_directory,
-                tmp_directory=job.tmp_directory)
+                service=service)
             hosts = {k: v.hostname for k, v in available_locations.items() if k in locations}
             parsed_env['STREAMFLOW_HOSTS'] = ','.join(hosts.values())
         # Process streams
@@ -522,12 +518,11 @@ class CWLCommand(CWLBaseCommand):
         else:
             status = Status.FAILED
         # Update command persistence
-        self.step.workflow.context.persistence_manager.db.update_command(command_id, {
+        await self.step.workflow.context.database.update_command(command_id, {
             "status": status.value,
             "output": str(result),
             "start_time": start_time,
-            "end_time": end_time
-        })
+            "end_time": end_time})
         # Check if file `cwl.output.json` exists either locally on at least one location
         result = await _check_cwl_output(job, self.step, result)
         return CWLCommandOutput(value=result, status=status, exit_code=exit_code)
@@ -776,7 +771,7 @@ class CWLExpressionCommand(CWLBaseCommand):
         logger.info('Evaluating expression for step {step} (job {job})'.format(
             step=self.step.name, job=job.name))
         # Persist command
-        command_id = self.step.workflow.context.persistence_manager.db.add_command(
+        command_id = await self.step.workflow.context.database.add_command(
             self.step.persistent_id,
             self.expression)
         # Execute command
@@ -788,12 +783,11 @@ class CWLExpressionCommand(CWLBaseCommand):
             expression_lib=self.expression_lib)
         end_time = time.time_ns()
         # Update command persistence
-        self.step.workflow.context.persistence_manager.db.update_command(command_id, {
+        await self.step.workflow.context.database.update_command(command_id, {
             "status": Status.COMPLETED.value,
             "output": str(result),
             "start_time": start_time,
-            "end_time": end_time
-        })
+            "end_time": end_time})
         # Return result
         return CWLCommandOutput(value=result, status=Status.COMPLETED, exit_code=0)
 
@@ -828,7 +822,7 @@ class CWLStepCommand(CWLBaseCommand):
         # Process expressions
         processed_inputs = {}
         for k, v in self.input_expressions.items():
-            context = {**context, **{'self': context['inputs'][k]}}
+            context = {**context, **{'self': context['inputs'].get(k)}}
             processed_inputs[k] = utils.eval_expression(
                 expression=v,
                 context=context,

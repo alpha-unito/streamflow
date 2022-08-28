@@ -1,15 +1,18 @@
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from asyncio import Lock
 from asyncio.subprocess import STDOUT
 from functools import partial
-from typing import Optional, MutableSequence, MutableMapping, Tuple, Any, Union
+from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import cachetools
+import pkg_resources
 from cachetools import Cache, TTLCache
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
@@ -19,13 +22,14 @@ class QueueManagerConnector(SSHConnector, ABC):
 
     def __init__(self,
                  deployment_name: str,
-                 streamflow_config_dir: str,
+                 context: StreamFlowContext,
                  file: str,
                  hostname: str,
                  username: str,
                  checkHostKey: bool = True,
                  dataTransferConnection: Optional[Union[str, MutableMapping[str, Any]]] = None,
                  maxConcurrentJobs: Optional[int] = 1,
+                 maxConcurrentSessions: Optional[int] = 10,
                  passwordFile: Optional[str] = None,
                  pollingInterval: int = 5,
                  sshKey: Optional[str] = None,
@@ -33,10 +37,11 @@ class QueueManagerConnector(SSHConnector, ABC):
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            streamflow_config_dir=streamflow_config_dir,
+            context=context,
             checkHostKey=checkHostKey,
             dataTransferConnection=dataTransferConnection,
             file=file,
+            maxConcurrentSessions=maxConcurrentSessions,
             nodes=[hostname],
             passwordFile=passwordFile,
             sshKey=sshKey,
@@ -83,19 +88,31 @@ class QueueManagerConnector(SSHConnector, ABC):
                                  stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
         ...
 
-    async def _run(self,
-                   location: str,
-                   command: MutableSequence[str],
-                   environment: MutableMapping[str, str] = None,
-                   workdir: Optional[str] = None,
-                   stdin: Optional[Union[int, str]] = None,
-                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-                   job_name: Optional[str] = None,
-                   capture_output: bool = False,
-                   encode: bool = True,
-                   interactive: bool = False,
-                   stream: bool = False) -> Union[Optional[Tuple[Optional[Any], int]], asyncio.subprocess.Process]:
+    async def get_available_locations(self,
+                                      service: str,
+                                      input_directory: Optional[str] = None,
+                                      output_directory: Optional[str] = None,
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
+        return {self.hostname: Location(
+            name=self.hostname,
+            hostname=self.hostname,
+            slots=self.maxConcurrentJobs)}
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join('schemas', 'queue_manager.json'))
+
+    async def run(self,
+                  location: str,
+                  command: MutableSequence[str],
+                  environment: MutableMapping[str, str] = None,
+                  workdir: Optional[str] = None,
+                  stdin: Optional[Union[int, str]] = None,
+                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+                  stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+                  capture_output: bool = False,
+                  job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         # TODO: find a smarter way to identify detachable jobs when implementing stacked connectors
         if job_name:
             command = utils.create_command(
@@ -106,6 +123,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 command=command,
                 location=location,
                 job="for job {job}".format(job=job_name) if job_name else ""))
+            command = utils.encode_command(command)
             helper_file = await self._build_helper_file(command, location, environment, workdir)
             job_id = await self._run_batch_command(
                 helper_file=helper_file,
@@ -132,7 +150,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 await self._get_output(job_id, location) if stdout == STDOUT else None,
                 await self._get_returncode(job_id, location))
         else:
-            return await super()._run(
+            return await super().run(
                 location=location,
                 command=command,
                 environment=environment,
@@ -141,20 +159,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 stdout=stdout,
                 stderr=stderr,
                 job_name=job_name,
-                capture_output=capture_output,
-                encode=encode,
-                interactive=interactive,
-                stream=stream)
-
-    async def get_available_locations(self,
-                                      service: str,
-                                      input_directory: str,
-                                      output_directory: str,
-                                      tmp_directory: str) -> MutableMapping[str, Location]:
-        return {self.hostname: Location(
-            name=self.hostname,
-            hostname=self.hostname,
-            slots=self.maxConcurrentJobs)}
+                capture_output=capture_output)
 
     async def undeploy(self, external: bool) -> None:
         await self._remove_jobs(self.hostname)
