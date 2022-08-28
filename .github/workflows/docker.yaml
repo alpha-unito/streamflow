@@ -25,7 +25,7 @@ jobs:
         run : echo "NEW_IMAGE=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect alphaunito/streamflow:${STREAMFLOW_VERSION}-base > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
       - name: "Build base image"
         id: docker-base
-        if: ${{ env.NEW_IMAGE }}
+        if: ${{ env.NEW_IMAGE == 1 }}
         uses: docker/build-push-action@v2
         with:
           build-args: |
