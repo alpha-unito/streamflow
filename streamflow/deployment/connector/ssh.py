@@ -189,6 +189,7 @@ class SSHConnector(BaseConnector):
                  file: Optional[str] = None,
                  maxConcurrentSessions: int = 10,
                  passwordFile: Optional[str] = None,
+                 services: Optional[MutableMapping[str, str]] = None,
                  sharedPaths: Optional[MutableSequence[str]] = None,
                  sshKey: Optional[str] = None,
                  sshKeyPassphraseFile: Optional[str] = None,
@@ -198,11 +199,18 @@ class SSHConnector(BaseConnector):
             deployment_name=deployment_name,
             context=context,
             transferBufferSize=transferBufferSize)
+        self.templates: MutableMapping[str, Template] = {}
         if file is not None:
+            logger.warn("The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                        "Use `services` instead.")
             with open(os.path.join(context.config_dir, file)) as f:
-                self.template: Optional[Template] = Template(f.read())
+                self.templates['__DEFAULT__'] = Template(f.read())
         else:
-            self.template: Optional[Template] = None
+            self.templates['__DEFAULT__'] = Template('#!/bin/sh\n\n{{streamflow_command}}')
+        if services:
+            for name, service in services.items():
+                with open(os.path.join(context.config_dir, file)) as f:
+                    self.templates[name]: Optional[Template] = Template(f.read())
         self.checkHostKey: bool = checkHostKey
         self.passwordFile: Optional[str] = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
@@ -222,10 +230,12 @@ class SSHConnector(BaseConnector):
                                  command: str,
                                  location: str,
                                  environment: MutableMapping[str, str] = None,
+                                 template: Optional[str] = None,
                                  workdir: str = None) -> str:
+        template = template or '__DEFAULT__'
         helper_file = tempfile.mktemp()
         with open(helper_file, mode='w') as f:
-            f.write(self.template.render(
+            f.write(self.templates[template].render(
                 streamflow_command="sh -c '{command}'".format(command=command),
                 streamflow_environment=environment,
                 streamflow_workdir=workdir))
@@ -471,8 +481,13 @@ class SSHConnector(BaseConnector):
             stdout=stdout,
             stderr=stderr,
             job_name=job_name)
-        if job_name is not None and self.template is not None:
-            helper_file = await self._build_helper_file(command, location, environment, workdir)
+        if job_name is not None:
+            helper_file = await self._build_helper_file(
+                command=command,
+                location=location,
+                environment=environment,
+                template=self.context.scheduler.get_service(job_name),
+                workdir=workdir)
             async with self._get_ssh_client(location) as ssh_client:
                 result = await ssh_client.run(helper_file, stderr=STDOUT)
         else:

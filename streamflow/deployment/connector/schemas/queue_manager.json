@@ -22,7 +22,7 @@
     },
     "file": {
       "type": "string",
-      "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+      "description": "(**Deprecated.** Use services.) Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
     },
     "hostname": {
       "type": "string",
@@ -46,6 +46,15 @@
       "type": "integer",
       "description": "Time interval (in seconds) between consecutive termination checks",
       "default": 5
+    },
+    "services": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "type": "string",
+          "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+        }
+      }
     },
     "sshKey": {
       "type": "string",

@@ -9,10 +9,12 @@ from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 import cachetools
 import pkg_resources
 from cachetools import Cache, TTLCache
+from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.scheduling import Location
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
@@ -32,6 +34,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                  maxConcurrentSessions: Optional[int] = 10,
                  passwordFile: Optional[str] = None,
                  pollingInterval: int = 5,
+                 services: Optional[MutableMapping[str, str]] = None,
                  sshKey: Optional[str] = None,
                  sshKeyPassphraseFile: Optional[str] = None,
                  transferBufferSize: int = 2 ** 16) -> None:
@@ -44,6 +47,7 @@ class QueueManagerConnector(SSHConnector, ABC):
             maxConcurrentSessions=maxConcurrentSessions,
             nodes=[hostname],
             passwordFile=passwordFile,
+            services=services,
             sshKey=sshKey,
             sshKeyPassphraseFile=sshKeyPassphraseFile,
             transferBufferSize=transferBufferSize,
@@ -93,6 +97,9 @@ class QueueManagerConnector(SSHConnector, ABC):
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
                                       tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
+        if service is not None and service not in self.services:
+            raise WorkflowDefinitionException("Invalid service {} for deployment {}.".format(
+                service, self.deployment_name))
         return {self.hostname: Location(
             name=self.hostname,
             hostname=self.hostname,
@@ -124,7 +131,12 @@ class QueueManagerConnector(SSHConnector, ABC):
                 location=location,
                 job="for job {job}".format(job=job_name) if job_name else ""))
             command = utils.encode_command(command)
-            helper_file = await self._build_helper_file(command, location, environment, workdir)
+            helper_file = await self._build_helper_file(
+                command=command,
+                location=location,
+                environment=environment,
+                template=self.context.scheduler.get_service(job_name),
+                workdir=workdir)
             job_id = await self._run_batch_command(
                 helper_file=helper_file,
                 job_name=job_name,

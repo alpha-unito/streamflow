@@ -85,7 +85,7 @@
     },
     "file": {
       "type": "string",
-      "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+      "description": "(**Deprecated.** Use services.) Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
     },
     "nodes": {
       "type": "array",
@@ -110,6 +110,15 @@
     "passwordFile": {
       "type": "string",
       "description": "Path to a file containing the password to use for authentication"
+    },
+    "services": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "type": "string",
+          "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+        }
+      }
     },
     "sharedPaths": {
       "type": "array",
