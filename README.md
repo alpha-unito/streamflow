@@ -179,7 +179,7 @@ Then you can install all the requred packages using the `pip install` command
 
 ```bash
 cd streamflow
-pip install .
+pip install -r requirements.txt
 ```
 
 StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for PyPI and Docker Hub distributions. Therefore, in order to publish a

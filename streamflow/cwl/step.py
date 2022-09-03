@@ -5,6 +5,7 @@ from abc import ABC
 from typing import Any, MutableMapping, MutableSequence, Optional
 
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag, random_name
@@ -323,20 +324,26 @@ class CWLTransferStep(TransferStep):
                 'dirname': path_processor.dirname(filepath)}
             # If token contains a file
             if token_class == 'File':
-                # Perform remote checksum
+                # Retrieve symbolic link data locations
+                data_locations = self.workflow.context.data_manager.get_data_locations(
+                    path=filepath,
+                    deployment=dst_connector.deployment_name,
+                    location_type=DataType.SYMBOLIC_LINK)
+                # If the remote location is not a symbolic link, perform remote checksum
                 original_checksum = token_value['checksum']
                 for location in dst_locations:
-                    if await remotepath.exists(dst_connector, location, filepath):
+                    perform_checksum = True
+                    for data_location in data_locations:
+                        if data_location.location == location and data_location.path == filepath:
+                            perform_checksum = False
+                            break
+                    if perform_checksum:
                         checksum = 'sha1${}'.format(await remotepath.checksum(
                             self.workflow.context, dst_connector, location, filepath))
                         if checksum != original_checksum:
                             raise WorkflowExecutionException(
                                 "Error transferring file {} in location {} to {} in location {}".format(
                                     selected_location.path, selected_location.location, filepath, location))
-                    else:
-                        raise WorkflowExecutionException(
-                            "Error transferring file {} in location {} to {} in location {}".format(
-                                selected_location.path, selected_location.location, filepath, location))
                 # Add size, checksum and format fields
                 new_token_value = {**new_token_value, **{
                     'nameroot': token_value['nameroot'],

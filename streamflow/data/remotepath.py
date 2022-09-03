@@ -13,7 +13,7 @@ import aiohttp
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import FileType
+from streamflow.core.data import DataType, FileType
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector.local import LocalConnector
 
@@ -26,26 +26,6 @@ def _check_status(command: MutableSequence[str], location: str, result: str, sta
     if status != 0:
         raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
             ' '.join(command), location, status, result))
-
-
-async def _file_checksum(context: StreamFlowContext,
-                         connector: Connector,
-                         location: Optional[str],
-                         path: str) -> str:
-    if isinstance(connector, LocalConnector):
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            context.process_executor,
-            _file_checksum_local,
-            path)
-    else:
-        command = ["sha1sum {path} | awk '{{print $1}}'".format(path=path)]
-        result, status = await connector.run(
-            location=location,
-            command=command,
-            capture_output=True)
-        _check_status(command, location, result, status)
-        return result.strip()
 
 
 def _file_checksum_local(path: str) -> str:
@@ -70,11 +50,26 @@ def _listdir_local(path: str, file_type: Optional[FileType]) -> MutableSequence[
 async def checksum(context: StreamFlowContext,
                    connector: Connector,
                    location: Optional[str],
-                   path: str) -> str:
-    if await isfile(connector, location, path):
-        return await _file_checksum(context, connector, location, path)
+                   path: str) -> Optional[str]:
+    if isinstance(connector, LocalConnector):
+        if os.path.isfile(path):
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                context.process_executor,
+                _file_checksum_local,
+                path)
+        else:
+            return None
     else:
-        raise Exception("Checksum for folders is not implemented yet")
+        command = ["test -f \"{path}\" && sha1sum \"{path}\" | awk '{{print $1}}'".format(path=path)]
+        result, status = await connector.run(
+            location=location,
+            command=command,
+            capture_output=True)
+        if status > 1:
+            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
+                command, location, status, result))
+        return result.strip()
 
 
 async def download(
@@ -129,14 +124,30 @@ async def exists(connector: Connector, location: Optional[str], path: str) -> bo
 
 async def follow_symlink(connector: Connector, location: Optional[str], path: str) -> str:
     if isinstance(connector, LocalConnector):
-        return os.path.realpath(path)
+        return os.path.realpath(path) if os.path.exists(path) else None
     else:
-        command = ["readlink -f \"{path}\"".format(path=path)]
+        # If at least one primary location is present on the site
+        if locations := connector.context.data_manager.get_data_locations(
+                path=path,
+                deployment=connector.deployment_name,
+                location=location,
+                location_type=DataType.PRIMARY):
+            # If there is only one primary location on the site, return its path
+            if len(locations) == 1:
+                return next(iter(locations)).path
+            # If multiple primary locations are present for the same path, raise an Exception
+            else:
+                raise WorkflowExecutionException("Multiple primary locations on site {}for the path {} : {}".format(
+                    location, path, [loc.path for loc in locations]))
+        # Otherwise, analyse the remote path
+        command = ["test -e \"{path}\" && readlink -f \"{path}\"".format(path=path)]
         result, status = await connector.run(
             location=location,
             command=command,
             capture_output=True)
-        _check_status(command, location, result, status)
+        if status > 1:
+            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
+                command, location, status, result))
         return result.strip()
 
 

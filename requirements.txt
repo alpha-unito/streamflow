@@ -1,0 +1,13 @@
+aiohttp
+aiosqlite
+antlr4-python3-runtime>=4.10
+asyncssh
+bcrypt
+cachetools
+cwltool
+importlib_metadata
+Jinja2
+jsonref
+jsonschema
+kubernetes_asyncio>=22.6.3
+rdflib

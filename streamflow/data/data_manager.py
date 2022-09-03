@@ -14,7 +14,6 @@ from streamflow.core.deployment import Connector
 from streamflow.data import remotepath
 from streamflow.deployment.connector.base import ConnectorCopyKind
 from streamflow.deployment.connector.local import LocalConnector
-from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -157,11 +156,14 @@ class DefaultDataManager(DataManager):
     def get_data_locations(self,
                            path: str,
                            deployment: Optional[str] = None,
+                           location: Optional[str] = None,
                            location_type: Optional[DataType] = None) -> Set[DataLocation]:
         data_locations = self.path_mapper.get(path, location_type)
         data_locations = {loc for loc in data_locations if loc.data_type != DataType.INVALID}
         if deployment is not None:
             data_locations = {loc for loc in data_locations if loc.deployment == deployment}
+        if location is not None:
+            data_locations = {loc for loc in data_locations if loc.location == location}
         return data_locations
 
     @classmethod
@@ -172,7 +174,7 @@ class DefaultDataManager(DataManager):
     def get_source_location(self,
                             path: str,
                             dst_deployment: str) -> Optional[DataLocation]:
-        if data_locations := self.get_data_locations(path):
+        if data_locations := self.get_data_locations(path=path):
             dst_connector = self.context.deployment_manager.get_connector(dst_deployment)
             same_connector_locations = {loc for loc in data_locations if
                                         loc.deployment == dst_connector.deployment_name}
@@ -239,30 +241,10 @@ class DefaultDataManager(DataManager):
         # Get connectors and locations from steps
         src_connector = self.context.deployment_manager.get_connector(src_deployment)
         dst_connector = self.context.deployment_manager.get_connector(dst_deployment)
-        src_found = False
-        for src_location in src_locations:
-            if await remotepath.exists(src_connector, src_location, src_path):
-                src_found = True
-                await self._transfer_from_location(
-                    src_connector, src_location, src_path,
-                    dst_connector, dst_locations, dst_path,
-                    writable)
-        # If source path does not exist
-        if not src_found:
-            # Search it on destination locations
-            for dst_location in dst_locations:
-                # If it exists, switch source connector and locations with the new ones
-                if await remotepath.exists(dst_connector, dst_location, src_path):
-                    logger.debug("Path {path} found {location}.".format(
-                        path=src_path,
-                        location="on location {location}".format(
-                            location=dst_location) if dst_location is not None else "on local file-system"
-                    ))
-                    await self._transfer_from_location(
-                        src_connector, dst_location, src_path,
-                        dst_connector, dst_locations, dst_path,
-                        writable)
-                    break
+        await asyncio.gather(*(asyncio.create_task(self._transfer_from_location(
+                src_connector, src_location, src_path,
+                dst_connector, dst_locations, dst_path,
+                writable)) for src_location in src_locations))
 
 
 class RemotePathNode(object):

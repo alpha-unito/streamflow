@@ -878,6 +878,12 @@ def _process_input_value(connector: Connector,
                     path=value['path'],
                     old_dir=output_directory,
                     new_dir=target.workdir)
+            if 'secondaryFiles' in value:
+                value['secondaryFiles'] = [_process_input_value(connector, output_directory, target, sf)
+                                           for sf in value['secondaryFiles']]
+            if 'listing' in value:
+                value['listing'] = [_process_input_value(connector, output_directory, target, sf)
+                                    for sf in value['listing']]
             return value
         else:
             return {k: _process_input_value(connector, output_directory, target, v) for k, v in value.items()}

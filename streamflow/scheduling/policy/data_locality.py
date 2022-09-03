@@ -62,7 +62,9 @@ class DataLocalityPolicy(Policy):
             if isinstance(token, FileToken):
                 for path in await token.get_paths(context):
                     related_locations.update([loc.location for loc in context.data_manager.get_data_locations(
-                        path, deployment, DataType.PRIMARY)])
+                        path=path,
+                        deployment=deployment,
+                        location_type=DataType.PRIMARY)])
             # Check if one of the related locations is free
             for current_location in related_locations:
                 if current_location in valid_locations:

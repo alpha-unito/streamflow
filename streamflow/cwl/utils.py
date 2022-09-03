@@ -32,7 +32,7 @@ async def _check_glob_path(connector: Connector,
     if not (effective_path.startswith(output_directory) or
             effective_path.startswith(input_directory) or
             effective_path.startswith(tmp_directory) or
-            workflow.context.data_manager.get_data_locations(path)):
+            workflow.context.data_manager.get_data_locations(path=path)):
         path_processor = get_path_processor(connector)
         input_dirs = await remotepath.listdir(connector, location, input_directory, FileType.DIRECTORY)
         for input_dir in input_dirs:
@@ -114,8 +114,8 @@ async def _register_path(context: StreamFlowContext,
                          path: str,
                          relpath: str,
                          data_type: DataType = DataType.PRIMARY) -> Optional[DataLocation]:
-    if await remotepath.exists(connector, location, path):
-        if (real_path := await remotepath.follow_symlink(connector, location, path)) != path:
+    if real_path := await remotepath.follow_symlink(connector, location, path):
+        if real_path != path:
             if data_locations := context.data_manager.get_data_locations(
                     path=real_path,
                     deployment=connector.deployment_name):
@@ -373,9 +373,9 @@ async def expand_glob(connector: Connector,
             output_directory=output_directory,
             tmp_directory=tmp_directory,
             path=p,
-            effective_path=ep)
+            effective_path=ep or p)
     ) for p, ep in zip(paths, effective_paths)))
-    return list(zip(paths, effective_paths))
+    return [(p, (ep or p)) for p, ep in zip(paths, effective_paths)]
 
 
 async def get_class_from_path(path: str, job: Job, context: StreamFlowContext) -> str:
@@ -410,8 +410,7 @@ async def get_file_token(
             token['format'] = file_format
         token['nameroot'], token['nameext'] = path_processor.splitext(basename)
         for location in locations:
-            if await remotepath.exists(connector, location, filepath):
-                real_path = await remotepath.follow_symlink(connector, location, filepath)
+            if real_path := await remotepath.follow_symlink(connector, location, filepath):
                 token['size'] = await remotepath.size(connector, location, real_path)
                 if load_contents:
                     if token['size'] > CONTENT_LIMIT:
@@ -655,7 +654,7 @@ async def search_in_parent_locations(context: StreamFlowContext,
     current_path = path
     while current_path != (base_path or path_processor.sep):
         # Retrieve all data locations
-        if data_locations := context.data_manager.get_data_locations(current_path):
+        if data_locations := context.data_manager.get_data_locations(path=current_path):
             # If there is no data location for the exact source path
             actual_locations = set()
             if current_path != path:

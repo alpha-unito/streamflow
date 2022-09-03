@@ -64,6 +64,7 @@ class DataManager(SchemaEntity):
     def get_data_locations(self,
                            path: str,
                            deployment: Optional[str] = None,
+                           location: Optional[str] = None,
                            location_type: Optional[DataType] = None) -> Set[DataLocation]:
         ...
 

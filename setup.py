@@ -1,3 +1,5 @@
+import os.path
+import pathlib
 from os import path
 
 from setuptools import setup
@@ -43,21 +45,7 @@ setup(
     description="StreamFlow framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    install_requires=[
-        "aiohttp",
-        "aiosqlite",
-        "antlr4-python3-runtime>=4.10",
-        "asyncssh",
-        "bcrypt",
-        "cachetools",
-        "cwltool",
-        "importlib_metadata",
-        "Jinja2",
-        "jsonref",
-        "jsonschema",
-        "kubernetes_asyncio>=22.6.3",
-        "rdflib"
-    ],
+    install_requires=open(os.path.join(pathlib.Path(__file__).parent, 'requirements.txt')),
     extras_require={
         "report": [
             "pandas",
