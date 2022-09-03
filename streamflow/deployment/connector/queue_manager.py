@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import os
 from abc import ABC, abstractmethod
 from asyncio import Lock
@@ -9,7 +10,6 @@ from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 import cachetools
 import pkg_resources
 from cachetools import Cache, TTLCache
-from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -25,11 +25,11 @@ class QueueManagerConnector(SSHConnector, ABC):
     def __init__(self,
                  deployment_name: str,
                  context: StreamFlowContext,
-                 file: str,
                  hostname: str,
                  username: str,
                  checkHostKey: bool = True,
                  dataTransferConnection: Optional[Union[str, MutableMapping[str, Any]]] = None,
+                 file: Optional[str] = None,
                  maxConcurrentJobs: Optional[int] = 1,
                  maxConcurrentSessions: Optional[int] = 10,
                  passwordFile: Optional[str] = None,
@@ -83,7 +83,7 @@ class QueueManagerConnector(SSHConnector, ABC):
 
     @abstractmethod
     async def _run_batch_command(self,
-                                 helper_file: str,
+                                 command: str,
                                  job_name: str,
                                  location: str,
                                  workdir: Optional[str] = None,
@@ -97,7 +97,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
                                       tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
-        if service is not None and service not in self.services:
+        if service is not None and service not in self.templates:
             raise WorkflowDefinitionException("Invalid service {} for deployment {}.".format(
                 service, self.deployment_name))
         return {self.hostname: Location(
@@ -120,7 +120,6 @@ class QueueManagerConnector(SSHConnector, ABC):
                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
-        # TODO: find a smarter way to identify detachable jobs when implementing stacked connectors
         if job_name:
             command = utils.create_command(
                 command=command,
@@ -131,14 +130,13 @@ class QueueManagerConnector(SSHConnector, ABC):
                 location=location,
                 job="for job {job}".format(job=job_name) if job_name else ""))
             command = utils.encode_command(command)
-            helper_file = await self._build_helper_file(
+            command = self._get_command_from_template(
                 command=command,
-                location=location,
                 environment=environment,
                 template=self.context.scheduler.get_service(job_name),
                 workdir=workdir)
             job_id = await self._run_batch_command(
-                helper_file=helper_file,
+                command=command,
                 job_name=job_name,
                 location=location,
                 workdir=workdir,
@@ -186,7 +184,8 @@ class SlurmConnector(QueueManagerConnector):
                           location: str) -> str:
         async with self._get_ssh_client(location) as ssh_client:
             output_path = (await ssh_client.run(
-                "scontrol show -o job {job_id} | sed -n 's/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'".format(
+                "scontrol show -o job {job_id} | "
+                "sed -n 's/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'".format(
                     job_id=job_id
                 ))).stdout.strip()
             return ((await ssh_client.run('cat {output}'.format(output=output_path))).stdout.strip()
@@ -197,7 +196,8 @@ class SlurmConnector(QueueManagerConnector):
                               location: str) -> int:
         async with self._get_ssh_client(location) as ssh_client:
             return int((await ssh_client.run(
-                "scontrol show -o job {job_id} | sed -n 's/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'".format(
+                "scontrol show -o job {job_id} | "
+                "sed -n 's/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'".format(
                     job_id=job_id
                 ))).stdout.strip())
 
@@ -219,19 +219,25 @@ class SlurmConnector(QueueManagerConnector):
                 "scancel {job_ids}".format(job_ids=" ".join(self.scheduledJobs)))
 
     async def _run_batch_command(self,
-                                 helper_file: str,
+                                 command: str,
                                  job_name: str,
                                  location: str,
                                  workdir: Optional[str] = None,
                                  stdin: Optional[Union[int, str]] = None,
                                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
                                  stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
-        batch_command = "sbatch --parsable {workdir} {stdin} {stdout} {stderr} {helper_file}".format(
-            workdir="-D {workdir}".format(workdir=workdir) if workdir is not None else "",
-            stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",
-            stdout="-o \"{stdout}\"".format(stdout=stdout) if stdout != STDOUT else "",
-            stderr="-e \"{stderr}\"".format(stderr=stderr) if stderr != STDOUT and stderr != stdout else "",
-            helper_file=helper_file)
+        batch_command = "sh -c 'echo {command} | " \
+                        "base64 -d | " \
+                        "sbatch --parsable {workdir} {stdin} {stdout} {stderr}'".format(
+                            workdir=("-D {workdir}".format(workdir=workdir)
+                                     if workdir is not None else ""),
+                            stdin=("-i \"{stdin}\"".format(stdin=stdin)
+                                   if stdin is not None else ""),
+                            stdout=("-o \"{stdout}\"".format(stdout=stdout)
+                                    if stdout != STDOUT else ""),
+                            stderr=("-e \"{stderr}\"".format(stderr=stderr)
+                                    if stderr != STDOUT and stderr != stdout else ""),
+                            command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
         async with self._get_ssh_client(location) as ssh_client:
             result = await ssh_client.run(batch_command)
         return result.stdout.strip()
@@ -244,7 +250,8 @@ class PBSConnector(QueueManagerConnector):
                           location: str) -> str:
         async with self._get_ssh_client(location) as ssh_client:
             output_path = (await ssh_client.run(
-                "qstat {job_id} -xf | sed -n 's/^\\s*Output_Path\\s=\\s.*:\\(.*\\)\\s*$/\\1/p'".format(
+                "qstat {job_id} -xf | "
+                "sed -n 's/^\\s*Output_Path\\s=\\s.*:\\(.*\\)\\s*$/\\1/p'".format(
                     job_id=job_id
                 ))).stdout.strip()
             return ((await ssh_client.run('cat {output}'.format(output=output_path))).stdout.strip()
@@ -255,7 +262,8 @@ class PBSConnector(QueueManagerConnector):
                               location: str) -> int:
         async with self._get_ssh_client(location) as ssh_client:
             return int((await ssh_client.run(
-                "qstat {job_id} -xf | sed -n 's/^\\s*Exit_status\\s=\\s\\([0-9]\\+\\)\\s*$/\\1/p'".format(
+                "qstat {job_id} -xf | "
+                "sed -n 's/^\\s*Exit_status\\s=\\s\\([0-9]\\+\\)\\s*$/\\1/p'".format(
                     job_id=job_id
                 ))).stdout.strip())
 
@@ -264,7 +272,9 @@ class PBSConnector(QueueManagerConnector):
                                 location: str) -> MutableSequence[str]:
         async with self._get_ssh_client(location) as ssh_client:
             return (await ssh_client.run(
-                "qstat -awx {job_ids} | grep '{grep_ids}' | awk '{{if($10 != \"E\" && $10 != \"F\") {{print $1}}}}'".format(
+                "qstat -awx {job_ids} | "
+                "grep '{grep_ids}' | "
+                "awk '{{if($10 != \"E\" && $10 != \"F\") {{print $1}}}}'".format(
                     job_ids=" ".join(self.scheduledJobs),
                     grep_ids="\\|".join(self.scheduledJobs)
                 ))).stdout.strip().splitlines()
@@ -276,19 +286,22 @@ class PBSConnector(QueueManagerConnector):
                 "qdel {job_ids}".format(job_ids=" ".join(self.scheduledJobs)))
 
     async def _run_batch_command(self,
-                                 helper_file: str,
+                                 command: str,
                                  job_name: str,
                                  location: str,
                                  workdir: Optional[str] = None,
                                  stdin: Optional[Union[int, str]] = None,
                                  stdout: Union[int, str] = asyncio.subprocess.STDOUT,
                                  stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
-        batch_command = "{workdir} qsub {stdin} {stdout} {stderr} {helper_file}".format(
-            workdir="cd {workdir} &&".format(workdir=workdir) if workdir is not None else "",
-            stdin="-i \"{stdin}\"".format(stdin=stdin) if stdin is not None else "",
-            stdout=("-o \"{stdout}\"".format(stdout=stdout if stdout != STDOUT else utils.random_name())),
-            stderr="-e \"{stderr}\"".format(stderr=stderr) if stderr != STDOUT and stderr != stdout else "",
-            helper_file=helper_file)
+        batch_command = "sh -c '{workdir} echo {command} | base64 -d | qsub {stdin} {stdout} {stderr} -'".format(
+            workdir=("cd {workdir} &&".format(workdir=workdir)
+                     if workdir is not None else ""),
+            stdin=("-i \"{stdin}\"".format(stdin=stdin)
+                   if stdin is not None else ""),
+            stdout="-o \"{stdout}\"".format(stdout=stdout if stdout != STDOUT else utils.random_name()),
+            stderr=("-e \"{stderr}\"".format(stderr=stderr)
+                    if stderr != STDOUT and stderr != stdout else ""),
+            command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
         async with self._get_ssh_client(location) as ssh_client:
             result = await ssh_client.run(batch_command)
         return result.stdout.strip()

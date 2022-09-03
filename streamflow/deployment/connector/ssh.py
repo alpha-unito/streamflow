@@ -4,9 +4,7 @@ import asyncio
 import contextlib
 import os
 import posixpath
-import stat
 import tarfile
-import tempfile
 from asyncio import Lock, Semaphore
 from asyncio.subprocess import STDOUT
 from pathlib import PurePosixPath
@@ -209,7 +207,7 @@ class SSHConnector(BaseConnector):
             self.templates['__DEFAULT__'] = Template('#!/bin/sh\n\n{{streamflow_command}}')
         if services:
             for name, service in services.items():
-                with open(os.path.join(context.config_dir, file)) as f:
+                with open(os.path.join(context.config_dir, service)) as f:
                     self.templates[name]: Optional[Template] = Template(f.read())
         self.checkHostKey: bool = checkHostKey
         self.passwordFile: Optional[str] = passwordFile
@@ -226,26 +224,15 @@ class SSHConnector(BaseConnector):
         self.nodes: MutableMapping[str, SSHConfig] = {n.hostname: n for n in [self._get_config(n) for n in nodes]}
         self.hardwareCache: Cache = LRUCache(maxsize=len(self.nodes))
 
-    async def _build_helper_file(self,
-                                 command: str,
-                                 location: str,
-                                 environment: MutableMapping[str, str] = None,
-                                 template: Optional[str] = None,
-                                 workdir: str = None) -> str:
-        template = template or '__DEFAULT__'
-        helper_file = tempfile.mktemp()
-        with open(helper_file, mode='w') as f:
-            f.write(self.templates[template].render(
-                streamflow_command="sh -c '{command}'".format(command=command),
-                streamflow_environment=environment,
-                streamflow_workdir=workdir))
-        os.chmod(helper_file, os.stat(helper_file).st_mode | stat.S_IEXEC)
-        remote_path = posixpath.join(workdir or '/tmp', os.path.basename(helper_file))
-        await self._copy_local_to_remote(
-            src=helper_file,
-            dst=remote_path,
-            locations=[location])
-        return remote_path
+    def _get_command_from_template(self,
+                                   command: str,
+                                   environment: MutableMapping[str, str] = None,
+                                   template: Optional[str] = None,
+                                   workdir: str = None) -> str:
+        return self.templates[template or '__DEFAULT__'].render(
+            streamflow_command="sh -c '{command}'".format(command=command),
+            streamflow_environment=environment,
+            streamflow_workdir=workdir)
 
     async def _copy_local_to_remote_single(self,
                                            src: str,
@@ -482,14 +469,14 @@ class SSHConnector(BaseConnector):
             stderr=stderr,
             job_name=job_name)
         if job_name is not None:
-            helper_file = await self._build_helper_file(
+            command = self._get_command_from_template(
                 command=command,
-                location=location,
                 environment=environment,
                 template=self.context.scheduler.get_service(job_name),
                 workdir=workdir)
+            command = utils.encode_command(command)
             async with self._get_ssh_client(location) as ssh_client:
-                result = await ssh_client.run(helper_file, stderr=STDOUT)
+                result = await ssh_client.run(command, stderr=STDOUT)
         else:
             async with self._get_ssh_client(location) as ssh_client:
                 result = await ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT)

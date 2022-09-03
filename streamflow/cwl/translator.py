@@ -20,7 +20,7 @@ from ruamel.yaml.comments import CommentedSeq
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import LOCAL_LOCATION
-from streamflow.core.deployment import DeploymentConfig, LocalTarget, Target
+from streamflow.core.deployment import Connector, DeploymentConfig, LocalTarget, Target
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.utils import get_tag, random_name
 from streamflow.core.workflow import CommandOutputProcessor, Port, Step, Token, TokenProcessor, Workflow
@@ -857,6 +857,34 @@ def _process_docker_requirement(name: str,
     return step_target
 
 
+def _process_input_value(connector: Connector,
+                         output_directory: str,
+                         target: Target,
+                         value: Any) -> Any:
+    if isinstance(value, MutableSequence):
+        return [_process_input_value(connector, output_directory, target, v) for v in value]
+    elif isinstance(value, MutableMapping):
+        if utils.get_token_class(value) in ['File', 'Directory']:
+            path_processor = utils.get_path_processor(connector)
+            if 'location' in value:
+                value['location'] = _remap_path(
+                    path_processor=path_processor,
+                    path=value['location'],
+                    old_dir=output_directory,
+                    new_dir=target.workdir)
+            if 'path' in value:
+                value['path'] = _remap_path(
+                    path_processor=path_processor,
+                    path=value['path'],
+                    old_dir=output_directory,
+                    new_dir=target.workdir)
+            return value
+        else:
+            return {k: _process_input_value(connector, output_directory, target, v) for k, v in value.items()}
+    else:
+        return value
+
+
 def _process_javascript_requirement(requirements: MutableMapping[str, Any]) -> (Optional[MutableSequence[Any]], bool):
     expression_lib = None
     full_js = False
@@ -1066,22 +1094,9 @@ class CWLTranslator(object):
         deploy_step = self._get_deploy_step(target, workflow)
         # Remap path if target's workdir is defined
         connector = self.context.deployment_manager.get_connector(target.deployment.name)
-        path_processor = utils.get_path_processor(connector)
-        if isinstance(value, MutableMapping) and utils.get_token_class(value) in ['File', 'Directory']:
-            target_config = self.workflow_config.propagate(PurePosixPath(global_name), 'port')
-            if target_config:
-                if 'location' in value:
-                    value['location'] = _remap_path(
-                        path_processor=path_processor,
-                        path=value['location'],
-                        old_dir=output_directory,
-                        new_dir=target.workdir)
-                if 'path' in value:
-                    value['path'] = _remap_path(
-                        path_processor=path_processor,
-                        path=value['path'],
-                        old_dir=output_directory,
-                        new_dir=target.workdir)
+        target_config = self.workflow_config.propagate(PurePosixPath(global_name), 'port')
+        if target_config:
+            value = _process_input_value(connector, output_directory, target, value)
         # Create a schedule step and connect it to the local DeployStep
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
