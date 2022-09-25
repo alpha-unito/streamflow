@@ -174,14 +174,11 @@ class CWLInputInjectorStep(InputInjectorStep):
         filepath = utils.get_path_from_token(token_value)
         connector = self.workflow.context.scheduler.get_connector(job.name)
         locations = self.workflow.context.scheduler.get_locations(job.name)
+        path_processor = utils.get_path_processor(connector)
         new_token_value = token_value
         if filepath:
-            await utils.register_data(
-                context=self.workflow.context,
-                connector=connector,
-                locations=locations,
-                base_path=job.output_directory,
-                token_value=token_value)
+            if not path_processor.isabs(filepath):
+                filepath = path_processor.join(job.output_directory, filepath)
             new_token_value = await utils.get_file_token(
                 context=self.workflow.context,
                 connector=connector,
@@ -190,6 +187,12 @@ class CWLInputInjectorStep(InputInjectorStep):
                 filepath=filepath,
                 file_format=token_value.get('format'),
                 basename=token_value.get('basename'))
+            await utils.register_data(
+                context=self.workflow.context,
+                connector=connector,
+                locations=locations,
+                base_path=job.output_directory,
+                token_value=new_token_value)
             if 'secondaryFiles' in token_value:
                 new_token_value['secondaryFiles'] = await asyncio.gather(*(asyncio.create_task(
                     utils.get_file_token(

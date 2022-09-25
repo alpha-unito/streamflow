@@ -14,16 +14,17 @@ from streamflow.cwl.utils import eval_expression
 class CWLHardwareRequirement(HardwareRequirement):
 
     def __init__(self,
-                 cores: Union[str, float] = 1,
-                 memory: Union[str, float] = 256,
-                 tmpdir: Union[str, float] = 1024,
-                 outdir: Union[str, float] = 1024,
+                 cwl_version: str,
+                 cores: Optional[Union[str, float]] = None,
+                 memory: Optional[Union[str, float]] = None,
+                 tmpdir: Optional[Union[str, float]] = None,
+                 outdir: Optional[Union[str, float]] = None,
                  full_js: bool = False,
                  expression_lib: Optional[MutableSequence[str]] = None, ):
-        self.cores: Union[str, float] = cores
-        self.memory: Union[str, float] = memory
-        self.tmpdir: Union[str, float] = tmpdir
-        self.outdir: Union[str, float] = outdir
+        self.cores: Union[str, float] = cores if cores is not None else 1
+        self.memory: Union[str, float] = memory if memory is not None else (1024 if cwl_version == 'v1.0' else 256)
+        self.tmpdir: Union[str, float] = tmpdir if tmpdir is not None else 1024
+        self.outdir: Union[str, float] = outdir if outdir is not None else 1024
         self.full_js: bool = full_js
         self.expression_lib: Optional[MutableSequence[str]] = expression_lib
 
@@ -33,6 +34,7 @@ class CWLHardwareRequirement(HardwareRequirement):
                     row: MutableMapping[str, Any],
                     loading_context: DatabaseLoadingContext) -> CWLHardwareRequirement:
         return cls(
+            cwl_version='',
             cores=row['cores'],
             memory=row['memory'],
             tmpdir=row['tmpdir'],

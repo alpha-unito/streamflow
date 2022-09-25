@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, MutableMapping, MutableSequence, Optional, Type, cast
 
-import cwltool.builder
+import cwl_utils.file_formats
 from rdflib import Graph
 from schema_salad.exceptions import ValidationException
 
@@ -15,7 +15,6 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import flatten_list, get_path_processor, get_tag
 from streamflow.core.workflow import CommandOutput, CommandOutputProcessor, Job, Status, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
-from streamflow.cwl.command import CWLCommandOutput
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.workflow.token import ListToken, ObjectToken
@@ -32,6 +31,20 @@ def _check_default_processor(processor: CWLCommandOutputProcessor, token_value: 
         return True
     except WorkflowExecutionException:
         return False
+
+
+class CWLCommandOutput(CommandOutput):
+    __slots__ = 'exit_code'
+
+    def __init__(self,
+                 value: Any,
+                 status: Status,
+                 exit_code: int):
+        super().__init__(value, status)
+        self.exit_code: int = exit_code
+
+    def update(self, value: Any):
+        return CWLCommandOutput(value=value, status=self.status, exit_code=self.exit_code)
 
 
 class CWLTokenProcessor(TokenProcessor):
@@ -105,7 +118,7 @@ class CWLTokenProcessor(TokenProcessor):
                 full_js=self.full_js,
                 expression_lib=self.expression_lib)
             try:
-                cwltool.builder.check_format(token_value, input_formats, self.format_graph)
+                cwl_utils.file_formats.check_format(token_value, input_formats, self.format_graph)
             except ValidationException as e:
                 raise WorkflowExecutionException(e.message) from e
         # If file exists, get coordinates

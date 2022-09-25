@@ -721,10 +721,12 @@ def _get_command_token_from_input(cwl_element: Any,
 
 
 def _get_hardware_requirement(
+        cwl_version: str,
         requirements: MutableMapping[str, Any],
         expression_lib: Optional[MutableSequence[str]],
-        full_js: bool):
+        full_js: bool) -> CWLHardwareRequirement:
     hardware_requirement = CWLHardwareRequirement(
+        cwl_version=cwl_version,
         expression_lib=expression_lib,
         full_js=full_js)
     if 'ResourceRequirement' in requirements:
@@ -1245,7 +1247,11 @@ class CWLTranslator(object):
             name=posixpath.join(name_prefix, '__schedule__'),
             connector_port=deploy_step.get_output_port(),
             target=target,
-            hardware_requirement=_get_hardware_requirement(requirements, expression_lib, full_js),
+            hardware_requirement=_get_hardware_requirement(
+                cwl_version=self.loading_context.metadata['cwlVersion'],
+                requirements=requirements,
+                expression_lib=expression_lib,
+                full_js=full_js),
             output_directory=context.get('output_directory'))
         # Create the ExecuteStep and connect it to the ScheduleStep
         step = workflow.create_step(

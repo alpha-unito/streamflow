@@ -10,7 +10,7 @@ import shlex
 import time
 from abc import ABC
 from asyncio.subprocess import STDOUT
-from typing import Any, IO, Iterable, List, MutableMapping, MutableSequence, Optional, Union
+from typing import Any, IO, Iterable, List, MutableMapping, MutableSequence, Optional, Union, cast
 
 from streamflow.core.data import DataLocation, LOCAL_LOCATION
 from streamflow.core.deployment import Connector
@@ -18,8 +18,32 @@ from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecu
 from streamflow.core.utils import flatten_list, get_path_processor
 from streamflow.core.workflow import Command, CommandOutput, Job, Status, Step, Token, Workflow
 from streamflow.cwl import utils
+from streamflow.cwl.processor import (
+    CWLCommandOutput, CWLCommandOutputProcessor, CWLMapCommandOutputProcessor,
+    CWLObjectCommandOutputProcessor, CWLUnionCommandOutputProcessor
+)
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
+from streamflow.workflow.step import ExecuteStep
+
+
+def _adjust_cwl_output(base_path: str,
+                       path_processor,
+                       value: Any) -> Any:
+    if isinstance(value, MutableSequence):
+        return [_adjust_cwl_output(base_path, path_processor, v) for v in value]
+    elif isinstance(value, MutableMapping):
+        if utils.get_token_class(value) in ['File', 'Directory']:
+            path = utils.get_path_from_token(value)
+            if not path_processor.isabs(path):
+                path = path_processor.join(base_path, path)
+                value['path'] = path
+                value['location'] = 'file://{}'.format(path)
+            return value
+        else:
+            return {k: _adjust_cwl_output(base_path, path_processor, v) for k, v in value.items()}
+    else:
+        return value
 
 
 def _adjust_inputs(inputs: MutableSequence[MutableMapping[str, Any]],
@@ -41,6 +65,43 @@ def _adjust_inputs(inputs: MutableSequence[MutableMapping[str, Any]],
             elif token_class == 'Directory' and src_path.startswith(path) and 'listing' in inp:
                 inp['listing'] = _adjust_inputs(inp['listing'], path_processor, src_path, dest_path)
     return inputs
+
+
+def _build_command_output_processor(name: str,
+                                    step: Step,
+                                    value: Any):
+    if isinstance(value, MutableSequence):
+        return CWLMapCommandOutputProcessor(
+            name=name,
+            workflow=step.workflow,
+            processor=CWLUnionCommandOutputProcessor(
+                name=name,
+                workflow=step.workflow,
+                processors=[_build_command_output_processor(
+                    name=name,
+                    step=step,
+                    value=v) for v in value]
+            )
+        )
+    elif isinstance(value, MutableMapping):
+        if (token_type := utils.get_token_class(value)) in ['File', 'Directory']:
+            return CWLCommandOutputProcessor(
+                name=name,
+                workflow=step.workflow,
+                token_type=token_type)
+        else:
+            return CWLObjectCommandOutputProcessor(
+                name=name,
+                workflow=step.workflow,
+                processors={k: _build_command_output_processor(
+                    name=name,
+                    step=step,
+                    value=v) for k, v in value.items()})
+    else:
+        return CWLCommandOutputProcessor(
+            name=name,
+            workflow=step.workflow,
+            token_type='Any')
 
 
 def _check_command_token(command_token: CWLCommandToken, input_value: Any) -> bool:
@@ -84,10 +145,18 @@ async def _check_cwl_output(job: Job, step: Step, result: Any) -> Any:
             # Update step output ports at runtime if needed
             if isinstance(result, MutableMapping):
                 for out_name, out in result.items():
+                    out = _adjust_cwl_output(
+                        base_path=job.output_directory,
+                        path_processor=path_processor,
+                        value=out)
                     if out_name not in step.output_ports:
-                        step.add_output_port(
-                            out_name,
-                            step.workflow.create_port())
+                        cast(step, ExecuteStep).add_output_port(
+                            name=out_name,
+                            port=step.workflow.create_port(),
+                            output_processor=_build_command_output_processor(
+                                name=out_name,
+                                step=step,
+                                value=out))
                         # Update workflow outputs if needed
                         if out_name not in step.workflow.output_ports:
                             step.workflow.output_ports[out_name] = step.output_ports[out_name]
@@ -371,6 +440,8 @@ class CWLCommand(CWLBaseCommand):
     def __init__(self,
                  step: Step,
                  absolute_initial_workdir_allowed: bool = False,
+                 base_command: Optional[MutableSequence[str]] = None,
+                 command_tokens: Optional[MutableSequence[CWLCommandToken]] = None,
                  expression_lib: Optional[MutableSequence[str]] = None,
                  failure_codes: Optional[MutableSequence[int]] = None,
                  full_js: bool = False,
@@ -390,8 +461,8 @@ class CWLCommand(CWLBaseCommand):
             inplace_update=inplace_update,
             full_js=full_js,
             time_limit=time_limit)
-        self.base_command: MutableSequence[str] = []
-        self.command_tokens: MutableSequence[CWLCommandToken] = []
+        self.base_command: MutableSequence[str] = base_command or []
+        self.command_tokens: MutableSequence[CWLCommandToken] = command_tokens or []
         self.environment: MutableMapping[str, str] = {}
         self.failure_codes: Optional[MutableSequence[int]] = failure_codes
         self.is_shell_command: bool = is_shell_command
@@ -526,20 +597,6 @@ class CWLCommand(CWLBaseCommand):
         # Check if file `cwl.output.json` exists either locally on at least one location
         result = await _check_cwl_output(job, self.step, result)
         return CWLCommandOutput(value=result, status=status, exit_code=exit_code)
-
-
-class CWLCommandOutput(CommandOutput):
-    __slots__ = 'exit_code'
-
-    def __init__(self,
-                 value: Any,
-                 status: Status,
-                 exit_code: int):
-        super().__init__(value, status)
-        self.exit_code: int = exit_code
-
-    def update(self, value: Any):
-        return CWLCommandOutput(value=value, status=self.status, exit_code=self.exit_code)
 
 
 class CWLCommandToken(object):

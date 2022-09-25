@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import urllib.parse
-from enum import Enum, auto
+from enum import Enum
 from typing import Any, MutableMapping, MutableSequence, Optional, Set, Tuple, Union, cast
 
-import cwltool.expression
+import cwl_utils.expression
 from cwltool.utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
@@ -15,7 +15,7 @@ from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecu
 from streamflow.core.scheduling import Hardware
 from streamflow.core.utils import get_path_processor, get_token_value, random_name
 from streamflow.core.workflow import Job, Token, Workflow
-from streamflow.cwl.expression import interpolate
+from streamflow.cwl.expression import DependencyResolver
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
 
@@ -342,11 +342,11 @@ def eval_expression(expression: str,
                     timeout: Optional[int] = None,
                     strip_whitespace: bool = True) -> Any:
     if isinstance(expression, str) and ('$(' in expression or '${' in expression):
-        return interpolate(
+        return cwl_utils.expression.interpolate(
             expression,
             context,
-            full_js=full_js,
-            jslib=cwltool.expression.jshead(expression_lib or [], context) if full_js else "",
+            jslib=cwl_utils.expression.jshead(expression_lib or [], context) if full_js else "",
+            fullJS=full_js,
             strip_whitespace=strip_whitespace,
             timeout=timeout)
     else:
@@ -503,9 +503,9 @@ def infer_type_from_token(token_value: Any) -> str:
 
 
 class LoadListing(Enum):
-    no_listing = auto()
-    shallow_listing = auto()
-    deep_listing = auto()
+    no_listing = 0
+    shallow_listing = 1
+    deep_listing = 2
 
 
 async def process_secondary_files(context: StreamFlowContext,
@@ -633,14 +633,17 @@ def resolve_dependencies(expression: str,
                          strip_whitespace: bool = True) -> Set[str]:
     if isinstance(expression, str) and ('$(' in expression or '${' in expression):
         context = {'inputs': {}, 'self': {}, 'runtime': {}}
-        return interpolate(
+        engine = DependencyResolver()
+        cwl_utils.expression.interpolate(
             expression,
             context,
-            full_js=full_js,
-            jslib=cwltool.expression.jshead(expression_lib or [], context) if full_js else "",
+            jslib=cwl_utils.expression.jshead(expression_lib or [], context) if full_js else "",
+            fullJS=full_js,
             strip_whitespace=strip_whitespace,
             timeout=timeout,
-            resolve_dependencies=True)
+            resolve_dependencies=True,
+            js_engine=engine)
+        return engine.deps
     else:
         return set()
 
