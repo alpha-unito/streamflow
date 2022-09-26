@@ -11,4 +11,5 @@ Jinja2
 jsonref
 jsonschema
 kubernetes_asyncio>=22.6.3
+psutil
 rdflib

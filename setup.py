@@ -45,7 +45,7 @@ setup(
     description="StreamFlow framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    install_requires=open(os.path.join(pathlib.Path(__file__).parent, 'requirements.txt')),
+    install_requires=open(os.path.join(pathlib.Path(__file__).parent, 'requirements.txt')).read().splitlines(),
     extras_require={
         "report": [
             "pandas",
