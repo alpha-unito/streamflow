@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you want to cite StreamFlow, please refer to the article below."
+authors:
+  - family-names: "Colonnelli"
+    given-names: "Iacopo"
+    orcid: "https://orcid.org/0000-0001-9290-2017"
+title: "StreamFlow"
+version: 0.2
+url: "https://github.com/alpha-unito/streamflow"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Colonnelli"
+      given-names: "Iacopo"
+      orcid: "https://orcid.org/0000-0001-9290-2017"
+    - family-names: "Cantalupo"
+      given-names: "Barbara"
+      orcid: "https://orcid.org/0000-0001-7575-3902"
+    - family-names: "Merelli"
+      given-names: "Ivan"
+      orcid: "https://orcid.org/0000-0003-3587-3680"
+    - family-names: "Aldinucci"
+      given-names: "Marco"
+      orcid: "https://orcid.org/0000-0001-8788-0829"
+  doi: 10.1109/TETC.2020.3019202
+  journal: "IEEE Transactions on Emerging Topics in Computing"
+  start: 1723
+  end: 1737
+  title: "StreamFlow: cross-breeding cloud with HPC"
+  issue: 4
+  volume: 9
+  year: 2021
