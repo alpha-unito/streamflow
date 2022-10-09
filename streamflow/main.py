@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import sys
+import uuid
 from typing import Any, MutableMapping, Optional, Type
 
 from streamflow import report
@@ -44,6 +45,7 @@ async def _async_list(args: argparse.Namespace):
 
 
 async def _async_main(args: argparse.Namespace):
+    args.name = args.name or str(uuid.uuid4())
     utils.load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
     context = build_context(os.path.dirname(args.streamflow_file), streamflow_config, args.outdir)
@@ -54,9 +56,6 @@ async def _async_main(args: argparse.Namespace):
             if workflow_config.type == 'cwl':
                 workflow_tasks.append(asyncio.create_task(cwl_main(workflow_config, context, args)))
             await asyncio.gather(*workflow_tasks)
-    except BaseException as e:
-        logger.exception(e)
-        sys.exit(1)
     finally:
         await context.close()
 
@@ -114,26 +113,31 @@ def build_context(config_dir: str,
 
 
 def main(args):
-    args = parser.parse_args(args)
-    if args.context == "version":
-        from streamflow.version import VERSION
-        print("StreamFlow version {version}".format(version=VERSION))
-    elif args.context == "list":
-        asyncio.run(_async_list(args))
-    elif args.context == "report":
-        asyncio.run(_async_report(args))
-    elif args.context == "run":
-        if args.quiet:
-            logger.setLevel(logging.WARN)
-        elif args.debug:
-            logger.setLevel(logging.DEBUG)
-        asyncio.run(_async_main(args))
-    else:
-        raise Exception
+    try:
+        args = parser.parse_args(args)
+        if args.context == "version":
+            from streamflow.version import VERSION
+            print("StreamFlow version {version}".format(version=VERSION))
+        elif args.context == "list":
+            asyncio.run(_async_list(args))
+        elif args.context == "report":
+            asyncio.run(_async_report(args))
+        elif args.context == "run":
+            if args.quiet:
+                logger.setLevel(logging.WARN)
+            elif args.debug:
+                logger.setLevel(logging.DEBUG)
+            asyncio.run(_async_main(args))
+        else:
+            raise Exception("Context {} not supported.".format(args.context))
+        return 0
+    except BaseException as e:
+        logger.exception(e)
+        return 1
 
 
 def run():
-    main(sys.argv[1:])
+    return main(sys.argv[1:])
 
 
 if __name__ == "__main__":

@@ -790,7 +790,13 @@ class LoopOutputStep(BaseStep, ABC):
             # If a TerminationToken is received, terminate the step
             if utils.check_termination(token):
                 logger.debug("Step {} received termination token".format(self.name))
-                self.termination_map = {k: len(self.token_map[k]) == self.size_map.get(k, -1) for k in self.token_map}
+                # If no iterations have been performed, just terminate
+                if not self.token_map:
+                    break
+                # Otherwise, build termination map to wait for all iteration temrinations
+                else:
+                    self.termination_map = {k: len(self.token_map[k]) == self.size_map.get(k, -1)
+                                            for k in self.token_map}
             # If an IterationTerminationToken is received, process loop output for the current port
             elif utils.check_iteration_termination(token):
                 logger.debug("Step {} received iteration termination token {}.".format(

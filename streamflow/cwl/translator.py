@@ -1444,6 +1444,11 @@ class CWLTranslator(object):
                         self.output_ports[source_name] = self._get_source_port(workflow, global_name)
                 # Otherwise, create a ListMergeCombinator
                 else:
+                    if (len(element_output['outputSource']) > 1 and
+                            'MultipleInputFeatureRequirement' not in requirements):
+                        raise WorkflowDefinitionException(
+                            "Workflow contains multiple inbound links to a single parameter "
+                            "but MultipleInputFeatureRequirement is not declared.")
                     source_names = [_get_name(name_prefix, cwl_name_prefix, src)
                                     for src in element_output['outputSource']]
                     ports = {n: self._get_source_port(workflow, n) for n in source_names}
@@ -1847,6 +1852,10 @@ class CWLTranslator(object):
             element_input = {**element_input, **{'type': element_input['type']['items']}}
         # If element contains `valueFrom` directive
         if 'valueFrom' in element_input:
+            # Check if StepInputExpressionRequirement is specified
+            if 'StepInputExpressionRequirement' not in requirements:
+                raise WorkflowDefinitionException(
+                    "Workflow step contains valueFrom but StepInputExpressionRequirement not in requirements")
             # Create a ValueFromTransformer
             value_from_transformers[global_name] = workflow.create_step(
                 cls=value_from_transformer_cls,
@@ -1899,6 +1908,10 @@ class CWLTranslator(object):
                     input_ports[global_name] = source_port
                 # Otherwise, create a ListMergeCombinator
                 else:
+                    if len(element_input['source']) > 1 and 'MultipleInputFeatureRequirement' not in requirements:
+                        raise WorkflowDefinitionException(
+                            "Workflow contains multiple inbound links to a single parameter "
+                            "but MultipleInputFeatureRequirement is not declared.")
                     source_names = [_get_name(name_prefix, cwl_name_prefix, src)
                                     for src in element_input['source']]
                     ports = {n: self._get_source_port(workflow, n) for n in source_names}
