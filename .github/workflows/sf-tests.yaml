@@ -1,8 +1,12 @@
 name: "StreamFlow Tests"
 on:
-  push:
+  workflow_run:
+    workflows:
+      - "CWL Conformance"
     branches:
       - master
+    types:
+      - completed
 jobs:
   test:
     runs-on: ubuntu-20.04

@@ -4,7 +4,7 @@ ARG HELM_VERSION
 ENV PYTHONPATH="${PYTHONPATH}:/build"
 ENV PATH="/root/.local/bin:${PATH}"
 
-COPY ./setup.py ./setup.cfg ./pytest.ini ./MANIFEST.in ./LICENSE ./README.md /build/
+COPY ./setup.py ./setup.cfg ./pytest.ini ./MANIFEST.in ./LICENSE ./README.md ./requirements.txt /build/
 COPY ./streamflow /build/streamflow
 
 RUN apk --no-cache add \
