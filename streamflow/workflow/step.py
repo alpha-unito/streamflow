@@ -609,6 +609,7 @@ class GatherStep(BaseStep):
         while True:
             token = await input_port.get(posixpath.join(self.name, next(iter(self.input_ports))))
             if utils.check_termination(token):
+                logger.debug("Step {} received termination token".format(self.name))
                 output_port = self.get_output_port()
                 for tag, tokens in self.token_map.items():
                     output_port.put(await self._persist_token(
@@ -619,6 +620,7 @@ class GatherStep(BaseStep):
                         inputs=tokens))
                 break
             else:
+                logger.debug("Step {} received input {}".format(self.name, token.tag))
                 key = '.'.join(token.tag.split('.')[:-self.depth])
                 if key not in self.token_map:
                     self.token_map[key] = []

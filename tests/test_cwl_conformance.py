@@ -48,6 +48,7 @@ def _run_conformance(spec: str,
     return process.wait()
 
 
+@pytest.mark.conformance
 @pytest.mark.cwl10
 def test_cwl10():
     with tempfile.TemporaryDirectory() as outdir:
@@ -63,6 +64,7 @@ def test_cwl10():
         assert returncode == 0
 
 
+@pytest.mark.conformance
 @pytest.mark.cwl11
 def test_cwl11():
     with tempfile.TemporaryDirectory() as outdir:
@@ -80,6 +82,7 @@ def test_cwl11():
         assert returncode == 0
 
 
+@pytest.mark.conformance
 @pytest.mark.cwl12
 def test_cwl12():
     with tempfile.TemporaryDirectory() as outdir:

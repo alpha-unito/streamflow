@@ -80,7 +80,7 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
         loading_context=loading_context)
     logger.info("Building workflow execution plan")
     workflow = translator.translate()
-    if args.validate:
+    if getattr(args, 'validate', False):
         return
     await workflow.save(context)
     logger.info("Building of workflow execution plan terminated with status COMPLETED")

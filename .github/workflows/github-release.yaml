@@ -3,6 +3,7 @@ on:
   workflow_run:
     workflows:
       - "CWL Conformance"
+      - "StreamFlow Tests"
     branches:
       - master
     types:
