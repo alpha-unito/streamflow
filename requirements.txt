@@ -4,7 +4,7 @@ antlr4-python3-runtime==4.10
 asyncssh
 bcrypt
 cachetools
-cwltool==3.1.20221008225030
+cwltool==3.1.20220802125926
 cwl-utils==0.20
 importlib_metadata
 Jinja2
