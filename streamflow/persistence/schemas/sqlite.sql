@@ -1,13 +1,15 @@
-CREATE TABLE workflow
+CREATE TABLE IF NOT EXISTS workflow
 (
     id     INTEGER PRIMARY KEY,
-    name   TEXT UNIQUE,
+    name   TEXT,
     params TEXT,
     status INTEGER,
-    type   TEXT
+    type   TEXT,
+    start_time INTEGER,
+    end_time   INTEGER
 );
 
-CREATE TABLE step
+CREATE TABLE IF NOT EXISTS step
 (
     id       INTEGER PRIMARY KEY,
     name     TEXT,
@@ -18,7 +20,7 @@ CREATE TABLE step
     FOREIGN KEY (workflow) REFERENCES workflow (id)
 );
 
-CREATE TABLE port
+CREATE TABLE IF NOT EXISTS port
 (
     id       INTEGER PRIMARY KEY,
     name     TEXT,
@@ -29,7 +31,7 @@ CREATE TABLE port
 );
 
 
-CREATE TABLE dependency
+CREATE TABLE IF NOT EXISTS dependency
 (
     step INTEGER,
     port INTEGER,
@@ -41,10 +43,11 @@ CREATE TABLE dependency
 );
 
 
-CREATE TABLE command
+CREATE TABLE IF NOT EXISTS command
 (
     id         INTEGER PRIMARY KEY,
     step       INTEGER,
+    tag        TEXT,
     cmd        TEXT,
     output     BLOB,
     status     INTEGER,
@@ -54,7 +57,7 @@ CREATE TABLE command
 );
 
 
-CREATE TABLE token
+CREATE TABLE IF NOT EXISTS token
 (
     id    INTEGER PRIMARY KEY,
     port  INTEGER,
@@ -65,7 +68,7 @@ CREATE TABLE token
 );
 
 
-CREATE TABLE provenance
+CREATE TABLE IF NOT EXISTS provenance
 (
     dependee INTEGER,
     depender INTEGER,
@@ -75,7 +78,7 @@ CREATE TABLE provenance
 );
 
 
-CREATE table deployment
+CREATE TABLE IF NOT EXISTS deployment
 (
     id       INTEGER PRIMARY KEY,
     name     TEXT,
@@ -87,7 +90,7 @@ CREATE table deployment
 );
 
 
-CREATE table target
+CREATE TABLE IF NOT EXISTS target
 (
     id         INTEGER PRIMARY KEY,
     deployment INTEGER,
