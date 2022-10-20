@@ -1,26 +1,40 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import posixpath
 import shlex
 import tarfile
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 from typing import MutableSequence, TYPE_CHECKING, Tuple
 
 from streamflow.core import utils
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import LOCAL_LOCATION, StreamWrapperContext
-from streamflow.core.deployment import Connector, ConnectorCopyKind
+from streamflow.core.data import StreamWrapperContext
+from streamflow.core.deployment import Connector, ConnectorCopyKind, LOCAL_LOCATION, Location
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.data import aiotarstream
 from streamflow.data.stream import StreamReaderWrapper, StreamWriterWrapper, SubprocessStreamReaderWrapperContext
+from streamflow.deployment.future import FutureConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import Any, Optional, MutableMapping, Union
 
 
-class BaseConnector(Connector, ABC):
+class FutureMeta(ABCMeta):
+
+    def __instancecheck__(self, instance):
+        if isinstance(instance, FutureConnector):
+            return super().__subclasscheck__(instance.type)
+        else:
+            return super().__instancecheck__(instance)
+
+
+class FutureAware(metaclass=FutureMeta):
+    __slots__ = ()
+
+
+class BaseConnector(Connector, FutureAware):
 
     @staticmethod
     def get_option(name: str,
@@ -41,16 +55,16 @@ class BaseConnector(Connector, ABC):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  transferBufferSize: int):
-        super().__init__(deployment_name, context)
+        super().__init__(deployment_name, config_dir)
         self.transferBufferSize: int = transferBufferSize
         self.is_deployed: bool = False
 
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
-                                    locations: MutableSequence[str],
+                                    locations: MutableSequence[Location],
                                     read_only: bool = False) -> None:
         await asyncio.gather(*(asyncio.create_task(
             self._copy_local_to_remote_single(
@@ -63,7 +77,7 @@ class BaseConnector(Connector, ABC):
     async def _copy_local_to_remote_single(self,
                                            src: str,
                                            dst: str,
-                                           location: str,
+                                           location: Location,
                                            read_only: bool = False) -> None:
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(self._get_run_command(
@@ -91,7 +105,7 @@ class BaseConnector(Connector, ABC):
     async def _copy_remote_to_local(self,
                                     src: str,
                                     dst: str,
-                                    location: str,
+                                    location: Location,
                                     read_only: bool = False) -> None:
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(self._get_run_command(
@@ -115,8 +129,8 @@ class BaseConnector(Connector, ABC):
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     locations: MutableSequence[str],
-                                     source_location: str,
+                                     locations: MutableSequence[Location],
+                                     source_location: Location,
                                      source_connector: Optional[str] = None,
                                      read_only: bool = False) -> None:
         source_connector = source_connector or self
@@ -160,12 +174,12 @@ class BaseConnector(Connector, ABC):
     @abstractmethod
     def _get_run_command(self,
                          command: str,
-                         location: str,
+                         location: Location,
                          interactive: bool = False) -> str:
         ...
 
     def _get_stream_reader(self,
-                           location: str,
+                           location: Location,
                            src: str) -> StreamWrapperContext:
         dirname, basename = posixpath.split(src)
         return SubprocessStreamReaderWrapperContext(
@@ -180,31 +194,28 @@ class BaseConnector(Connector, ABC):
     async def copy(self,
                    src: str,
                    dst: str,
-                   locations: MutableSequence[str],
+                   locations: MutableSequence[Location],
                    kind: ConnectorCopyKind,
                    source_connector: Optional[Connector] = None,
-                   source_location: Optional[str] = None,
+                   source_location: Optional[Location] = None,
                    read_only: bool = False) -> None:
         if kind == ConnectorCopyKind.REMOTE_TO_REMOTE:
             if source_location is None:
                 raise Exception("Source location is mandatory for remote to remote copy")
-            if len(locations) > 1:
-                logger.info("Copying {src} {source_location} to {dst} on locations:\n\t{locations}".format(
-                    source_location=("on local file-system" if source_location == LOCAL_LOCATION else
-                                     "on location {res}".format(res=source_location)),
-                    src=src,
-                    dst=dst,
-                    locations='\n\t'.join(locations)
-                ))
-            else:
-                logger.info("Copying {src} {source_location} to {dst} {location}".format(
-                    source_location=("on local file-system" if source_location == LOCAL_LOCATION else
-                                     "on location {res}".format(res=source_location)),
-                    src=src,
-                    dst=dst,
-                    location=("on local file-system" if locations[0] == LOCAL_LOCATION else
-                              "on location {res}".format(res=locations[0]))
-                ))
+            if logger.isEnabledFor(logging.INFO):
+                if len(locations) > 1:
+                    logger.info("Copying {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
+                        src_loc=source_location,
+                        src=src,
+                        dst=dst,
+                        locations='\n\t'.join([str(loc) for loc in locations])
+                    ))
+                else:
+                    logger.info("Copying {src} on location {src_loc} to {dst} on location {location}".format(
+                        src_loc=source_location,
+                        src=src,
+                        dst=dst,
+                        location=locations[0]))
             await self._copy_remote_to_remote(
                 src=src,
                 dst=dst,
@@ -213,18 +224,19 @@ class BaseConnector(Connector, ABC):
                 source_location=source_location,
                 read_only=read_only)
         elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
-            if len(locations) > 1:
-                logger.info("Copying {src} on local file-system to {dst} on locations:\n\t{locations}".format(
-                    src=src,
-                    dst=dst,
-                    locations='\n\t'.join(locations)
-                ))
-            else:
-                logger.info("Copying {src} on local file-system to {dst} on location {location}".format(
-                    src=src,
-                    dst=dst,
-                    location=locations[0]
-                ))
+            if logger.isEnabledFor(logging.INFO):
+                if len(locations) > 1:
+                    logger.info("Copying {src} on local file-system to {dst} on locations:\n\t{locations}".format(
+                        src=src,
+                        dst=dst,
+                        locations='\n\t'.join([str(loc) for loc in locations])
+                    ))
+                else:
+                    logger.info("Copying {src} on local file-system to {dst} {location}".format(
+                        src=src,
+                        dst=dst,
+                        location=("on local file-system" if locations[0].name == LOCAL_LOCATION
+                                  else "on location {}".format(locations[0]))))
             await self._copy_local_to_remote(
                 src=src,
                 dst=dst,
@@ -233,11 +245,12 @@ class BaseConnector(Connector, ABC):
         elif kind == ConnectorCopyKind.REMOTE_TO_LOCAL:
             if len(locations) > 1:
                 raise Exception("Copy from multiple locations is not supported")
-            logger.info("Copying {src} on location {location} to {dst} on local file-system".format(
-                src=src,
-                dst=dst,
-                location=locations[0]
-            ))
+            if logger.isEnabledFor(logging.INFO):
+                logger.info("Copying {src} on location {location} to {dst} on local file-system".format(
+                    src=src,
+                    dst=dst,
+                    location=locations[0]
+                ))
             await self._copy_remote_to_local(
                 src=src,
                 dst=dst,
@@ -247,7 +260,7 @@ class BaseConnector(Connector, ABC):
             raise NotImplementedError
 
     async def run(self,
-                  location: str,
+                  location: Location,
                   command: MutableSequence[str],
                   environment: MutableMapping[str, str] = None,
                   workdir: Optional[str] = None,
@@ -258,10 +271,11 @@ class BaseConnector(Connector, ABC):
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
-        logger.debug("Executing command {command} on {location} {job}".format(
-            command=command,
-            location=location,
-            job="for job {job}".format(job=job_name) if job_name else ""))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Executing command {command} on {location} {job}".format(
+                command=command,
+                location=location,
+                job="for job {job}".format(job=job_name) if job_name else ""))
         command = utils.encode_command(command)
         run_command = self._get_run_command(command, location)
         proc = await asyncio.create_subprocess_exec(

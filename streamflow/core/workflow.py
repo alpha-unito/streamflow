@@ -14,7 +14,7 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext, DependencyType, PersistableEntity
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import Connector, Target
+    from streamflow.core.deployment import Connector, Location, Target
     from streamflow.core.context import StreamFlowContext
     from typing import Optional, Any
 
@@ -56,10 +56,12 @@ class CommandOutputProcessor(ABC):
     def _get_connector(self, connector: Optional[Connector], job: Job) -> Connector:
         return connector or self.workflow.context.scheduler.get_connector(job.name)
 
-    async def _get_locations(self, connector: Optional[Connector], job: Job) -> MutableSequence[str]:
+    async def _get_locations(self,
+                             connector: Optional[Connector],
+                             job: Job) -> MutableSequence[Location]:
         if self.target:
             return list((await connector.get_available_locations(
-                service=self.target.service)).keys())
+                service=self.target.service)).values())
         else:
             return self.workflow.context.scheduler.get_locations(job.name)
 

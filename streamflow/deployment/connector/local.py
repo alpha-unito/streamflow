@@ -8,10 +8,8 @@ from typing import MutableMapping, MutableSequence, Optional
 import pkg_resources
 import psutil
 
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import LOCAL_LOCATION
-from streamflow.core.deployment import Connector
-from streamflow.core.scheduling import Hardware, Location
+from streamflow.core.deployment import Connector, LOCAL_LOCATION, Location
+from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 
 
@@ -25,15 +23,15 @@ class LocalConnector(BaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  transferBufferSize: int = 2 ** 16):
-        super().__init__(deployment_name, context, transferBufferSize)
+        super().__init__(deployment_name, config_dir, transferBufferSize)
         self.cores = float(psutil.cpu_count())
         self.memory = float(psutil.virtual_memory().available / 2 ** 20)
 
     def _get_run_command(self,
                          command: str,
-                         location: str,
+                         location: Location,
                          interactive: bool = False):
         if sys.platform == 'win32':
             return "cmd /C '{command}'".format(command=command)
@@ -43,8 +41,8 @@ class LocalConnector(BaseConnector):
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     locations: MutableSequence[str],
-                                     source_location: str,
+                                     locations: MutableSequence[Location],
+                                     source_location: Location,
                                      source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
         source_connector = source_connector or self
@@ -67,12 +65,14 @@ class LocalConnector(BaseConnector):
         os.makedirs(os.path.join(tempfile.gettempdir(), 'streamflow'), exist_ok=True)
 
     async def get_available_locations(self,
-                                      service: str,
+                                      service: Optional[str] = None,
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
-                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
-        return {LOCAL_LOCATION: Location(
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, AvailableLocation]:
+        return {LOCAL_LOCATION: AvailableLocation(
             name=LOCAL_LOCATION,
+            deployment=self.deployment_name,
+            service=service,
             hostname='localhost',
             slots=1,
             hardware=Hardware(

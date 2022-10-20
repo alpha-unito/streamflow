@@ -13,8 +13,26 @@
               "type": "string"
             },
             "target": {
-              "type": "object",
-              "$ref": "#/definitions/target"
+              "oneOf": [
+                {
+                  "type": "object",
+                  "$ref": "#/definitions/target"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "$ref": "#/definitions/target"
+                  }
+                }
+              ]
+            },
+            "filters": {
+              "type": "array",
+              "items": {
+                 "type": "string"
+              },
+              "description": "The filters used to manipulate the targets associated with this binding."
             }
           },
           "required": [
@@ -40,6 +58,21 @@
           ],
           "additionalProperties": false
         }
+      ]
+    },
+    "bindingFilter": {
+      "$id": "#/definitions/bindingFilter",
+      "type": "object",
+      "definitions": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "$comment": "The `config` property is injected by each BindingFilter extension",
+      "required": [
+        "type",
+        "config"
       ]
     },
     "checkpointManager": {
@@ -335,6 +368,15 @@
     }
   },
   "properties": {
+    "bindingFilters": {
+      "$id": "#/properties/bindingFilters",
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "$ref": "#/definitions/bindingFilter"
+        }
+      }
+    },
     "checkpointManager": {
       "$id": "#/properties/checkpointManager",
       "type": "object",

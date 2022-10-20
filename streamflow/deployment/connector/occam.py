@@ -9,8 +9,8 @@ import pkg_resources
 from ruamel.yaml import YAML
 
 from streamflow.core import utils
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.scheduling import Location
+from streamflow.core.deployment import Location
+from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
 
@@ -19,7 +19,7 @@ class OccamConnector(SSHConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  file: str,
                  sshKey: str,
                  username: str,
@@ -28,7 +28,7 @@ class OccamConnector(SSHConnector):
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            context=context,
+            config_dir=config_dir,
             nodes=[hostname],
             sshKey=sshKey,
             sshKeyPassphraseFile=sshKeyPassphraseFile,
@@ -37,19 +37,19 @@ class OccamConnector(SSHConnector):
                 '/scratch/home/{username}'.format(username=username)],
             transferBufferSize=transferBufferSize,
             username=username)
-        with open(os.path.join(context.config_dir, file)) as f:
+        with open(os.path.join(config_dir, file)) as f:
             yaml = YAML(typ='safe')
             self.env_description = yaml.load(f)
         self.jobs_table: MutableMapping[str, MutableSequence[str]] = {}
 
     def _get_effective_locations(self,
-                                 locations: MutableSequence[str],
+                                 locations: MutableSequence[Location],
                                  dest_path: str,
-                                 source_location: Optional[str] = None) -> MutableSequence[str]:
+                                 source_location: Location) -> MutableSequence[Location]:
         # If destination path is in a shared location, transfer only on the first location
         for shared_path in self.sharedPaths:
             if dest_path.startswith(shared_path):
-                if source_location in locations:
+                if source_location.name in [loc.name for loc in locations]:
                     return [source_location]
                 else:
                     return [locations[0]]
@@ -57,12 +57,12 @@ class OccamConnector(SSHConnector):
         common_paths = {}
         effective_locations = []
         for location in locations:
-            shared_path = self._get_shared_path(location, dest_path)
+            shared_path = self._get_shared_path(location.name, dest_path)
             if shared_path is not None:
                 if shared_path not in common_paths:
                     common_paths[shared_path] = location
                     effective_locations.append(location)
-                elif location == source_location:
+                elif location.name == source_location.name:
                     effective_locations.remove(common_paths[shared_path])
                     common_paths[shared_path] = location
                     effective_locations.append(location)
@@ -98,15 +98,16 @@ class OccamConnector(SSHConnector):
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     locations: MutableSequence[str],
-                                     source_location: str,
+                                     locations: MutableSequence[Location],
+                                     source_location: Location,
+                                     source_connector: Optional[str] = None,
                                      read_only: bool = False) -> None:
         effective_locations = self._get_effective_locations(locations, dst, source_location)
         # Check for the need of a temporary copy
         temp_dir = None
         for location in effective_locations:
             if source_location != location:
-                temp_dir = await self._get_tmpdir(location)
+                temp_dir = await self._get_tmpdir(location.name)
                 copy1_command = ['/bin/cp', '-rf', src, temp_dir]
                 await self.run(source_location, copy1_command)
                 break
@@ -123,17 +124,17 @@ class OccamConnector(SSHConnector):
         # If a temporary location was created, delete it
         if temp_dir is not None:
             for location in effective_locations:
-                async with self._get_ssh_client(location) as ssh_client:
+                async with self._get_ssh_client(location.name) as ssh_client:
                     await ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
 
     async def _copy_remote_to_remote_single(self,
                                             src: str,
                                             dst: str,
-                                            location: str,
-                                            source_location: str,
+                                            location: Location,
+                                            source_location: Location,
                                             temp_dir: Optional[str],
                                             read_only: bool = False) -> None:
-        if source_location == location:
+        if source_location.name == location.name:
             command = ['/bin/cp', "-rf", src, dst]
             await self.run(location, command)
         else:
@@ -143,16 +144,16 @@ class OccamConnector(SSHConnector):
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
-                                    locations: MutableSequence[str],
+                                    locations: MutableSequence[Location],
                                     read_only: bool = False) -> None:
         effective_locations = self._get_effective_locations(locations, dst)
         # Check for the need of a temporary copy
         temp_dir = None
         for location in effective_locations:
-            shared_path = self._get_shared_path(location, dst)
+            shared_path = self._get_shared_path(location.name, dst)
             if shared_path is None:
-                temp_dir = await self._get_tmpdir(location)
-                async with self._get_ssh_client(location) as ssh_client:
+                temp_dir = await self._get_tmpdir(location.name)
+                async with self._get_ssh_client(location.name) as ssh_client:
                     await asyncssh.scp(src, (ssh_client, temp_dir), preserve=True, recurse=True)
                 break
         # Perform the actual copies
@@ -169,18 +170,18 @@ class OccamConnector(SSHConnector):
         # If a temporary location was created, delete it
         if temp_dir is not None:
             for location in effective_locations:
-                async with self._get_ssh_client(location) as ssh_client:
+                async with self._get_ssh_client(location.name) as ssh_client:
                     await ssh_client.run('rm -rf {dir}'.format(dir=temp_dir))
 
     async def _copy_local_to_remote_single(self,
                                            src: str,
                                            dst: str,
-                                           location: str,
+                                           location: Location,
                                            temp_dir: Optional[str],
                                            read_only: bool = False) -> None:
-        shared_path = self._get_shared_path(location, dst)
+        shared_path = self._get_shared_path(location.name, dst)
         if shared_path is not None:
-            async with self._get_ssh_client(location) as ssh_client:
+            async with self._get_ssh_client(location.name) as ssh_client:
                 await asyncssh.scp(src, (ssh_client, shared_path), preserve=True, recurse=True)
         else:
             copy_command = ['/bin/cp', "-rf", temp_dir + "/*", dst]
@@ -189,20 +190,20 @@ class OccamConnector(SSHConnector):
     async def _copy_remote_to_local(self,
                                     src: str,
                                     dst: str,
-                                    location: str,
+                                    location: Location,
                                     read_only: bool = False) -> None:
-        shared_path = self._get_shared_path(location, src)
+        shared_path = self._get_shared_path(location.name, src)
         if shared_path is not None:
-            async with self._get_ssh_client(location) as ssh_client:
+            async with self._get_ssh_client(location.name) as ssh_client:
                 await asyncssh.scp((ssh_client, shared_path), dst, preserve=True, recurse=True)
         else:
-            temp_dir = await self._get_tmpdir(location)
+            temp_dir = await self._get_tmpdir(location.name)
             copy_command = ['/bin/cp', "-rf", src, temp_dir, '&&',
                             'find', temp_dir, '-maxdepth', '1', '-mindepth', '1', '-exec', 'basename', '{}', '\\;']
             contents, _ = await self.run(location, copy_command, capture_output=True)
             contents = contents.split()
             scp_tasks = []
-            async with self._get_ssh_client(location) as ssh_client:
+            async with self._get_ssh_client(location.name) as ssh_client:
                 for content in contents:
                     scp_tasks.append(asyncio.create_task(asyncssh.scp(
                         (ssh_client, posixpath.join(temp_dir, content)),
@@ -273,12 +274,18 @@ class OccamConnector(SSHConnector):
             await asyncio.gather(*deploy_tasks)
 
     async def get_available_locations(self,
-                                      service: str,
+                                      service: Optional[str] = None,
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
-                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, AvailableLocation]:
         nodes = self.jobs_table.get(service, []) if service else utils.flatten_list(self.jobs_table.values())
-        return {n: Location(name=n, hostname=n.split('-')[0]) for n in nodes}
+        return {
+            n: AvailableLocation(
+                name=n,
+                deployment=self.deployment_name,
+                service=service,
+                hostname=n.split('-')[0])
+            for n in nodes}
 
     @classmethod
     def get_schema(cls) -> str:
@@ -298,7 +305,7 @@ class OccamConnector(SSHConnector):
         await super().undeploy(external)
 
     async def run(self,
-                  location: str,
+                  location: Location,
                   command: MutableSequence[str],
                   environment: MutableMapping[str, str] = None,
                   workdir: Optional[str] = None,
@@ -323,7 +330,7 @@ class OccamConnector(SSHConnector):
         ).format(
             location=location,
             command=command)
-        async with self._get_ssh_client(location) as ssh_client:
+        async with self._get_ssh_client(location.name) as ssh_client:
             result = await ssh_client.run(occam_command)
         if capture_output:
             lines = (line for line in result.stdout.split('\n'))

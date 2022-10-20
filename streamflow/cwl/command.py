@@ -10,9 +10,10 @@ import shlex
 import time
 from abc import ABC
 from asyncio.subprocess import STDOUT
+from types import ModuleType
 from typing import Any, IO, Iterable, List, MutableMapping, MutableSequence, Optional, Union, cast
 
-from streamflow.core.data import DataLocation, LOCAL_LOCATION
+from streamflow.core.data import DataLocation
 from streamflow.core.deployment import Connector
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.utils import flatten_list, get_path_processor
@@ -23,12 +24,13 @@ from streamflow.cwl.processor import (
     CWLObjectCommandOutputProcessor, CWLUnionCommandOutputProcessor
 )
 from streamflow.data import remotepath
+from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
 from streamflow.workflow.step import ExecuteStep
 
 
 def _adjust_cwl_output(base_path: str,
-                       path_processor,
+                       path_processor: ModuleType,
                        value: Any) -> Any:
     if isinstance(value, MutableSequence):
         return [_adjust_cwl_output(base_path, path_processor, v) for v in value]
@@ -47,7 +49,7 @@ def _adjust_cwl_output(base_path: str,
 
 
 def _adjust_inputs(inputs: MutableSequence[MutableMapping[str, Any]],
-                   path_processor,
+                   path_processor: ModuleType,
                    src_path: str,
                    dest_path: str) -> MutableSequence[MutableMapping[str, Any]]:
     for inp in inputs:
@@ -306,10 +308,8 @@ class CWLBaseCommand(Command, ABC):
                         src_path, job.input_directory, connector, self.step.workflow))):
                     dest_path = dest_path or path_processor.join(base_path, path_processor.basename(src_path))
                     await self.step.workflow.context.data_manager.transfer_data(
-                        src_deployment=selected_location.deployment,
-                        src_locations=[selected_location.location],
+                        src_locations=[selected_location],
                         src_path=src_path,
-                        dst_deployment=connector.deployment_name,
                         dst_locations=locations,
                         dst_path=dest_path,
                         writable=writable)
@@ -524,13 +524,15 @@ class CWLCommand(CWLBaseCommand):
         locations = self.step.workflow.context.scheduler.get_locations(job.name)
         cmd_string = ' \\\n\t'.join(["/bin/sh", "-c", "\"{cmd}\"".format(cmd=" ".join(cmd))]
                                     if self.is_shell_command else cmd)
-        logger.info('Executing step {step} (job {job}) {location} into directory {outdir}:\n{command}'.format(
-            step=self.step.name,
-            job=job.name,
-            location="locally" if locations[0] == LOCAL_LOCATION else "on location {loc}".format(
-                loc=locations[0]),
-            outdir=job.output_directory,
-            command=cmd_string))
+        if logger.isEnabledFor(logging.INFO):
+            is_local = isinstance(
+                self.step.workflow.context.deployment_manager.get_connector(locations[0].deployment), LocalConnector)
+            logger.info('Executing step {step} (job {job}) {location} into directory {outdir}:\n{command}'.format(
+                step=self.step.name,
+                job=job.name,
+                location="locally" if is_local else "on location {loc}".format(loc=locations[0]),
+                outdir=job.output_directory,
+                command=cmd_string))
         # Persist command
         command_id = await self.step.workflow.context.database.add_command(
             step_id=self.step.persistent_id,
@@ -568,7 +570,7 @@ class CWLCommand(CWLBaseCommand):
         start_time = time.time_ns()
         result, exit_code = await asyncio.wait_for(
             connector.run(
-                locations[0] if locations else None,
+                locations[0],
                 cmd,
                 environment=parsed_env,
                 workdir=job.output_directory,

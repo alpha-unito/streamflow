@@ -3,26 +3,28 @@ from __future__ import annotations
 import asyncio
 import urllib.parse
 from enum import Enum
+from types import ModuleType
 from typing import Any, MutableMapping, MutableSequence, Optional, Set, Tuple, Union, cast
 
 import cwl_utils.expression
 from cwltool.utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataLocation, DataType, FileType, LOCAL_LOCATION
-from streamflow.core.deployment import Connector
+from streamflow.core.data import DataLocation, DataType, FileType
+from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.scheduling import Hardware
 from streamflow.core.utils import get_path_processor, get_token_value, random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver
 from streamflow.data import remotepath
+from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
 
 
 async def _check_glob_path(connector: Connector,
                            workflow: Workflow,
-                           location: Optional[str],
+                           location: Optional[Location],
                            input_directory: str,
                            output_directory: str,
                            tmp_directory: str,
@@ -44,7 +46,7 @@ async def _check_glob_path(connector: Connector,
 
 async def _process_secondary_file(context: StreamFlowContext,
                                   connector: Connector,
-                                  locations: MutableSequence[str],
+                                  locations: MutableSequence[Location],
                                   secondary_file: Any,
                                   token_value: MutableMapping[str, Any],
                                   from_expression: bool,
@@ -99,7 +101,7 @@ async def _process_secondary_file(context: StreamFlowContext,
             return existing_sf[filepath]
 
 
-def _process_sf_path(path_processor,
+def _process_sf_path(path_processor: ModuleType,
                      pattern: str,
                      primary_path: str) -> str:
     if pattern.startswith('^'):
@@ -110,11 +112,11 @@ def _process_sf_path(path_processor,
 
 async def _register_path(context: StreamFlowContext,
                          connector: Connector,
-                         location: str,
+                         location: Location,
                          path: str,
                          relpath: str,
                          data_type: DataType = DataType.PRIMARY) -> Optional[DataLocation]:
-    if real_path := await remotepath.follow_symlink(connector, location, path):
+    if real_path := await remotepath.follow_symlink(context, connector, location, path):
         if real_path != path:
             if data_locations := context.data_manager.get_data_locations(
                     path=real_path,
@@ -125,7 +127,6 @@ async def _register_path(context: StreamFlowContext,
                 base_path = path_processor.normpath(path[:-len(relpath)])
                 if real_path.startswith(base_path):
                     data_location = context.data_manager.register_path(
-                        deployment=connector.deployment_name,
                         location=location,
                         path=real_path,
                         relpath=path_processor.relpath(real_path, base_path))
@@ -134,11 +135,10 @@ async def _register_path(context: StreamFlowContext,
                         connector=connector,
                         path=real_path,
                         relpath=path_processor.basename(real_path)):
-                    data_location = next(iter(data_locations))
+                    data_location = data_locations[0]
                 else:
                     raise WorkflowExecutionException("Error registering path {}".format(path))
             link_location = context.data_manager.register_path(
-                deployment=connector.deployment_name,
                 location=location,
                 path=path,
                 relpath=relpath,
@@ -147,7 +147,6 @@ async def _register_path(context: StreamFlowContext,
             return data_location
         else:
             return context.data_manager.register_path(
-                deployment=connector.deployment_name,
                 location=location,
                 path=path,
                 relpath=relpath,
@@ -186,7 +185,7 @@ async def build_token_value(context: StreamFlowContext,
                             expression_lib: Optional[MutableSequence[str]],
                             secondary_files: Optional[MutableSequence[SecondaryFile]],
                             connector: Connector,
-                            locations: MutableSequence[str],
+                            locations: MutableSequence[Location],
                             token_value: Any,
                             load_contents: bool,
                             load_listing: LoadListing) -> Any:
@@ -355,14 +354,14 @@ def eval_expression(expression: str,
 
 async def expand_glob(connector: Connector,
                       workflow: Workflow,
-                      location: Optional[str],
+                      location: Optional[Location],
                       input_directory: str,
                       output_directory: str,
                       tmp_directory: str,
                       path: str) -> MutableSequence[Tuple[str, str]]:
     paths = await remotepath.resolve(connector, location, path) or []
     effective_paths = await asyncio.gather(*(asyncio.create_task(
-        remotepath.follow_symlink(connector, location, p)
+        remotepath.follow_symlink(workflow.context, connector, location, p)
     ) for p in paths))
     await asyncio.gather(*(asyncio.create_task(
         _check_glob_path(
@@ -388,7 +387,7 @@ async def get_class_from_path(path: str, job: Job, context: StreamFlowContext) -
 async def get_file_token(
         context: StreamFlowContext,
         connector: Connector,
-        locations: MutableSequence[str],
+        locations: MutableSequence[Location],
         token_class: str,
         filepath: str,
         file_format: Optional[str] = None,
@@ -410,7 +409,7 @@ async def get_file_token(
             token['format'] = file_format
         token['nameroot'], token['nameext'] = path_processor.splitext(basename)
         for location in locations:
-            if real_path := await remotepath.follow_symlink(connector, location, filepath):
+            if real_path := await remotepath.follow_symlink(context, connector, location, filepath):
                 token['size'] = await remotepath.size(connector, location, real_path)
                 if load_contents:
                     if token['size'] > CONTENT_LIMIT:
@@ -438,7 +437,7 @@ async def get_file_token(
 async def get_listing(
         context: StreamFlowContext,
         connector: Connector,
-        locations: MutableSequence[str],
+        locations: MutableSequence[Location],
         dirpath: str,
         load_contents: bool,
         recursive: bool) -> MutableSequence[MutableMapping[str, Any]]:
@@ -515,7 +514,7 @@ async def process_secondary_files(context: StreamFlowContext,
                                   full_js: bool,
                                   expression_lib: Optional[MutableSequence[str]],
                                   connector: Connector,
-                                  locations: MutableSequence[str],
+                                  locations: MutableSequence[Location],
                                   token_value: Any,
                                   load_contents: Optional[bool] = None,
                                   load_listing: Optional[LoadListing] = None,
@@ -589,7 +588,7 @@ async def process_secondary_files(context: StreamFlowContext,
 
 async def register_data(context: StreamFlowContext,
                         connector: Connector,
-                        locations: MutableSequence[str],
+                        locations: MutableSequence[Location],
                         base_path: Optional[str],
                         token_value: Union[MutableSequence[MutableMapping[str, Any]], MutableMapping[str, Any]]):
     # If `token_value` is a list, process every item independently
@@ -652,37 +651,35 @@ async def search_in_parent_locations(context: StreamFlowContext,
                                      connector: Connector,
                                      path: str,
                                      relpath: str,
-                                     base_path: Optional[str] = None) -> Set[DataLocation]:
+                                     base_path: Optional[str] = None) -> MutableSequence[DataLocation]:
     path_processor = get_path_processor(connector)
     current_path = path
     while current_path != (base_path or path_processor.sep):
         # Retrieve all data locations
         if data_locations := context.data_manager.get_data_locations(path=current_path):
             # If there is no data location for the exact source path
-            actual_locations = set()
+            actual_locations = {}
             if current_path != path:
                 # Add source path to all the involved locations
                 previous_location = None
                 for data_location in sorted(data_locations, key=lambda l: 0 if l.data_type == DataType.PRIMARY else 1):
                     data_path = path if data_location.path.startswith(current_path) else path_processor.join(
-                        path_processor.normpath(data_location.path[:-len(data_location.relpath)]),
-                        relpath)
-                    data_connector = context.deployment_manager.get_connector(
-                        data_location.deployment)
+                        path_processor.normpath(data_location.path[:-len(data_location.relpath)]), relpath)
+                    data_connector = context.deployment_manager.get_connector(data_location.deployment)
                     if current_location := await _register_path(
                             context=context,
                             connector=data_connector,
-                            location=data_location.location,
+                            location=data_location,
                             path=data_path,
                             relpath=relpath,
                             data_type=data_location.data_type):
-                        actual_locations.add(current_location)
+                        actual_locations[current_location.name] = current_location
                         if previous_location is not None:
                             context.data_manager.register_relation(previous_location, current_location)
                         previous_location = current_location
                 if not actual_locations:
                     raise WorkflowExecutionException("Error registering path {}".format(path))
-            return actual_locations
+            return list(actual_locations.values())
         path_tokens = [path_processor.sep]
         path_tokens.extend(current_path.lstrip(path_processor.sep).split(path_processor.sep)[:-1])
         current_path = path_processor.normpath(path_processor.join(*path_tokens))
@@ -712,7 +709,7 @@ class SecondaryFile(object):
 
 async def update_file_token(context: StreamFlowContext,
                             connector: Connector,
-                            location: str,
+                            location: Location,
                             token_value: MutableMapping[str, Any],
                             load_contents: Optional[bool],
                             load_listing: Optional[LoadListing] = None):
@@ -754,18 +751,16 @@ async def write_remote_file(context: StreamFlowContext,
                             job: Job,
                             content: str,
                             path: str):
-    connector = context.scheduler.get_connector(job.name)
-    locations = context.scheduler.get_locations(job.name)
-    path_processor = get_path_processor(connector)
-    for location in locations:
+    for location in context.scheduler.get_locations(job.name):
+        connector = context.deployment_manager.get_connector(location.deployment)
+        path_processor = get_path_processor(connector)
         if not await remotepath.exists(connector, location, path):
             logger.info("Creating {path} {location}".format(
                 path=path,
-                location=("on local file-system" if location == LOCAL_LOCATION else
+                location=("on local file-system" if isinstance(connector, LocalConnector) else
                           "on location {res}".format(res=location))))
             await remotepath.write(connector, location, path, content)
             context.data_manager.register_path(
-                deployment=connector.deployment_name,
                 location=location,
                 path=path,
                 relpath=path_processor.relpath(path_processor.normpath(path), job.output_directory))

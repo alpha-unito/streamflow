@@ -38,6 +38,11 @@
       "description": "Maximum number of concurrent session to open for a single SSH client connection",
       "default": 10
     },
+    "maxConnections": {
+      "type": "integer",
+      "description": "Maximum number of concurrent connection to open for a single SSH node",
+      "default": 1
+    },
     "passwordFile": {
       "type": "string",
       "description": "Path to a file containing the password to use for authentication"

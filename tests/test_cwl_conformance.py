@@ -86,14 +86,14 @@ def test_cwl11():
 @pytest.mark.cwl12
 def test_cwl12():
     with tempfile.TemporaryDirectory() as outdir:
-        commit = '60a963508acafee8d6b024dcb9b0eaca255a49d5'
+        commit = '9b091ed7e0bef98b3312e9478c52b89ba25792de'
         url = 'cwl-v1.2/archive/{}.zip'.format(commit)
         spec = _download_spec(url, outdir, 'cwl-v1.2-{}'.format(commit))
         returncode = _run_conformance(
             spec=spec,
             testfile=os.path.join(spec, 'conformance_tests.yaml'),
             skipped_tests=[
-                '175',  # docker_entrypoint
-                '236'   # inplace_update_on_file_content
+                '177',  # docker_entrypoint
+                '237'   # inplace_update_on_file_content
             ])
         assert returncode == 0

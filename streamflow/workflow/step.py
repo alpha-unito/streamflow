@@ -6,11 +6,13 @@ import logging
 import posixpath
 from abc import ABC, abstractmethod
 from asyncio import CancelledError, FIRST_COMPLETED, Task
+from types import ModuleType
 from typing import Any, AsyncIterable, Iterable, MutableMapping, MutableSequence, Optional, Set, cast
 
+from streamflow.core.config import BindingConfig
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Connector, DeploymentConfig, Target
+from streamflow.core.deployment import Connector, DeploymentConfig, Location, Target
 from streamflow.core.exception import (
     FailureHandlingException, WorkflowDefinitionException, WorkflowExecutionException
 )
@@ -25,6 +27,12 @@ from streamflow.data import remotepath
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
+
+
+def _get_directory(path_processor: ModuleType,
+                   directory: Optional[str],
+                   target: Target):
+    return directory or path_processor.join(target.workdir, utils.random_name())
 
 
 def _get_step_status(statuses: MutableSequence[Status]):
@@ -828,26 +836,22 @@ class ScheduleStep(BaseStep):
     def __init__(self,
                  name: str,
                  workflow: Workflow,
-                 target: Target,
-                 connector_port: ConnectorPort,
+                 binding_config: BindingConfig,
+                 connector_ports: MutableMapping[str, ConnectorPort],
                  job_port: Optional[JobPort] = None,
                  hardware_requirement: Optional[HardwareRequirement] = None,
                  input_directory: Optional[str] = None,
                  output_directory: Optional[str] = None,
                  tmp_directory: Optional[str] = None):
         super().__init__(name, workflow)
-        self.target: Target = target
+        self.binding_config: BindingConfig = binding_config
         self.hardware_requirement: Optional[HardwareRequirement] = hardware_requirement
         self.input_directory: Optional[str] = input_directory
         self.output_directory: Optional[str] = output_directory
         self.tmp_directory: Optional[str] = tmp_directory
-        self.add_input_port("__connector__", connector_port)
+        for name, port in connector_ports.items():
+            self.add_input_port("__connector__{}".format(name), port)
         self.add_output_port("__job__", job_port or workflow.create_port(cls=JobPort))
-
-    def _get_directory(self,
-                       path_processor,
-                       directory: Optional[str]):
-        return directory or path_processor.join(self.target.workdir, utils.random_name())
 
     @classmethod
     async def _load(cls,
@@ -861,8 +865,9 @@ class ScheduleStep(BaseStep):
         return cls(
             name=row['name'],
             workflow=await loading_context.load_workflow(context, row['workflow']),
-            target=await loading_context.load_target(context, params['target']),
-            connector_port=cast(ConnectorPort, await loading_context.load_port(context, params['connector_port'])),
+            binding_config=await BindingConfig.load(context, params['binding_config'], loading_context),
+            connector_ports={k: cast(ConnectorPort, await loading_context.load_port(context, v))
+                             for k, v in params['connector_port']},
             job_port=cast(JobPort, await loading_context.load_port(context, params['job_port'])),
             hardware_requirement=hardware_requirement,
             input_directory=params['input_directory'],
@@ -871,8 +876,14 @@ class ScheduleStep(BaseStep):
 
     async def _propagate_job(self,
                              connector: Connector,
-                             locations: MutableSequence[str],
+                             locations: MutableSequence[Location],
                              job: Job):
+        # Set job directories
+        allocation = self.workflow.context.scheduler.get_allocation(job.name)
+        path_processor = utils.get_path_processor(connector)
+        job.input_directory = _get_directory(path_processor, job.input_directory, allocation.target)
+        job.output_directory = _get_directory(path_processor, job.output_directory, allocation.target)
+        job.tmp_directory = _get_directory(path_processor, job.tmp_directory, allocation.target)
         # Create directories
         await remotepath.mkdirs(
             connector=connector,
@@ -885,11 +896,11 @@ class ScheduleStep(BaseStep):
             inputs=job.inputs.values()))
 
     async def _save_additional_params(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
-        await self.target.save(context)
         params = {**await super()._save_additional_params(context),
-                  **{'connector_port': self.get_input_port('__connector__').persistent_id,
+                  **{'connector_ports': {name: self.get_input_port(name).persistent_id
+                                         for name in self.input_ports if name.startswith("__connector__")},
                      'job_port': self.get_output_port('__job__').persistent_id,
-                     'target': self.target.persistent_id,
+                     'binding_config': await self.binding_config.save(context),
                      'input_directory': self.input_directory,
                      'output_directory': self.output_directory,
                      'tmp_directory': self.tmp_directory}}
@@ -903,10 +914,15 @@ class ScheduleStep(BaseStep):
     async def run(self):
         try:
             # Retrieve connector
-            connector = await cast(ConnectorPort, self.get_input_port("__connector__")).get_connector(self.name)
-            path_processor = utils.get_path_processor(connector)
+            connector_ports = cast(MutableMapping[str, ConnectorPort],
+                                   {name: self.get_input_port(name)
+                                    for name in self.input_ports
+                                    if name.startswith("__connector__")})
+            connectors = await asyncio.gather(*(asyncio.create_task(port.get_connector(self.name))
+                                                for port in connector_ports.values()))
+            connectors = {c.deployment_name: c for c in connectors}
             # If there are input ports
-            input_ports = {k: v for k, v in self.get_input_ports().items() if k != "__connector__"}
+            input_ports = {k: v for k, v in self.get_input_ports().items() if k not in connector_ports}
             if input_ports:
                 inputs_map = {}
                 while True:
@@ -925,28 +941,29 @@ class ScheduleStep(BaseStep):
                             job = Job(
                                 name=random_name(),
                                 inputs=inputs,
-                                input_directory=self._get_directory(path_processor, self.input_directory),
-                                output_directory=self._get_directory(path_processor, self.output_directory),
-                                tmp_directory=self._get_directory(path_processor, self.tmp_directory))
+                                input_directory=self.input_directory,
+                                output_directory=self.output_directory,
+                                tmp_directory=self.tmp_directory)
                             # Schedule
                             hardware_requirement = (self.hardware_requirement.eval(inputs)
                                                     if self.hardware_requirement else None)
-                            await self.workflow.context.scheduler.schedule(job, self.target, hardware_requirement)
+                            await self.workflow.context.scheduler.schedule(
+                                job, self.binding_config, hardware_requirement)
                             locations = self.workflow.context.scheduler.get_locations(job.name)
-                            await self._propagate_job(connector, locations, job)
+                            await self._propagate_job(connectors[locations[0].deployment], locations, job)
             else:
                 # Create Job
                 job = Job(
                     name=random_name(),
                     inputs={},
-                    input_directory=self._get_directory(path_processor, self.input_directory),
-                    output_directory=self._get_directory(path_processor, self.output_directory),
-                    tmp_directory=self._get_directory(path_processor, self.tmp_directory))
+                    input_directory=self.input_directory,
+                    output_directory=self.output_directory,
+                    tmp_directory=self.tmp_directory)
                 # Schedule
                 await self.workflow.context.scheduler.schedule(
-                    job, self.target, self.hardware_requirement.eval({}) if self.hardware_requirement else None)
+                    job, self.binding_config, self.hardware_requirement.eval({}) if self.hardware_requirement else None)
                 locations = self.workflow.context.scheduler.get_locations(job.name)
-                await self._propagate_job(connector, locations, job)
+                await self._propagate_job(connectors[locations[0].deployment], locations, job)
             await self.terminate(Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED)
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:

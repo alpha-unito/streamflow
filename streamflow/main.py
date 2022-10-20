@@ -11,7 +11,6 @@ from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.exception import WorkflowException
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes

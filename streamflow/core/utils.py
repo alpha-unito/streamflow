@@ -8,15 +8,17 @@ import os
 import posixpath
 import uuid
 from pathlib import Path
+from types import ModuleType
 from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Type, Union
 
 from importlib_metadata import entry_points
 from jsonref import loads
 
-from streamflow.core.data import LOCAL_LOCATION
+from streamflow.core.deployment import Location
 from streamflow.core.exception import InvalidPluginException, WorkflowExecutionException
 from streamflow.core.workflow import Token
 from streamflow.data import aiotarstream
+from streamflow.deployment.connector import LocalConnector
 from streamflow.ext import StreamFlowPlugin
 from streamflow.log_handler import logger
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken, TerminationToken
@@ -163,15 +165,15 @@ def get_class_from_name(name: str) -> Type:
     return getattr(importlib.import_module(module_name), class_name)
 
 
-def get_path_processor(connector: Connector):
-    return posixpath if connector is not None and connector.deployment_name != LOCAL_LOCATION else os.path
+def get_path_processor(connector: Connector) -> ModuleType:
+    return posixpath if connector is not None and not isinstance(connector, LocalConnector) else os.path
 
 
 async def get_remote_to_remote_write_command(src_connector: Connector,
-                                             src_location: str,
+                                             src_location: Location,
                                              src: str,
                                              dst_connector: Connector,
-                                             dst_locations: MutableSequence[str],
+                                             dst_locations: MutableSequence[Location],
                                              dst: str) -> MutableSequence[str]:
     if posixpath.basename(src) != posixpath.basename(dst):
         result, status = await src_connector.run(

@@ -8,8 +8,7 @@ from rdflib import Graph
 from schema_salad.exceptions import ValidationException
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import LOCAL_LOCATION
-from streamflow.core.deployment import Connector, Target
+from streamflow.core.deployment import Connector, LOCAL_LOCATION, Target
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import flatten_list, get_path_processor, get_tag
@@ -126,13 +125,12 @@ class CWLTokenProcessor(TokenProcessor):
                 data_location := self.workflow.context.data_manager.get_source_location(filepath, LOCAL_LOCATION)):
             connector = self.workflow.context.deployment_manager.get_connector(data_location.deployment)
             path_processor = utils.get_path_processor(connector)
-            location = data_location.location
             base_path = path_processor.normpath(data_location.path[:-len(data_location.relpath)])
             # Process file contents
             token_value = await utils.update_file_token(
                 context=self.workflow.context,
                 connector=connector,
-                location=location,
+                location=data_location,
                 token_value=token_value,
                 load_contents=self.load_contents,
                 load_listing=self.load_listing)
@@ -143,7 +141,7 @@ class CWLTokenProcessor(TokenProcessor):
                     utils.update_file_token(
                         context=self.workflow.context,
                         connector=connector,
-                        location=location,
+                        location=data_location,
                         token_value=sf,
                         load_contents=self.load_contents,
                         load_listing=self.load_listing
@@ -160,7 +158,7 @@ class CWLTokenProcessor(TokenProcessor):
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
                     connector=connector,
-                    locations=[location],
+                    locations=[data_location],
                     token_value=token_value,
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
@@ -172,7 +170,7 @@ class CWLTokenProcessor(TokenProcessor):
             await utils.register_data(
                 context=self.workflow.context,
                 connector=connector,
-                locations=[location],
+                locations=[data_location],
                 token_value=token_value,
                 base_path=base_path)
         # Return token value

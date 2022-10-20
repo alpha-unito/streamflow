@@ -4,9 +4,9 @@ from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING, Type, cast
 
 from streamflow.core import utils
-from streamflow.core.config import Config, SchemaEntity
+from streamflow.core.config import BindingConfig, Config, SchemaEntity
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Connector, Target
+from streamflow.core.deployment import Connector, Location, Target
 from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
 
 if TYPE_CHECKING:
@@ -89,25 +89,27 @@ class JobAllocation(object):
     def __init__(self,
                  job: str,
                  target: Target,
-                 locations: MutableSequence[str],
+                 locations: MutableSequence[Location],
                  status: Status,
                  hardware: Hardware):
         self.job: str = job
         self.target: Target = target
-        self.locations: MutableSequence[str] = locations
+        self.locations: MutableSequence[Location] = locations
         self.status: Status = status
         self.hardware: Hardware = hardware
 
 
-class Location(object):
-    __slots__ = ('name', 'hostname', 'hardware', 'slots')
+class AvailableLocation(Location):
+    __slots__ = ('hostname', 'hardware', 'slots')
 
     def __init__(self,
                  name: str,
+                 deployment: str,
                  hostname: str,
+                 service: Optional[str] = None,
                  slots: int = 1,
                  hardware: Optional[Hardware] = None):
-        self.name: str = name
+        super().__init__(name, deployment, service)
         self.hostname: str = hostname
         self.slots: int = slots
         self.hardware: Optional[Hardware] = hardware
@@ -139,9 +141,10 @@ class Policy(SchemaEntity):
                            job: Job,
                            deployment: str,
                            hardware_requirement: Hardware,
-                           available_locations: MutableMapping[str, Location],
+                           available_locations: MutableMapping[str, AvailableLocation],
                            jobs: MutableMapping[str, JobAllocation],
-                           locations: MutableMapping[str, LocationAllocation]) -> Optional[str]: ...
+                           locations: MutableMapping[str, MutableMapping[str, LocationAllocation]]
+                           ) -> Optional[Location]: ...
 
 
 class Scheduler(SchemaEntity):
@@ -149,7 +152,7 @@ class Scheduler(SchemaEntity):
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
         self.job_allocations: MutableMapping[str, JobAllocation] = {}
-        self.location_allocations: MutableMapping[str, LocationAllocation] = {}
+        self.location_allocations: MutableMapping[str, MutableMapping[str, LocationAllocation]] = {}
 
     @abstractmethod
     async def close(self):
@@ -168,7 +171,7 @@ class Scheduler(SchemaEntity):
 
     def get_locations(self,
                       job_name: str,
-                      statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[str]:
+                      statuses: Optional[MutableSequence[Status]] = None) -> MutableSequence[Location]:
         allocation = self.get_allocation(job_name)
         return allocation.locations if allocation is not None and (
                 statuses is None or allocation.status in statuses) else []
@@ -186,6 +189,6 @@ class Scheduler(SchemaEntity):
     @abstractmethod
     async def schedule(self,
                        job: Job,
-                       target: Target,
+                       binding_config: BindingConfig,
                        hardware_requirement: Hardware) -> None:
         ...

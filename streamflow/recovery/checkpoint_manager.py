@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 import pkg_resources
 
 from streamflow.core import utils
-from streamflow.core.data import DataLocation, LOCAL_LOCATION
+from streamflow.core.data import DataLocation
+from streamflow.core.deployment import LOCAL_LOCATION, Location
 from streamflow.core.recovery import CheckpointManager
 from streamflow.core.utils import random_name
 
@@ -31,11 +32,9 @@ class DefaultCheckpointManager(CheckpointManager):
         parent_directory = os.path.join(self.checkpoint_dir, random_name())
         local_path = os.path.join(parent_directory, data_location.relpath)
         await self.context.data_manager.transfer_data(
-            src_deployment=data_location.deployment,
-            src_locations=[data_location.location],
+            src_locations=[data_location],
             src_path=data_location.path,
-            dst_deployment=LOCAL_LOCATION,
-            dst_locations=[LOCAL_LOCATION],
+            dst_locations=[Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)],
             dst_path=local_path)
 
     async def close(self):

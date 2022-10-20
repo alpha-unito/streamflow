@@ -12,6 +12,7 @@ from streamflow.core import utils
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
+from streamflow.deployment.filter import binding_filter_classes
 from streamflow.deployment.connector import connector_classes
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
@@ -58,6 +59,7 @@ class SfValidator(object):
 
     def validate(self, streamflow_config: MutableMapping[str, Any]):
         schema = load_jsonschema(streamflow_config)
+        utils.inject_schema(schema, binding_filter_classes, 'bindingFilter')
         utils.inject_schema(schema, checkpoint_manager_classes, 'checkpointManager')
         utils.inject_schema(schema, database_classes, 'database')
         utils.inject_schema(schema, data_manager_classes, 'dataManager')

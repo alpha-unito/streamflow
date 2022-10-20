@@ -3,8 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import MutableMapping, Type
 
-from streamflow.core.deployment import Connector
+from streamflow.core.deployment import BindingFilter, Connector
 from streamflow.core.scheduling import Policy, Scheduler
+from streamflow.deployment.filter import binding_filter_classes
 from streamflow.deployment.connector import connector_classes
 from streamflow.log_handler import logger
 from streamflow.scheduling import scheduler_classes
@@ -25,6 +26,11 @@ class StreamFlowPlugin(ABC):
     @abstractmethod
     def register(self) -> None:
         ...
+
+    def register_binding_order(self,
+                               name: str,
+                               cls: Type[BindingFilter]):
+        self._register(name, cls, binding_filter_classes)
 
     def register_connector(self,
                            name: str,

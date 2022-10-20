@@ -309,12 +309,9 @@ class CWLTransferStep(TransferStep):
                 utils.random_name(),
                 selected_location.relpath)
             # Perform and transfer
-            src_connector = self.workflow.context.deployment_manager.get_connector(selected_location.deployment)
             await self.workflow.context.data_manager.transfer_data(
-                src_deployment=src_connector.deployment_name,
-                src_locations=[selected_location.location],
+                src_locations=[selected_location],
                 src_path=selected_location.path,
-                dst_deployment=dst_connector.deployment_name,
                 dst_locations=dst_locations,
                 dst_path=filepath,
                 writable=self.writable)
@@ -337,7 +334,7 @@ class CWLTransferStep(TransferStep):
                 for location in dst_locations:
                     perform_checksum = True
                     for data_location in data_locations:
-                        if data_location.location == location and data_location.path == filepath:
+                        if data_location.name == location.name and data_location.path == filepath:
                             perform_checksum = False
                             break
                     if perform_checksum:
@@ -346,7 +343,7 @@ class CWLTransferStep(TransferStep):
                         if checksum != original_checksum:
                             raise WorkflowExecutionException(
                                 "Error transferring file {} in location {} to {} in location {}".format(
-                                    selected_location.path, selected_location.location, filepath, location))
+                                    selected_location.path, selected_location.name, filepath, location))
                 # Add size, checksum and format fields
                 new_token_value = {**new_token_value, **{
                     'nameroot': token_value['nameroot'],

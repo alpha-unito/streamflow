@@ -4,10 +4,10 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING
 
 from streamflow.core.config import SchemaEntity
-from streamflow.core.data import DataLocation
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
+    from streamflow.core.data import DataLocation
     from streamflow.core.workflow import Job, CommandOutput, Step
     from typing import Optional, MutableMapping, Any
 

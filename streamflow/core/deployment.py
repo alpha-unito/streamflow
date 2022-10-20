@@ -10,13 +10,15 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from streamflow.core.config import Config, SchemaEntity
-from streamflow.core.data import LOCAL_LOCATION
 from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from streamflow.core.scheduling import Location
+    from streamflow.core.scheduling import AvailableLocation
+    from streamflow.core.workflow import Job
     from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
+
+LOCAL_LOCATION = '__LOCAL__'
 
 
 def _init_workdir(deployment_name: str) -> str:
@@ -26,22 +28,59 @@ def _init_workdir(deployment_name: str) -> str:
         return os.path.join(tempfile.gettempdir(), 'streamflow')
 
 
+class Location(object):
+    __slots__ = ('name', 'deployment', 'service')
+
+    def __init__(self,
+                 name: str,
+                 deployment: str,
+                 service: Optional[str] = None):
+        self.name: str = name
+        self.deployment: str = deployment
+        self.service: Optional[str] = service
+
+    def __eq__(self, other):
+        if not isinstance(other, Location):
+            return False
+        else:
+            return (self.deployment == other.deployment and
+                    self.name == other.name)
+
+    def __hash__(self):
+        return hash((self.deployment, self.name))
+
+    def __str__(self) -> str:
+        if self.service:
+            return posixpath.join(self.deployment, self.service, self.name)
+        else:
+            return posixpath.join(self.deployment, self.name)
+
+
+class BindingFilter(SchemaEntity):
+
+    @abstractmethod
+    async def get_targets(self,
+                          job: Job,
+                          targets: MutableSequence[Target]) -> MutableSequence[Target]:
+        ...
+
+
 class Connector(SchemaEntity):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext):
+                 config_dir: str):
         self.deployment_name: str = deployment_name
-        self.context: StreamFlowContext = context
+        self.config_dir: str = config_dir
 
     @abstractmethod
     async def copy(self,
                    src: str,
                    dst: str,
-                   locations: MutableSequence[str],
+                   locations: MutableSequence[Location],
                    kind: ConnectorCopyKind,
                    source_connector: Optional[Connector] = None,
-                   source_location: Optional[str] = None,
+                   source_location: Optional[Location] = None,
                    read_only: bool = False) -> None:
         ...
 
@@ -51,15 +90,15 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def get_available_locations(self,
-                                      service: str,
+                                      service: Optional[str] = None,
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
-                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, AvailableLocation]:
         ...
 
     @abstractmethod
     async def run(self,
-                  location: str,
+                  location: Location,
                   command: MutableSequence[str],
                   environment: MutableMapping[str, str] = None,
                   workdir: Optional[str] = None,

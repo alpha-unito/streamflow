@@ -11,10 +11,9 @@ from cachetools import Cache, TTLCache
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Connector
+from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Location
+from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -56,13 +55,13 @@ class ContainerConnector(BaseConnector, ABC):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  transferBufferSize: int,
                  locationsCacheSize: int = None,
                  locationsCacheTTL: int = None,
                  resourcesCacheSize: int = None,
                  resourcesCacheTTL: int = None):
-        super().__init__(deployment_name, context, transferBufferSize)
+        super().__init__(deployment_name, config_dir, transferBufferSize)
         cacheSize = locationsCacheSize
         if cacheSize is None:
             cacheSize = resourcesCacheSize
@@ -83,13 +82,13 @@ class ContainerConnector(BaseConnector, ABC):
 
     async def _check_effective_location(self,
                                         common_paths: MutableMapping[str, Any],
-                                        effective_locations: MutableSequence[str],
-                                        location: str,
+                                        effective_locations: MutableSequence[Location],
+                                        location: Location,
                                         path: str,
-                                        source_location: Optional[str] = None
-                                        ) -> Tuple[MutableMapping[str, Any], MutableSequence[str]]:
+                                        source_location: Optional[Location] = None
+                                        ) -> Tuple[MutableMapping[str, Any], MutableSequence[Location]]:
         # Get all container mounts
-        volumes = await self._get_volumes(location)
+        volumes = await self._get_volumes(location.name)
         for volume in volumes:
             # If path is in a persistent volume
             if path.startswith(volume['Destination']):
@@ -99,7 +98,7 @@ class ContainerConnector(BaseConnector, ABC):
                 for i, common_path in enumerate(common_paths[path]):
                     if common_path['source'] == volume['Source']:
                         # If path has already been processed, but the current location is the source, substitute it
-                        if location == source_location:
+                        if source_location and location.name == source_location.name:
                             effective_locations.remove(common_path['location'])
                             common_path['location'] = location
                             common_paths[path][i] = common_path
@@ -119,12 +118,12 @@ class ContainerConnector(BaseConnector, ABC):
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
-                                    locations: MutableSequence[str],
+                                    locations: MutableSequence[Location],
                                     read_only: bool = False) -> None:
         effective_locations = await self._get_effective_locations(locations, dst)
         copy_tasks = []
         for location in effective_locations:
-            if read_only and await self._is_bind_transfer(location, src, dst):
+            if read_only and await self._is_bind_transfer(location.name, src, dst):
                 copy_tasks.append(asyncio.create_task(
                     self.run(
                         location=location,
@@ -141,16 +140,16 @@ class ContainerConnector(BaseConnector, ABC):
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     locations: MutableSequence[str],
-                                     source_location: str,
+                                     locations: MutableSequence[Location],
+                                     source_location: Location,
                                      source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
         source_connector = source_connector or self
         effective_locations = await self._get_effective_locations(locations, dst, source_location)
         non_bind_locations = []
-        if read_only and source_connector == self and await self._is_bind_transfer(source_location, src, src):
+        if read_only and source_connector == self and await self._is_bind_transfer(source_location.name, src, src):
             for location in effective_locations:
-                if await self._is_bind_transfer(location, dst, dst):
+                if await self._is_bind_transfer(location.name, dst, dst):
                     await self.run(
                         location=location,
                         command=["ln", "-snf", posixpath.abspath(src), dst])
@@ -173,9 +172,9 @@ class ContainerConnector(BaseConnector, ABC):
                 read_only=read_only)
 
     async def _get_effective_locations(self,
-                                       locations: MutableSequence[str],
+                                       locations: MutableSequence[Location],
                                        dest_path: str,
-                                       source_location: Optional[str] = None) -> MutableSequence[str]:
+                                       source_location: Optional[Location] = None) -> MutableSequence[Location]:
         common_paths = {}
         effective_locations = []
         for location in locations:
@@ -194,7 +193,7 @@ class ContainerConnector(BaseConnector, ABC):
 
     @abstractmethod
     async def _get_location(self,
-                            location_name: str) -> Optional[Location]:
+                            location_name: str) -> Optional[AvailableLocation]:
         ...
 
     @abstractmethod
@@ -224,7 +223,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         return [v for v in await self._get_volumes(location) if v['Type'] == 'bind']
 
     async def _get_location(self,
-                            location_name: str) -> Location:
+                            location_name: str) -> AvailableLocation:
         inspect_command = "".join([
             "docker ",
             "inspect ",
@@ -236,11 +235,14 @@ class DockerBaseConnector(ContainerConnector, ABC):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE)
         stdout, _ = await proc.communicate()
-        return Location(name=location_name, hostname=stdout.decode().strip())
+        return AvailableLocation(
+            name=location_name,
+            deployment=self.deployment_name,
+            hostname=stdout.decode().strip())
 
     def _get_run_command(self,
                          command: str,
-                         location: str,
+                         location: Location,
                          interactive: bool = False):
         return "".join([
             "docker "
@@ -249,7 +251,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             "{location} ",
             "sh -c '{command}'"
         ]).format(
-            location=location,
+            location=location.name,
             command=command
         )
 
@@ -273,7 +275,7 @@ class DockerConnector(DockerBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  image: str,
                  addHost: Optional[MutableSequence[str]] = None,
                  blkioWeight: Optional[int] = None,
@@ -371,7 +373,7 @@ class DockerConnector(DockerBaseConnector):
                  workdir: Optional[str] = None):
         super().__init__(
             deployment_name=deployment_name,
-            context=context,
+            config_dir=config_dir,
             transferBufferSize=transferBufferSize,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
@@ -672,11 +674,12 @@ class DockerConnector(DockerBaseConnector):
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
-                                      service: str,
+                                      service: Optional[str] = None,
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
-                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
-        return {container_id: await self._get_location(container_id) for container_id in self.containerIds}
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, AvailableLocation]:
+        return {container_id: await self._get_location(container_id)
+                for container_id in self.containerIds}
 
     @classmethod
     def get_schema(cls) -> str:
@@ -706,7 +709,7 @@ class DockerComposeConnector(DockerBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  files: MutableSequence[str],
                  projectName: Optional[str] = None,
                  verbose: Optional[bool] = False,
@@ -739,13 +742,13 @@ class DockerComposeConnector(DockerBaseConnector):
                  resourcesCacheTTL: int = None) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            context=context,
+            config_dir=config_dir,
             transferBufferSize=transferBufferSize,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
             resourcesCacheSize=resourcesCacheSize,
             resourcesCacheTTL=resourcesCacheTTL)
-        self.files = [os.path.join(context.config_dir, file) for file in files]
+        self.files = [os.path.join(self.config_dir, file) for file in files]
         self.projectName = projectName
         self.verbose = verbose
         self.logLevel = logLevel
@@ -830,10 +833,10 @@ class DockerComposeConnector(DockerBaseConnector):
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
-                                      service: str,
+                                      service: Optional[str] = None,
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
-                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, AvailableLocation]:
         ps_command = self.base_command() + "".join([
             "ps ",
             service or ""])
@@ -873,10 +876,10 @@ class DockerComposeConnector(DockerBaseConnector):
 
 class SingularityBaseConnector(ContainerConnector, ABC):
 
-    async def _get_bind_mounts(self, location: str) -> MutableSequence[MutableMapping[str, str]]:
+    async def _get_bind_mounts(self, location: Location) -> MutableSequence[MutableMapping[str, str]]:
         return await self._get_volumes(location)
 
-    async def _get_location(self, location_name: str) -> Optional[Location]:
+    async def _get_location(self, location_name: str) -> Optional[AvailableLocation]:
         inspect_command = "singularity instance list --json"
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(inspect_command),
@@ -887,13 +890,16 @@ class SingularityBaseConnector(ContainerConnector, ABC):
             json_out = json.loads(stdout)
             for instance in json_out["instances"]:
                 if instance["instance"] == location_name:
-                    return Location(name=location_name, hostname=instance["ip"])
+                    return AvailableLocation(
+                        name=location_name,
+                        deployment=self.deployment_name,
+                        hostname=instance["ip"])
         else:
             return None
 
     def _get_run_command(self,
                          command: str,
-                         location: str,
+                         location: Location,
                          interactive: bool = False):
         return "".join([
             "singularity "
@@ -901,12 +907,12 @@ class SingularityBaseConnector(ContainerConnector, ABC):
             "instance://{location} "
             "sh -c '{command}'"
         ]).format(
-            location=location,
+            location=location.name,
             command=command
         )
 
     async def _get_volumes(self,
-                           location: str) -> MutableSequence[MutableMapping[str, str]]:
+                           location: Location) -> MutableSequence[MutableMapping[str, str]]:
         bind_mounts, _ = await self.run(
             location=location,
             command=["cat", "/proc/1/mountinfo", "|", "awk", "'{print $9,$4,$5}'"],
@@ -920,7 +926,7 @@ class SingularityConnector(SingularityBaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  image: str,
                  transferBufferSize: int = 2 ** 16,
                  addCaps: Optional[str] = None,
@@ -970,7 +976,7 @@ class SingularityConnector(SingularityBaseConnector):
                  writableTmpfs: bool = False):
         super().__init__(
             deployment_name=deployment_name,
-            context=context,
+            config_dir=config_dir,
             transferBufferSize=transferBufferSize,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
@@ -1124,10 +1130,10 @@ class SingularityConnector(SingularityBaseConnector):
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
-                                      service: str,
+                                      service: Optional[str] = None,
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
-                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, AvailableLocation]:
         location_tasks = {}
         for instance_name in self.instanceNames:
             location_tasks[instance_name] = asyncio.create_task(self._get_location(instance_name))

@@ -5,7 +5,7 @@ import contextlib
 import os
 import posixpath
 import tarfile
-from asyncio import Lock, Semaphore
+from asyncio import Condition
 from asyncio.subprocess import STDOUT
 from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
@@ -13,17 +13,16 @@ from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 import asyncssh
 import pkg_resources
 from asyncssh import SSHClientConnection
-from asyncssh.process import SSHProcess
+from asyncssh.process import SSHClientProcess
 from cachetools import Cache, LRUCache
 from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import StreamWrapperContext
-from streamflow.core.deployment import Connector
+from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Hardware, Location
+from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.data import aiotarstream
 from streamflow.data.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.connector.base import BaseConnector
@@ -58,22 +57,20 @@ class SSHContext(object):
                  max_concurrent_sessions: int):
         self._streamflow_config_dir: str = streamflow_config_dir
         self._config: SSHConfig = config
+        self._max_concurrent_sessions: int = max_concurrent_sessions
         self._ssh_connection: Optional[SSHClientConnection] = None
-        self._connection_lock: Lock = Lock()
-        self._sem: Semaphore = Semaphore(max_concurrent_sessions)
+        self._sessions: int = 0
 
     async def __aenter__(self):
-        async with self._connection_lock:
-            if self._ssh_connection is None:
-                self._ssh_connection = await self._get_connection(self._config)
-        await self._sem.acquire()
+        if self._ssh_connection is None:
+            self._ssh_connection = await self._get_connection(self._config)
+        self._sessions += 1
         return self._ssh_connection
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self._sem.release()
+        self._sessions -= 1
 
-    async def _get_connection(self,
-                              config: SSHConfig):
+    async def _get_connection(self, config: SSHConfig) -> Optional[SSHClientConnection]:
         if config is None:
             return None
         (hostname, port) = _parse_hostname(config.hostname)
@@ -104,16 +101,72 @@ class SSHContext(object):
         with open(file_path) as f:
             return f.read().strip()
 
+    async def close(self):
+        if self._ssh_connection is not None:
+            self._ssh_connection.close()
+
+    def full(self) -> bool:
+        return self._sessions == self._max_concurrent_sessions
+
+
+class SSHContextManager(object):
+
+    def __init__(self,
+                 condition: Condition,
+                 contexts: MutableSequence[SSHContext]):
+        self._condition: Condition = condition
+        self._contexts: MutableSequence[SSHContext] = contexts
+        self._selected_context: Optional[SSHContext] = None
+
+    async def __aenter__(self):
+        async with self._condition:
+            while True:
+                for context in self._contexts:
+                    if not context.full():
+                        ssh_connection = await context.__aenter__()
+                        self._selected_context = context
+                        return ssh_connection
+                await self._condition.wait()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        async with self._condition:
+            if self._selected_context:
+                await self._selected_context.__aexit__(exc_type, exc_val, exc_tb)
+                self._condition.notify_all()
+
+
+class SSHContextFactory(object):
+    def __init__(self,
+                 streamflow_config_dir: str,
+                 config: SSHConfig,
+                 max_concurrent_sessions: int,
+                 max_connections: int):
+        self._condition: Condition = Condition()
+        self._contexts: MutableSequence[SSHContext] = [
+            SSHContext(
+                streamflow_config_dir=streamflow_config_dir,
+                config=config,
+                max_concurrent_sessions=max_concurrent_sessions)
+            for _ in range(max_connections)]
+
+    async def close(self):
+        await asyncio.gather(*(asyncio.create_task(c.close()) for c in self._contexts))
+
+    def get(self):
+        return SSHContextManager(
+            condition=self._condition,
+            contexts=self._contexts)
+
 
 class SSHStreamWrapperContext(StreamWrapperContext):
 
     def __init__(self,
                  src: str,
-                 ssh_context: SSHContext):
+                 ssh_context: SSHContextManager):
         super().__init__()
         self.src: str = src
-        self.ssh_context: SSHContext = ssh_context
-        self.ssh_process: Optional[SSHProcess] = None
+        self.ssh_context: SSHContextManager = ssh_context
+        self.ssh_process: Optional[SSHClientProcess] = None
         self.stream: Optional[StreamReaderWrapper] = None
 
     async def __aenter__(self):
@@ -156,7 +209,7 @@ class SSHConfig(object):
 class SSHConnector(BaseConnector):
 
     @staticmethod
-    def _get_command(location: str,
+    def _get_command(location: Location,
                      command: MutableSequence[str],
                      environment: MutableMapping[str, str] = None,
                      workdir: Optional[str] = None,
@@ -179,13 +232,14 @@ class SSHConnector(BaseConnector):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  nodes: MutableSequence[Any],
                  username: str,
                  checkHostKey: bool = True,
                  dataTransferConnection: Optional[Union[str, MutableMapping[str, Any]]] = None,
                  file: Optional[str] = None,
                  maxConcurrentSessions: int = 10,
+                 maxConnections: int = 1,
                  passwordFile: Optional[str] = None,
                  services: Optional[MutableMapping[str, str]] = None,
                  sharedPaths: Optional[MutableSequence[str]] = None,
@@ -195,28 +249,29 @@ class SSHConnector(BaseConnector):
                  transferBufferSize: int = 2 ** 16) -> None:
         super().__init__(
             deployment_name=deployment_name,
-            context=context,
+            config_dir=config_dir,
             transferBufferSize=transferBufferSize)
         self.templates: MutableMapping[str, Template] = {}
         if file is not None:
             logger.warn("The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `services` instead.")
-            with open(os.path.join(context.config_dir, file)) as f:
+            with open(os.path.join(self.config_dir, file)) as f:
                 self.templates['__DEFAULT__'] = Template(f.read())
         else:
             self.templates['__DEFAULT__'] = Template('#!/bin/sh\n\n{{streamflow_command}}')
         if services:
             for name, service in services.items():
-                with open(os.path.join(context.config_dir, service)) as f:
+                with open(os.path.join(self.config_dir, service)) as f:
                     self.templates[name]: Optional[Template] = Template(f.read())
         self.checkHostKey: bool = checkHostKey
         self.passwordFile: Optional[str] = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
+        self.maxConnections: int = maxConnections
         self.sharedPaths: MutableSequence[str] = sharedPaths or []
         self.sshKey: Optional[str] = sshKey
         self.sshKeyPassphraseFile: Optional[str] = sshKeyPassphraseFile
-        self.ssh_contexts: MutableMapping[str, SSHContext] = {}
-        self.data_transfer_contexts: MutableMapping[str, SSHContext] = {}
+        self.ssh_context_factories: MutableMapping[str, SSHContextFactory] = {}
+        self.data_transfer_context_factories: MutableMapping[str, SSHContextFactory] = {}
         self.username: str = username
         self.tunnel: Optional[SSHConfig] = self._get_config(tunnel)
         self.dataTransferConfig: Optional[SSHConfig] = self._get_config(
@@ -237,9 +292,9 @@ class SSHConnector(BaseConnector):
     async def _copy_local_to_remote_single(self,
                                            src: str,
                                            dst: str,
-                                           location: str,
+                                           location: Location,
                                            read_only: bool = False):
-        async with self._get_data_transfer_client(location) as ssh_client:
+        async with self._get_data_transfer_client(location.name) as ssh_client:
             async with ssh_client.create_process(
                     "tar xf - -C /",
                     stderr=asyncio.subprocess.DEVNULL,
@@ -260,9 +315,9 @@ class SSHConnector(BaseConnector):
     async def _copy_remote_to_local(self,
                                     src: str,
                                     dst: str,
-                                    location: str,
+                                    location: Location,
                                     read_only: bool = False) -> None:
-        async with self._get_data_transfer_client(location) as ssh_client:
+        async with self._get_data_transfer_client(location.name) as ssh_client:
             async with ssh_client.create_process(
                     "tar chf - -C / " + posixpath.relpath(src, '/'),
                     stdin=asyncio.subprocess.DEVNULL,
@@ -280,12 +335,12 @@ class SSHConnector(BaseConnector):
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     locations: MutableSequence[str],
-                                     source_location: str,
+                                     locations: MutableSequence[Location],
+                                     source_location: Location,
                                      source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
         source_connector = source_connector or self
-        if source_connector == self and source_location in locations:
+        if source_connector == self and source_location.name in [loc.name for loc in locations]:
             if src != dst:
                 command = ['/bin/cp', "-rf", src, dst]
                 await self.run(source_location, command)
@@ -302,7 +357,7 @@ class SSHConnector(BaseConnector):
                 async with contextlib.AsyncExitStack() as exit_stack:
                     # Open a target StreamWriter for each location
                     writer_clients = await asyncio.gather(*(asyncio.create_task(
-                        exit_stack.enter_async_context(self._get_data_transfer_client(location))
+                        exit_stack.enter_async_context(self._get_data_transfer_client(location.name))
                     ) for location in locations))
                     async with contextlib.AsyncExitStack() as writers_stack:
                         writers = await asyncio.gather(*(asyncio.create_task(
@@ -338,14 +393,15 @@ class SSHConnector(BaseConnector):
                     self.tunnel if hasattr(self, 'tunnel') else
                     None))
 
-    def _get_data_transfer_client(self, location: str):
+    def _get_data_transfer_client(self, location: str) -> SSHContextManager:
         if self.dataTransferConfig:
-            if location not in self.data_transfer_contexts:
-                self.data_transfer_contexts[location] = SSHContext(
-                    streamflow_config_dir=self.context.config_dir,
+            if location not in self.data_transfer_context_factories:
+                self.data_transfer_context_factories[location] = SSHContextFactory(
+                    streamflow_config_dir=self.config_dir,
                     config=self.dataTransferConfig,
-                    max_concurrent_sessions=self.maxConcurrentSessions)
-            return self.data_transfer_contexts[location]
+                    max_concurrent_sessions=self.maxConcurrentSessions,
+                    max_connections=self.maxConnections)
+            return self.data_transfer_context_factories[location].get()
         else:
             return self._get_ssh_client(location)
 
@@ -394,39 +450,40 @@ class SSHConnector(BaseConnector):
 
     def _get_run_command(self,
                          command: str,
-                         location: str,
+                         location: Location,
                          interactive: bool = False):
         return "".join([
             "ssh ",
             "{location} ",
             "{command}"
         ]).format(
-            location=location,
+            location=location.name,
             command=command)
 
-    def _get_ssh_client(self, location: str):
-        if location not in self.ssh_contexts:
-            self.ssh_contexts[location] = SSHContext(
-                streamflow_config_dir=self.context.config_dir,
+    def _get_ssh_client(self, location: str) -> SSHContextManager:
+        if location not in self.ssh_context_factories:
+            self.ssh_context_factories[location] = SSHContextFactory(
+                streamflow_config_dir=self.config_dir,
                 config=self.nodes[location],
-                max_concurrent_sessions=self.maxConcurrentSessions)
-        return self.ssh_contexts[location]
+                max_concurrent_sessions=self.maxConcurrentSessions,
+                max_connections=self.maxConnections)
+        return self.ssh_context_factories[location].get()
 
     def _get_stream_reader(self,
-                           location: str,
+                           location: Location,
                            src: str) -> StreamWrapperContext:
         return SSHStreamWrapperContext(
             src=src,
-            ssh_context=self._get_data_transfer_client(location))
+            ssh_context=self._get_data_transfer_client(location.name))
 
     async def deploy(self, external: bool) -> None:
         pass
 
     async def get_available_locations(self,
-                                      service: str,
+                                      service: Optional[str] = None,
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
-                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, AvailableLocation]:
         locations = {}
         for location_obj in self.nodes.values():
             inpdir, outdir, tmpdir = await asyncio.gather(
@@ -438,8 +495,10 @@ class SSHConnector(BaseConnector):
                 input_directory=inpdir,
                 output_directory=outdir,
                 tmp_directory=tmpdir)
-            locations[location_obj.hostname] = Location(
+            locations[location_obj.hostname] = AvailableLocation(
                 name=location_obj.hostname,
+                deployment=self.deployment_name,
+                service=service,
                 hostname=location_obj.hostname,
                 hardware=hardware)
         return locations
@@ -450,7 +509,7 @@ class SSHConnector(BaseConnector):
             __name__, os.path.join('schemas', 'ssh.json'))
 
     async def run(self,
-                  location: str,
+                  location: Location,
                   command: MutableSequence[str],
                   environment: MutableMapping[str, str] = None,
                   workdir: Optional[str] = None,
@@ -472,23 +531,21 @@ class SSHConnector(BaseConnector):
             command = self._get_command_from_template(
                 command=command,
                 environment=environment,
-                template=self.context.scheduler.get_service(job_name),
+                template=location.service,
                 workdir=workdir)
             command = utils.encode_command(command)
-            async with self._get_ssh_client(location) as ssh_client:
+            async with self._get_ssh_client(location.name) as ssh_client:
                 result = await ssh_client.run(command, stderr=STDOUT)
         else:
-            async with self._get_ssh_client(location) as ssh_client:
+            async with self._get_ssh_client(location.name) as ssh_client:
                 result = await ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT)
         if capture_output:
             return result.stdout.strip(), result.returncode
 
     async def undeploy(self, external: bool) -> None:
-        for ssh_context in self.ssh_contexts.values():
-            async with ssh_context as ssh_client:
-                ssh_client.close()
-        self.ssh_contexts = {}
-        for ssh_context in self.data_transfer_contexts.values():
-            async with ssh_context as ssh_client:
-                ssh_client.close()
-        self.data_transfer_contexts = {}
+        for ssh_context in self.ssh_context_factories.values():
+            await ssh_context.close()
+        self.ssh_context_factories = {}
+        for ssh_context in self.data_transfer_context_factories.values():
+            await ssh_context.close()
+        self.data_transfer_context_factories = {}

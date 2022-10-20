@@ -6,12 +6,11 @@ from enum import Enum
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core.config import SchemaEntity
+from streamflow.core.deployment import Location
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from typing import Any, Optional, Set
-
-LOCAL_LOCATION = '__LOCAL__'
 
 
 class DataType(Enum):
@@ -20,35 +19,26 @@ class DataType(Enum):
     INVALID = 2
 
 
-class DataLocation(object):
-    __slots__ = ('path', 'relpath', 'deployment', 'data_type', 'location', 'available')
+class DataLocation(Location):
+    __slots__ = ('path', 'relpath', 'data_type', 'available')
 
     def __init__(self,
+                 name: str,
                  path: str,
                  relpath: str,
                  deployment: str,
                  data_type: DataType,
-                 location: str,
+                 service: Optional[str] = None,
                  available: bool = False):
+        super().__init__(name, deployment, service)
         self.path: str = path
         self.relpath: str = relpath
         self.deployment: str = deployment
-        self.location: str = location
+        self.name: str = name
         self.data_type: DataType = data_type
         self.available: asyncio.Event = asyncio.Event()
         if available:
             self.available.set()
-
-    def __eq__(self, other):
-        if not isinstance(other, DataLocation):
-            return False
-        else:
-            return (self.path == other.path and
-                    self.deployment == other.deployment and
-                    self.location == other.location)
-
-    def __hash__(self):
-        return hash((self.path, self.deployment, self.location))
 
 
 class DataManager(SchemaEntity):
@@ -65,7 +55,7 @@ class DataManager(SchemaEntity):
                            path: str,
                            deployment: Optional[str] = None,
                            location: Optional[str] = None,
-                           location_type: Optional[DataType] = None) -> Set[DataLocation]:
+                           location_type: Optional[DataType] = None) -> MutableSequence[DataLocation]:
         ...
 
     @abstractmethod
@@ -76,14 +66,13 @@ class DataManager(SchemaEntity):
 
     @abstractmethod
     def invalidate_location(self,
-                            location: str,
+                            location: Location,
                             path: str) -> None:
         ...
 
     @abstractmethod
     def register_path(self,
-                      deployment: str,
-                      location: str,
+                      location: Location,
                       path: str,
                       relpath: str,
                       data_type: DataType = DataType.PRIMARY) -> DataLocation:
@@ -97,11 +86,9 @@ class DataManager(SchemaEntity):
 
     @abstractmethod
     async def transfer_data(self,
-                            src_deployment: str,
-                            src_locations: MutableSequence[str],
+                            src_locations: MutableSequence[Location],
                             src_path: str,
-                            dst_deployment: str,
-                            dst_locations: MutableSequence[str],
+                            dst_locations: MutableSequence[Location],
                             dst_path: str,
                             writable: bool = False):
         ...

@@ -22,11 +22,10 @@ from kubernetes_asyncio.stream import WsApiClient, ws_client
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import StreamWrapperContext
-from streamflow.core.deployment import Connector
+from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Location
+from streamflow.core.scheduling import AvailableLocation
 from streamflow.data import aiotarstream
 from streamflow.data.aiotarstream import BaseStreamWrapper
 from streamflow.deployment.connector.base import BaseConnector
@@ -86,7 +85,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  inCluster: Optional[bool] = False,
                  kubeconfig: Optional[str] = os.path.join(str(Path.home()), ".kube", "config"),
                  namespace: Optional[str] = None,
@@ -98,7 +97,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                  maxConcurrentConnections: int = 4096):
         super().__init__(
             deployment_name=deployment_name,
-            context=context,
+            config_dir=config_dir,
             transferBufferSize=transferBufferSize)
         self.inCluster = inCluster
         self.kubeconfig = kubeconfig
@@ -139,7 +138,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     async def _copy_local_to_remote(self,
                                     src: str,
                                     dst: str,
-                                    locations: MutableSequence[str],
+                                    locations: MutableSequence[Location],
                                     read_only: bool = False):
         effective_locations = await self._get_effective_locations(locations, dst)
         await super()._copy_local_to_remote(
@@ -151,9 +150,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     async def _copy_local_to_remote_single(self,
                                            src: str,
                                            dst: str,
-                                           location: str,
+                                           location: Location,
                                            read_only: bool = False) -> None:
-        pod, container = location.split(':')
+        pod, container = location.name.split(':')
         command = ["tar", "xf", "-", "-C", "/"]
         # noinspection PyUnresolvedReferences
         response = await self.client_ws.connect_get_namespaced_pod_exec(
@@ -183,9 +182,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     async def _copy_remote_to_local(self,
                                     src: str,
                                     dst: str,
-                                    location: str,
+                                    location: Location,
                                     read_only: bool = False):
-        pod, container = location.split(':')
+        pod, container = location.name.split(':')
         command = ["tar", "chf", "-", "-C", "/", posixpath.relpath(src, '/')]
         # noinspection PyUnresolvedReferences
         response = await self.client_ws.connect_get_namespaced_pod_exec(
@@ -213,8 +212,8 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     async def _copy_remote_to_remote(self,
                                      src: str,
                                      dst: str,
-                                     locations: MutableSequence[str],
-                                     source_location: str,
+                                     locations: MutableSequence[Location],
+                                     source_location: Location,
                                      source_connector: Optional[Connector] = None,
                                      read_only: bool = False) -> None:
         source_connector = source_connector or self
@@ -237,9 +236,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 # Open a target response for each location
                 writers = [KubernetesResponseWrapper(w) for w in await asyncio.gather(*(asyncio.create_task(
                     cast(Coroutine, self.client_ws.connect_get_namespaced_pod_exec(
-                        name=location.split(':')[0],
+                        name=location.name.split(':')[0],
                         namespace=self.namespace or 'default',
-                        container=location.split(':')[1],
+                        container=location.name.split(':')[1],
                         command=write_command,
                         stderr=True,
                         stdin=False,
@@ -250,8 +249,8 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 while content := await reader.read(source_connector.transferBufferSize):
                     await asyncio.gather(*(asyncio.create_task(writer.write(content)) for writer in writers))
 
-    async def _get_container(self, location: str) -> Tuple[str, V1Container]:
-        pod_name, container_name = location.split(':')
+    async def _get_container(self, location: Location) -> Tuple[str, V1Container]:
+        pod_name, container_name = location.name.split(':')
         pod = await self.client.read_namespaced_pod(name=pod_name, namespace=self.namespace or 'default')
         for container in pod.spec.containers:
             if container.name == container_name:
@@ -268,9 +267,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         return self.configuration
 
     async def _get_effective_locations(self,
-                                       locations: MutableSequence[str],
+                                       locations: MutableSequence[Location],
                                        dest_path: str,
-                                       source_location: Optional[str] = None) -> MutableSequence[str]:
+                                       source_location: Optional[Location] = None) -> MutableSequence[Location]:
         # Get containers
         container_tasks = []
         for location in locations:
@@ -280,14 +279,14 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         common_paths = {}
         effective_locations = []
         for location in locations:
-            container = containers[location.split(':')[1]]
+            container = containers[location.name.split(':')[1]]
             add_location = True
             for volume in container.volume_mounts:
                 if dest_path.startswith(volume.mount_path):
                     path = ':'.join([volume.name, dest_path])
                     if path not in common_paths:
                         common_paths[path] = location
-                    elif location == source_location:
+                    elif location.name == source_location.name:
                         effective_locations.remove(common_paths[path])
                         common_paths[path] = location
                     else:
@@ -299,9 +298,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 
     def _get_run_command(self,
                          command: str,
-                         location: str,
+                         location: Location,
                          interactive: bool = False):
-        pod, container = location.split(':')
+        pod, container = location.name.split(':')
         return (
             "kubectl "
             "{namespace}"
@@ -321,9 +320,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             command=command)
 
     def _get_stream_reader(self,
-                           location: str,
+                           location: Location,
                            src: str) -> StreamWrapperContext:
-        pod, container = location.split(':')
+        pod, container = location.name.split(':')
         dirname, basename = posixpath.split(src)
         return KubernetesResponseWrapperContext(
             coro=cast(Coroutine, self.client_ws.connect_get_namespaced_pod_exec(
@@ -350,7 +349,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
 
     async def run(self,
-                  location: str,
+                  location: Location,
                   command: MutableSequence[str],
                   environment: MutableMapping[str, str] = None,
                   workdir: Optional[str] = None,
@@ -366,7 +365,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             location=location,
             job="for job {job}".format(job=job_name) if job_name else ""))
         command = utils.encode_command(command)
-        pod, container = location.split(':')
+        pod, container = location.name.split(':')
         # noinspection PyUnresolvedReferences
         response = await self.client_ws.connect_get_namespaced_pod_exec(
             name=pod,
@@ -412,7 +411,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 class Helm3Connector(BaseKubernetesConnector):
     def __init__(self,
                  deployment_name: str,
-                 context: StreamFlowContext,
+                 config_dir: str,
                  chart: str,
                  debug: Optional[bool] = False,
                  kubeContext: Optional[str] = None,
@@ -453,7 +452,7 @@ class Helm3Connector(BaseKubernetesConnector):
                  wait: Optional[bool] = True):
         super().__init__(
             deployment_name=deployment_name,
-            context=context,
+            config_dir=config_dir,
             inCluster=inCluster,
             kubeconfig=kubeconfig,
             namespace=namespace,
@@ -462,7 +461,7 @@ class Helm3Connector(BaseKubernetesConnector):
             resourcesCacheSize=resourcesCacheSize,
             resourcesCacheTTL=resourcesCacheTTL,
             transferBufferSize=transferBufferSize)
-        self.chart: str = os.path.join(context.config_dir, chart)
+        self.chart: str = os.path.join(self.config_dir, chart)
         self.debug: bool = debug
         self.kubeContext: Optional[str] = kubeContext
         self.atomic: bool = atomic
@@ -587,10 +586,10 @@ class Helm3Connector(BaseKubernetesConnector):
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(self,
-                                      service: str,
+                                      service: Optional[str] = None,
                                       input_directory: Optional[str] = None,
                                       output_directory: Optional[str] = None,
-                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, Location]:
+                                      tmp_directory: Optional[str] = None) -> MutableMapping[str, AvailableLocation]:
         pods = await self.client.list_namespaced_pod(
             namespace=self.namespace or 'default',
             label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
@@ -609,7 +608,11 @@ class Helm3Connector(BaseKubernetesConnector):
                 for container in pod.spec.containers:
                     if not service or service == container.name:
                         location_name = pod.metadata.name + ':' + service
-                        valid_targets[location_name] = Location(name=location_name, hostname=pod.status.pod_ip)
+                        valid_targets[location_name] = AvailableLocation(
+                            name=location_name,
+                            deployment=self.deployment_name,
+                            service=service,
+                            hostname=pod.status.pod_ip)
                         break
         return valid_targets
 

@@ -19,21 +19,24 @@ def set_targets(current_node, target):
         set_targets(node, node['step'])
 
 
-class WorkflowConfig(object):
+class WorkflowConfig(Config):
 
     def __init__(self,
-                 workflow_name: str,
-                 streamflow_config: Optional[MutableMapping[str, Any]] = None) -> None:
-        super().__init__()
-        workflow_config = streamflow_config['workflows'][workflow_name]
-        self.type = workflow_config['type']
-        self.config = workflow_config['config']
-        self.deplyoments = streamflow_config.get('deployments', {})
+                 name: str,
+                 config: MutableMapping[str, Any]) -> None:
+        workflow_config = config['workflows'][name]
+        super().__init__(
+            name=name,
+            type=workflow_config['type'],
+            config=workflow_config['config'])
+        self.deplyoments = config.get('deployments', {})
         self.policies = {k: Config(name=k, type=v['type'], config=v['config'])
-                         for k, v in streamflow_config.get('scheduling', {}).get('policies', {}).items()}
+                         for k, v in config.get('scheduling', {}).get('policies', {}).items()}
         self.policies['__DEFAULT__'] = Config(name='__DEFAULT__', type='data_locality', config={})
+        self.binding_filters = {k: Config(name=k, type=v['type'], config=v['config'])
+                                for k, v in config.get('bindingFilters', {}).items()}
         if not self.deplyoments:
-            self.deplyoments = streamflow_config.get('models', {})
+            self.deplyoments = config.get('models', {})
             if self.deplyoments:
                 logger.warn(
                     "The `models` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
@@ -62,17 +65,25 @@ class WorkflowConfig(object):
     def _process_binding(self, binding: MutableMapping[str, Any]):
         current_config = self._build_config(PurePosixPath(
             binding['step'] if 'step' in binding else binding['port']))
-        policy = binding['target'].get(
-            'policy', self.deplyoments[binding['target'].get('deployment', binding['target'].get('model', {}))].get(
-                'policy', '__DEFAULT__'))
-        if policy not in self.policies:
-            raise WorkflowDefinitionException("Policy {} is not defined".format(policy))
-        binding['target']['policy'] = self.policies[policy]
+        targets = binding['target'] if isinstance(binding['target'], MutableSequence) else [binding['target']]
+        for target in targets:
+            policy = target.get(
+                'policy', self.deplyoments[target.get(
+                    'deployment', target.get('model', {}))].get('policy', '__DEFAULT__'))
+            if policy not in self.policies:
+                raise WorkflowDefinitionException("Policy {} is not defined".format(policy))
+            target['policy'] = self.policies[policy]
         target_type = 'step' if 'step' in binding else 'port'
         if target_type == 'port' and 'workdir' not in binding['target']:
             raise WorkflowDefinitionException(
                 "The `workdir` option is mandatory when specifying a `port` target.")
-        current_config[target_type] = binding['target']
+        config = {'targets': targets, 'filters': []}
+        for f in binding.get('filters', []):
+            if f in self.binding_filters:
+                config['filters'].append(self.binding_filters[f])
+            else:
+                raise WorkflowDefinitionException("Binding filter {} is not defined".format(f))
+        current_config[target_type] = config
 
     def get(self, path: PurePosixPath, name: str, default: Optional[Any] = None) -> Optional[Any]:
         current_node = self.filesystem

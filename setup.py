@@ -22,6 +22,7 @@ setup(
         "streamflow.data",
         "streamflow.deployment",
         "streamflow.deployment.connector",
+        "streamflow.deployment.filter",
         "streamflow.persistence",
         "streamflow.recovery",
         "streamflow.scheduling",
@@ -33,6 +34,7 @@ setup(
         "streamflow.data": ["schemas/*.json"],
         "streamflow.deployment": ["schemas/*.json"],
         "streamflow.deployment.connector": ["schemas/*.json"],
+        "streamflow.deployment.filter": ["schemas/*.json"],
         "streamflow.persistence": ["schemas/*.sql", "schemas/*.json"],
         "streamflow.recovery": ["schemas/*.json"],
         "streamflow.scheduling.policy": ["schemas/*.json"]
@@ -60,6 +62,7 @@ setup(
     },
     tests_require=[
         'pytest',
+        'pytest-asyncio',
         'cwltest'
     ],
     python_requires=">=3.8, <4",

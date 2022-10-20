@@ -7,6 +7,7 @@ import tempfile
 import urllib.parse
 from enum import Enum
 from pathlib import PurePosixPath
+from types import ModuleType
 from typing import Any, MutableMapping, MutableSequence, Optional, Set, Type, Union, cast
 
 import cwltool.command_line_tool
@@ -18,9 +19,9 @@ from rdflib import Graph
 from ruamel.yaml.comments import CommentedSeq
 
 from streamflow.config.config import WorkflowConfig
+from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import LOCAL_LOCATION
-from streamflow.core.deployment import Connector, DeploymentConfig, LocalTarget, Target
+from streamflow.core.deployment import DeploymentConfig, LOCAL_LOCATION, LocalTarget, Location, Target
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.utils import get_tag, random_name
 from streamflow.core.workflow import CommandOutputProcessor, Port, Step, Token, TokenProcessor, Workflow
@@ -859,15 +860,14 @@ def _process_docker_requirement(name: str,
     return step_target
 
 
-def _process_input_value(connector: Connector,
+def _process_input_value(path_processor: ModuleType,
                          output_directory: str,
                          target: Target,
                          value: Any) -> Any:
     if isinstance(value, MutableSequence):
-        return [_process_input_value(connector, output_directory, target, v) for v in value]
+        return [_process_input_value(path_processor, output_directory, target, v) for v in value]
     elif isinstance(value, MutableMapping):
         if utils.get_token_class(value) in ['File', 'Directory']:
-            path_processor = utils.get_path_processor(connector)
             if 'location' in value:
                 value['location'] = _remap_path(
                     path_processor=path_processor,
@@ -881,14 +881,14 @@ def _process_input_value(connector: Connector,
                     old_dir=output_directory,
                     new_dir=target.workdir)
             if 'secondaryFiles' in value:
-                value['secondaryFiles'] = [_process_input_value(connector, output_directory, target, sf)
+                value['secondaryFiles'] = [_process_input_value(path_processor, output_directory, target, sf)
                                            for sf in value['secondaryFiles']]
             if 'listing' in value:
-                value['listing'] = [_process_input_value(connector, output_directory, target, sf)
+                value['listing'] = [_process_input_value(path_processor, output_directory, target, sf)
                                     for sf in value['listing']]
             return value
         else:
-            return {k: _process_input_value(connector, output_directory, target, v) for k, v in value.items()}
+            return {k: _process_input_value(path_processor, output_directory, target, v) for k, v in value.items()}
     else:
         return value
 
@@ -941,7 +941,7 @@ def _process_transformers(step_name: str,
     return {**input_ports, **new_input_ports}
 
 
-def _remap_path(path_processor,
+def _remap_path(path_processor: ModuleType,
                 path: str,
                 old_dir: str,
                 new_dir: str) -> str:
@@ -983,14 +983,14 @@ class CWLTranslator(object):
         self.workflow_config: WorkflowConfig = workflow_config
 
     def _get_deploy_step(self,
-                         target: Target,
+                         deploymenty_config: DeploymentConfig,
                          workflow: Workflow):
-        if target.deployment.name not in self.deployment_map:
-            self.deployment_map[target.deployment.name] = workflow.create_step(
+        if deploymenty_config.name not in self.deployment_map:
+            self.deployment_map[deploymenty_config.name] = workflow.create_step(
                 cls=DeployStep,
-                name=posixpath.join("__deploy__", target.deployment.name),
-                deployment_config=target.deployment)
-        return self.deployment_map[target.deployment.name]
+                name=posixpath.join("__deploy__", deploymenty_config.name),
+                deployment_config=deploymenty_config)
+        return self.deployment_map[deploymenty_config.name]
 
     def _get_input_port(self,
                         workflow: Workflow,
@@ -1025,40 +1025,44 @@ class CWLTranslator(object):
         else:
             return self.input_ports[source_name]
 
-    def _get_target(self, name: str, target_type: str):
+    def _get_binding_config(self,
+                            name: str,
+                            target_type: str) -> BindingConfig:
         path = PurePosixPath(name)
-        target_config = self.workflow_config.propagate(path, target_type)
-        workdir = target_config.get('workdir') if target_config is not None else None
-        if target_config is not None:
-            if 'deployment' in target_config:
-                target_deployment = self.workflow_config.deplyoments[target_config['deployment']]
-            else:
-                target_deployment = self.workflow_config.deplyoments[target_config['model']]
-                logger.warn("The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `deployment` instead.")
-            locations = target_config.get('locations', None)
-            if locations is None:
-                locations = target_config.get('resources')
-                if locations is not None:
-                    logger.warn("The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                                "Use `locations` instead.")
+        config = self.workflow_config.propagate(path, target_type)
+        if config is not None:
+            targets = []
+            for target in config['targets']:
+                workdir = target.get('workdir') if target is not None else None
+                if 'deployment' in target:
+                    target_deployment = self.workflow_config.deplyoments[target['deployment']]
                 else:
-                    locations = 1
-            deployment = DeploymentConfig(
-                name=target_deployment['name'],
-                type=target_deployment['type'],
-                config=target_deployment['config'],
-                external=target_deployment.get('external', False),
-                lazy=target_deployment.get('lazy', True),
-                workdir=target_deployment.get('workdir'))
-            target = Target(
-                deployment=deployment,
-                locations=locations,
-                service=target_config.get('service'),
-                workdir=workdir)
-            return target
+                    target_deployment = self.workflow_config.deplyoments[target['model']]
+                    logger.warn("The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                                "Use `deployment` instead.")
+                locations = target.get('locations', None)
+                if locations is None:
+                    locations = target.get('resources')
+                    if locations is not None:
+                        logger.warn("The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                                    "Use `locations` instead.")
+                    else:
+                        locations = 1
+                deployment = DeploymentConfig(
+                    name=target_deployment['name'],
+                    type=target_deployment['type'],
+                    config=target_deployment['config'],
+                    external=target_deployment.get('external', False),
+                    lazy=target_deployment.get('lazy', True),
+                    workdir=target_deployment.get('workdir'))
+                targets.append(Target(
+                    deployment=deployment,
+                    locations=locations,
+                    service=target.get('service'),
+                    workdir=workdir))
+            return BindingConfig(targets=targets, filters=config.get('filters'))
         else:
-            return LocalTarget(workdir=workdir)
+            return BindingConfig(targets=[LocalTarget()])
 
     def _handle_default_port(self,
                              global_name: str,
@@ -1098,22 +1102,22 @@ class CWLTranslator(object):
                       output_directory: str,
                       value: Any) -> None:
         # Retrieve a local DeployStep
-        target = self._get_target(global_name, 'port')
-        deploy_step = self._get_deploy_step(target, workflow)
+        binding_config = self._get_binding_config(global_name, 'port')
+        target = binding_config.targets[0]
+        deploy_step = self._get_deploy_step(target.deployment, workflow)
         # Remap path if target's workdir is defined
-        connector = self.context.deployment_manager.get_connector(target.deployment.name)
-        target_config = self.workflow_config.propagate(PurePosixPath(global_name), 'port')
-        if target_config:
-            value = _process_input_value(connector, output_directory, target, value)
+        if self.workflow_config.propagate(PurePosixPath(global_name), 'port') is not None:
+            path_processor = os.path if target.deployment.type == 'local' else posixpath
+            value = _process_input_value(path_processor, output_directory, target, value)
         # Create a schedule step and connect it to the local DeployStep
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
             name=posixpath.join(global_name + "-injector", "__schedule__"),
-            connector_port=deploy_step.get_output_port(),
+            connector_ports={target.deployment.name: deploy_step.get_output_port()},
             input_directory=target.workdir or output_directory,
             output_directory=target.workdir or output_directory,
             tmp_directory=target.workdir or output_directory,
-            target=target)
+            binding_config=binding_config)
         # Create a CWLInputInjector step to process the input
         injector_step = workflow.create_step(
             cls=CWLInputInjectorStep,
@@ -1223,30 +1227,36 @@ class CWLTranslator(object):
         # Process InlineJavascriptRequirement
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Retrieve target
-        target = self._get_target(name_prefix, 'step')
+        binding_config = self._get_binding_config(name_prefix, 'step')
         # Process DockerRequirement
         if 'DockerRequirement' in requirements:
             network_access = (requirements['NetworkAccess']['networkAccess'] if 'NetworkAccess' in requirements
                               else False)
-            if target.deployment.name == LOCAL_LOCATION:
-                target = _process_docker_requirement(
+            if len(binding_config.targets) == 1 and binding_config.targets[0].deployment.name == LOCAL_LOCATION:
+                binding_config.targets[0] = _process_docker_requirement(
                     name=posixpath.join(name_prefix, 'docker-requirement'),
-                    target=target,
+                    target=binding_config.targets[0],
                     context=context,
                     docker_requirement=requirements['DockerRequirement'],
                     network_access=network_access)
-            elif 'image' in target.deployment.config and target.deployment.config['image'] == '':
-                # Overwite image configuration
-                image_name = _process_docker_image(docker_requirement=requirements['DockerRequirement'])
-                target.deployment.config['image'] = image_name
-        # Create DeployStep to initialise the execution environment
-        deploy_step = self._get_deploy_step(target, workflow)
+            else:
+                for target in binding_config.targets:
+                    if (target.deployment.type == 'docker' and
+                            'image' in target.deployment.config and
+                            target.deployment.config['image'] == ''):
+                        # Overwite image configuration
+                        image_name = _process_docker_image(docker_requirement=requirements['DockerRequirement'])
+                        target.deployment.config['image'] = image_name
+        # Create DeploySteps to initialise the execution environment
+        deployments = {t.deployment.name: t.deployment for t in binding_config.targets}
+        deploy_steps = {name: self._get_deploy_step(deployment, workflow)
+                        for name, deployment in deployments.items()}
         # Create a schedule step and connect it to the DeployStep
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
             name=posixpath.join(name_prefix, '__schedule__'),
-            connector_port=deploy_step.get_output_port(),
-            target=target,
+            connector_ports={name: step.get_output_port() for name, step in deploy_steps.items()},
+            binding_config=binding_config,
             hardware_requirement=_get_hardware_requirement(
                 cwl_version=self.loading_context.metadata['cwlVersion'],
                 requirements=requirements,
@@ -1312,8 +1322,9 @@ class CWLTranslator(object):
             output_port = self.output_ports[global_name]
             # If the port is bound to a remote target, add the connector dependency
             if self.workflow_config.propagate(PurePosixPath(global_name), 'port'):
-                port_target = self._get_target(global_name, 'port')
-                output_deploy_step = self._get_deploy_step(port_target, workflow)
+                binding_config = self._get_binding_config(global_name, 'port')
+                port_target = binding_config.targets[0]
+                output_deploy_step = self._get_deploy_step(port_target.deployment, workflow)
                 step.add_input_port(port_name + '__connector__', output_deploy_step.get_output_port())
                 step.output_connectors[port_name] = port_name + '__connector__'
             else:
@@ -1967,15 +1978,13 @@ class CWLTranslator(object):
         # Register data locations for config files
         path = _get_path(self.cwl_definition.tool['id'])
         self.context.data_manager.register_path(
-            deployment=LOCAL_LOCATION,
-            location=LOCAL_LOCATION,
+            location=Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION),
             path=path,
             relpath=os.path.basename(path))
         if self.cwl_inputs:
             path = _get_path(self.cwl_inputs['id'])
             self.context.data_manager.register_path(
-                deployment=LOCAL_LOCATION,
-                location=LOCAL_LOCATION,
+                location=Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION),
                 path=path,
                 relpath=os.path.basename(path))
         # Build workflow graph
@@ -2002,7 +2011,7 @@ class CWLTranslator(object):
                     port_name = output_name.lstrip(posixpath.sep)
                     # Retrieve a local DeployStep
                     target = LocalTarget()
-                    deploy_step = self._get_deploy_step(target, workflow)
+                    deploy_step = self._get_deploy_step(target.deployment, workflow)
                     # Create a transformer to enforce deep listing in folders
                     expression_lib, full_js = _process_javascript_requirement(requirements)
                     # Search for dependencies in format expression
@@ -2045,9 +2054,9 @@ class CWLTranslator(object):
                     schedule_step = workflow.create_step(
                         cls=ScheduleStep,
                         name=posixpath.join(port_name + "-collector", "__schedule__"),
-                        connector_port=deploy_step.get_output_port(),
+                        connector_ports={target.deployment.name: deploy_step.get_output_port()},
                         input_directory=self.output_directory,
-                        target=target)
+                        binding_config=BindingConfig(targets=[target]))
                     # Add the port as an input of the schedule step
                     schedule_step.add_input_port(port_name, transformer_step.get_output_port())
                     # Add TransferStep to transfer the output in the output_dir

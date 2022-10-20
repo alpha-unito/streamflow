@@ -2,29 +2,28 @@ from __future__ import annotations
 
 import asyncio
 import os
-import posixpath
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 import pkg_resources
 
 from streamflow.core import utils
-from streamflow.core.data import DataLocation, DataManager, DataType, LOCAL_LOCATION
-from streamflow.core.deployment import Connector
+from streamflow.core.data import DataLocation, DataManager, DataType
+from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector.base import ConnectorCopyKind
 from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Optional, MutableMapping, Set, MutableSequence
+    from typing import Optional, MutableMapping, MutableSequence
 
 
 async def _copy(src_connector: Optional[Connector],
-                src_location: Optional[str],
+                src_location: Optional[Location],
                 src: str,
                 dst_connector: Optional[Connector],
-                dst_locations: Optional[MutableSequence[str]],
+                dst_locations: Optional[MutableSequence[Location]],
                 dst: str,
                 writable: False) -> None:
     if isinstance(src_connector, LocalConnector):
@@ -59,20 +58,17 @@ class DefaultDataManager(DataManager):
         self.path_mapper = RemotePathMapper(context)
 
     async def _transfer_from_location(self,
-                                      src_connector: Connector,
-                                      src_location: str,
+                                      src_location: Location,
                                       src: str,
-                                      dst_connector: Connector,
-                                      dst_locations: MutableSequence[str],
+                                      dst_locations: MutableSequence[Location],
                                       dst: str,
                                       writable: bool):
-        # Register source path among data locations
-        path_processor = os.path if isinstance(src_connector, LocalConnector) is None else posixpath
-        src = path_processor.abspath(src)
+        src_connector = self.context.deployment_manager.get_connector(src_location.deployment)
+        dst_connector = self.context.deployment_manager.get_connector(dst_locations[0].deployment)
         # Create destination folder
         await remotepath.mkdir(dst_connector, dst_locations, str(Path(dst).parent))
         # Follow symlink for source path
-        src = await remotepath.follow_symlink(src_connector, src_location, src)
+        src = await remotepath.follow_symlink(self.context, src_connector, src_location, src)
         primary_locations = self.path_mapper.get(src, DataType.PRIMARY)
         copy_tasks = []
         remote_locations = []
@@ -81,7 +77,7 @@ class DefaultDataManager(DataManager):
             # Check if a primary copy of the source path is already present on the destination location
             found_existing_loc = False
             for primary_loc in primary_locations:
-                if primary_loc.location == dst_location:
+                if primary_loc.name == dst_location.name:
                     # Wait for the source location to be available on the destination path
                     await primary_loc.available.wait()
                     # If yes, perform a symbolic link if possible
@@ -92,7 +88,8 @@ class DefaultDataManager(DataManager):
                             src_path=src,
                             dst_path=dst,
                             dst_deployment=dst_connector.deployment_name,
-                            dst_location=dst_location,
+                            dst_service=dst_location.service,
+                            dst_location=dst_location.name,
                             available=True)
                     # Otherwise, perform a copy operation
                     else:
@@ -110,8 +107,9 @@ class DefaultDataManager(DataManager):
                                 path=dst,
                                 relpath=list(self.path_mapper.get(src))[0].relpath,
                                 deployment=dst_connector.deployment_name,
+                                service=dst_location.service,
                                 data_type=DataType.PRIMARY,
-                                location=dst_location,
+                                name=dst_location.name,
                                 available=False)))
                     found_existing_loc = True
                     break
@@ -126,7 +124,8 @@ class DefaultDataManager(DataManager):
                             relpath=list(self.path_mapper.get(src))[0].relpath,
                             deployment=dst_connector.deployment_name,
                             data_type=DataType.PRIMARY,
-                            location=dst_location,
+                            service=dst_location.service,
+                            name=dst_location.name,
                             available=False)))
                 else:
                     data_locations.append(self.path_mapper.create_and_map(
@@ -134,7 +133,8 @@ class DefaultDataManager(DataManager):
                         src_path=src,
                         dst_path=dst,
                         dst_deployment=dst_connector.deployment_name,
-                        dst_location=dst_location))
+                        dst_service=dst_location.service,
+                        dst_location=dst_location.name))
         # Perform all the copy operations
         if remote_locations:
             copy_tasks.append(asyncio.create_task(_copy(
@@ -157,13 +157,9 @@ class DefaultDataManager(DataManager):
                            path: str,
                            deployment: Optional[str] = None,
                            location: Optional[str] = None,
-                           location_type: Optional[DataType] = None) -> Set[DataLocation]:
-        data_locations = self.path_mapper.get(path, location_type)
-        data_locations = {loc for loc in data_locations if loc.data_type != DataType.INVALID}
-        if deployment is not None:
-            data_locations = {loc for loc in data_locations if loc.deployment == deployment}
-        if location is not None:
-            data_locations = {loc for loc in data_locations if loc.location == location}
+                           location_type: Optional[DataType] = None) -> MutableSequence[DataLocation]:
+        data_locations = self.path_mapper.get(path, location_type, deployment, location)
+        data_locations = [loc for loc in data_locations if loc.data_type != DataType.INVALID]
         return data_locations
 
     @classmethod
@@ -185,7 +181,7 @@ class DefaultDataManager(DataManager):
                 return list(same_connector_locations)[0]
             else:
                 local_locations = {loc for loc in data_locations if isinstance(
-                                   self.context.deployment_manager.get_connector(loc.deployment), LocalConnector)}
+                    self.context.deployment_manager.get_connector(loc.deployment), LocalConnector)}
                 if local_locations:
                     for loc in local_locations:
                         if loc.data_type == DataType.PRIMARY:
@@ -199,20 +195,20 @@ class DefaultDataManager(DataManager):
         else:
             return None
 
-    def invalidate_location(self, location: str, path: str) -> None:
+    def invalidate_location(self, location: Location, path: str) -> None:
         self.path_mapper.invalidate_location(location, path)
 
     def register_path(self,
-                      deployment: str,
-                      location: str,
+                      location: Location,
                       path: str,
                       relpath: Optional[str] = None,
                       data_type: DataType = DataType.PRIMARY) -> DataLocation:
         data_location = DataLocation(
             path=path,
             relpath=relpath or path,
-            deployment=deployment,
-            location=location or LOCAL_LOCATION,
+            deployment=location.deployment,
+            service=location.service,
+            name=location.name,
             data_type=data_type,
             available=True)
         self.path_mapper.put(
@@ -231,20 +227,14 @@ class DefaultDataManager(DataManager):
             self.path_mapper.put(dst_location.path, data_location)
 
     async def transfer_data(self,
-                            src_deployment: str,
-                            src_locations: MutableSequence[str],
+                            src_locations: MutableSequence[Location],
                             src_path: str,
-                            dst_deployment: str,
-                            dst_locations: MutableSequence[str],
+                            dst_locations: MutableSequence[Location],
                             dst_path: str,
                             writable: bool = False):
         # Get connectors and locations from steps
-        src_connector = self.context.deployment_manager.get_connector(src_deployment)
-        dst_connector = self.context.deployment_manager.get_connector(dst_deployment)
         await asyncio.gather(*(asyncio.create_task(self._transfer_from_location(
-                src_connector, src_location, src_path,
-                dst_connector, dst_locations, dst_path,
-                writable)) for src_location in src_locations))
+            src_location, src_path, dst_locations, dst_path, writable)) for src_location in src_locations))
 
 
 class RemotePathNode(object):
@@ -252,7 +242,7 @@ class RemotePathNode(object):
 
     def __init__(self):
         self.children: MutableMapping[str, RemotePathNode] = {}
-        self.locations: Set[DataLocation] = set()
+        self.locations: MutableMapping[str, MutableMapping[str, MutableSequence[DataLocation]]] = {}
 
 
 class RemotePathMapper(object):
@@ -263,7 +253,8 @@ class RemotePathMapper(object):
         self.context: StreamFlowContext = context
 
     def _remove_node(self, location: DataLocation, node: RemotePathNode):
-        node.locations.remove(location)
+        if location.deployment in node.locations:
+            del node.locations[location.deployment][location.name]
         for n in node.children.values():
             self._remove_node(location, n)
 
@@ -272,6 +263,7 @@ class RemotePathMapper(object):
                        src_path: str,
                        dst_path: str,
                        dst_deployment: str,
+                       dst_service: Optional[str],
                        dst_location: Optional[str],
                        available: bool = False) -> DataLocation:
         data_locations = self.get(src_path)
@@ -279,8 +271,9 @@ class RemotePathMapper(object):
             path=dst_path,
             relpath=list(data_locations)[0].relpath,
             deployment=dst_deployment,
+            service=dst_service,
             data_type=location_type,
-            location=dst_location,
+            name=dst_location,
             available=available)
         for data_location in list(data_locations):
             self.put(data_location.path, dst_data_location)
@@ -288,27 +281,37 @@ class RemotePathMapper(object):
         self.put(dst_path, dst_data_location)
         return dst_data_location
 
-    def get(self, path: str, location_type: Optional[DataType] = None) -> Set[DataLocation]:
+    def get(self,
+            path: str,
+            location_type: Optional[DataType] = None,
+            deployment: Optional[str] = None,
+            name: Optional[str] = None) -> MutableSequence[DataLocation]:
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
         for token in path.parts:
             if token in node.children:
                 node = node.children[token]
             else:
-                return set()
-        return ({loc for loc in node.locations if loc.data_type == location_type} if location_type
-                else node.locations)
+                return []
+        result = []
+        for dep in [deployment] if deployment is not None else node.locations:
+            for n in [name] if name is not None else node.locations.setdefault(dep, {}):
+                locations = node.locations[dep].setdefault(n, [])
+                result.extend([loc for loc in locations if not (location_type and loc.data_type != location_type)])
+        return result
 
-    def invalidate_location(self, location: str, path: str) -> None:
+    def invalidate_location(self, location: Location, path: str) -> None:
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
         for token in path.parts:
             node = node.children[token]
-        for loc in node.locations:
-            if loc.location == location:
-                loc.data_type = DataType.INVALID
+        for loc in node.locations.setdefault(location.deployment, {}).get(location.name, []):
+            loc.data_type = DataType.INVALID
 
-    def put(self, path: str, data_location: DataLocation, recursive: bool = False) -> DataLocation:
+    def put(self,
+            path: str,
+            data_location: DataLocation,
+            recursive: bool = False) -> DataLocation:
         path = PurePosixPath(Path(path).as_posix())
         path_processor = utils.get_path_processor(
             self.context.deployment_manager.get_connector(data_location.deployment))
@@ -332,22 +335,21 @@ class RemotePathMapper(object):
                     path=node_path,
                     relpath=relpath if relpath and node_path.endswith(relpath) else path_processor.basename(node_path),
                     deployment=data_location.deployment,
+                    service=data_location.service,
                     data_type=DataType.PRIMARY,
-                    location=data_location.location,
+                    name=data_location.name,
                     available=True)
-            if location in node.locations:
+            node_location = node.locations.setdefault(location.deployment, {}).setdefault(location.name, [])
+            paths = [loc.path for loc in node_location]
+            if location.path in paths:
                 break
             else:
-                node.locations.add(location)
+                node.locations[location.deployment][location.name].append(location)
                 relpath = path_processor.dirname(relpath)
         # Return location
         return data_location
 
-    def remove_location(self, location: str):
-        data_location = None
-        for loc in self._filesystem.locations:
-            if loc.location == location:
-                data_location = loc
-                break
-        if data_location:
+    def remove_location(self, location: Location):
+        data_locations = self._filesystem.locations.setdefault(location.deployment, {}).get(location.name)
+        for data_location in data_locations:
             self._remove_node(data_location, self._filesystem)
