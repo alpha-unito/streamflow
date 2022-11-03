@@ -2,6 +2,7 @@ import asyncio
 import tempfile
 
 import pytest
+import pytest_asyncio
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import DeploymentConfig, LOCAL_LOCATION, Location
@@ -20,23 +21,32 @@ async def get_location(context: StreamFlowContext,
         raise Exception("{} location type not supported".format(request.param))
 
 
-@pytest.fixture(scope="session")
-def context() -> StreamFlowContext:
+@pytest_asyncio.fixture(scope="session")
+async def context() -> StreamFlowContext:
     context = build_context(tempfile.gettempdir(), {})
-    asyncio.run(context.deployment_manager.deploy(DeploymentConfig(
+    await context.deployment_manager.deploy(DeploymentConfig(
         name=LOCAL_LOCATION,
         type="local",
         config={},
         external=True,
         lazy=False,
-        workdir=tempfile.gettempdir())))
-    asyncio.run(context.deployment_manager.deploy(DeploymentConfig(
+        workdir=tempfile.gettempdir()))
+    await context.deployment_manager.deploy(DeploymentConfig(
         name="alpine",
         type="docker",
         config={
             "image": "alpine:3.16.2"
         },
         external=False,
-        lazy=False)))
+        lazy=False))
     yield context
-    asyncio.run(context.deployment_manager.undeploy_all())
+    await context.deployment_manager.undeploy_all()
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    yield loop
+    loop.close()
+

@@ -25,7 +25,7 @@ class AllNonNullTransformer(OneToOneTransformer):
         return {self.get_output_name(): self._transform(*next(iter(inputs.items())))}
 
 
-class CWLDefaultTransformer(ManyToOneTransformer):
+class DefaultTransformer(ManyToOneTransformer):
 
     def __init__(self,
                  name: str,
@@ -51,6 +51,17 @@ class CWLDefaultTransformer(ManyToOneTransformer):
             if not self.default_token:
                 self.default_token = (await self._get_inputs({'__default__': self.default_port}))['__default__']
             return {self.get_output_name(): self.default_token.retag(primary_token.tag)}
+
+
+class DefaultRetagTransformer(DefaultTransformer):
+
+    async def transform(self, inputs: MutableMapping[str, Token]) -> MutableMapping[str, Token]:
+        if not self.default_port:
+            raise WorkflowDefinitionException("{} step must contain a default port.".format(self.name))
+        tag = get_tag(inputs.values())
+        if not self.default_token:
+            self.default_token = (await self._get_inputs({'__default__': self.default_port}))['__default__']
+        return {self.get_output_name(): self.default_token.retag(tag)}
 
 
 class CWLTokenTransformer(ManyToOneTransformer):

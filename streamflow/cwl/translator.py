@@ -40,8 +40,9 @@ from streamflow.cwl.step import (
     CWLLoopConditionalStep, CWLLoopOutputAllStep, CWLLoopOutputLastStep, CWLTransferStep
 )
 from streamflow.cwl.transformer import (
-    AllNonNullTransformer, CWLDefaultTransformer, CWLTokenTransformer, FirstNonNullTransformer, ForwardTransformer,
-    ListToElementTransformer, LoopValueFromTransformer, OnlyNonNullTransformer, ValueFromTransformer
+    AllNonNullTransformer, DefaultTransformer, CWLTokenTransformer, FirstNonNullTransformer, ForwardTransformer,
+    ListToElementTransformer, LoopValueFromTransformer, OnlyNonNullTransformer, ValueFromTransformer,
+    DefaultRetagTransformer
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
 from streamflow.log_handler import logger
@@ -1085,7 +1086,7 @@ class CWLTranslator(object):
         if port is not None:
             # Add default transformer
             transformer = workflow.create_step(
-                cls=CWLDefaultTransformer,
+                cls=DefaultTransformer,
                 name=global_name + transformer_suffix,
                 default_port=default_port)
             transformer.add_input_port(port_name, port)
@@ -1530,6 +1531,7 @@ class CWLTranslator(object):
                               for n in cwl_element.tool.get('scatter', [])]
         # Process inputs
         input_ports = {}
+        default_ports = {}
         value_from_transformers = {}
         input_dependencies = {}
         for element_input in cwl_element.tool['inputs']:
@@ -1543,8 +1545,22 @@ class CWLTranslator(object):
                 scatter_inputs=scatter_inputs,
                 requirements=requirements,
                 input_ports=input_ports,
+                default_ports=default_ports,
                 value_from_transformers=value_from_transformers,
                 input_dependencies=input_dependencies)
+        for default_name, default_port in default_ports.items():
+            # If there are inputs, add default retag transformer
+            if input_ports:
+                global_name = posixpath.join(step_name, default_name)
+                transformer = workflow.create_step(
+                    cls=DefaultRetagTransformer,
+                    name=global_name + "-step-retag-transformer",
+                    default_port=default_port)
+                for port_name, port in input_ports.items():
+                    transformer.add_input_port(posixpath.relpath(port_name, step_name), port)
+                transformer.add_output_port(posixpath.relpath(default_name, step_name), workflow.create_port())
+                default_ports[default_name] = transformer.get_output_port()
+        input_ports = {**input_ports, **default_ports}
         # Process loop inputs
         element_requirements = {
             **{h['class']: h for h in cwl_element.embedded_tool.hints},
@@ -1766,6 +1782,7 @@ class CWLTranslator(object):
                 loop_terminator_combinator.add_item(port_name)
             # Process inputs
             loop_input_ports = {}
+            loop_default_ports = {}
             loop_value_from_transformers = {}
             loop_input_dependencies = {}
             for loop_input in loop_requirement.get('loop', []):
@@ -1781,10 +1798,24 @@ class CWLTranslator(object):
                     scatter_inputs=scatter_inputs,
                     requirements=requirements,
                     input_ports=loop_input_ports,
+                    default_ports=loop_default_ports,
                     value_from_transformers=loop_value_from_transformers,
                     input_dependencies=loop_input_dependencies,
                     inner_steps_prefix='-loop',
                     value_from_transformer_cls=LoopValueFromTransformer)
+            for default_name, default_port in loop_default_ports.items():
+                # If there are inputs, add default retag transformer
+                if loop_input_ports:
+                    global_name = posixpath.join(step_name, default_name)
+                    transformer = workflow.create_step(
+                        cls=DefaultRetagTransformer,
+                        name=global_name + "-loop-step-retag-transformer",
+                        default_port=default_port)
+                    for port_name, port in loop_input_ports.items():
+                        transformer.add_input_port(posixpath.relpath(port_name, step_name), port)
+                    transformer.add_output_port(posixpath.relpath(default_name, step_name), workflow.create_port())
+                    loop_default_ports[default_name] = transformer.get_output_port()
+            loop_input_ports = {**loop_input_ports, **loop_default_ports}
             # Process inputs again to attach ports to transformers
             loop_input_ports = _process_loop_transformers(
                 step_name=step_name,
@@ -1843,6 +1874,7 @@ class CWLTranslator(object):
                                        scatter_inputs: MutableSequence[str],
                                        requirements: MutableMapping[str, Any],
                                        input_ports: MutableMapping[str, Port],
+                                       default_ports: MutableMapping[str, Port],
                                        value_from_transformers: MutableMapping[str, ValueFromTransformer],
                                        input_dependencies: MutableMapping[str, Any],
                                        inner_steps_prefix: str = '',
@@ -1953,7 +1985,7 @@ class CWLTranslator(object):
                 input_ports[global_name] = source_port
         # Otherwise, search for default values
         elif 'default' in element_input:
-            input_ports[global_name] = self._handle_default_port(
+            default_ports[global_name] = self._handle_default_port(
                 global_name=global_name,
                 port_name=port_name,
                 transformer_suffix=inner_steps_prefix + "-step-default-transformer",

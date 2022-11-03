@@ -2,6 +2,7 @@ import asyncio
 import posixpath
 
 import pytest
+import pytest_asyncio
 
 from streamflow.core import utils
 from streamflow.core.data import FileType
@@ -10,9 +11,9 @@ from streamflow.data import remotepath
 from tests.conftest import get_location
 
 
-@pytest.fixture(scope="module", params=["local", "docker"])
-def location(context, request) -> Location:
-    return asyncio.run(get_location(context, request))
+@pytest_asyncio.fixture(scope="module", params=["local", "docker"])
+async def location(context, request) -> Location:
+    return await get_location(context, request)
 
 
 @pytest.fixture(scope="module")
@@ -20,7 +21,6 @@ def connector(context, location) -> Connector:
     return context.deployment_manager.get_connector(location.deployment)
 
 
-@pytest.mark.asyncio
 async def test_resolve(context, connector, location):
     """Test glob resolution."""
     path_processor = utils.get_path_processor(connector)
@@ -62,7 +62,6 @@ async def test_resolve(context, connector, location):
         await remotepath.rm(connector, location, path)
 
 
-@pytest.mark.asyncio
 async def test_directory(context, connector, location):
     """Test directory creation and deletion."""
     path = utils.random_name()
@@ -94,7 +93,6 @@ async def test_directory(context, connector, location):
             await remotepath.rm(connector, location, path)
 
 
-@pytest.mark.asyncio
 async def test_file(context, connector, location):
     """Test file creation, size, checksum and deletion."""
     path = utils.random_name()
@@ -112,7 +110,6 @@ async def test_file(context, connector, location):
             await remotepath.rm(connector, location, path)
 
 
-@pytest.mark.asyncio
 async def test_symlink(context, connector, location):
     """Test symlink creation, resolution and deletion."""
     src = utils.random_name()

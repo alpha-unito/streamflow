@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+import pytest_asyncio
 
 from streamflow.core import utils
 from streamflow.core.data import DataType
@@ -9,9 +10,9 @@ from streamflow.data import remotepath
 from tests.conftest import get_location
 
 
-@pytest.fixture(scope="module", params=["local", "docker"])
-def src_location(context, request) -> Location:
-    return asyncio.run(get_location(context, request))
+@pytest_asyncio.fixture(scope="module", params=["local", "docker"])
+async def src_location(context, request) -> Location:
+    return await get_location(context, request)
 
 
 @pytest.fixture(scope="module")
@@ -19,9 +20,9 @@ def src_connector(context, src_location) -> Connector:
     return context.deployment_manager.get_connector(src_location.deployment)
 
 
-@pytest.fixture(scope="module", params=["local", "docker"])
-def dst_location(context, request) -> Location:
-    return asyncio.run(get_location(context, request))
+@pytest_asyncio.fixture(scope="module", params=["local", "docker"])
+async def dst_location(context, request) -> Location:
+    return await get_location(context, request)
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +30,6 @@ def dst_connector(context, dst_location) -> Connector:
     return context.deployment_manager.get_connector(dst_location.deployment)
 
 
-@pytest.mark.asyncio
 async def test_file(context, src_connector, src_location, dst_connector, dst_location):
     """Test transferring a file from one location to another."""
     src_path = utils.random_name()
@@ -49,7 +49,7 @@ async def test_file(context, src_connector, src_location, dst_connector, dst_loc
             dst_locations=[dst_location],
             dst_path=dst_path,
             writable=False)
-        assert remotepath.exists(dst_connector, dst_location, dst_path)
+        assert await remotepath.exists(dst_connector, dst_location, dst_path)
         dst_digest = await remotepath.checksum(context, dst_connector, dst_location, dst_path)
         assert src_digest == dst_digest
     finally:

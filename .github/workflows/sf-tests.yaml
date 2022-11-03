@@ -25,6 +25,4 @@ jobs:
           python -m pip install requests tabulate pytest pytest-asyncio --user
           python -m pip install . --user
       - name: "Run StreamFlow tests (excluding CWL Conformance)"
-        env:
-          PYTEST_MARK: ${{ matrix.mark }}
         run: pytest -m "not conformance"
