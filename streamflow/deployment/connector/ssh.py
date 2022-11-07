@@ -517,6 +517,7 @@ class SSHConnector(BaseConnector):
                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
+                  timeout: Optional[int] = None,
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = self._get_command(
             location=location,
@@ -535,10 +536,12 @@ class SSHConnector(BaseConnector):
                 workdir=workdir)
             command = utils.encode_command(command)
             async with self._get_ssh_client(location.name) as ssh_client:
-                result = await ssh_client.run(command, stderr=STDOUT)
+                result = await asyncio.wait_for(ssh_client.run(command, stderr=STDOUT), timeout=timeout)
         else:
             async with self._get_ssh_client(location.name) as ssh_client:
-                result = await ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT)
+                result = await asyncio.wait_for(
+                    ssh_client.run("sh -c '{command}'".format(command=command), stderr=STDOUT),
+                    timeout=timeout)
         if capture_output:
             return result.stdout.strip(), result.returncode
 

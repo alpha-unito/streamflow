@@ -357,6 +357,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
+                  timeout: Optional[int] = None,
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
@@ -367,16 +368,18 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         command = utils.encode_command(command)
         pod, container = location.name.split(':')
         # noinspection PyUnresolvedReferences
-        response = await self.client_ws.connect_get_namespaced_pod_exec(
-            name=pod,
-            namespace=self.namespace or 'default',
-            container=container,
-            command=["sh", "-c", "{command}".format(command=command)],
-            stderr=True,
-            stdin=False,
-            stdout=True,
-            tty=False,
-            _preload_content=not capture_output)
+        response = await asyncio.wait_for(
+            cast(Awaitable, self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or 'default',
+                container=container,
+                command=["sh", "-c", "{command}".format(command=command)],
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _preload_content=not capture_output)),
+            timeout=timeout)
         if capture_output:
             with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
                 while not response.closed:

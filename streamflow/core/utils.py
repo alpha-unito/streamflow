@@ -156,6 +156,14 @@ def flatten_list(hierarchical_list):
     return flat_list
 
 
+def format_seconds_to_hhmmss(seconds: int) -> str:
+    hours = seconds // (60*60)
+    seconds %= (60*60)
+    minutes = seconds // 60
+    seconds %= 60
+    return "%02i:%02i:%02i" % (hours, minutes, seconds)
+
+
 def get_class_fullname(cls: Type):
     return cls.__module__ + '.' + cls.__qualname__
 

@@ -218,17 +218,17 @@ def _escape_value(value: Any) -> Any:
         return shlex.quote(str(value))
 
 
-def alphanumeric_sorting(list_to_sort: Iterable) -> Iterable:
-    regex = '(-{0,1}[0-9]+)'
-    return sorted(list_to_sort, key=lambda key: [int(c) if re.match(regex, c) else c for c in re.split(regex, key)])
-
-
 def _merge_tokens(bindings_map: MutableMapping[str, MutableSequence[Any]]) -> MutableSequence[Any]:
     command = []
     for binding_position in alphanumeric_sorting(bindings_map.keys()):
         for binding in bindings_map[binding_position]:
             command.extend(flatten_list(binding))
     return [str(token) for token in command]
+
+
+def alphanumeric_sorting(list_to_sort: Iterable) -> Iterable:
+    regex = '(-{0,1}[0-9]+)'
+    return sorted(list_to_sort, key=lambda key: [int(c) if re.match(regex, c) else c for c in re.split(regex, key)])
 
 
 class CWLBaseCommand(Command, ABC):
@@ -249,7 +249,8 @@ class CWLBaseCommand(Command, ABC):
         self.inplace_update: bool = inplace_update
         self.time_limit: Optional[Union[int, str]] = time_limit
 
-    def _get_timeout(self, job: Job) -> Optional[int]:
+    def _get_timeout(self, job: Job, step: Step) -> Optional[int]:
+        timeout = 0
         if isinstance(self.time_limit, int):
             timeout = self.time_limit
         elif isinstance(self.time_limit, str):
@@ -263,9 +264,14 @@ class CWLBaseCommand(Command, ABC):
                 context=context,
                 full_js=self.full_js,
                 expression_lib=self.expression_lib))
+        if timeout and timeout < 0:
+            raise WorkflowDefinitionException(
+                "Invalid time limit for step {step}: {timeout}. Time limit should be >= 0.".format(
+                    step=step.name, timeout=timeout))
+        elif timeout == 0:
+            return None
         else:
-            timeout = 0
-        return timeout if timeout > 0 else None
+            return timeout
 
     async def _prepare_work_dir(self,
                                 job: Job,
@@ -566,10 +572,11 @@ class CWLCommand(CWLBaseCommand):
             full_js=self.full_js,
             expression_lib=self.expression_lib
         ) if self.stderr is not None else stdout
+        # Get timeout
+        timeout = self._get_timeout(job=job, step=self.step)
         # Execute remote command
         start_time = time.time_ns()
-        result, exit_code = await asyncio.wait_for(
-            connector.run(
+        result, exit_code = await connector.run(
                 locations[0],
                 cmd,
                 environment=parsed_env,
@@ -578,8 +585,8 @@ class CWLCommand(CWLBaseCommand):
                 stdout=stdout,
                 stderr=stderr,
                 capture_output=True,
-                job_name=job.name),
-            self._get_timeout(job))
+                timeout=timeout,
+                job_name=job.name)
         end_time = time.time_ns()
         # Handle exit codes
         if self.failure_codes and exit_code in self.failure_codes:

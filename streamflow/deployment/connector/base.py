@@ -5,7 +5,7 @@ import logging
 import posixpath
 import shlex
 import tarfile
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod
 from typing import MutableSequence, TYPE_CHECKING, Tuple
 
 from streamflow.core import utils
@@ -268,6 +268,7 @@ class BaseConnector(Connector, FutureAware):
                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
+                  timeout: Optional[int] = None,
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
@@ -284,7 +285,7 @@ class BaseConnector(Connector, FutureAware):
             stdout=asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL)
         if capture_output:
-            stdout, _ = await proc.communicate()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
             return stdout.decode().strip(), proc.returncode
         else:
-            await proc.wait()
+            await asyncio.wait_for(proc.wait(), timeout=timeout)

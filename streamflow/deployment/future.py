@@ -90,6 +90,7 @@ class FutureConnector(Connector):
                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
+                  timeout: Optional[int] = None,
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         if self.connector is None:
             if not self.deploying:
@@ -106,6 +107,7 @@ class FutureConnector(Connector):
             stdout=stdout,
             stderr=stderr,
             capture_output=capture_output,
+            timeout=timeout,
             job_name=job_name)
 
     async def undeploy(self, external: bool) -> None:

@@ -1221,7 +1221,7 @@ class CWLTranslator(object):
                                      context: MutableMapping[str, Any],
                                      name_prefix: str,
                                      cwl_name_prefix: str):
-        logger.debug("Translating {} {}".format(cwl_element.tool.__class__.__name__, name_prefix))
+        logger.debug("Translating {} {}".format(cwl_element.__class__.__name__, name_prefix))
         # Extract custom types if present
         requirements = {**context['hints'], **context['requirements']}
         schema_def_types = _get_schema_def_types(requirements)
@@ -1354,8 +1354,6 @@ class CWLTranslator(object):
             # Process ToolTimeLimit
             if 'ToolTimeLimit' in requirements:
                 step.command.time_limit = requirements['ToolTimeLimit']['timelimit']
-                if step.command.time_limit < 0:
-                    raise WorkflowDefinitionException('Invalid time limit for step {step}'.format(step=name_prefix))
         elif isinstance(cwl_element, cwltool.command_line_tool.ExpressionTool):
             if 'expression' in cwl_element.tool:
                 step.command = CWLExpressionCommand(step, cwl_element.tool['expression'])
