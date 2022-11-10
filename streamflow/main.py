@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import logging
-import coloredlogs
 import os
 import sys
 import uuid
