@@ -15,7 +15,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
-from streamflow.log_handler import logger, CustomFormatter
+from streamflow.log_handler import logger, CustomFormatter, HighlitingFilter
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
@@ -132,6 +132,7 @@ def main(args):
                 coloredStreamHandler.setFormatter(CustomFormatter())
                 logger.handlers = []
                 logger.addHandler(coloredStreamHandler)
+                logger.addFilter(HighlitingFilter())
             asyncio.run(_async_main(args))
         else:
             raise Exception("Context {} not supported.".format(args.context))
