@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import coloredlogs
 import os
 import sys
 import uuid
@@ -14,7 +15,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
-from streamflow.log_handler import logger
+from streamflow.log_handler import logger, CustomFormatter
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
@@ -126,6 +127,11 @@ def main(args):
                 logger.setLevel(logging.WARN)
             elif args.debug:
                 logger.setLevel(logging.DEBUG)
+            if args.color and hasattr(sys.stdout, 'isatty') and sys.stdout.isatty():
+                coloredStreamHandler = logging.StreamHandler()
+                coloredStreamHandler.setFormatter(CustomFormatter())
+                logger.handlers = []
+                logger.addHandler(coloredStreamHandler)
             asyncio.run(_async_main(args))
         else:
             raise Exception("Context {} not supported.".format(args.context))
