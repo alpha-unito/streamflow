@@ -38,11 +38,11 @@ class HighlitingFilter(logging.Filter):
     bold_blue = "\x1b[1;34m"
     reset = "\x1b[0m"
     patterns = {
-        'CANCELLED': 2, # bad
-        'SKIPPED': 1,   # less bad
-        'COMPLETED': 0,  # good
+        'CANCELLED': 3, # bad
+        'SKIPPED': 2,   # less bad
+        'COMPLETED': 1,  # good
         'FAILED': 2,
-        'EXECUTING': 0,
+        'EXECUTING': 0, # working messages
         'COPYING': 0
     }
 
@@ -57,10 +57,12 @@ class HighlitingFilter(logging.Filter):
         msg = str(msg)
         for pattern, category in self.patterns.items():
             if category == 0:
+                msg = msg.replace(pattern, self.bold_blue + pattern + self.reset)
+            elif category == 1:
                 msg = msg.replace(pattern, self.bold_green + pattern + self.reset)
-            elif category == 1:
+            elif category == 2:
                 msg = msg.replace(pattern, self.bold_yellow + pattern + self.reset)
-            elif category == 1:
+            elif category == 3:
                 msg = msg.replace(pattern, self.bold_red + pattern + self.reset)
         return msg
 
