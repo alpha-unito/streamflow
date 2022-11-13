@@ -313,6 +313,7 @@ class OccamConnector(SSHConnector):
                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
                   stderr: Union[int, str] = asyncio.subprocess.STDOUT,
                   capture_output: bool = False,
+                  timeout: Optional[int] = None,
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = self._get_command(
             location=location,
@@ -331,7 +332,7 @@ class OccamConnector(SSHConnector):
             location=location,
             command=command)
         async with self._get_ssh_client(location.name) as ssh_client:
-            result = await ssh_client.run(occam_command)
+            result = await asyncio.wait_for(ssh_client.run(occam_command), timeout=timeout)
         if capture_output:
             lines = (line for line in result.stdout.split('\n'))
             out = ""
