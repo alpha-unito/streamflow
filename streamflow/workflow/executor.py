@@ -101,7 +101,7 @@ class StreamFlowExecutor(Executor):
             # Check if workflow terminated properly
             for step in self.workflow.steps.values():
                 if step.status in [Status.FAILED, Status.CANCELLED]:
-                    raise WorkflowExecutionException("Workflow execution terminated with status FAILED")
+                    raise WorkflowExecutionException("FAILED Workflow execution")
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
                     self.workflow.persistent_id, {'status': Status.COMPLETED.value})

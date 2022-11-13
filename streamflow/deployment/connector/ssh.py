@@ -224,7 +224,7 @@ class SSHConnector(BaseConnector):
             stdin=stdin,
             stdout=stdout,
             stderr=stderr)
-        logger.debug("Executing command {command} on {location} {job}".format(
+        logger.debug("EXECUTING command {command} on {location} {job}".format(
             command=command,
             location=location,
             job="for job {job}".format(job=job_name) if job_name else ""))

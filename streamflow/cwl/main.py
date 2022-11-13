@@ -83,9 +83,9 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
     if getattr(args, 'validate', False):
         return
     await workflow.save(context)
-    logger.info("Building of workflow execution plan terminated with status COMPLETED")
+    logger.info("COMPLETED Building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)
     logger.info("Running workflow {}".format(args.name))
     output_tokens = await executor.run()
-    logger.info("Workflow execution terminated with status COMPLETED")
+    logger.info("COMPLETED Workflow execution")
     print(json.dumps(output_tokens, sort_keys=True, indent=4))

@@ -204,14 +204,14 @@ class BaseConnector(Connector, FutureAware):
                 raise Exception("Source location is mandatory for remote to remote copy")
             if logger.isEnabledFor(logging.INFO):
                 if len(locations) > 1:
-                    logger.info("Copying {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
+                    logger.info("COPYING {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
                         src_loc=source_location,
                         src=src,
                         dst=dst,
                         locations='\n\t'.join([str(loc) for loc in locations])
                     ))
                 else:
-                    logger.info("Copying {src} on location {src_loc} to {dst} on location {location}".format(
+                    logger.info("COPYING {src} on location {src_loc} to {dst} on location {location}".format(
                         src_loc=source_location,
                         src=src,
                         dst=dst,
@@ -226,13 +226,13 @@ class BaseConnector(Connector, FutureAware):
         elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
             if logger.isEnabledFor(logging.INFO):
                 if len(locations) > 1:
-                    logger.info("Copying {src} on local file-system to {dst} on locations:\n\t{locations}".format(
+                    logger.info("COPYING {src} on local file-system to {dst} on locations:\n\t{locations}".format(
                         src=src,
                         dst=dst,
                         locations='\n\t'.join([str(loc) for loc in locations])
                     ))
                 else:
-                    logger.info("Copying {src} on local file-system to {dst} {location}".format(
+                    logger.info("COPYING {src} on local file-system to {dst} {location}".format(
                         src=src,
                         dst=dst,
                         location=("on local file-system" if locations[0].name == LOCAL_LOCATION
@@ -246,7 +246,7 @@ class BaseConnector(Connector, FutureAware):
             if len(locations) > 1:
                 raise Exception("Copy from multiple locations is not supported")
             if logger.isEnabledFor(logging.INFO):
-                logger.info("Copying {src} on location {location} to {dst} on local file-system".format(
+                logger.info("COPYING {src} on location {location} to {dst} on local file-system".format(
                     src=src,
                     dst=dst,
                     location=locations[0]
@@ -272,7 +272,7 @@ class BaseConnector(Connector, FutureAware):
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Executing command {command} on {location} {job}".format(
+            logger.debug("EXECUTING command {command} on {location} {job}".format(
                 command=command,
                 location=location,
                 job="for job {job}".format(job=job_name) if job_name else ""))

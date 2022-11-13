@@ -360,7 +360,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                   job_name: Optional[str] = None) -> Optional[Tuple[Optional[Any], int]]:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr)
-        logger.debug("Executing command {command} on {location} {job}".format(
+        logger.debug("EXECUTING command {command} on {location} {job}".format(
             command=command,
             location=location,
             job="for job {job}".format(job=job_name) if job_name else ""))
@@ -577,7 +577,7 @@ class Helm3Connector(BaseKubernetesConnector):
                 releaseName="{releaseName} ".format(releaseName=self.releaseName),
                 chart="\"{chart}\"".format(chart=self.chart)
             )
-            logger.debug("Executing {command}".format(command=deploy_command))
+            logger.debug("EXECUTING {command}".format(command=deploy_command))
             proc = await asyncio.create_subprocess_exec(
                 *shlex.split(deploy_command),
                 stderr=asyncio.subprocess.DEVNULL,
@@ -636,7 +636,7 @@ class Helm3Connector(BaseKubernetesConnector):
                 timeout=self.get_option("timeout", self.timeout),
                 releaseName=self.releaseName
             )
-            logger.debug("Executing {command}".format(command=undeploy_command))
+            logger.debug("EXECUTING {command}".format(command=undeploy_command))
             proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
             await proc.wait()
         # Close connections

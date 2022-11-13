@@ -120,7 +120,7 @@ class DefaultFailureManager(FailureManager):
                 logger.exception(e)
                 return await self.handle_exception(job, job_version.step, e)
         else:
-            logger.error("Job {name} failed {version} times. Execution aborted".format(
+            logger.error("FAILED Job {name} {version} times. Execution aborted".format(
                 name=job.name, version=self.jobs[job.name].version))
             raise FailureHandlingException()
 
