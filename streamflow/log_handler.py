@@ -31,6 +31,41 @@ class CustomFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
+class HighlitingFilter(logging.Filter):
+    bold_green = "\x1b[1;32m"
+    bold_yellow = "\x1b[33;1m"
+    bold_red = "\x1b[31;1m"
+    bold_blue = "\x1b[1;34m"
+    reset = "\x1b[0m"
+    patterns = {
+        'CANCELLED': 3, # bad
+        'SKIPPED': 2,   # less bad
+        'COMPLETED': 1,  # good
+        'FAILED': 2,
+        'EXECUTING': 0, # working messages
+        'COPYING': 0
+    }
+
+    def __init__(self):
+        super(HighlitingFilter, self).__init__()
+
+    def filter(self, record):
+        record.msg = self.highlight(record.msg)
+        return True
+
+    def highlight(self, msg):
+        msg = str(msg)
+        for pattern, category in self.patterns.items():
+            if category == 0:
+                msg = msg.replace(pattern, self.bold_blue + pattern + self.reset)
+            elif category == 1:
+                msg = msg.replace(pattern, self.bold_green + pattern + self.reset)
+            elif category == 2:
+                msg = msg.replace(pattern, self.bold_yellow + pattern + self.reset)
+            elif category == 3:
+                msg = msg.replace(pattern, self.bold_red + pattern + self.reset)
+        return msg
+
 logger = logging.getLogger("streamflow")
 defaultStreamHandler = logging.StreamHandler()
 formatter = logging.Formatter(fmt='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',

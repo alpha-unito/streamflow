@@ -99,7 +99,7 @@ class BaseStep(Step, ABC):
                 port.put(TerminationToken())
             # Set termination status
             await self._set_status(status)
-            logger.log(self._log_level, "Step {name} terminated with status {status}".format(
+            logger.log(self._log_level, "{status} Step {name}".format(
                 name=self.name, status=status.name))
 
 
@@ -461,7 +461,7 @@ class ExecuteStep(BaseStep):
             await self.workflow.context.scheduler.notify_status(job.name, Status.RUNNING)
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
-                logger.error("Job {name} failed {error}".format(
+                logger.error("FAILED Job {name} with error {error}".format(
                     name=job.name,
                     error="with error:\n\t{error}".format(error=command_output.value)))
                 command_output = await self.workflow.context.failure_manager.handle_failure(job, self, command_output)
@@ -505,7 +505,7 @@ class ExecuteStep(BaseStep):
                 logger.exception(e)
                 command_output.status = Status.FAILED
         # Return job status
-        logger.debug("Job {name} terminated with status {status}".format(
+        logger.debug("{status} Job {name} terminated".format(
             name=job.name, status=command_output.status.name))
         return command_output.status
 

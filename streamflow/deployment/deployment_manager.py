@@ -54,7 +54,7 @@ class DefaultDeploymentManager(DeploymentManager):
                         logger.info("Deploying {}".format(deployment_name))
                     await connector.deploy(deployment_config.external)
                     if not deployment_config.external:
-                        logger.info("Deployment of {} terminated with status COMPLETED".format(deployment_name))
+                        logger.info("COMPLETED Deployment of {}".format(deployment_name))
                     self.events_map[deployment_name].set()
                     break
             else:
@@ -83,7 +83,7 @@ class DefaultDeploymentManager(DeploymentManager):
                 logger.info("Undeploying {deployment}".format(deployment=deployment_name))
             await connector.undeploy(config.external)
             if not config.external:
-                logger.info("Undeployment of {} terminated with status COMPLETED".format(deployment_name))
+                logger.info("COMPLETED Undeployment of {}".format(deployment_name))
             del self.deployments_map[deployment_name]
             del self.config_map[deployment_name]
             self.events_map[deployment_name].set()

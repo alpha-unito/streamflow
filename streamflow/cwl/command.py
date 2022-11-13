@@ -533,7 +533,7 @@ class CWLCommand(CWLBaseCommand):
         if logger.isEnabledFor(logging.INFO):
             is_local = isinstance(
                 self.step.workflow.context.deployment_manager.get_connector(locations[0].deployment), LocalConnector)
-            logger.info('Executing step {step} (job {job}) {location} into directory {outdir}:\n{command}'.format(
+            logger.info('EXECUTING step {step} (job {job}) {location} into directory {outdir}:\n{command}'.format(
                 step=self.step.name,
                 job=job.name,
                 location="locally" if is_local else "on location {loc}".format(loc=locations[0]),
@@ -884,7 +884,7 @@ class CWLStepCommand(CWLBaseCommand):
             output_directory=job.output_directory,
             tmp_directory=job.tmp_directory,
             hardware=self.step.workflow.context.scheduler.get_hardware(job.name))
-        logger.info('Executing job {job}'.format(job=job.name))
+        logger.info('EXECUTING job {job}'.format(job=job.name))
         # Process expressions
         processed_inputs = {}
         for k, v in self.input_expressions.items():
