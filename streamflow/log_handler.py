@@ -32,12 +32,19 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 class HighlitingFilter(logging.Filter):
-    bold_cyan = "\x1b[1;36m"
+    bold_green = "\x1b[1;32m"
+    bold_yellow = "\x1b[33;1m"
+    bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
+    patterns = {
+        'CANCELLED': 2, # bad
+        'SKIPPED': 1,   # less bad
+        'COMPLETED': 0,  # good
+        'FAILED': 2
+    }
 
     def __init__(self):
         super(HighlitingFilter, self).__init__()
-        self._patterns = ["CANCELLED"]
 
     def filter(self, record):
         record.msg = self.highlight(record.msg)
@@ -45,8 +52,13 @@ class HighlitingFilter(logging.Filter):
 
     def highlight(self, msg):
         msg = str(msg)
-        for pattern in self._patterns:
-               msg = msg.replace(pattern, self.bold_cyan + pattern + self.reset)
+        for pattern, category in self.patterns.items():
+            if category == 0:
+                msg = msg.replace(pattern, self.bold_green + pattern + self.reset)
+            elif category == 1:
+                msg = msg.replace(pattern, self.bold_yellow + pattern + self.reset)
+            elif category == 1:
+                msg = msg.replace(pattern, self.bold_red + pattern + self.reset)
         return msg
 
 logger = logging.getLogger("streamflow")
