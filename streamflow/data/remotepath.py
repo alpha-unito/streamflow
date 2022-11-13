@@ -28,8 +28,8 @@ def _check_status(command: MutableSequence[str],
                   result: str,
                   status: int):
     if status != 0:
-        raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
-            ' '.join(command), location, status, result))
+        raise WorkflowExecutionException("{} Command '{}' on location {}: {}".format(
+            status, ' '.join(command), location, result))
 
 
 def _file_checksum_local(path: str) -> str:
@@ -71,8 +71,8 @@ async def checksum(context: StreamFlowContext,
             command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
-                command, location, status, result))
+            raise WorkflowExecutionException("{} Command '{}' on location {}: {}".format(
+                status, command, location, result))
         return result.strip()
 
 
@@ -120,8 +120,8 @@ async def exists(connector: Connector, location: Optional[Location], path: str) 
             command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
-                command, location, status, result))
+            raise WorkflowExecutionException("{} Command '{}' on location {}: {}".format(
+                status, command, location, result))
         else:
             return not status
 
@@ -153,8 +153,8 @@ async def follow_symlink(context: StreamFlowContext,
             command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
-                command, location, status, result))
+            raise WorkflowExecutionException("{} Command '{}' on location {}: {}".format(
+                status, command, location, result))
         return result.strip()
 
 
@@ -187,8 +187,8 @@ async def isdir(connector: Connector,
             command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
-                command, location, status, result))
+            raise WorkflowExecutionException("{} Command '{}' on location {}: {}".format(
+                status, command, location, result))
         else:
             return not status
 
@@ -205,8 +205,8 @@ async def isfile(connector: Connector,
             command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
-                command, location, status, result))
+            raise WorkflowExecutionException("{} Command '{}' on location {}: {}".format(
+                status, command, location, result))
         else:
             return not status
 
@@ -223,8 +223,8 @@ async def islink(connector: Connector,
             command=command,
             capture_output=True)
         if status > 1:
-            raise WorkflowExecutionException("Command '{}' on location {} terminated with status {}: {}".format(
-                command, location, status, result))
+            raise WorkflowExecutionException("{} Command '{}' on location {}: {}".format(
+                status, command, location, result))
         else:
             return not status
 
