@@ -43,7 +43,10 @@ class HighlitingFilter(logging.Filter):
         'COMPLETED': 1,  # good
         'FAILED': 2,
         'EXECUTING': 0, # working messages
-        'COPYING': 0
+        'COPYING': 0,
+        'DEPLOYING': 0,
+        'UNDEPLOYING': 0,
+        'SCHEDULED': 0
     }
 
     def __init__(self):
