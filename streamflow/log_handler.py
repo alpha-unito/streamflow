@@ -44,8 +44,8 @@ class HighlitingFilter(logging.Filter):
         'FAILED': 2,
         'EXECUTING': 0, # working messages
         'COPYING': 0,
-        'DEPLOYING': 0,
         'UNDEPLOYING': 0,
+        'DEPLOYING': 0,
         'SCHEDULED': 0
     }
 
