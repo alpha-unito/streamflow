@@ -14,7 +14,7 @@ from cachetools import Cache, TTLCache
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.deployment import Location
-from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
@@ -251,7 +251,11 @@ class SlurmConnector(QueueManagerConnector):
             command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
         async with self._get_ssh_client(location.name) as ssh_client:
             result = await ssh_client.run(batch_command)
-        return result.stdout.strip()
+            if result.returncode == 0:
+                return result.stdout.strip()
+            else:
+                raise WorkflowExecutionException("Error submitting job {} to Slurm: {}".format(
+                    job_name, result.stderr.strip()))
 
 
 class PBSConnector(QueueManagerConnector):
@@ -318,4 +322,8 @@ class PBSConnector(QueueManagerConnector):
             command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
         async with self._get_ssh_client(location.name) as ssh_client:
             result = await ssh_client.run(batch_command)
-        return result.stdout.strip()
+            if result.returncode == 0:
+                return result.stdout.strip()
+            else:
+                raise WorkflowExecutionException("Error submitting job {} to PBS: {}".format(
+                    job_name, result.stderr.strip()))
