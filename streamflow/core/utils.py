@@ -6,6 +6,7 @@ import importlib
 import itertools
 import os
 import posixpath
+import shlex
 import uuid
 from pathlib import Path
 from types import ModuleType
@@ -99,10 +100,10 @@ def create_command(command: MutableSequence[str],
         environment="".join(["export %s=\"%s\" && " % (key, value) for (key, value) in
                              environment.items()]) if environment is not None else "",
         command=" ".join(command),
-        stdin=" < {stdin}".format(stdin=stdin) if stdin is not None else "",
-        stdout=" > {stdout}".format(stdout=stdout) if stdout != asyncio.subprocess.STDOUT else "",
+        stdin=" < {stdin}".format(stdin=shlex.quote(stdin)) if stdin is not None else "",
+        stdout=" > {stdout}".format(stdout=shlex.quote(stdout)) if stdout != asyncio.subprocess.STDOUT else "",
         stderr=(" 2>&1" if stderr == stdout else
-                " 2>{stderr}".format(stderr=stderr) if stderr != asyncio.subprocess.STDOUT else
+                " 2>{stderr}".format(stderr=shlex.quote(stderr)) if stderr != asyncio.subprocess.STDOUT else
                 ""))
     return command
 

@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import os
+import shlex
 from abc import ABC, abstractmethod
 from asyncio import Lock
 from asyncio.subprocess import STDOUT
@@ -240,11 +241,11 @@ class SlurmConnector(QueueManagerConnector):
                          "sbatch --parsable {workdir} {stdin} {stdout} {stderr} {timeout}'").format(
             workdir=("-D {workdir}".format(workdir=workdir)
                      if workdir is not None else ""),
-            stdin=("-i \"{stdin}\"".format(stdin=stdin)
+            stdin=("-i \"{stdin}\"".format(stdin=shlex.quote(stdin))
                    if stdin is not None else ""),
-            stdout=("-o \"{stdout}\"".format(stdout=stdout)
+            stdout=("-o \"{stdout}\"".format(stdout=shlex.quote(stdout))
                     if stdout != STDOUT else ""),
-            stderr=("-e \"{stderr}\"".format(stderr=stderr)
+            stderr=("-e \"{stderr}\"".format(stderr=shlex.quote(stderr))
                     if stderr != STDOUT and stderr != stdout else ""),
             timeout=("-t {timeout}".format(timeout=utils.format_seconds_to_hhmmss(timeout))
                      if timeout else ""),
