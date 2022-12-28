@@ -36,15 +36,17 @@ class HighlitingFilter(logging.Filter):
     bold_yellow = "\x1b[33;1m"
     bold_red = "\x1b[31;1m"
     bold_blue = "\x1b[1;34m"
+    red = "\x1b[31;20m"
     reset = "\x1b[0m"
+    
     patterns = {
         'CANCELLED': 3, # bad
         'SKIPPED': 2,   # less bad
         'COMPLETED': 1,  # good
-        'FAILED': 2,
-        'EXECUTING': 0, # working messages
+        'FAILED': 3,
+        'EXECUTING': 0, # status report messages
         'COPYING': 0,
-        'UNDEPLOYING': 0,
+        'UNDEPLOYING': 0, # put before deploying as one word is part of the other, and otherwise it would highlight only a part of the word
         'DEPLOYING': 0,
         'SCHEDULED': 0
     }
@@ -58,16 +60,20 @@ class HighlitingFilter(logging.Filter):
 
     def highlight(self, msg):
         msg = str(msg)
+        msg_tok = msg.split()
         for pattern, category in self.patterns.items():
-            if category == 0:
-                msg = msg.replace(pattern, self.bold_blue + pattern + self.reset)
-            elif category == 1:
-                msg = msg.replace(pattern, self.bold_green + pattern + self.reset)
-            elif category == 2:
-                msg = msg.replace(pattern, self.bold_yellow + pattern + self.reset)
-            elif category == 3:
-                msg = msg.replace(pattern, self.bold_red + pattern + self.reset)
-        return msg
+            if msg_tok[0] == pattern:
+                if category == 0:
+                    msg_tok[0] = msg_tok[0].replace(pattern, self.bold_blue + pattern + self.reset)
+                elif category == 1:
+                    msg_tok[0] = msg_tok[0].replace(pattern, self.bold_green + pattern + self.reset)
+                elif category == 2:
+                    msg_tok[0] = msg_tok[0].replace(pattern, self.bold_yellow + pattern + self.reset)
+                elif category == 3:
+                    # Failed workflows are reported as error-level logging, hence the coloring here should comply with the coloring in the
+                    # logger formatter: plain red formatting is restored after the bold red error token
+                    msg_tok[0] = msg_tok[0].replace(pattern, self.bold_red + pattern + self.reset + self.red)
+        return ' '.join(msg_tok)
 
 logger = logging.getLogger("streamflow")
 defaultStreamHandler = logging.StreamHandler()
