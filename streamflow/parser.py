@@ -21,6 +21,8 @@ run_parser.add_argument('--outdir', default=os.getcwd(), type=str,
                         help='Output directory in which to store final results of the workflow')
 run_parser.add_argument('--quiet', action='store_true',
                         help='Only prints results, warnings and errors')
+run_parser.add_argument('--color', action='store_true',
+                        help='Prints log preamble with colors related to the logging level')
 run_parser.add_argument('--debug', action='store_true',
                         help='Prints debug-level diagnostic output')
 

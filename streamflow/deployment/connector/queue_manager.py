@@ -132,7 +132,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 command=command,
                 environment=environment,
                 workdir=workdir)
-            logger.debug("Executing command {command} on {location} {job}".format(
+            logger.debug("EXECUTING command {command} on {location} {job}".format(
                 command=command,
                 location=location,
                 job="for job {job}".format(job=job_name) if job_name else ""))

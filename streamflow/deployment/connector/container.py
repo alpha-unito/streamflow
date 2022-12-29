@@ -661,7 +661,7 @@ class DockerConnector(DockerBaseConnector):
                     workdir=self.get_option("workdir", self.workdir),
                     image=self.image
                 )
-                logger.debug("Executing command {command}".format(command=deploy_command))
+                logger.debug("EXECUTING command {command}".format(command=deploy_command))
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(deploy_command),
                     stdout=asyncio.subprocess.PIPE,
@@ -696,7 +696,7 @@ class DockerConnector(DockerBaseConnector):
                 ]).format(
                     containerId=container_id
                 )
-                logger.debug("Executing command {command}".format(command=undeploy_command))
+                logger.debug("EXECUTING command {command}".format(command=undeploy_command))
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(undeploy_command),
                     stdout=asyncio.subprocess.PIPE,
@@ -827,7 +827,7 @@ class DockerComposeConnector(DockerBaseConnector):
                 noBuild=self.get_option("no-build", self.noBuild),
                 noStart=self.get_option("no-start", self.noStart)
             )
-            logger.debug("Executing command {command}".format(command=deploy_command))
+            logger.debug("EXECUTING command {command}".format(command=deploy_command))
             proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
             await proc.wait()
 
@@ -840,7 +840,7 @@ class DockerComposeConnector(DockerBaseConnector):
         ps_command = self.base_command() + "".join([
             "ps ",
             service or ""])
-        logger.debug("Executing command {command}".format(command=ps_command))
+        logger.debug("EXECUTING command {command}".format(command=ps_command))
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(ps_command),
             stdout=asyncio.subprocess.PIPE,
@@ -869,7 +869,7 @@ class DockerComposeConnector(DockerBaseConnector):
             ]).format(
                 removeVolumes=self.get_option("volumes", self.removeVolumes)
             )
-            logger.debug("Executing command {command}".format(command=undeploy_command))
+            logger.debug("EXECUTING command {command}".format(command=undeploy_command))
             proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
             await proc.wait()
 
@@ -1117,7 +1117,7 @@ class SingularityConnector(SingularityBaseConnector):
                     image=self.image,
                     name=instance_name
                 )
-                logger.debug("Executing command {command}".format(command=deploy_command))
+                logger.debug("EXECUTING command {command}".format(command=deploy_command))
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(deploy_command),
                     stdout=asyncio.subprocess.PIPE,
@@ -1156,7 +1156,7 @@ class SingularityConnector(SingularityBaseConnector):
                 ]).format(
                     containerId=instance_name
                 )
-                logger.debug("Executing command {command}".format(command=undeploy_command))
+                logger.debug("EXECUTING command {command}".format(command=undeploy_command))
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(undeploy_command),
                     stdout=asyncio.subprocess.PIPE,

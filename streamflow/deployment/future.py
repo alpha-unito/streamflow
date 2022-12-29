@@ -54,10 +54,10 @@ class FutureConnector(Connector):
         connector = self.type(
             self.deployment_name, self.config_dir, **self.parameters)
         if not external:
-            logger.info("Deploying {}".format(self.deployment_name))
+            logger.info("DEPLOYING {}".format(self.deployment_name))
         await connector.deploy(external)
         if not external:
-            logger.info("Deployment of {} terminated with status COMPLETED".format(self.deployment_name))
+            logger.info("COMPLETED Deployment of {}".format(self.deployment_name))
         self.connector = connector
         self.deploy_event.set()
 

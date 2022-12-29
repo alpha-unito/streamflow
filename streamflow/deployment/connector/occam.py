@@ -238,7 +238,7 @@ class OccamConnector(SSHConnector):
             image=service['image'],
             command=" ".join(service.get('command', ""))
         )
-        logger.debug("Executing {command}".format(command=deploy_command))
+        logger.debug("EXECUTING {command}".format(command=deploy_command))
         async with self._get_ssh_client(name) as ssh_client:
             result = await ssh_client.run(deploy_command)
         output = result.stdout
@@ -258,7 +258,7 @@ class OccamConnector(SSHConnector):
         ]).format(
             job_id=job_id
         )
-        logger.debug("Executing {command}".format(command=undeploy_command))
+        logger.debug("EXECUTING {command}".format(command=undeploy_command))
         async with self._get_ssh_client(name) as ssh_client:
             await ssh_client.run(undeploy_command)
         logger.info("Killed {location}".format(location=job_id))
