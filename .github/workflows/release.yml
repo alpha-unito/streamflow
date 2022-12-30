@@ -48,8 +48,6 @@ jobs:
         id: check-tag
         with:
           tag: ${{ env.STREAMFLOW_VERSION }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: "Create Release"
         id: create-release
         uses: actions/create-release@v1
