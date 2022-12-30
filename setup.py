@@ -50,20 +50,20 @@ setup(
     install_requires=open(os.path.join(pathlib.Path(__file__).parent, 'requirements.txt')).read().splitlines(),
     extras_require={
         "report": [
-            "pandas",
-            "plotly",
-            "kaleido"
+            "pandas==1.5.2",
+            "plotly==5.11.0",
+            "kaleido==0.2.1.post1"
         ],
         "docs": [
-            "sphinx",
-            "sphinx-jsonschema",
-            "sphinx-rtd-theme"
+            "sphinx==6.0.0",
+            "sphinx-jsonschema==1.19.1",
+            "sphinx-rtd-theme==1.1.1"
         ]
     },
     tests_require=[
-        'pytest',
-        'pytest-asyncio',
-        'cwltest'
+        'pytest==7.2.0',
+        'pytest-asyncio==0.20.3',
+        'cwltest==2.2.20220521103021'
     ],
     python_requires=">=3.8, <4",
     entry_points={"console_scripts": [
