@@ -1,4 +1,4 @@
-# Generated from ECMAScript.g4 by ANTLR 4.10
+# Generated from ECMAScript.g4 by ANTLR 4.11.1
 # encoding: utf-8
 import sys
 
@@ -476,7 +476,7 @@ class ECMAScriptParser(Parser):
 
     def __init__(self, input: TokenStream, output: TextIO = sys.stdout):
         super().__init__(input, output)
-        self.checkVersion("4.10")
+        self.checkVersion("4.11.1")
         self._interp = ParserATNSimulator(self, self.atn, self.decisionsToDFA, self.sharedContextCache)
         self._predicates = None
 
@@ -538,7 +538,7 @@ class ECMAScriptParser(Parser):
         # Check if the token is, or contains a line terminator.
         return (type == ECMAScriptParser.MultiLineComment and \
                 ('\r' in text or '\n' in text)) or \
-               (type == ECMAScriptParser.LineTerminator)
+            (type == ECMAScriptParser.LineTerminator)
 
     class ProgramContext(ParserRuleContext):
         __slots__ = 'parser'
@@ -1607,21 +1607,8 @@ class ECMAScriptParser(Parser):
                 self.state = 204
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if (((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                        (1 << ECMAScriptParser.RegularExpressionLiteral) | (1 << ECMAScriptParser.OpenBracket) | (
-                        1 << ECMAScriptParser.OpenParen) | (1 << ECMAScriptParser.OpenBrace) | (
-                                1 << ECMAScriptParser.PlusPlus) | (1 << ECMAScriptParser.MinusMinus) | (
-                                1 << ECMAScriptParser.Plus) | (1 << ECMAScriptParser.Minus) | (
-                                1 << ECMAScriptParser.BitNot) | (1 << ECMAScriptParser.Not) | (
-                                1 << ECMAScriptParser.NullLiteral) | (1 << ECMAScriptParser.BooleanLiteral) | (
-                                1 << ECMAScriptParser.DecimalLiteral) | (1 << ECMAScriptParser.HexIntegerLiteral) | (
-                                1 << ECMAScriptParser.OctalIntegerLiteral) | (1 << ECMAScriptParser.Typeof) | (
-                                1 << ECMAScriptParser.New))) != 0) or ((((_la - 67)) & ~0x3f) == 0 and (
-                        (1 << (_la - 67)) & (
-                        (1 << (ECMAScriptParser.Void - 67)) | (1 << (ECMAScriptParser.Function - 67)) | (
-                        1 << (ECMAScriptParser.This - 67)) | (1 << (ECMAScriptParser.Delete - 67)) | (
-                                1 << (ECMAScriptParser.Identifier - 67)) | (
-                                1 << (ECMAScriptParser.StringLiteral - 67)))) != 0):
+                if ((_la) & ~0x3f) == 0 and ((1 << _la) & 5257952564957118634) != 0 or (((_la - 67)) & ~0x3f) == 0 and (
+                        (1 << (_la - 67)) & 6442455233) != 0:
                     self.state = 203
                     self.expressionSequence()
 
@@ -1630,21 +1617,8 @@ class ECMAScriptParser(Parser):
                 self.state = 208
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if (((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                        (1 << ECMAScriptParser.RegularExpressionLiteral) | (1 << ECMAScriptParser.OpenBracket) | (
-                        1 << ECMAScriptParser.OpenParen) | (1 << ECMAScriptParser.OpenBrace) | (
-                                1 << ECMAScriptParser.PlusPlus) | (1 << ECMAScriptParser.MinusMinus) | (
-                                1 << ECMAScriptParser.Plus) | (1 << ECMAScriptParser.Minus) | (
-                                1 << ECMAScriptParser.BitNot) | (1 << ECMAScriptParser.Not) | (
-                                1 << ECMAScriptParser.NullLiteral) | (1 << ECMAScriptParser.BooleanLiteral) | (
-                                1 << ECMAScriptParser.DecimalLiteral) | (1 << ECMAScriptParser.HexIntegerLiteral) | (
-                                1 << ECMAScriptParser.OctalIntegerLiteral) | (1 << ECMAScriptParser.Typeof) | (
-                                1 << ECMAScriptParser.New))) != 0) or ((((_la - 67)) & ~0x3f) == 0 and (
-                        (1 << (_la - 67)) & (
-                        (1 << (ECMAScriptParser.Void - 67)) | (1 << (ECMAScriptParser.Function - 67)) | (
-                        1 << (ECMAScriptParser.This - 67)) | (1 << (ECMAScriptParser.Delete - 67)) | (
-                                1 << (ECMAScriptParser.Identifier - 67)) | (
-                                1 << (ECMAScriptParser.StringLiteral - 67)))) != 0):
+                if ((_la) & ~0x3f) == 0 and ((1 << _la) & 5257952564957118634) != 0 or (((_la - 67)) & ~0x3f) == 0 and (
+                        (1 << (_la - 67)) & 6442455233) != 0:
                     self.state = 207
                     self.expressionSequence()
 
@@ -1653,21 +1627,8 @@ class ECMAScriptParser(Parser):
                 self.state = 212
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if (((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                        (1 << ECMAScriptParser.RegularExpressionLiteral) | (1 << ECMAScriptParser.OpenBracket) | (
-                        1 << ECMAScriptParser.OpenParen) | (1 << ECMAScriptParser.OpenBrace) | (
-                                1 << ECMAScriptParser.PlusPlus) | (1 << ECMAScriptParser.MinusMinus) | (
-                                1 << ECMAScriptParser.Plus) | (1 << ECMAScriptParser.Minus) | (
-                                1 << ECMAScriptParser.BitNot) | (1 << ECMAScriptParser.Not) | (
-                                1 << ECMAScriptParser.NullLiteral) | (1 << ECMAScriptParser.BooleanLiteral) | (
-                                1 << ECMAScriptParser.DecimalLiteral) | (1 << ECMAScriptParser.HexIntegerLiteral) | (
-                                1 << ECMAScriptParser.OctalIntegerLiteral) | (1 << ECMAScriptParser.Typeof) | (
-                                1 << ECMAScriptParser.New))) != 0) or ((((_la - 67)) & ~0x3f) == 0 and (
-                        (1 << (_la - 67)) & (
-                        (1 << (ECMAScriptParser.Void - 67)) | (1 << (ECMAScriptParser.Function - 67)) | (
-                        1 << (ECMAScriptParser.This - 67)) | (1 << (ECMAScriptParser.Delete - 67)) | (
-                                1 << (ECMAScriptParser.Identifier - 67)) | (
-                                1 << (ECMAScriptParser.StringLiteral - 67)))) != 0):
+                if ((_la) & ~0x3f) == 0 and ((1 << _la) & 5257952564957118634) != 0 or (((_la - 67)) & ~0x3f) == 0 and (
+                        (1 << (_la - 67)) & 6442455233) != 0:
                     self.state = 211
                     self.expressionSequence()
 
@@ -1693,21 +1654,8 @@ class ECMAScriptParser(Parser):
                 self.state = 222
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if (((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                        (1 << ECMAScriptParser.RegularExpressionLiteral) | (1 << ECMAScriptParser.OpenBracket) | (
-                        1 << ECMAScriptParser.OpenParen) | (1 << ECMAScriptParser.OpenBrace) | (
-                                1 << ECMAScriptParser.PlusPlus) | (1 << ECMAScriptParser.MinusMinus) | (
-                                1 << ECMAScriptParser.Plus) | (1 << ECMAScriptParser.Minus) | (
-                                1 << ECMAScriptParser.BitNot) | (1 << ECMAScriptParser.Not) | (
-                                1 << ECMAScriptParser.NullLiteral) | (1 << ECMAScriptParser.BooleanLiteral) | (
-                                1 << ECMAScriptParser.DecimalLiteral) | (1 << ECMAScriptParser.HexIntegerLiteral) | (
-                                1 << ECMAScriptParser.OctalIntegerLiteral) | (1 << ECMAScriptParser.Typeof) | (
-                                1 << ECMAScriptParser.New))) != 0) or ((((_la - 67)) & ~0x3f) == 0 and (
-                        (1 << (_la - 67)) & (
-                        (1 << (ECMAScriptParser.Void - 67)) | (1 << (ECMAScriptParser.Function - 67)) | (
-                        1 << (ECMAScriptParser.This - 67)) | (1 << (ECMAScriptParser.Delete - 67)) | (
-                                1 << (ECMAScriptParser.Identifier - 67)) | (
-                                1 << (ECMAScriptParser.StringLiteral - 67)))) != 0):
+                if ((_la) & ~0x3f) == 0 and ((1 << _la) & 5257952564957118634) != 0 or (((_la - 67)) & ~0x3f) == 0 and (
+                        (1 << (_la - 67)) & 6442455233) != 0:
                     self.state = 221
                     self.expressionSequence()
 
@@ -1716,21 +1664,8 @@ class ECMAScriptParser(Parser):
                 self.state = 226
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if (((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                        (1 << ECMAScriptParser.RegularExpressionLiteral) | (1 << ECMAScriptParser.OpenBracket) | (
-                        1 << ECMAScriptParser.OpenParen) | (1 << ECMAScriptParser.OpenBrace) | (
-                                1 << ECMAScriptParser.PlusPlus) | (1 << ECMAScriptParser.MinusMinus) | (
-                                1 << ECMAScriptParser.Plus) | (1 << ECMAScriptParser.Minus) | (
-                                1 << ECMAScriptParser.BitNot) | (1 << ECMAScriptParser.Not) | (
-                                1 << ECMAScriptParser.NullLiteral) | (1 << ECMAScriptParser.BooleanLiteral) | (
-                                1 << ECMAScriptParser.DecimalLiteral) | (1 << ECMAScriptParser.HexIntegerLiteral) | (
-                                1 << ECMAScriptParser.OctalIntegerLiteral) | (1 << ECMAScriptParser.Typeof) | (
-                                1 << ECMAScriptParser.New))) != 0) or ((((_la - 67)) & ~0x3f) == 0 and (
-                        (1 << (_la - 67)) & (
-                        (1 << (ECMAScriptParser.Void - 67)) | (1 << (ECMAScriptParser.Function - 67)) | (
-                        1 << (ECMAScriptParser.This - 67)) | (1 << (ECMAScriptParser.Delete - 67)) | (
-                                1 << (ECMAScriptParser.Identifier - 67)) | (
-                                1 << (ECMAScriptParser.StringLiteral - 67)))) != 0):
+                if ((_la) & ~0x3f) == 0 and ((1 << _la) & 5257952564957118634) != 0 or (((_la - 67)) & ~0x3f) == 0 and (
+                        (1 << (_la - 67)) & 6442455233) != 0:
                     self.state = 225
                     self.expressionSequence()
 
@@ -2116,20 +2051,20 @@ class ECMAScriptParser(Parser):
             self.state = 285
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la == ECMAScriptParser.Case:
+            if _la == 60:
                 self.state = 284
                 self.caseClauses()
 
             self.state = 291
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la == ECMAScriptParser.Default:
+            if _la == 76:
                 self.state = 287
                 self.defaultClause()
                 self.state = 289
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if _la == ECMAScriptParser.Case:
+                if _la == 60:
                     self.state = 288
                     self.caseClauses()
 
@@ -2183,7 +2118,7 @@ class ECMAScriptParser(Parser):
                 self.state = 298
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if not (_la == ECMAScriptParser.Case):
+                if not (_la == 60):
                     break
 
         except RecognitionException as re:
@@ -2681,7 +2616,7 @@ class ECMAScriptParser(Parser):
             self.state = 351
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la == ECMAScriptParser.Identifier:
+            if _la == 98:
                 self.state = 350
                 self.formalParameterList()
 
@@ -2743,7 +2678,7 @@ class ECMAScriptParser(Parser):
             self.state = 363
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la == ECMAScriptParser.Comma:
+            while _la == 10:
                 self.state = 359
                 self.match(ECMAScriptParser.Comma)
                 self.state = 360
@@ -2862,7 +2797,7 @@ class ECMAScriptParser(Parser):
             self.state = 377
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la == ECMAScriptParser.Comma:
+            if _la == 10:
                 self.state = 376
                 self.elision()
 
@@ -2922,7 +2857,7 @@ class ECMAScriptParser(Parser):
             self.state = 382
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la == ECMAScriptParser.Comma:
+            if _la == 10:
                 self.state = 381
                 self.elision()
 
@@ -2938,7 +2873,7 @@ class ECMAScriptParser(Parser):
                     self.state = 387
                     self._errHandler.sync(self)
                     _la = self._input.LA(1)
-                    if _la == ECMAScriptParser.Comma:
+                    if _la == 10:
                         self.state = 386
                         self.elision()
 
@@ -2996,7 +2931,7 @@ class ECMAScriptParser(Parser):
                 self.state = 398
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if not (_la == ECMAScriptParser.Comma):
+                if not (_la == 10):
                     break
 
         except RecognitionException as re:
@@ -3063,7 +2998,7 @@ class ECMAScriptParser(Parser):
                 self.state = 405
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if _la == ECMAScriptParser.Comma:
+                if _la == 10:
                     self.state = 404
                     self.match(ECMAScriptParser.Comma)
 
@@ -3341,31 +3276,18 @@ class ECMAScriptParser(Parser):
             self.state = 443
             self._errHandler.sync(self)
             token = self._input.LA(1)
-            if token in [ECMAScriptParser.NullLiteral, ECMAScriptParser.BooleanLiteral, ECMAScriptParser.Break,
-                         ECMAScriptParser.Do, ECMAScriptParser.Instanceof, ECMAScriptParser.Typeof,
-                         ECMAScriptParser.Case, ECMAScriptParser.Else, ECMAScriptParser.New, ECMAScriptParser.Var,
-                         ECMAScriptParser.Catch, ECMAScriptParser.Finally, ECMAScriptParser.Return,
-                         ECMAScriptParser.Void, ECMAScriptParser.Continue, ECMAScriptParser.For,
-                         ECMAScriptParser.Switch, ECMAScriptParser.While, ECMAScriptParser.Debugger,
-                         ECMAScriptParser.Function, ECMAScriptParser.This, ECMAScriptParser.With,
-                         ECMAScriptParser.Default, ECMAScriptParser.If, ECMAScriptParser.Throw, ECMAScriptParser.Delete,
-                         ECMAScriptParser.In, ECMAScriptParser.Try, ECMAScriptParser.Class, ECMAScriptParser.Enum,
-                         ECMAScriptParser.Extends, ECMAScriptParser.Super, ECMAScriptParser.Const,
-                         ECMAScriptParser.Export, ECMAScriptParser.Import, ECMAScriptParser.Implements,
-                         ECMAScriptParser.Let, ECMAScriptParser.Private, ECMAScriptParser.Public,
-                         ECMAScriptParser.Interface, ECMAScriptParser.Package, ECMAScriptParser.Protected,
-                         ECMAScriptParser.Static, ECMAScriptParser.Yield, ECMAScriptParser.Identifier]:
+            if token in [51, 52, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77,
+                         78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98]:
                 self.enterOuterAlt(localctx, 1)
                 self.state = 440
                 self.identifierName()
                 pass
-            elif token in [ECMAScriptParser.StringLiteral]:
+            elif token in [99]:
                 self.enterOuterAlt(localctx, 2)
                 self.state = 441
                 self.match(ECMAScriptParser.StringLiteral)
                 pass
-            elif token in [ECMAScriptParser.DecimalLiteral, ECMAScriptParser.HexIntegerLiteral,
-                           ECMAScriptParser.OctalIntegerLiteral]:
+            elif token in [53, 54, 55]:
                 self.enterOuterAlt(localctx, 3)
                 self.state = 442
                 self.numericLiteral()
@@ -3457,21 +3379,8 @@ class ECMAScriptParser(Parser):
             self.state = 449
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if (((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                    (1 << ECMAScriptParser.RegularExpressionLiteral) | (1 << ECMAScriptParser.OpenBracket) | (
-                    1 << ECMAScriptParser.OpenParen) | (1 << ECMAScriptParser.OpenBrace) | (
-                            1 << ECMAScriptParser.PlusPlus) | (1 << ECMAScriptParser.MinusMinus) | (
-                            1 << ECMAScriptParser.Plus) | (1 << ECMAScriptParser.Minus) | (
-                            1 << ECMAScriptParser.BitNot) | (1 << ECMAScriptParser.Not) | (
-                            1 << ECMAScriptParser.NullLiteral) | (1 << ECMAScriptParser.BooleanLiteral) | (
-                            1 << ECMAScriptParser.DecimalLiteral) | (1 << ECMAScriptParser.HexIntegerLiteral) | (
-                            1 << ECMAScriptParser.OctalIntegerLiteral) | (1 << ECMAScriptParser.Typeof) | (
-                            1 << ECMAScriptParser.New))) != 0) or ((((_la - 67)) & ~0x3f) == 0 and (
-                    (1 << (_la - 67)) & (
-                    (1 << (ECMAScriptParser.Void - 67)) | (1 << (ECMAScriptParser.Function - 67)) | (
-                    1 << (ECMAScriptParser.This - 67)) | (1 << (ECMAScriptParser.Delete - 67)) | (
-                            1 << (ECMAScriptParser.Identifier - 67)) | (
-                            1 << (ECMAScriptParser.StringLiteral - 67)))) != 0):
+            if ((_la) & ~0x3f) == 0 and ((1 << _la) & 5257952564957118634) != 0 or (((_la - 67)) & ~0x3f) == 0 and (
+                    (1 << (_la - 67)) & 6442455233) != 0:
                 self.state = 448
                 self.argumentList()
 
@@ -3527,7 +3436,7 @@ class ECMAScriptParser(Parser):
             self.state = 458
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la == ECMAScriptParser.Comma:
+            while _la == 10:
                 self.state = 454
                 self.match(ECMAScriptParser.Comma)
                 self.state = 455
@@ -4468,7 +4377,7 @@ class ECMAScriptParser(Parser):
             self.state = 515
             self._errHandler.sync(self)
             token = self._input.LA(1)
-            if token in [ECMAScriptParser.Function]:
+            if token in [73]:
                 localctx = ECMAScriptParser.FunctionExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4478,7 +4387,7 @@ class ECMAScriptParser(Parser):
                 self.state = 472
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if _la == ECMAScriptParser.Identifier:
+                if _la == 98:
                     self.state = 471
                     self.match(ECMAScriptParser.Identifier)
 
@@ -4487,7 +4396,7 @@ class ECMAScriptParser(Parser):
                 self.state = 476
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if _la == ECMAScriptParser.Identifier:
+                if _la == 98:
                     self.state = 475
                     self.formalParameterList()
 
@@ -4500,7 +4409,7 @@ class ECMAScriptParser(Parser):
                 self.state = 481
                 self.match(ECMAScriptParser.CloseBrace)
                 pass
-            elif token in [ECMAScriptParser.New]:
+            elif token in [62]:
                 localctx = ECMAScriptParser.NewExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4516,7 +4425,7 @@ class ECMAScriptParser(Parser):
                     self.arguments()
 
                 pass
-            elif token in [ECMAScriptParser.Delete]:
+            elif token in [79]:
                 localctx = ECMAScriptParser.DeleteExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4525,7 +4434,7 @@ class ECMAScriptParser(Parser):
                 self.state = 489
                 self.singleExpression(30)
                 pass
-            elif token in [ECMAScriptParser.Void]:
+            elif token in [67]:
                 localctx = ECMAScriptParser.VoidExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4534,7 +4443,7 @@ class ECMAScriptParser(Parser):
                 self.state = 491
                 self.singleExpression(29)
                 pass
-            elif token in [ECMAScriptParser.Typeof]:
+            elif token in [59]:
                 localctx = ECMAScriptParser.TypeofExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4543,7 +4452,7 @@ class ECMAScriptParser(Parser):
                 self.state = 493
                 self.singleExpression(28)
                 pass
-            elif token in [ECMAScriptParser.PlusPlus]:
+            elif token in [15]:
                 localctx = ECMAScriptParser.PreIncrementExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4552,7 +4461,7 @@ class ECMAScriptParser(Parser):
                 self.state = 495
                 self.singleExpression(27)
                 pass
-            elif token in [ECMAScriptParser.MinusMinus]:
+            elif token in [16]:
                 localctx = ECMAScriptParser.PreDecreaseExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4561,7 +4470,7 @@ class ECMAScriptParser(Parser):
                 self.state = 497
                 self.singleExpression(26)
                 pass
-            elif token in [ECMAScriptParser.Plus]:
+            elif token in [17]:
                 localctx = ECMAScriptParser.UnaryPlusExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4570,7 +4479,7 @@ class ECMAScriptParser(Parser):
                 self.state = 499
                 self.singleExpression(25)
                 pass
-            elif token in [ECMAScriptParser.Minus]:
+            elif token in [18]:
                 localctx = ECMAScriptParser.UnaryMinusExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4579,7 +4488,7 @@ class ECMAScriptParser(Parser):
                 self.state = 501
                 self.singleExpression(24)
                 pass
-            elif token in [ECMAScriptParser.BitNot]:
+            elif token in [19]:
                 localctx = ECMAScriptParser.BitNotExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4588,7 +4497,7 @@ class ECMAScriptParser(Parser):
                 self.state = 503
                 self.singleExpression(23)
                 pass
-            elif token in [ECMAScriptParser.Not]:
+            elif token in [20]:
                 localctx = ECMAScriptParser.NotExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4597,45 +4506,42 @@ class ECMAScriptParser(Parser):
                 self.state = 505
                 self.singleExpression(22)
                 pass
-            elif token in [ECMAScriptParser.This]:
+            elif token in [74]:
                 localctx = ECMAScriptParser.ThisExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
                 self.state = 506
                 self.match(ECMAScriptParser.This)
                 pass
-            elif token in [ECMAScriptParser.Identifier]:
+            elif token in [98]:
                 localctx = ECMAScriptParser.IdentifierExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
                 self.state = 507
                 self.match(ECMAScriptParser.Identifier)
                 pass
-            elif token in [ECMAScriptParser.RegularExpressionLiteral, ECMAScriptParser.NullLiteral,
-                           ECMAScriptParser.BooleanLiteral, ECMAScriptParser.DecimalLiteral,
-                           ECMAScriptParser.HexIntegerLiteral, ECMAScriptParser.OctalIntegerLiteral,
-                           ECMAScriptParser.StringLiteral]:
+            elif token in [1, 51, 52, 53, 54, 55, 99]:
                 localctx = ECMAScriptParser.LiteralExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
                 self.state = 508
                 self.literal()
                 pass
-            elif token in [ECMAScriptParser.OpenBracket]:
+            elif token in [3]:
                 localctx = ECMAScriptParser.ArrayLiteralExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
                 self.state = 509
                 self.arrayLiteral()
                 pass
-            elif token in [ECMAScriptParser.OpenBrace]:
+            elif token in [7]:
                 localctx = ECMAScriptParser.ObjectLiteralExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
                 self.state = 510
                 self.objectLiteral()
                 pass
-            elif token in [ECMAScriptParser.OpenParen]:
+            elif token in [5]:
                 localctx = ECMAScriptParser.ParenthesizedExpressionContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -4672,9 +4578,7 @@ class ECMAScriptParser(Parser):
                             raise FailedPredicateException(self, "self.precpred(self._ctx, 21)")
                         self.state = 518
                         _la = self._input.LA(1)
-                        if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                                (1 << ECMAScriptParser.Multiply) | (1 << ECMAScriptParser.Divide) | (
-                                1 << ECMAScriptParser.Modulus))) != 0)):
+                        if not (((_la) & ~0x3f) == 0 and ((1 << _la) & 14680064) != 0):
                             self._errHandler.recoverInline(self)
                         else:
                             self._errHandler.reportMatch(self)
@@ -4694,7 +4598,7 @@ class ECMAScriptParser(Parser):
                             raise FailedPredicateException(self, "self.precpred(self._ctx, 20)")
                         self.state = 521
                         _la = self._input.LA(1)
-                        if not (_la == ECMAScriptParser.Plus or _la == ECMAScriptParser.Minus):
+                        if not (_la == 17 or _la == 18):
                             self._errHandler.recoverInline(self)
                         else:
                             self._errHandler.reportMatch(self)
@@ -4714,10 +4618,7 @@ class ECMAScriptParser(Parser):
                             raise FailedPredicateException(self, "self.precpred(self._ctx, 19)")
                         self.state = 524
                         _la = self._input.LA(1)
-                        if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                                (1 << ECMAScriptParser.RightShiftArithmetic) | (
-                                1 << ECMAScriptParser.LeftShiftArithmetic) | (
-                                        1 << ECMAScriptParser.RightShiftLogical))) != 0)):
+                        if not (((_la) & ~0x3f) == 0 and ((1 << _la) & 117440512) != 0):
                             self._errHandler.recoverInline(self)
                         else:
                             self._errHandler.reportMatch(self)
@@ -4737,10 +4638,7 @@ class ECMAScriptParser(Parser):
                             raise FailedPredicateException(self, "self.precpred(self._ctx, 18)")
                         self.state = 527
                         _la = self._input.LA(1)
-                        if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                                (1 << ECMAScriptParser.LessThan) | (1 << ECMAScriptParser.MoreThan) | (
-                                1 << ECMAScriptParser.LessThanEquals) | (
-                                        1 << ECMAScriptParser.GreaterThanEquals))) != 0)):
+                        if not (((_la) & ~0x3f) == 0 and ((1 << _la) & 2013265920) != 0):
                             self._errHandler.recoverInline(self)
                         else:
                             self._errHandler.reportMatch(self)
@@ -4791,10 +4689,7 @@ class ECMAScriptParser(Parser):
                             raise FailedPredicateException(self, "self.precpred(self._ctx, 15)")
                         self.state = 536
                         _la = self._input.LA(1)
-                        if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                                (1 << ECMAScriptParser.Equals) | (1 << ECMAScriptParser.NotEquals) | (
-                                1 << ECMAScriptParser.IdentityEquals) | (
-                                        1 << ECMAScriptParser.IdentityNotEquals))) != 0)):
+                        if not (((_la) & ~0x3f) == 0 and ((1 << _la) & 32212254720) != 0):
                             self._errHandler.recoverInline(self)
                         else:
                             self._errHandler.reportMatch(self)
@@ -5079,13 +4974,7 @@ class ECMAScriptParser(Parser):
             self.enterOuterAlt(localctx, 1)
             self.state = 587
             _la = self._input.LA(1)
-            if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                    (1 << ECMAScriptParser.MultiplyAssign) | (1 << ECMAScriptParser.DivideAssign) | (
-                    1 << ECMAScriptParser.ModulusAssign) | (1 << ECMAScriptParser.PlusAssign) | (
-                            1 << ECMAScriptParser.MinusAssign) | (1 << ECMAScriptParser.LeftShiftArithmeticAssign) | (
-                            1 << ECMAScriptParser.RightShiftArithmeticAssign) | (
-                            1 << ECMAScriptParser.RightShiftLogicalAssign) | (1 << ECMAScriptParser.BitAndAssign) | (
-                            1 << ECMAScriptParser.BitXorAssign) | (1 << ECMAScriptParser.BitOrAssign))) != 0)):
+            if not (((_la) & ~0x3f) == 0 and ((1 << _la) & 2250700302057472) != 0):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
@@ -5140,21 +5029,17 @@ class ECMAScriptParser(Parser):
             self.state = 591
             self._errHandler.sync(self)
             token = self._input.LA(1)
-            if token in [ECMAScriptParser.RegularExpressionLiteral, ECMAScriptParser.NullLiteral,
-                         ECMAScriptParser.BooleanLiteral, ECMAScriptParser.StringLiteral]:
+            if token in [1, 51, 52, 99]:
                 self.enterOuterAlt(localctx, 1)
                 self.state = 589
                 _la = self._input.LA(1)
-                if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                        (1 << ECMAScriptParser.RegularExpressionLiteral) | (1 << ECMAScriptParser.NullLiteral) | (
-                        1 << ECMAScriptParser.BooleanLiteral))) != 0) or _la == ECMAScriptParser.StringLiteral):
+                if not (((_la) & ~0x3f) == 0 and ((1 << _la) & 6755399441055746) != 0 or _la == 99):
                     self._errHandler.recoverInline(self)
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
                 pass
-            elif token in [ECMAScriptParser.DecimalLiteral, ECMAScriptParser.HexIntegerLiteral,
-                           ECMAScriptParser.OctalIntegerLiteral]:
+            elif token in [53, 54, 55]:
                 self.enterOuterAlt(localctx, 2)
                 self.state = 590
                 self.numericLiteral()
@@ -5206,9 +5091,7 @@ class ECMAScriptParser(Parser):
             self.enterOuterAlt(localctx, 1)
             self.state = 593
             _la = self._input.LA(1)
-            if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & (
-                    (1 << ECMAScriptParser.DecimalLiteral) | (1 << ECMAScriptParser.HexIntegerLiteral) | (
-                    1 << ECMAScriptParser.OctalIntegerLiteral))) != 0)):
+            if not (((_la) & ~0x3f) == 0 and ((1 << _la) & 63050394783186944) != 0):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
@@ -5253,25 +5136,13 @@ class ECMAScriptParser(Parser):
             self.state = 597
             self._errHandler.sync(self)
             token = self._input.LA(1)
-            if token in [ECMAScriptParser.Identifier]:
+            if token in [98]:
                 self.enterOuterAlt(localctx, 1)
                 self.state = 595
                 self.match(ECMAScriptParser.Identifier)
                 pass
-            elif token in [ECMAScriptParser.NullLiteral, ECMAScriptParser.BooleanLiteral, ECMAScriptParser.Break,
-                           ECMAScriptParser.Do, ECMAScriptParser.Instanceof, ECMAScriptParser.Typeof,
-                           ECMAScriptParser.Case, ECMAScriptParser.Else, ECMAScriptParser.New, ECMAScriptParser.Var,
-                           ECMAScriptParser.Catch, ECMAScriptParser.Finally, ECMAScriptParser.Return,
-                           ECMAScriptParser.Void, ECMAScriptParser.Continue, ECMAScriptParser.For,
-                           ECMAScriptParser.Switch, ECMAScriptParser.While, ECMAScriptParser.Debugger,
-                           ECMAScriptParser.Function, ECMAScriptParser.This, ECMAScriptParser.With,
-                           ECMAScriptParser.Default, ECMAScriptParser.If, ECMAScriptParser.Throw,
-                           ECMAScriptParser.Delete, ECMAScriptParser.In, ECMAScriptParser.Try, ECMAScriptParser.Class,
-                           ECMAScriptParser.Enum, ECMAScriptParser.Extends, ECMAScriptParser.Super,
-                           ECMAScriptParser.Const, ECMAScriptParser.Export, ECMAScriptParser.Import,
-                           ECMAScriptParser.Implements, ECMAScriptParser.Let, ECMAScriptParser.Private,
-                           ECMAScriptParser.Public, ECMAScriptParser.Interface, ECMAScriptParser.Package,
-                           ECMAScriptParser.Protected, ECMAScriptParser.Static, ECMAScriptParser.Yield]:
+            elif token in [51, 52, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76,
+                           77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97]:
                 self.enterOuterAlt(localctx, 2)
                 self.state = 596
                 self.reservedWord()
@@ -5326,33 +5197,22 @@ class ECMAScriptParser(Parser):
             self.state = 602
             self._errHandler.sync(self)
             token = self._input.LA(1)
-            if token in [ECMAScriptParser.Break, ECMAScriptParser.Do, ECMAScriptParser.Instanceof,
-                         ECMAScriptParser.Typeof, ECMAScriptParser.Case, ECMAScriptParser.Else, ECMAScriptParser.New,
-                         ECMAScriptParser.Var, ECMAScriptParser.Catch, ECMAScriptParser.Finally,
-                         ECMAScriptParser.Return, ECMAScriptParser.Void, ECMAScriptParser.Continue,
-                         ECMAScriptParser.For, ECMAScriptParser.Switch, ECMAScriptParser.While,
-                         ECMAScriptParser.Debugger, ECMAScriptParser.Function, ECMAScriptParser.This,
-                         ECMAScriptParser.With, ECMAScriptParser.Default, ECMAScriptParser.If, ECMAScriptParser.Throw,
-                         ECMAScriptParser.Delete, ECMAScriptParser.In, ECMAScriptParser.Try]:
+            if token in [56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+                         80, 81]:
                 self.enterOuterAlt(localctx, 1)
                 self.state = 599
                 self.keyword()
                 pass
-            elif token in [ECMAScriptParser.Class, ECMAScriptParser.Enum, ECMAScriptParser.Extends,
-                           ECMAScriptParser.Super, ECMAScriptParser.Const, ECMAScriptParser.Export,
-                           ECMAScriptParser.Import, ECMAScriptParser.Implements, ECMAScriptParser.Let,
-                           ECMAScriptParser.Private, ECMAScriptParser.Public, ECMAScriptParser.Interface,
-                           ECMAScriptParser.Package, ECMAScriptParser.Protected, ECMAScriptParser.Static,
-                           ECMAScriptParser.Yield]:
+            elif token in [82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97]:
                 self.enterOuterAlt(localctx, 2)
                 self.state = 600
                 self.futureReservedWord()
                 pass
-            elif token in [ECMAScriptParser.NullLiteral, ECMAScriptParser.BooleanLiteral]:
+            elif token in [51, 52]:
                 self.enterOuterAlt(localctx, 3)
                 self.state = 601
                 _la = self._input.LA(1)
-                if not (_la == ECMAScriptParser.NullLiteral or _la == ECMAScriptParser.BooleanLiteral):
+                if not (_la == 51 or _la == 52):
                     self._errHandler.recoverInline(self)
                 else:
                     self._errHandler.reportMatch(self)
@@ -5474,20 +5334,7 @@ class ECMAScriptParser(Parser):
             self.enterOuterAlt(localctx, 1)
             self.state = 604
             _la = self._input.LA(1)
-            if not (((((_la - 56)) & ~0x3f) == 0 and ((1 << (_la - 56)) & (
-                    (1 << (ECMAScriptParser.Break - 56)) | (1 << (ECMAScriptParser.Do - 56)) | (
-                    1 << (ECMAScriptParser.Instanceof - 56)) | (1 << (ECMAScriptParser.Typeof - 56)) | (
-                            1 << (ECMAScriptParser.Case - 56)) | (1 << (ECMAScriptParser.Else - 56)) | (
-                            1 << (ECMAScriptParser.New - 56)) | (1 << (ECMAScriptParser.Var - 56)) | (
-                            1 << (ECMAScriptParser.Catch - 56)) | (1 << (ECMAScriptParser.Finally - 56)) | (
-                            1 << (ECMAScriptParser.Return - 56)) | (1 << (ECMAScriptParser.Void - 56)) | (
-                            1 << (ECMAScriptParser.Continue - 56)) | (1 << (ECMAScriptParser.For - 56)) | (
-                            1 << (ECMAScriptParser.Switch - 56)) | (1 << (ECMAScriptParser.While - 56)) | (
-                            1 << (ECMAScriptParser.Debugger - 56)) | (1 << (ECMAScriptParser.Function - 56)) | (
-                            1 << (ECMAScriptParser.This - 56)) | (1 << (ECMAScriptParser.With - 56)) | (
-                            1 << (ECMAScriptParser.Default - 56)) | (1 << (ECMAScriptParser.If - 56)) | (
-                            1 << (ECMAScriptParser.Throw - 56)) | (1 << (ECMAScriptParser.Delete - 56)) | (
-                            1 << (ECMAScriptParser.In - 56)) | (1 << (ECMAScriptParser.Try - 56)))) != 0)):
+            if not ((((_la - 56)) & ~0x3f) == 0 and ((1 << (_la - 56)) & 67108863) != 0):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
@@ -5575,15 +5422,7 @@ class ECMAScriptParser(Parser):
             self.enterOuterAlt(localctx, 1)
             self.state = 606
             _la = self._input.LA(1)
-            if not (((((_la - 82)) & ~0x3f) == 0 and ((1 << (_la - 82)) & (
-                    (1 << (ECMAScriptParser.Class - 82)) | (1 << (ECMAScriptParser.Enum - 82)) | (
-                    1 << (ECMAScriptParser.Extends - 82)) | (1 << (ECMAScriptParser.Super - 82)) | (
-                            1 << (ECMAScriptParser.Const - 82)) | (1 << (ECMAScriptParser.Export - 82)) | (
-                            1 << (ECMAScriptParser.Import - 82)) | (1 << (ECMAScriptParser.Implements - 82)) | (
-                            1 << (ECMAScriptParser.Let - 82)) | (1 << (ECMAScriptParser.Private - 82)) | (
-                            1 << (ECMAScriptParser.Public - 82)) | (1 << (ECMAScriptParser.Interface - 82)) | (
-                            1 << (ECMAScriptParser.Package - 82)) | (1 << (ECMAScriptParser.Protected - 82)) | (
-                            1 << (ECMAScriptParser.Static - 82)) | (1 << (ECMAScriptParser.Yield - 82)))) != 0)):
+            if not ((((_la - 82)) & ~0x3f) == 0 and ((1 << (_la - 82)) & 65535) != 0):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
