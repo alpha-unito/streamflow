@@ -44,7 +44,7 @@ jobs:
       - name: "Get StreamFlow version"
         run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
       - name: "Check tag existence"
-        uses: mukunku/tag-exists-action@v1.0.0
+        uses: mukunku/tag-exists-action@v1.2.0
         id: check-tag
         with:
           tag: ${{ env.STREAMFLOW_VERSION }}
