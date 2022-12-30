@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
-      - uses: docker/setup-qemu-action@v1
+      - uses: docker/setup-qemu-action@v2
       - uses: docker/setup-buildx-action@v2
       - name: "Install Python Dependencies and Streamflow"
         run: |
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
-      - uses: docker/setup-qemu-action@v1
+      - uses: docker/setup-qemu-action@v2
       - uses: docker/setup-buildx-action@v2
       - name: "Install Python Dependencies and Streamflow"
         run: |
