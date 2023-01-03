@@ -136,18 +136,25 @@ async def test_directory(context, connector, location):
 async def test_file(context, connector, location):
     """Test file creation, size, checksum and deletion."""
     path = utils.random_name()
+    path2 = utils.random_name()
     try:
         await remotepath.write(connector, location, path, "StreamFlow")
         assert await remotepath.exists(connector, location, path)
         assert await remotepath.isfile(connector, location, path)
         assert await remotepath.size(connector, location, path) == 10
+        await remotepath.write(connector, location, path2, "CWL")
+        assert await remotepath.exists(connector, location, path2)
+        assert await remotepath.size(connector, location, [path, path2]) == 13
         digest = await remotepath.checksum(context, connector, location, path)
         assert digest == "e8abb7445e1c4061c3ef39a0e1690159b094d3b5"
-        await remotepath.rm(connector, location, path)
+        await remotepath.rm(connector, location, [path, path2])
         assert not await remotepath.exists(connector, location, path)
+        assert not await remotepath.exists(connector, location, path2)
     finally:
         if await remotepath.exists(connector, location, path):
             await remotepath.rm(connector, location, path)
+        if await remotepath.exists(connector, location, path2):
+            await remotepath.rm(connector, location, path2)
 
 
 @pytest.mark.asyncio

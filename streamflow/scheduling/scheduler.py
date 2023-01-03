@@ -370,4 +370,11 @@ class DefaultScheduler(Scheduler):
             )
             for target in targets
         ]
-        await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
+        # Capture finished tasks and call result() to check for exceptions
+        finished, _ = await asyncio.wait(
+            wait_tasks, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in finished:
+            if task.cancelled():
+                continue
+            task.result()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor
-from typing import TYPE_CHECKING
+from typing import Any, MutableMapping, TYPE_CHECKING
 
 from streamflow.log_handler import logger
 
@@ -23,8 +23,8 @@ class SchemaEntity(ABC):
 
 
 class StreamFlowContext:
-    def __init__(self, streamflow_config_dir: str):
-        self.config_dir = streamflow_config_dir
+    def __init__(self, config: MutableMapping[str, Any]):
+        self.config: MutableMapping[str, Any] = config
         self.checkpoint_manager: CheckpointManager | None = None
         self.database: Database | None = None
         self.data_manager: DataManager | None = None

@@ -301,6 +301,7 @@ class DockerConnector(DockerBaseConnector):
         capAdd: MutableSequence[str] | None = None,
         capDrop: MutableSequence[str] | None = None,
         cgroupParent: str | None = None,
+        cgroupns: str | None = None,
         cidfile: str | None = None,
         command: MutableSequence[str] | None = None,
         containerIds: MutableSequence | None = None,
@@ -407,6 +408,7 @@ class DockerConnector(DockerBaseConnector):
         self.capAdd: MutableSequence[str] | None = capAdd
         self.capDrop: MutableSequence[str] | None = capDrop
         self.cgroupParent: str | None = cgroupParent
+        self.cgroupns: str | None = cgroupns
         self.cidfile: str | None = cidfile
         self.containerIds: MutableSequence[str] = containerIds or []
         self.command: MutableSequence[str] = command
@@ -511,6 +513,7 @@ class DockerConnector(DockerBaseConnector):
                         self.get_option("cap-add", self.capAdd),
                         self.get_option("cap-drop", self.capDrop),
                         self.get_option("cgroup-parent", self.cgroupParent),
+                        self.get_option("cgroupns", self.cgroupns),
                         self.get_option("cidfile", self.cidfile),
                         self.get_option("cpu-period", self.cpuPeriod),
                         self.get_option("cpu-quota", self.cpuQuota),

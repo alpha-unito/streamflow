@@ -161,6 +161,10 @@
           "type": "string",
           "description": "Path to the working directory.",
           "default": "${TMPDIR}/streamflow"
+        },
+        "wraps": {
+          "type": "string",
+          "description": "The name of the deployment wrapped by this configuration."
         }
       },
       "$comment": "The `config` property is injected by each Connector extension",

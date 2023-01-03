@@ -12,7 +12,6 @@ from typing import Any, MutableMapping, MutableSequence
 import asyncssh
 import pkg_resources
 from cachetools import Cache, LRUCache
-from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -21,8 +20,9 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment import aiotarstream
-from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.connector.base import BaseConnector, extract_tar_stream
+from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
+from streamflow.deployment.template import CommandTemplateMap
 from streamflow.log_handler import logger
 
 
@@ -272,7 +272,11 @@ class SSHConnector(BaseConnector):
             config_dir=config_dir,
             transferBufferSize=transferBufferSize,
         )
-        self.templates: MutableMapping[str, Template] = {}
+        services_map: MutableMapping[str, Any] = {}
+        if services:
+            for name, service in services.items():
+                with open(os.path.join(self.config_dir, service)) as f:
+                    services_map[name] = f.read()
         if file is not None:
             if logger.isEnabledFor(logging.WARN):
                 logger.warn(
@@ -280,15 +284,14 @@ class SSHConnector(BaseConnector):
                     "Use `services` instead."
                 )
             with open(os.path.join(self.config_dir, file)) as f:
-                self.templates["__DEFAULT__"] = Template(f.read())
+                self.template_map: CommandTemplateMap = CommandTemplateMap(
+                    default=f.read(), template_map=services_map
+                )
         else:
-            self.templates["__DEFAULT__"] = Template(
-                "#!/bin/sh\n\n{{streamflow_command}}"
+            self.template_map: CommandTemplateMap = CommandTemplateMap(
+                default="#!/bin/sh\n\n{{streamflow_command}}",
+                template_map=services_map,
             )
-        if services:
-            for name, service in services.items():
-                with open(os.path.join(self.config_dir, service)) as f:
-                    self.templates[name]: Template | None = Template(f.read())
         self.checkHostKey: bool = checkHostKey
         self.passwordFile: str | None = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
@@ -309,19 +312,6 @@ class SSHConnector(BaseConnector):
             n.hostname: n for n in [self._get_config(n) for n in nodes]
         }
         self.hardwareCache: Cache = LRUCache(maxsize=len(self.nodes))
-
-    def _get_command_from_template(
-        self,
-        command: str,
-        environment: MutableMapping[str, str] = None,
-        template: str | None = None,
-        workdir: str = None,
-    ) -> str:
-        return self.templates[template or "__DEFAULT__"].render(
-            streamflow_command=f"sh -c '{command}'",
-            streamflow_environment=environment,
-            streamflow_workdir=workdir,
-        )
 
     async def _copy_local_to_remote_single(
         self, src: str, dst: str, location: Location, read_only: bool = False
@@ -634,10 +624,10 @@ class SSHConnector(BaseConnector):
             job_name=job_name,
         )
         if job_name is not None:
-            command = self._get_command_from_template(
+            command = self.template_map.get_command(
                 command=command,
-                environment=environment,
                 template=location.service,
+                environment=environment,
                 workdir=workdir,
             )
             command = utils.encode_command(command)
@@ -650,7 +640,7 @@ class SSHConnector(BaseConnector):
             async with self._get_ssh_client(location.name) as ssh_client:
                 result = await asyncio.wait_for(
                     ssh_client.run(
-                        f"sh -c '{command}'",
+                        command,
                         stderr=asyncio.subprocess.STDOUT,
                     ),
                     timeout=timeout,

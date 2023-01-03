@@ -53,6 +53,7 @@ def get_binding_config(
                 external=target_deployment.get("external", False),
                 lazy=target_deployment.get("lazy", True),
                 workdir=target_deployment.get("workdir"),
+                wraps=target_deployment.get("wraps"),
             )
             targets.append(
                 Target(

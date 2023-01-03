@@ -22,7 +22,6 @@ from streamflow.core.deployment import Connector, DeploymentConfig, Location, Ta
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
-    WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
@@ -558,13 +557,11 @@ class ExecuteStep(BaseStep):
 
     async def _run_job(
         self,
+        job: Job,
         inputs: MutableMapping[str, Token],
         connectors: MutableMapping[str, Connector],
     ) -> Status:
         # Update job
-        job = await cast(JobPort, self.get_input_port("__job__")).get_job(self.name)
-        if job is None:
-            raise WorkflowExecutionException(f"Step {self.name} received a null job")
         job = Job(
             name=job.name,
             workflow_id=self.workflow.persistent_id,
@@ -716,8 +713,12 @@ class ExecuteStep(BaseStep):
             while True:
                 # Retrieve input tokens
                 inputs = await self._get_inputs(input_ports)
+                # Retrieve job
+                job = await cast(JobPort, self.get_input_port("__job__")).get_job(
+                    self.name
+                )
                 # Check for termination
-                if check_termination(inputs.values()):
+                if check_termination(inputs.values()) or job is None:
                     break
                 # Group inputs by tag
                 _group_by_tag(inputs, inputs_map)
@@ -730,17 +731,23 @@ class ExecuteStep(BaseStep):
                         # Run job
                         jobs.append(
                             asyncio.create_task(
-                                self._run_job(inputs, connectors),
+                                self._run_job(job, inputs, connectors),
                                 name=utils.random_name(),
                             )
                         )
         # Otherwise simply run job
         else:
-            jobs.append(
-                asyncio.create_task(
-                    self._run_job({}, connectors), name=utils.random_name()
+            # Retrieve job
+            if (
+                job := await cast(JobPort, self.get_input_port("__job__")).get_job(
+                    self.name
                 )
-            )
+            ) is not None:
+                jobs.append(
+                    asyncio.create_task(
+                        self._run_job(job, {}, connectors), name=utils.random_name()
+                    )
+                )
         # Wait for jobs termination
         statuses = cast(MutableSequence[Status], await asyncio.gather(*jobs))
         # If there are connector ports, retrieve termination tokens from them
@@ -897,17 +904,13 @@ class InputInjectorStep(BaseStep, ABC):
             while True:
                 # Retrieve input token
                 token = next(iter((await self._get_inputs(input_ports)).values()))
-                # Check for termination
-                if check_termination(token):
-                    break
                 # Retrieve job
                 job = await cast(JobPort, self.get_input_port("__job__")).get_job(
                     self.name
                 )
-                if job is None:
-                    raise WorkflowExecutionException(
-                        f"Step {self.name} received a null job"
-                    )
+                # Check for termination
+                if check_termination(token) or job is None:
+                    break
                 try:
                     await self.workflow.context.scheduler.notify_status(
                         job.name, Status.RUNNING
@@ -1432,8 +1435,12 @@ class TransferStep(BaseStep, ABC):
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
+                    # Retrieve job
+                    job = await cast(JobPort, self.get_input_port("__job__")).get_job(
+                        self.name
+                    )
                     # Check for termination
-                    if check_termination(inputs.values()):
+                    if check_termination(inputs.values()) or job is None:
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1441,14 +1448,6 @@ class TransferStep(BaseStep, ABC):
                     for tag in list(inputs_map.keys()):
                         if len(inputs_map[tag]) == len(input_ports):
                             inputs = inputs_map.pop(tag)
-                            # Retrieve job
-                            job = await cast(
-                                JobPort, self.get_input_port("__job__")
-                            ).get_job(self.name)
-                            if job is None:
-                                raise WorkflowExecutionException(
-                                    f"Step {self.name} received a null job"
-                                )
                             # Change default status to COMPLETED
                             status = Status.COMPLETED
                             # Transfer token

@@ -7,7 +7,7 @@ from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.workflow import Token, Job
+from streamflow.core.workflow import Job, Token
 
 
 class IterationTerminationToken(Token):
