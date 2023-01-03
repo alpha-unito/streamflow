@@ -1,6 +1,6 @@
 # StreamFlow
 
-[![CWL Conformance](https://github.com/alpha-unito/streamflow/actions/workflows/cwl-conformance.yaml/badge.svg?branch=master)](https://github.com/alpha-unito/streamflow/actions/workflows/cwl-conformance.yaml)
+[![CI Tests](https://github.com/alpha-unito/streamflow/actions/workflows/ci-tests.yaml/badge.svg?branch=master)](https://github.com/alpha-unito/streamflow/actions/workflows/ci-tests.yaml)
 
 The [StreamFlow](https://streamflow.di.unito.it/) framework is a container-native *Workflow Management System (WMS)* written in Python 3.
 It has been designed around two main principles:

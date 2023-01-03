@@ -2,7 +2,7 @@ name: "Release new version"
 on:
   workflow_run:
     workflows:
-      - "Continuous integration tests"
+      - "CI Tests"
     branches:
       - master
     types:
