@@ -24,9 +24,12 @@ def cached(cache, key=cachetools.keys.hashkey, lock=None):
     def decorator(func):
         if inspect.iscoroutinefunction(func):
             if cache is None:
+
                 async def wrapper(*args, **kwargs):
                     return await func(*args, **kwargs)
+
             elif lock is None:
+
                 async def wrapper(*args, **kwargs):
                     k = key(*args, **kwargs)
                     try:
@@ -39,7 +42,9 @@ def cached(cache, key=cachetools.keys.hashkey, lock=None):
                     except ValueError:
                         pass  # value too large
                     return v
+
             else:
+
                 async def wrapper(*args, **kwargs):
                     k = key(*args, **kwargs)
                     try:
@@ -54,6 +59,7 @@ def cached(cache, key=cachetools.keys.hashkey, lock=None):
                             return cache.setdefault(k, v)
                     except ValueError:
                         return v  # value too large
+
             return functools.update_wrapper(wrapper, func)
         else:
             raise NotImplementedError("Use cachetools.cached for non-async functions")
@@ -74,6 +80,7 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
     def decorator(method):
         if inspect.iscoroutinefunction(method):
             if lock is None:
+
                 async def wrapper(self, *args, **kwargs):
                     c = cache(self)
                     if c is None:
@@ -89,7 +96,9 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     except ValueError:
                         pass  # value too large
                     return v
+
             else:
+
                 async def wrapper(self, *args, **kwargs):
                     c = cache(self)
                     if c is None:
@@ -107,8 +116,11 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                             return c.setdefault(k, v)
                     except ValueError:
                         return v  # value too large
+
             return functools.update_wrapper(wrapper, method)
         else:
-            raise NotImplementedError("Use cachetools.cachedmethod for non-async methods")
+            raise NotImplementedError(
+                "Use cachetools.cachedmethod for non-async methods"
+            )
 
     return decorator

@@ -17,7 +17,6 @@ def _extract_key(next_seg: str) -> str:
 
 
 class CWLDependencyListener(ECMAScriptListener):
-
     def __init__(self):
         self.deps: Set[str] = set()
         self.names: NamesStack = NamesStack()
@@ -33,7 +32,9 @@ class CWLDependencyListener(ECMAScriptListener):
         token = ctx.getToken(ECMAScriptParser.Identifier, 0)
         return token.symbol.text if token else None
 
-    def enterFunctionDeclaration(self, ctx: ECMAScriptParser.FunctionDeclarationContext):
+    def enterFunctionDeclaration(
+        self, ctx: ECMAScriptParser.FunctionDeclarationContext
+    ):
         self.names.add_scope()
         parameters = ctx.formalParameterList()
         if parameters:
@@ -44,7 +45,9 @@ class CWLDependencyListener(ECMAScriptListener):
     def exitFunctionDeclaration(self, ctx: ECMAScriptParser.FunctionDeclarationContext):
         self.names.delete_scope()
 
-    def enterAssignmentExpression(self, ctx: ECMAScriptParser.AssignmentExpressionContext):
+    def enterAssignmentExpression(
+        self, ctx: ECMAScriptParser.AssignmentExpressionContext
+    ):
         left = ctx.getChild(0)
         right = ctx.getChild(2)
         if isinstance(left, ECMAScriptParser.SingleExpressionContext):
@@ -62,12 +65,16 @@ class CWLDependencyListener(ECMAScriptListener):
                     if right_name in self.names:
                         self.names.add_name(left_name)
 
-    def enterMemberDotExpression(self, ctx: ECMAScriptParser.MemberDotExpressionContext):
+    def enterMemberDotExpression(
+        self, ctx: ECMAScriptParser.MemberDotExpressionContext
+    ):
         if self._get_name(ctx.singleExpression()) in self.names.global_names():
             if dep := self._get_name(ctx.identifierName()):
                 self.deps.add(dep)
 
-    def enterMemberIndexExpression(self, ctx: ECMAScriptParser.MemberIndexExpressionContext):
+    def enterMemberIndexExpression(
+        self, ctx: ECMAScriptParser.MemberIndexExpressionContext
+    ):
         if self._get_name(ctx.singleExpression()) in self.names.global_names():
             for expr in ctx.expressionSequence().singleExpression():
                 if dep := self._get_index(expr.literal()).strip("'\""):
@@ -75,14 +82,10 @@ class CWLDependencyListener(ECMAScriptListener):
 
 
 class DependencyResolver(JSEngine):
-
     def __init__(self):
         self.deps = set()
 
-    def eval(self,
-             scan: str,
-             jslib: str = "",
-             **kwargs: Any) -> Optional[Any]:
+    def eval(self, scan: str, jslib: str = "", **kwargs: Any) -> Optional[Any]:
         code = code_fragment_to_js(scan, jslib)
         lexer = ECMAScriptLexer(antlr4.InputStream(code))
         parser = ECMAScriptParser(antlr4.CommonTokenStream(lexer))
@@ -92,18 +95,24 @@ class DependencyResolver(JSEngine):
         self.deps = listener.deps
         return None
 
-    def regex_eval(self,
-                   parsed_string: str,
-                   remaining_string: str,
-                   current_value: Any,
-                   **kwargs: Any) -> Optional[Any]:
+    def regex_eval(
+        self,
+        parsed_string: str,
+        remaining_string: str,
+        current_value: Any,
+        **kwargs: Any,
+    ) -> Optional[Any]:
         if parsed_string != "inputs":
             return None
         elif remaining_string:
             if not (m := segment_re.match(remaining_string)):
                 return None
             key = _extract_key(m.group(1))
-            if isinstance(current_value, MutableSequence) and key == "length" and not remaining_string[m.end(1):]:
+            if (
+                isinstance(current_value, MutableSequence)
+                and key == "length"
+                and not remaining_string[m.end(1) :]
+            ):
                 return None
             self.deps = {key}
             return None

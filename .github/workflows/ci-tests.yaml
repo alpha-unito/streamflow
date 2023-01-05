@@ -6,53 +6,119 @@ on:
   pull_request:
     branches:
       - master
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   cwl-conformance:
-    name: "CWL Conformance"
-    runs-on: ubuntu-20.04
+    name: "CWL conformance tests"
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
+        python: [ "3.8", "3.9", "3.10", "3.11" ]
+        version: [ "v1.0", "v1.1", "v1.2" ]
         include:
-          - mark: "cwl10"
-            version: "1.0"
-          - mark: "cwl11"
-            version: "1.1"
-          - mark: "cwl12"
-            version: "1.2"
+          - commit: "1c1f122f780075d910fdfdea7e15e46eef3c078d"
+            exclude: "docker_entrypoint"
+            version: "v1.0"
+          - commit: "6397014050177074c9ccd0d771577f7fa9f728a3"
+            exclude: "docker_entrypoint,stdin_shorcut,inplace_update_on_file_content"
+            version: "v1.1"
+          - commit: "ad6f77c648ae9f0eaa2fd53ba7032b0523e12de8"
+            exclude: "docker_entrypoint,modify_file_content"
+            version: "v1.2"
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
+          python-version: ${{ matrix.python }}
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
       - uses: docker/setup-qemu-action@v2
-      - uses: docker/setup-buildx-action@v2
-      - name: "Install Python Dependencies and Streamflow"
+      - name: "Install Streamflow"
         run: |
-          python -m pip install requests tabulate pytest pytest-asyncio cwltest --user
           python -m pip install . --user
-      - name: "Test CWL ${{ matrix.version }} Conformance"
+      - name: "Test CWL ${{ matrix.version }} conformance"
         env:
-          PYTEST_MARK: ${{ matrix.mark }}
-        run: pytest -m $PYTEST_MARK
-  streamflow-tests:
-    name: "StreamFlow Tests"
-    runs-on: ubuntu-20.04
+          VERSION: ${{ matrix.version }}
+          COMMIT: ${{ matrix.commit }}
+          EXCLUDE: ${{ matrix.exclude }}
+        run: ./conformance-test.sh
+      - name: "Upload coverage report for conformance tests"
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ format('py{0}-cwl{1}-conformance-tests', matrix.python, matrix.version) }}
+          path: ./coverage.xml
+          retention-days: 1
+          if-no-files-found: error
+  static-checks:
+    name: "StreamFlow static checks"
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        step: [ "bandit", "lint" ]
+    env:
+      TOXENV: ${{ matrix.step }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            tox.ini
+      - name: "Install Python Dependencies and Streamflow"
+        run: |
+          python -m pip install tox --user
+          python -m pip install . --user
+      - name: "Run StreamFlow static analysis via Tox"
+        run: tox
+  unit-tests:
+    name: "StreamFlow unit tests"
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python: [ "3.8", "3.9", "3.10", "3.11" ]
+    env:
+      TOXENV: ${{ format('py{0}-unit', matrix.python) }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            tox.ini
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
       - uses: docker/setup-qemu-action@v2
-      - uses: docker/setup-buildx-action@v2
       - name: "Install Python Dependencies and Streamflow"
         run: |
-          python -m pip install requests tabulate pytest pytest-asyncio --user
+          python -m pip install tox --user
           python -m pip install . --user
-      - name: "Run StreamFlow tests (excluding CWL Conformance)"
-        run: pytest -m "not conformance"
+      - name: "Run StreamFlow tests via Tox"
+        run: tox
+      - name: "Upload coverage report for unit tests"
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ format('py{0}-unit-tests', matrix.python) }}
+          path: ./coverage.xml
+          retention-days: 1
+          if-no-files-found: error
+  upload-to-codecov:
+    name: "Codecov report upload"
+    needs: ["cwl-conformance", "unit-tests"]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: "Download artifacts"
+        uses: actions/download-artifact@v3
+      - name: "Upload coverage to Codecov"
+        uses: codecov/codecov-action@v3
+        with:
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}

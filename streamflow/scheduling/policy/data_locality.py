@@ -19,29 +19,47 @@ if TYPE_CHECKING:
 
 
 class DataLocalityPolicy(Policy):
-
-    async def get_location(self,
-                           context: StreamFlowContext,
-                           job: Job,
-                           deployment: str,
-                           hardware_requirement: Hardware,
-                           available_locations: MutableMapping[str, AvailableLocation],
-                           jobs: MutableMapping[str, JobAllocation],
-                           locations: MutableMapping[str, MutableMapping[str, LocationAllocation]]
-                           ) -> Optional[Location]:
+    async def get_location(
+        self,
+        context: StreamFlowContext,
+        job: Job,
+        deployment: str,
+        hardware_requirement: Hardware,
+        available_locations: MutableMapping[str, AvailableLocation],
+        jobs: MutableMapping[str, JobAllocation],
+        locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
+    ) -> Optional[Location]:
         valid_locations = list(available_locations.keys())
         # For each input token sorted by weight
-        weights = {k: v for k, v in zip(job.inputs, await asyncio.gather(*(
-            asyncio.create_task(t.get_weight(context)) for t in job.inputs.values())))}
-        for name, token in sorted(job.inputs.items(), key=lambda item: weights[item[0]], reverse=True):
+        weights = {
+            k: v
+            for k, v in zip(
+                job.inputs,
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(t.get_weight(context))
+                        for t in job.inputs.values()
+                    )
+                ),
+            )
+        }
+        for name, token in sorted(
+            job.inputs.items(), key=lambda item: weights[item[0]], reverse=True
+        ):
             related_locations = set()
             # For FileTokens, retrieve related locations
             if isinstance(token, FileToken):
                 for path in await token.get_paths(context):
-                    related_locations.update([loc.name for loc in context.data_manager.get_data_locations(
-                        path=path,
-                        deployment=deployment,
-                        location_type=DataType.PRIMARY)])
+                    related_locations.update(
+                        [
+                            loc.name
+                            for loc in context.data_manager.get_data_locations(
+                                path=path,
+                                deployment=deployment,
+                                location_type=DataType.PRIMARY,
+                            )
+                        ]
+                    )
             # Check if one of the related locations is free
             for current_location in related_locations:
                 if current_location in valid_locations:
@@ -55,4 +73,5 @@ class DataLocalityPolicy(Policy):
     @classmethod
     def get_schema(cls) -> str:
         return pkg_resources.resource_filename(
-            __name__, os.path.join('schemas', 'data_locality.json'))
+            __name__, os.path.join("schemas", "data_locality.json")
+        )

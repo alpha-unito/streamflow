@@ -14,7 +14,7 @@
     },
     "reset_db": {
       "type": "boolean",
-      "description": "Wether or not to recreate a new (empty) version of the database",
+      "description": "Weather or not to recreate a new (empty) version of the database",
       "default": false
     }
   },

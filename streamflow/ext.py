@@ -13,35 +13,31 @@ from streamflow.scheduling.policy import policy_classes
 
 
 class StreamFlowPlugin(ABC):
-
-    def _register(self,
-                  name: str,
-                  cls: Type,
-                  classes: MutableMapping[str, Type]):
+    def _register(self, name: str, cls: Type, classes: MutableMapping[str, Type]):
         if name in classes:
-            logger.warning("{} is already installed and will be overridden by {}".format(
-                name, self.__class__.__module__ + "." + self.__class__.__name__))
+            logger.warning(
+                "{} is already installed and will be overridden by {}".format(
+                    name, self.__class__.__module__ + "." + self.__class__.__name__
+                )
+            )
         classes[name] = cls
 
     @abstractmethod
     def register(self) -> None:
         ...
 
-    def register_binding_order(self,
-                               name: str,
-                               cls: Type[BindingFilter]):
+    def register_binding_order(self, name: str, cls: Type[BindingFilter]):
         self._register(name, cls, binding_filter_classes)
 
-    def register_connector(self,
-                           name: str,
-                           cls: Type[Connector]):
+    def register_connector(self, name: str, cls: Type[Connector]):
         self._register(name, cls, connector_classes)
 
-    def register_policy(self,
-                        name: str,
-                        cls: Type[Policy]):
+    def register_policy(self, name: str, cls: Type[Policy]):
         self._register(name, cls, policy_classes)
 
-    def register_scheduler(self,
-                           cls: Type[Scheduler]):
-        self._register(cls.__class__.__module__ + '.' + cls.__class__.__name__, cls, scheduler_classes)
+    def register_scheduler(self, cls: Type[Scheduler]):
+        self._register(
+            cls.__class__.__module__ + "." + cls.__class__.__name__,
+            cls,
+            scheduler_classes,
+        )

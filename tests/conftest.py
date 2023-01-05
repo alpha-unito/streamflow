@@ -9,8 +9,9 @@ from streamflow.core.deployment import DeploymentConfig, LOCAL_LOCATION, Locatio
 from streamflow.main import build_context
 
 
-async def get_location(context: StreamFlowContext,
-                       request: pytest.FixtureRequest) -> Location:
+async def get_location(
+    context: StreamFlowContext, request: pytest.FixtureRequest
+) -> Location:
     if request.param == "local":
         return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
     elif request.param == "docker":
@@ -24,21 +25,25 @@ async def get_location(context: StreamFlowContext,
 @pytest_asyncio.fixture(scope="session")
 async def context() -> StreamFlowContext:
     context = build_context(tempfile.gettempdir(), {})
-    await context.deployment_manager.deploy(DeploymentConfig(
-        name=LOCAL_LOCATION,
-        type="local",
-        config={},
-        external=True,
-        lazy=False,
-        workdir=tempfile.gettempdir()))
-    await context.deployment_manager.deploy(DeploymentConfig(
-        name="alpine",
-        type="docker",
-        config={
-            "image": "alpine:3.16.2"
-        },
-        external=False,
-        lazy=False))
+    await context.deployment_manager.deploy(
+        DeploymentConfig(
+            name=LOCAL_LOCATION,
+            type="local",
+            config={},
+            external=True,
+            lazy=False,
+            workdir=tempfile.gettempdir(),
+        )
+    )
+    await context.deployment_manager.deploy(
+        DeploymentConfig(
+            name="alpine",
+            type="docker",
+            config={"image": "alpine:3.16.2"},
+            external=False,
+            lazy=False,
+        )
+    )
     yield context
     await context.deployment_manager.undeploy_all()
 
@@ -49,4 +54,3 @@ def event_loop():
     loop = policy.new_event_loop()
     yield loop
     loop.close()
-

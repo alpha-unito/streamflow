@@ -119,11 +119,11 @@ In particular, CWL workflows ``config`` contain a mandatory ``file`` entry that 
 Binding steps and deployments
 -----------------------------
 
-Each entry in the ``bindings`` contains a ``step`` directive referring to a specific step in the workflow, and a ``target`` directive refering to a deployment entry in the ``deployments`` section of the StreamFlow file.
+Each entry in the ``bindings`` contains a ``step`` directive referring to a specific step in the workflow, and a ``target`` directive referring to a deployment entry in the ``deployments`` section of the StreamFlow file.
 
 Each step can refer to either a single command or a nested sub-workflow. Steps are uniquely identified by means of a Posix-like path, where each simple task is mapped to a file and each sub-workflow is mapped to a folder. In partiuclar, the most external workflow description is always mapped to the root folder ``/``. Considering the example reported :ref:`above <Write your workflow>`, you should specify ``/compile`` in the ``step`` directive to identify the ``compile`` step, or ``/`` to identify the entire workflow.
 
-The ``target`` directive binds the step with a specific service in a StreamFlow deployment. As discussed in the :doc:`architecture section <architecture>`, complex deployments can contain multple services, which represent the unit of binding in StreamFlow. The best way to identify services in a deployment strictly depends on the deployment specification itself. For example, in DockerCompose it is quite straightforward to uniquely identify each service by using its key in the ``services`` dictionary. Conversely, in Kubernetes we explicitly require users to label containers in a Pod with a unique identifier through the ``name`` attribute, in order to unambiguously identify them at deploy time.
+The ``target`` directive binds the step with a specific service in a StreamFlow deployment. As discussed in the :doc:`architecture section <architecture>`, complex deployments can contain multiple services, which represent the unit of binding in StreamFlow. The best way to identify services in a deployment strictly depends on the deployment specification itself. For example, in DockerCompose it is quite straightforward to uniquely identify each service by using its key in the ``services`` dictionary. Conversely, in Kubernetes we explicitly require users to label containers in a Pod with a unique identifier through the ``name`` attribute, in order to unambiguously identify them at deploy time.
 
 Simpler deployments like single Docker or Singularity containers do not need a service layer, since the deployment contains a single service that is automatically uniquely identified.
 

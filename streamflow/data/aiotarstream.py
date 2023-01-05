@@ -36,13 +36,16 @@ async def copyfileobj(src, dst, length=None, bufsize=None):
 
 async def write(src, dst, bufsize):
     while bufsize > 0:
-        buf = await src.read(bufsize) if isinstance(src, StreamWrapper) else src.read(bufsize)
+        buf = (
+            await src.read(bufsize)
+            if isinstance(src, StreamWrapper)
+            else src.read(bufsize)
+        )
         bufsize -= len(buf)
         await dst.write(buf) if isinstance(dst, StreamWrapper) else dst.write(buf)
 
 
 class CompressionStreamWrapper(BaseStreamWrapper, ABC):
-
     def __init__(self, stream, mode):
         super().__init__(stream)
         self.mode = mode
@@ -72,7 +75,6 @@ class CompressionStreamWrapper(BaseStreamWrapper, ABC):
 
 
 class BZ2StreamWrapper(CompressionStreamWrapper):
-
     def __init__(self, stream, mode, compresslevel: int = 9):
         super().__init__(stream, mode)
         try:
@@ -87,7 +89,6 @@ class BZ2StreamWrapper(CompressionStreamWrapper):
 
 
 class GZipStreamWrapper(CompressionStreamWrapper):
-
     def __init__(self, stream, mode, compresslevel: int = 9):
         super().__init__(stream, mode)
         self.compresslevel: int = compresslevel
@@ -138,9 +139,12 @@ class GZipStreamWrapper(CompressionStreamWrapper):
             method=self.zlib.DEFLATED,
             wbits=-self.zlib.MAX_WBITS,
             memLevel=self.zlib.DEF_MEM_LEVEL,
-            strategy=self.zlib.Z_DEFAULT_STRATEGY)
+            strategy=self.zlib.Z_DEFAULT_STRATEGY,
+        )
         timestamp = struct.pack("<L", int(time.time()))
-        await self.stream.write(b"\037\213\010\010" + timestamp + b"\002\377" + tarfile.NUL)
+        await self.stream.write(
+            b"\037\213\010\010" + timestamp + b"\002\377" + tarfile.NUL
+        )
 
     async def close(self):
         if self.closed:
@@ -149,7 +153,7 @@ class GZipStreamWrapper(CompressionStreamWrapper):
         try:
             await self.stream.write(self.cmp.flush())
             await self.stream.write(struct.pack("<L", self.crc))
-            await self.stream.write(struct.pack("<L", self.pos & 0xffffFFFF))
+            await self.stream.write(struct.pack("<L", self.pos & 0xFFFFFFFF))
         finally:
             await self.stream.close()
 
@@ -169,7 +173,6 @@ class GZipStreamWrapper(CompressionStreamWrapper):
 
 
 class LZMAStreamWrapper(CompressionStreamWrapper):
-
     def __init__(self, stream, mode, preset: Optional[int] = None):
         super().__init__(stream, mode)
         try:
@@ -184,7 +187,6 @@ class LZMAStreamWrapper(CompressionStreamWrapper):
 
 
 class FileStreamReaderWrapper(StreamWrapper):
-
     def __init__(self, stream, size, blockinfo=None):
         super().__init__(stream)
         self.size = size
@@ -213,7 +215,11 @@ class FileStreamReaderWrapper(StreamWrapper):
         self.closed = True
 
     async def read(self, size: Optional[int] = None):
-        size = self.size - self.position if size is None else min(size, self.size - self.position)
+        size = (
+            self.size - self.position
+            if size is None
+            else min(size, self.size - self.position)
+        )
         while True:
             data, start, stop = self.map[self.map_index]
             if start <= self.position < stop:
@@ -236,7 +242,6 @@ class FileStreamReaderWrapper(StreamWrapper):
 
 
 class AioTarInfo(tarfile.TarInfo):
-
     @classmethod
     async def fromtarfile(cls, tarstream):
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
@@ -250,7 +255,9 @@ class AioTarInfo(tarfile.TarInfo):
         if self.isreg() or self.type not in tarfile.SUPPORTED_TYPES:
             offset += self._block(self.size)
         tarstream.offset = offset
-        self._apply_pax_info(tarstream.pax_headers, tarstream.encoding, tarstream.errors)
+        self._apply_pax_info(
+            tarstream.pax_headers, tarstream.encoding, tarstream.errors
+        )
         return self
 
     async def _proc_gnulong(self, tarstream):
@@ -295,7 +302,7 @@ class AioTarInfo(tarfile.TarInfo):
             pax_headers = tarstream.pax_headers
         else:
             pax_headers = tarstream.pax_headers.copy()
-        match = re.search(br"\d+ hdrcharset=([^\n]+)\n", buf)
+        match = re.search(rb"\d+ hdrcharset=([^\n]+)\n", buf)
         if match is not None:
             pax_headers["hdrcharset"] = match.group(1).decode("utf-8")
         hdrcharset = pax_headers.get("hdrcharset")
@@ -303,7 +310,7 @@ class AioTarInfo(tarfile.TarInfo):
             encoding = tarstream.encoding
         else:
             encoding = "utf-8"
-        regex = re.compile(br"(\d+) ([^=]+)=")
+        regex = re.compile(rb"(\d+) ([^=]+)=")
         pos = 0
         while True:
             match = regex.match(buf, pos)
@@ -313,12 +320,18 @@ class AioTarInfo(tarfile.TarInfo):
             length = int(length)
             if length == 0:
                 raise tarfile.InvalidHeaderError("invalid header")
-            value = buf[match.end(2) + 1:match.start(1) + length - 1]
-            keyword = self._decode_pax_field(keyword, "utf-8", "utf-8", tarstream.errors)
+            value = buf[match.end(2) + 1 : match.start(1) + length - 1]
+            keyword = self._decode_pax_field(
+                keyword, "utf-8", "utf-8", tarstream.errors
+            )
             if keyword in tarfile.PAX_NAME_FIELDS:
-                value = self._decode_pax_field(value, encoding, tarstream.encoding, tarstream.errors)
+                value = self._decode_pax_field(
+                    value, encoding, tarstream.encoding, tarstream.errors
+                )
             else:
-                value = self._decode_pax_field(value, "utf-8", "utf-8", tarstream.errors)
+                value = self._decode_pax_field(
+                    value, "utf-8", "utf-8", tarstream.errors
+                )
             pax_headers[keyword] = value
             pos += length
         try:
@@ -329,7 +342,10 @@ class AioTarInfo(tarfile.TarInfo):
             self._proc_gnusparse_01(next, pax_headers)
         elif "GNU.sparse.size" in pax_headers:
             self._proc_gnusparse_00(next, pax_headers, buf)
-        elif pax_headers.get("GNU.sparse.major") == "1" and pax_headers.get("GNU.sparse.minor") == "0":
+        elif (
+            pax_headers.get("GNU.sparse.major") == "1"
+            and pax_headers.get("GNU.sparse.minor") == "0"
+        ):
             await self._proc_gnusparse_10(next, tarstream)
         if self.type in (tarfile.XHDTYPE, tarfile.SOLARIS_XHDTYPE):
             next._apply_pax_info(pax_headers, tarstream.encoding, tarstream.errors)
@@ -349,8 +365,8 @@ class AioTarInfo(tarfile.TarInfo):
             pos = 0
             for i in range(21):
                 try:
-                    offset = tarfile.nti(buf[pos:pos + 12])
-                    numbytes = tarfile.nti(buf[pos + 12:pos + 24])
+                    offset = tarfile.nti(buf[pos : pos + 12])
+                    numbytes = tarfile.nti(buf[pos + 12 : pos + 24])
                 except ValueError:
                     break
                 if offset and numbytes:
@@ -375,19 +391,21 @@ class AioTarStream(object):
     tarinfo = AioTarInfo
     fileobject = FileStreamReaderWrapper
 
-    def __init__(self,
-                 stream,
-                 mode="r",
-                 format=None,
-                 tarinfo=None,
-                 dereference=None,
-                 ignore_zeros=None,
-                 encoding=None,
-                 errors="surrogateescape",
-                 pax_headers=None,
-                 debug=None,
-                 errorlevel=None,
-                 copybufsize=None):
+    def __init__(
+        self,
+        stream,
+        mode="r",
+        format=None,
+        tarinfo=None,
+        dereference=None,
+        ignore_zeros=None,
+        encoding=None,
+        errors="surrogateescape",
+        pax_headers=None,
+        debug=None,
+        errorlevel=None,
+        copybufsize=None,
+    ):
         modes = {"r": "rb", "a": "r+b", "w": "wb", "x": "xb"}
         if mode not in modes:
             raise ValueError("mode must be 'r', 'a', 'w' or 'x'")
@@ -407,7 +425,11 @@ class AioTarStream(object):
         if encoding is not None:
             self.encoding = encoding
         self.errors = errors
-        self.pax_headers = pax_headers if pax_headers is not None and self.format == tarfile.PAX_FORMAT else {}
+        self.pax_headers = (
+            pax_headers
+            if pax_headers is not None and self.format == tarfile.PAX_FORMAT
+            else {}
+        )
         if debug is not None:
             self.debug = debug
         if errorlevel is not None:
@@ -465,7 +487,7 @@ class AioTarStream(object):
 
     @classmethod
     def open(cls, stream, mode="r", **kwargs):
-        filemode, comptype = mode.split(":", 1) if ':' in mode else (mode, None)
+        filemode, comptype = mode.split(":", 1) if ":" in mode else (mode, None)
         filemode = mode or "r"
         comptype = comptype or "tar"
         if filemode not in ("r", "w"):
@@ -517,7 +539,9 @@ class AioTarStream(object):
         if level <= self.debug:
             print(msg, file=sys.stderr)
 
-    async def _extract_member(self, tarinfo, targetpath, set_attrs=True, numeric_owner=False):
+    async def _extract_member(
+        self, tarinfo, targetpath, set_attrs=True, numeric_owner=False
+    ):
         targetpath = targetpath.rstrip("/")
         targetpath = targetpath.replace("/", os.sep)
         upperdirs = os.path.dirname(targetpath)
@@ -549,7 +573,9 @@ class AioTarStream(object):
 
     async def _find_link_target(self, tarinfo):
         if tarinfo.issym():
-            linkname = "/".join(filter(None, (os.path.dirname(tarinfo.name), tarinfo.linkname)))
+            linkname = "/".join(
+                filter(None, (os.path.dirname(tarinfo.name), tarinfo.linkname))
+            )
             limit = None
         else:
             linkname = tarinfo.linkname
@@ -562,7 +588,7 @@ class AioTarStream(object):
     async def _getmember(self, name, tarinfo=None, normalize=False):
         members = await self.getmembers()
         if tarinfo is not None:
-            members = members[:members.index(tarinfo)]
+            members = members[: members.index(tarinfo)]
         if normalize:
             name = os.path.normpath(name)
         for member in reversed(members):
@@ -601,7 +627,12 @@ class AioTarStream(object):
             await self.addfile(tarinfo)
             if recursive:
                 for f in sorted(os.listdir(name)):
-                    await self.add(os.path.join(name, f), os.path.join(arcname, f), recursive, filter=filter)
+                    await self.add(
+                        os.path.join(name, f),
+                        os.path.join(arcname, f),
+                        recursive,
+                        filter=filter,
+                    )
         else:
             await self.addfile(tarinfo)
 
@@ -657,10 +688,12 @@ class AioTarStream(object):
         try:
             if self.mode in ("a", "w", "x"):
                 await self.stream.write(tarfile.NUL * (tarfile.BLOCKSIZE * 2))
-                self.offset += (tarfile.BLOCKSIZE * 2)
+                self.offset += tarfile.BLOCKSIZE * 2
                 blocks, remainder = divmod(self.offset, tarfile.RECORDSIZE)
                 if remainder > 0:
-                    await self.stream.write(tarfile.NUL * (tarfile.RECORDSIZE - remainder))
+                    await self.stream.write(
+                        tarfile.NUL * (tarfile.RECORDSIZE - remainder)
+                    )
         finally:
             await self.stream.close()
 
@@ -670,10 +703,12 @@ class AioTarStream(object):
         if tarinfo.islnk():
             tarinfo._link_target = os.path.join(path, tarinfo.linkname)
         try:
-            await self._extract_member(tarinfo,
-                                       os.path.join(path, tarinfo.name),
-                                       set_attrs=set_attrs,
-                                       numeric_owner=numeric_owner)
+            await self._extract_member(
+                tarinfo,
+                os.path.join(path, tarinfo.name),
+                set_attrs=set_attrs,
+                numeric_owner=numeric_owner,
+            )
         except OSError as e:
             if self.errorlevel > 0:
                 raise
@@ -697,7 +732,12 @@ class AioTarStream(object):
                 directories.append(tarinfo)
                 tarinfo = copy.copy(tarinfo)
                 tarinfo.mode = 0o700
-            await self.extract(tarinfo, path, set_attrs=not tarinfo.isdir(), numeric_owner=numeric_owner)
+            await self.extract(
+                tarinfo,
+                path,
+                set_attrs=not tarinfo.isdir(),
+                numeric_owner=numeric_owner,
+            )
         directories.sort(key=lambda a: a.name)
         directories.reverse()
         for tarinfo in directories:
@@ -717,16 +757,15 @@ class AioTarStream(object):
         tarinfo = await self.getmember(member) if isinstance(member, str) else member
         if tarinfo.isreg() or tarinfo.type not in tarinfo.SUPPORTED_TYPES:
             return self.fileobject(
-                stream=self.stream,
-                size=tarinfo.size,
-                blockinfo=tarinfo.sparse)
+                stream=self.stream, size=tarinfo.size, blockinfo=tarinfo.sparse
+            )
         elif tarinfo.islnk() or tarinfo.issym():
             raise tarinfo.StreamError("cannot extract (sym)link as file object")
         else:
             return None
 
     async def getmember(self, name):
-        tarinfo = await self._getmember(name.rstrip('/'))
+        tarinfo = await self._getmember(name.rstrip("/"))
         if tarinfo is None:
             raise KeyError("filename %r not found" % name)
         return tarinfo
@@ -758,8 +797,12 @@ class AioTarStream(object):
         stmd = statres.st_mode
         if stat.S_ISREG(stmd):
             inode = (statres.st_ino, statres.st_dev)
-            if not self.dereference and statres.st_nlink > 1 and \
-                    inode in self.inodes and arcname != self.inodes[inode]:
+            if (
+                not self.dereference
+                and statres.st_nlink > 1
+                and inode in self.inodes
+                and arcname != self.inodes[inode]
+            ):
                 type = tarfile.LNKTYPE
                 linkname = self.inodes[inode]
             else:
@@ -811,12 +854,19 @@ class AioTarStream(object):
         for tarinfo in members:
             if verbose:
                 tarfile._safe_print(stat.filemode(tarinfo.mode))
-                tarfile._safe_print("%s/%s" % (tarinfo.uname or tarinfo.uid, tarinfo.gname or tarinfo.gid))
+                tarfile._safe_print(
+                    "%s/%s"
+                    % (tarinfo.uname or tarinfo.uid, tarinfo.gname or tarinfo.gid)
+                )
                 if tarinfo.ischr() or tarinfo.isblk():
-                    tarfile._safe_print("%10s" % ("%d,%d" % (tarinfo.devmajor, tarinfo.devminor)))
+                    tarfile._safe_print(
+                        "%10s" % ("%d,%d" % (tarinfo.devmajor, tarinfo.devminor))
+                    )
                 else:
                     tarfile._safe_print("%10d" % tarinfo.size)
-                tarfile._safe_print("%d-%02d-%02d %02d:%02d:%02d" % time.localtime(tarinfo.mtime)[:6])
+                tarfile._safe_print(
+                    "%d-%02d-%02d %02d:%02d:%02d" % time.localtime(tarinfo.mtime)[:6]
+                )
             tarfile._safe_print(tarinfo.name + ("/" if tarinfo.isdir() else ""))
             if verbose:
                 if tarinfo.issym():
@@ -869,16 +919,25 @@ class AioTarStream(object):
                 if os.path.exists(tarinfo._link_target):
                     os.link(tarinfo._link_target, targetpath)
                 else:
-                    await self._extract_member(await self._find_link_target(tarinfo), targetpath)
+                    await self._extract_member(
+                        await self._find_link_target(tarinfo), targetpath
+                    )
         except tarfile.symlink_exception:
             try:
-                await self._extract_member(await self._find_link_target(tarinfo), targetpath)
+                await self._extract_member(
+                    await self._find_link_target(tarinfo), targetpath
+                )
             except KeyError:
-                raise tarfile.ExtractError("unable to resolve link inside archive") from None
+                raise tarfile.ExtractError(
+                    "unable to resolve link inside archive"
+                ) from None
 
     async def makeunknown(self, tarinfo, targetpath):
         await self.makefile(tarinfo, targetpath)
-        self._dbg(1, "tarfile: Unknown file type %r, extracted as regular file." % tarinfo.type)
+        self._dbg(
+            1,
+            "tarfile: Unknown file type %r, extracted as regular file." % tarinfo.type,
+        )
 
     async def next(self):
         self._check("ra")
@@ -913,8 +972,9 @@ class AioTarStream(object):
             except Exception as e:
                 try:
                     import zlib
+
                     if isinstance(e, zlib.error):
-                        raise tarfile.ReadError(f'zlib error: {e}') from None
+                        raise tarfile.ReadError(f"zlib error: {e}") from None
                     else:
                         raise e
                 except ImportError:
@@ -927,7 +987,7 @@ class AioTarStream(object):
         return tarinfo
 
     def utime(self, tarinfo, targetpath):
-        if not hasattr(os, 'utime'):
+        if not hasattr(os, "utime"):
             return
         try:
             os.utime(targetpath, (tarinfo.mtime, tarinfo.mtime))

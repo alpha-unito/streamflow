@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 
 class StreamFlowContext(object):
-
     def __init__(self, streamflow_config_dir: str):
         self.config_dir = streamflow_config_dir
         self.checkpoint_manager: Optional[CheckpointManager] = None
@@ -34,7 +33,8 @@ class StreamFlowContext(object):
                 self.data_manager.close(),
                 self.deployment_manager.close(),
                 self.failure_manager.close(),
-                self.scheduler.close())
+                self.scheduler.close(),
+            )
         except BaseException as e:
             logger.exception(e)
         finally:

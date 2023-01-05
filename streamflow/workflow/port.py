@@ -6,7 +6,6 @@ from streamflow.workflow.token import TerminationToken
 
 
 class ConnectorPort(Port):
-
     async def get_connector(self, consumer: str) -> Connector:
         token = await self.get(consumer)
         return self.workflow.context.deployment_manager.get_connector(token.value)
@@ -16,7 +15,6 @@ class ConnectorPort(Port):
 
 
 class JobPort(Port):
-
     async def get_job(self, consumer: str) -> Optional[Job]:
         token = await self.get(consumer)
         if isinstance(token, TerminationToken):

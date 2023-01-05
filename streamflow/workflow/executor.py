@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 
 class StreamFlowExecutor(Executor):
-
     def __init__(self, workflow: Workflow):
         super().__init__(workflow)
         self.executions: MutableSequence[Task] = []
@@ -36,15 +35,22 @@ class StreamFlowExecutor(Executor):
 
     async def _shutdown(self):
         # Terminate all steps
-        await asyncio.gather(*(asyncio.create_task(step.terminate(Status.CANCELLED))
-                               for step in self.workflow.steps.values() if not step.terminated))
+        await asyncio.gather(
+            *(
+                asyncio.create_task(step.terminate(Status.CANCELLED))
+                for step in self.workflow.steps.values()
+                if not step.terminated
+            )
+        )
         # Mark the executor as closed
         self.closed = True
 
-    async def _wait_outputs(self,
-                            output_consumer: str,
-                            output_tokens: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
-        finished, unfinished = await asyncio.wait(self.output_tasks.values(), return_when=FIRST_COMPLETED)
+    async def _wait_outputs(
+        self, output_consumer: str, output_tokens: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
+        finished, unfinished = await asyncio.wait(
+            self.output_tasks.values(), return_when=FIRST_COMPLETED
+        )
         self.output_tasks = {t.get_name(): t for t in unfinished}
         for task in finished:
             if task.cancelled():
@@ -64,13 +70,25 @@ class StreamFlowExecutor(Executor):
                 output_tokens[task_name] = utils.get_token_value(token)
                 # Create a new task in place of the completed one if not terminated
                 if task_name not in self.received:
-                    self.output_tasks[task_name] = asyncio.create_task(self._handle_exception(asyncio.create_task(
-                        self.workflow.get_output_port(task_name).get(output_consumer))), name=task_name)
+                    self.output_tasks[task_name] = asyncio.create_task(
+                        self._handle_exception(
+                            asyncio.create_task(
+                                self.workflow.get_output_port(task_name).get(
+                                    output_consumer
+                                )
+                            )
+                        ),
+                        name=task_name,
+                    )
         # Check if new output ports have been created
         for port_name, port in self.workflow.get_output_ports().items():
             if port_name not in self.output_tasks and port_name not in self.received:
-                self.output_tasks[port_name] = asyncio.create_task(self._handle_exception(asyncio.create_task(
-                    port.get(output_consumer))), name=port_name)
+                self.output_tasks[port_name] = asyncio.create_task(
+                    self._handle_exception(
+                        asyncio.create_task(port.get(output_consumer))
+                    ),
+                    name=port_name,
+                )
                 self.closed = False
         # Return output tokens
         return output_tokens
@@ -80,21 +98,30 @@ class StreamFlowExecutor(Executor):
             output_tokens = {}
             # Execute workflow
             for step in self.workflow.steps.values():
-                execution = asyncio.create_task(self._handle_exception(asyncio.create_task(
-                    step.run())), name=step.name)
+                execution = asyncio.create_task(
+                    self._handle_exception(asyncio.create_task(step.run())),
+                    name=step.name,
+                )
                 self.executions.append(execution)
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
-                    self.workflow.persistent_id, {'status': Status.RUNNING.value})
+                    self.workflow.persistent_id, {"status": Status.RUNNING.value}
+                )
             # If workflow has output ports
             if self.workflow.output_ports:
-                # Retreive output tokens
+                # Retrieve output tokens
                 output_consumer = utils.random_name()
                 for port_name, port in self.workflow.get_output_ports().items():
-                    self.output_tasks[port_name] = asyncio.create_task(self._handle_exception(asyncio.create_task(
-                        port.get(output_consumer))), name=port_name)
+                    self.output_tasks[port_name] = asyncio.create_task(
+                        self._handle_exception(
+                            asyncio.create_task(port.get(output_consumer))
+                        ),
+                        name=port_name,
+                    )
                 while not self.closed:
-                    output_tokens = await self._wait_outputs(output_consumer, output_tokens)
+                    output_tokens = await self._wait_outputs(
+                        output_consumer, output_tokens
+                    )
             # Otherwise simply wait for all tasks to finish
             else:
                 await asyncio.gather(*self.executions)
@@ -104,13 +131,15 @@ class StreamFlowExecutor(Executor):
                     raise WorkflowExecutionException("FAILED Workflow execution")
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
-                    self.workflow.persistent_id, {'status': Status.COMPLETED.value})
+                    self.workflow.persistent_id, {"status": Status.COMPLETED.value}
+                )
             # Print output tokens
             return output_tokens
         except BaseException:
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
-                    self.workflow.persistent_id, {'status': Status.FAILED.value})
+                    self.workflow.persistent_id, {"status": Status.FAILED.value}
+                )
             if not self.closed:
                 await self._shutdown()
             raise

@@ -1,2 +1,7 @@
 include LICENSE
 include README.md
+include requirements.txt
+include docs/requirements.txt
+include bandit-requirements.txt
+include lint-requirements.txt
+include test-requirements.txt

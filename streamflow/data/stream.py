@@ -5,7 +5,6 @@ from streamflow.core.data import StreamWrapper, StreamWrapperContext
 
 
 class BaseStreamWrapper(StreamWrapper):
-
     async def close(self):
         if self.closed:
             return
@@ -20,7 +19,6 @@ class BaseStreamWrapper(StreamWrapper):
 
 
 class StreamReaderWrapper(StreamWrapper):
-
     async def close(self):
         pass
 
@@ -32,7 +30,6 @@ class StreamReaderWrapper(StreamWrapper):
 
 
 class StreamWriterWrapper(StreamWrapper):
-
     async def close(self):
         self.stream.close()
         await self.stream.wait_closed()
@@ -46,9 +43,7 @@ class StreamWriterWrapper(StreamWrapper):
 
 
 class SubprocessStreamReaderWrapperContext(StreamWrapperContext):
-
-    def __init__(self,
-                 coro: Coroutine):
+    def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
         self.proc: Optional[asyncio.subprocess.Process] = None
         self.stream: Optional[StreamReaderWrapper] = None
@@ -65,9 +60,7 @@ class SubprocessStreamReaderWrapperContext(StreamWrapperContext):
 
 
 class SubprocessStreamWriterWrapperContext(StreamWrapperContext):
-
-    def __init__(self,
-                 coro: Coroutine):
+    def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
         self.stream: Optional[StreamReaderWrapper] = None
 

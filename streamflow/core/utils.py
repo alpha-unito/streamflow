@@ -10,7 +10,16 @@ import shlex
 import uuid
 from pathlib import Path
 from types import ModuleType
-from typing import Any, MutableMapping, MutableSequence, Optional, Set, TYPE_CHECKING, Type, Union
+from typing import (
+    Any,
+    MutableMapping,
+    MutableSequence,
+    Optional,
+    Set,
+    TYPE_CHECKING,
+    Type,
+    Union,
+)
 
 from importlib_metadata import entry_points
 from jsonref import loads
@@ -22,7 +31,12 @@ from streamflow.data import aiotarstream
 from streamflow.deployment.connector import LocalConnector
 from streamflow.ext import StreamFlowPlugin
 from streamflow.log_handler import logger
-from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken, TerminationToken
+from streamflow.workflow.token import (
+    IterationTerminationToken,
+    ListToken,
+    ObjectToken,
+    TerminationToken,
+)
 
 if TYPE_CHECKING:
     from streamflow.core.config import SchemaEntity
@@ -31,7 +45,6 @@ if TYPE_CHECKING:
 
 
 class NamesStack(object):
-
     def __init__(self):
         self.stack: MutableSequence[Set] = [set()]
 
@@ -82,29 +95,43 @@ def check_token_class(inputs: Union[Token, Iterable[Token]], cls: Type[Token]):
         return False
 
 
-def create_command(command: MutableSequence[str],
-                   environment: MutableMapping[str, str] = None,
-                   workdir: Optional[str] = None,
-                   stdin: Optional[Union[int, str]] = None,
-                   stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-                   stderr: Union[int, str] = asyncio.subprocess.STDOUT) -> str:
+def create_command(
+    command: MutableSequence[str],
+    environment: MutableMapping[str, str] = None,
+    workdir: Optional[str] = None,
+    stdin: Optional[Union[int, str]] = None,
+    stdout: Union[int, str] = asyncio.subprocess.STDOUT,
+    stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+) -> str:
     command = "".join(
-        "{workdir}"
-        "{environment}"
-        "{command}"
-        "{stdin}"
-        "{stdout}"
-        "{stderr}"
+        "{workdir}" "{environment}" "{command}" "{stdin}" "{stdout}" "{stderr}"
     ).format(
-        workdir="cd {workdir} && ".format(workdir=workdir) if workdir is not None else "",
-        environment="".join(["export %s=\"%s\" && " % (key, value) for (key, value) in
-                             environment.items()]) if environment is not None else "",
+        workdir="cd {workdir} && ".format(workdir=workdir)
+        if workdir is not None
+        else "",
+        environment="".join(
+            [
+                'export %s="%s" && ' % (key, value)
+                for (key, value) in environment.items()
+            ]
+        )
+        if environment is not None
+        else "",
         command=" ".join(command),
-        stdin=" < {stdin}".format(stdin=shlex.quote(stdin)) if stdin is not None else "",
-        stdout=" > {stdout}".format(stdout=shlex.quote(stdout)) if stdout != asyncio.subprocess.STDOUT else "",
-        stderr=(" 2>&1" if stderr == stdout else
-                " 2>{stderr}".format(stderr=shlex.quote(stderr)) if stderr != asyncio.subprocess.STDOUT else
-                ""))
+        stdin=" < {stdin}".format(stdin=shlex.quote(stdin))
+        if stdin is not None
+        else "",
+        stdout=" > {stdout}".format(stdout=shlex.quote(stdout))
+        if stdout != asyncio.subprocess.STDOUT
+        else "",
+        stderr=(
+            " 2>&1"
+            if stderr == stdout
+            else " 2>{stderr}".format(stderr=shlex.quote(stderr))
+            if stderr != asyncio.subprocess.STDOUT
+            else ""
+        ),
+    )
     return command
 
 
@@ -115,23 +142,25 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
         yield dict(zip(keys, list(instance)))
 
 
-async def extract_tar_stream(tar: aiotarstream.AioTarStream,
-                             src: str,
-                             dst: str,
-                             transferBufferSize: Optional[int] = None) -> None:
+async def extract_tar_stream(
+    tar: aiotarstream.AioTarStream,
+    src: str,
+    dst: str,
+    transferBufferSize: Optional[int] = None,
+) -> None:
     async for member in tar:
         if os.path.isdir(dst):
-            if posixpath.join('/', member.path) == src:
+            if posixpath.join("/", member.path) == src:
                 member.path = posixpath.basename(member.path)
                 await tar.extract(member, dst)
                 if member.isdir():
                     dst = os.path.join(dst, member.path)
             else:
-                member.path = posixpath.relpath(posixpath.join('/', member.path), src)
+                member.path = posixpath.relpath(posixpath.join("/", member.path), src)
                 await tar.extract(member, dst)
         elif member.isfile():
             async with await tar.extractfile(member) as inputfile:
-                with open(dst, 'wb') as outputfile:
+                with open(dst, "wb") as outputfile:
                     while content := await inputfile.read(transferBufferSize):
                         outputfile.write(content)
         else:
@@ -142,7 +171,8 @@ async def extract_tar_stream(tar: aiotarstream.AioTarStream,
 
 def encode_command(command: str):
     return "echo {command} | base64 -d | sh".format(
-        command=base64.b64encode(command.encode('utf-8')).decode('utf-8'))
+        command=base64.b64encode(command.encode("utf-8")).decode("utf-8")
+    )
 
 
 def flatten_list(hierarchical_list):
@@ -158,44 +188,58 @@ def flatten_list(hierarchical_list):
 
 
 def format_seconds_to_hhmmss(seconds: int) -> str:
-    hours = seconds // (60*60)
-    seconds %= (60*60)
+    hours = seconds // (60 * 60)
+    seconds %= 60 * 60
     minutes = seconds // 60
     seconds %= 60
     return "%02i:%02i:%02i" % (hours, minutes, seconds)
 
 
 def get_class_fullname(cls: Type):
-    return cls.__module__ + '.' + cls.__qualname__
+    return cls.__module__ + "." + cls.__qualname__
 
 
 def get_class_from_name(name: str) -> Type:
-    module_name, class_name = name.rsplit('.', 1)
+    module_name, class_name = name.rsplit(".", 1)
     return getattr(importlib.import_module(module_name), class_name)
 
 
 def get_path_processor(connector: Connector) -> ModuleType:
-    return posixpath if connector is not None and not isinstance(connector, LocalConnector) else os.path
+    return (
+        posixpath
+        if connector is not None and not isinstance(connector, LocalConnector)
+        else os.path
+    )
 
 
-async def get_remote_to_remote_write_command(src_connector: Connector,
-                                             src_location: Location,
-                                             src: str,
-                                             dst_connector: Connector,
-                                             dst_locations: MutableSequence[Location],
-                                             dst: str) -> MutableSequence[str]:
+async def get_remote_to_remote_write_command(
+    src_connector: Connector,
+    src_location: Location,
+    src: str,
+    dst_connector: Connector,
+    dst_locations: MutableSequence[Location],
+    dst: str,
+) -> MutableSequence[str]:
     if posixpath.basename(src) != posixpath.basename(dst):
         result, status = await src_connector.run(
             location=src_location,
-            command=["test -d \"{path}\"".format(path=src)],
-            capture_output=True)
+            command=['test -d "{path}"'.format(path=src)],
+            capture_output=True,
+        )
         if status > 1:
             raise WorkflowExecutionException(result)
         # If is a directory
         elif status == 0:
-            await asyncio.gather(*(asyncio.create_task(
-                dst_connector.run(location=dst_location, command=["mkdir", "-p", dst])
-            ) for dst_location in dst_locations))
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        dst_connector.run(
+                            location=dst_location, command=["mkdir", "-p", dst]
+                        )
+                    )
+                    for dst_location in dst_locations
+                )
+            )
             return ["tar", "xf", "-", "-C", dst, "--strip-components", "1"]
         # If is a file
         else:
@@ -217,7 +261,7 @@ def get_size(path):
 
 
 def get_tag(tokens: Iterable[Token]) -> str:
-    output_tag = '0'
+    output_tag = "0"
     for tag in [t.tag for t in tokens]:
         if len(tag) > len(output_tag):
             output_tag = tag
@@ -235,33 +279,46 @@ def get_token_value(token: Token) -> Any:
         return token.value
 
 
-def inject_schema(schema: MutableMapping[str, Any],
-                  classes: MutableMapping[str, Type[SchemaEntity]],
-                  definition_name: str):
+def inject_schema(
+    schema: MutableMapping[str, Any],
+    classes: MutableMapping[str, Type[SchemaEntity]],
+    definition_name: str,
+):
     for name, entity in classes.items():
         if entity_schema := entity.get_schema():
             with open(entity_schema, "r") as f:
                 entity_schema = loads(
                     f.read(),
-                    base_uri='file://{}/'.format(os.path.dirname(entity_schema)),
-                    jsonschema=True)
-            schema['definitions'][definition_name]['properties']['type'].setdefault('enum', []).append(name)
-            schema['definitions'][definition_name]['definitions'][name] = entity_schema
-            schema['definitions'][definition_name].setdefault('allOf', []).append({
-                'if': {'properties': {'type': {'const': name}}},
-                'then': {'properties': {'config': entity_schema}}})
+                    base_uri="file://{}/".format(os.path.dirname(entity_schema)),
+                    jsonschema=True,
+                )
+            schema["definitions"][definition_name]["properties"]["type"].setdefault(
+                "enum", []
+            ).append(name)
+            schema["definitions"][definition_name]["definitions"][name] = entity_schema
+            schema["definitions"][definition_name].setdefault("allOf", []).append(
+                {
+                    "if": {"properties": {"type": {"const": name}}},
+                    "then": {"properties": {"config": entity_schema}},
+                }
+            )
 
 
 def load_extensions():
-    plugins = entry_points(group='unito.streamflow.plugin')
+    plugins = entry_points(group="unito.streamflow.plugin")
     for plugin in plugins:
         plugin = (plugin.load())()
         if isinstance(plugin, StreamFlowPlugin):
             plugin.register()
-            logger.info("Succesfully registered plugin {}".format(
-                get_class_fullname(type(plugin))))
+            logger.info(
+                "Successfully registered plugin {}".format(
+                    get_class_fullname(type(plugin))
+                )
+            )
         else:
-            raise InvalidPluginException("StreamFlow plugins must extend the streamflow.ext.StreamFlowPlugin class")
+            raise InvalidPluginException(
+                "StreamFlow plugins must extend the streamflow.ext.StreamFlowPlugin class"
+            )
 
 
 def random_name() -> str:

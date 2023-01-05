@@ -1,0 +1,6 @@
+# cwltest==2.2.20220521103021
+cwltest @ git+https://github.com/common-workflow-language/cwltest.git@refs/pull/74/head
+pytest==7.2.0
+pytest-asyncio==0.20.3
+pytest-cov==4.0.0
+pytest-xdist==3.1.0
