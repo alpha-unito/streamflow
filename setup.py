@@ -55,7 +55,7 @@ setup(
             "kaleido==0.2.1.post1"
         ],
         "docs": [
-            "sphinx==6.0.0",
+            "sphinx==6.1.0",
             "sphinx-jsonschema==1.19.1",
             "sphinx-rtd-theme==1.1.1"
         ]
