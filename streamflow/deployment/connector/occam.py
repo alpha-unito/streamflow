@@ -103,6 +103,7 @@ class OccamConnector(SSHConnector):
             if location in self.jobs_table[name]:
                 service = name
                 return self.env_description[service].get("volumes", [])
+        return []
 
     async def _copy_remote_to_remote(
         self,
@@ -272,23 +273,21 @@ class OccamConnector(SSHConnector):
     ):
         deploy_command = "".join(
             [
-                "{workdir}" "occam-run ",
-                "{x11}",
-                "{node}",
-                "{stdin}" "{jobidFile}" "{shmSize}" "{volumes}" "{image} " "{command}",
+                (
+                    "cd {} && ".format(service.get("workdir"))
+                    if "workdir" in service
+                    else ""
+                ),
+                "occam-run ",
+                self.get_option("x", service.get("x11")),
+                self.get_option("n", node),
+                self.get_option("i", service.get("stdin")),
+                self.get_option("c", service.get("jobidFile")),
+                self.get_option("s", service.get("shmSize")),
+                self.get_option("v", service.get("volumes")),
+                "{} ".format(service["image"]),
+                " ".join(service.get("command", "")),
             ]
-        ).format(
-            workdir="cd {workdir} && ".format(workdir=service.get("workdir"))
-            if "workdir" in service
-            else "",
-            x11=self.get_option("x", service.get("x11")),
-            node=self.get_option("n", node),
-            stdin=self.get_option("i", service.get("stdin")),
-            jobidFile=self.get_option("c", service.get("jobidFile")),
-            shmSize=self.get_option("s", service.get("shmSize")),
-            volumes=self.get_option("v", service.get("volumes")),
-            image=service["image"],
-            command=" ".join(service.get("command", "")),
         )
         logger.debug("EXECUTING {command}".format(command=deploy_command))
         async with self._get_ssh_client(name) as ssh_client:
@@ -414,3 +413,5 @@ class OccamConnector(SSHConnector):
             for line in lines:
                 out = "\n".join([out, line.strip(" \r\t")])
             return out, result.returncode
+        else:
+            return None

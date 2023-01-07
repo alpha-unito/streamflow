@@ -7,6 +7,7 @@ from streamflow.core import utils
 from streamflow.core.data import FileType
 from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
+from streamflow.deployment.utils import get_path_processor
 from tests.conftest import get_location
 
 
@@ -23,7 +24,7 @@ def connector(context, location) -> Connector:
 @pytest.mark.asyncio
 async def test_resolve(context, connector, location):
     """Test glob resolution."""
-    path_processor = utils.get_path_processor(connector)
+    path_processor = get_path_processor(connector)
     path = utils.random_name()
     await remotepath.mkdir(connector, [location], path)
     try:
@@ -154,7 +155,7 @@ async def test_symlink(context, connector, location):
     """Test symlink creation, resolution and deletion."""
     src = utils.random_name()
     path = utils.random_name()
-    path_processor = utils.get_path_processor(connector)
+    path_processor = get_path_processor(connector)
     try:
         # Test symlink to file
         await remotepath.write(connector, location, src, "StreamFlow")

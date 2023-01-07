@@ -1,5 +1,4 @@
 import asyncio
-from asyncio import Event
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Type, Union
 
 from streamflow.core.deployment import Connector, ConnectorCopyKind, Location
@@ -21,7 +20,7 @@ class FutureConnector(Connector):
         self.external: bool = external
         self.parameters: MutableMapping[str, Any] = kwargs
         self.deploying: bool = False
-        self.deploy_event: Event = Event()
+        self.deploy_event: asyncio.Event = asyncio.Event()
         self.connector: Optional[Connector] = None
 
     async def copy(

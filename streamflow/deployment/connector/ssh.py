@@ -5,15 +5,11 @@ import contextlib
 import os
 import posixpath
 import tarfile
-from asyncio import Condition
-from asyncio.subprocess import STDOUT
 from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import asyncssh
 import pkg_resources
-from asyncssh import SSHClientConnection
-from asyncssh.process import SSHClientProcess
 from cachetools import Cache, LRUCache
 from jinja2 import Template
 
@@ -25,14 +21,17 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.data import aiotarstream
 from streamflow.data.stream import StreamReaderWrapper, StreamWriterWrapper
-from streamflow.deployment.connector.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector, extract_tar_stream
 from streamflow.log_handler import logger
 
 
-async def _get_disk_usage(ssh_client: SSHClientConnection, directory: str) -> float:
+async def _get_disk_usage(
+    ssh_client: asyncssh.SSHClientConnection, directory: str
+) -> float:
     if directory:
         result = await ssh_client.run(
-            "df {} | tail -n 1 | awk '{{print $2}}'".format(directory), stderr=STDOUT
+            "df {} | tail -n 1 | awk '{{print $2}}'".format(directory),
+            stderr=asyncio.subprocess.STDOUT,
         )
         if result.returncode == 0:
             return float(result.stdout.strip()) / 2**10
@@ -61,7 +60,7 @@ class SSHContext(object):
         self._streamflow_config_dir: str = streamflow_config_dir
         self._config: SSHConfig = config
         self._max_concurrent_sessions: int = max_concurrent_sessions
-        self._ssh_connection: Optional[SSHClientConnection] = None
+        self._ssh_connection: Optional[asyncssh.SSHClientConnection] = None
         self._sessions: int = 0
 
     async def __aenter__(self):
@@ -73,7 +72,9 @@ class SSHContext(object):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self._sessions -= 1
 
-    async def _get_connection(self, config: SSHConfig) -> Optional[SSHClientConnection]:
+    async def _get_connection(
+        self, config: SSHConfig
+    ) -> Optional[asyncssh.SSHClientConnection]:
         if config is None:
             return None
         (hostname, port) = _parse_hostname(config.hostname)
@@ -120,8 +121,10 @@ class SSHContext(object):
 
 
 class SSHContextManager(object):
-    def __init__(self, condition: Condition, contexts: MutableSequence[SSHContext]):
-        self._condition: Condition = condition
+    def __init__(
+        self, condition: asyncio.Condition, contexts: MutableSequence[SSHContext]
+    ):
+        self._condition: asyncio.Condition = condition
         self._contexts: MutableSequence[SSHContext] = contexts
         self._selected_context: Optional[SSHContext] = None
 
@@ -150,7 +153,7 @@ class SSHContextFactory(object):
         max_concurrent_sessions: int,
         max_connections: int,
     ):
-        self._condition: Condition = Condition()
+        self._condition: asyncio.Condition = asyncio.Condition()
         self._contexts: MutableSequence[SSHContext] = [
             SSHContext(
                 streamflow_config_dir=streamflow_config_dir,
@@ -172,7 +175,7 @@ class SSHStreamWrapperContext(StreamWrapperContext):
         super().__init__()
         self.src: str = src
         self.ssh_context: SSHContextManager = ssh_context
-        self.ssh_process: Optional[SSHClientProcess] = None
+        self.ssh_process: Optional[asyncssh.SSHClientProcess] = None
         self.stream: Optional[StreamReaderWrapper] = None
 
     async def __aenter__(self):
@@ -360,9 +363,7 @@ class SSHConnector(BaseConnector):
                         mode="r",
                         copybufsize=self.transferBufferSize,
                     ) as tar:
-                        await utils.extract_tar_stream(
-                            tar, src, dst, self.transferBufferSize
-                        )
+                        await extract_tar_stream(tar, src, dst, self.transferBufferSize)
                 except tarfile.TarError as e:
                     raise WorkflowExecutionException(
                         "Error copying {} from location {} to {}: {}".format(
@@ -492,7 +493,8 @@ class SSHConnector(BaseConnector):
         async with self._get_ssh_client(location) as ssh_client:
             while True:
                 result = await ssh_client.run(
-                    command_template.format(path=directory), stderr=STDOUT
+                    command_template.format(path=directory),
+                    stderr=asyncio.subprocess.STDOUT,
                 )
                 if result.returncode == 0:
                     return directory
@@ -518,10 +520,13 @@ class SSHConnector(BaseConnector):
                     output_directory,
                     tmp_directory,
                 ) = await asyncio.gather(
-                    asyncio.create_task(ssh_client.run("nproc", stderr=STDOUT)),
+                    asyncio.create_task(
+                        ssh_client.run("nproc", stderr=asyncio.subprocess.STDOUT)
+                    ),
                     asyncio.create_task(
                         ssh_client.run(
-                            "free | grep Mem | awk '{print $2}'", stderr=STDOUT
+                            "free | grep Mem | awk '{print $2}'",
+                            stderr=asyncio.subprocess.STDOUT,
                         )
                     ),
                     asyncio.create_task(_get_disk_usage(ssh_client, input_directory)),
@@ -648,18 +653,19 @@ class SSHConnector(BaseConnector):
             command = utils.encode_command(command)
             async with self._get_ssh_client(location.name) as ssh_client:
                 result = await asyncio.wait_for(
-                    ssh_client.run(command, stderr=STDOUT), timeout=timeout
+                    ssh_client.run(command, stderr=asyncio.subprocess.STDOUT),
+                    timeout=timeout,
                 )
         else:
             async with self._get_ssh_client(location.name) as ssh_client:
                 result = await asyncio.wait_for(
                     ssh_client.run(
-                        "sh -c '{command}'".format(command=command), stderr=STDOUT
+                        "sh -c '{command}'".format(command=command),
+                        stderr=asyncio.subprocess.STDOUT,
                     ),
                     timeout=timeout,
                 )
-        if capture_output:
-            return result.stdout.strip(), result.returncode
+        return result.stdout.strip(), result.returncode if capture_output else None
 
     async def undeploy(self, external: bool) -> None:
         for ssh_context in self.ssh_context_factories.values():

@@ -5,12 +5,12 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import MutableSequence, TYPE_CHECKING
 
-from streamflow.core.config import SchemaEntity
+from streamflow.core.context import SchemaEntity
 from streamflow.core.deployment import Location
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Any, Optional, Set
+    from typing import Any, Optional
 
 
 class DataType(Enum):
@@ -35,12 +35,24 @@ class DataLocation(Location):
         super().__init__(name, deployment, service)
         self.path: str = path
         self.relpath: str = relpath
-        self.deployment: str = deployment
-        self.name: str = name
         self.data_type: DataType = data_type
         self.available: asyncio.Event = asyncio.Event()
         if available:
             self.available.set()
+
+    def __eq__(self, other):
+        if not isinstance(other, DataLocation):
+            return False
+        else:
+            return (
+                self.deployment == other.deployment
+                and self.name == other.name
+                and self.service == other.service
+                and self.path == other.path
+            )
+
+    def __hash__(self):
+        return hash((self.deployment, self.service, self.name, self.path))
 
 
 class DataManager(SchemaEntity):
@@ -107,7 +119,6 @@ class FileType(Enum):
 class StreamWrapper(ABC):
     def __init__(self, stream):
         self.stream = stream
-        self.closed = False
 
     @abstractmethod
     async def close(self):

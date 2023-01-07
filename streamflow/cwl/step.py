@@ -17,6 +17,7 @@ from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import LoadListing
 from streamflow.data import remotepath
+from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import (
@@ -207,7 +208,7 @@ class CWLInputInjectorStep(InputInjectorStep):
         filepath = utils.get_path_from_token(token_value)
         connector = self.workflow.context.scheduler.get_connector(job.name)
         locations = self.workflow.context.scheduler.get_locations(job.name)
-        path_processor = utils.get_path_processor(connector)
+        path_processor = get_path_processor(connector)
         new_token_value = token_value
         if filepath:
             if not path_processor.isabs(filepath):
@@ -374,7 +375,7 @@ class CWLTransferStep(TransferStep):
                 location = urllib.parse.unquote(location[7:])
         # If basename is explicitly stated in the token, use it as destination path
         if "basename" in token_value:
-            path_processor = utils.get_path_processor(connector)
+            path_processor = get_path_processor(connector)
             dest_path = dest_path or path_processor.join(
                 job.input_directory, random_name()
             )
@@ -382,7 +383,7 @@ class CWLTransferStep(TransferStep):
         # Get destination coordinates
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
-        path_processor = utils.get_path_processor(dst_connector)
+        path_processor = get_path_processor(dst_connector)
         # If source data exist, get source locations
         if location and (
             selected_location := self.workflow.context.data_manager.get_source_location(

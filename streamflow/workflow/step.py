@@ -5,7 +5,6 @@ import json
 import logging
 import posixpath
 from abc import ABC, abstractmethod
-from asyncio import CancelledError, FIRST_COMPLETED, Task
 from types import ModuleType
 from typing import (
     Any,
@@ -42,9 +41,11 @@ from streamflow.core.workflow import (
     Workflow,
 )
 from streamflow.data import remotepath
+from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
+from streamflow.workflow.utils import check_iteration_termination, check_termination
 
 
 def _get_directory(
@@ -96,7 +97,7 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
-        if utils.check_termination(inputs):
+        if check_termination(inputs):
             logger.debug("Step {} received termination token".format(self.name))
         logger.debug(
             "Step {} received inputs {}".format(
@@ -266,14 +267,14 @@ class CombinatorStep(BaseStep):
             while input_tasks:
                 # Wait for the next token
                 finished, unfinished = await asyncio.wait(
-                    input_tasks, return_when=FIRST_COMPLETED
+                    input_tasks, return_when=asyncio.FIRST_COMPLETED
                 )
                 input_tasks = list(unfinished)
                 for task in finished:
-                    task_name = cast(Task, task).get_name()
+                    task_name = cast(asyncio.Task, task).get_name()
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
-                    if utils.check_termination(token):
+                    if check_termination(token):
                         logger.debug(
                             "Step {} received termination token for port {}".format(
                                 self.name, task_name
@@ -337,7 +338,7 @@ class ConditionalStep(BaseStep):
                     # Retrieve input tokens
                     inputs = await self._get_inputs(self.get_input_ports())
                     # Check for termination
-                    if utils.check_termination(inputs.values()):
+                    if check_termination(inputs.values()):
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -363,9 +364,9 @@ class ConditionalStep(BaseStep):
         except KeyboardInterrupt:
             raise
         # When receiving a CancelledError, mark the step as Cancelled
-        except CancelledError:
+        except asyncio.CancelledError:
             await self.terminate(Status.CANCELLED)
-        except BaseException as e:
+        except Exception as e:
             logger.exception(e)
             await self.terminate(Status.FAILED)
 
@@ -452,7 +453,7 @@ class DeployStep(BaseStep):
                     # Wait for input tokens to be available
                     inputs = await self._get_inputs(self.get_input_ports())
                     # Check for termination
-                    if utils.check_termination(inputs.values()):
+                    if check_termination(inputs.values()):
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -490,9 +491,9 @@ class DeployStep(BaseStep):
         except KeyboardInterrupt:
             raise
         # When receiving a CancelledError, mark the step as Cancelled
-        except CancelledError:
+        except asyncio.CancelledError:
             await self.terminate(Status.CANCELLED)
-        except BaseException as e:
+        except Exception as e:
             logger.exception(e)
             await self.terminate(Status.FAILED)
 
@@ -605,7 +606,7 @@ class ExecuteStep(BaseStep):
         except KeyboardInterrupt:
             raise
         # When receiving a CancelledError, mark the step as Cancelled
-        except CancelledError:
+        except asyncio.CancelledError:
             command_output.status = Status.CANCELLED
             await self.terminate(command_output.status)
         # When receiving a FailureHandling exception, mark the step as Failed
@@ -613,7 +614,7 @@ class ExecuteStep(BaseStep):
             command_output.status = Status.FAILED
             await self.terminate(command_output.status)
         # When receiving a generic exception, try to handle it
-        except BaseException as e:
+        except Exception as e:
             logger.exception(e)
             try:
                 command_output = (
@@ -622,7 +623,7 @@ class ExecuteStep(BaseStep):
                     )
                 )
             # If failure cannot be recovered, simply fail
-            except BaseException as ie:
+            except Exception as ie:
                 if ie != e:
                     logger.exception(ie)
                 command_output.status = Status.FAILED
@@ -649,7 +650,7 @@ class ExecuteStep(BaseStep):
                         for output_name, output_port in self.output_ports.items()
                     )
                 )
-            except BaseException as e:
+            except Exception as e:
                 logger.exception(e)
                 command_output.status = Status.FAILED
         # Return job status
@@ -725,7 +726,7 @@ class ExecuteStep(BaseStep):
                 # Retrieve input tokens
                 inputs = await self._get_inputs(input_ports)
                 # Check for termination
-                if utils.check_termination(inputs.values()):
+                if check_termination(inputs.values()):
                     break
                 # Group inputs by tag
                 _group_by_tag(inputs, inputs_map)
@@ -820,7 +821,7 @@ class GatherStep(BaseStep):
             token = await input_port.get(
                 posixpath.join(self.name, next(iter(self.input_ports)))
             )
-            if utils.check_termination(token):
+            if check_termination(token):
                 logger.debug("Step {} received termination token".format(self.name))
                 output_port = self.get_output_port()
                 for tag, tokens in self.token_map.items():
@@ -904,7 +905,7 @@ class InputInjectorStep(BaseStep, ABC):
                 # Retrieve input token
                 token = next(iter((await self._get_inputs(input_ports)).values()))
                 # Check for termination
-                if utils.check_termination(token):
+                if check_termination(token):
                     break
                 # Retrieve job
                 job = await cast(JobPort, self.get_input_port("__job__")).get_job(
@@ -957,14 +958,14 @@ class LoopCombinatorStep(CombinatorStep):
             while input_tasks:
                 # Wait for the next token
                 finished, unfinished = await asyncio.wait(
-                    input_tasks, return_when=FIRST_COMPLETED
+                    input_tasks, return_when=asyncio.FIRST_COMPLETED
                 )
                 input_tasks = list(unfinished)
                 for task in finished:
-                    task_name = cast(Task, task).get_name()
+                    task_name = cast(asyncio.Task, task).get_name()
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
-                    if utils.check_termination(token):
+                    if check_termination(token):
                         logger.debug(
                             "Step {} received termination token for port {}".format(
                                 self.name, task_name
@@ -972,7 +973,7 @@ class LoopCombinatorStep(CombinatorStep):
                         )
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
-                    elif utils.check_iteration_termination(token):
+                    elif check_iteration_termination(token):
                         if token.tag in self.iteration_terminaton_checklist[task_name]:
                             logger.debug(
                                 "Step {} received iteration termination token {} for port {}".format(
@@ -1068,7 +1069,7 @@ class LoopOutputStep(BaseStep, ABC):
             )
             prefix = ".".join(token.tag.split(".")[:-1])
             # If a TerminationToken is received, terminate the step
-            if utils.check_termination(token):
+            if check_termination(token):
                 logger.debug("Step {} received termination token".format(self.name))
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
@@ -1080,7 +1081,7 @@ class LoopOutputStep(BaseStep, ABC):
                         for k in self.token_map
                     }
             # If an IterationTerminationToken is received, process loop output for the current port
-            elif utils.check_iteration_termination(token):
+            elif check_iteration_termination(token):
                 logger.debug(
                     "Step {} received iteration termination token {}.".format(
                         self.name, token.tag
@@ -1169,7 +1170,7 @@ class ScheduleStep(BaseStep):
     ):
         # Set job directories
         allocation = self.workflow.context.scheduler.get_allocation(job.name)
-        path_processor = utils.get_path_processor(connector)
+        path_processor = get_path_processor(connector)
         job.input_directory = _get_directory(
             path_processor, job.input_directory, allocation.target
         )
@@ -1251,7 +1252,7 @@ class ScheduleStep(BaseStep):
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
                     # Check for termination
-                    if utils.check_termination(inputs.values()):
+                    if check_termination(inputs.values()):
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1310,9 +1311,9 @@ class ScheduleStep(BaseStep):
         except KeyboardInterrupt:
             raise
         # When receiving a CancelledError, mark the step as Cancelled
-        except CancelledError:
+        except asyncio.CancelledError:
             await self.terminate(Status.CANCELLED)
-        except BaseException as e:
+        except Exception as e:
             logger.exception(e)
             await self.terminate(Status.FAILED)
 
@@ -1418,7 +1419,7 @@ class TransferStep(BaseStep, ABC):
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
                     # Check for termination
-                    if utils.check_termination(inputs.values()):
+                    if check_termination(inputs.values()):
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1449,9 +1450,9 @@ class TransferStep(BaseStep, ABC):
             except KeyboardInterrupt:
                 raise
             # When receiving a CancelledError, mark the step as Cancelled
-            except CancelledError:
+            except asyncio.CancelledError:
                 await self.terminate(Status.CANCELLED)
-            except BaseException as e:
+            except Exception as e:
                 logger.exception(e)
                 await self.terminate(Status.FAILED)
         # Terminate step
@@ -1474,7 +1475,7 @@ class Transformer(BaseStep, ABC):
                     # Retrieve input tokens
                     inputs = await self._get_inputs(self.get_input_ports())
                     # Check for termination
-                    if utils.check_termination(inputs.values()):
+                    if check_termination(inputs.values()):
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1483,7 +1484,7 @@ class Transformer(BaseStep, ABC):
                         if len(inputs_map[tag]) == len(self.input_ports):
                             inputs = inputs_map.pop(tag)
                             # Check for iteration termination and propagate
-                            if utils.check_iteration_termination(inputs.values()):
+                            if check_iteration_termination(inputs.values()):
                                 for port_name, token in inputs.items():
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
@@ -1521,9 +1522,9 @@ class Transformer(BaseStep, ABC):
         except KeyboardInterrupt:
             raise
         # When receiving a CancelledError, mark the step as Cancelled
-        except CancelledError:
+        except asyncio.CancelledError:
             await self.terminate(Status.CANCELLED)
-        except BaseException as e:
+        except Exception as e:
             logger.exception(e)
             await self.terminate(Status.FAILED)
 

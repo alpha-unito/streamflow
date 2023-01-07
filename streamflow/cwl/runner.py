@@ -6,10 +6,11 @@ import sys
 import uuid
 
 import streamflow.cwl.main
+import streamflow.ext
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
-from streamflow.core import utils
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.ext.utils import load_extensions
 from streamflow.log_handler import logger
 from streamflow.main import build_context
 
@@ -58,7 +59,7 @@ async def _async_main(args: argparse.Namespace):
     config_dir = os.getcwd()
     args.name = args.name or str(uuid.uuid4())
     if args.streamflow_file:
-        utils.load_extensions()
+        load_extensions()
         with open(args.streamflow_file) as f:
             streamflow_config = validator.yaml.load(f)
         config_dir = os.path.dirname(args.streamflow_file)
@@ -92,23 +93,27 @@ async def _async_main(args: argparse.Namespace):
         await context.close()
 
 
-def main(args):
+def main(args) -> int:
     try:
         args = parser.parse_args(args)
         if args.version:
             from streamflow.version import VERSION
 
             print("StreamFlow version {version}".format(version=VERSION))
-            return
+            return 0
         if args.quiet:
             logger.setLevel(logging.WARN)
         elif args.debug:
             logger.setLevel(logging.DEBUG)
         asyncio.run(_async_main(args))
         return 0
-    except BaseException as e:
+    except Exception as e:
         logger.exception(e)
         return 1
+    except KeyboardInterrupt:
+        return 1
+    except SystemExit as se:
+        return se.code
 
 
 def run():

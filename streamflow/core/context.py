@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 import asyncio
+from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING
 
-from streamflow.core.recovery import CheckpointManager, FailureManager
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.data import DataManager
     from streamflow.core.deployment import DeploymentManager
     from streamflow.core.persistence import Database
+    from streamflow.core.recovery import CheckpointManager, FailureManager
     from streamflow.core.scheduling import Scheduler
     from typing import Optional
+
+
+class SchemaEntity(ABC):
+    @classmethod
+    @abstractmethod
+    def get_schema(cls) -> str:
+        ...
 
 
 class StreamFlowContext(object):
@@ -35,7 +43,7 @@ class StreamFlowContext(object):
                 self.failure_manager.close(),
                 self.scheduler.close(),
             )
-        except BaseException as e:
+        except Exception as e:
             logger.exception(e)
         finally:
             await self.database.close()

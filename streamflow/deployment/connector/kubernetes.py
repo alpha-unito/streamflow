@@ -41,7 +41,7 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.data import aiotarstream
 from streamflow.data.aiotarstream import BaseStreamWrapper
-from streamflow.deployment.connector.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector, extract_tar_stream
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -72,6 +72,7 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
                 data = msg.data[1:]
                 if data and channel == ws_client.STDOUT_CHANNEL:
                     return data
+        return None
 
     async def write(self, data: Any):
         channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
@@ -223,7 +224,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 mode="r",
                 copybufsize=self.transferBufferSize,
             ) as tar:
-                await utils.extract_tar_stream(tar, src, dst, self.transferBufferSize)
+                await extract_tar_stream(tar, src, dst, self.transferBufferSize)
         except tarfile.TarError as e:
             raise WorkflowExecutionException(
                 "Error copying {} from location {} to {}: {}".format(
@@ -304,6 +305,11 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         for container in pod.spec.containers:
             if container.name == container_name:
                 return container.name, container
+        raise WorkflowExecutionException(
+            "No container with name {} available on pod {}.".format(
+                container_name, pod_name
+            )
+        )
 
     async def _get_configuration(self) -> Configuration:
         if self.configuration is None:
@@ -474,6 +480,8 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                         return err["message"], int(
                             err["details"]["causes"][0]["message"]
                         )
+        else:
+            return None
 
     async def undeploy(self, external: bool):
         if self.client is not None:

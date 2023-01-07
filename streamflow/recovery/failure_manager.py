@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from asyncio import Condition
 from typing import MutableMapping, Optional, cast
 
 import pkg_resources
@@ -41,7 +40,7 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int = max_retries
         self.replay_cache: MutableMapping[str, ReplayResponse] = {}
         self.retry_delay: Optional[int] = retry_delay
-        self.wait_queues: MutableMapping[str, Condition] = {}
+        self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -143,6 +142,9 @@ class DefaultFailureManager(FailureManager):
                                 )
                                 token.name = input_port.name
                     job.inputs = recovered_tokens
+                    return await cast(ExecuteStep, job_version.step).command.execute(
+                        job
+                    )
             # When receiving a FailureHandlingException, simply fail
             except FailureHandlingException as e:
                 logger.exception(e)
@@ -150,7 +152,7 @@ class DefaultFailureManager(FailureManager):
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
-            except BaseException as e:
+            except Exception as e:
                 logger.exception(e)
                 return await self.handle_exception(job, job_version.step, e)
         else:
@@ -190,7 +192,7 @@ class DefaultFailureManager(FailureManager):
         sender_job = replay_request.sender
         target_job = replay_request.target
         if target_job not in self.wait_queues:
-            self.wait_queues[target_job] = Condition()
+            self.wait_queues[target_job] = asyncio.Condition()
         wait_queue = self.wait_queues[target_job]
         async with wait_queue:
             if (

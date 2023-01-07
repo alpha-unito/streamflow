@@ -106,7 +106,11 @@ async def download(
                     filepath = os.path.join(parent_dir, params["filename"])
                     content = await response.read()
                 else:
-                    raise Exception
+                    raise Exception(
+                        "Downloading {} failed with status {}:\n{}".format(
+                            url, response.status, response.content
+                        )
+                    )
         with open(filepath, mode="wb") as f:
             f.write(content)
     else:
@@ -117,6 +121,12 @@ async def download(
                         response.headers.get("Content-Disposition", "")
                     )
                     filepath = posixpath.join(parent_dir, params["filename"])
+                else:
+                    raise Exception(
+                        "Downloading {} failed with status {}:\n{}".format(
+                            url, response.status, response.content
+                        )
+                    )
         download_tasks = []
         for location in locations:
             download_tasks.append(

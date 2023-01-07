@@ -8,8 +8,6 @@ import os
 import posixpath
 import shlex
 import uuid
-from pathlib import Path
-from types import ModuleType
 from typing import (
     Any,
     MutableMapping,
@@ -21,26 +19,14 @@ from typing import (
     Union,
 )
 
-from importlib_metadata import entry_points
 from jsonref import loads
 
-from streamflow.core.deployment import Location
-from streamflow.core.exception import InvalidPluginException, WorkflowExecutionException
-from streamflow.core.workflow import Token
-from streamflow.data import aiotarstream
-from streamflow.deployment.connector import LocalConnector
-from streamflow.ext import StreamFlowPlugin
-from streamflow.log_handler import logger
-from streamflow.workflow.token import (
-    IterationTerminationToken,
-    ListToken,
-    ObjectToken,
-    TerminationToken,
-)
+from streamflow.core.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:
-    from streamflow.core.config import SchemaEntity
-    from streamflow.core.deployment import Connector
+    from streamflow.core.context import SchemaEntity
+    from streamflow.core.deployment import Connector, Location
+    from streamflow.core.workflow import Token
     from typing import Iterable
 
 
@@ -70,27 +56,6 @@ class NamesStack(object):
     def __contains__(self, name: str) -> bool:
         for scope in self.stack:
             if name in scope:
-                return True
-        return False
-
-
-def check_iteration_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
-    return check_token_class(inputs, IterationTerminationToken)
-
-
-def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
-    return check_token_class(inputs, TerminationToken)
-
-
-def check_token_class(inputs: Union[Token, Iterable[Token]], cls: Type[Token]):
-    if isinstance(inputs, Token):
-        return isinstance(inputs, cls)
-    else:
-        for token in inputs:
-            if isinstance(token, MutableSequence):
-                if check_token_class(token, cls):
-                    return True
-            elif isinstance(token, cls):
                 return True
         return False
 
@@ -142,33 +107,6 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
         yield dict(zip(keys, list(instance)))
 
 
-async def extract_tar_stream(
-    tar: aiotarstream.AioTarStream,
-    src: str,
-    dst: str,
-    transferBufferSize: Optional[int] = None,
-) -> None:
-    async for member in tar:
-        if os.path.isdir(dst):
-            if posixpath.join("/", member.path) == src:
-                member.path = posixpath.basename(member.path)
-                await tar.extract(member, dst)
-                if member.isdir():
-                    dst = os.path.join(dst, member.path)
-            else:
-                member.path = posixpath.relpath(posixpath.join("/", member.path), src)
-                await tar.extract(member, dst)
-        elif member.isfile():
-            async with await tar.extractfile(member) as inputfile:
-                with open(dst, "wb") as outputfile:
-                    while content := await inputfile.read(transferBufferSize):
-                        outputfile.write(content)
-        else:
-            parent_dir = str(Path(dst).parent)
-            member.path = posixpath.basename(member.path)
-            await tar.extract(member, parent_dir)
-
-
 def encode_command(command: str):
     return "echo {command} | base64 -d | sh".format(
         command=base64.b64encode(command.encode("utf-8")).decode("utf-8")
@@ -202,14 +140,6 @@ def get_class_fullname(cls: Type):
 def get_class_from_name(name: str) -> Type:
     module_name, class_name = name.rsplit(".", 1)
     return getattr(importlib.import_module(module_name), class_name)
-
-
-def get_path_processor(connector: Connector) -> ModuleType:
-    return (
-        posixpath
-        if connector is not None and not isinstance(connector, LocalConnector)
-        else os.path
-    )
 
 
 async def get_remote_to_remote_write_command(
@@ -268,17 +198,6 @@ def get_tag(tokens: Iterable[Token]) -> str:
     return output_tag
 
 
-def get_token_value(token: Token) -> Any:
-    if isinstance(token, ListToken):
-        return [get_token_value(t) for t in token.value]
-    elif isinstance(token, ObjectToken):
-        return {k: get_token_value(v) for k, v in token.value.items()}
-    elif isinstance(token.value, Token):
-        return get_token_value(token.value)
-    else:
-        return token.value
-
-
 def inject_schema(
     schema: MutableMapping[str, Any],
     classes: MutableMapping[str, Type[SchemaEntity]],
@@ -301,23 +220,6 @@ def inject_schema(
                     "if": {"properties": {"type": {"const": name}}},
                     "then": {"properties": {"config": entity_schema}},
                 }
-            )
-
-
-def load_extensions():
-    plugins = entry_points(group="unito.streamflow.plugin")
-    for plugin in plugins:
-        plugin = (plugin.load())()
-        if isinstance(plugin, StreamFlowPlugin):
-            plugin.register()
-            logger.info(
-                "Successfully registered plugin {}".format(
-                    get_class_fullname(type(plugin))
-                )
-            )
-        else:
-            raise InvalidPluginException(
-                "StreamFlow plugins must extend the streamflow.ext.StreamFlowPlugin class"
             )
 
 

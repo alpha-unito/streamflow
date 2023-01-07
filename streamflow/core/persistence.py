@@ -5,8 +5,7 @@ from asyncio import Lock
 from enum import Enum
 from typing import Any, MutableMapping, MutableSequence, Optional, TYPE_CHECKING, Type
 
-from streamflow.core.config import SchemaEntity
-from streamflow.core.context import StreamFlowContext
+from streamflow.core.context import SchemaEntity, StreamFlowContext
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import DeploymentConfig, Target

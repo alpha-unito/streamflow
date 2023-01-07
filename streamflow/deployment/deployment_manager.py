@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from asyncio import Event
 from typing import TYPE_CHECKING
 
 import pkg_resources
@@ -22,7 +21,7 @@ class DefaultDeploymentManager(DeploymentManager):
     def __init__(self, context: StreamFlowContext) -> None:
         super().__init__(context)
         self.config_map: MutableMapping[str, Any] = {}
-        self.events_map: MutableMapping[str, Event] = {}
+        self.events_map: MutableMapping[str, asyncio.Event] = {}
         self.deployments_map: MutableMapping[str, Connector] = {}
 
     async def close(self):
@@ -32,7 +31,7 @@ class DefaultDeploymentManager(DeploymentManager):
         deployment_name = deployment_config.name
         while True:
             if deployment_name not in self.events_map:
-                self.events_map[deployment_name] = Event()
+                self.events_map[deployment_name] = asyncio.Event()
             if deployment_name not in self.config_map:
                 self.config_map[deployment_name] = deployment_config
                 if deployment_config.lazy:

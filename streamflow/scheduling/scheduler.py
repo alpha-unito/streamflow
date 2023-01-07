@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import posixpath
-from asyncio import Condition, FIRST_COMPLETED, Lock
 from typing import MutableSequence, Optional, TYPE_CHECKING
 
 import pkg_resources
@@ -35,7 +34,7 @@ class JobContext(object):
 
     def __init__(self, job: Job):
         self.job: Job = job
-        self.lock: Lock = Lock()
+        self.lock: asyncio.Lock = asyncio.Lock()
         self.scheduled: bool = False
 
 
@@ -49,7 +48,7 @@ class DefaultScheduler(Scheduler):
         self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: Optional[int] = retry_delay
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
-        self.wait_queues: MutableMapping[str, Condition] = {}
+        self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
     def _allocate_job(
         self,
@@ -211,7 +210,7 @@ class DefaultScheduler(Scheduler):
     ):
         deployment = target.deployment.name
         if deployment not in self.wait_queues:
-            self.wait_queues[deployment] = Condition()
+            self.wait_queues[deployment] = asyncio.Condition()
         async with self.wait_queues[deployment]:
             while True:
                 async with job_context.lock:
@@ -379,4 +378,4 @@ class DefaultScheduler(Scheduler):
             )
             for target in targets
         ]
-        await asyncio.wait(wait_tasks, return_when=FIRST_COMPLETED)
+        await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)

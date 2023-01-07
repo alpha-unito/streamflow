@@ -12,13 +12,14 @@ from streamflow.core.workflow import Port, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
 from streamflow.workflow.token import ListToken
 from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
+from streamflow.workflow.utils import get_token_value
 
 
 class AllNonNullTransformer(OneToOneTransformer):
     def _transform(self, name: str, token: Token) -> Token:
         if isinstance(token, ListToken):
             return token.update(
-                [t for t in token.value if utils.get_token_value(t) is not None]
+                [t for t in token.value if get_token_value(t) is not None]
             )
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
@@ -57,7 +58,7 @@ class DefaultTransformer(ManyToOneTransformer):
                 "{} step must contain a default port.".format(self.name)
             )
         primary_token = next(iter(inputs[k] for k in inputs))
-        if utils.get_token_value(primary_token) is not None:
+        if get_token_value(primary_token) is not None:
             return {self.get_output_name(): primary_token}
         else:
             if not self.default_token:
@@ -133,7 +134,7 @@ class FirstNonNullTransformer(OneToOneTransformer):
     def _transform(self, name: str, token: Token) -> Token:
         if isinstance(token, ListToken):
             for t in token.value:
-                if utils.get_token_value(t) is not None:
+                if get_token_value(t) is not None:
                     return t
             raise WorkflowExecutionException(
                 "All sources are null in token {}".format(name)
@@ -179,7 +180,7 @@ class OnlyNonNullTransformer(OneToOneTransformer):
         if isinstance(token, ListToken):
             ret = None
             for t in token.value:
-                if utils.get_token_value(t) is not None:
+                if get_token_value(t) is not None:
                     if ret is not None:
                         raise WorkflowExecutionException(
                             "Expected only one source to be non-null in token {}".format(
@@ -299,7 +300,7 @@ class LoopValueFromTransformer(ValueFromTransformer):
             else None
         )
         context = utils.build_context(loop_inputs)
-        context = {**context, **{"self": utils.get_token_value(self_token)}}
+        context = {**context, **{"self": get_token_value(self_token)}}
         return {
             self.get_output_name(): Token(
                 tag=get_tag(inputs.values()),

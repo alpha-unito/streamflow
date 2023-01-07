@@ -38,7 +38,7 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.exception import WorkflowDefinitionException
-from streamflow.core.utils import get_tag, random_name
+from streamflow.core.utils import random_name
 from streamflow.core.workflow import (
     CommandOutputProcessor,
     Port,
@@ -1019,9 +1019,11 @@ def _get_secondary_files(
                 else default_required,
             )
         ]
+    else:
+        return []
 
 
-def _percolate_port(port_name: str, *args) -> Port:
+def _percolate_port(port_name: str, *args) -> Optional[Port]:
     for arg in args:
         if port_name in arg:
             port = arg[port_name]
@@ -1029,6 +1031,7 @@ def _percolate_port(port_name: str, *args) -> Port:
                 return port
             else:
                 return _percolate_port(port, *args)
+    return None
 
 
 def _process_docker_image(docker_requirement: MutableMapping[str, Any]) -> str:

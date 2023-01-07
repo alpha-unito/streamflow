@@ -46,11 +46,11 @@ async def write(src, dst, bufsize):
 
 
 class CompressionStreamWrapper(BaseStreamWrapper, ABC):
-    def __init__(self, stream, mode):
+    def __init__(self, stream, mode, cmp=None, exception=None):
         super().__init__(stream)
         self.mode = mode
-        self.cmp = None
-        self.exception = None
+        self.cmp = cmp
+        self.exception = exception
 
     async def close(self):
         if self.closed:
@@ -76,32 +76,34 @@ class CompressionStreamWrapper(BaseStreamWrapper, ABC):
 
 class BZ2StreamWrapper(CompressionStreamWrapper):
     def __init__(self, stream, mode, compresslevel: int = 9):
-        super().__init__(stream, mode)
         try:
             import bz2
         except ImportError:
             raise tarfile.CompressionError("bz2 module is not available") from None
-        if self.mode == "r":
-            self.cmp = bz2.BZ2Decompressor()
-            self.exception = OSError
+        if mode == "r":
+            super().__init__(
+                stream=stream, mode=mode, cmp=bz2.BZ2Decompressor(), exception=OSError
+            )
         else:
-            self.cmp = bz2.BZ2Compressor(compresslevel=compresslevel)
+            super().__init__(
+                stream=stream,
+                mode=mode,
+                cmp=bz2.BZ2Compressor(compresslevel=compresslevel),
+            )
 
 
 class GZipStreamWrapper(CompressionStreamWrapper):
     def __init__(self, stream, mode, compresslevel: int = 9):
-        super().__init__(stream, mode)
+        import zlib
+
+        if mode == "r":
+            super().__init__(stream, mode, exception=zlib.error)
+        else:
+            super().__init__(stream, mode)
         self.compresslevel: int = compresslevel
-        self.cmp = None
         self.pos = 0
-        try:
-            import zlib
-        except ImportError:
-            raise tarfile.CompressionError("zlib module is not available") from None
         self.zlib = zlib
         self.crc = zlib.crc32(b"")
-        if self.mode == "r":
-            self.exception = zlib.error
 
     async def _init_compression(self):
         if self.mode == "r":
@@ -174,16 +176,16 @@ class GZipStreamWrapper(CompressionStreamWrapper):
 
 class LZMAStreamWrapper(CompressionStreamWrapper):
     def __init__(self, stream, mode, preset: Optional[int] = None):
-        super().__init__(stream, mode)
         try:
             import lzma
         except ImportError:
             raise tarfile.CompressionError("lzma module is not available") from None
-        if self.mode == "r":
-            self.cmp = lzma.LZMADecompressor()
-            self.exception = lzma.LZMAError
+        if mode == "r":
+            super().__init__(
+                stream, mode, cmp=lzma.LZMADecompressor(), exception=lzma.LZMAError
+            )
         else:
-            self.cmp = lzma.LZMACompressor(preset=preset)
+            super().__init__(stream, mode, cmp=lzma.LZMACompressor(preset=preset))
 
 
 class FileStreamReaderWrapper(StreamWrapper):
@@ -273,7 +275,7 @@ class AioTarInfo(tarfile.TarInfo):
             next.linkname = tarfile.nts(buf, tarstream.encoding, tarstream.errors)
         return next
 
-    async def _proc_gnusparse_10(self, next, tarstream):
+    async def _proc_gnusparse_10(self, next, pax_headers, tarstream):
         sparse = []
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
         fields, buf = buf.split(b"\n", 1)
@@ -346,7 +348,7 @@ class AioTarInfo(tarfile.TarInfo):
             pax_headers.get("GNU.sparse.major") == "1"
             and pax_headers.get("GNU.sparse.minor") == "0"
         ):
-            await self._proc_gnusparse_10(next, tarstream)
+            await self._proc_gnusparse_10(next, pax_headers, tarstream)
         if self.type in (tarfile.XHDTYPE, tarfile.SOLARIS_XHDTYPE):
             next._apply_pax_info(pax_headers, tarstream.encoding, tarstream.errors)
             next.offset = self.offset
@@ -453,7 +455,7 @@ class AioTarStream(object):
                     await self.stream.write(buf)
                     self.offset += len(buf)
             return self
-        except BaseException:
+        except Exception:
             self.closed = True
             raise
 
@@ -472,6 +474,8 @@ class AioTarStream(object):
         if self._loaded:
             if index < len(self.members):
                 return self.members[index]
+            else:
+                raise StopAsyncIteration
         else:
             if index == 0 and self.firstmember is not None:
                 return await self.next()
@@ -580,8 +584,9 @@ class AioTarStream(object):
         else:
             linkname = tarinfo.linkname
             limit = tarinfo
-        member = await self._getmember(linkname, tarinfo=limit, normalize=True)
-        if member is None:
+        if (
+            member := await self._getmember(linkname, tarinfo=limit, normalize=True)
+        ) is None:
             raise KeyError("linkname %r not found" % linkname)
         return member
 
@@ -598,6 +603,7 @@ class AioTarStream(object):
                 member_name = member.name
             if name == member_name:
                 return member
+        return None
 
     async def _load(self):
         while True:
@@ -661,11 +667,13 @@ class AioTarStream(object):
                     if grp:
                         g = grp.getgrnam(tarinfo.gname)[2]
                 except KeyError:
+                    # If group is not defined, do nothing
                     pass
                 try:
                     if pwd:
                         u = pwd.getpwnam(tarinfo.uname)[2]
                 except KeyError:
+                    # If user is not defined, do nothing
                     pass
             try:
                 if tarinfo.issym() and hasattr(os, "lchown"):
@@ -765,8 +773,7 @@ class AioTarStream(object):
             return None
 
     async def getmember(self, name):
-        tarinfo = await self._getmember(name.rstrip("/"))
-        if tarinfo is None:
+        if (tarinfo := await self._getmember(name.rstrip("/"))) is None:
             raise KeyError("filename %r not found" % name)
         return tarinfo
 
@@ -834,11 +841,13 @@ class AioTarStream(object):
             try:
                 tarinfo.uname = pwd.getpwuid(tarinfo.uid)[0]
             except KeyError:
+                # If user is not defined, do nothing
                 pass
         if grp:
             try:
                 tarinfo.gname = grp.getgrgid(tarinfo.gid)[0]
             except KeyError:
+                # If group is not defined, do nothing
                 pass
 
         if type in (tarfile.CHRTYPE, tarfile.BLKTYPE):
@@ -889,6 +898,7 @@ class AioTarStream(object):
         try:
             os.mkdir(targetpath, 0o700)
         except FileExistsError:
+            # If file doesn't exist, do nothing
             pass
 
     def makefifo(self, tarinfo, targetpath):

@@ -3,14 +3,11 @@ import base64
 import os
 import shlex
 from abc import ABC, abstractmethod
-from asyncio import Lock
-from asyncio.subprocess import STDOUT
 from functools import partial
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 import cachetools
 import pkg_resources
-from cachetools import Cache, TTLCache
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -64,8 +61,10 @@ class QueueManagerConnector(SSHConnector, ABC):
         self.maxConcurrentJobs: int = maxConcurrentJobs
         self.pollingInterval: int = pollingInterval
         self.scheduledJobs: MutableSequence[str] = []
-        self.jobsCache: Cache = TTLCache(maxsize=1, ttl=self.pollingInterval)
-        self.jobsCacheLock: Lock = Lock()
+        self.jobsCache: cachetools.Cache = cachetools.TTLCache(
+            maxsize=1, ttl=self.pollingInterval
+        )
+        self.jobsCacheLock: asyncio.Lock = asyncio.Lock()
 
     @abstractmethod
     async def _get_output(self, job_id: str, location: Location) -> str:
@@ -183,7 +182,9 @@ class QueueManagerConnector(SSHConnector, ABC):
                 await asyncio.sleep(self.pollingInterval)
             self.scheduledJobs.remove(job_id)
             return (
-                await self._get_output(job_id, location) if stdout == STDOUT else None,
+                await self._get_output(job_id, location)
+                if stdout == asyncio.subprocess.STDOUT
+                else None,
                 await self._get_returncode(job_id, location),
             )
         else:
@@ -301,12 +302,12 @@ class SlurmConnector(QueueManagerConnector):
             ),
             stdout=(
                 '-o "{stdout}"'.format(stdout=shlex.quote(stdout))
-                if stdout != STDOUT
+                if stdout != asyncio.subprocess.STDOUT
                 else ""
             ),
             stderr=(
                 '-e "{stderr}"'.format(stderr=shlex.quote(stderr))
-                if stderr != STDOUT and stderr != stdout
+                if stderr != asyncio.subprocess.STDOUT and stderr != stdout
                 else ""
             ),
             timeout=(
@@ -404,11 +405,13 @@ class PBSConnector(QueueManagerConnector):
             ),
             stdin=('-i "{stdin}"'.format(stdin=stdin) if stdin is not None else ""),
             stdout='-o "{stdout}"'.format(
-                stdout=stdout if stdout != STDOUT else utils.random_name()
+                stdout=stdout
+                if stdout != asyncio.subprocess.STDOUT
+                else utils.random_name()
             ),
             stderr=(
                 '-e "{stderr}"'.format(stderr=stderr)
-                if stderr != STDOUT and stderr != stdout
+                if stderr != asyncio.subprocess.STDOUT and stderr != stdout
                 else ""
             ),
             timeout=(

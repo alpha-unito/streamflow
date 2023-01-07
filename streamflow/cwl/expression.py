@@ -9,11 +9,13 @@ from streamflow.cwl.antlr.ECMAScriptListener import ECMAScriptListener
 from streamflow.cwl.antlr.ECMAScriptParser import ECMAScriptParser
 
 
-def _extract_key(next_seg: str) -> str:
+def _extract_key(next_seg: str) -> Optional[str]:
     if next_seg[0] == ".":
         return next_seg[1:]
     elif next_seg[1] in ("'", '"'):
         return next_seg[2:-2].replace("\\'", "'").replace('\\"', '"')
+    else:
+        return None
 
 
 class CWLDependencyListener(ECMAScriptListener):
@@ -107,14 +109,14 @@ class DependencyResolver(JSEngine):
         elif remaining_string:
             if not (m := segment_re.match(remaining_string)):
                 return None
-            key = _extract_key(m.group(1))
-            if (
-                isinstance(current_value, MutableSequence)
-                and key == "length"
-                and not remaining_string[m.end(1) :]
-            ):
-                return None
-            self.deps = {key}
+            if key := _extract_key(m.group(1)):
+                if (
+                    isinstance(current_value, MutableSequence)
+                    and key == "length"
+                    and not remaining_string[m.end(1) :]
+                ):
+                    return None
+                self.deps = {key}
             return None
         else:
             return None

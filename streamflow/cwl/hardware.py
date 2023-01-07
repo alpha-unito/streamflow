@@ -6,9 +6,9 @@ from typing import Any, MutableMapping, MutableSequence, Optional, Union
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement
-from streamflow.core.utils import get_token_value
 from streamflow.core.workflow import Token
 from streamflow.cwl.utils import eval_expression
+from streamflow.workflow.utils import get_token_value
 
 
 class CWLHardwareRequirement(HardwareRequirement):

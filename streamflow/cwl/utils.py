@@ -26,12 +26,14 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.scheduling import Hardware
-from streamflow.core.utils import get_path_processor, get_token_value, random_name
+from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
+from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
+from streamflow.workflow.utils import get_token_value
 
 
 async def _check_glob_path(
@@ -97,6 +99,7 @@ async def _process_secondary_file(
                     load_contents=load_contents,
                     load_listing=load_listing,
                 )
+        return None
     # If value is a string
     else:
         # If value doesn't come from an expression, apply it to the primary path
@@ -134,6 +137,7 @@ async def _process_secondary_file(
                             load_contents=load_contents,
                             load_listing=load_listing,
                         )
+                return None
         else:
             return existing_sf[filepath]
 
@@ -476,7 +480,9 @@ async def expand_glob(
     return [(p, (ep or p)) for p, ep in zip(paths, effective_paths)]
 
 
-async def get_class_from_path(path: str, job: Job, context: StreamFlowContext) -> str:
+async def get_class_from_path(
+    path: str, job: Job, context: StreamFlowContext
+) -> Optional[str]:
     connector = context.scheduler.get_connector(job.name)
     locations = context.scheduler.get_locations(job.name)
     for location in locations:
@@ -485,6 +491,9 @@ async def get_class_from_path(path: str, job: Job, context: StreamFlowContext) -
             if await remotepath.isfile(connector, location, path)
             else "Directory"
         )
+    raise WorkflowExecutionException(
+        "Impossible to retrieve CWL token class for path {}".format(path)
+    )
 
 
 async def get_file_token(
@@ -886,6 +895,7 @@ async def search_in_parent_locations(
             current_path.lstrip(path_processor.sep).split(path_processor.sep)[:-1]
         )
         current_path = path_processor.normpath(path_processor.join(*path_tokens))
+    return []
 
 
 class SecondaryFile(object):

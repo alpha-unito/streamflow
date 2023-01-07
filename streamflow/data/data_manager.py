@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING
 
 import pkg_resources
 
-from streamflow.core import utils
 from streamflow.core.data import DataLocation, DataManager, DataType
 from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector.base import ConnectorCopyKind
 from streamflow.deployment.connector.local import LocalConnector
+from streamflow.deployment.utils import get_path_processor
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -387,7 +387,7 @@ class RemotePathMapper(object):
         self, path: str, data_location: DataLocation, recursive: bool = False
     ) -> DataLocation:
         path = PurePosixPath(Path(path).as_posix())
-        path_processor = utils.get_path_processor(
+        path_processor = get_path_processor(
             self.context.deployment_manager.get_connector(data_location.deployment)
         )
         node = self._filesystem

@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING
 
-from streamflow.core.config import SchemaEntity
+from streamflow.core.context import SchemaEntity
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext

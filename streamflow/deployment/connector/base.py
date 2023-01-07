@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import posixpath
 import shlex
 import tarfile
 from abc import ABCMeta, abstractmethod
+from pathlib import Path
 from typing import MutableSequence, TYPE_CHECKING, Tuple
 
 from streamflow.core import utils
@@ -30,8 +32,35 @@ if TYPE_CHECKING:
     from typing import Any, Optional, MutableMapping, Union
 
 
+async def extract_tar_stream(
+    tar: aiotarstream.AioTarStream,
+    src: str,
+    dst: str,
+    transferBufferSize: Optional[int] = None,
+) -> None:
+    async for member in tar:
+        if os.path.isdir(dst):
+            if posixpath.join("/", member.path) == src:
+                member.path = posixpath.basename(member.path)
+                await tar.extract(member, dst)
+                if member.isdir():
+                    dst = os.path.join(dst, member.path)
+            else:
+                member.path = posixpath.relpath(posixpath.join("/", member.path), src)
+                await tar.extract(member, dst)
+        elif member.isfile():
+            async with await tar.extractfile(member) as inputfile:
+                with open(dst, "wb") as outputfile:
+                    while content := await inputfile.read(transferBufferSize):
+                        outputfile.write(content)
+        else:
+            parent_dir = str(Path(dst).parent)
+            member.path = posixpath.basename(member.path)
+            await tar.extract(member, parent_dir)
+
+
 class FutureMeta(ABCMeta):
-    def __instancecheck__(self, instance):
+    def __instancecheck__(cls, instance):
         if isinstance(instance, FutureConnector):
             return super().__subclasscheck__(instance.type)
         else:
@@ -138,7 +167,7 @@ class BaseConnector(Connector, FutureAware):
                 mode="r",
                 copybufsize=self.transferBufferSize,
             ) as tar:
-                await utils.extract_tar_stream(tar, src, dst, self.transferBufferSize)
+                await extract_tar_stream(tar, src, dst, self.transferBufferSize)
         except tarfile.TarError as e:
             raise WorkflowExecutionException(
                 "Error copying {} from location {} to {}: {}".format(
@@ -365,3 +394,4 @@ class BaseConnector(Connector, FutureAware):
             return stdout.decode().strip(), proc.returncode
         else:
             await asyncio.wait_for(proc.wait(), timeout=timeout)
+            return None

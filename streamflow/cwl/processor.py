@@ -14,7 +14,7 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import flatten_list, get_path_processor, get_tag
+from streamflow.core.utils import flatten_list, get_tag
 from streamflow.core.workflow import (
     CommandOutput,
     CommandOutputProcessor,
@@ -27,6 +27,7 @@ from streamflow.core.workflow import (
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import LoadListing, SecondaryFile
+from streamflow.deployment.utils import get_path_processor
 from streamflow.workflow.token import ListToken, ObjectToken
 
 
@@ -157,7 +158,7 @@ class CWLTokenProcessor(TokenProcessor):
             connector = self.workflow.context.deployment_manager.get_connector(
                 data_location.deployment
             )
-            path_processor = utils.get_path_processor(connector)
+            path_processor = get_path_processor(connector)
             base_path = path_processor.normpath(
                 data_location.path[: -len(data_location.relpath)]
             )

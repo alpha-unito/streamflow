@@ -5,7 +5,6 @@ import json
 import sys
 import uuid
 from abc import ABC, abstractmethod
-from asyncio import Queue
 from enum import Enum
 from typing import MutableMapping, MutableSequence, TYPE_CHECKING, Type, TypeVar, cast
 
@@ -153,13 +152,13 @@ class Job(object):
 class Port(PersistableEntity):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__()
-        self.queues: MutableMapping[str, Queue] = {}
+        self.queues: MutableMapping[str, asyncio.Queue] = {}
         self.name: str = name
         self.token_list: MutableSequence[Token] = []
         self.workflow: Workflow = workflow
 
     def _init_consumer(self, consumer: str):
-        self.queues[consumer] = Queue()
+        self.queues[consumer] = asyncio.Queue()
         for t in self.token_list:
             self.queues[consumer].put_nowait(t)
 
@@ -542,7 +541,6 @@ class TokenProcessor(ABC):
 
 
 if TYPE_CHECKING:
-    J = TypeVar("J", bound=Job)
     P = TypeVar("P", bound=Port)
     S = TypeVar("S", bound=Step)
 

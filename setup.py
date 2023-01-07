@@ -9,6 +9,16 @@ from streamflow.version import VERSION
 this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
+with open(os.path.join(pathlib.Path(__file__).parent, "requirements.txt")) as f:
+    install_requires = f.read().splitlines()
+with open(os.path.join(pathlib.Path(__file__).parent, "bandit-requirements.txt")) as f:
+    extras_require_bandit = f.read().splitlines()
+with open(os.path.join(pathlib.Path(__file__).parent, "docs/requirements.txt")) as f:
+    extras_require_docs = f.read().splitlines()
+with open(os.path.join(pathlib.Path(__file__).parent, "lint-requirements.txt")) as f:
+    extras_require_lint = f.read().splitlines()
+with open(os.path.join(pathlib.Path(__file__).parent, "test-requirements.txt")) as f:
+    tests_require = f.read().splitlines()
 
 setup(
     name="streamflow",
@@ -23,6 +33,7 @@ setup(
         "streamflow.deployment",
         "streamflow.deployment.connector",
         "streamflow.deployment.filter",
+        "streamflow.ext",
         "streamflow.persistence",
         "streamflow.recovery",
         "streamflow.scheduling",
@@ -47,34 +58,14 @@ setup(
     description="StreamFlow framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    install_requires=open(
-        os.path.join(pathlib.Path(__file__).parent, "requirements.txt")
-    )
-    .read()
-    .splitlines(),
+    install_requires=install_requires,
     extras_require={
-        "bandit": open(
-            os.path.join(pathlib.Path(__file__).parent, "bandit-requirements.txt")
-        )
-        .read()
-        .splitlines(),
-        "docs": open(
-            os.path.join(pathlib.Path(__file__).parent, "docs/requirements.txt")
-        )
-        .read()
-        .splitlines(),
-        "lint": open(
-            os.path.join(pathlib.Path(__file__).parent, "lint-requirements.txt")
-        )
-        .read()
-        .splitlines(),
+        "bandit": extras_require_bandit,
+        "docs": extras_require_docs,
+        "lint": extras_require_lint,
         "report": ["pandas==1.5.2", "plotly==5.11.0", "kaleido==0.2.1.post1"],
     },
-    tests_require=open(
-        os.path.join(pathlib.Path(__file__).parent, "test-requirements.txt")
-    )
-    .read()
-    .splitlines(),
+    tests_require=tests_require,
     python_requires=">=3.8, <4",
     entry_points={
         "console_scripts": [

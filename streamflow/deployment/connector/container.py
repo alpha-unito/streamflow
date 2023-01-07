@@ -19,9 +19,7 @@ from streamflow.log_handler import logger
 
 
 async def _exists_docker_image(image_name: str) -> bool:
-    exists_command = "".join("docker " "image " "inspect " "{image_name}").format(
-        image_name=image_name
-    )
+    exists_command = "".join(["docker ", "image ", "inspect ", image_name])
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(exists_command),
         stdout=asyncio.subprocess.PIPE,
@@ -32,9 +30,7 @@ async def _exists_docker_image(image_name: str) -> bool:
 
 
 async def _pull_docker_image(image_name: str) -> None:
-    exists_command = "".join("docker " "pull " "--quiet " "{image_name}").format(
-        image_name=image_name
-    )
+    exists_command = "".join(["docker ", "pull ", "--quiet ", image_name])
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(exists_command),
         stdout=asyncio.subprocess.DEVNULL,
@@ -266,12 +262,12 @@ class DockerBaseConnector(ContainerConnector, ABC):
     ):
         return "".join(
             [
-                "docker " "exec ",
-                "-i " if interactive else "",
-                "{location} ",
-                "sh -c '{command}'",
+                "docker ",
+                "exec {}".format("-i " if interactive else ""),
+                "{} ".format(location.name),
+                "sh -c '{}'".format(command),
             ]
-        ).format(location=location.name, command=command)
+        )
 
     async def _get_volumes(
         self, location: str
@@ -499,219 +495,106 @@ class DockerConnector(DockerBaseConnector):
                 deploy_command = "".join(
                     [
                         "docker ",
-                        "run "
-                        "--detach "
-                        "--interactive "
-                        "{addHost}"
-                        "{blkioWeight}"
-                        "{blkioWeightDevice}"
-                        "{capAdd}"
-                        "{capDrop}"
-                        "{cgroupParent}"
-                        "{cidfile}"
-                        "{cpuPeriod}"
-                        "{cpuQuota}"
-                        "{cpuRTPeriod}"
-                        "{cpuRTRuntime}"
-                        "{cpuShares}"
-                        "{cpus}"
-                        "{cpusetCpus}"
-                        "{cpusetMems}"
-                        "{detachKeys}"
-                        "{device}"
-                        "{deviceCgroupRule}"
-                        "{deviceReadBps}"
-                        "{deviceReadIops}"
-                        "{deviceWriteBps}"
-                        "{deviceWriteIops}"
-                        "{disableContentTrust}"
-                        "{dns}"
-                        "{dnsOptions}"
-                        "{dnsSearch}"
-                        "{domainname}"
-                        "{entrypoint}"
-                        "{env}"
-                        "{envFile}"
-                        "{expose}"
-                        "{gpus}"
-                        "{groupAdd}"
-                        "{healthCmd}"
-                        "{healthInterval}"
-                        "{healthRetries}"
-                        "{healthStartPeriod}"
-                        "{healthTimeout}"
-                        "{hostname}"
-                        "{init}"
-                        "{ip}"
-                        "{ip6}"
-                        "{ipc}"
-                        "{isolation}"
-                        "{kernelMemory}"
-                        "{label}"
-                        "{labelFile}"
-                        "{link}"
-                        "{linkLocalIP}"
-                        "{logDriver}"
-                        "{logOpts}"
-                        "{macAddress}"
-                        "{memory}"
-                        "{memoryReservation}"
-                        "{memorySwap}"
-                        "{memorySwappiness}"
-                        "{mount}"
-                        "{network}"
-                        "{networkAlias}"
-                        "{noHealthcheck}"
-                        "{oomKillDisable}"
-                        "{oomScoreAdj}"
-                        "{pid}"
-                        "{pidsLimit}"
-                        "{privileged}"
-                        "{publish}"
-                        "{publishAll}"
-                        "{readOnly}"
-                        "{restart}"
-                        "{rm}"
-                        "{runtime}"
-                        "{securityOpts}"
-                        "{shmSize}"
-                        "{sigProxy}"
-                        "{stopSignal}"
-                        "{stopTimeout}"
-                        "{storageOpts}"
-                        "{sysctl}"
-                        "{tmpfs}"
-                        "{ulimit}"
-                        "{user}"
-                        "{userns}"
-                        "{uts}"
-                        "{volume}"
-                        "{volumeDriver}"
-                        "{volumesFrom}"
-                        "{workdir}"
-                        "{image}",
+                        "run ",
+                        "--detach ",
+                        "--interactive ",
+                        self.get_option("add-host", self.addHost),
+                        self.get_option("blkio-weight", self.addHost),
+                        self.get_option("blkio-weight-device", self.blkioWeightDevice),
+                        self.get_option("cap-add", self.capAdd),
+                        self.get_option("cap-drop", self.capDrop),
+                        self.get_option("cgroup-parent", self.cgroupParent),
+                        self.get_option("cidfile", self.cidfile),
+                        self.get_option("cpu-period", self.cpuPeriod),
+                        self.get_option("cpu-quota", self.cpuQuota),
+                        self.get_option("cpu-rt-period", self.cpuRTPeriod),
+                        self.get_option("cpu-rt-runtime", self.cpuRTRuntime),
+                        self.get_option("cpu-shares", self.cpuShares),
+                        self.get_option("cpus", self.cpus),
+                        self.get_option("cpuset-cpus", self.cpusetCpus),
+                        self.get_option("cpuset-mems", self.cpusetMems),
+                        self.get_option("detach-keys", self.detachKeys),
+                        self.get_option("device", self.device),
+                        self.get_option("device-cgroup-rule", self.deviceCgroupRule),
+                        self.get_option("device-read-bps", self.deviceReadBps),
+                        self.get_option("device-read-iops", self.deviceReadIops),
+                        self.get_option("device-write-bps", self.deviceWriteBps),
+                        self.get_option("device-write-iops", self.deviceWriteIops),
+                        "--disable-content-trust={disableContentTrust} ".format(
+                            disableContentTrust="true"
+                            if self.disableContentTrust
+                            else "false"
+                        ),
+                        self.get_option("dns", self.dns),
+                        self.get_option("dns-option", self.dnsOptions),
+                        self.get_option("dns-search", self.dnsSearch),
+                        self.get_option("domainname", self.domainname),
+                        self.get_option("entrypoint", self.entrypoint),
+                        self.get_option("env", self.env),
+                        self.get_option("env-file", self.envFile),
+                        self.get_option("expose", self.expose),
+                        self.get_option("gpus", self.gpus),
+                        self.get_option("group-add", self.groupAdd),
+                        self.get_option("health-cmd", self.healthCmd),
+                        self.get_option("health-interval", self.healthInterval),
+                        self.get_option("health-retries", self.healthRetries),
+                        self.get_option("health-start-period", self.healthStartPeriod),
+                        self.get_option("health-timeout", self.healthTimeout),
+                        self.get_option("hostname", self.hostname),
+                        self.get_option("init", self.init),
+                        self.get_option("ip", self.ip),
+                        self.get_option("ip6", self.ip6),
+                        self.get_option("ipc", self.ipc),
+                        self.get_option("isolation", self.isolation),
+                        self.get_option("kernel-memory", self.kernelMemory),
+                        self.get_option("label", self.label),
+                        self.get_option("label-file", self.labelFile),
+                        self.get_option("link", self.link),
+                        self.get_option("link-local-ip", self.linkLocalIP),
+                        self.get_option("log-driver", self.logDriver),
+                        self.get_option("log-opt", self.logOpts),
+                        self.get_option("mac-address", self.macAddress),
+                        self.get_option("memory", self.memory),
+                        self.get_option("memory-reservation", self.memoryReservation),
+                        self.get_option("memory-swap", self.memorySwap),
+                        self.get_option("memory-swappiness", self.memorySwappiness),
+                        self.get_option("mount", self.mount),
+                        self.get_option("network", self.network),
+                        self.get_option("network-alias", self.networkAlias),
+                        self.get_option("no-healthcheck", self.noHealthcheck),
+                        self.get_option("oom-kill-disable", self.oomKillDisable),
+                        self.get_option("oom-score-adj", self.oomScoreAdj),
+                        self.get_option("pid", self.pid),
+                        self.get_option("pids-limit", self.pidsLimit),
+                        self.get_option("privileged", self.privileged),
+                        self.get_option("publish", self.publish),
+                        self.get_option("publish-all", self.publishAll),
+                        self.get_option("read-only", self.readOnly),
+                        self.get_option("restart", self.restart),
+                        self.get_option("rm", self.rm),
+                        self.get_option("runtime", self.runtime),
+                        self.get_option("security-opt", self.securityOpts),
+                        self.get_option("shm-size", self.shmSize),
+                        "--sig-proxy={sigProxy} ".format(
+                            sigProxy="true" if self.sigProxy else "false"
+                        ),
+                        self.get_option("stop-signal", self.stopSignal),
+                        self.get_option("stop-timeout", self.stopTimeout),
+                        self.get_option("storage-opt", self.storageOpts),
+                        self.get_option("sysctl", self.sysctl),
+                        self.get_option("tmpfs", self.tmpfs),
+                        self.get_option("ulimit", self.ulimit),
+                        self.get_option("user", self.user),
+                        self.get_option("userns", self.userns),
+                        self.get_option("uts", self.uts),
+                        self.get_option("volume", self.volume),
+                        self.get_option("volume-driver", self.volumeDriver),
+                        self.get_option("volumes-from", self.volumesFrom),
+                        self.get_option("workdir", self.workdir),
+                        self.image,
                     ]
-                ).format(
-                    addHost=self.get_option("add-host", self.addHost),
-                    blkioWeight=self.get_option("blkio-weight", self.addHost),
-                    blkioWeightDevice=self.get_option(
-                        "blkio-weight-device", self.blkioWeightDevice
-                    ),
-                    capAdd=self.get_option("cap-add", self.capAdd),
-                    capDrop=self.get_option("cap-drop", self.capDrop),
-                    cgroupParent=self.get_option("cgroup-parent", self.cgroupParent),
-                    cidfile=self.get_option("cidfile", self.cidfile),
-                    cpuPeriod=self.get_option("cpu-period", self.cpuPeriod),
-                    cpuQuota=self.get_option("cpu-quota", self.cpuQuota),
-                    cpuRTPeriod=self.get_option("cpu-rt-period", self.cpuRTPeriod),
-                    cpuRTRuntime=self.get_option("cpu-rt-runtime", self.cpuRTRuntime),
-                    cpuShares=self.get_option("cpu-shares", self.cpuShares),
-                    cpus=self.get_option("cpus", self.cpus),
-                    cpusetCpus=self.get_option("cpuset-cpus", self.cpusetCpus),
-                    cpusetMems=self.get_option("cpuset-mems", self.cpusetMems),
-                    detachKeys=self.get_option("detach-keys", self.detachKeys),
-                    device=self.get_option("device", self.device),
-                    deviceCgroupRule=self.get_option(
-                        "device-cgroup-rule", self.deviceCgroupRule
-                    ),
-                    deviceReadBps=self.get_option(
-                        "device-read-bps", self.deviceReadBps
-                    ),
-                    deviceReadIops=self.get_option(
-                        "device-read-iops", self.deviceReadIops
-                    ),
-                    deviceWriteBps=self.get_option(
-                        "device-write-bps", self.deviceWriteBps
-                    ),
-                    deviceWriteIops=self.get_option(
-                        "device-write-iops", self.deviceWriteIops
-                    ),
-                    disableContentTrust="--disable-content-trust={disableContentTrust} ".format(
-                        disableContentTrust="true"
-                        if self.disableContentTrust
-                        else "false"
-                    ),
-                    dns=self.get_option("dns", self.dns),
-                    dnsOptions=self.get_option("dns-option", self.dnsOptions),
-                    dnsSearch=self.get_option("dns-search", self.dnsSearch),
-                    domainname=self.get_option("domainname", self.domainname),
-                    entrypoint=self.get_option("entrypoint", self.entrypoint),
-                    env=self.get_option("env", self.env),
-                    envFile=self.get_option("env-file", self.envFile),
-                    expose=self.get_option("expose", self.expose),
-                    gpus=self.get_option("gpus", self.gpus),
-                    groupAdd=self.get_option("group-add", self.groupAdd),
-                    healthCmd=self.get_option("health-cmd", self.healthCmd),
-                    healthInterval=self.get_option(
-                        "health-interval", self.healthInterval
-                    ),
-                    healthRetries=self.get_option("health-retries", self.healthRetries),
-                    healthStartPeriod=self.get_option(
-                        "health-start-period", self.healthStartPeriod
-                    ),
-                    healthTimeout=self.get_option("health-timeout", self.healthTimeout),
-                    hostname=self.get_option("hostname", self.hostname),
-                    init=self.get_option("init", self.init),
-                    ip=self.get_option("ip", self.ip),
-                    ip6=self.get_option("ip6", self.ip6),
-                    ipc=self.get_option("ipc", self.ipc),
-                    isolation=self.get_option("isolation", self.isolation),
-                    kernelMemory=self.get_option("kernel-memory", self.kernelMemory),
-                    label=self.get_option("label", self.label),
-                    labelFile=self.get_option("label-file", self.labelFile),
-                    link=self.get_option("link", self.link),
-                    linkLocalIP=self.get_option("link-local-ip", self.linkLocalIP),
-                    logDriver=self.get_option("log-driver", self.logDriver),
-                    logOpts=self.get_option("log-opt", self.logOpts),
-                    macAddress=self.get_option("mac-address", self.macAddress),
-                    memory=self.get_option("memory", self.memory),
-                    memoryReservation=self.get_option(
-                        "memory-reservation", self.memoryReservation
-                    ),
-                    memorySwap=self.get_option("memory-swap", self.memorySwap),
-                    memorySwappiness=self.get_option(
-                        "memory-swappiness", self.memorySwappiness
-                    ),
-                    mount=self.get_option("mount", self.mount),
-                    network=self.get_option("network", self.network),
-                    networkAlias=self.get_option("network-alias", self.networkAlias),
-                    noHealthcheck=self.get_option("no-healthcheck", self.noHealthcheck),
-                    oomKillDisable=self.get_option(
-                        "oom-kill-disable", self.oomKillDisable
-                    ),
-                    oomScoreAdj=self.get_option("oom-score-adj", self.oomScoreAdj),
-                    pid=self.get_option("pid", self.pid),
-                    pidsLimit=self.get_option("pids-limit", self.pidsLimit),
-                    privileged=self.get_option("privileged", self.privileged),
-                    publish=self.get_option("publish", self.publish),
-                    publishAll=self.get_option("publish-all", self.publishAll),
-                    readOnly=self.get_option("read-only", self.readOnly),
-                    restart=self.get_option("restart", self.restart),
-                    rm=self.get_option("rm", self.rm),
-                    runtime=self.get_option("runtime", self.runtime),
-                    securityOpts=self.get_option("security-opt", self.securityOpts),
-                    shmSize=self.get_option("shm-size", self.shmSize),
-                    sigProxy="--sig-proxy={sigProxy} ".format(
-                        sigProxy="true" if self.sigProxy else "false"
-                    ),
-                    stopSignal=self.get_option("stop-signal", self.stopSignal),
-                    stopTimeout=self.get_option("stop-timeout", self.stopTimeout),
-                    storageOpts=self.get_option("storage-opt", self.storageOpts),
-                    sysctl=self.get_option("sysctl", self.sysctl),
-                    tmpfs=self.get_option("tmpfs", self.tmpfs),
-                    ulimit=self.get_option("ulimit", self.ulimit),
-                    user=self.get_option("user", self.user),
-                    userns=self.get_option("userns", self.userns),
-                    uts=self.get_option("uts", self.uts),
-                    volume=self.get_option("volume", self.volume),
-                    volumeDriver=self.get_option("volume-driver", self.volumeDriver),
-                    volumesFrom=self.get_option("volumes-from", self.volumesFrom),
-                    workdir=self.get_option("workdir", self.workdir),
-                    image=self.image,
                 )
-                logger.debug(
-                    "EXECUTING command {command}".format(command=deploy_command)
-                )
+                logger.debug("EXECUTING command {}".format(deploy_command))
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(deploy_command),
                     stdout=asyncio.subprocess.PIPE,
@@ -745,9 +628,7 @@ class DockerConnector(DockerBaseConnector):
     async def undeploy(self, external: bool) -> None:
         if not external and self.containerIds:
             for container_id in self.containerIds:
-                undeploy_command = "".join(["docker ", "stop " "{containerId}"]).format(
-                    containerId=container_id
-                )
+                undeploy_command = "".join(["docker ", "stop ", container_id])
                 logger.debug(
                     "EXECUTING command {command}".format(command=undeploy_command)
                 )
@@ -835,40 +716,21 @@ class DockerComposeConnector(DockerBaseConnector):
         return "".join(
             [
                 "docker-compose ",
-                "{files}",
-                "{projectName}",
-                "{verbose}",
-                "{logLevel}",
-                "{noAnsi}",
-                "{host}",
-                "{tls}",
-                "{tlscacert}",
-                "{tlscert}",
-                "{tlskey}",
-                "{tlsverify}",
-                "{skipHostnameCheck}",
-                "{projectDirectory}",
-                "{compatibility} ",
+                self.get_option("file", self.files),
+                self.get_option("project-name", self.projectName),
+                self.get_option("verbose", self.verbose),
+                self.get_option("log-level", self.logLevel),
+                self.get_option("no-ansi", self.noAnsi),
+                self.get_option("host", self.host),
+                self.get_option("tls", self.tls),
+                self.get_option("tlscacert", self.tlscacert),
+                self.get_option("tlscert", self.tlscert),
+                self.get_option("tlskey", self.tlskey),
+                self.get_option("tlsverify", self.tlsverify),
+                self.get_option("skip-hostname-check", self.skipHostnameCheck),
+                self.get_option("project-directory", self.projectDirectory),
+                self.get_option("compatibility", self.compatibility),
             ]
-        ).format(
-            files=self.get_option("file", self.files),
-            projectName=self.get_option("project-name", self.projectName),
-            verbose=self.get_option("verbose", self.verbose),
-            logLevel=self.get_option("log-level", self.logLevel),
-            noAnsi=self.get_option("no-ansi", self.noAnsi),
-            host=self.get_option("host", self.host),
-            tls=self.get_option("tls", self.tls),
-            tlscacert=self.get_option("tlscacert", self.tlscacert),
-            tlscert=self.get_option("tlscert", self.tlscert),
-            tlskey=self.get_option("tlskey", self.tlskey),
-            tlsverify=self.get_option("tlsverify", self.tlsverify),
-            skipHostnameCheck=self.get_option(
-                "skip-hostname-check", self.skipHostnameCheck
-            ),
-            projectDirectory=self.get_option(
-                "project-directory", self.projectDirectory
-            ),
-            compatibility=self.get_option("compatibility", self.compatibility),
         )
 
     async def deploy(self, external: bool) -> None:
@@ -877,24 +739,15 @@ class DockerComposeConnector(DockerBaseConnector):
                 [
                     "up ",
                     "--detach ",
-                    "{noDeps}",
-                    "{forceRecreate}",
-                    "{alwaysRecreateDeps}",
-                    "{noRecreate}",
-                    "{noBuild}",
-                    "{noStart}",
+                    self.get_option("no-deps ", self.noDeps),
+                    self.get_option("force-recreate", self.forceRecreate),
+                    self.get_option("always-recreate-deps", self.alwaysRecreateDeps),
+                    self.get_option("no-recreate", self.noRecreate),
+                    self.get_option("no-build", self.noBuild),
+                    self.get_option("no-start", self.noStart),
                 ]
-            ).format(
-                noDeps=self.get_option("no-deps ", self.noDeps),
-                forceRecreate=self.get_option("force-recreate", self.forceRecreate),
-                alwaysRecreateDeps=self.get_option(
-                    "always-recreate-deps", self.alwaysRecreateDeps
-                ),
-                noRecreate=self.get_option("no-recreate", self.noRecreate),
-                noBuild=self.get_option("no-build", self.noBuild),
-                noStart=self.get_option("no-start", self.noStart),
             )
-            logger.debug("EXECUTING command {command}".format(command=deploy_command))
+            logger.debug("EXECUTING command {}".format(deploy_command))
             proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
             await proc.wait()
 
@@ -963,15 +816,20 @@ class SingularityBaseConnector(ContainerConnector, ABC):
                         deployment=self.deployment_name,
                         hostname=instance["ip"],
                     )
-        else:
-            return None
+        return None
 
     def _get_run_command(
         self, command: str, location: Location, interactive: bool = False
     ):
         return "".join(
-            ["singularity " "exec ", "instance://{location} " "sh -c '{command}'"]
-        ).format(location=location.name, command=command)
+            [
+                "singularity ",
+                "exec ",
+                "instance://",
+                location.name,
+                " sh -c '{}'".format(command),
+            ]
+        )
 
     async def _get_volumes(
         self, location: Location
@@ -1101,96 +959,52 @@ class SingularityConnector(SingularityBaseConnector):
                 deploy_command = "".join(
                     [
                         "singularity ",
-                        "instance "
-                        "start "
-                        "{addCaps}"
-                        "{allowSetuid}"
-                        "{applyCgroups}"
-                        "{bind}"
-                        "{boot}"
-                        "{cleanenv}"
-                        "{contain}"
-                        "{containall}"
-                        "{disableCache}"
-                        "{dns}"
-                        "{dropCaps}"
-                        "{env}"
-                        "{envFile}"
-                        "{fakeroot}"
-                        "{fusemount}"
-                        "{home}"
-                        "{hostname}"
-                        "{keepPrivs}"
-                        "{net}"
-                        "{network}"
-                        "{networkArgs}"
-                        "{noHome}"
-                        "{noInit}"
-                        "{noMount}"
-                        "{noPrivs}"
-                        "{noUmask}"
-                        "{nohttps}"
-                        "{nv}"
-                        "{overlay}"
-                        "{pemPath}"
-                        "{pidFile}"
-                        "{rocm}"
-                        "{scratch}"
-                        "{security}"
-                        "{userns}"
-                        "{uts}"
-                        "{workdir}"
-                        "{writable}"
-                        "{writableTmpfs}"
-                        "{image} "
-                        "{name}",
+                        "instance ",
+                        "start ",
+                        self.get_option("add-caps", self.addCaps),
+                        self.get_option("allow-setuid", self.allowSetuid),
+                        self.get_option("apply-cgroups", self.applyCgroups),
+                        self.get_option("bind", self.bind),
+                        self.get_option("boot", self.boot),
+                        self.get_option("cleanenv", self.cleanenv),
+                        self.get_option("contain", self.contain),
+                        self.get_option("containall", self.containall),
+                        self.get_option("disable-cache", self.disableCache),
+                        self.get_option("dns", self.dns),
+                        self.get_option("drop-caps", self.dropCaps),
+                        self.get_option("env", self.env),
+                        self.get_option("env-file", self.envFile),
+                        self.get_option("fakeroot", self.fakeroot),
+                        self.get_option("fusemount", self.fusemount),
+                        self.get_option("home", self.home),
+                        self.get_option("hostname", self.hostname),
+                        self.get_option("keep-privs", self.keepPrivs),
+                        self.get_option("net", self.net),
+                        self.get_option("network", self.network),
+                        self.get_option("network-args", self.networkArgs),
+                        self.get_option("no-home", self.noHome),
+                        self.get_option("no-init", self.noInit),
+                        self.get_option("no-mount", self.noMount),
+                        self.get_option("no-privs", self.noPrivs),
+                        self.get_option("no-umask", self.noUmask),
+                        self.get_option("nohttps", self.nohttps),
+                        self.get_option("nv", self.nv),
+                        self.get_option("overlay", self.overlay),
+                        self.get_option("pem-path", self.pemPath),
+                        self.get_option("pid-file", self.pidFile),
+                        self.get_option("rocm", self.rocm),
+                        self.get_option("scratch", self.scratch),
+                        self.get_option("security", self.security),
+                        self.get_option("userns", self.userns),
+                        self.get_option("uts", self.uts),
+                        self.get_option("workdir", self.workdir),
+                        self.get_option("writable", self.writable),
+                        self.get_option("writable-tmpfs", self.writableTmpfs),
+                        "{} ".format(self.image),
+                        instance_name,
                     ]
-                ).format(
-                    addCaps=self.get_option("add-caps", self.addCaps),
-                    allowSetuid=self.get_option("allow-setuid", self.allowSetuid),
-                    applyCgroups=self.get_option("apply-cgroups", self.applyCgroups),
-                    bind=self.get_option("bind", self.bind),
-                    boot=self.get_option("boot", self.boot),
-                    cleanenv=self.get_option("cleanenv", self.cleanenv),
-                    contain=self.get_option("contain", self.contain),
-                    containall=self.get_option("containall", self.containall),
-                    disableCache=self.get_option("disable-cache", self.disableCache),
-                    dns=self.get_option("dns", self.dns),
-                    dropCaps=self.get_option("drop-caps", self.dropCaps),
-                    env=self.get_option("env", self.env),
-                    envFile=self.get_option("env-file", self.envFile),
-                    fakeroot=self.get_option("fakeroot", self.fakeroot),
-                    fusemount=self.get_option("fusemount", self.fusemount),
-                    home=self.get_option("home", self.home),
-                    hostname=self.get_option("hostname", self.hostname),
-                    keepPrivs=self.get_option("keep-privs", self.keepPrivs),
-                    net=self.get_option("net", self.net),
-                    network=self.get_option("network", self.network),
-                    networkArgs=self.get_option("network-args", self.networkArgs),
-                    noHome=self.get_option("no-home", self.noHome),
-                    noInit=self.get_option("no-init", self.noInit),
-                    noMount=self.get_option("no-mount", self.noMount),
-                    noPrivs=self.get_option("no-privs", self.noPrivs),
-                    noUmask=self.get_option("no-umask", self.noUmask),
-                    nohttps=self.get_option("nohttps", self.nohttps),
-                    nv=self.get_option("nv", self.nv),
-                    overlay=self.get_option("overlay", self.overlay),
-                    pemPath=self.get_option("pem-path", self.pemPath),
-                    pidFile=self.get_option("pid-file", self.pidFile),
-                    rocm=self.get_option("rocm", self.rocm),
-                    scratch=self.get_option("scratch", self.scratch),
-                    security=self.get_option("security", self.security),
-                    userns=self.get_option("userns", self.userns),
-                    uts=self.get_option("uts", self.uts),
-                    workdir=self.get_option("workdir", self.workdir),
-                    writable=self.get_option("writable", self.writable),
-                    writableTmpfs=self.get_option("writable-tmpfs", self.writableTmpfs),
-                    image=self.image,
-                    name=instance_name,
                 )
-                logger.debug(
-                    "EXECUTING command {command}".format(command=deploy_command)
-                )
+                logger.debug("EXECUTING command {}".format(deploy_command))
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(deploy_command),
                     stdout=asyncio.subprocess.PIPE,
@@ -1233,8 +1047,8 @@ class SingularityConnector(SingularityBaseConnector):
         if not external and self.instanceNames:
             for instance_name in self.instanceNames:
                 undeploy_command = "".join(
-                    ["singularity ", "instance " "stop " "{containerId}"]
-                ).format(containerId=instance_name)
+                    ["singularity ", "instance ", "stop ", instance_name]
+                )
                 logger.debug(
                     "EXECUTING command {command}".format(command=undeploy_command)
                 )

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
 from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING, cast
+
+from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -10,7 +11,7 @@ if TYPE_CHECKING:
     from streamflow.core.persistence import DatabaseLoadingContext
 
 
-class Config(object):
+class Config(PersistableEntity):
     __slots__ = ("name", "type", "config")
 
     def __init__(self, name: str, type: str, config: MutableMapping[str, Any]) -> None:
@@ -79,10 +80,3 @@ class BindingConfig(object):
                 *(asyncio.create_task(f.save(context)) for f in self.filters)
             ),
         }
-
-
-class SchemaEntity(ABC):
-    @classmethod
-    @abstractmethod
-    def get_schema(cls) -> str:
-        ...

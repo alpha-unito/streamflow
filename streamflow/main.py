@@ -9,12 +9,12 @@ from typing import Any, MutableMapping, Optional, Type
 from streamflow import report
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
-from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
-from streamflow.log_handler import logger, CustomFormatter, HighlitingFilter
+from streamflow.ext.utils import load_extensions
+from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
@@ -57,7 +57,7 @@ async def _async_list(args: argparse.Namespace):
 
 async def _async_main(args: argparse.Namespace):
     args.name = args.name or str(uuid.uuid4())
-    utils.load_extensions()
+    load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
     context = build_context(
         os.path.dirname(args.streamflow_file), streamflow_config, args.outdir
@@ -181,7 +181,7 @@ def main(args):
         else:
             raise Exception("Context {} not supported.".format(args.context))
         return 0
-    except BaseException as e:
+    except Exception as e:
         logger.exception(e)
         return 1
 

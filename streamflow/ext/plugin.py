@@ -5,8 +5,8 @@ from typing import MutableMapping, Type
 
 from streamflow.core.deployment import BindingFilter, Connector
 from streamflow.core.scheduling import Policy, Scheduler
-from streamflow.deployment.filter import binding_filter_classes
 from streamflow.deployment.connector import connector_classes
+from streamflow.deployment.filter import binding_filter_classes
 from streamflow.log_handler import logger
 from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes

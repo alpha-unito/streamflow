@@ -9,7 +9,8 @@ from abc import abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from streamflow.core.config import Config, SchemaEntity
+from streamflow.core.config import Config
+from streamflow.core.context import SchemaEntity
 from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
 
 if TYPE_CHECKING:
@@ -40,10 +41,14 @@ class Location(object):
         if not isinstance(other, Location):
             return False
         else:
-            return self.deployment == other.deployment and self.name == other.name
+            return (
+                self.deployment == other.deployment
+                and self.service == other.service
+                and self.name == other.name
+            )
 
     def __hash__(self):
-        return hash((self.deployment, self.name))
+        return hash((self.deployment, self.service, self.name))
 
     def __str__(self) -> str:
         if self.service:
@@ -148,7 +153,7 @@ class DeploymentManager(SchemaEntity):
         ...
 
 
-class DeploymentConfig(Config, PersistableEntity):
+class DeploymentConfig(Config):
     __slots__ = ("name", "type", "config", "external", "lazy", "workdir")
 
     def __init__(

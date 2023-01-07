@@ -120,6 +120,8 @@ def _patched_arraytype(self, schema):
                 rows = _original_arraytype(self, schema)
                 rows.extend(self._bool_or_object(schema, 'unique'))
             return rows
+    else:
+        return _original_arraytype(self, schema)
 
 
 _original_arraytype = sjs_wide_format.WideFormat._arraytype
@@ -150,7 +152,6 @@ def _patched_objectproperties(self, schema, key):
     return rows
 
 
-_original_objectproperties = sjs_wide_format.WideFormat._objectproperties
 sjs_wide_format.WideFormat._objectproperties = _patched_objectproperties
 
 

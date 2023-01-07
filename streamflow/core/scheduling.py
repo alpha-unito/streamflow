@@ -4,10 +4,10 @@ from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING, Type, cast
 
 from streamflow.core import utils
-from streamflow.core.config import BindingConfig, Config, SchemaEntity
-from streamflow.core.context import StreamFlowContext
+from streamflow.core.config import BindingConfig, Config
+from streamflow.core.context import SchemaEntity, StreamFlowContext
 from streamflow.core.deployment import Connector, Location, Target
-from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
+from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status, Token
@@ -59,12 +59,32 @@ class Hardware(object):
             )
         )
 
+    def __gt__(self, other):
+        if not isinstance(other, Hardware):
+            return NotImplementedError
+        return all(
+            (
+                vars(self).get(k, 0.0) > vars(other).get(k, 0.0)
+                for k in set().union(vars(self).keys(), vars(other).keys())
+            )
+        )
+
     def __le__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
         return all(
             (
                 vars(self).get(k, 0.0) <= vars(other).get(k, 0.0)
+                for k in set().union(vars(self).keys(), vars(other).keys())
+            )
+        )
+
+    def __lt__(self, other):
+        if not isinstance(other, Hardware):
+            return NotImplementedError
+        return all(
+            (
+                vars(self).get(k, 0.0) < vars(other).get(k, 0.0)
                 for k in set().union(vars(self).keys(), vars(other).keys())
             )
         )
@@ -145,6 +165,19 @@ class AvailableLocation(Location):
         self.slots: int = slots
         self.hardware: Optional[Hardware] = hardware
 
+    def __eq__(self, other):
+        if not isinstance(other, AvailableLocation):
+            return False
+        else:
+            return (
+                self.deployment == other.deployment
+                and self.service == other.service
+                and self.name == other.name
+            )
+
+    def __hash__(self):
+        return hash((self.deployment, self.service, self.name))
+
 
 class LocationAllocation(object):
     __slots__ = ("name", "deployment", "jobs")
@@ -155,7 +188,7 @@ class LocationAllocation(object):
         self.jobs: MutableSequence[str] = []
 
 
-class PolicyConfig(Config, PersistableEntity):
+class PolicyConfig(Config):
     async def save(self, context: StreamFlowContext):
         # TODO
         return self.config

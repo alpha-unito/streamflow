@@ -29,7 +29,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.utils import flatten_list, get_path_processor
+from streamflow.core.utils import flatten_list
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -49,6 +49,7 @@ from streamflow.cwl.processor import (
 )
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
+from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.step import ExecuteStep
 
@@ -855,6 +856,7 @@ class CWLCommandToken(object):
                 try:
                     position = int(position) if position is not None else 0
                 except ValueError:
+                    # If position is not a number, do nothing
                     pass
             else:
                 position = int(self.position)

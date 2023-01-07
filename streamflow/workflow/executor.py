@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from asyncio import CancelledError, FIRST_COMPLETED, Task
 from typing import MutableSequence, TYPE_CHECKING, cast
 
 from streamflow.core import utils
@@ -9,6 +8,7 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Executor, Status
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
+from streamflow.workflow.utils import get_token_value
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Workflow
@@ -18,17 +18,17 @@ if TYPE_CHECKING:
 class StreamFlowExecutor(Executor):
     def __init__(self, workflow: Workflow):
         super().__init__(workflow)
-        self.executions: MutableSequence[Task] = []
-        self.output_tasks: MutableMapping[str, Task] = {}
+        self.executions: MutableSequence[asyncio.Task] = []
+        self.output_tasks: MutableMapping[str, asyncio.Task] = {}
         self.received: MutableSequence[str] = []
         self.closed: bool = False
 
-    async def _handle_exception(self, task: Task):
+    async def _handle_exception(self, task: asyncio.Task):
         try:
             return await task
-        except CancelledError:
+        except asyncio.CancelledError:
             pass
-        except BaseException as exc:
+        except Exception as exc:
             logger.exception(exc)
             if not self.closed:
                 await self._shutdown()
@@ -49,13 +49,13 @@ class StreamFlowExecutor(Executor):
         self, output_consumer: str, output_tokens: MutableMapping[str, Any]
     ) -> MutableMapping[str, Any]:
         finished, unfinished = await asyncio.wait(
-            self.output_tasks.values(), return_when=FIRST_COMPLETED
+            self.output_tasks.values(), return_when=asyncio.FIRST_COMPLETED
         )
         self.output_tasks = {t.get_name(): t for t in unfinished}
         for task in finished:
             if task.cancelled():
                 continue
-            task_name = cast(Task, task).get_name()
+            task_name = cast(asyncio.Task, task).get_name()
             if task_name not in self.workflow.output_ports:
                 continue
             token = task.result()
@@ -67,7 +67,7 @@ class StreamFlowExecutor(Executor):
                     self.closed = True
             else:
                 # Collect result
-                output_tokens[task_name] = utils.get_token_value(token)
+                output_tokens[task_name] = get_token_value(token)
                 # Create a new task in place of the completed one if not terminated
                 if task_name not in self.received:
                     self.output_tasks[task_name] = asyncio.create_task(
@@ -135,7 +135,7 @@ class StreamFlowExecutor(Executor):
                 )
             # Print output tokens
             return output_tokens
-        except BaseException:
+        except Exception:
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
                     self.workflow.persistent_id, {"status": Status.FAILED.value}
