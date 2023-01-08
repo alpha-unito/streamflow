@@ -56,6 +56,7 @@ if [[ "${VERSION}" = "v1.0" ]] ; then
 else
   CONFORMANCE_TEST="${SCRIPT_DIRECTORY}/${REPO}-${COMMIT}/conformance_tests.yaml"
 fi
+mv "${CONFORMANCE_TEST}" "${CONFORMANCE_TEST%".yaml"}.cwltest.yaml"
 CONFORMANCE_TEST="${CONFORMANCE_TEST%".yaml"}.cwltest.yaml"
 
 # Build command
