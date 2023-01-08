@@ -1,0 +1,20 @@
+[run]
+branch = True
+source_pkgs = streamflow
+omit =
+    streamflow/cwl/antlr/*
+
+[report]
+exclude_lines =
+    # Exclude not implemented methods
+    raise NotImplementedError
+    # Exclude abstract methods
+    @(abc\.)?abstractmethod
+    # Exclude Python script entrypoints
+    if __name__ == .__main__.:
+    # Exclude type checking lines
+    if TYPE_CHECKING:
+ignore_errors = True
+omit =
+    streamflow/__main__.py
+    tests/*

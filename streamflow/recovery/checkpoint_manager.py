@@ -19,13 +19,13 @@ if TYPE_CHECKING:
 
 
 class DefaultCheckpointManager(CheckpointManager):
-
-    def __init__(self,
-                 context: StreamFlowContext,
-                 checkpoint_dir: Optional[str] = None):
+    def __init__(
+        self, context: StreamFlowContext, checkpoint_dir: Optional[str] = None
+    ):
         super().__init__(context)
         self.checkpoint_dir = checkpoint_dir or os.path.join(
-            tempfile.gettempdir(), 'streamflow', 'checkpoint', utils.random_name())
+            tempfile.gettempdir(), "streamflow", "checkpoint", utils.random_name()
+        )
         self.copy_tasks: MutableSequence = []
 
     async def _async_local_copy(self, data_location: DataLocation):
@@ -35,7 +35,8 @@ class DefaultCheckpointManager(CheckpointManager):
             src_locations=[data_location],
             src_path=data_location.path,
             dst_locations=[Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)],
-            dst_path=local_path)
+            dst_path=local_path,
+        )
 
     async def close(self):
         pass
@@ -43,22 +44,24 @@ class DefaultCheckpointManager(CheckpointManager):
     @classmethod
     def get_schema(cls) -> str:
         return pkg_resources.resource_filename(
-            __name__, os.path.join('schemas', 'default_checkpoint_manager.json'))
+            __name__, os.path.join("schemas", "default_checkpoint_manager.json")
+        )
 
     def register(self, data_location: DataLocation) -> None:
-        self.copy_tasks.append(asyncio.create_task(
-            self._async_local_copy(data_location)))
+        self.copy_tasks.append(
+            asyncio.create_task(self._async_local_copy(data_location))
+        )
 
 
 class DummyCheckpointManager(CheckpointManager):
-
     async def close(self):
         pass
 
     @classmethod
     def get_schema(cls) -> str:
         return pkg_resources.resource_filename(
-            __name__, os.path.join('schemas', 'dummy_checkpoint_manager.json'))
+            __name__, os.path.join("schemas", "dummy_checkpoint_manager.json")
+        )
 
     def register(self, data_location: DataLocation) -> None:
         pass

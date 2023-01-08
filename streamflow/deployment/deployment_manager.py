@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from asyncio import Event
 from typing import TYPE_CHECKING
 
 import pkg_resources
@@ -19,12 +18,10 @@ if TYPE_CHECKING:
 
 
 class DefaultDeploymentManager(DeploymentManager):
-
-    def __init__(self,
-                 context: StreamFlowContext) -> None:
+    def __init__(self, context: StreamFlowContext) -> None:
         super().__init__(context)
         self.config_map: MutableMapping[str, Any] = {}
-        self.events_map: MutableMapping[str, Event] = {}
+        self.events_map: MutableMapping[str, asyncio.Event] = {}
         self.deployments_map: MutableMapping[str, Connector] = {}
 
     async def close(self):
@@ -34,7 +31,7 @@ class DefaultDeploymentManager(DeploymentManager):
         deployment_name = deployment_config.name
         while True:
             if deployment_name not in self.events_map:
-                self.events_map[deployment_name] = Event()
+                self.events_map[deployment_name] = asyncio.Event()
             if deployment_name not in self.config_map:
                 self.config_map[deployment_name] = deployment_config
                 if deployment_config.lazy:
@@ -43,18 +40,22 @@ class DefaultDeploymentManager(DeploymentManager):
                         config_dir=self.context.config_dir,
                         type=connector_classes[deployment_config.type],
                         external=deployment_config.external,
-                        **deployment_config.config)
+                        **deployment_config.config,
+                    )
                     self.deployments_map[deployment_name] = connector
                     self.events_map[deployment_name].set()
                 else:
                     connector = connector_classes[deployment_config.type](
-                        deployment_name, self.context, **deployment_config.config)
+                        deployment_name, self.context, **deployment_config.config
+                    )
                     self.deployments_map[deployment_name] = connector
                     if not deployment_config.external:
                         logger.info("DEPLOYING {}".format(deployment_name))
                     await connector.deploy(deployment_config.external)
                     if not deployment_config.external:
-                        logger.info("COMPLETED Deployment of {}".format(deployment_name))
+                        logger.info(
+                            "COMPLETED Deployment of {}".format(deployment_name)
+                        )
                     self.events_map[deployment_name].set()
                     break
             else:
@@ -68,7 +69,8 @@ class DefaultDeploymentManager(DeploymentManager):
     @classmethod
     def get_schema(cls) -> str:
         return pkg_resources.resource_filename(
-            __name__, os.path.join('schemas', 'deployment_manager.json'))
+            __name__, os.path.join("schemas", "deployment_manager.json")
+        )
 
     def is_deployed(self, deployment_name: str):
         return deployment_name in self.deployments_map
@@ -80,7 +82,9 @@ class DefaultDeploymentManager(DeploymentManager):
             connector = self.deployments_map[deployment_name]
             config = self.config_map[deployment_name]
             if not config.external:
-                logger.info("UNDEPLOYING {deployment}".format(deployment=deployment_name))
+                logger.info(
+                    "UNDEPLOYING {deployment}".format(deployment=deployment_name)
+                )
             await connector.undeploy(config.external)
             if not config.external:
                 logger.info("COMPLETED Undeployment of {}".format(deployment_name))

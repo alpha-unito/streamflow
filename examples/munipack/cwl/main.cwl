@@ -118,7 +118,7 @@ steps:
       have the FIND HDU added). The subject frames (now with FIND and APHOT HDU added) and the cone.fits file
       go to the input of next step, that derives astrometry calibration of FITS frames.  
       After all these steps are terminated, the corrected original frames of blazar with FIND and APHOT extension and
-      with astrometry calibration are stacked all togheter with the kombine action to produce a unique summing frame.
+      with astrometry calibration are stacked all together with the kombine action to produce a unique summing frame.
     in:
       corrected_frames: flattening/flattenedArray
       fwmh: fwmh_par 

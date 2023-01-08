@@ -5,6 +5,9 @@ from streamflow.core.data import StreamWrapper, StreamWrapperContext
 
 
 class BaseStreamWrapper(StreamWrapper):
+    def __init__(self, stream):
+        super().__init__(stream)
+        self.closed = False
 
     async def close(self):
         if self.closed:
@@ -20,7 +23,6 @@ class BaseStreamWrapper(StreamWrapper):
 
 
 class StreamReaderWrapper(StreamWrapper):
-
     async def close(self):
         pass
 
@@ -32,7 +34,6 @@ class StreamReaderWrapper(StreamWrapper):
 
 
 class StreamWriterWrapper(StreamWrapper):
-
     async def close(self):
         self.stream.close()
         await self.stream.wait_closed()
@@ -46,9 +47,7 @@ class StreamWriterWrapper(StreamWrapper):
 
 
 class SubprocessStreamReaderWrapperContext(StreamWrapperContext):
-
-    def __init__(self,
-                 coro: Coroutine):
+    def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
         self.proc: Optional[asyncio.subprocess.Process] = None
         self.stream: Optional[StreamReaderWrapper] = None
@@ -65,15 +64,14 @@ class SubprocessStreamReaderWrapperContext(StreamWrapperContext):
 
 
 class SubprocessStreamWriterWrapperContext(StreamWrapperContext):
-
-    def __init__(self,
-                 coro: Coroutine):
+    def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
+        self.proc: Optional[asyncio.subprocess.Process] = None
         self.stream: Optional[StreamReaderWrapper] = None
 
     async def __aenter__(self):
         proc = await self.coro
-        self.stream: StreamReaderWrapper(proc.stdout)
+        self.stream = StreamReaderWrapper(proc.stdout)
         return self.stream
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

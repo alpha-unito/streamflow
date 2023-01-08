@@ -175,7 +175,7 @@ As a first step, get StreamFlow from [GitHub](https://github.com/alpha-unito/str
 git clone git@github.com:alpha-unito/streamflow.git
 ```
 
-Then you can install all the requred packages using the `pip install` command
+Then you can install all the required packages using the `pip install` command
 
 ```bash
 cd streamflow

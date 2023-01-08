@@ -5,7 +5,7 @@ class: CommandLineTool
 # pars:
 #   fst must be a operation: {open, sum, comb}
 #   snd must be a error: {zero, loop}
-#     with zero will throw a divion by zero exception
+#     with zero will throw a division by zero exception
 #     with loop will enter in a infinity loop
 #   trd must be: a integer [0, 100]
 #     indicate the probability that will throw the error

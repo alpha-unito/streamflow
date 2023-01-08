@@ -1,4 +1,3 @@
-import asyncio
 import posixpath
 
 import pytest
@@ -8,6 +7,7 @@ from streamflow.core import utils
 from streamflow.core.data import FileType
 from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
+from streamflow.deployment.utils import get_path_processor
 from tests.conftest import get_location
 
 
@@ -21,9 +21,10 @@ def connector(context, location) -> Connector:
     return context.deployment_manager.get_connector(location.deployment)
 
 
+@pytest.mark.asyncio
 async def test_resolve(context, connector, location):
     """Test glob resolution."""
-    path_processor = utils.get_path_processor(connector)
+    path_processor = get_path_processor(connector)
     path = utils.random_name()
     await remotepath.mkdir(connector, [location], path)
     try:
@@ -36,32 +37,63 @@ async def test_resolve(context, connector, location):
         #     dir2/
         #       file1.txt
         #       file2.csv
-        await remotepath.write(connector, location, path_processor.join(path, "file1.txt"), "StreamFlow")
-        await remotepath.write(connector, location, path_processor.join(path, "file2.csv"), "StreamFlow")
-        await remotepath.mkdir(connector, [location], path_processor.join(path, "dir1", "dir2"))
-        await remotepath.write(connector, location, path_processor.join(path, "dir1", "file1.txt"), "StreamFlow")
-        await remotepath.write(connector, location, path_processor.join(path, "dir1", "file2.csv"), "StreamFlow")
         await remotepath.write(
-            connector, location, path_processor.join(path, "dir1", "dir2", "file1.txt"), "StreamFlow")
+            connector, location, path_processor.join(path, "file1.txt"), "StreamFlow"
+        )
         await remotepath.write(
-            connector, location, path_processor.join(path, "dir1", "dir2", "file2.csv"), "StreamFlow")
+            connector, location, path_processor.join(path, "file2.csv"), "StreamFlow"
+        )
+        await remotepath.mkdir(
+            connector, [location], path_processor.join(path, "dir1", "dir2")
+        )
+        await remotepath.write(
+            connector,
+            location,
+            path_processor.join(path, "dir1", "file1.txt"),
+            "StreamFlow",
+        )
+        await remotepath.write(
+            connector,
+            location,
+            path_processor.join(path, "dir1", "file2.csv"),
+            "StreamFlow",
+        )
+        await remotepath.write(
+            connector,
+            location,
+            path_processor.join(path, "dir1", "dir2", "file1.txt"),
+            "StreamFlow",
+        )
+        await remotepath.write(
+            connector,
+            location,
+            path_processor.join(path, "dir1", "dir2", "file2.csv"),
+            "StreamFlow",
+        )
         # Test *.txt
-        result = await remotepath.resolve(connector, location, path_processor.join(path, "*.txt"))
+        result = await remotepath.resolve(
+            connector, location, path_processor.join(path, "*.txt")
+        )
         assert len(result) == 1
         assert path_processor.join(path, "file1.txt") in result
         # Test file*
-        result = await remotepath.resolve(connector, location, path_processor.join(path, "file*"))
+        result = await remotepath.resolve(
+            connector, location, path_processor.join(path, "file*")
+        )
         assert len(result) == 2
         assert path_processor.join(path, "file1.txt") in result
         assert path_processor.join(path, "file2.csv") in result
         # Test */*.txt
-        result = await remotepath.resolve(connector, location, path_processor.join(path, "*/*.txt"))
+        result = await remotepath.resolve(
+            connector, location, path_processor.join(path, "*/*.txt")
+        )
         assert len(result) == 1
         assert path_processor.join(path, "dir1", "file1.txt") in result
     finally:
         await remotepath.rm(connector, location, path)
 
 
+@pytest.mark.asyncio
 async def test_directory(context, connector, location):
     """Test directory creation and deletion."""
     path = utils.random_name()
@@ -75,9 +107,16 @@ async def test_directory(context, connector, location):
         #   dir1/
         #   dir2/
         await remotepath.mkdirs(
-            connector, [location], [posixpath.join(path, "dir1"), posixpath.join(path, "dir2")])
-        await remotepath.write(connector, location, posixpath.join(path, "file1.txt"), "StreamFlow")
-        await remotepath.write(connector, location, posixpath.join(path, "file2.csv"), "StreamFlow")
+            connector,
+            [location],
+            [posixpath.join(path, "dir1"), posixpath.join(path, "dir2")],
+        )
+        await remotepath.write(
+            connector, location, posixpath.join(path, "file1.txt"), "StreamFlow"
+        )
+        await remotepath.write(
+            connector, location, posixpath.join(path, "file2.csv"), "StreamFlow"
+        )
         files = await remotepath.listdir(connector, location, path, FileType.FILE)
         assert len(files) == 2
         assert posixpath.join(path, "file1.txt") in files
@@ -93,6 +132,7 @@ async def test_directory(context, connector, location):
             await remotepath.rm(connector, location, path)
 
 
+@pytest.mark.asyncio
 async def test_file(context, connector, location):
     """Test file creation, size, checksum and deletion."""
     path = utils.random_name()
@@ -110,18 +150,24 @@ async def test_file(context, connector, location):
             await remotepath.rm(connector, location, path)
 
 
+@pytest.mark.asyncio
 async def test_symlink(context, connector, location):
     """Test symlink creation, resolution and deletion."""
     src = utils.random_name()
     path = utils.random_name()
-    path_processor = utils.get_path_processor(connector)
+    path_processor = get_path_processor(connector)
     try:
         # Test symlink to file
         await remotepath.write(connector, location, src, "StreamFlow")
         await remotepath.symlink(connector, location, src, path)
         assert await remotepath.exists(connector, location, path)
         assert await remotepath.islink(connector, location, path)
-        assert path_processor.basename(await remotepath.follow_symlink(context, connector, location, path)) == src
+        assert (
+            path_processor.basename(
+                await remotepath.follow_symlink(context, connector, location, path)
+            )
+            == src
+        )
         await remotepath.rm(connector, location, path)
         assert not await remotepath.exists(connector, location, path)
         await remotepath.rm(connector, location, src)
@@ -130,7 +176,12 @@ async def test_symlink(context, connector, location):
         await remotepath.symlink(connector, location, src, path)
         assert await remotepath.exists(connector, location, path)
         assert await remotepath.islink(connector, location, path)
-        assert path_processor.basename(await remotepath.follow_symlink(context, connector, location, path)) == src
+        assert (
+            path_processor.basename(
+                await remotepath.follow_symlink(context, connector, location, path)
+            )
+            == src
+        )
         await remotepath.rm(connector, location, path)
         assert not await remotepath.exists(connector, location, path)
     finally:

@@ -1,0 +1,13 @@
+name: "StreamFlow CodeQL configuration"
+queries:
+  - uses: security-and-quality
+paths-ignore:
+  - tests
+  - streamflow/cwl/antlr
+query-filters:
+  # Reason: this rule targets XSS, which is not a concern here
+  - exclude:
+      id: py/jinja2/autoescape-false
+  # Reason: false positive on function body ellipsis (issue 11351)
+  - exclude:
+      id: py/ineffectual-statement
