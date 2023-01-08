@@ -56,7 +56,7 @@ jobs:
           VERSION: ${{ matrix.version }}
           COMMIT: ${{ matrix.commit }}
           EXCLUDE: ${{ matrix.exclude }}
-        run: ./conformance-test.sh
+        run: ./cwl-conformance-test.sh
       - name: "Upload coverage report for conformance tests"
         uses: actions/upload-artifact@v2
         with:
