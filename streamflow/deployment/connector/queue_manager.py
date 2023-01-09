@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import logging
 import os
 import shlex
 from abc import ABC, abstractmethod
@@ -142,13 +143,14 @@ class QueueManagerConnector(SSHConnector, ABC):
             command = utils.create_command(
                 command=command, environment=environment, workdir=workdir
             )
-            logger.debug(
-                "EXECUTING command {command} on {location} {job}".format(
-                    command=command,
-                    location=location,
-                    job="for job {job}".format(job=job_name) if job_name else "",
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "EXECUTING command {command} on {location} {job}".format(
+                        command=command,
+                        location=location,
+                        job="for job {job}".format(job=job_name) if job_name else "",
+                    )
                 )
-            )
             command = utils.encode_command(command)
             command = self._get_command_from_template(
                 command=command,
@@ -166,11 +168,12 @@ class QueueManagerConnector(SSHConnector, ABC):
                 stderr=stderr,
                 timeout=timeout,
             )
-            logger.info(
-                "Scheduled job {job} with job id {job_id}".format(
-                    job=job_name, job_id=job_id
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Scheduled job {job} with job id {job_id}".format(
+                        job=job_name, job_id=job_id
+                    )
                 )
-            )
             self.scheduledJobs.append(job_id)
             async with self.jobsCacheLock:
                 self.jobsCache.clear()

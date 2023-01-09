@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import os
 import posixpath
 import tempfile
@@ -1299,18 +1300,20 @@ class CWLTranslator(object):
                     target_deployment = self.workflow_config.deplyoments[
                         target["model"]
                     ]
-                    logger.warn(
-                        "The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `deployment` instead."
-                    )
+                    if logger.isEnabledFor(logging.WARN):
+                        logger.warn(
+                            "The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                            "Use `deployment` instead."
+                        )
                 locations = target.get("locations", None)
                 if locations is None:
                     locations = target.get("resources")
                     if locations is not None:
-                        logger.warn(
-                            "The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `locations` instead."
-                        )
+                        if logger.isEnabledFor(logging.WARN):
+                            logger.warn(
+                                "The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                                "Use `locations` instead."
+                            )
                     else:
                         locations = 1
                 deployment = DeploymentConfig(
@@ -1522,9 +1525,10 @@ class CWLTranslator(object):
         name_prefix: str,
         cwl_name_prefix: str,
     ):
-        logger.debug(
-            "Translating {} {}".format(cwl_element.__class__.__name__, name_prefix)
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Translating {} {}".format(cwl_element.__class__.__name__, name_prefix)
+            )
         # Extract custom types if present
         requirements = {**context["hints"], **context["requirements"]}
         schema_def_types = _get_schema_def_types(requirements)
@@ -1706,7 +1710,8 @@ class CWLTranslator(object):
         cwl_name_prefix: str,
     ):
         step_name = name_prefix
-        logger.debug("Translating Workflow {}".format(step_name))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Translating Workflow {}".format(step_name))
         # Extract custom types if present
         requirements = {**context["hints"], **context["requirements"]}
         schema_def_types = _get_schema_def_types(requirements)
@@ -1865,7 +1870,8 @@ class CWLTranslator(object):
     ):
         # Process content
         step_name = _get_name(name_prefix, cwl_name_prefix, cwl_element.id)
-        logger.debug("Translating WorkflowStep {}".format(step_name))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Translating WorkflowStep {}".format(step_name))
         cwl_step_name = _get_name(
             name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
         )

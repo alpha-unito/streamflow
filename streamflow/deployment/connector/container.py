@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import posixpath
 import shlex
@@ -55,20 +56,22 @@ class ContainerConnector(BaseConnector, ABC):
         if cacheSize is None:
             cacheSize = resourcesCacheSize
             if cacheSize is not None:
-                logger.warn(
-                    "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                    "Use `locationsCacheSize` instead."
-                )
+                if logger.isEnabledFor(logging.WARN):
+                    logger.warn(
+                        "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                        "Use `locationsCacheSize` instead."
+                    )
             else:
                 cacheSize = 10
         cacheTTL = locationsCacheTTL
         if cacheTTL is None:
             cacheTTL = resourcesCacheTTL
             if cacheTTL is not None:
-                logger.warn(
-                    "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                    "Use `locationsCacheTTL` instead."
-                )
+                if logger.isEnabledFor(logging.WARN):
+                    logger.warn(
+                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                        "Use `locationsCacheTTL` instead."
+                    )
             else:
                 cacheTTL = 10
         self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
@@ -594,7 +597,8 @@ class DockerConnector(DockerBaseConnector):
                         self.image,
                     ]
                 )
-                logger.debug("EXECUTING command {}".format(deploy_command))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("EXECUTING command {}".format(deploy_command))
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(deploy_command),
                     stdout=asyncio.subprocess.PIPE,
@@ -629,9 +633,10 @@ class DockerConnector(DockerBaseConnector):
         if not external and self.containerIds:
             for container_id in self.containerIds:
                 undeploy_command = "".join(["docker ", "stop ", container_id])
-                logger.debug(
-                    "EXECUTING command {command}".format(command=undeploy_command)
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "EXECUTING command {command}".format(command=undeploy_command)
+                    )
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(undeploy_command),
                     stdout=asyncio.subprocess.PIPE,
@@ -747,7 +752,8 @@ class DockerComposeConnector(DockerBaseConnector):
                     self.get_option("no-start", self.noStart),
                 ]
             )
-            logger.debug("EXECUTING command {}".format(deploy_command))
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("EXECUTING command {}".format(deploy_command))
             proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
             await proc.wait()
 
@@ -760,7 +766,8 @@ class DockerComposeConnector(DockerBaseConnector):
         tmp_directory: Optional[str] = None,
     ) -> MutableMapping[str, AvailableLocation]:
         ps_command = self.base_command() + "".join(["ps ", service or ""])
-        logger.debug("EXECUTING command {command}".format(command=ps_command))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("EXECUTING command {command}".format(command=ps_command))
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(ps_command),
             stdout=asyncio.subprocess.PIPE,
@@ -788,7 +795,10 @@ class DockerComposeConnector(DockerBaseConnector):
             undeploy_command = self.base_command() + "".join(
                 ["down ", "{removeVolumes}"]
             ).format(removeVolumes=self.get_option("volumes", self.removeVolumes))
-            logger.debug("EXECUTING command {command}".format(command=undeploy_command))
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "EXECUTING command {command}".format(command=undeploy_command)
+                )
             proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
             await proc.wait()
 
@@ -1004,7 +1014,8 @@ class SingularityConnector(SingularityBaseConnector):
                         instance_name,
                     ]
                 )
-                logger.debug("EXECUTING command {}".format(deploy_command))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("EXECUTING command {}".format(deploy_command))
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(deploy_command),
                     stdout=asyncio.subprocess.PIPE,
@@ -1049,9 +1060,10 @@ class SingularityConnector(SingularityBaseConnector):
                 undeploy_command = "".join(
                     ["singularity ", "instance ", "stop ", instance_name]
                 )
-                logger.debug(
-                    "EXECUTING command {command}".format(command=undeploy_command)
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "EXECUTING command {command}".format(command=undeploy_command)
+                    )
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(undeploy_command),
                     stdout=asyncio.subprocess.PIPE,

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Type, Union
 
 from streamflow.core.deployment import Connector, ConnectorCopyKind, Location
@@ -54,11 +55,13 @@ class FutureConnector(Connector):
     async def deploy(self, external: bool) -> None:
         # noinspection PyArgumentList
         connector = self.type(self.deployment_name, self.config_dir, **self.parameters)
-        if not external:
-            logger.info("DEPLOYING {}".format(self.deployment_name))
+        if logger.isEnabledFor(logging.INFO):
+            if not external:
+                logger.info("DEPLOYING {}".format(self.deployment_name))
         await connector.deploy(external)
-        if not external:
-            logger.info("COMPLETED Deployment of {}".format(self.deployment_name))
+        if logger.isEnabledFor(logging.INFO):
+            if not external:
+                logger.info("COMPLETED Deployment of {}".format(self.deployment_name))
         self.connector = connector
         self.deploy_event.set()
 

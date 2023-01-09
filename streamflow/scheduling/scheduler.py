@@ -323,15 +323,16 @@ class DefaultScheduler(Scheduler):
                                 )
                                 job_context.scheduled = True
                                 return
-                    elif logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            "No location available for job {} on deployment {}.".format(
-                                job_context.job.name,
-                                posixpath.join(deployment, target.service)
-                                if target.service
-                                else deployment,
+                    else:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "No location available for job {} on deployment {}.".format(
+                                    job_context.job.name,
+                                    posixpath.join(deployment, target.service)
+                                    if target.service
+                                    else deployment,
+                                )
                             )
-                        )
                 await asyncio.wait_for(
                     self.wait_queues[deployment].wait(), timeout=self.retry_interval
                 )
@@ -353,11 +354,12 @@ class DefaultScheduler(Scheduler):
                     if job_name in self.job_allocations:
                         if status != self.job_allocations[job_name].status:
                             self.job_allocations[job_name].status = status
-                            logger.debug(
-                                "Job {name} changed status to {status}".format(
-                                    name=job_name, status=status.name
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.debug(
+                                    "Job {name} changed status to {status}".format(
+                                        name=job_name, status=status.name
+                                    )
                                 )
-                            )
                         if status in [Status.COMPLETED, Status.FAILED]:
                             self.wait_queues[connector.deployment_name].notify_all()
 

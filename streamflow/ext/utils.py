@@ -1,3 +1,5 @@
+import logging
+
 from importlib_metadata import entry_points
 
 from streamflow.core.exception import InvalidPluginException
@@ -12,11 +14,12 @@ def load_extensions():
         plugin = (plugin.load())()
         if isinstance(plugin, StreamFlowPlugin):
             plugin.register()
-            logger.info(
-                "Successfully registered plugin {}".format(
-                    get_class_fullname(type(plugin))
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Successfully registered plugin {}".format(
+                        get_class_fullname(type(plugin))
+                    )
                 )
-            )
         else:
             raise InvalidPluginException(
                 "StreamFlow plugins must extend the streamflow.ext.StreamFlowPlugin class"

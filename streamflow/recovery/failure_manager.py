@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from typing import MutableMapping, Optional, cast
 
@@ -175,17 +176,19 @@ class DefaultFailureManager(FailureManager):
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
     ) -> CommandOutput:
-        logger.info(
-            "Handling {exception} failure for job {job}".format(
-                job=job.name, exception=type(exception).__name__
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Handling {exception} failure for job {job}".format(
+                    job=job.name, exception=type(exception).__name__
+                )
             )
-        )
         return await self._do_handle_failure(job, step)
 
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> CommandOutput:
-        logger.info("Handling command failure for job {job}".format(job=job.name))
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Handling command failure for job {job}".format(job=job.name))
         return await self._do_handle_failure(job, step)
 
     async def replay_job(self, replay_request: ReplayRequest) -> ReplayResponse:
@@ -200,7 +203,8 @@ class DefaultFailureManager(FailureManager):
                 or self.replay_cache[target_job].version < replay_request.version
             ):
                 # Reschedule job
-                logger.info("Rescheduling job {job}".format(job=target_job))
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info("Rescheduling job {job}".format(job=target_job))
                 command_output = CommandOutput(value=None, status=Status.FAILED)
                 self.replay_cache[target_job] = ReplayResponse(
                     job=target_job,

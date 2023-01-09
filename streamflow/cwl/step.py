@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import urllib.parse
 from abc import ABC
 from typing import Any, MutableMapping, MutableSequence, Optional
@@ -132,22 +133,24 @@ class CWLLoopConditionalStep(CWLConditionalStep):
                 "Conditional 'when' must evaluate to 'true' or 'false'"
             )
 
-    async def _on_true(self, inputs: MutableMapping[str, Token]):
-        logger.debug(
-            "Step {} condition evaluated true on inputs {}".format(
-                self.name, [t.tag for t in inputs.values()]
+    async def _on_true(self, inputs: MutableMapping[str, Token]) -> None:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Step {} condition evaluated true on inputs {}".format(
+                    self.name, [t.tag for t in inputs.values()]
+                )
             )
-        )
         # Next iteration: propagate outputs to the loop
         for port_name, port in self.get_output_ports().items():
             port.put(inputs[port_name])
 
-    async def _on_false(self, inputs: MutableMapping[str, Token]):
-        logger.debug(
-            "Step {} condition evaluated false on inputs {}".format(
-                self.name, [t.tag for t in inputs.values()]
+    async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Step {} condition evaluated false on inputs {}".format(
+                    self.name, [t.tag for t in inputs.values()]
+                )
             )
-        )
         # Loop termination: propagate outputs outside the loop
         for port_name, port in self.get_skip_ports().items():
             port.put(IterationTerminationToken(tag=get_tag(inputs.values())))

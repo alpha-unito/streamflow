@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import posixpath
 import tarfile
@@ -239,13 +240,14 @@ class SSHConnector(BaseConnector):
             stdout=stdout,
             stderr=stderr,
         )
-        logger.debug(
-            "EXECUTING command {command} on {location} {job}".format(
-                command=command,
-                location=location,
-                job="for job {job}".format(job=job_name) if job_name else "",
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "EXECUTING command {command} on {location} {job}".format(
+                    command=command,
+                    location=location,
+                    job="for job {job}".format(job=job_name) if job_name else "",
+                )
             )
-        )
         return utils.encode_command(command)
 
     def __init__(
@@ -274,10 +276,11 @@ class SSHConnector(BaseConnector):
         )
         self.templates: MutableMapping[str, Template] = {}
         if file is not None:
-            logger.warn(
-                "The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                "Use `services` instead."
-            )
+            if logger.isEnabledFor(logging.WARN):
+                logger.warn(
+                    "The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                    "Use `services` instead."
+                )
             with open(os.path.join(self.config_dir, file)) as f:
                 self.templates["__DEFAULT__"] = Template(f.read())
         else:

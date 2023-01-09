@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import PurePosixPath
 from typing import MutableSequence, TYPE_CHECKING
 
@@ -40,10 +41,11 @@ class WorkflowConfig(Config):
         if not self.deplyoments:
             self.deplyoments = config.get("models", {})
             if self.deplyoments:
-                logger.warn(
-                    "The `models` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                    "Use `deployments` instead."
-                )
+                if logger.isEnabledFor(logging.WARN):
+                    logger.warn(
+                        "The `models` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                        "Use `deployments` instead."
+                    )
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         for name, deployment in self.deplyoments.items():
             deployment["name"] = name
