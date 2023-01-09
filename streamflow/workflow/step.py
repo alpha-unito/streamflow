@@ -97,13 +97,14 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
-        if check_termination(inputs):
-            logger.debug("Step {} received termination token".format(self.name))
-        logger.debug(
-            "Step {} received inputs {}".format(
-                self.name, [t.tag for t in inputs.values()]
+        if logger.isEnabledFor(logging.DEBUG):
+            if check_termination(inputs):
+                logger.debug("Step {} received termination token".format(self.name))
+            logger.debug(
+                "Step {} received inputs {}".format(
+                    self.name, [t.tag for t in inputs.values()]
+                )
             )
-        )
         return inputs
 
     async def _persist_token(
@@ -275,19 +276,21 @@ class CombinatorStep(BaseStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
-                        logger.debug(
-                            "Step {} received termination token for port {}".format(
-                                self.name, task_name
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "Step {} received termination token for port {}".format(
+                                    self.name, task_name
+                                )
                             )
-                        )
                         terminated.append(task_name)
                     # Otherwise, build combination and set default status to COMPLETED
                     else:
-                        logger.debug(
-                            "Step {} received token {} on port {}".format(
-                                self.name, token.tag, task_name
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "Step {} received token {} on port {}".format(
+                                    self.name, token.tag, task_name
+                                )
                             )
-                        )
                         status = Status.COMPLETED
                         async for schema in cast(
                             AsyncIterable, self.combinator.combine(task_name, token)
@@ -576,7 +579,8 @@ class ExecuteStep(BaseStep):
             output_directory=job.output_directory,
             tmp_directory=job.tmp_directory,
         )
-        logger.debug("Job {name} started".format(name=job.name))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Job {name} started".format(name=job.name))
         # Initialise command output with default values
         command_output = CommandOutput(value=None, status=Status.FAILED)
         # TODO: Trigger location deployment in case of lazy environments
@@ -654,11 +658,12 @@ class ExecuteStep(BaseStep):
                 logger.exception(e)
                 command_output.status = Status.FAILED
         # Return job status
-        logger.debug(
-            "{status} Job {name} terminated".format(
-                name=job.name, status=command_output.status.name
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "{status} Job {name} terminated".format(
+                    name=job.name, status=command_output.status.name
+                )
             )
-        )
         return command_output.status
 
     async def _save_additional_params(
@@ -822,7 +827,8 @@ class GatherStep(BaseStep):
                 posixpath.join(self.name, next(iter(self.input_ports)))
             )
             if check_termination(token):
-                logger.debug("Step {} received termination token".format(self.name))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("Step {} received termination token".format(self.name))
                 output_port = self.get_output_port()
                 for tag, tokens in self.token_map.items():
                     output_port.put(
@@ -836,7 +842,10 @@ class GatherStep(BaseStep):
                     )
                 break
             else:
-                logger.debug("Step {} received input {}".format(self.name, token.tag))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "Step {} received input {}".format(self.name, token.tag)
+                    )
                 key = ".".join(token.tag.split(".")[: -self.depth])
                 if key not in self.token_map:
                     self.token_map[key] = []
@@ -966,30 +975,33 @@ class LoopCombinatorStep(CombinatorStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
-                        logger.debug(
-                            "Step {} received termination token for port {}".format(
-                                self.name, task_name
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "Step {} received termination token for port {}".format(
+                                    self.name, task_name
+                                )
                             )
-                        )
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
                     elif check_iteration_termination(token):
                         if token.tag in self.iteration_terminaton_checklist[task_name]:
-                            logger.debug(
-                                "Step {} received iteration termination token {} for port {}".format(
-                                    self.name, token.tag, task_name
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.debug(
+                                    "Step {} received iteration termination token {} for port {}".format(
+                                        self.name, token.tag, task_name
+                                    )
                                 )
-                            )
                             self.iteration_terminaton_checklist[task_name].remove(
                                 token.tag
                             )
                     # Otherwise, build combination and set default status to COMPLETED
                     else:
-                        logger.debug(
-                            "Step {} received token {} on port {}".format(
-                                self.name, token.tag, task_name
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "Step {} received token {} on port {}".format(
+                                    self.name, token.tag, task_name
+                                )
                             )
-                        )
                         status = Status.COMPLETED
                         if (
                             ".".join(token.tag.split(".")[:-1])
@@ -1070,7 +1082,8 @@ class LoopOutputStep(BaseStep, ABC):
             prefix = ".".join(token.tag.split(".")[:-1])
             # If a TerminationToken is received, terminate the step
             if check_termination(token):
-                logger.debug("Step {} received termination token".format(self.name))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("Step {} received termination token".format(self.name))
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
                     break
@@ -1082,15 +1095,19 @@ class LoopOutputStep(BaseStep, ABC):
                     }
             # If an IterationTerminationToken is received, process loop output for the current port
             elif check_iteration_termination(token):
-                logger.debug(
-                    "Step {} received iteration termination token {}.".format(
-                        self.name, token.tag
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "Step {} received iteration termination token {}.".format(
+                            self.name, token.tag
+                        )
                     )
-                )
                 self.size_map[prefix] = int(token.tag.split(".")[-1])
             # Otherwise, store the new token in the map
             else:
-                logger.debug("Step {} received token {}.".format(self.name, token.tag))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "Step {} received token {}.".format(self.name, token.tag)
+                    )
                 if prefix not in self.token_map:
                     self.token_map[prefix] = []
                 self.token_map[prefix].append(token)

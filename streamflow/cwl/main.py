@@ -74,7 +74,8 @@ async def main(
     else:
         cwl_inputs = {}
     # Transpile CWL workflow to the StreamFlow representation
-    logger.info("Processing workflow {}".format(args.name))
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("Processing workflow {}".format(args.name))
     translator = CWLTranslator(
         context=context,
         name=args.name,
@@ -84,14 +85,18 @@ async def main(
         workflow_config=workflow_config,
         loading_context=loading_context,
     )
-    logger.info("Building workflow execution plan")
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("Building workflow execution plan")
     workflow = translator.translate()
     if getattr(args, "validate", False):
         return
     await workflow.save(context)
-    logger.info("COMPLETED Building of workflow execution plan")
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("COMPLETED Building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)
-    logger.info("Running workflow {}".format(args.name))
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("Running workflow {}".format(args.name))
     output_tokens = await executor.run()
-    logger.info("COMPLETED Workflow execution")
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("COMPLETED Workflow execution")
     print(json.dumps(output_tokens, sort_keys=True, indent=4))

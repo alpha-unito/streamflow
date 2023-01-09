@@ -14,6 +14,8 @@ exclude_lines =
     if __name__ == .__main__.:
     # Exclude type checking lines
     if TYPE_CHECKING:
+    # Exclude log messages
+    if logger.isEnabledFor
 ignore_errors = True
 omit =
     streamflow/__main__.py

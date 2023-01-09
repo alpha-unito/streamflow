@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import MutableMapping, Type
 
@@ -15,11 +16,12 @@ from streamflow.scheduling.policy import policy_classes
 class StreamFlowPlugin(ABC):
     def _register(self, name: str, cls: Type, classes: MutableMapping[str, Type]):
         if name in classes:
-            logger.warning(
-                "{} is already installed and will be overridden by {}".format(
-                    name, self.__class__.__module__ + "." + self.__class__.__name__
+            if logger.isEnabledFor(logging.WARN):
+                logger.warn(
+                    "{} is already installed and will be overridden by {}".format(
+                        name, self.__class__.__module__ + "." + self.__class__.__name__
+                    )
                 )
-            )
         classes[name] = cls
 
     @abstractmethod

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from typing import TYPE_CHECKING
 
@@ -49,13 +50,15 @@ class DefaultDeploymentManager(DeploymentManager):
                         deployment_name, self.context, **deployment_config.config
                     )
                     self.deployments_map[deployment_name] = connector
-                    if not deployment_config.external:
-                        logger.info("DEPLOYING {}".format(deployment_name))
+                    if logger.isEnabledFor(logging.INFO):
+                        if not deployment_config.external:
+                            logger.info("DEPLOYING {}".format(deployment_name))
                     await connector.deploy(deployment_config.external)
-                    if not deployment_config.external:
-                        logger.info(
-                            "COMPLETED Deployment of {}".format(deployment_name)
-                        )
+                    if logger.isEnabledFor(logging.INFO):
+                        if not deployment_config.external:
+                            logger.info(
+                                "COMPLETED Deployment of {}".format(deployment_name)
+                            )
                     self.events_map[deployment_name].set()
                     break
             else:
@@ -81,13 +84,15 @@ class DefaultDeploymentManager(DeploymentManager):
             self.events_map[deployment_name].clear()
             connector = self.deployments_map[deployment_name]
             config = self.config_map[deployment_name]
-            if not config.external:
-                logger.info(
-                    "UNDEPLOYING {deployment}".format(deployment=deployment_name)
-                )
+            if logger.isEnabledFor(logging.INFO):
+                if not config.external:
+                    logger.info(
+                        "UNDEPLOYING {deployment}".format(deployment=deployment_name)
+                    )
             await connector.undeploy(config.external)
-            if not config.external:
-                logger.info("COMPLETED Undeployment of {}".format(deployment_name))
+            if logger.isEnabledFor(logging.INFO):
+                if not config.external:
+                    logger.info("COMPLETED Undeployment of {}".format(deployment_name))
             del self.deployments_map[deployment_name]
             del self.config_map[deployment_name]
             self.events_map[deployment_name].set()

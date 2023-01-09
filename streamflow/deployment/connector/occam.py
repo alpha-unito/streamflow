@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import posixpath
 import re
@@ -289,7 +290,8 @@ class OccamConnector(SSHConnector):
                 " ".join(service.get("command", "")),
             ]
         )
-        logger.debug("EXECUTING {command}".format(command=deploy_command))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("EXECUTING {command}".format(command=deploy_command))
         async with self._get_ssh_client(name) as ssh_client:
             result = await ssh_client.run(deploy_command)
         output = result.stdout
@@ -300,20 +302,23 @@ class OccamConnector(SSHConnector):
             if name not in self.jobs_table:
                 self.jobs_table[name] = []
             self.jobs_table[name].append(search_result[0])
-            logger.info(
-                "Deployed {name} on {location}".format(
-                    name=name, location=search_result[0]
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Deployed {name} on {location}".format(
+                        name=name, location=search_result[0]
+                    )
                 )
-            )
         else:
             raise Exception
 
     async def _undeploy_node(self, name: str, job_id: str):
         undeploy_command = "".join(["occam-kill ", "{job_id}"]).format(job_id=job_id)
-        logger.debug("EXECUTING {command}".format(command=undeploy_command))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("EXECUTING {command}".format(command=undeploy_command))
         async with self._get_ssh_client(name) as ssh_client:
             await ssh_client.run(undeploy_command)
-        logger.info("Killed {location}".format(location=job_id))
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Killed {location}".format(location=job_id))
 
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)

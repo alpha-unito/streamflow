@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import urllib.parse
 from enum import Enum
 from types import ModuleType
@@ -987,16 +988,17 @@ async def write_remote_file(
         connector = context.deployment_manager.get_connector(location.deployment)
         path_processor = get_path_processor(connector)
         if not await remotepath.exists(connector, location, path):
-            logger.info(
-                "Creating {path} {location}".format(
-                    path=path,
-                    location=(
-                        "on local file-system"
-                        if isinstance(connector, LocalConnector)
-                        else "on location {res}".format(res=location)
-                    ),
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Creating {path} {location}".format(
+                        path=path,
+                        location=(
+                            "on local file-system"
+                            if isinstance(connector, LocalConnector)
+                            else "on location {res}".format(res=location)
+                        ),
+                    )
                 )
-            )
             await remotepath.write(connector, location, path, content)
             context.data_manager.register_path(
                 location=location,

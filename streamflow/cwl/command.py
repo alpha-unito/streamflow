@@ -765,8 +765,9 @@ class CWLCommand(CWLBaseCommand):
             status = Status.FAILED
         elif (self.success_codes and exit_code in self.success_codes) or exit_code == 0:
             status = Status.COMPLETED
-            if result:
-                logger.info(result)
+            if logger.isEnabledFor(logging.INFO):
+                if result:
+                    logger.info(result)
         else:
             status = Status.FAILED
         # Update command persistence
@@ -1042,11 +1043,12 @@ class CWLExpressionCommand(CWLBaseCommand):
         )
         if self.initial_work_dir is not None:
             await self._prepare_work_dir(job, context, self.initial_work_dir)
-        logger.info(
-            "Evaluating expression for step {step} (job {job})".format(
-                step=self.step.name, job=job.name
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Evaluating expression for step {step} (job {job})".format(
+                    step=self.step.name, job=job.name
+                )
             )
-        )
         # Persist command
         command_id = await self.step.workflow.context.database.add_command(
             self.step.persistent_id, self.expression
@@ -1103,7 +1105,8 @@ class CWLStepCommand(CWLBaseCommand):
             tmp_directory=job.tmp_directory,
             hardware=self.step.workflow.context.scheduler.get_hardware(job.name),
         )
-        logger.info("EXECUTING job {job}".format(job=job.name))
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("EXECUTING job {job}".format(job=job.name))
         # Process expressions
         processed_inputs = {}
         for k, v in self.input_expressions.items():
