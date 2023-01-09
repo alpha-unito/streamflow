@@ -58,7 +58,7 @@ jobs:
           EXCLUDE: ${{ matrix.exclude }}
         run: ./cwl-conformance-test.sh
       - name: "Upload coverage report for conformance tests"
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ format('py{0}-cwl{1}-conformance-tests', matrix.python, matrix.version) }}
           path: ./coverage.xml
