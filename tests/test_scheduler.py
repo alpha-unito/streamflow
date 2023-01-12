@@ -83,8 +83,8 @@ async def test_single_env_few_resources(context: StreamFlowContext):
             )
         )
     hardware_requirement = Hardware(cores=1)
-    step_target = LocalTarget()
-    binding_config = BindingConfig(targets=[step_target])
+    local_target = LocalTarget()
+    binding_config = BindingConfig(targets=[local_target])
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -93,24 +93,24 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     ]
     assert len(task_pending) == 2
 
-    # Available resources to schedule only one job
+    # Available resources to schedule only one job (timeout parameter useful if a deadlock occurs)
     _, task_pending = await asyncio.wait(
-        task_pending, return_when=asyncio.FIRST_COMPLETED
+        task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
     )
     assert len(task_pending) == 1
     assert context.scheduler.job_allocations[jobs[0].name].status == Status.FIREABLE
 
     # First job change status in RUNNING and continue to keep all resources
-    # Testing that second job is not scheduled
+    # Testing that second job is not scheduled (timeout parameter necessary)
     await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
     _, task_pending = await asyncio.wait(task_pending, timeout=2)
     assert len(task_pending) == 1
     assert context.scheduler.job_allocations[jobs[0].name].status == Status.RUNNING
 
-    # First job complete and the second job can be schedulated
+    # First job complete and the second job can be schedulated (timeout parameter useful if a deadlock occurs)
     await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
     _, task_pending = await asyncio.wait(
-        task_pending, return_when=asyncio.ALL_COMPLETED
+        task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
     )
     assert len(task_pending) == 0
     assert context.scheduler.job_allocations[jobs[0].name].status == Status.COMPLETED
@@ -158,8 +158,8 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
             )
         )
     hardware_requirement = Hardware(cores=1)
-    step_target = LocalTarget()
-    binding_config = BindingConfig(targets=[step_target])
+    local_target = LocalTarget()
+    binding_config = BindingConfig(targets=[local_target])
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -168,9 +168,9 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
     ]
     assert len(task_pending) == 2
 
-    # Available resources to schedule all the jobs
+    # Available resources to schedule all the jobs (timeout parameter useful if a deadlock occurs)
     _, task_pending = await asyncio.wait(
-        task_pending, return_when=asyncio.ALL_COMPLETED
+        task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
     )
     assert len(task_pending) == 0
     for j in jobs:
@@ -231,9 +231,9 @@ async def test_multi_env(context: StreamFlowContext):
     ]
     assert len(task_pending) == 2
 
-    # Available resources to schedule all the jobs
+    # Available resources to schedule all the jobs (timeout parameter useful if a deadlock occurs)
     _, task_pending = await asyncio.wait(
-        task_pending, return_when=asyncio.ALL_COMPLETED
+        task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
     )
     assert len(task_pending) == 0
     for j, _ in jobs:
