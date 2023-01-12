@@ -25,7 +25,7 @@ class InjectedConnector(LocalConnector):
         deployment_name: str,
         config_dir: str,
         hardware: Hardware,
-        transferBufferSize: int = 2 ** 16,
+        transferBufferSize: int = 2**16,
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
         self.hardware = hardware
