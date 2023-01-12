@@ -248,3 +248,139 @@ async def test_multi_env(context: StreamFlowContext):
     for j, _ in jobs:
         await context.scheduler.notify_status(j.name, Status.COMPLETED)
         assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_multi_targets_one_job(context: StreamFlowContext):
+    """Test scheduling one jobs with two targets: Local and Docker Image. The job will be schedulated in the first because is free"""
+
+    # Inject custom connector to manipolate available resources
+    machine_hardware = Hardware(cores=1)
+    conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = InjectedConnector(
+        deployment_name=conn.deployment_name,
+        config_dir=conn.config_dir,
+        transferBufferSize=conn.transferBufferSize,
+        hardware=machine_hardware,
+    )
+
+    # Create fake job with two target and schedule it
+    job = Job(
+        name=utils.random_name(),
+        inputs={},
+        input_directory=utils.random_name(),
+        output_directory=utils.random_name(),
+        tmp_directory=utils.random_name(),
+    )
+    local_target = LocalTarget()
+    docker_target = Target(
+        deployment=get_docker_deploy_config(),
+        service="test-multi-targ-1",
+        workdir=utils.random_name(),
+    )
+    binding_config = BindingConfig(targets=[local_target, docker_target])
+
+    hardware_requirement = Hardware(cores=1)
+    task_pending = [
+        asyncio.create_task(
+            context.scheduler.schedule(job, binding_config, hardware_requirement)
+        )
+    ]
+    assert len(task_pending) == 1
+
+    # Available resources to schedule the job on the first target (timeout parameter useful if a deadlock occurs)
+    _, task_pending = await asyncio.wait(
+        task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
+    )
+    assert len(task_pending) == 0
+    assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
+
+    # Check if it has been scheduled into the first target
+    assert (
+        context.scheduler.job_allocations[job.name].target.deployment.name
+        == LOCAL_LOCATION
+    )
+
+    # Jobs change their status in RUNNING
+    await context.scheduler.notify_status(job.name, Status.RUNNING)
+    assert context.scheduler.job_allocations[job.name].status == Status.RUNNING
+
+    # Jobs change their status in COMPLETED
+    await context.scheduler.notify_status(job.name, Status.COMPLETED)
+    assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_multi_targets_two_jobs(context: StreamFlowContext):
+    """
+    Test scheduling two jobs with two same targets: Local and Docker Image.
+    The first job will be scheduled in the local target and the second job in the docker target because the local resources will be full.
+    """
+
+    # Inject custom connector to manipolate available resources
+    machine_hardware = Hardware(cores=1)
+    conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = InjectedConnector(
+        deployment_name=conn.deployment_name,
+        config_dir=conn.config_dir,
+        transferBufferSize=conn.transferBufferSize,
+        hardware=machine_hardware,
+    )
+
+    # Create fake job with two target and schedule it
+    jobs = []
+    for _ in range(2):
+        jobs.append(
+            Job(
+                name=utils.random_name(),
+                inputs={},
+                input_directory=utils.random_name(),
+                output_directory=utils.random_name(),
+                tmp_directory=utils.random_name(),
+            )
+        )
+    local_target = LocalTarget()
+    docker_target = Target(
+        deployment=get_docker_deploy_config(),
+        service="test-multi-targ-2",
+        workdir=utils.random_name(),
+    )
+    binding_config = BindingConfig(targets=[local_target, docker_target])
+
+    hardware_requirement = Hardware(cores=1)
+    task_pending = [
+        asyncio.create_task(
+            context.scheduler.schedule(job, binding_config, hardware_requirement)
+        )
+        for job in jobs
+    ]
+    assert len(task_pending) == 2
+
+    # Available resources to schedule the job on the first target (timeout parameter useful if a deadlock occurs)
+    _, task_pending = await asyncio.wait(
+        task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
+    )
+    assert len(task_pending) == 0
+    for j in jobs:
+        assert context.scheduler.job_allocations[j.name].status == Status.FIREABLE
+        print(j.name, context.scheduler.job_allocations[j.name].target)
+
+    # Check if they have been scheduled into the right targets
+    assert (
+        context.scheduler.job_allocations[jobs[0].name].target.deployment.name
+        == LOCAL_LOCATION
+    )
+    assert (
+        context.scheduler.job_allocations[jobs[1].name].target.deployment.name
+        == get_docker_deploy_config().name
+    )
+
+    # Jobs change their status in RUNNING
+    for j in jobs:
+        await context.scheduler.notify_status(j.name, Status.RUNNING)
+        assert context.scheduler.job_allocations[j.name].status == Status.RUNNING
+
+    # Jobs change their status in COMPLETED
+    for j in jobs:
+        await context.scheduler.notify_status(j.name, Status.COMPLETED)
+        assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
