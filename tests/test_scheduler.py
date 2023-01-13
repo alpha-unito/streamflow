@@ -118,7 +118,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     assert len(task_pending) == 1
     assert context.scheduler.job_allocations[jobs[0].name].status == Status.RUNNING
 
-    # First job completed and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
+    # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
     await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
     _, task_pending = await asyncio.wait(
         task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
@@ -146,7 +146,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
         tmp_directory=100,
     )
 
-    # Inject custom connector to manipolate available resources
+    # Inject custom connector to manipulate available resources
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
         deployment_name=conn.deployment_name,
@@ -201,7 +201,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
 async def test_multi_env(context: StreamFlowContext):
     """Test scheduling two jobs on two different environments."""
 
-    # Inject custom connector to manipolate available resources
+    # Inject custom connector to manipulate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
@@ -262,9 +262,9 @@ async def test_multi_env(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_multi_targets_one_job(context: StreamFlowContext):
-    """Test scheduling one jobs with two targets: Local and Docker Image. The job will be schedulated in the first"""
+    """Test scheduling one jobs with two targets: Local and Docker Image. The job will be scheduled in the first"""
 
-    # Inject custom connector to manipolate available resources
+    # Inject custom connector to manipulate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
@@ -327,7 +327,7 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     The first job will be scheduled in the local target and the second job in the docker target because the local resources will be full.
     """
 
-    # Inject custom connector to manipolate available resources
+    # Inject custom connector to manipulate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
