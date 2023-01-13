@@ -19,7 +19,7 @@ from streamflow.core.deployment import (
 from streamflow.deployment.connector import LocalConnector
 
 
-class InjectedConnector(LocalConnector):
+class CustomConnector(LocalConnector):
     def __init__(
         self,
         deployment_name: str,
@@ -72,9 +72,9 @@ async def test_single_env_few_resources(context: StreamFlowContext):
         tmp_directory=100,
     )
 
-    # inject custom connector to manipolate available resources
+    # inject custom connector to manipulate available resources
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = InjectedConnector(
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
         deployment_name=conn.deployment_name,
         config_dir=conn.config_dir,
         transferBufferSize=conn.transferBufferSize,
@@ -111,14 +111,14 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     assert len(task_pending) == 1
     assert context.scheduler.job_allocations[jobs[0].name].status == Status.FIREABLE
 
-    # First job change status in RUNNING and continue to keep all resources
+    # First job changes status to RUNNING and continue to keep all resources
     # Testing that second job is not scheduled (timeout parameter necessary)
     await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
     _, task_pending = await asyncio.wait(task_pending, timeout=2)
     assert len(task_pending) == 1
     assert context.scheduler.job_allocations[jobs[0].name].status == Status.RUNNING
 
-    # First job complete and the second job can be schedulated (timeout parameter useful if a deadlock occurs)
+    # First job completed and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
     await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
     _, task_pending = await asyncio.wait(
         task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
@@ -127,10 +127,9 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     assert context.scheduler.job_allocations[jobs[0].name].status == Status.COMPLETED
     assert context.scheduler.job_allocations[jobs[1].name].status == Status.FIREABLE
 
-    # Second job complete
+    # Second job completed
     await context.scheduler.notify_status(jobs[1].name, Status.RUNNING)
     assert context.scheduler.job_allocations[jobs[1].name].status == Status.RUNNING
-
     await context.scheduler.notify_status(jobs[1].name, Status.COMPLETED)
     assert context.scheduler.job_allocations[jobs[1].name].status == Status.COMPLETED
 
@@ -149,7 +148,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
 
     # Inject custom connector to manipolate available resources
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = InjectedConnector(
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
         deployment_name=conn.deployment_name,
         config_dir=conn.config_dir,
         transferBufferSize=conn.transferBufferSize,
@@ -187,12 +186,12 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
     for j in jobs:
         assert context.scheduler.job_allocations[j.name].status == Status.FIREABLE
 
-    # Jobs change their status in RUNNING
+    # Jobs change status to RUNNING
     for j in jobs:
         await context.scheduler.notify_status(j.name, Status.RUNNING)
         assert context.scheduler.job_allocations[j.name].status == Status.RUNNING
 
-    # Jobs change their status in COMPLETED
+    # Jobs change status to COMPLETED
     for j in jobs:
         await context.scheduler.notify_status(j.name, Status.COMPLETED)
         assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
@@ -205,7 +204,7 @@ async def test_multi_env(context: StreamFlowContext):
     # Inject custom connector to manipolate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = InjectedConnector(
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
         deployment_name=conn.deployment_name,
         config_dir=conn.config_dir,
         transferBufferSize=conn.transferBufferSize,
@@ -250,12 +249,12 @@ async def test_multi_env(context: StreamFlowContext):
     for j, _ in jobs:
         assert context.scheduler.job_allocations[j.name].status == Status.FIREABLE
 
-    # Jobs change their status in RUNNING
+    # Jobs change status to RUNNING
     for j, _ in jobs:
         await context.scheduler.notify_status(j.name, Status.RUNNING)
         assert context.scheduler.job_allocations[j.name].status == Status.RUNNING
 
-    # Jobs change their status in COMPLETED
+    # Jobs change status to COMPLETED
     for j, _ in jobs:
         await context.scheduler.notify_status(j.name, Status.COMPLETED)
         assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
@@ -263,19 +262,19 @@ async def test_multi_env(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_multi_targets_one_job(context: StreamFlowContext):
-    """Test scheduling one jobs with two targets: Local and Docker Image. The job will be schedulated in the first because is free"""
+    """Test scheduling one jobs with two targets: Local and Docker Image. The job will be schedulated in the first"""
 
     # Inject custom connector to manipolate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = InjectedConnector(
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
         deployment_name=conn.deployment_name,
         config_dir=conn.config_dir,
         transferBufferSize=conn.transferBufferSize,
         hardware=machine_hardware,
     )
 
-    # Create fake job with two target and schedule it
+    # Create fake job with two targets and schedule it
     job = Job(
         name=utils.random_name(),
         inputs={},
@@ -312,11 +311,11 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
         == LOCAL_LOCATION
     )
 
-    # Jobs change their status in RUNNING
+    # Job changes status to RUNNING
     await context.scheduler.notify_status(job.name, Status.RUNNING)
     assert context.scheduler.job_allocations[job.name].status == Status.RUNNING
 
-    # Jobs change their status in COMPLETED
+    # Job changes status to COMPLETED
     await context.scheduler.notify_status(job.name, Status.COMPLETED)
     assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
 
@@ -331,14 +330,14 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     # Inject custom connector to manipolate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = InjectedConnector(
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
         deployment_name=conn.deployment_name,
         config_dir=conn.config_dir,
         transferBufferSize=conn.transferBufferSize,
         hardware=machine_hardware,
     )
 
-    # Create fake job with two target and schedule it
+    # Create fake jobs with two same targets and schedule them
     jobs = []
     for _ in range(2):
         jobs.append(
@@ -367,14 +366,13 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     ]
     assert len(task_pending) == 2
 
-    # Available resources to schedule the job on the first target (timeout parameter useful if a deadlock occurs)
+    # Available resources to schedule the jobs on the two targets (timeout parameter useful if a deadlock occurs)
     _, task_pending = await asyncio.wait(
         task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
     )
     assert len(task_pending) == 0
     for j in jobs:
         assert context.scheduler.job_allocations[j.name].status == Status.FIREABLE
-        print(j.name, context.scheduler.job_allocations[j.name].target)
 
     # Check if they have been scheduled into the right targets
     assert (
@@ -386,12 +384,12 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
         == get_docker_deploy_config().name
     )
 
-    # Jobs change their status in RUNNING
+    # Jobs change status to RUNNING
     for j in jobs:
         await context.scheduler.notify_status(j.name, Status.RUNNING)
         assert context.scheduler.job_allocations[j.name].status == Status.RUNNING
 
-    # Jobs change their status in COMPLETED
+    # Jobs change status to COMPLETED
     for j in jobs:
         await context.scheduler.notify_status(j.name, Status.COMPLETED)
         assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
