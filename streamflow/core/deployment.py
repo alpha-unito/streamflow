@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
     from streamflow.core.workflow import Job
-    from typing import MutableSequence, MutableMapping, Optional, Any, Tuple, Union
+    from typing import MutableSequence, MutableMapping, Any
 
 LOCAL_LOCATION = "__LOCAL__"
 
@@ -29,13 +29,13 @@ def _init_workdir(deployment_name: str) -> str:
         return os.path.join(tempfile.gettempdir(), "streamflow")
 
 
-class Location(object):
+class Location:
     __slots__ = ("name", "deployment", "service")
 
-    def __init__(self, name: str, deployment: str, service: Optional[str] = None):
+    def __init__(self, name: str, deployment: str, service: str | None = None):
         self.name: str = name
         self.deployment: str = deployment
-        self.service: Optional[str] = service
+        self.service: str | None = service
 
     def __eq__(self, other):
         if not isinstance(other, Location):
@@ -77,8 +77,8 @@ class Connector(SchemaEntity):
         dst: str,
         locations: MutableSequence[Location],
         kind: ConnectorCopyKind,
-        source_connector: Optional[Connector] = None,
-        source_location: Optional[Location] = None,
+        source_connector: Connector | None = None,
+        source_location: Location | None = None,
         read_only: bool = False,
     ) -> None:
         ...
@@ -90,10 +90,10 @@ class Connector(SchemaEntity):
     @abstractmethod
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         ...
 
@@ -103,14 +103,14 @@ class Connector(SchemaEntity):
         location: Location,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
         capture_output: bool = False,
-        timeout: Optional[int] = None,
-        job_name: Optional[str] = None,
-    ) -> Optional[Tuple[Optional[Any], int]]:
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
         ...
 
     @abstractmethod
@@ -137,7 +137,7 @@ class DeploymentManager(SchemaEntity):
         ...
 
     @abstractmethod
-    def get_connector(self, deployment_name: str) -> Optional[Connector]:
+    def get_connector(self, deployment_name: str) -> Connector | None:
         ...
 
     @abstractmethod
@@ -163,12 +163,12 @@ class DeploymentConfig(Config):
         config: MutableMapping[str, Any],
         external: bool = False,
         lazy: bool = True,
-        workdir: Optional[str] = None,
+        workdir: str | None = None,
     ) -> None:
         super().__init__(name, type, config)
         self.external = external
         self.lazy: bool = lazy
-        self.workdir: Optional[str] = workdir
+        self.workdir: str | None = workdir
 
     @classmethod
     async def load(
@@ -208,17 +208,17 @@ class Target(PersistableEntity):
         self,
         deployment: DeploymentConfig,
         locations: int = 1,
-        service: Optional[str] = None,
-        scheduling_group: Optional[str] = None,
-        scheduling_policy: Optional[Config] = None,
-        workdir: Optional[str] = None,
+        service: str | None = None,
+        scheduling_group: str | None = None,
+        scheduling_policy: Config | None = None,
+        workdir: str | None = None,
     ):
         super().__init__()
         self.deployment: DeploymentConfig = deployment
         self.locations: int = locations
-        self.service: Optional[str] = service
-        self.scheduling_group: Optional[str] = scheduling_group
-        self.scheduling_policy: Optional[Config] = scheduling_policy or Config(
+        self.service: str | None = service
+        self.scheduling_group: str | None = scheduling_group
+        self.scheduling_policy: Config | None = scheduling_policy or Config(
             name="__DEFAULT__", type="data_locality", config={}
         )
         self.workdir: str = (
@@ -267,7 +267,7 @@ class Target(PersistableEntity):
 class LocalTarget(Target):
     __deployment_config = None
 
-    def __init__(self, workdir: Optional[str] = None):
+    def __init__(self, workdir: str | None = None):
         super().__init__(
             deployment=self._get_deployment_config(), locations=1, workdir=workdir
         )

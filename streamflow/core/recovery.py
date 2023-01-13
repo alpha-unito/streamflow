@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
     from streamflow.core.workflow import Job, CommandOutput, Step
-    from typing import Optional, MutableMapping, Any
+    from typing import MutableMapping, Any
 
 
 class CheckpointManager(SchemaEntity):
@@ -46,7 +46,7 @@ class FailureManager(SchemaEntity):
         ...
 
 
-class ReplayRequest(object):
+class ReplayRequest:
     __slots__ = ("sender", "target", "version")
 
     def __init__(self, sender: str, target: str, version: int = 1):
@@ -55,11 +55,11 @@ class ReplayRequest(object):
         self.version: int = version
 
 
-class ReplayResponse(object):
+class ReplayResponse:
     __slots__ = ("job", "outputs", "version")
 
     def __init__(
-        self, job: str, outputs: Optional[MutableMapping[str, Any]], version: int = 1
+        self, job: str, outputs: MutableMapping[str, Any] | None, version: int = 1
     ):
         self.job: str = job
         self.outputs: MutableMapping[str, Any] = outputs

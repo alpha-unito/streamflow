@@ -1,14 +1,16 @@
+from __future__ import annotations
+
 import io
 import json
 from contextlib import redirect_stdout
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from cwltest import utils
 
 
 def pytest_cwl_execute_test(
-    config: utils.CWLTestConfig, processfile: str, jobfile: Optional[str]
-) -> Tuple[int, Optional[Dict[str, Any]]]:
+    config: utils.CWLTestConfig, processfile: str, jobfile: str | None
+) -> tuple[int, dict[str, Any] | None]:
     from streamflow.core.exception import WorkflowException
     from streamflow.cwl.runner import main
 

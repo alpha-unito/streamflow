@@ -9,10 +9,6 @@ from typing import (
     Any,
     MutableMapping,
     MutableSequence,
-    Optional,
-    Set,
-    Tuple,
-    Union,
     cast,
 )
 
@@ -40,7 +36,7 @@ from streamflow.workflow.utils import get_token_value
 async def _check_glob_path(
     connector: Connector,
     workflow: Workflow,
-    location: Optional[Location],
+    location: Location | None,
     input_directory: str,
     output_directory: str,
     tmp_directory: str,
@@ -78,9 +74,9 @@ async def _process_secondary_file(
     from_expression: bool,
     existing_sf: MutableMapping[str, Any],
     load_contents: bool,
-    load_listing: Optional[LoadListing],
+    load_listing: LoadListing | None,
     only_retrieve_from_token: bool,
-) -> Optional[MutableMapping[str, Any]]:
+) -> MutableMapping[str, Any] | None:
     # If value is None, simply return None
     if secondary_file is None:
         return None
@@ -161,7 +157,7 @@ async def _register_path(
     path: str,
     relpath: str,
     data_type: DataType = DataType.PRIMARY,
-) -> Optional[DataLocation]:
+) -> DataLocation | None:
     if real_path := await remotepath.follow_symlink(context, connector, location, path):
         if real_path != path:
             if data_locations := context.data_manager.get_data_locations(
@@ -185,9 +181,7 @@ async def _register_path(
                 ):
                     data_location = data_locations[0]
                 else:
-                    raise WorkflowExecutionException(
-                        "Error registering path {}".format(path)
-                    )
+                    raise WorkflowExecutionException(f"Error registering path {path}")
             link_location = context.data_manager.register_path(
                 location=location,
                 path=path,
@@ -205,9 +199,9 @@ async def _register_path(
 
 def build_context(
     inputs: MutableMapping[str, Token],
-    output_directory: Optional[str] = None,
-    tmp_directory: Optional[str] = None,
-    hardware: Optional[Hardware] = None,
+    output_directory: str | None = None,
+    tmp_directory: str | None = None,
+    hardware: Hardware | None = None,
 ) -> MutableMapping[str, Any]:
     context = {"inputs": {}, "self": None, "runtime": {}}
     for name, token in inputs.items():
@@ -230,8 +224,8 @@ async def build_token_value(
     context: StreamFlowContext,
     js_context: MutableMapping[str, Any],
     full_js: bool,
-    expression_lib: Optional[MutableSequence[str]],
-    secondary_files: Optional[MutableSequence[SecondaryFile]],
+    expression_lib: MutableSequence[str] | None,
+    secondary_files: MutableSequence[SecondaryFile] | None,
     connector: Connector,
     locations: MutableSequence[Location],
     token_value: Any,
@@ -389,7 +383,7 @@ def check_token_type(
     name: str,
     token_value: Any,
     token_type: str,
-    enum_symbols: Optional[MutableSequence[str]],
+    enum_symbols: MutableSequence[str] | None,
     optional: bool,
 ):
     if isinstance(token_value, Token):
@@ -397,26 +391,24 @@ def check_token_type(
     elif token_type == "Any":  # nosec
         if token_value is None:
             raise WorkflowExecutionException(
-                "Token {} is of type `Any`: it cannot be null.".format(name)
+                f"Token {name} is of type `Any`: it cannot be null."
             )
     elif token_type == "null":  # nosec
         if token_value is not None:
-            raise WorkflowExecutionException("Token {} should be null.".format(name))
+            raise WorkflowExecutionException(f"Token {name} should be null.")
     elif token_value is None:
         if not optional:
-            raise WorkflowExecutionException("Token {} is not optional.".format(name))
+            raise WorkflowExecutionException(f"Token {name} is not optional.")
     elif token_type == "enum":  # nosec
         if token_value not in enum_symbols:
             raise WorkflowExecutionException(
-                "Value {} is not valid for token {}.".format(token_value, name)
+                f"Value {token_value} is not valid for token {name}."
             )
     elif (inferred_type := infer_type_from_token(token_value)) != token_type:
         # In CWL, long is considered as a subtype of double
         if inferred_type != "long" or token_type != "double":  # nosec
             raise WorkflowExecutionException(
-                "Expected {} token of type {}, got {}.".format(
-                    name, token_type, inferred_type
-                )
+                f"Expected {name} token of type {token_type}, got {inferred_type}."
             )
 
 
@@ -424,8 +416,8 @@ def eval_expression(
     expression: str,
     context: MutableMapping[str, Any],
     full_js: bool = False,
-    expression_lib: Optional[MutableSequence[str]] = None,
-    timeout: Optional[int] = None,
+    expression_lib: MutableSequence[str] | None = None,
+    timeout: int | None = None,
     strip_whitespace: bool = True,
 ) -> Any:
     if isinstance(expression, str) and ("$(" in expression or "${" in expression):
@@ -446,12 +438,12 @@ def eval_expression(
 async def expand_glob(
     connector: Connector,
     workflow: Workflow,
-    location: Optional[Location],
+    location: Location | None,
     input_directory: str,
     output_directory: str,
     tmp_directory: str,
     path: str,
-) -> MutableSequence[Tuple[str, str]]:
+) -> MutableSequence[tuple[str, str]]:
     paths = await remotepath.resolve(connector, location, path) or []
     effective_paths = await asyncio.gather(
         *(
@@ -483,7 +475,7 @@ async def expand_glob(
 
 async def get_class_from_path(
     path: str, job: Job, context: StreamFlowContext
-) -> Optional[str]:
+) -> str | None:
     connector = context.scheduler.get_connector(job.name)
     locations = context.scheduler.get_locations(job.name)
     for location in locations:
@@ -493,7 +485,7 @@ async def get_class_from_path(
             else "Directory"
         )
     raise WorkflowExecutionException(
-        "Impossible to retrieve CWL token class for path {}".format(path)
+        f"Impossible to retrieve CWL token class for path {path}"
     )
 
 
@@ -503,10 +495,10 @@ async def get_file_token(
     locations: MutableSequence[Location],
     token_class: str,
     filepath: str,
-    file_format: Optional[str] = None,
-    basename: Optional[str] = None,
+    file_format: str | None = None,
+    basename: str | None = None,
     load_contents: bool = False,
-    load_listing: Optional[LoadListing] = None,
+    load_listing: LoadListing | None = None,
 ) -> MutableMapping[str, Any]:
     path_processor = get_path_processor(connector)
     basename = basename or path_processor.basename(filepath)
@@ -530,9 +522,7 @@ async def get_file_token(
                 if load_contents:
                     if token["size"] > CONTENT_LIMIT:
                         raise WorkflowExecutionException(
-                            "Cannot read contents from files larger than {limit}kB".format(
-                                limit=CONTENT_LIMIT / 1024
-                            )
+                            f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB"
                         )
                     token["contents"] = await remotepath.head(
                         connector, location, real_path, CONTENT_LIMIT
@@ -606,7 +596,7 @@ async def get_listing(
     )
 
 
-def get_path_from_token(token_value: MutableMapping[str, Any]) -> Optional[str]:
+def get_path_from_token(token_value: MutableMapping[str, Any]) -> str | None:
     location = token_value.get("location", token_value.get("path"))
     if location and "://" in location:
         scheme = urllib.parse.urlsplit(location).scheme
@@ -614,7 +604,7 @@ def get_path_from_token(token_value: MutableMapping[str, Any]) -> Optional[str]:
     return location
 
 
-def get_token_class(token_value: Any) -> Optional[str]:
+def get_token_class(token_value: Any) -> str | None:
     if isinstance(token_value, MutableMapping):
         return token_value.get("class", token_value.get("type"))
     else:
@@ -651,12 +641,12 @@ async def process_secondary_files(
     sf_map: MutableMapping[str, Any],
     js_context: MutableMapping[str, Any],
     full_js: bool,
-    expression_lib: Optional[MutableSequence[str]],
+    expression_lib: MutableSequence[str] | None,
     connector: Connector,
     locations: MutableSequence[Location],
     token_value: Any,
-    load_contents: Optional[bool] = None,
-    load_listing: Optional[LoadListing] = None,
+    load_contents: bool | None = None,
+    load_listing: LoadListing | None = None,
     only_retrieve_from_token: bool = False,
 ) -> None:
     sf_tasks, sf_specs = [], []
@@ -742,7 +732,7 @@ async def process_secondary_files(
             )
             if required:
                 raise WorkflowExecutionException(
-                    "Required secondary file {sf} not found".format(sf=sf_spec.pattern)
+                    f"Required secondary file {sf_spec.pattern} not found"
                 )
 
 
@@ -750,10 +740,8 @@ async def register_data(
     context: StreamFlowContext,
     connector: Connector,
     locations: MutableSequence[Location],
-    base_path: Optional[str],
-    token_value: Union[
-        MutableSequence[MutableMapping[str, Any]], MutableMapping[str, Any]
-    ],
+    base_path: str | None,
+    token_value: (MutableSequence[MutableMapping[str, Any]] | MutableMapping[str, Any]),
 ):
     # If `token_value` is a list, process every item independently
     if isinstance(token_value, MutableSequence):
@@ -814,10 +802,10 @@ async def register_data(
 def resolve_dependencies(
     expression: str,
     full_js: bool = False,
-    expression_lib: Optional[MutableSequence[str]] = None,
-    timeout: Optional[int] = None,
+    expression_lib: MutableSequence[str] | None = None,
+    timeout: int | None = None,
     strip_whitespace: bool = True,
-) -> Set[str]:
+) -> set[str]:
     if isinstance(expression, str) and ("$(" in expression or "${" in expression):
         context = {"inputs": {}, "self": {}, "runtime": {}}
         engine = DependencyResolver()
@@ -843,7 +831,7 @@ async def search_in_parent_locations(
     connector: Connector,
     path: str,
     relpath: str,
-    base_path: Optional[str] = None,
+    base_path: str | None = None,
 ) -> MutableSequence[DataLocation]:
     path_processor = get_path_processor(connector)
     current_path = path
@@ -857,7 +845,7 @@ async def search_in_parent_locations(
                 previous_location = None
                 for data_location in sorted(
                     data_locations,
-                    key=lambda l: 0 if l.data_type == DataType.PRIMARY else 1,
+                    key=lambda loc: 0 if loc.data_type == DataType.PRIMARY else 1,
                 ):
                     data_path = (
                         path
@@ -887,9 +875,7 @@ async def search_in_parent_locations(
                             )
                         previous_location = current_location
                 if not actual_locations:
-                    raise WorkflowExecutionException(
-                        "Error registering path {}".format(path)
-                    )
+                    raise WorkflowExecutionException(f"Error registering path {path}")
             return list(actual_locations.values())
         path_tokens = [path_processor.sep]
         path_tokens.extend(
@@ -899,12 +885,12 @@ async def search_in_parent_locations(
     return []
 
 
-class SecondaryFile(object):
+class SecondaryFile:
     __slots__ = ("pattern", "required")
 
-    def __init__(self, pattern: str, required: Union[bool, str]):
+    def __init__(self, pattern: str, required: bool | str):
         self.pattern: str = pattern
-        self.required: Union[bool, str] = required
+        self.required: bool | str = required
 
     def __eq__(self, other):
         if not isinstance(other, SecondaryFile):
@@ -924,17 +910,15 @@ async def update_file_token(
     connector: Connector,
     location: Location,
     token_value: MutableMapping[str, Any],
-    load_contents: Optional[bool],
-    load_listing: Optional[LoadListing] = None,
+    load_contents: bool | None,
+    load_listing: LoadListing | None = None,
 ):
     filepath = get_path_from_token(token_value)
     if load_contents is not None:
         if load_contents and "contents" not in token_value:
             if token_value["size"] > CONTENT_LIMIT:
                 raise WorkflowExecutionException(
-                    "Cannot read contents from files larger than {}kB".format(
-                        round(CONTENT_LIMIT / 1024)
-                    )
+                    f"Cannot read contents from files larger than {round(CONTENT_LIMIT / 1024)}kB"
                 )
             token_value = {
                 **token_value,
@@ -995,7 +979,7 @@ async def write_remote_file(
                         location=(
                             "on local file-system"
                             if isinstance(connector, LocalConnector)
-                            else "on location {res}".format(res=location)
+                            else f"on location {location}"
                         ),
                     )
                 )

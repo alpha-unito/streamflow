@@ -12,13 +12,11 @@ from typing import (
     Iterable,
     MutableMapping,
     MutableSequence,
-    Optional,
-    Set,
     cast,
 )
 
-from streamflow.core.config import BindingConfig
 from streamflow.core import utils
+from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, DeploymentConfig, Location, Target
 from streamflow.core.exception import (
@@ -48,9 +46,7 @@ from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import check_iteration_termination, check_termination
 
 
-def _get_directory(
-    path_processor: ModuleType, directory: Optional[str], target: Target
-):
+def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
     return directory or path_processor.join(target.workdir, utils.random_name())
 
 
@@ -99,11 +95,9 @@ class BaseStep(Step, ABC):
         }
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs):
-                logger.debug("Step {} received termination token".format(self.name))
+                logger.debug(f"Step {self.name} received termination token")
             logger.debug(
-                "Step {} received inputs {}".format(
-                    self.name, [t.tag for t in inputs.values()]
-                )
+                f"Step {self.name} received inputs {[t.tag for t in inputs.values()]}"
             )
         return inputs
 
@@ -131,7 +125,7 @@ class BaseStep(Step, ABC):
             await self._set_status(status)
             logger.log(
                 self._log_level,
-                "{status} Step {name}".format(name=self.name, status=status.name),
+                f"{status.name} Step {self.name}",
             )
 
 
@@ -175,7 +169,7 @@ class Combinator(ABC):
             "workflow": self.workflow.persistent_id,
         }
 
-    def add_combinator(self, combinator: Combinator, items: Set[str]) -> None:
+    def add_combinator(self, combinator: Combinator, items: set[str]) -> None:
         self.combinators[combinator.name] = combinator
         self.items.append(combinator.name)
         self.combinators_map = {
@@ -186,10 +180,10 @@ class Combinator(ABC):
     def add_item(self, item: str) -> None:
         self.items.append(item)
 
-    def get_combinator(self, item: str) -> Optional[Combinator]:
+    def get_combinator(self, item: str) -> Combinator | None:
         return self.combinators.get(self.combinators_map.get(item, ""))
 
-    def get_items(self, recursive: bool = False) -> Set[str]:
+    def get_items(self, recursive: bool = False) -> set[str]:
         items = set(self.items)
         if recursive:
             for combinator in self.combinators.values():
@@ -278,18 +272,14 @@ class CombinatorStep(BaseStep):
                     if check_termination(token):
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                "Step {} received termination token for port {}".format(
-                                    self.name, task_name
-                                )
+                                f"Step {self.name} received termination token for port {task_name}"
                             )
                         terminated.append(task_name)
                     # Otherwise, build combination and set default status to COMPLETED
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                "Step {} received token {} on port {}".format(
-                                    self.name, token.tag, task_name
-                                )
+                                f"Step {self.name} received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
                         async for schema in cast(
@@ -379,8 +369,8 @@ class DefaultCommandOutputProcessor(CommandOutputProcessor):
         self,
         job: Job,
         command_output: CommandOutput,
-        connector: Optional[Connector] = None,
-    ) -> Optional[Token]:
+        connector: Connector | None = None,
+    ) -> Token | None:
         return Token(tag=utils.get_tag(job.inputs.values()), value=command_output.value)
 
 
@@ -390,7 +380,7 @@ class DeployStep(BaseStep):
         name: str,
         workflow: Workflow,
         deployment_config: DeploymentConfig,
-        connector_port: Optional[ConnectorPort] = None,
+        connector_port: ConnectorPort | None = None,
     ):
         super().__init__(name, workflow)
         self.deployment_config: DeploymentConfig = deployment_config
@@ -441,7 +431,7 @@ class DeployStep(BaseStep):
                 "Deploy step must contain a single output port."
             )
 
-    def get_output_port(self, name: Optional[str] = None) -> ConnectorPort:
+    def get_output_port(self, name: str | None = None) -> ConnectorPort:
         return cast(ConnectorPort, super().get_output_port(name))
 
     async def run(self):
@@ -505,7 +495,7 @@ class ExecuteStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow, job_port: JobPort):
         super().__init__(name, workflow)
         self._log_level: int = logging.INFO
-        self.command: Optional[Command] = None
+        self.command: Command | None = None
         self.output_connectors: MutableMapping[str, str] = {}
         self.output_processors: MutableMapping[str, CommandOutputProcessor] = {}
         self.add_input_port("__job__", job_port)
@@ -548,7 +538,7 @@ class ExecuteStep(BaseStep):
         output_name: str,
         output_port: Port,
         command_output: CommandOutput,
-        connector: Optional[Connector] = None,
+        connector: Connector | None = None,
     ) -> None:
         if (
             token := await self.output_processors[output_name].process(
@@ -569,9 +559,7 @@ class ExecuteStep(BaseStep):
         # Update job
         job = await cast(JobPort, self.get_input_port("__job__")).get_job(self.name)
         if job is None:
-            raise WorkflowExecutionException(
-                "Step {} received a null job".format(self.name)
-            )
+            raise WorkflowExecutionException(f"Step {self.name} received a null job")
         job = Job(
             name=job.name,
             inputs=inputs,
@@ -580,7 +568,7 @@ class ExecuteStep(BaseStep):
             tmp_directory=job.tmp_directory,
         )
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Job {name} started".format(name=job.name))
+            logger.debug(f"Job {job.name} started")
         # Initialise command output with default values
         command_output = CommandOutput(value=None, status=Status.FAILED)
         # TODO: Trigger location deployment in case of lazy environments
@@ -594,12 +582,7 @@ class ExecuteStep(BaseStep):
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
                 logger.error(
-                    "FAILED Job {name} with error {error}".format(
-                        name=job.name,
-                        error="with error:\n\t{error}".format(
-                            error=command_output.value
-                        ),
-                    )
+                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
                 )
                 command_output = (
                     await self.workflow.context.failure_manager.handle_failure(
@@ -659,11 +642,7 @@ class ExecuteStep(BaseStep):
                 command_output.status = Status.FAILED
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "{status} Job {name} terminated".format(
-                    name=job.name, status=command_output.status.name
-                )
-            )
+            logger.debug(f"{command_output.status.name} Job {job.name} terminated")
         return command_output.status
 
     async def _save_additional_params(
@@ -801,7 +780,7 @@ class GatherStep(BaseStep):
             super().add_input_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                "{} step must contain a single input port.".format(self.name)
+                f"{self.name} step must contain a single input port."
             )
 
     def add_output_port(self, name: str, port: Port) -> None:
@@ -809,17 +788,17 @@ class GatherStep(BaseStep):
             super().add_output_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
 
     async def run(self):
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single input port.".format(self.name)
+                f"{self.name} step must contain a single input port."
             )
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
         input_port = self.get_input_port()
         while True:
@@ -828,7 +807,7 @@ class GatherStep(BaseStep):
             )
             if check_termination(token):
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug("Step {} received termination token".format(self.name))
+                    logger.debug(f"Step {self.name} received termination token")
                 output_port = self.get_output_port()
                 for tag, tokens in self.token_map.items():
                     output_port.put(
@@ -843,9 +822,7 @@ class GatherStep(BaseStep):
                 break
             else:
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        "Step {} received input {}".format(self.name, token.tag)
-                    )
+                    logger.debug(f"Step {self.name} received input {token.tag}")
                 key = ".".join(token.tag.split(".")[: -self.depth])
                 if key not in self.token_map:
                     self.token_map[key] = []
@@ -890,7 +867,7 @@ class InputInjectorStep(BaseStep, ABC):
             super().add_output_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
 
     @abstractmethod
@@ -903,11 +880,11 @@ class InputInjectorStep(BaseStep, ABC):
         }
         if len(input_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single input port.".format(self.name)
+                f"{self.name} step must contain a single input port."
             )
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
         if input_ports:
             while True:
@@ -922,7 +899,7 @@ class InputInjectorStep(BaseStep, ABC):
                 )
                 if job is None:
                     raise WorkflowExecutionException(
-                        "Step {} received a null job".format(self.name)
+                        f"Step {self.name} received a null job"
                     )
                 try:
                     await self.workflow.context.scheduler.notify_status(
@@ -950,7 +927,7 @@ class InputInjectorStep(BaseStep, ABC):
 class LoopCombinatorStep(CombinatorStep):
     def __init__(self, name: str, workflow: Workflow, combinator: Combinator):
         super().__init__(name, workflow, combinator)
-        self.iteration_terminaton_checklist: MutableMapping[str, Set[str]] = {}
+        self.iteration_terminaton_checklist: MutableMapping[str, set[str]] = {}
 
     async def run(self):
         # Set default status to SKIPPED
@@ -977,9 +954,7 @@ class LoopCombinatorStep(CombinatorStep):
                     if check_termination(token):
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                "Step {} received termination token for port {}".format(
-                                    self.name, task_name
-                                )
+                                f"Step {self.name} received termination token for port {task_name}"
                             )
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
@@ -987,9 +962,8 @@ class LoopCombinatorStep(CombinatorStep):
                         if token.tag in self.iteration_terminaton_checklist[task_name]:
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
-                                    "Step {} received iteration termination token {} for port {}".format(
-                                        self.name, token.tag, task_name
-                                    )
+                                    f"Step {self.name} received iteration termination token {token.tag} "
+                                    f"for port {task_name}"
                                 )
                             self.iteration_terminaton_checklist[task_name].remove(
                                 token.tag
@@ -998,9 +972,8 @@ class LoopCombinatorStep(CombinatorStep):
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                "Step {} received token {} on port {}".format(
-                                    self.name, token.tag, task_name
-                                )
+                                f"Step {self.name} received token {token.tag} "
+                                f"on port {task_name}"
                             )
                         status = Status.COMPLETED
                         if (
@@ -1054,7 +1027,7 @@ class LoopOutputStep(BaseStep, ABC):
             super().add_input_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                "{} step must contain a single input port.".format(self.name)
+                f"{self.name} step must contain a single input port."
             )
 
     def add_output_port(self, name: str, port: Port) -> None:
@@ -1062,17 +1035,17 @@ class LoopOutputStep(BaseStep, ABC):
             super().add_output_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
 
     async def run(self):
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single input port.".format(self.name)
+                f"{self.name} step must contain a single input port."
             )
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
         input_port = self.get_input_port()
         while True:
@@ -1083,7 +1056,7 @@ class LoopOutputStep(BaseStep, ABC):
             # If a TerminationToken is received, terminate the step
             if check_termination(token):
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug("Step {} received termination token".format(self.name))
+                    logger.debug(f"Step {self.name} received termination token")
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
                     break
@@ -1097,17 +1070,13 @@ class LoopOutputStep(BaseStep, ABC):
             elif check_iteration_termination(token):
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        "Step {} received iteration termination token {}.".format(
-                            self.name, token.tag
-                        )
+                        f"Step {self.name} received iteration termination token {token.tag}."
                     )
                 self.size_map[prefix] = int(token.tag.split(".")[-1])
             # Otherwise, store the new token in the map
             else:
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        "Step {} received token {}.".format(self.name, token.tag)
-                    )
+                    logger.debug(f"Step {self.name} received token {token.tag}.")
                 if prefix not in self.token_map:
                     self.token_map[prefix] = []
                 self.token_map[prefix].append(token)
@@ -1135,20 +1104,20 @@ class ScheduleStep(BaseStep):
         workflow: Workflow,
         binding_config: BindingConfig,
         connector_ports: MutableMapping[str, ConnectorPort],
-        job_port: Optional[JobPort] = None,
-        hardware_requirement: Optional[HardwareRequirement] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        job_port: JobPort | None = None,
+        hardware_requirement: HardwareRequirement | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ):
         super().__init__(name, workflow)
         self.binding_config: BindingConfig = binding_config
-        self.hardware_requirement: Optional[HardwareRequirement] = hardware_requirement
-        self.input_directory: Optional[str] = input_directory
-        self.output_directory: Optional[str] = output_directory
-        self.tmp_directory: Optional[str] = tmp_directory
+        self.hardware_requirement: HardwareRequirement | None = hardware_requirement
+        self.input_directory: str | None = input_directory
+        self.output_directory: str | None = output_directory
+        self.tmp_directory: str | None = tmp_directory
         for name, port in connector_ports.items():
-            self.add_input_port("__connector__{}".format(name), port)
+            self.add_input_port(f"__connector__{name}", port)
         self.add_output_port("__job__", job_port or workflow.create_port(cls=JobPort))
 
     @classmethod
@@ -1236,7 +1205,7 @@ class ScheduleStep(BaseStep):
             )
         return params
 
-    def get_output_port(self, name: Optional[str] = None) -> JobPort:
+    def get_output_port(self, name: str | None = None) -> JobPort:
         return cast(JobPort, super().get_output_port(name))
 
     async def run(self):
@@ -1450,7 +1419,7 @@ class TransferStep(BaseStep, ABC):
                             ).get_job(self.name)
                             if job is None:
                                 raise WorkflowExecutionException(
-                                    "Step {} received a null job".format(self.name)
+                                    f"Step {self.name} received a null job"
                                 )
                             # Change default status to COMPLETED
                             status = Status.COMPLETED

@@ -1,4 +1,4 @@
-from typing import Optional
+from __future__ import annotations
 
 from streamflow.core.deployment import Connector
 from streamflow.core.workflow import Job, Port, Token
@@ -15,7 +15,7 @@ class ConnectorPort(Port):
 
 
 class JobPort(Port):
-    async def get_job(self, consumer: str) -> Optional[Job]:
+    async def get_job(self, consumer: str) -> Job | None:
         token = await self.get(consumer)
         if isinstance(token, TerminationToken):
             return None

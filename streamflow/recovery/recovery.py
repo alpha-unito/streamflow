@@ -1,19 +1,21 @@
-from typing import MutableMapping, Optional
+from __future__ import annotations
+
+from typing import MutableMapping
 
 from streamflow.core.workflow import Job, Step, Token
 
 
-class JobVersion(object):
+class JobVersion:
     __slots__ = ("job", "outputs", "step", "version")
 
     def __init__(
         self,
         job: Job,
-        outputs: Optional[MutableMapping[str, Token]],
+        outputs: MutableMapping[str, Token] | None,
         step: Step,
         version: int = 1,
     ):
         self.job: Job = job
-        self.outputs: Optional[MutableMapping[str, Token]] = outputs
+        self.outputs: MutableMapping[str, Token] | None = outputs
         self.step: Step = step
         self.version: int = version

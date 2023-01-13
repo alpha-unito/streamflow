@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import urllib.parse
 from abc import ABC
-from typing import Any, MutableMapping, MutableSequence, Optional
+from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
@@ -71,12 +73,12 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         name: str,
         workflow: Workflow,
         expression: str,
-        expression_lib: Optional[MutableSequence[str]] = None,
+        expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
     ):
         super().__init__(name, workflow)
         self.expression: str = expression
-        self.expression_lib: Optional[MutableSequence[str]] = expression_lib
+        self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
 
     async def _eval(self, inputs: MutableMapping[str, Token]):
@@ -136,9 +138,8 @@ class CWLLoopConditionalStep(CWLConditionalStep):
     async def _on_true(self, inputs: MutableMapping[str, Token]) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                "Step {} condition evaluated true on inputs {}".format(
-                    self.name, [t.tag for t in inputs.values()]
-                )
+                f"Step {self.name} condition evaluated true "
+                f"on inputs {[t.tag for t in inputs.values()]}"
             )
         # Next iteration: propagate outputs to the loop
         for port_name, port in self.get_output_ports().items():
@@ -147,12 +148,11 @@ class CWLLoopConditionalStep(CWLConditionalStep):
     async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                "Step {} condition evaluated false on inputs {}".format(
-                    self.name, [t.tag for t in inputs.values()]
-                )
+                f"Step {self.name} condition evaluated false "
+                f"on inputs {[t.tag for t in inputs.values()]}"
             )
         # Loop termination: propagate outputs outside the loop
-        for port_name, port in self.get_skip_ports().items():
+        for port in self.get_skip_ports().values():
             port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
 
 
@@ -362,7 +362,7 @@ class CWLTransferStep(TransferStep):
         self,
         job: Job,
         token_value: MutableMapping[str, Any],
-        dest_path: Optional[str] = None,
+        dest_path: str | None = None,
     ) -> MutableMapping[str, Any]:
         token_class = utils.get_token_class(token_value)
         # Get allocation and connector

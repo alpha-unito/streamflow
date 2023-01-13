@@ -16,9 +16,7 @@ def load_extensions():
             plugin.register()
             if logger.isEnabledFor(logging.INFO):
                 logger.info(
-                    "Successfully registered plugin {}".format(
-                        get_class_fullname(type(plugin))
-                    )
+                    f"Successfully registered plugin {get_class_fullname(type(plugin))}"
                 )
         else:
             raise InvalidPluginException(

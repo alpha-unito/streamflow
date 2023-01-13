@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -5,7 +7,7 @@ import os
 import posixpath
 import shlex
 from abc import ABC, abstractmethod
-from typing import Any, MutableMapping, MutableSequence, Optional, Tuple
+from typing import Any, MutableMapping, MutableSequence
 
 import pkg_resources
 from cachetools import Cache, TTLCache
@@ -24,7 +26,7 @@ async def _exists_docker_image(image_name: str) -> bool:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(exists_command),
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        stderr=asyncio.subprocess.PIPE,
     )
     await proc.wait()
     return proc.returncode == 0
@@ -35,7 +37,7 @@ async def _pull_docker_image(image_name: str) -> None:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(exists_command),
         stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL
+        stderr=asyncio.subprocess.DEVNULL,
     )
     await proc.wait()
 
@@ -82,8 +84,8 @@ class ContainerConnector(BaseConnector, ABC):
         effective_locations: MutableSequence[Location],
         location: Location,
         path: str,
-        source_location: Optional[Location] = None,
-    ) -> Tuple[MutableMapping[str, Any], MutableSequence[Location]]:
+        source_location: Location | None = None,
+    ) -> tuple[MutableMapping[str, Any], MutableSequence[Location]]:
         # Get all container mounts
         volumes = await self._get_volumes(location.name)
         for volume in volumes:
@@ -149,7 +151,7 @@ class ContainerConnector(BaseConnector, ABC):
         dst: str,
         locations: MutableSequence[Location],
         source_location: Location,
-        source_connector: Optional[Connector] = None,
+        source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
@@ -192,7 +194,7 @@ class ContainerConnector(BaseConnector, ABC):
         self,
         locations: MutableSequence[Location],
         dest_path: str,
-        source_location: Optional[Location] = None,
+        source_location: Location | None = None,
     ) -> MutableSequence[Location]:
         common_paths = {}
         effective_locations = []
@@ -209,7 +211,7 @@ class ContainerConnector(BaseConnector, ABC):
         ...
 
     @abstractmethod
-    async def _get_location(self, location_name: str) -> Optional[AvailableLocation]:
+    async def _get_location(self, location_name: str) -> AvailableLocation | None:
         ...
 
     @abstractmethod
@@ -251,7 +253,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(inspect_command),
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
         return AvailableLocation(
@@ -267,8 +269,8 @@ class DockerBaseConnector(ContainerConnector, ABC):
             [
                 "docker ",
                 "exec {}".format("-i " if interactive else ""),
-                "{} ".format(location.name),
-                "sh -c '{}'".format(command),
+                f"{location.name} ",
+                f"sh -c '{command}'",
             ]
         )
 
@@ -281,7 +283,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(inspect_command),
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
         return json.loads(stdout.decode().strip()) if stdout else []
@@ -293,100 +295,100 @@ class DockerConnector(DockerBaseConnector):
         deployment_name: str,
         config_dir: str,
         image: str,
-        addHost: Optional[MutableSequence[str]] = None,
-        blkioWeight: Optional[int] = None,
-        blkioWeightDevice: Optional[MutableSequence[int]] = None,
-        capAdd: Optional[MutableSequence[str]] = None,
-        capDrop: Optional[MutableSequence[str]] = None,
-        cgroupParent: Optional[str] = None,
-        cidfile: Optional[str] = None,
-        containerIds: Optional[MutableSequence] = None,
-        cpuPeriod: Optional[int] = None,
-        cpuQuota: Optional[int] = None,
-        cpuRTPeriod: Optional[int] = None,
-        cpuRTRuntime: Optional[int] = None,
-        cpuShares: Optional[int] = None,
-        cpus: Optional[float] = None,
-        cpusetCpus: Optional[str] = None,
-        cpusetMems: Optional[str] = None,
-        detachKeys: Optional[str] = None,
-        device: Optional[MutableSequence[str]] = None,
-        deviceCgroupRule: Optional[MutableSequence[str]] = None,
-        deviceReadBps: Optional[MutableSequence[str]] = None,
-        deviceReadIops: Optional[MutableSequence[str]] = None,
-        deviceWriteBps: Optional[MutableSequence[str]] = None,
-        deviceWriteIops: Optional[MutableSequence[str]] = None,
+        addHost: MutableSequence[str] | None = None,
+        blkioWeight: int | None = None,
+        blkioWeightDevice: MutableSequence[int] | None = None,
+        capAdd: MutableSequence[str] | None = None,
+        capDrop: MutableSequence[str] | None = None,
+        cgroupParent: str | None = None,
+        cidfile: str | None = None,
+        containerIds: MutableSequence | None = None,
+        cpuPeriod: int | None = None,
+        cpuQuota: int | None = None,
+        cpuRTPeriod: int | None = None,
+        cpuRTRuntime: int | None = None,
+        cpuShares: int | None = None,
+        cpus: float | None = None,
+        cpusetCpus: str | None = None,
+        cpusetMems: str | None = None,
+        detachKeys: str | None = None,
+        device: MutableSequence[str] | None = None,
+        deviceCgroupRule: MutableSequence[str] | None = None,
+        deviceReadBps: MutableSequence[str] | None = None,
+        deviceReadIops: MutableSequence[str] | None = None,
+        deviceWriteBps: MutableSequence[str] | None = None,
+        deviceWriteIops: MutableSequence[str] | None = None,
         disableContentTrust: bool = True,
-        dns: Optional[MutableSequence[str]] = None,
-        dnsOptions: Optional[MutableSequence[str]] = None,
-        dnsSearch: Optional[MutableSequence[str]] = None,
-        domainname: Optional[str] = None,
-        entrypoint: Optional[str] = None,
-        env: Optional[MutableSequence[str]] = None,
-        envFile: Optional[MutableSequence[str]] = None,
-        expose: Optional[MutableSequence[str]] = None,
-        gpus: Optional[MutableSequence[str]] = None,
-        groupAdd: Optional[MutableSequence[str]] = None,
-        healthCmd: Optional[str] = None,
-        healthInterval: Optional[str] = None,
-        healthRetries: Optional[int] = None,
-        healthStartPeriod: Optional[str] = None,
-        healthTimeout: Optional[str] = None,
-        hostname: Optional[str] = None,
+        dns: MutableSequence[str] | None = None,
+        dnsOptions: MutableSequence[str] | None = None,
+        dnsSearch: MutableSequence[str] | None = None,
+        domainname: str | None = None,
+        entrypoint: str | None = None,
+        env: MutableSequence[str] | None = None,
+        envFile: MutableSequence[str] | None = None,
+        expose: MutableSequence[str] | None = None,
+        gpus: MutableSequence[str] | None = None,
+        groupAdd: MutableSequence[str] | None = None,
+        healthCmd: str | None = None,
+        healthInterval: str | None = None,
+        healthRetries: int | None = None,
+        healthStartPeriod: str | None = None,
+        healthTimeout: str | None = None,
+        hostname: str | None = None,
         init: bool = True,
-        ip: Optional[str] = None,
-        ip6: Optional[str] = None,
-        ipc: Optional[str] = None,
-        isolation: Optional[str] = None,
-        kernelMemory: Optional[int] = None,
-        label: Optional[MutableSequence[str]] = None,
-        labelFile: Optional[MutableSequence[str]] = None,
-        link: Optional[MutableSequence[str]] = None,
-        linkLocalIP: Optional[MutableSequence[str]] = None,
+        ip: str | None = None,
+        ip6: str | None = None,
+        ipc: str | None = None,
+        isolation: str | None = None,
+        kernelMemory: int | None = None,
+        label: MutableSequence[str] | None = None,
+        labelFile: MutableSequence[str] | None = None,
+        link: MutableSequence[str] | None = None,
+        linkLocalIP: MutableSequence[str] | None = None,
         locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
-        logDriver: Optional[str] = None,
-        logOpts: Optional[MutableSequence[str]] = None,
-        macAddress: Optional[str] = None,
-        memory: Optional[int] = None,
-        memoryReservation: Optional[int] = None,
-        memorySwap: Optional[int] = None,
-        memorySwappiness: Optional[int] = None,
-        mount: Optional[MutableSequence[str]] = None,
-        network: Optional[MutableSequence[str]] = None,
-        networkAlias: Optional[MutableSequence[str]] = None,
+        logDriver: str | None = None,
+        logOpts: MutableSequence[str] | None = None,
+        macAddress: str | None = None,
+        memory: int | None = None,
+        memoryReservation: int | None = None,
+        memorySwap: int | None = None,
+        memorySwappiness: int | None = None,
+        mount: MutableSequence[str] | None = None,
+        network: MutableSequence[str] | None = None,
+        networkAlias: MutableSequence[str] | None = None,
         noHealthcheck: bool = False,
         oomKillDisable: bool = False,
-        oomScoreAdj: Optional[int] = None,
-        pid: Optional[str] = None,
-        pidsLimit: Optional[int] = None,
+        oomScoreAdj: int | None = None,
+        pid: str | None = None,
+        pidsLimit: int | None = None,
         privileged: bool = False,
-        publish: Optional[MutableSequence[str]] = None,
+        publish: MutableSequence[str] | None = None,
         publishAll: bool = False,
         readOnly: bool = False,
         replicas: int = 1,
         resourcesCacheSize: int = None,
         resourcesCacheTTL: int = None,
-        restart: Optional[str] = None,
+        restart: str | None = None,
         rm: bool = True,
-        runtime: Optional[str] = None,
-        securityOpts: Optional[MutableSequence[str]] = None,
-        shmSize: Optional[int] = None,
+        runtime: str | None = None,
+        securityOpts: MutableSequence[str] | None = None,
+        shmSize: int | None = None,
         sigProxy: bool = True,
-        stopSignal: Optional[str] = None,
-        stopTimeout: Optional[int] = None,
-        storageOpts: Optional[MutableSequence[str]] = None,
-        sysctl: Optional[MutableSequence[str]] = None,
-        tmpfs: Optional[MutableSequence[str]] = None,
+        stopSignal: str | None = None,
+        stopTimeout: int | None = None,
+        storageOpts: MutableSequence[str] | None = None,
+        sysctl: MutableSequence[str] | None = None,
+        tmpfs: MutableSequence[str] | None = None,
         transferBufferSize: int = 2**16,
-        ulimit: Optional[MutableSequence[str]] = None,
-        user: Optional[str] = None,
-        userns: Optional[str] = None,
-        uts: Optional[str] = None,
-        volume: Optional[MutableSequence[str]] = None,
-        volumeDriver: Optional[str] = None,
-        volumesFrom: Optional[MutableSequence[str]] = None,
-        workdir: Optional[str] = None,
+        ulimit: MutableSequence[str] | None = None,
+        user: str | None = None,
+        userns: str | None = None,
+        uts: str | None = None,
+        volume: MutableSequence[str] | None = None,
+        volumeDriver: str | None = None,
+        volumesFrom: MutableSequence[str] | None = None,
+        workdir: str | None = None,
     ):
         super().__init__(
             deployment_name=deployment_name,
@@ -398,95 +400,95 @@ class DockerConnector(DockerBaseConnector):
             resourcesCacheTTL=resourcesCacheTTL,
         )
         self.image: str = image
-        self.addHost: Optional[MutableSequence[str]] = addHost
-        self.blkioWeight: Optional[int] = blkioWeight
-        self.blkioWeightDevice: Optional[MutableSequence[int]] = blkioWeightDevice
-        self.capAdd: Optional[MutableSequence[str]] = capAdd
-        self.capDrop: Optional[MutableSequence[str]] = capDrop
-        self.cgroupParent: Optional[str] = cgroupParent
-        self.cidfile: Optional[str] = cidfile
+        self.addHost: MutableSequence[str] | None = addHost
+        self.blkioWeight: int | None = blkioWeight
+        self.blkioWeightDevice: MutableSequence[int] | None = blkioWeightDevice
+        self.capAdd: MutableSequence[str] | None = capAdd
+        self.capDrop: MutableSequence[str] | None = capDrop
+        self.cgroupParent: str | None = cgroupParent
+        self.cidfile: str | None = cidfile
         self.containerIds: MutableSequence[str] = containerIds or []
-        self.cpuPeriod: Optional[int] = cpuPeriod
-        self.cpuQuota: Optional[int] = cpuQuota
-        self.cpuRTPeriod: Optional[int] = cpuRTPeriod
-        self.cpuRTRuntime: Optional[int] = cpuRTRuntime
-        self.cpuShares: Optional[int] = cpuShares
-        self.cpus: Optional[float] = cpus
-        self.cpusetCpus: Optional[str] = cpusetCpus
-        self.cpusetMems: Optional[str] = cpusetMems
-        self.detachKeys: Optional[str] = detachKeys
-        self.device: Optional[MutableSequence[str]] = device
-        self.deviceCgroupRule: Optional[MutableSequence[str]] = deviceCgroupRule
-        self.deviceReadBps: Optional[MutableSequence[str]] = deviceReadBps
-        self.deviceReadIops: Optional[MutableSequence[str]] = deviceReadIops
-        self.deviceWriteBps: Optional[MutableSequence[str]] = deviceWriteBps
-        self.deviceWriteIops: Optional[MutableSequence[str]] = deviceWriteIops
+        self.cpuPeriod: int | None = cpuPeriod
+        self.cpuQuota: int | None = cpuQuota
+        self.cpuRTPeriod: int | None = cpuRTPeriod
+        self.cpuRTRuntime: int | None = cpuRTRuntime
+        self.cpuShares: int | None = cpuShares
+        self.cpus: float | None = cpus
+        self.cpusetCpus: str | None = cpusetCpus
+        self.cpusetMems: str | None = cpusetMems
+        self.detachKeys: str | None = detachKeys
+        self.device: MutableSequence[str] | None = device
+        self.deviceCgroupRule: MutableSequence[str] | None = deviceCgroupRule
+        self.deviceReadBps: MutableSequence[str] | None = deviceReadBps
+        self.deviceReadIops: MutableSequence[str] | None = deviceReadIops
+        self.deviceWriteBps: MutableSequence[str] | None = deviceWriteBps
+        self.deviceWriteIops: MutableSequence[str] | None = deviceWriteIops
         self.disableContentTrust: bool = disableContentTrust
-        self.dns: Optional[MutableSequence[str]] = dns
-        self.dnsOptions: Optional[MutableSequence[str]] = dnsOptions
-        self.dnsSearch: Optional[MutableSequence[str]] = dnsSearch
-        self.domainname: Optional[str] = domainname
-        self.entrypoint: Optional[str] = entrypoint
-        self.env: Optional[MutableSequence[str]] = env
-        self.envFile: Optional[MutableSequence[str]] = envFile
-        self.expose: Optional[MutableSequence[str]] = expose
-        self.gpus: Optional[MutableSequence[str]] = gpus
-        self.groupAdd: Optional[MutableSequence[str]] = groupAdd
-        self.healthCmd: Optional[str] = healthCmd
-        self.healthInterval: Optional[str] = healthInterval
-        self.healthRetries: Optional[int] = healthRetries
-        self.healthStartPeriod: Optional[str] = healthStartPeriod
-        self.healthTimeout: Optional[str] = healthTimeout
-        self.hostname: Optional[str] = hostname
+        self.dns: MutableSequence[str] | None = dns
+        self.dnsOptions: MutableSequence[str] | None = dnsOptions
+        self.dnsSearch: MutableSequence[str] | None = dnsSearch
+        self.domainname: str | None = domainname
+        self.entrypoint: str | None = entrypoint
+        self.env: MutableSequence[str] | None = env
+        self.envFile: MutableSequence[str] | None = envFile
+        self.expose: MutableSequence[str] | None = expose
+        self.gpus: MutableSequence[str] | None = gpus
+        self.groupAdd: MutableSequence[str] | None = groupAdd
+        self.healthCmd: str | None = healthCmd
+        self.healthInterval: str | None = healthInterval
+        self.healthRetries: int | None = healthRetries
+        self.healthStartPeriod: str | None = healthStartPeriod
+        self.healthTimeout: str | None = healthTimeout
+        self.hostname: str | None = hostname
         self.init: bool = init
-        self.ip: Optional[str] = ip
-        self.ip6: Optional[str] = ip6
-        self.ipc: Optional[str] = ipc
-        self.isolation: Optional[str] = isolation
-        self.kernelMemory: Optional[int] = kernelMemory
-        self.label: Optional[MutableSequence[str]] = label
-        self.labelFile: Optional[MutableSequence[str]] = labelFile
-        self.link: Optional[MutableSequence[str]] = link
-        self.linkLocalIP: Optional[MutableSequence[str]] = linkLocalIP
-        self.logDriver: Optional[str] = logDriver
-        self.logOpts: Optional[MutableSequence[str]] = logOpts
-        self.macAddress: Optional[str] = macAddress
-        self.memory: Optional[int] = memory
-        self.memoryReservation: Optional[int] = memoryReservation
-        self.memorySwap: Optional[int] = memorySwap
-        self.memorySwappiness: Optional[int] = memorySwappiness
-        self.mount: Optional[MutableSequence[str]] = mount
-        self.network: Optional[MutableSequence[str]] = network
-        self.networkAlias: Optional[MutableSequence[str]] = networkAlias
+        self.ip: str | None = ip
+        self.ip6: str | None = ip6
+        self.ipc: str | None = ipc
+        self.isolation: str | None = isolation
+        self.kernelMemory: int | None = kernelMemory
+        self.label: MutableSequence[str] | None = label
+        self.labelFile: MutableSequence[str] | None = labelFile
+        self.link: MutableSequence[str] | None = link
+        self.linkLocalIP: MutableSequence[str] | None = linkLocalIP
+        self.logDriver: str | None = logDriver
+        self.logOpts: MutableSequence[str] | None = logOpts
+        self.macAddress: str | None = macAddress
+        self.memory: int | None = memory
+        self.memoryReservation: int | None = memoryReservation
+        self.memorySwap: int | None = memorySwap
+        self.memorySwappiness: int | None = memorySwappiness
+        self.mount: MutableSequence[str] | None = mount
+        self.network: MutableSequence[str] | None = network
+        self.networkAlias: MutableSequence[str] | None = networkAlias
         self.noHealthcheck: bool = noHealthcheck
         self.oomKillDisable: bool = oomKillDisable
-        self.oomScoreAdj: Optional[int] = oomScoreAdj
-        self.pid: Optional[str] = pid
-        self.pidsLimit: Optional[int] = pidsLimit
+        self.oomScoreAdj: int | None = oomScoreAdj
+        self.pid: str | None = pid
+        self.pidsLimit: int | None = pidsLimit
         self.privileged: bool = privileged
-        self.publish: Optional[MutableSequence[str]] = publish
+        self.publish: MutableSequence[str] | None = publish
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
         self.replicas: int = replicas
-        self.restart: Optional[str] = restart
+        self.restart: str | None = restart
         self.rm: bool = rm
-        self.runtime: Optional[str] = runtime
-        self.securityOpts: Optional[MutableSequence[str]] = securityOpts
-        self.shmSize: Optional[int] = shmSize
+        self.runtime: str | None = runtime
+        self.securityOpts: MutableSequence[str] | None = securityOpts
+        self.shmSize: int | None = shmSize
         self.sigProxy: bool = sigProxy
-        self.stopSignal: Optional[str] = stopSignal
-        self.stopTimeout: Optional[int] = stopTimeout
-        self.storageOpts: Optional[MutableSequence[str]] = storageOpts
-        self.sysctl: Optional[MutableSequence[str]] = sysctl
-        self.tmpfs: Optional[MutableSequence[str]] = tmpfs
-        self.ulimit: Optional[MutableSequence[str]] = ulimit
-        self.user: Optional[str] = user
-        self.userns: Optional[str] = userns
-        self.uts: Optional[str] = uts
-        self.volume: Optional[MutableSequence[str]] = volume
-        self.volumeDriver: Optional[str] = volumeDriver
-        self.volumesFrom: Optional[MutableSequence[str]] = volumesFrom
-        self.workdir: Optional[str] = workdir
+        self.stopSignal: str | None = stopSignal
+        self.stopTimeout: int | None = stopTimeout
+        self.storageOpts: MutableSequence[str] | None = storageOpts
+        self.sysctl: MutableSequence[str] | None = sysctl
+        self.tmpfs: MutableSequence[str] | None = tmpfs
+        self.ulimit: MutableSequence[str] | None = ulimit
+        self.user: str | None = user
+        self.userns: str | None = userns
+        self.uts: str | None = uts
+        self.volume: MutableSequence[str] | None = volume
+        self.volumeDriver: str | None = volumeDriver
+        self.volumesFrom: MutableSequence[str] | None = volumesFrom
+        self.workdir: str | None = workdir
 
     async def deploy(self, external: bool) -> None:
         if not external:
@@ -598,11 +600,11 @@ class DockerConnector(DockerBaseConnector):
                     ]
                 )
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug("EXECUTING command {}".format(deploy_command))
+                    logger.debug(f"EXECUTING command {deploy_command}")
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(deploy_command),
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
                 )
                 stdout, stderr = await proc.communicate()
                 if proc.returncode == 0:
@@ -613,10 +615,10 @@ class DockerConnector(DockerBaseConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         return {
             container_id: await self._get_location(container_id)
@@ -634,13 +636,11 @@ class DockerConnector(DockerBaseConnector):
             for container_id in self.containerIds:
                 undeploy_command = "".join(["docker ", "stop ", container_id])
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        "EXECUTING command {command}".format(command=undeploy_command)
-                    )
+                    logger.debug(f"EXECUTING command {undeploy_command}")
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(undeploy_command),
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
                 )
                 await proc.wait()
             self.containerIds = []
@@ -652,31 +652,31 @@ class DockerComposeConnector(DockerBaseConnector):
         deployment_name: str,
         config_dir: str,
         files: MutableSequence[str],
-        projectName: Optional[str] = None,
-        verbose: Optional[bool] = False,
-        logLevel: Optional[str] = None,
-        noAnsi: Optional[bool] = False,
-        host: Optional[str] = None,
-        tls: Optional[bool] = False,
-        tlscacert: Optional[str] = None,
-        tlscert: Optional[str] = None,
-        tlskey: Optional[str] = None,
-        tlsverify: Optional[bool] = False,
-        skipHostnameCheck: Optional[bool] = False,
-        projectDirectory: Optional[str] = None,
-        compatibility: Optional[bool] = False,
-        noDeps: Optional[bool] = False,
-        forceRecreate: Optional[bool] = False,
-        alwaysRecreateDeps: Optional[bool] = False,
-        noRecreate: Optional[bool] = False,
-        noBuild: Optional[bool] = False,
-        noStart: Optional[bool] = False,
-        build: Optional[bool] = False,
-        timeout: Optional[int] = None,
+        projectName: str | None = None,
+        verbose: bool | None = False,
+        logLevel: str | None = None,
+        noAnsi: bool | None = False,
+        host: str | None = None,
+        tls: bool | None = False,
+        tlscacert: str | None = None,
+        tlscert: str | None = None,
+        tlskey: str | None = None,
+        tlsverify: bool | None = False,
+        skipHostnameCheck: bool | None = False,
+        projectDirectory: str | None = None,
+        compatibility: bool | None = False,
+        noDeps: bool | None = False,
+        forceRecreate: bool | None = False,
+        alwaysRecreateDeps: bool | None = False,
+        noRecreate: bool | None = False,
+        noBuild: bool | None = False,
+        noStart: bool | None = False,
+        build: bool | None = False,
+        timeout: int | None = None,
         transferBufferSize: int = 2**16,
-        renewAnonVolumes: Optional[bool] = False,
-        removeOrphans: Optional[bool] = False,
-        removeVolumes: Optional[bool] = False,
+        renewAnonVolumes: bool | None = False,
+        removeOrphans: bool | None = False,
+        removeVolumes: bool | None = False,
         locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
         resourcesCacheSize: int = None,
@@ -753,25 +753,25 @@ class DockerComposeConnector(DockerBaseConnector):
                 ]
             )
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("EXECUTING command {}".format(deploy_command))
+                logger.debug(f"EXECUTING command {deploy_command}")
             proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
             await proc.wait()
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         ps_command = self.base_command() + "".join(["ps ", service or ""])
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("EXECUTING command {command}".format(command=ps_command))
+            logger.debug(f"EXECUTING command {ps_command}")
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(ps_command),
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
         lines = (line for line in stdout.decode().strip().split("\n"))
@@ -792,13 +792,12 @@ class DockerComposeConnector(DockerBaseConnector):
 
     async def undeploy(self, external: bool) -> None:
         if not external:
-            undeploy_command = self.base_command() + "".join(
-                ["down ", "{removeVolumes}"]
-            ).format(removeVolumes=self.get_option("volumes", self.removeVolumes))
+            undeploy_command = (
+                self.base_command()
+                + f"down {self.get_option('volumes', self.removeVolumes)}"
+            )
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "EXECUTING command {command}".format(command=undeploy_command)
-                )
+                logger.debug(f"EXECUTING command {undeploy_command}")
             proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
             await proc.wait()
 
@@ -809,12 +808,12 @@ class SingularityBaseConnector(ContainerConnector, ABC):
     ) -> MutableSequence[MutableMapping[str, str]]:
         return await self._get_volumes(location)
 
-    async def _get_location(self, location_name: str) -> Optional[AvailableLocation]:
+    async def _get_location(self, location_name: str) -> AvailableLocation | None:
         inspect_command = "singularity instance list --json"
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(inspect_command),
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
         if stdout:
@@ -837,7 +836,7 @@ class SingularityBaseConnector(ContainerConnector, ABC):
                 "exec ",
                 "instance://",
                 location.name,
-                " sh -c '{}'".format(command),
+                f" sh -c '{command}'",
             ]
         )
 
@@ -864,49 +863,49 @@ class SingularityConnector(SingularityBaseConnector):
         config_dir: str,
         image: str,
         transferBufferSize: int = 2**16,
-        addCaps: Optional[str] = None,
+        addCaps: str | None = None,
         allowSetuid: bool = False,
-        applyCgroups: Optional[str] = None,
-        bind: Optional[MutableSequence[str]] = None,
+        applyCgroups: str | None = None,
+        bind: MutableSequence[str] | None = None,
         boot: bool = False,
         cleanenv: bool = False,
         contain: bool = False,
         containall: bool = False,
         disableCache: bool = False,
-        dns: Optional[str] = None,
-        dropCaps: Optional[str] = None,
-        env: Optional[MutableSequence[str]] = None,
-        envFile: Optional[str] = None,
+        dns: str | None = None,
+        dropCaps: str | None = None,
+        env: MutableSequence[str] | None = None,
+        envFile: str | None = None,
         fakeroot: bool = False,
-        fusemount: Optional[MutableSequence[str]] = None,
-        home: Optional[str] = None,
-        hostname: Optional[str] = None,
-        instanceNames: Optional[MutableSequence[str]] = None,
+        fusemount: MutableSequence[str] | None = None,
+        home: str | None = None,
+        hostname: str | None = None,
+        instanceNames: MutableSequence[str] | None = None,
         keepPrivs: bool = False,
         locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
         net: bool = False,
-        network: Optional[str] = None,
-        networkArgs: Optional[MutableSequence[str]] = None,
+        network: str | None = None,
+        networkArgs: MutableSequence[str] | None = None,
         noHome: bool = False,
         noInit: bool = False,
-        noMount: Optional[MutableSequence[str]] = None,
+        noMount: MutableSequence[str] | None = None,
         noPrivs: bool = False,
         noUmask: bool = False,
         nohttps: bool = False,
         nv: bool = False,
-        overlay: Optional[MutableSequence[str]] = None,
-        pemPath: Optional[str] = None,
-        pidFile: Optional[str] = None,
+        overlay: MutableSequence[str] | None = None,
+        pemPath: str | None = None,
+        pidFile: str | None = None,
         replicas: int = 1,
         resourcesCacheSize: int = None,
         resourcesCacheTTL: int = None,
         rocm: bool = False,
-        scratch: Optional[MutableSequence[str]] = None,
-        security: Optional[MutableSequence[str]] = None,
+        scratch: MutableSequence[str] | None = None,
+        security: MutableSequence[str] | None = None,
         userns: bool = False,
         uts: bool = False,
-        workdir: Optional[str] = None,
+        workdir: str | None = None,
         writable: bool = False,
         writableTmpfs: bool = False,
     ):
@@ -920,45 +919,45 @@ class SingularityConnector(SingularityBaseConnector):
             resourcesCacheTTL=resourcesCacheTTL,
         )
         self.image: str = image
-        self.addCaps: Optional[str] = addCaps
+        self.addCaps: str | None = addCaps
         self.allowSetuid: bool = allowSetuid
-        self.applyCgroups: Optional[str] = applyCgroups
-        self.bind: Optional[MutableSequence[str]] = bind
+        self.applyCgroups: str | None = applyCgroups
+        self.bind: MutableSequence[str] | None = bind
         self.boot: bool = boot
         self.cleanenv: bool = cleanenv
         self.contain: bool = contain
         self.containall: bool = containall
         self.disableCache: bool = disableCache
-        self.dns: Optional[str] = dns
-        self.dropCaps: Optional[str] = dropCaps
-        self.env: Optional[MutableSequence[str]] = env
-        self.envFile: Optional[str] = envFile
+        self.dns: str | None = dns
+        self.dropCaps: str | None = dropCaps
+        self.env: MutableSequence[str] | None = env
+        self.envFile: str | None = envFile
         self.fakeroot: bool = fakeroot
-        self.fusemount: Optional[MutableSequence[str]] = fusemount
-        self.home: Optional[str] = home
-        self.hostname: Optional[str] = hostname
+        self.fusemount: MutableSequence[str] | None = fusemount
+        self.home: str | None = home
+        self.hostname: str | None = hostname
         self.instanceNames: MutableSequence[str] = instanceNames or []
         self.keepPrivs: bool = keepPrivs
         self.net: bool = net
-        self.network: Optional[str] = network
-        self.networkArgs: Optional[MutableSequence[str]] = networkArgs
+        self.network: str | None = network
+        self.networkArgs: MutableSequence[str] | None = networkArgs
         self.noHome: bool = noHome
         self.noInit: bool = noInit
-        self.noMount: Optional[MutableSequence[str]] = noMount or []
+        self.noMount: MutableSequence[str] | None = noMount or []
         self.noPrivs: bool = noPrivs
         self.noUmask: bool = noUmask
         self.nohttps: bool = nohttps
         self.nv: bool = nv
-        self.overlay: Optional[MutableSequence[str]] = overlay
-        self.pemPath: Optional[str] = pemPath
-        self.pidFile: Optional[str] = pidFile
+        self.overlay: MutableSequence[str] | None = overlay
+        self.pemPath: str | None = pemPath
+        self.pidFile: str | None = pidFile
         self.replicas: int = replicas
         self.rocm: bool = rocm
-        self.scratch: Optional[MutableSequence[str]] = scratch
-        self.security: Optional[MutableSequence[str]] = security
+        self.scratch: MutableSequence[str] | None = scratch
+        self.security: MutableSequence[str] | None = security
         self.userns: bool = userns
         self.uts: bool = uts
-        self.workdir: Optional[str] = workdir
+        self.workdir: str | None = workdir
         self.writable: bool = writable
         self.writableTmpfs: bool = writableTmpfs
 
@@ -1010,16 +1009,16 @@ class SingularityConnector(SingularityBaseConnector):
                         self.get_option("workdir", self.workdir),
                         self.get_option("writable", self.writable),
                         self.get_option("writable-tmpfs", self.writableTmpfs),
-                        "{} ".format(self.image),
+                        f"{self.image} ",
                         instance_name,
                     ]
                 )
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug("EXECUTING command {}".format(deploy_command))
+                    logger.debug(f"EXECUTING command {deploy_command}")
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(deploy_command),
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
                 )
                 stdout, stderr = await proc.communicate()
                 if proc.returncode == 0:
@@ -1030,10 +1029,10 @@ class SingularityConnector(SingularityBaseConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         location_tasks = {}
         for instance_name in self.instanceNames:
@@ -1061,13 +1060,11 @@ class SingularityConnector(SingularityBaseConnector):
                     ["singularity ", "instance ", "stop ", instance_name]
                 )
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        "EXECUTING command {command}".format(command=undeploy_command)
-                    )
+                    logger.debug(f"EXECUTING command {undeploy_command}")
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(undeploy_command),
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
                 )
                 await proc.wait()
             self.instanceNames = []

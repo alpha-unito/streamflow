@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import MutableMapping, Type
+from typing import MutableMapping
 
 from streamflow.core.deployment import BindingFilter, Connector
 from streamflow.core.scheduling import Policy, Scheduler
@@ -14,7 +14,7 @@ from streamflow.scheduling.policy import policy_classes
 
 
 class StreamFlowPlugin(ABC):
-    def _register(self, name: str, cls: Type, classes: MutableMapping[str, Type]):
+    def _register(self, name: str, cls: type, classes: MutableMapping[str, type]):
         if name in classes:
             if logger.isEnabledFor(logging.WARN):
                 logger.warn(
@@ -28,16 +28,16 @@ class StreamFlowPlugin(ABC):
     def register(self) -> None:
         ...
 
-    def register_binding_order(self, name: str, cls: Type[BindingFilter]):
+    def register_binding_order(self, name: str, cls: type[BindingFilter]):
         self._register(name, cls, binding_filter_classes)
 
-    def register_connector(self, name: str, cls: Type[Connector]):
+    def register_connector(self, name: str, cls: type[Connector]):
         self._register(name, cls, connector_classes)
 
-    def register_policy(self, name: str, cls: Type[Policy]):
+    def register_policy(self, name: str, cls: type[Policy]):
         self._register(name, cls, policy_classes)
 
-    def register_scheduler(self, cls: Type[Scheduler]):
+    def register_scheduler(self, cls: type[Scheduler]):
         self._register(
             cls.__class__.__module__ + "." + cls.__class__.__name__,
             cls,

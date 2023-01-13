@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import MutableMapping, Optional, cast
+from typing import MutableMapping, cast
 
 import pkg_resources
 
@@ -14,7 +14,14 @@ from streamflow.core.exception import (
     UnrecoverableTokenException,
 )
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
-from streamflow.core.workflow import CommandOutput, Job, Status, Step
+from streamflow.core.workflow import (
+    CommandOutput,
+    Job,
+    Status,
+    Step,
+    Token,
+    TokenProcessor,
+)
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
@@ -29,18 +36,24 @@ async def _cleanup_dir(
     )
 
 
+async def _replace_token(
+    job: Job, token_processor: TokenProcessor, token: Token, recovered_token: Token
+):
+    pass
+
+
 class DefaultFailureManager(FailureManager):
     def __init__(
         self,
         context: StreamFlowContext,
-        max_retries: Optional[int] = None,
-        retry_delay: Optional[int] = None,
+        max_retries: int | None = None,
+        retry_delay: int | None = None,
     ):
         super().__init__(context)
         self.jobs: MutableMapping[str, JobVersion] = {}
         self.max_retries: int = max_retries
         self.replay_cache: MutableMapping[str, ReplayResponse] = {}
-        self.retry_delay: Optional[int] = retry_delay
+        self.retry_delay: int | None = retry_delay
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
@@ -158,9 +171,7 @@ class DefaultFailureManager(FailureManager):
                 return await self.handle_exception(job, job_version.step, e)
         else:
             logger.error(
-                "FAILED Job {name} {version} times. Execution aborted".format(
-                    name=job.name, version=self.jobs[job.name].version
-                )
+                f"FAILED Job {job.name} {self.jobs[job.name].version} times. Execution aborted"
             )
             raise FailureHandlingException()
 
@@ -178,9 +189,7 @@ class DefaultFailureManager(FailureManager):
     ) -> CommandOutput:
         if logger.isEnabledFor(logging.INFO):
             logger.info(
-                "Handling {exception} failure for job {job}".format(
-                    job=job.name, exception=type(exception).__name__
-                )
+                f"Handling {type(exception).__name__} failure for job {job.name}"
             )
         return await self._do_handle_failure(job, step)
 
@@ -188,7 +197,7 @@ class DefaultFailureManager(FailureManager):
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> CommandOutput:
         if logger.isEnabledFor(logging.INFO):
-            logger.info("Handling command failure for job {job}".format(job=job.name))
+            logger.info(f"Handling command failure for job {job.name}")
         return await self._do_handle_failure(job, step)
 
     async def replay_job(self, replay_request: ReplayRequest) -> ReplayResponse:
@@ -204,7 +213,7 @@ class DefaultFailureManager(FailureManager):
             ):
                 # Reschedule job
                 if logger.isEnabledFor(logging.INFO):
-                    logger.info("Rescheduling job {job}".format(job=target_job))
+                    logger.info(f"Rescheduling job {target_job}")
                 command_output = CommandOutput(value=None, status=Status.FAILED)
                 self.replay_cache[target_job] = ReplayResponse(
                     job=target_job,

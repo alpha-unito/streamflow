@@ -99,7 +99,7 @@ def main(args) -> int:
         if args.version:
             from streamflow.version import VERSION
 
-            print("StreamFlow version {version}".format(version=VERSION))
+            print(f"StreamFlow version {VERSION}")
             return 0
         if args.quiet:
             logger.setLevel(logging.WARN)

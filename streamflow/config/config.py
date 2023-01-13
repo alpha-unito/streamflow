@@ -10,7 +10,7 @@ from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
-    from typing import MutableMapping, Any, Optional
+    from typing import MutableMapping, Any
 
 
 def set_targets(current_node, target):
@@ -84,9 +84,7 @@ class WorkflowConfig(Config):
                 ),
             )
             if policy not in self.policies:
-                raise WorkflowDefinitionException(
-                    "Policy {} is not defined".format(policy)
-                )
+                raise WorkflowDefinitionException(f"Policy {policy} is not defined")
             target["policy"] = self.policies[policy]
         target_type = "step" if "step" in binding else "port"
         if target_type == "port" and "workdir" not in binding["target"]:
@@ -98,14 +96,12 @@ class WorkflowConfig(Config):
             if f in self.binding_filters:
                 config["filters"].append(self.binding_filters[f])
             else:
-                raise WorkflowDefinitionException(
-                    "Binding filter {} is not defined".format(f)
-                )
+                raise WorkflowDefinitionException(f"Binding filter {f} is not defined")
         current_config[target_type] = config
 
     def get(
-        self, path: PurePosixPath, name: str, default: Optional[Any] = None
-    ) -> Optional[Any]:
+        self, path: PurePosixPath, name: str, default: Any | None = None
+    ) -> Any | None:
         current_node = self.filesystem
         for part in path.parts:
             if part not in current_node["children"]:
@@ -113,7 +109,7 @@ class WorkflowConfig(Config):
             current_node = current_node["children"][part]
         return current_node.get(name)
 
-    def propagate(self, path: PurePosixPath, name: str) -> Optional[Any]:
+    def propagate(self, path: PurePosixPath, name: str) -> Any | None:
         current_node = self.filesystem
         value = None
         for part in path.parts:

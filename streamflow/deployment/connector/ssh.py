@@ -7,7 +7,7 @@ import os
 import posixpath
 import tarfile
 from pathlib import PurePosixPath
-from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
+from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
 import pkg_resources
@@ -31,7 +31,7 @@ async def _get_disk_usage(
 ) -> float:
     if directory:
         result = await ssh_client.run(
-            "df {} | tail -n 1 | awk '{{print $2}}'".format(directory),
+            f"df {directory} | tail -n 1 | awk '{{print $2}}'",
             stderr=asyncio.subprocess.STDOUT,
         )
         if result.returncode == 0:
@@ -51,7 +51,7 @@ def _parse_hostname(hostname):
     return hostname, port
 
 
-class SSHContext(object):
+class SSHContext:
     def __init__(
         self,
         streamflow_config_dir: str,
@@ -61,7 +61,7 @@ class SSHContext(object):
         self._streamflow_config_dir: str = streamflow_config_dir
         self._config: SSHConfig = config
         self._max_concurrent_sessions: int = max_concurrent_sessions
-        self._ssh_connection: Optional[asyncssh.SSHClientConnection] = None
+        self._ssh_connection: asyncssh.SSHClientConnection | None = None
         self._sessions: int = 0
 
     async def __aenter__(self):
@@ -75,7 +75,7 @@ class SSHContext(object):
 
     async def _get_connection(
         self, config: SSHConfig
-    ) -> Optional[asyncssh.SSHClientConnection]:
+    ) -> asyncssh.SSHClientConnection | None:
         if config is None:
             return None
         (hostname, port) = _parse_hostname(config.hostname)
@@ -121,13 +121,13 @@ class SSHContext(object):
         return self._sessions == self._max_concurrent_sessions
 
 
-class SSHContextManager(object):
+class SSHContextManager:
     def __init__(
         self, condition: asyncio.Condition, contexts: MutableSequence[SSHContext]
     ):
         self._condition: asyncio.Condition = condition
         self._contexts: MutableSequence[SSHContext] = contexts
-        self._selected_context: Optional[SSHContext] = None
+        self._selected_context: SSHContext | None = None
 
     async def __aenter__(self):
         async with self._condition:
@@ -146,7 +146,7 @@ class SSHContextManager(object):
                 self._condition.notify_all()
 
 
-class SSHContextFactory(object):
+class SSHContextFactory:
     def __init__(
         self,
         streamflow_config_dir: str,
@@ -176,15 +176,15 @@ class SSHStreamWrapperContext(StreamWrapperContext):
         super().__init__()
         self.src: str = src
         self.ssh_context: SSHContextManager = ssh_context
-        self.ssh_process: Optional[asyncssh.SSHClientProcess] = None
-        self.stream: Optional[StreamReaderWrapper] = None
+        self.ssh_process: asyncssh.SSHClientProcess | None = None
+        self.stream: StreamReaderWrapper | None = None
 
     async def __aenter__(self):
         ssh_client = await self.ssh_context.__aenter__()
         dirname, basename = posixpath.split(self.src)
         self.ssh_process = await (
             await ssh_client.create_process(
-                "tar chf - -C {} {}".format(dirname, basename),
+                f"tar chf - -C {dirname} {basename}",
                 stdin=asyncio.subprocess.DEVNULL,
                 encoding=None,
             )
@@ -200,23 +200,23 @@ class SSHStreamWrapperContext(StreamWrapperContext):
         await self.ssh_context.__aexit__(exc_type, exc_val, exc_tb)
 
 
-class SSHConfig(object):
+class SSHConfig:
     def __init__(
         self,
         check_host_key: bool,
         client_keys: MutableSequence[str],
         hostname: str,
-        password_file: Optional[str],
-        ssh_key_passphrase_file: Optional[str],
-        tunnel: Optional[SSHConfig],
+        password_file: str | None,
+        ssh_key_passphrase_file: str | None,
+        tunnel: SSHConfig | None,
         username: str,
     ):
         self.check_host_key: bool = check_host_key
         self.client_keys: MutableSequence[str] = client_keys
         self.hostname: str = hostname
-        self.password_file: Optional[str] = password_file
-        self.ssh_key_passphrase_file: Optional[str] = ssh_key_passphrase_file
-        self.tunnel: Optional[SSHConfig] = tunnel
+        self.password_file: str | None = password_file
+        self.ssh_key_passphrase_file: str | None = ssh_key_passphrase_file
+        self.tunnel: SSHConfig | None = tunnel
         self.username: str = username
 
 
@@ -226,11 +226,11 @@ class SSHConnector(BaseConnector):
         location: Location,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-        job_name: Optional[str] = None,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        job_name: str | None = None,
     ):
         command = utils.create_command(
             command=command,
@@ -242,11 +242,9 @@ class SSHConnector(BaseConnector):
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                "EXECUTING command {command} on {location} {job}".format(
-                    command=command,
-                    location=location,
-                    job="for job {job}".format(job=job_name) if job_name else "",
-                )
+                f"EXECUTING command {command} on {location}" f" for job {job_name}"
+                if job_name
+                else ""
             )
         return utils.encode_command(command)
 
@@ -257,16 +255,16 @@ class SSHConnector(BaseConnector):
         nodes: MutableSequence[Any],
         username: str,
         checkHostKey: bool = True,
-        dataTransferConnection: Optional[Union[str, MutableMapping[str, Any]]] = None,
-        file: Optional[str] = None,
+        dataTransferConnection: str | MutableMapping[str, Any] | None = None,
+        file: str | None = None,
         maxConcurrentSessions: int = 10,
         maxConnections: int = 1,
-        passwordFile: Optional[str] = None,
-        services: Optional[MutableMapping[str, str]] = None,
-        sharedPaths: Optional[MutableSequence[str]] = None,
-        sshKey: Optional[str] = None,
-        sshKeyPassphraseFile: Optional[str] = None,
-        tunnel: Optional[MutableMapping[str, Any]] = None,
+        passwordFile: str | None = None,
+        services: MutableMapping[str, str] | None = None,
+        sharedPaths: MutableSequence[str] | None = None,
+        sshKey: str | None = None,
+        sshKeyPassphraseFile: str | None = None,
+        tunnel: MutableMapping[str, Any] | None = None,
         transferBufferSize: int = 2**16,
     ) -> None:
         super().__init__(
@@ -290,21 +288,21 @@ class SSHConnector(BaseConnector):
         if services:
             for name, service in services.items():
                 with open(os.path.join(self.config_dir, service)) as f:
-                    self.templates[name]: Optional[Template] = Template(f.read())
+                    self.templates[name]: Template | None = Template(f.read())
         self.checkHostKey: bool = checkHostKey
-        self.passwordFile: Optional[str] = passwordFile
+        self.passwordFile: str | None = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
         self.maxConnections: int = maxConnections
         self.sharedPaths: MutableSequence[str] = sharedPaths or []
-        self.sshKey: Optional[str] = sshKey
-        self.sshKeyPassphraseFile: Optional[str] = sshKeyPassphraseFile
+        self.sshKey: str | None = sshKey
+        self.sshKeyPassphraseFile: str | None = sshKeyPassphraseFile
         self.ssh_context_factories: MutableMapping[str, SSHContextFactory] = {}
         self.data_transfer_context_factories: MutableMapping[
             str, SSHContextFactory
         ] = {}
         self.username: str = username
-        self.tunnel: Optional[SSHConfig] = self._get_config(tunnel)
-        self.dataTransferConfig: Optional[SSHConfig] = self._get_config(
+        self.tunnel: SSHConfig | None = self._get_config(tunnel)
+        self.dataTransferConfig: SSHConfig | None = self._get_config(
             dataTransferConnection
         )
         self.nodes: MutableMapping[str, SSHConfig] = {
@@ -316,11 +314,11 @@ class SSHConnector(BaseConnector):
         self,
         command: str,
         environment: MutableMapping[str, str] = None,
-        template: Optional[str] = None,
+        template: str | None = None,
         workdir: str = None,
     ) -> str:
         return self.templates[template or "__DEFAULT__"].render(
-            streamflow_command="sh -c '{command}'".format(command=command),
+            streamflow_command=f"sh -c '{command}'",
             streamflow_environment=environment,
             streamflow_workdir=workdir,
         )
@@ -346,9 +344,7 @@ class SSHConnector(BaseConnector):
                         await tar.add(src, arcname=dst)
                 except tarfile.TarError as e:
                     raise WorkflowExecutionException(
-                        "Error copying {} to {} on location {}: {}".format(
-                            src, dst, location, str(e)
-                        )
+                        f"Error copying {src} to {dst} on location {location}: {e}"
                     ) from e
 
     async def _copy_remote_to_local(
@@ -369,9 +365,7 @@ class SSHConnector(BaseConnector):
                         await extract_tar_stream(tar, src, dst, self.transferBufferSize)
                 except tarfile.TarError as e:
                     raise WorkflowExecutionException(
-                        "Error copying {} from location {} to {}: {}".format(
-                            src, location, dst, str(e)
-                        )
+                        f"Error copying {src} from location {location} to {dst}: {e}"
                     ) from e
 
     async def _copy_remote_to_remote(
@@ -380,7 +374,7 @@ class SSHConnector(BaseConnector):
         dst: str,
         locations: MutableSequence[Location],
         source_location: Location,
-        source_connector: Optional[Connector] = None,
+        source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
@@ -446,7 +440,7 @@ class SSHConnector(BaseConnector):
                                 )
                             )
 
-    def _get_config(self, node: Union[str, MutableMapping[str, Any]]):
+    def _get_config(self, node: str | MutableMapping[str, Any]):
         if node is None:
             return None
         elif isinstance(node, str):
@@ -492,11 +486,10 @@ class SSHConnector(BaseConnector):
     async def _get_existing_parent(self, location: str, directory: str):
         if directory is None:
             return None
-        command_template = 'test -e "{path}"'
         async with self._get_ssh_client(location) as ssh_client:
             while True:
                 result = await ssh_client.run(
-                    command_template.format(path=directory),
+                    f'test -e "{directory}"',
                     stderr=asyncio.subprocess.STDOUT,
                 )
                 if result.returncode == 0:
@@ -546,23 +539,17 @@ class SSHConnector(BaseConnector):
                     )
                 else:
                     raise WorkflowExecutionException(
-                        "Impossible to retrieve locations for {location}".format(
-                            location=location
-                        )
+                        f"Impossible to retrieve locations for {location}"
                     )
         except WorkflowExecutionException:
             raise WorkflowExecutionException(
-                "Impossible to retrieve locations for {location}".format(
-                    location=location
-                )
+                f"Impossible to retrieve locations for {location}"
             )
 
     def _get_run_command(
         self, command: str, location: Location, interactive: bool = False
     ):
-        return "".join(["ssh ", "{location} ", "{command}"]).format(
-            location=location.name, command=command
-        )
+        return f"ssh {location.name} {command}"
 
     def _get_ssh_client(self, location: str) -> SSHContextManager:
         if location not in self.ssh_context_factories:
@@ -584,10 +571,10 @@ class SSHConnector(BaseConnector):
 
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         locations = {}
         for location_obj in self.nodes.values():
@@ -628,14 +615,14 @@ class SSHConnector(BaseConnector):
         location: Location,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
         capture_output: bool = False,
-        timeout: Optional[int] = None,
-        job_name: Optional[str] = None,
-    ) -> Optional[Tuple[Optional[Any], int]]:
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
         command = self._get_command(
             location=location,
             command=command,
@@ -663,7 +650,7 @@ class SSHConnector(BaseConnector):
             async with self._get_ssh_client(location.name) as ssh_client:
                 result = await asyncio.wait_for(
                     ssh_client.run(
-                        "sh -c '{command}'".format(command=command),
+                        f"sh -c '{command}'",
                         stderr=asyncio.subprocess.STDOUT,
                     ),
                     timeout=timeout,

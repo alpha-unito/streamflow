@@ -11,10 +11,10 @@ from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status, Token
-    from typing import MutableSequence, MutableMapping, Optional
+    from typing import MutableSequence, MutableMapping
 
 
-class Hardware(object):
+class Hardware:
     def __init__(
         self,
         cores: float = 0.0,
@@ -53,40 +53,32 @@ class Hardware(object):
         if not isinstance(other, Hardware):
             return NotImplementedError
         return all(
-            (
-                vars(self).get(k, 0.0) >= vars(other).get(k, 0.0)
-                for k in set().union(vars(self).keys(), vars(other).keys())
-            )
+            vars(self).get(k, 0.0) >= vars(other).get(k, 0.0)
+            for k in set().union(vars(self).keys(), vars(other).keys())
         )
 
     def __gt__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
         return all(
-            (
-                vars(self).get(k, 0.0) > vars(other).get(k, 0.0)
-                for k in set().union(vars(self).keys(), vars(other).keys())
-            )
+            vars(self).get(k, 0.0) > vars(other).get(k, 0.0)
+            for k in set().union(vars(self).keys(), vars(other).keys())
         )
 
     def __le__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
         return all(
-            (
-                vars(self).get(k, 0.0) <= vars(other).get(k, 0.0)
-                for k in set().union(vars(self).keys(), vars(other).keys())
-            )
+            vars(self).get(k, 0.0) <= vars(other).get(k, 0.0)
+            for k in set().union(vars(self).keys(), vars(other).keys())
         )
 
     def __lt__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
         return all(
-            (
-                vars(self).get(k, 0.0) < vars(other).get(k, 0.0)
-                for k in set().union(vars(self).keys(), vars(other).keys())
-            )
+            vars(self).get(k, 0.0) < vars(other).get(k, 0.0)
+            for k in set().union(vars(self).keys(), vars(other).keys())
         )
 
 
@@ -130,7 +122,7 @@ class HardwareRequirement(ABC):
         }
 
 
-class JobAllocation(object):
+class JobAllocation:
     __slots__ = ("job", "target", "locations", "status", "hardware")
 
     def __init__(
@@ -156,14 +148,14 @@ class AvailableLocation(Location):
         name: str,
         deployment: str,
         hostname: str,
-        service: Optional[str] = None,
+        service: str | None = None,
         slots: int = 1,
-        hardware: Optional[Hardware] = None,
+        hardware: Hardware | None = None,
     ):
         super().__init__(name, deployment, service)
         self.hostname: str = hostname
         self.slots: int = slots
-        self.hardware: Optional[Hardware] = hardware
+        self.hardware: Hardware | None = hardware
 
     def __eq__(self, other):
         if not isinstance(other, AvailableLocation):
@@ -179,7 +171,7 @@ class AvailableLocation(Location):
         return hash((self.deployment, self.service, self.name))
 
 
-class LocationAllocation(object):
+class LocationAllocation:
     __slots__ = ("name", "deployment", "jobs")
 
     def __init__(self, name: str, deployment: str):
@@ -205,7 +197,7 @@ class Policy(SchemaEntity):
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> Optional[Location]:
+    ) -> Location | None:
         ...
 
 
@@ -221,14 +213,14 @@ class Scheduler(SchemaEntity):
     async def close(self):
         ...
 
-    def get_allocation(self, job_name: str) -> Optional[JobAllocation]:
+    def get_allocation(self, job_name: str) -> JobAllocation | None:
         return self.job_allocations.get(job_name)
 
-    def get_hardware(self, job_name: str) -> Optional[Hardware]:
+    def get_hardware(self, job_name: str) -> Hardware | None:
         allocation = self.get_allocation(job_name)
         return allocation.hardware if allocation else None
 
-    def get_connector(self, job_name: str) -> Optional[Connector]:
+    def get_connector(self, job_name: str) -> Connector | None:
         allocation = self.get_allocation(job_name)
         return (
             self.context.deployment_manager.get_connector(
@@ -239,7 +231,7 @@ class Scheduler(SchemaEntity):
         )
 
     def get_locations(
-        self, job_name: str, statuses: Optional[MutableSequence[Status]] = None
+        self, job_name: str, statuses: MutableSequence[Status] | None = None
     ) -> MutableSequence[Location]:
         allocation = self.get_allocation(job_name)
         return (
@@ -249,7 +241,7 @@ class Scheduler(SchemaEntity):
             else []
         )
 
-    def get_service(self, job_name: str) -> Optional[str]:
+    def get_service(self, job_name: str) -> str | None:
         allocation = self.get_allocation(job_name)
         return allocation.target.service if allocation else None
 

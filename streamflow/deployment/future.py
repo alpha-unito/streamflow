@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import asyncio
 import logging
-from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Type, Union
+from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.deployment import Connector, ConnectorCopyKind, Location
 from streamflow.core.scheduling import AvailableLocation
@@ -12,17 +14,17 @@ class FutureConnector(Connector):
         self,
         name: str,
         config_dir: str,
-        type: Type[Connector],
+        connector_type: type[Connector],
         external: bool,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(name, config_dir)
-        self.type: Type[Connector] = type
+        self.type: type[Connector] = connector_type
         self.external: bool = external
         self.parameters: MutableMapping[str, Any] = kwargs
         self.deploying: bool = False
         self.deploy_event: asyncio.Event = asyncio.Event()
-        self.connector: Optional[Connector] = None
+        self.connector: Connector | None = None
 
     async def copy(
         self,
@@ -30,8 +32,8 @@ class FutureConnector(Connector):
         dst: str,
         locations: MutableSequence[Location],
         kind: ConnectorCopyKind,
-        source_connector: Optional[Connector] = None,
-        source_location: Optional[str] = None,
+        source_connector: Connector | None = None,
+        source_location: str | None = None,
         read_only: bool = False,
     ) -> None:
         if self.connector is None:
@@ -57,20 +59,20 @@ class FutureConnector(Connector):
         connector = self.type(self.deployment_name, self.config_dir, **self.parameters)
         if logger.isEnabledFor(logging.INFO):
             if not external:
-                logger.info("DEPLOYING {}".format(self.deployment_name))
+                logger.info(f"DEPLOYING {self.deployment_name}")
         await connector.deploy(external)
         if logger.isEnabledFor(logging.INFO):
             if not external:
-                logger.info("COMPLETED Deployment of {}".format(self.deployment_name))
+                logger.info(f"COMPLETED Deployment of {self.deployment_name}")
         self.connector = connector
         self.deploy_event.set()
 
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         if self.connector is None:
             if not self.deploying:
@@ -93,14 +95,14 @@ class FutureConnector(Connector):
         location: Location,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
         capture_output: bool = False,
-        timeout: Optional[int] = None,
-        job_name: Optional[str] = None,
-    ) -> Optional[Tuple[Optional[Any], int]]:
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
         if self.connector is None:
             if not self.deploying:
                 self.deploying = True

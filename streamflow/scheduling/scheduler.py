@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import posixpath
-from typing import MutableSequence, Optional, TYPE_CHECKING
+from typing import MutableSequence, TYPE_CHECKING
 
 import pkg_resources
 
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from typing import MutableMapping
 
 
-class JobContext(object):
+class JobContext:
     __slots__ = ("job", "lock", "scheduled")
 
     def __init__(self, job: Job):
@@ -40,13 +40,13 @@ class JobContext(object):
 
 class DefaultScheduler(Scheduler):
     def __init__(
-        self, context: StreamFlowContext, retry_delay: Optional[int] = None
+        self, context: StreamFlowContext, retry_delay: int | None = None
     ) -> None:
         super().__init__(context)
         self.allocation_groups: MutableMapping[str, MutableSequence[Job]] = {}
         self.binding_filter_map: MutableMapping[str, BindingFilter] = {}
         self.policy_map: MutableMapping[str, Policy] = {}
-        self.retry_interval: Optional[int] = retry_delay
+        self.retry_interval: int | None = retry_delay
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
@@ -71,16 +71,14 @@ class DefaultScheduler(Scheduler):
                         location=(
                             "locally"
                             if is_local
-                            else "on location {loc}".format(loc=selected_locations[0])
+                            else f"on location {selected_locations[0]}"
                         ),
                     )
                 )
             else:
                 logger.debug(
-                    "Job {name} allocated on locations {locations}".format(
-                        name=job.name,
-                        locations=", ".join([str(loc) for loc in selected_locations]),
-                    )
+                    f"Job {job.name} allocated on locations "
+                    ", ".join([str(loc) for loc in selected_locations])
                 )
         self.job_allocations[job.name] = JobAllocation(
             job=job.name,
@@ -114,20 +112,14 @@ class DefaultScheduler(Scheduler):
                         location=(
                             "from local location"
                             if is_local
-                            else "from location {loc}".format(
-                                loc=job_allocation.locations[0]
-                            )
+                            else f"from location {job_allocation.locations[0]}"
                         ),
                     )
                 )
             else:
                 logger.info(
-                    "Job {name} deallocated from locations {locations}".format(
-                        name=job,
-                        locations=", ".join(
-                            [str(loc) for loc in job_allocation.locations]
-                        ),
-                    )
+                    "Job {job} deallocated from locations "
+                    ", ".join([str(loc) for loc in job_allocation.locations])
                 )
 
     def _get_binding_filter(self, config: Config):
@@ -145,9 +137,9 @@ class DefaultScheduler(Scheduler):
         locations: int,
         scheduling_policy: Policy,
         available_locations: MutableMapping[str, AvailableLocation],
-    ) -> Optional[MutableSequence[Location]]:
+    ) -> MutableSequence[Location] | None:
         selected_locations = []
-        for i in range(locations):
+        for _ in range(locations):
             selected_location = await scheduling_policy.get_location(
                 context=self.context,
                 job=job,
@@ -356,9 +348,7 @@ class DefaultScheduler(Scheduler):
                             self.job_allocations[job_name].status = status
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
-                                    "Job {name} changed status to {status}".format(
-                                        name=job_name, status=status.name
-                                    )
+                                    f"Job {job_name} changed status to {status.name}"
                                 )
                         if status in [Status.COMPLETED, Status.FAILED]:
                             self.wait_queues[connector.deployment_name].notify_all()

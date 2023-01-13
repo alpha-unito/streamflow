@@ -140,7 +140,7 @@ def _patched_objectproperties(self, schema, key):
             dispprop = self._escape(' | '.join(proplist))
             if 'required' in schema:
                 if prop in schema['required']:
-                    dispprop = '**{}**\n(required)'.format(dispprop)
+                    dispprop = f'**{dispprop}**\n(required)'
             label = self._cell(dispprop)
 
             if isinstance(schema[key][prop], dict):

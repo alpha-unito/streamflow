@@ -13,7 +13,7 @@ import tarfile
 import time
 from abc import ABC
 from builtins import open as bltn_open
-from typing import Any, Optional
+from typing import Any
 
 from streamflow.core.data import StreamWrapper
 from streamflow.data.stream import BaseStreamWrapper
@@ -27,7 +27,7 @@ async def copyfileobj(src, dst, length=None, bufsize=None):
         shutil.copyfileobj(src, dst, bufsize)
         return
     blocks, remainder = divmod(length, bufsize)
-    for b in range(blocks):
+    for _ in range(blocks):
         await write(src, dst, bufsize)
     if remainder != 0:
         await write(src, dst, remainder)
@@ -62,7 +62,7 @@ class CompressionStreamWrapper(BaseStreamWrapper, ABC):
         finally:
             await self.stream.close()
 
-    async def read(self, size: Optional[int] = None):
+    async def read(self, size: int | None = None):
         buf = await super().read(size)
         try:
             return self.cmp.decompress(buf)
@@ -159,7 +159,7 @@ class GZipStreamWrapper(CompressionStreamWrapper):
         finally:
             await self.stream.close()
 
-    async def read(self, size: Optional[int] = None):
+    async def read(self, size: int | None = None):
         if self.cmp is None:
             await self._init_compression()
         buf = await super().read(size)
@@ -175,7 +175,7 @@ class GZipStreamWrapper(CompressionStreamWrapper):
 
 
 class LZMAStreamWrapper(CompressionStreamWrapper):
-    def __init__(self, stream, mode, preset: Optional[int] = None):
+    def __init__(self, stream, mode, preset: int | None = None):
         try:
             import lzma
         except ImportError:
@@ -216,7 +216,7 @@ class FileStreamReaderWrapper(StreamWrapper):
     async def close(self):
         self.closed = True
 
-    async def read(self, size: Optional[int] = None):
+    async def read(self, size: int | None = None):
         size = (
             self.size - self.position
             if size is None
@@ -229,7 +229,7 @@ class FileStreamReaderWrapper(StreamWrapper):
             else:
                 self.map_index += 1
                 if self.map_index == len(self.map):
-                    return bytes()
+                    return b""
         length = min(size, stop - self.position)
         if data:
             buf = await self.stream.read(length)
@@ -365,7 +365,7 @@ class AioTarInfo(tarfile.TarInfo):
         while isextended:
             buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
             pos = 0
-            for i in range(21):
+            for _ in range(21):
                 try:
                     offset = tarfile.nti(buf[pos : pos + 12])
                     numbytes = tarfile.nti(buf[pos + 12 : pos + 24])
@@ -382,7 +382,7 @@ class AioTarInfo(tarfile.TarInfo):
         return self
 
 
-class AioTarStream(object):
+class AioTarStream:
     debug = 0
     dereference = False
     ignore_zeros = False
@@ -552,7 +552,7 @@ class AioTarStream(object):
         if upperdirs and not os.path.exists(upperdirs):
             os.makedirs(upperdirs)
         if tarinfo.islnk() or tarinfo.issym():
-            self._dbg(1, "%s -> %s" % (tarinfo.name, tarinfo.linkname))
+            self._dbg(1, f"{tarinfo.name} -> {tarinfo.linkname}")
         else:
             self._dbg(1, tarinfo.name)
         if tarinfo.isreg():
@@ -724,7 +724,7 @@ class AioTarStream(object):
                 if e.filename is None:
                     self._dbg(1, "tarfile: %s" % e.strerror)
                 else:
-                    self._dbg(1, "tarfile: %s %r" % (e.strerror, e.filename))
+                    self._dbg(1, f"tarfile: {e.strerror} {e.filename!r}")
         except tarfile.ExtractError as e:
             if self.errorlevel > 1:
                 raise
@@ -961,12 +961,12 @@ class AioTarStream(object):
                 tarinfo = await self.tarinfo.fromtarfile(self)
             except tarfile.EOFHeaderError as e:
                 if self.ignore_zeros:
-                    self._dbg(2, "0x%X: %s" % (self.offset, e))
+                    self._dbg(2, f"0x{self.offset:X}: {e}")
                     self.offset += tarfile.BLOCKSIZE
                     continue
             except tarfile.InvalidHeaderError as e:
                 if self.ignore_zeros:
-                    self._dbg(2, "0x%X: %s" % (self.offset, e))
+                    self._dbg(2, f"0x{self.offset:X}: {e}")
                     self.offset += tarfile.BLOCKSIZE
                     continue
                 elif self.offset == 0:

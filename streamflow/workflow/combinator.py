@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, AsyncIterable, MutableMapping, MutableSequence, Union, cast
+from typing import Any, AsyncIterable, MutableMapping, MutableSequence, cast
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -13,7 +13,7 @@ from streamflow.workflow.token import IterationTerminationToken
 
 
 def _add_to_list(
-    token: Union[Token, MutableMapping[str, Token]],
+    token: Token | MutableMapping[str, Token],
     token_values: MutableMapping[str, MutableMapping[str, MutableSequence[Any]]],
     port_name: str,
     depth: int = 0,
@@ -42,7 +42,7 @@ def _add_to_list(
 
 
 def _add_to_port(
-    token: Union[Token, MutableMapping[str, Token]],
+    token: Token | MutableMapping[str, Token],
     tag_values: MutableMapping[str, MutableSequence[Any]],
     port_name: str,
 ):
@@ -73,7 +73,7 @@ class CartesianProductCombinator(Combinator):
         )
 
     async def _product(
-        self, port_name: str, token: Union[Token, MutableSequence[Token]]
+        self, port_name: str, token: Token | MutableSequence[Token]
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # Get all combinations of the new element with the others
         tag = ".".join(token.tag.split(".")[: -self.depth])
@@ -123,7 +123,7 @@ class CartesianProductCombinator(Combinator):
         # Otherwise throw Exception
         else:
             raise WorkflowExecutionException(
-                "No item to combine for token '{}'.".format(port_name)
+                f"No item to combine for token '{port_name}'."
             )
 
 
@@ -139,7 +139,7 @@ class DotProductCombinator(Combinator):
         for tag in list(self.token_values):
             if len(self.token_values[tag]) == len(self.items):
                 num_items = min(len(i) for i in self.token_values[tag].values())
-                for i in range(num_items):
+                for _ in range(num_items):
                     # Return the relative combination schema
                     schema = {}
                     for key, elements in self.token_values[tag].items():
@@ -169,7 +169,7 @@ class DotProductCombinator(Combinator):
         # Otherwise throw Exception
         else:
             raise WorkflowExecutionException(
-                "No item to combine for token '{}'.".format(port_name)
+                f"No item to combine for token '{port_name}'."
             )
 
 

@@ -4,7 +4,7 @@ import asyncio
 import os
 import sys
 from abc import ABC
-from typing import Any, MutableMapping, MutableSequence, Optional, Type
+from typing import Any, MutableMapping, MutableSequence
 
 import aiosqlite
 import pkg_resources
@@ -29,12 +29,12 @@ class CachedDatabase(Database, ABC):
         self.workflow_cache: Cache = LRUCache(maxsize=sys.maxsize)
 
 
-class SqliteConnection(object):
+class SqliteConnection:
     def __init__(self, connection: str, timeout: int, init_db: bool):
         self.connection: str = connection
         self.timeout: int = timeout
         self.init_db: bool = init_db
-        self._connection: Optional[aiosqlite.Connection] = None
+        self._connection: aiosqlite.Connection | None = None
         self.__row_factory = None
 
     async def __aenter__(self):
@@ -46,7 +46,7 @@ class SqliteConnection(object):
                 schema_path = pkg_resources.resource_filename(
                     __name__, os.path.join("schemas", "sqlite.sql")
                 )
-                with open(schema_path, "r") as f:
+                with open(schema_path) as f:
                     async with self._connection.cursor() as cursor:
                         await cursor.execute("PRAGMA journal_mode = WAL")
                         await cursor.execute("PRAGMA wal_autocheckpoint = 10")
@@ -118,7 +118,7 @@ class SqliteDatabase(CachedDatabase):
         config: str,
         external: bool,
         lazy: bool,
-        workdir: Optional[str],
+        workdir: str | None,
     ) -> int:
         async with self.connection as db:
             async with db.execute(
@@ -136,7 +136,7 @@ class SqliteDatabase(CachedDatabase):
                 return cursor.lastrowid
 
     async def add_port(
-        self, name: str, workflow_id: int, type: Type[Port], params: str
+        self, name: str, workflow_id: int, type: type[Port], params: str
     ) -> int:
         async with self.connection as db:
             async with db.execute(
@@ -168,7 +168,7 @@ class SqliteDatabase(CachedDatabase):
             )
 
     async def add_step(
-        self, name: str, workflow_id: int, status: int, type: Type[Step], params: str
+        self, name: str, workflow_id: int, status: int, type: type[Step], params: str
     ) -> int:
         async with self.connection as db:
             async with db.execute(
@@ -187,11 +187,11 @@ class SqliteDatabase(CachedDatabase):
     async def add_target(
         self,
         deployment: int,
-        type: Type[Target],
+        type: type[Target],
         params: str,
         locations: int = 1,
-        service: Optional[str] = None,
-        workdir: Optional[str] = None,
+        service: str | None = None,
+        workdir: str | None = None,
     ) -> int:
         async with self.connection as db:
             async with db.execute(
@@ -209,7 +209,7 @@ class SqliteDatabase(CachedDatabase):
                 return cursor.lastrowid
 
     async def add_token(
-        self, tag: str, type: Type[Token], value: Any, port: Optional[int] = None
+        self, tag: str, type: type[Token], value: Any, port: int | None = None
     ):
         async with self.connection as db:
             async with db.execute(
@@ -368,7 +368,7 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             await db.execute(
                 "UPDATE command SET {} WHERE id = :id".format(  # nosec
-                    ", ".join(["{} = :{}".format(k, k) for k in updates])
+                    ", ".join([f"{k} = :{k}" for k in updates])
                 ),
                 {**updates, **{"id": command_id}},
             )
@@ -380,7 +380,7 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             await db.execute(
                 "UPDATE deployment SET {} WHERE id = :id".format(  # nosec
-                    ", ".join(["{} = :{}".format(k, k) for k in updates])
+                    ", ".join([f"{k} = :{k}" for k in updates])
                 ),
                 {**updates, **{"id": deployment_id}},
             )
@@ -391,7 +391,7 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             await db.execute(
                 "UPDATE port SET {} WHERE id = :id".format(  # nosec
-                    ", ".join(["{} = :{}".format(k, k) for k in updates])
+                    ", ".join([f"{k} = :{k}" for k in updates])
                 ),
                 {**updates, **{"id": port_id}},
             )
@@ -402,7 +402,7 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             await db.execute(
                 "UPDATE step SET {} WHERE id = :id".format(  # nosec
-                    ", ".join(["{} = :{}".format(k, k) for k in updates])
+                    ", ".join([f"{k} = :{k}" for k in updates])
                 ),
                 {**updates, **{"id": step_id}},
             )
@@ -415,7 +415,7 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             await db.execute(
                 "UPDATE target SET {} WHERE id = :id".format(  # nosec
-                    ", ".join(["{} = :{}".format(k, k) for k in updates])
+                    ", ".join([f"{k} = :{k}" for k in updates])
                 ),
                 {**updates, **{"id": target_id}},
             )
@@ -428,7 +428,7 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             await db.execute(
                 "UPDATE workflow SET {} WHERE id = :id".format(  # nosec
-                    ", ".join(["{} = :{}".format(k, k) for k in updates])
+                    ", ".join([f"{k} = :{k}" for k in updates])
                 ),
                 {**updates, **{"id": workflow_id}},
             )

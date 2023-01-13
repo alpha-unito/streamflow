@@ -16,15 +16,15 @@ from streamflow.deployment.utils import get_path_processor
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Optional, MutableMapping, MutableSequence
+    from typing import MutableMapping, MutableSequence
 
 
 async def _copy(
-    src_connector: Optional[Connector],
-    src_location: Optional[Location],
+    src_connector: Connector | None,
+    src_location: Location | None,
     src: str,
-    dst_connector: Optional[Connector],
-    dst_locations: Optional[MutableSequence[Location]],
+    dst_connector: Connector | None,
+    dst_locations: MutableSequence[Location] | None,
     dst: str,
     writable: False,
 ) -> None:
@@ -192,9 +192,9 @@ class DefaultDataManager(DataManager):
     def get_data_locations(
         self,
         path: str,
-        deployment: Optional[str] = None,
-        location: Optional[str] = None,
-        location_type: Optional[DataType] = None,
+        deployment: str | None = None,
+        location: str | None = None,
+        location_type: DataType | None = None,
     ) -> MutableSequence[DataLocation]:
         data_locations = self.path_mapper.get(path, location_type, deployment, location)
         data_locations = [
@@ -210,7 +210,7 @@ class DefaultDataManager(DataManager):
 
     def get_source_location(
         self, path: str, dst_deployment: str
-    ) -> Optional[DataLocation]:
+    ) -> DataLocation | None:
         if data_locations := self.get_data_locations(path=path):
             dst_connector = self.context.deployment_manager.get_connector(
                 dst_deployment
@@ -254,7 +254,7 @@ class DefaultDataManager(DataManager):
         self,
         location: Location,
         path: str,
-        relpath: Optional[str] = None,
+        relpath: str | None = None,
         data_type: DataType = DataType.PRIMARY,
     ) -> DataLocation:
         data_location = DataLocation(
@@ -299,7 +299,7 @@ class DefaultDataManager(DataManager):
         )
 
 
-class RemotePathNode(object):
+class RemotePathNode:
     __slots__ = ("children", "locations")
 
     def __init__(self):
@@ -309,7 +309,7 @@ class RemotePathNode(object):
         ] = {}
 
 
-class RemotePathMapper(object):
+class RemotePathMapper:
     def __init__(self, context: StreamFlowContext):
         self._filesystem: RemotePathNode = RemotePathNode()
         self.context: StreamFlowContext = context
@@ -326,8 +326,8 @@ class RemotePathMapper(object):
         src_path: str,
         dst_path: str,
         dst_deployment: str,
-        dst_service: Optional[str],
-        dst_location: Optional[str],
+        dst_service: str | None,
+        dst_location: str | None,
         available: bool = False,
     ) -> DataLocation:
         data_locations = self.get(src_path)
@@ -349,9 +349,9 @@ class RemotePathMapper(object):
     def get(
         self,
         path: str,
-        location_type: Optional[DataType] = None,
-        deployment: Optional[str] = None,
-        name: Optional[str] = None,
+        location_type: DataType | None = None,
+        deployment: str | None = None,
+        name: str | None = None,
     ) -> MutableSequence[DataLocation]:
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem

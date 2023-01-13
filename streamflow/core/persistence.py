@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from asyncio import Lock
 from enum import Enum
-from typing import Any, MutableMapping, MutableSequence, Optional, TYPE_CHECKING, Type
+from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 
@@ -62,9 +62,9 @@ class DatabaseLoadingContext(ABC):
         ...
 
 
-class PersistableEntity(object):
+class PersistableEntity:
     def __init__(self):
-        self.persistent_id: Optional[int] = None
+        self.persistent_id: int | None = None
         self.persistence_lock: Lock = Lock()
 
     @classmethod
@@ -109,13 +109,13 @@ class Database(SchemaEntity):
         config: str,
         external: bool,
         lazy: bool,
-        workdir: Optional[str],
+        workdir: str | None,
     ) -> int:
         ...
 
     @abstractmethod
     async def add_port(
-        self, name: str, workflow_id: int, type: Type[Port], params: str
+        self, name: str, workflow_id: int, type: type[Port], params: str
     ) -> int:
         ...
 
@@ -125,7 +125,7 @@ class Database(SchemaEntity):
 
     @abstractmethod
     async def add_step(
-        self, name: str, workflow_id: int, status: int, type: Type[Step], params: str
+        self, name: str, workflow_id: int, status: int, type: type[Step], params: str
     ) -> int:
         ...
 
@@ -133,17 +133,17 @@ class Database(SchemaEntity):
     async def add_target(
         self,
         deployment: int,
-        type: Type[Target],
+        type: type[Target],
         params: str,
         locations: int = 1,
-        service: Optional[str] = None,
-        workdir: Optional[str] = None,
+        service: str | None = None,
+        workdir: str | None = None,
     ) -> int:
         ...
 
     @abstractmethod
     async def add_token(
-        self, tag: str, type: Type[Token], value: Any, port: Optional[int] = None
+        self, tag: str, type: type[Token], value: Any, port: int | None = None
     ) -> int:
         ...
 

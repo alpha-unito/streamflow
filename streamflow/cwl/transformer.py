@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import json
-from typing import Any, MutableMapping, MutableSequence, Optional
+from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import (
@@ -24,7 +26,7 @@ class AllNonNullTransformer(OneToOneTransformer):
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
         else:
-            raise WorkflowExecutionException("Invalid value for token {}".format(name))
+            raise WorkflowExecutionException(f"Invalid value for token {name}")
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
@@ -36,7 +38,7 @@ class DefaultTransformer(ManyToOneTransformer):
     def __init__(self, name: str, workflow: Workflow, default_port: Port):
         super().__init__(name, workflow)
         self.default_port: Port = default_port
-        self.default_token: Optional[Token] = None
+        self.default_token: Token | None = None
 
     async def _save_additional_params(
         self, context: StreamFlowContext
@@ -51,11 +53,11 @@ class DefaultTransformer(ManyToOneTransformer):
     ) -> MutableMapping[str, Token]:
         if len(inputs) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single input port.".format(self.name)
+                f"{self.name} step must contain a single input port."
             )
         if not self.default_port:
             raise WorkflowDefinitionException(
-                "{} step must contain a default port.".format(self.name)
+                f"{self.name} step must contain a default port."
             )
         primary_token = next(iter(inputs[k] for k in inputs))
         if get_token_value(primary_token) is not None:
@@ -74,7 +76,7 @@ class DefaultRetagTransformer(DefaultTransformer):
     ) -> MutableMapping[str, Token]:
         if not self.default_port:
             raise WorkflowDefinitionException(
-                "{} step must contain a default port.".format(self.name)
+                f"{self.name} step must contain a default port."
             )
         tag = get_tag(inputs.values())
         if not self.default_token:
@@ -136,13 +138,11 @@ class FirstNonNullTransformer(OneToOneTransformer):
             for t in token.value:
                 if get_token_value(t) is not None:
                     return t
-            raise WorkflowExecutionException(
-                "All sources are null in token {}".format(name)
-            )
+            raise WorkflowExecutionException(f"All sources are null in token {name}")
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
         else:
-            raise WorkflowExecutionException("Invalid value for token {}".format(name))
+            raise WorkflowExecutionException(f"Invalid value for token {name}")
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
@@ -183,20 +183,18 @@ class OnlyNonNullTransformer(OneToOneTransformer):
                 if get_token_value(t) is not None:
                     if ret is not None:
                         raise WorkflowExecutionException(
-                            "Expected only one source to be non-null in token {}".format(
-                                name
-                            )
+                            f"Expected only one source to be non-null in token {name}"
                         )
                     ret = t
             if ret is None:
                 raise WorkflowExecutionException(
-                    "All sources are null in token {}".format(name)
+                    f"All sources are null in token {name}"
                 )
             return ret
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
         else:
-            raise WorkflowExecutionException("Invalid value for token {}".format(name))
+            raise WorkflowExecutionException(f"Invalid value for token {name}")
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
@@ -212,14 +210,14 @@ class ValueFromTransformer(ManyToOneTransformer):
         port_name: str,
         processor: TokenProcessor,
         value_from: str,
-        expression_lib: Optional[MutableSequence[str]] = None,
+        expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
     ):
         super().__init__(name, workflow)
         self.port_name: str = port_name
         self.processor: TokenProcessor = processor
         self.value_from: str = value_from
-        self.expression_lib: Optional[MutableSequence[str]] = expression_lib
+        self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
 
     async def _save_additional_params(
@@ -271,14 +269,14 @@ class LoopValueFromTransformer(ValueFromTransformer):
         port_name: str,
         processor: TokenProcessor,
         value_from: str,
-        expression_lib: Optional[MutableSequence[str]] = None,
+        expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
     ):
         super().__init__(
             name, workflow, port_name, processor, value_from, expression_lib, full_js
         )
         self.loop_input_ports: MutableSequence[str] = []
-        self.loop_source_port: Optional[str] = None
+        self.loop_source_port: str | None = None
 
     def add_loop_input_port(self, name: str, port: Port):
         self.add_input_port(name + "-in", port)

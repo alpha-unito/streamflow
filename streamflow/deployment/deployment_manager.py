@@ -15,7 +15,7 @@ from streamflow.log_handler import logger
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import DeploymentConfig
-    from typing import MutableMapping, Optional, Any
+    from typing import MutableMapping, Any
 
 
 class DefaultDeploymentManager(DeploymentManager):
@@ -39,7 +39,7 @@ class DefaultDeploymentManager(DeploymentManager):
                     connector = FutureConnector(
                         name=deployment_name,
                         config_dir=self.context.config_dir,
-                        type=connector_classes[deployment_config.type],
+                        connector_type=connector_classes[deployment_config.type],
                         external=deployment_config.external,
                         **deployment_config.config,
                     )
@@ -52,13 +52,11 @@ class DefaultDeploymentManager(DeploymentManager):
                     self.deployments_map[deployment_name] = connector
                     if logger.isEnabledFor(logging.INFO):
                         if not deployment_config.external:
-                            logger.info("DEPLOYING {}".format(deployment_name))
+                            logger.info(f"DEPLOYING {deployment_name}")
                     await connector.deploy(deployment_config.external)
                     if logger.isEnabledFor(logging.INFO):
                         if not deployment_config.external:
-                            logger.info(
-                                "COMPLETED Deployment of {}".format(deployment_name)
-                            )
+                            logger.info(f"COMPLETED Deployment of {deployment_name}")
                     self.events_map[deployment_name].set()
                     break
             else:
@@ -66,7 +64,7 @@ class DefaultDeploymentManager(DeploymentManager):
                 if deployment_name in self.config_map:
                     break
 
-    def get_connector(self, deployment_name: str) -> Optional[Connector]:
+    def get_connector(self, deployment_name: str) -> Connector | None:
         return self.deployments_map.get(deployment_name, None)
 
     @classmethod
@@ -86,13 +84,11 @@ class DefaultDeploymentManager(DeploymentManager):
             config = self.config_map[deployment_name]
             if logger.isEnabledFor(logging.INFO):
                 if not config.external:
-                    logger.info(
-                        "UNDEPLOYING {deployment}".format(deployment=deployment_name)
-                    )
+                    logger.info(f"UNDEPLOYING {deployment_name}")
             await connector.undeploy(config.external)
             if logger.isEnabledFor(logging.INFO):
                 if not config.external:
-                    logger.info("COMPLETED Undeployment of {}".format(deployment_name))
+                    logger.info(f"COMPLETED Undeployment of {deployment_name}")
             del self.deployments_map[deployment_name]
             del self.config_map[deployment_name]
             self.events_map[deployment_name].set()

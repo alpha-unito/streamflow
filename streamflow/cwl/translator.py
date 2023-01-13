@@ -13,10 +13,6 @@ from typing import (
     Any,
     MutableMapping,
     MutableSequence,
-    Optional,
-    Set,
-    Type,
-    Union,
     cast,
 )
 
@@ -177,7 +173,7 @@ def _create_command(
 def _create_command_output_processor(
     port_name: str,
     workflow: Workflow,
-    port_target: Optional[Target],
+    port_target: Target | None,
     port_type: Any,
     cwl_element: MutableMapping[str, Any],
     cwl_name_prefix: str,
@@ -267,9 +263,7 @@ def _create_command_output_processor(
             # Unknown type -> raise Exception
             else:
                 raise WorkflowDefinitionException(
-                    "Unsupported type {} for port {}.".format(
-                        port_type["type"], port_name
-                    )
+                    f"Unsupported type {port_type['type']} for port {port_name}."
                 )
         # Untyped object -> not supported
         else:
@@ -392,9 +386,9 @@ def _create_list_merger(
     name: str,
     workflow: Workflow,
     ports: MutableMapping[str, Port],
-    output_port: Optional[Port] = None,
-    link_merge: Optional[str] = None,
-    pick_value: Optional[str] = None,
+    output_port: Port | None = None,
+    link_merge: str | None = None,
+    pick_value: str | None = None,
 ) -> Step:
     combinator = workflow.create_step(
         cls=CombinatorStep,
@@ -575,9 +569,7 @@ def _create_token_processor(
             # Unknown type -> raise Exception
             else:
                 raise WorkflowDefinitionException(
-                    "Unsupported type {} for port {}.".format(
-                        port_type["type"], port_name
-                    )
+                    f"Unsupported type {port_type['type']} for port {port_name}."
                 )
         # Untyped object -> not supported
         else:
@@ -740,8 +732,8 @@ def _create_token_transformer(
 def _get_command_token(
     binding: Any,
     is_shell_command: bool = False,
-    input_name: Optional[str] = None,
-    token_type: Optional[str] = None,
+    input_name: str | None = None,
+    token_type: str | None = None,
 ) -> CWLCommandToken:
     # Normalize type (Python does not distinguish among all CWL number types)
     token_type = (
@@ -778,7 +770,7 @@ def _get_command_token_from_input(
     port_type: Any,
     input_name: str,
     is_shell_command: bool = False,
-    schema_def_types: Optional[MutableMapping[str, Any]] = None,
+    schema_def_types: MutableMapping[str, Any] | None = None,
 ):
     token = None
     command_line_binding = cwl_element.get("inputBinding", None)
@@ -833,9 +825,7 @@ def _get_command_token_from_input(
             # Unknown type -> raise Exception
             else:
                 raise WorkflowDefinitionException(
-                    "Unsupported type {} for port {}.".format(
-                        port_type["type"], input_name
-                    )
+                    f"Unsupported type {port_type['type']} for port {input_name}."
                 )
         # Untyped object -> not supported
         else:
@@ -856,7 +846,7 @@ def _get_command_token_from_input(
         # List of types: -> CWLUnionCommandToken
         else:
             command_tokens = []
-            for i, port_type in enumerate(types):
+            for port_type in types:
                 token = _get_command_token_from_input(
                     cwl_element=cwl_element,
                     port_type=port_type,
@@ -915,7 +905,7 @@ def _get_command_token_from_input(
 def _get_hardware_requirement(
     cwl_version: str,
     requirements: MutableMapping[str, Any],
-    expression_lib: Optional[MutableSequence[str]],
+    expression_lib: MutableSequence[str] | None,
     full_js: bool,
 ) -> CWLHardwareRequirement:
     hardware_requirement = CWLHardwareRequirement(
@@ -1024,7 +1014,7 @@ def _get_secondary_files(
         return []
 
 
-def _percolate_port(port_name: str, *args) -> Optional[Port]:
+def _percolate_port(port_name: str, *args) -> Port | None:
     for arg in args:
         if port_name in arg:
             port = arg[port_name]
@@ -1061,9 +1051,7 @@ def _process_docker_requirement(
         "image": image_name,
         "logDriver": "none",
         "network": "default" if network_access else "none",
-        "volume": [
-            "{host}:{container}".format(host=target.workdir, container=target.workdir)
-        ],
+        "volume": [f"{target.workdir}:{target.workdir}"],
     }
     # Manage dockerOutputDirectory directive
     if "dockerOutputDirectory" in docker_requirement:
@@ -1071,11 +1059,7 @@ def _process_docker_requirement(
         context["output_directory"] = docker_config["workdir"]
         local_dir = os.path.join(tempfile.gettempdir(), "streamflow", random_name())
         os.makedirs(local_dir, exist_ok=True)
-        docker_config["volume"].append(
-            "{host}:{container}".format(
-                host=local_dir, container=docker_config["workdir"]
-            )
-        )
+        docker_config["volume"].append(f"{local_dir}:{docker_config['workdir']}")
     # Build step target
     deployment = DeploymentConfig(name=name, type="docker", config=docker_config)
     step_target = Target(
@@ -1130,7 +1114,7 @@ def _process_input_value(
 
 def _process_javascript_requirement(
     requirements: MutableMapping[str, Any]
-) -> (Optional[MutableSequence[Any]], bool):
+) -> (MutableSequence[Any] | None, bool):
     expression_lib = None
     full_js = False
     if "InlineJavascriptRequirement" in requirements:
@@ -1147,7 +1131,7 @@ def _process_loop_transformers(
     input_ports: MutableMapping[str, Port],
     loop_input_ports: MutableMapping[str, Port],
     transformers: MutableMapping[str, LoopValueFromTransformer],
-    input_dependencies: MutableMapping[str, Set[str]],
+    input_dependencies: MutableMapping[str, set[str]],
 ):
     new_input_ports = {}
     for input_name, token_transformer in transformers.items():
@@ -1170,7 +1154,7 @@ def _process_transformers(
     step_name: str,
     input_ports: MutableMapping[str, Port],
     transformers: MutableMapping[str, Transformer],
-    input_dependencies: MutableMapping[str, Set[str]],
+    input_dependencies: MutableMapping[str, set[str]],
 ):
     new_input_ports = {}
     for input_name, token_transformer in transformers.items():
@@ -1210,7 +1194,7 @@ def _remap_path(
         )
 
 
-class CWLTranslator(object):
+class CWLTranslator:
     def __init__(
         self,
         context: StreamFlowContext,
@@ -1231,7 +1215,7 @@ class CWLTranslator(object):
         self.gather_map: MutableMapping[str, str] = {}
         self.input_ports: MutableMapping[str, Port] = {}
         self.loading_context: cwltool.context.LoadingContext = loading_context
-        self.output_ports: MutableMapping[str, Union[str, Port]] = {}
+        self.output_ports: MutableMapping[str, str | Port] = {}
         self.scatter: MutableMapping[str, Any] = {}
         self.workflow_config: WorkflowConfig = workflow_config
 
@@ -1341,7 +1325,7 @@ class CWLTranslator(object):
         global_name: str,
         port_name: str,
         transformer_suffix: str,
-        port: Optional[Port],
+        port: Port | None,
         workflow: Workflow,
         value: Any,
     ) -> Port:
@@ -1517,18 +1501,16 @@ class CWLTranslator(object):
     def _translate_command_line_tool(
         self,
         workflow: Workflow,
-        cwl_element: Union[
-            cwltool.command_line_tool.CommandLineTool,
-            cwltool.command_line_tool.ExpressionTool,
-        ],
+        cwl_element: (
+            cwltool.command_line_tool.CommandLineTool
+            | cwltool.command_line_tool.ExpressionTool
+        ),
         context: MutableMapping[str, Any],
         name_prefix: str,
         cwl_name_prefix: str,
     ):
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "Translating {} {}".format(cwl_element.__class__.__name__, name_prefix)
-            )
+            logger.debug(f"Translating {cwl_element.__class__.__name__} {name_prefix}")
         # Extract custom types if present
         requirements = {**context["hints"], **context["requirements"]}
         schema_def_types = _get_schema_def_types(requirements)
@@ -1711,7 +1693,7 @@ class CWLTranslator(object):
     ):
         step_name = name_prefix
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Translating Workflow {}".format(step_name))
+            logger.debug(f"Translating Workflow {step_name}")
         # Extract custom types if present
         requirements = {**context["hints"], **context["requirements"]}
         schema_def_types = _get_schema_def_types(requirements)
@@ -1871,7 +1853,7 @@ class CWLTranslator(object):
         # Process content
         step_name = _get_name(name_prefix, cwl_name_prefix, cwl_element.id)
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Translating WorkflowStep {}".format(step_name))
+            logger.debug(f"Translating WorkflowStep {step_name}")
         cwl_step_name = _get_name(
             name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
         )
@@ -2330,7 +2312,7 @@ class CWLTranslator(object):
         value_from_transformers: MutableMapping[str, ValueFromTransformer],
         input_dependencies: MutableMapping[str, Any],
         inner_steps_prefix: str = "",
-        value_from_transformer_cls: Type[ValueFromTransformer] = ValueFromTransformer,
+        value_from_transformer_cls: type[ValueFromTransformer] = ValueFromTransformer,
     ):
         # Extract custom types if present
         schema_def_types = _get_schema_def_types(requirements)
@@ -2527,7 +2509,7 @@ class CWLTranslator(object):
             _get_name("/", cwl_root_prefix, element["id"]): element
             for element in self.cwl_definition.tool.get("outputs", [])
         }
-        for output_name, output_value in self.output_ports.items():
+        for output_name in self.output_ports:
             if output_name.lstrip(posixpath.sep).count(posixpath.sep) == 0:
                 if port := _percolate_port(output_name, self.output_ports):
                     port_name = output_name.lstrip(posixpath.sep)
@@ -2577,7 +2559,7 @@ class CWLTranslator(object):
                                 break
                         if not port_found:
                             raise WorkflowDefinitionException(
-                                "Cannot retrieve {} input port.".format(dep)
+                                f"Cannot retrieve {dep} input port."
                             )
                     # Create an output port for the transformer
                     transformer_step.add_output_port(port_name, workflow.create_port())

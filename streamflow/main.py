@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import argparse
 import asyncio
 import logging
 import os
 import sys
 import uuid
-from typing import Any, MutableMapping, Optional, Type
+from typing import Any, MutableMapping
 
 from streamflow import report
 from streamflow.config.config import WorkflowConfig
@@ -91,7 +93,7 @@ async def _async_report(args: argparse.Namespace):
 
 def _get_instance_from_config(
     streamflow_config: MutableMapping[str, Any],
-    classes: MutableMapping[str, Type],
+    classes: MutableMapping[str, type],
     instance_type: str,
     kwargs: MutableMapping[str, Any],
     enabled_by_default: bool = True,
@@ -110,7 +112,7 @@ def _get_instance_from_config(
 def build_context(
     config_dir: str,
     streamflow_config: MutableMapping[str, Any],
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
 ) -> StreamFlowContext:
     output_dir = output_dir or os.getcwd()
     context = StreamFlowContext(config_dir)
@@ -161,7 +163,7 @@ def main(args):
         if args.context == "version":
             from streamflow.version import VERSION
 
-            print("StreamFlow version {version}".format(version=VERSION))
+            print(f"StreamFlow version {VERSION}")
         elif args.context == "list":
             asyncio.run(_async_list(args))
         elif args.context == "report":
@@ -179,7 +181,7 @@ def main(args):
                 logger.addFilter(HighlitingFilter())
             asyncio.run(_async_main(args))
         else:
-            raise Exception("Context {} not supported.".format(args.context))
+            raise Exception(f"Context {args.context} not supported.")
         return 0
     except Exception as e:
         logger.exception(e)

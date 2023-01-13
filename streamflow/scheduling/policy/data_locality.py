@@ -15,7 +15,7 @@ from streamflow.workflow.token import FileToken
 if TYPE_CHECKING:
     from streamflow.core.scheduling import AvailableLocation, LocationAllocation
     from streamflow.core.workflow import Job
-    from typing import MutableMapping, Optional
+    from typing import MutableMapping
 
 
 class DataLocalityPolicy(Policy):
@@ -28,7 +28,7 @@ class DataLocalityPolicy(Policy):
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> Optional[Location]:
+    ) -> Location | None:
         valid_locations = list(available_locations.keys())
         # For each input token sorted by weight
         weights = {
@@ -43,7 +43,7 @@ class DataLocalityPolicy(Policy):
                 ),
             )
         }
-        for name, token in sorted(
+        for _, token in sorted(
             job.inputs.items(), key=lambda item: weights[item[0]], reverse=True
         ):
             related_locations = set()

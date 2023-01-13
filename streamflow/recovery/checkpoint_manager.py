@@ -15,13 +15,11 @@ from streamflow.core.utils import random_name
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Optional, MutableSequence
+    from typing import MutableSequence
 
 
 class DefaultCheckpointManager(CheckpointManager):
-    def __init__(
-        self, context: StreamFlowContext, checkpoint_dir: Optional[str] = None
-    ):
+    def __init__(self, context: StreamFlowContext, checkpoint_dir: str | None = None):
         super().__init__(context)
         self.checkpoint_dir = checkpoint_dir or os.path.join(
             tempfile.gettempdir(), "streamflow", "checkpoint", utils.random_name()

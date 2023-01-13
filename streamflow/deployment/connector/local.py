@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import MutableMapping, MutableSequence, Optional
+from typing import MutableMapping, MutableSequence
 
 import pkg_resources
 import psutil
@@ -16,7 +18,7 @@ from streamflow.deployment.connector.base import BaseConnector
 def _get_disk_usage(path: Path):
     while not os.path.exists(path):
         path = path.parent
-    return float(getattr(shutil.disk_usage(path), "free") / 2**20)
+    return float(shutil.disk_usage(path).free / 2**20)
 
 
 class LocalConnector(BaseConnector):
@@ -31,9 +33,9 @@ class LocalConnector(BaseConnector):
         self, command: str, location: Location, interactive: bool = False
     ):
         if sys.platform == "win32":
-            return "cmd /C '{command}'".format(command=command)
+            return f"cmd /C '{command}'"
         else:
-            return "sh -c '{command}'".format(command=command)
+            return f"sh -c '{command}'"
 
     async def _copy_remote_to_remote(
         self,
@@ -41,7 +43,7 @@ class LocalConnector(BaseConnector):
         dst: str,
         locations: MutableSequence[Location],
         source_location: Location,
-        source_connector: Optional[Connector] = None,
+        source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
@@ -66,10 +68,10 @@ class LocalConnector(BaseConnector):
 
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         return {
             LOCAL_LOCATION: AvailableLocation(
