@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
 import posixpath
 import re
-from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
+from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
 import pkg_resources
@@ -24,8 +26,8 @@ class OccamConnector(SSHConnector):
         file: str,
         sshKey: str,
         username: str,
-        sshKeyPassphraseFile: Optional[str] = None,
-        hostname: Optional[str] = "occam.c3s.unito.it",
+        sshKeyPassphraseFile: str | None = None,
+        hostname: str | None = "occam.c3s.unito.it",
         transferBufferSize: int = 2**16,
     ) -> None:
         super().__init__(
@@ -35,8 +37,8 @@ class OccamConnector(SSHConnector):
             sshKey=sshKey,
             sshKeyPassphraseFile=sshKeyPassphraseFile,
             sharedPaths=[
-                "/archive/home/{username}".format(username=username),
-                "/scratch/home/{username}".format(username=username),
+                f"/archive/home/{username}",
+                f"/scratch/home/{username}",
             ],
             transferBufferSize=transferBufferSize,
             username=username,
@@ -77,7 +79,7 @@ class OccamConnector(SSHConnector):
 
         return effective_locations
 
-    def _get_shared_path(self, location: str, path: str) -> Optional[str]:
+    def _get_shared_path(self, location: str, path: str) -> str | None:
         for shared_path in self.sharedPaths:
             if path.startswith(shared_path):
                 return path
@@ -91,12 +93,12 @@ class OccamConnector(SSHConnector):
         return None
 
     async def _get_tmpdir(self, location: str):
-        scratch_home = "/scratch/home/{username}".format(username=self.username)
+        scratch_home = f"/scratch/home/{self.username}"
         temp_dir = posixpath.join(
             scratch_home, "streamflow", "".join(utils.random_name())
         )
         async with self._get_ssh_client(location) as ssh_client:
-            await ssh_client.run("mkdir -p {dir}".format(dir=temp_dir))
+            await ssh_client.run(f"mkdir -p {temp_dir}")
         return temp_dir
 
     def _get_volumes(self, location: str) -> MutableSequence[str]:
@@ -112,7 +114,7 @@ class OccamConnector(SSHConnector):
         dst: str,
         locations: MutableSequence[Location],
         source_location: Location,
-        source_connector: Optional[str] = None,
+        source_connector: str | None = None,
         read_only: bool = False,
     ) -> None:
         effective_locations = self._get_effective_locations(
@@ -146,7 +148,7 @@ class OccamConnector(SSHConnector):
         if temp_dir is not None:
             for location in effective_locations:
                 async with self._get_ssh_client(location.name) as ssh_client:
-                    await ssh_client.run("rm -rf {dir}".format(dir=temp_dir))
+                    await ssh_client.run(f"rm -rf {temp_dir}")
 
     async def _copy_remote_to_remote_single(
         self,
@@ -154,7 +156,7 @@ class OccamConnector(SSHConnector):
         dst: str,
         location: Location,
         source_location: Location,
-        temp_dir: Optional[str],
+        temp_dir: str | None,
         read_only: bool = False,
     ) -> None:
         if source_location.name == location.name:
@@ -202,14 +204,14 @@ class OccamConnector(SSHConnector):
         if temp_dir is not None:
             for location in effective_locations:
                 async with self._get_ssh_client(location.name) as ssh_client:
-                    await ssh_client.run("rm -rf {dir}".format(dir=temp_dir))
+                    await ssh_client.run(f"rm -rf {temp_dir}")
 
     async def _copy_local_to_remote_single(
         self,
         src: str,
         dst: str,
         location: Location,
-        temp_dir: Optional[str],
+        temp_dir: str | None,
         read_only: bool = False,
     ) -> None:
         shared_path = self._get_shared_path(location.name, dst)
@@ -274,11 +276,7 @@ class OccamConnector(SSHConnector):
     ):
         deploy_command = "".join(
             [
-                (
-                    "cd {} && ".format(service.get("workdir"))
-                    if "workdir" in service
-                    else ""
-                ),
+                (f"cd {service.get('workdir')} && " if "workdir" in service else ""),
                 "occam-run ",
                 self.get_option("x", service.get("x11")),
                 self.get_option("n", node),
@@ -286,39 +284,32 @@ class OccamConnector(SSHConnector):
                 self.get_option("c", service.get("jobidFile")),
                 self.get_option("s", service.get("shmSize")),
                 self.get_option("v", service.get("volumes")),
-                "{} ".format(service["image"]),
-                " ".join(service.get("command", "")),
+                f"{service['image']} " " ".join(service.get("command", "")),
             ]
         )
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("EXECUTING {command}".format(command=deploy_command))
+            logger.debug(f"EXECUTING {deploy_command}")
         async with self._get_ssh_client(name) as ssh_client:
             result = await ssh_client.run(deploy_command)
         output = result.stdout
-        search_result = re.findall(
-            "({node}-[0-9]+).*".format(node=node), output, re.MULTILINE
-        )
+        search_result = re.findall(f"({node}-[0-9]+).*", output, re.MULTILINE)
         if search_result:
             if name not in self.jobs_table:
                 self.jobs_table[name] = []
             self.jobs_table[name].append(search_result[0])
             if logger.isEnabledFor(logging.INFO):
-                logger.info(
-                    "Deployed {name} on {location}".format(
-                        name=name, location=search_result[0]
-                    )
-                )
+                logger.info(f"Deployed {name} on {search_result[0]}")
         else:
             raise Exception
 
     async def _undeploy_node(self, name: str, job_id: str):
-        undeploy_command = "".join(["occam-kill ", "{job_id}"]).format(job_id=job_id)
+        undeploy_command = f"occam-kill {job_id}"
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("EXECUTING {command}".format(command=undeploy_command))
+            logger.debug(f"EXECUTING {undeploy_command}")
         async with self._get_ssh_client(name) as ssh_client:
             await ssh_client.run(undeploy_command)
         if logger.isEnabledFor(logging.INFO):
-            logger.info("Killed {location}".format(location=job_id))
+            logger.info(f"Killed {job_id}")
 
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
@@ -334,10 +325,10 @@ class OccamConnector(SSHConnector):
 
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         nodes = (
             self.jobs_table.get(service, [])
@@ -379,14 +370,14 @@ class OccamConnector(SSHConnector):
         location: Location,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
         capture_output: bool = False,
-        timeout: Optional[int] = None,
-        job_name: Optional[str] = None,
-    ) -> Optional[Tuple[Optional[Any], int]]:
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
         command = self._get_command(
             location=location,
             command=command,
@@ -397,9 +388,7 @@ class OccamConnector(SSHConnector):
             stderr=stderr,
             job_name=job_name,
         )
-        occam_command = "".join("occam-exec " "{location} " "sh -c '{command}'").format(
-            location=location, command=command
-        )
+        occam_command = f"occam-exec {location} sh -c '{command}'"
         async with self._get_ssh_client(location.name) as ssh_client:
             result = await asyncio.wait_for(
                 ssh_client.run(occam_command), timeout=timeout

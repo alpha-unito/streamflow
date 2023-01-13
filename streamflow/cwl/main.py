@@ -75,7 +75,7 @@ async def main(
         cwl_inputs = {}
     # Transpile CWL workflow to the StreamFlow representation
     if logger.isEnabledFor(logging.INFO):
-        logger.info("Processing workflow {}".format(args.name))
+        logger.info(f"Processing workflow {args.name}")
     translator = CWLTranslator(
         context=context,
         name=args.name,
@@ -95,7 +95,7 @@ async def main(
         logger.info("COMPLETED Building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)
     if logger.isEnabledFor(logging.INFO):
-        logger.info("Running workflow {}".format(args.name))
+        logger.info(f"Running workflow {args.name}")
     output_tokens = await executor.run()
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED Workflow execution")

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import base64
 import logging
@@ -5,7 +7,7 @@ import os
 import shlex
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
+from typing import Any, MutableMapping, MutableSequence
 
 import cachetools
 import pkg_resources
@@ -30,16 +32,16 @@ class QueueManagerConnector(SSHConnector, ABC):
         hostname: str,
         username: str,
         checkHostKey: bool = True,
-        dataTransferConnection: Optional[Union[str, MutableMapping[str, Any]]] = None,
-        file: Optional[str] = None,
-        maxConcurrentJobs: Optional[int] = 1,
-        maxConcurrentSessions: Optional[int] = 10,
-        maxConnections: Optional[int] = 1,
-        passwordFile: Optional[str] = None,
+        dataTransferConnection: str | MutableMapping[str, Any] | None = None,
+        file: str | None = None,
+        maxConcurrentJobs: int | None = 1,
+        maxConcurrentSessions: int | None = 10,
+        maxConnections: int | None = 1,
+        passwordFile: str | None = None,
         pollingInterval: int = 5,
-        services: Optional[MutableMapping[str, str]] = None,
-        sshKey: Optional[str] = None,
-        sshKeyPassphraseFile: Optional[str] = None,
+        services: MutableMapping[str, str] | None = None,
+        sshKey: str | None = None,
+        sshKeyPassphraseFile: str | None = None,
         transferBufferSize: int = 2**16,
     ) -> None:
         super().__init__(
@@ -89,26 +91,24 @@ class QueueManagerConnector(SSHConnector, ABC):
         command: str,
         job_name: str,
         location: Location,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-        timeout: Optional[int] = None,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        timeout: int | None = None,
     ) -> str:
         ...
 
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         if service is not None and service not in self.templates:
             raise WorkflowDefinitionException(
-                "Invalid service {} for deployment {}.".format(
-                    service, self.deployment_name
-                )
+                f"Invalid service {service} for deployment {self.deployment_name}."
             )
         return {
             self.hostname: AvailableLocation(
@@ -131,14 +131,14 @@ class QueueManagerConnector(SSHConnector, ABC):
         location: Location,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
         capture_output: bool = False,
-        timeout: Optional[int] = None,
-        job_name: Optional[str] = None,
-    ) -> Optional[Tuple[Optional[Any], int]]:
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
         if job_name:
             command = utils.create_command(
                 command=command, environment=environment, workdir=workdir
@@ -148,7 +148,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                     "EXECUTING command {command} on {location} {job}".format(
                         command=command,
                         location=location,
-                        job="for job {job}".format(job=job_name) if job_name else "",
+                        job=f"for job {job_name}" if job_name else "",
                     )
                 )
             command = utils.encode_command(command)
@@ -169,11 +169,7 @@ class QueueManagerConnector(SSHConnector, ABC):
                 timeout=timeout,
             )
             if logger.isEnabledFor(logging.INFO):
-                logger.info(
-                    "Scheduled job {job} with job id {job_id}".format(
-                        job=job_name, job_id=job_id
-                    )
-                )
+                logger.info(f"Scheduled job {job_name} with job id {job_id}")
             self.scheduledJobs.append(job_id)
             async with self.jobsCacheLock:
                 self.jobsCache.clear()
@@ -215,16 +211,12 @@ class SlurmConnector(QueueManagerConnector):
         async with self._get_ssh_client(location.name) as ssh_client:
             output_path = (
                 await ssh_client.run(
-                    "scontrol show -o job {job_id} | "
-                    "sed -n 's/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'".format(
-                        job_id=job_id
-                    )
+                    f"scontrol show -o job {job_id} | "
+                    "sed -n 's/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'"
                 )
             ).stdout.strip()
             return (
-                (
-                    await ssh_client.run("cat {output}".format(output=output_path))
-                ).stdout.strip()
+                (await ssh_client.run(f"cat {output_path}")).stdout.strip()
                 if output_path
                 else ""
             )
@@ -234,10 +226,8 @@ class SlurmConnector(QueueManagerConnector):
             return int(
                 (
                     await ssh_client.run(
-                        "scontrol show -o job {job_id} | "
-                        "sed -n 's/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'".format(
-                            job_id=job_id
-                        )
+                        f"scontrol show -o job {job_id} | "
+                        "sed -n 's/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'"
                     )
                 ).stdout.strip()
             )
@@ -275,48 +265,38 @@ class SlurmConnector(QueueManagerConnector):
 
     async def _remove_jobs(self, location: str) -> None:
         async with self._get_ssh_client(location) as ssh_client:
-            await ssh_client.run(
-                "scancel {job_ids}".format(job_ids=" ".join(self.scheduledJobs))
-            )
+            await ssh_client.run(f"scancel {' '.join(self.scheduledJobs)}")
 
     async def _run_batch_command(
         self,
         command: str,
         job_name: str,
         location: Location,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-        timeout: Optional[int] = None,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        timeout: int | None = None,
     ) -> str:
         batch_command = (
             "sh -c 'echo {command} | "
             "base64 -d | "
             "sbatch --parsable {workdir} {stdin} {stdout} {stderr} {timeout}'"
         ).format(
-            workdir=(
-                "-D {workdir}".format(workdir=workdir) if workdir is not None else ""
-            ),
-            stdin=(
-                '-i "{stdin}"'.format(stdin=shlex.quote(stdin))
-                if stdin is not None
-                else ""
-            ),
+            workdir=(f"-D {workdir}" if workdir is not None else ""),
+            stdin=(f'-i "{shlex.quote(stdin)}"' if stdin is not None else ""),
             stdout=(
-                '-o "{stdout}"'.format(stdout=shlex.quote(stdout))
+                f'-o "{shlex.quote(stdout)}"'
                 if stdout != asyncio.subprocess.STDOUT
                 else ""
             ),
             stderr=(
-                '-e "{stderr}"'.format(stderr=shlex.quote(stderr))
+                f'-e "{shlex.quote(stderr)}"'
                 if stderr != asyncio.subprocess.STDOUT and stderr != stdout
                 else ""
             ),
             timeout=(
-                "-t {timeout}".format(timeout=utils.format_seconds_to_hhmmss(timeout))
-                if timeout
-                else ""
+                f"-t {utils.format_seconds_to_hhmmss(timeout)}" if timeout else ""
             ),
             command=base64.b64encode(command.encode("utf-8")).decode("utf-8"),
         )
@@ -326,9 +306,7 @@ class SlurmConnector(QueueManagerConnector):
                 return result.stdout.strip()
             else:
                 raise WorkflowExecutionException(
-                    "Error submitting job {} to Slurm: {}".format(
-                        job_name, result.stderr.strip()
-                    )
+                    f"Error submitting job {job_name} to Slurm: {result.stderr.strip()}"
                 )
 
 
@@ -337,16 +315,12 @@ class PBSConnector(QueueManagerConnector):
         async with self._get_ssh_client(location.name) as ssh_client:
             output_path = (
                 await ssh_client.run(
-                    "qstat {job_id} -xf | "
-                    "sed -n 's/^\\s*Output_Path\\s=\\s.*:\\(.*\\)\\s*$/\\1/p'".format(
-                        job_id=job_id
-                    )
+                    f"qstat {job_id} -xf | "
+                    "sed -n 's/^\\s*Output_Path\\s=\\s.*:\\(.*\\)\\s*$/\\1/p'"
                 )
             ).stdout.strip()
             return (
-                (
-                    await ssh_client.run("cat {output}".format(output=output_path))
-                ).stdout.strip()
+                (await ssh_client.run(f"cat {output_path}")).stdout.strip()
                 if output_path
                 else ""
             )
@@ -356,10 +330,8 @@ class PBSConnector(QueueManagerConnector):
             return int(
                 (
                     await ssh_client.run(
-                        "qstat {job_id} -xf | "
-                        "sed -n 's/^\\s*Exit_status\\s=\\s\\([0-9]\\+\\)\\s*$/\\1/p'".format(
-                            job_id=job_id
-                        )
+                        f"qstat {job_id} -xf | "
+                        "sed -n 's/^\\s*Exit_status\\s=\\s\\([0-9]\\+\\)\\s*$/\\1/p'"
                     )
                 ).stdout.strip()
             )
@@ -387,40 +359,34 @@ class PBSConnector(QueueManagerConnector):
 
     async def _remove_jobs(self, location: str) -> None:
         async with self._get_ssh_client(location) as ssh_client:
-            await ssh_client.run(
-                "qdel {job_ids}".format(job_ids=" ".join(self.scheduledJobs))
-            )
+            await ssh_client.run(f"qdel {' '.join(self.scheduledJobs)}")
 
     async def _run_batch_command(
         self,
         command: str,
         job_name: str,
         location: Location,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
-        timeout: Optional[int] = None,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        timeout: int | None = None,
     ) -> str:
-        batch_command = "sh -c '{workdir} echo {command} | base64 -d | qsub {stdin} {stdout} {stderr} -'".format(
-            workdir=(
-                "cd {workdir} &&".format(workdir=workdir) if workdir is not None else ""
-            ),
-            stdin=('-i "{stdin}"'.format(stdin=stdin) if stdin is not None else ""),
+        batch_command = "sh -c '{workdir} echo {command} | base64 -d | qsub {stdin} {stdout} {stderr} {timeout} -'".format(
+            workdir=(f"cd {workdir} &&" if workdir is not None else ""),
+            stdin=(f'-i "{stdin}"' if stdin is not None else ""),
             stdout='-o "{stdout}"'.format(
                 stdout=stdout
                 if stdout != asyncio.subprocess.STDOUT
                 else utils.random_name()
             ),
             stderr=(
-                '-e "{stderr}"'.format(stderr=stderr)
+                f'-e "{stderr}"'
                 if stderr != asyncio.subprocess.STDOUT and stderr != stdout
                 else ""
             ),
             timeout=(
-                "-l walltime={timeout}".format(
-                    timeout=utils.format_seconds_to_hhmmss(timeout)
-                )
+                f"-l walltime={utils.format_seconds_to_hhmmss(timeout)}"
                 if timeout
                 else ""
             ),
@@ -432,7 +398,6 @@ class PBSConnector(QueueManagerConnector):
                 return result.stdout.strip()
             else:
                 raise WorkflowExecutionException(
-                    "Error submitting job {} to PBS: {}".format(
-                        job_name, result.stderr.strip()
-                    )
+                    f"Error submitting job {job_name} "
+                    f"to PBS: {result.stderr.strip()}"
                 )

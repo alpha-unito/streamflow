@@ -1,9 +1,3 @@
-MODULE=streamflow
-
-PYSOURCES=$(wildcard ${MODULE}/**.py tests/*.py) setup.py
-SCHEMAS=$(wildcard ${MODULE}/**/schemas)
-
-
 codespell:
 	codespell -w $(shell git ls-files | grep -v streamflow/cwl/antlr)
 
@@ -16,8 +10,8 @@ coverage.xml: testcov
 coverage-report: testcov
 	coverage report
 
-flake8: $(PYSOURCES)
-	flake8 $^
+flake8:
+	flake8 --exclude streamflow/cwl/antlr setup.py streamflow tests
 
 format:
 	black --exclude streamflow/cwl/antlr setup.py streamflow tests
@@ -25,8 +19,11 @@ format:
 format-check:
 	black --diff --check --exclude streamflow/cwl/antlr setup.py streamflow tests
 
-test: $(PYSOURCES)
+pyupgrade:
+	pyupgrade --py3-only --py38-plus $(shell git ls-files | grep .py | grep -v streamflow/cwl/antlr)
+
+test:
 	python -m pytest -rs ${PYTEST_EXTRA}
 
-testcov: $(PYSOURCES)
+testcov:
 	python -m pytest -rs --cov --cov-config=.coveragerc --cov-report= ${PYTEST_EXTRA}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, MutableMapping, MutableSequence, Optional, Union
+from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
@@ -15,21 +15,21 @@ class CWLHardwareRequirement(HardwareRequirement):
     def __init__(
         self,
         cwl_version: str,
-        cores: Optional[Union[str, float]] = None,
-        memory: Optional[Union[str, float]] = None,
-        tmpdir: Optional[Union[str, float]] = None,
-        outdir: Optional[Union[str, float]] = None,
+        cores: str | float | None = None,
+        memory: str | float | None = None,
+        tmpdir: str | float | None = None,
+        outdir: str | float | None = None,
         full_js: bool = False,
-        expression_lib: Optional[MutableSequence[str]] = None,
+        expression_lib: MutableSequence[str] | None = None,
     ):
-        self.cores: Union[str, float] = cores if cores is not None else 1
-        self.memory: Union[str, float] = (
+        self.cores: str | float = cores if cores is not None else 1
+        self.memory: str | float = (
             memory if memory is not None else (1024 if cwl_version == "v1.0" else 256)
         )
-        self.tmpdir: Union[str, float] = tmpdir if tmpdir is not None else 1024
-        self.outdir: Union[str, float] = outdir if outdir is not None else 1024
+        self.tmpdir: str | float = tmpdir if tmpdir is not None else 1024
+        self.outdir: str | float = outdir if outdir is not None else 1024
         self.full_js: bool = full_js
-        self.expression_lib: Optional[MutableSequence[str]] = expression_lib
+        self.expression_lib: MutableSequence[str] | None = expression_lib
 
     @classmethod
     async def _load(
@@ -59,7 +59,7 @@ class CWLHardwareRequirement(HardwareRequirement):
         }
 
     def _process_requirement(
-        self, requirement: Union[str, float], context: MutableMapping[str, Any]
+        self, requirement: str | float, context: MutableMapping[str, Any]
     ) -> float:
         return math.ceil(
             eval_expression(

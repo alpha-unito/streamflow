@@ -10,7 +10,7 @@ from streamflow.core.deployment import Location
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Any, Optional
+    from typing import Any
 
 
 class DataType(Enum):
@@ -29,7 +29,7 @@ class DataLocation(Location):
         relpath: str,
         deployment: str,
         data_type: DataType,
-        service: Optional[str] = None,
+        service: str | None = None,
         available: bool = False,
     ):
         super().__init__(name, deployment, service)
@@ -67,16 +67,16 @@ class DataManager(SchemaEntity):
     def get_data_locations(
         self,
         path: str,
-        deployment: Optional[str] = None,
-        location: Optional[str] = None,
-        location_type: Optional[DataType] = None,
+        deployment: str | None = None,
+        location: str | None = None,
+        location_type: DataType | None = None,
     ) -> MutableSequence[DataLocation]:
         ...
 
     @abstractmethod
     def get_source_location(
         self, path: str, dst_deployment: str
-    ) -> Optional[DataLocation]:
+    ) -> DataLocation | None:
         ...
 
     @abstractmethod
@@ -125,7 +125,7 @@ class StreamWrapper(ABC):
         ...
 
     @abstractmethod
-    async def read(self, size: Optional[int] = None):
+    async def read(self, size: int | None = None):
         ...
 
     @abstractmethod

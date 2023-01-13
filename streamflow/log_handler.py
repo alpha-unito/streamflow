@@ -81,7 +81,7 @@ class HighlitingFilter(logging.Filter):
     }
 
     def __init__(self):
-        super(HighlitingFilter, self).__init__()
+        super().__init__()
 
     def filter(self, record):
         record.msg = self.highlight(record.msg)

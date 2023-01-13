@@ -12,8 +12,8 @@ from streamflow.core import utils
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
-from streamflow.deployment.filter import binding_filter_classes
 from streamflow.deployment.connector import connector_classes
+from streamflow.deployment.filter import binding_filter_classes
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling.policy import policy_classes
@@ -28,7 +28,7 @@ def handle_errors(errors):
         return
     raise WorkflowDefinitionException(
         "The StreamFlow configuration is invalid because:\n{error_msgs}".format(
-            error_msgs="\n".join([" - {msg}".format(msg=err) for err in errors])
+            error_msgs="\n".join([f" - {err}" for err in errors])
         )
     )
 
@@ -39,15 +39,15 @@ def load_jsonschema(config_file: MutableMapping[str, Any]):
             __name__, os.path.join("schemas", config_file["version"])
         )
     except pkg_resources.ResolutionError:
-        raise Exception("Version {} is unsupported".format(config_file["version"]))
+        raise Exception(f"Version {config_file['version']} is unsupported")
     filename = os.path.join(base_path, "config_schema.json")
     if not os.path.exists(filename):
-        raise Exception('Version in "{}" is unsupported'.format(filename))
-    with open(filename, "r") as f:
-        return loads(f.read(), base_uri="file://{}/".format(base_path), jsonschema=True)
+        raise Exception(f'Version in "{filename}" is unsupported')
+    with open(filename) as f:
+        return loads(f.read(), base_uri=f"file://{base_path}/", jsonschema=True)
 
 
-class SfValidator(object):
+class SfValidator:
     def __init__(self) -> None:
         super().__init__()
         self.yaml = YAML(typ="safe")

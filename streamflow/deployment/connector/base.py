@@ -8,7 +8,7 @@ import shlex
 import tarfile
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
-from typing import MutableSequence, TYPE_CHECKING, Tuple
+from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContext
@@ -29,14 +29,14 @@ from streamflow.deployment.future import FutureConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
-    from typing import Any, Optional, MutableMapping, Union
+    from typing import Any, MutableMapping
 
 
 async def extract_tar_stream(
     tar: aiotarstream.AioTarStream,
     src: str,
     dst: str,
-    transferBufferSize: Optional[int] = None,
+    transferBufferSize: int | None = None,
 ) -> None:
     async for member in tar:
         if os.path.isdir(dst):
@@ -78,15 +78,13 @@ class BaseConnector(Connector, FutureAware):
         value: Any,
     ) -> str:
         if len(name) > 1:
-            name = "-{name} ".format(name=name)
+            name = f"-{name} "
         if isinstance(value, bool):
-            return "-{name} ".format(name=name) if value else ""
+            return f"-{name} " if value else ""
         elif isinstance(value, str):
-            return '-{name} "{value}" '.format(name=name, value=value)
+            return f'-{name} "{value}" '
         elif isinstance(value, MutableSequence):
-            return "".join(
-                ['-{name} "{value}" '.format(name=name, value=item) for item in value]
-            )
+            return "".join([f'-{name} "{item}" ' for item in value])
         elif value is None:
             return ""
         else:
@@ -139,9 +137,7 @@ class BaseConnector(Connector, FutureAware):
                 await tar.add(src, arcname=dst)
         except tarfile.TarError as e:
             raise WorkflowExecutionException(
-                "Error copying {} to {} on location {}: {}".format(
-                    src, dst, location, str(e)
-                )
+                f"Error copying {src} to {dst} on location {location}: {e}"
             ) from e
         finally:
             proc.stdin.close()
@@ -170,9 +166,7 @@ class BaseConnector(Connector, FutureAware):
                 await extract_tar_stream(tar, src, dst, self.transferBufferSize)
         except tarfile.TarError as e:
             raise WorkflowExecutionException(
-                "Error copying {} from location {} to {}: {}".format(
-                    src, location, dst, str(e)
-                )
+                f"Error copying {src} from location {location} to {dst}: {e}"
             ) from e
         finally:
             await proc.wait()
@@ -183,7 +177,7 @@ class BaseConnector(Connector, FutureAware):
         dst: str,
         locations: MutableSequence[Location],
         source_location: Location,
-        source_connector: Optional[str] = None,
+        source_connector: str | None = None,
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
@@ -261,7 +255,7 @@ class BaseConnector(Connector, FutureAware):
             coro=asyncio.create_subprocess_exec(
                 *shlex.split(
                     self._get_run_command(
-                        command="tar chf - -C {} {}".format(dirname, basename),
+                        command=f"tar chf - -C {dirname} {basename}",
                         location=location,
                     )
                 ),
@@ -277,8 +271,8 @@ class BaseConnector(Connector, FutureAware):
         dst: str,
         locations: MutableSequence[Location],
         kind: ConnectorCopyKind,
-        source_connector: Optional[Connector] = None,
-        source_location: Optional[Location] = None,
+        source_connector: Connector | None = None,
+        source_location: Location | None = None,
         read_only: bool = False,
     ) -> None:
         if kind == ConnectorCopyKind.REMOTE_TO_REMOTE:
@@ -331,7 +325,7 @@ class BaseConnector(Connector, FutureAware):
                             location=(
                                 "on local file-system"
                                 if locations[0].name == LOCAL_LOCATION
-                                else "on location {}".format(locations[0])
+                                else f"on location {locations[0]}"
                             ),
                         )
                     )
@@ -343,9 +337,7 @@ class BaseConnector(Connector, FutureAware):
                 raise Exception("Copy from multiple locations is not supported")
             if logger.isEnabledFor(logging.INFO):
                 logger.info(
-                    "COPYING {src} on location {location} to {dst} on local file-system".format(
-                        src=src, dst=dst, location=locations[0]
-                    )
+                    f"COPYING {src} on location {locations[0]} to {dst} on local file-system"
                 )
             await self._copy_remote_to_local(
                 src=src, dst=dst, location=locations[0], read_only=read_only
@@ -358,14 +350,14 @@ class BaseConnector(Connector, FutureAware):
         location: Location,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
         capture_output: bool = False,
-        timeout: Optional[int] = None,
-        job_name: Optional[str] = None,
-    ) -> Optional[Tuple[Optional[Any], int]]:
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr
         )
@@ -374,7 +366,7 @@ class BaseConnector(Connector, FutureAware):
                 "EXECUTING command {command} on {location} {job}".format(
                     command=command,
                     location=location,
-                    job="for job {job}".format(job=job_name) if job_name else "",
+                    job=f"for job {job_name}" if job_name else "",
                 )
             )
         command = utils.encode_command(command)

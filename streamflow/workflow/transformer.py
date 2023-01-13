@@ -11,7 +11,7 @@ class ManyToOneTransformer(Transformer, ABC):
             super().add_output_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
 
     def get_output_name(self):
@@ -20,7 +20,7 @@ class ManyToOneTransformer(Transformer, ABC):
     async def run(self):
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
         await super().run()
 
@@ -31,16 +31,16 @@ class OneToOneTransformer(ManyToOneTransformer, ABC):
             super().add_input_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                "{} step must contain a single input port.".format(self.name)
+                f"{self.name} step must contain a single input port."
             )
 
     async def run(self):
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single input port.".format(self.name)
+                f"{self.name} step must contain a single input port."
             )
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
-                "{} step must contain a single output port.".format(self.name)
+                f"{self.name} step must contain a single output port."
             )
         await super().run()

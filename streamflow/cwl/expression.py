@@ -1,4 +1,6 @@
-from typing import Any, MutableSequence, Optional, Set
+from __future__ import annotations
+
+from typing import Any, MutableSequence
 
 import antlr4
 from cwl_utils.sandboxjs import JSEngine, code_fragment_to_js, segment_re
@@ -9,7 +11,7 @@ from streamflow.cwl.antlr.ECMAScriptListener import ECMAScriptListener
 from streamflow.cwl.antlr.ECMAScriptParser import ECMAScriptParser
 
 
-def _extract_key(next_seg: str) -> Optional[str]:
+def _extract_key(next_seg: str) -> str | None:
     if next_seg[0] == ".":
         return next_seg[1:]
     elif next_seg[1] in ("'", '"'):
@@ -20,17 +22,17 @@ def _extract_key(next_seg: str) -> Optional[str]:
 
 class CWLDependencyListener(ECMAScriptListener):
     def __init__(self):
-        self.deps: Set[str] = set()
+        self.deps: set[str] = set()
         self.names: NamesStack = NamesStack()
         self.names.add_name("inputs")
 
     @staticmethod
-    def _get_index(ctx: antlr4.ParserRuleContext) -> Optional[str]:
+    def _get_index(ctx: antlr4.ParserRuleContext) -> str | None:
         token = ctx.getToken(ECMAScriptParser.StringLiteral, 0)
         return token.symbol.text if token else None
 
     @staticmethod
-    def _get_name(ctx: antlr4.ParserRuleContext) -> Optional[str]:
+    def _get_name(ctx: antlr4.ParserRuleContext) -> str | None:
         token = ctx.getToken(ECMAScriptParser.Identifier, 0)
         return token.symbol.text if token else None
 
@@ -87,7 +89,7 @@ class DependencyResolver(JSEngine):
     def __init__(self):
         self.deps = set()
 
-    def eval(self, scan: str, jslib: str = "", **kwargs: Any) -> Optional[Any]:
+    def eval(self, scan: str, jslib: str = "", **kwargs: Any) -> Any | None:
         code = code_fragment_to_js(scan, jslib)
         lexer = ECMAScriptLexer(antlr4.InputStream(code))
         parser = ECMAScriptParser(antlr4.CommonTokenStream(lexer))
@@ -103,7 +105,7 @@ class DependencyResolver(JSEngine):
         remaining_string: str,
         current_value: Any,
         **kwargs: Any,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         if parsed_string != "inputs":
             return None
         elif remaining_string:

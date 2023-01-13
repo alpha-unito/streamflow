@@ -16,7 +16,7 @@ def _export_to_file(fig, args: argparse.Namespace, default_name: str) -> None:
         pio.write_image(
             fig,
             format=args.format,
-            file=args.name or "{}.{}".format(default_name, args.format),
+            file=args.name or f"{default_name}.{args.format}",
         )
 
 

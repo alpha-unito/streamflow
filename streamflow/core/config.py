@@ -33,7 +33,7 @@ class Config(PersistableEntity):
         return {"name": self.name, "type": self.type, "config": self.config}
 
 
-class BindingConfig(object):
+class BindingConfig:
     __slots__ = ("targets", "filters")
 
     def __init__(

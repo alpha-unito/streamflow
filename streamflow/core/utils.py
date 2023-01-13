@@ -12,11 +12,7 @@ from typing import (
     Any,
     MutableMapping,
     MutableSequence,
-    Optional,
-    Set,
     TYPE_CHECKING,
-    Type,
-    Union,
 )
 
 from jsonref import loads
@@ -30,9 +26,9 @@ if TYPE_CHECKING:
     from typing import Iterable
 
 
-class NamesStack(object):
+class NamesStack:
     def __init__(self):
-        self.stack: MutableSequence[Set] = [set()]
+        self.stack: MutableSequence[set] = [set()]
 
     def add_scope(self):
         self.stack.append(set())
@@ -46,7 +42,7 @@ class NamesStack(object):
     def delete_name(self, name: str):
         self.stack[-1].remove(name)
 
-    def global_names(self) -> Set[str]:
+    def global_names(self) -> set[str]:
         names = self.stack[0].copy()
         if len(self.stack) > 1:
             for scope in self.stack[1:]:
@@ -63,36 +59,29 @@ class NamesStack(object):
 def create_command(
     command: MutableSequence[str],
     environment: MutableMapping[str, str] = None,
-    workdir: Optional[str] = None,
-    stdin: Optional[Union[int, str]] = None,
-    stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-    stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+    workdir: str | None = None,
+    stdin: int | str | None = None,
+    stdout: int | str = asyncio.subprocess.STDOUT,
+    stderr: int | str = asyncio.subprocess.STDOUT,
 ) -> str:
     command = "".join(
         "{workdir}" "{environment}" "{command}" "{stdin}" "{stdout}" "{stderr}"
     ).format(
-        workdir="cd {workdir} && ".format(workdir=workdir)
-        if workdir is not None
-        else "",
+        workdir=f"cd {workdir} && " if workdir is not None else "",
         environment="".join(
-            [
-                'export %s="%s" && ' % (key, value)
-                for (key, value) in environment.items()
-            ]
+            [f'export {key}="{value}" && ' for (key, value) in environment.items()]
         )
         if environment is not None
         else "",
         command=" ".join(command),
-        stdin=" < {stdin}".format(stdin=shlex.quote(stdin))
-        if stdin is not None
-        else "",
-        stdout=" > {stdout}".format(stdout=shlex.quote(stdout))
+        stdin=f" < {shlex.quote(stdin)}" if stdin is not None else "",
+        stdout=f" > {shlex.quote(stdout)}"
         if stdout != asyncio.subprocess.STDOUT
         else "",
         stderr=(
             " 2>&1"
             if stderr == stdout
-            else " 2>{stderr}".format(stderr=shlex.quote(stderr))
+            else f" 2>{shlex.quote(stderr)}"
             if stderr != asyncio.subprocess.STDOUT
             else ""
         ),
@@ -133,11 +122,11 @@ def format_seconds_to_hhmmss(seconds: int) -> str:
     return "%02i:%02i:%02i" % (hours, minutes, seconds)
 
 
-def get_class_fullname(cls: Type):
+def get_class_fullname(cls: type):
     return cls.__module__ + "." + cls.__qualname__
 
 
-def get_class_from_name(name: str) -> Type:
+def get_class_from_name(name: str) -> type:
     module_name, class_name = name.rsplit(".", 1)
     return getattr(importlib.import_module(module_name), class_name)
 
@@ -153,7 +142,7 @@ async def get_remote_to_remote_write_command(
     if posixpath.basename(src) != posixpath.basename(dst):
         result, status = await src_connector.run(
             location=src_location,
-            command=['test -d "{path}"'.format(path=src)],
+            command=[f'test -d "{src}"'],
             capture_output=True,
         )
         if status > 1:
@@ -183,7 +172,7 @@ def get_size(path):
         return os.path.getsize(path)
     else:
         total_size = 0
-        for dirpath, dirnames, filenames in os.walk(path, followlinks=True):
+        for dirpath, _, filenames in os.walk(path, followlinks=True):
             for f in filenames:
                 fp = os.path.join(dirpath, f)
                 total_size += os.path.getsize(fp)
@@ -200,15 +189,15 @@ def get_tag(tokens: Iterable[Token]) -> str:
 
 def inject_schema(
     schema: MutableMapping[str, Any],
-    classes: MutableMapping[str, Type[SchemaEntity]],
+    classes: MutableMapping[str, type[SchemaEntity]],
     definition_name: str,
 ):
     for name, entity in classes.items():
         if entity_schema := entity.get_schema():
-            with open(entity_schema, "r") as f:
+            with open(entity_schema) as f:
                 entity_schema = loads(
                     f.read(),
-                    base_uri="file://{}/".format(os.path.dirname(entity_schema)),
+                    base_uri=f"file://{os.path.dirname(entity_schema)}/",
                     jsonschema=True,
                 )
             schema["definitions"][definition_name]["properties"]["type"].setdefault(
@@ -228,4 +217,4 @@ def random_name() -> str:
 
 
 def wrap_command(command: str):
-    return ["/bin/sh", "-c", "{command}".format(command=command)]
+    return ["/bin/sh", "-c", f"{command}"]

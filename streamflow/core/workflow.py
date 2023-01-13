@@ -19,7 +19,7 @@ from streamflow.core.persistence import (
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location, Target
     from streamflow.core.context import StreamFlowContext
-    from typing import Optional, Any
+    from typing import Any
 
 
 class Command(ABC):
@@ -32,7 +32,7 @@ class Command(ABC):
         ...
 
 
-class CommandOutput(object):
+class CommandOutput:
     __slots__ = ("value", "status")
 
     def __init__(self, value: Any, status: Status):
@@ -44,16 +44,16 @@ class CommandOutput(object):
 
 
 class CommandOutputProcessor(ABC):
-    def __init__(self, name: str, workflow: Workflow, target: Optional[Target] = None):
+    def __init__(self, name: str, workflow: Workflow, target: Target | None = None):
         self.name: str = name
         self.workflow: Workflow = workflow
-        self.target: Optional[Target] = target
+        self.target: Target | None = target
 
-    def _get_connector(self, connector: Optional[Connector], job: Job) -> Connector:
+    def _get_connector(self, connector: Connector | None, job: Job) -> Connector:
         return connector or self.workflow.context.scheduler.get_connector(job.name)
 
     async def _get_locations(
-        self, connector: Optional[Connector], job: Job
+        self, connector: Connector | None, job: Job
     ) -> MutableSequence[Location]:
         if self.target:
             return list(
@@ -105,8 +105,8 @@ class CommandOutputProcessor(ABC):
         self,
         job: Job,
         command_output: CommandOutput,
-        connector: Optional[Connector] = None,
-    ) -> Optional[Token]:
+        connector: Connector | None = None,
+    ) -> Token | None:
         ...
 
     async def save(self, context: StreamFlowContext):
@@ -125,7 +125,7 @@ class Executor(ABC):
         ...
 
 
-class Job(object):
+class Job:
     __slots__ = (
         "name",
         "inputs",
@@ -297,15 +297,13 @@ class Step(PersistableEntity, ABC):
     def add_output_port(self, name: str, port: Port) -> None:
         self._add_port(name, port, DependencyType.OUTPUT)
 
-    def get_input_port(self, name: Optional[str] = None) -> Port:
+    def get_input_port(self, name: str | None = None) -> Port:
         if name is None:
             if len(self.input_ports) == 1:
                 return self.workflow.ports.get(next(iter(self.input_ports.values())))
             else:
                 raise WorkflowExecutionException(
-                    "Cannot retrieve default input port as step {step} contains multiple input ports.".format(
-                        step=self.name
-                    )
+                    f"Cannot retrieve default input port as step {self.name} contains multiple input ports."
                 )
         return (
             self.workflow.ports.get(self.input_ports[name])
@@ -316,15 +314,13 @@ class Step(PersistableEntity, ABC):
     def get_input_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.input_ports.items()}
 
-    def get_output_port(self, name: Optional[str] = None) -> Port:
+    def get_output_port(self, name: str | None = None) -> Port:
         if name is None:
             if len(self.output_ports) == 1:
                 return self.workflow.ports.get(next(iter(self.output_ports.values())))
             else:
                 raise WorkflowExecutionException(
-                    "Cannot retrieve default output port as step {step} contains multiple output ports.".format(
-                        step=self.name
-                    )
+                    f"Cannot retrieve default output port as step {self.name} contains multiple output ports."
                 )
         return (
             self.workflow.ports.get(self.output_ports[name])
@@ -485,7 +481,7 @@ class Token(PersistableEntity):
     def retag(self, tag: str) -> Token:
         return self.__class__(tag=tag, value=self.value)
 
-    async def save(self, context: StreamFlowContext, port_id: Optional[int] = None):
+    async def save(self, context: StreamFlowContext, port_id: int | None = None):
         async with self.persistence_lock:
             if not self.persistent_id:
                 self.persistent_id = await context.database.add_token(
@@ -546,13 +542,11 @@ if TYPE_CHECKING:
 
 
 class Workflow(PersistableEntity):
-    def __init__(
-        self, context: StreamFlowContext, type: str, name: str = str(uuid.uuid4())
-    ):
+    def __init__(self, context: StreamFlowContext, type: str, name: str = None):
         super().__init__()
         self.context: StreamFlowContext = context
         self.type: str = type
-        self.name: str = name
+        self.name: str = name if name is not None else str(uuid.uuid4())
         self.output_ports: MutableMapping[str, str] = {}
         self.ports: MutableMapping[str, Port] = {}
         self.steps: MutableMapping[str, Step] = {}
@@ -562,14 +556,14 @@ class Workflow(PersistableEntity):
     ) -> MutableMapping[str, Any]:
         return {}
 
-    def create_port(self, cls: Type[P] = Port, name: str = None, **kwargs) -> P:
+    def create_port(self, cls: type[P] = Port, name: str = None, **kwargs) -> P:
         if name is None:
             name = str(uuid.uuid4())
         port = cls(workflow=self, name=name, **kwargs)
         self.ports[name] = port
         return port
 
-    def create_step(self, cls: Type[S], name: str = None, **kwargs) -> S:
+    def create_step(self, cls: type[S], name: str = None, **kwargs) -> S:
         if name is None:
             name = str(uuid.uuid4())
         step = cls(name=name, workflow=self, **kwargs)

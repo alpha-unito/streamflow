@@ -19,7 +19,7 @@ async def get_location(
         locations = await connector.get_available_locations()
         return Location(deployment="alpine", name=next(iter(locations.keys())))
     else:
-        raise Exception("{} location type not supported".format(request.param))
+        raise Exception(f"{request.param} location type not supported")
 
 
 def get_docker_deploy_config():

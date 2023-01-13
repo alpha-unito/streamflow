@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, MutableMapping, MutableSequence, Optional, Type, cast
+from typing import Any, Callable, MutableMapping, MutableSequence, cast
 
 import cwl_utils.file_formats
 from rdflib import Graph
@@ -63,30 +63,30 @@ class CWLTokenProcessor(TokenProcessor):
         self,
         name: str,
         workflow: Workflow,
-        token_type: Optional[str] = None,
+        token_type: str | None = None,
         check_type: bool = True,
-        enum_symbols: Optional[MutableSequence[str]] = None,
-        expression_lib: Optional[MutableSequence[str]] = None,
-        file_format: Optional[str] = None,
-        format_graph: Optional[Graph] = None,
+        enum_symbols: MutableSequence[str] | None = None,
+        expression_lib: MutableSequence[str] | None = None,
+        file_format: str | None = None,
+        format_graph: Graph | None = None,
         full_js: bool = False,
-        load_contents: Optional[bool] = None,
-        load_listing: Optional[LoadListing] = None,
+        load_contents: bool | None = None,
+        load_listing: LoadListing | None = None,
         only_propagate_secondary_files: bool = True,
         optional: bool = False,
-        secondary_files: Optional[MutableSequence[SecondaryFile]] = None,
+        secondary_files: MutableSequence[SecondaryFile] | None = None,
         streamable: bool = False,
     ):
         super().__init__(name, workflow)
         self.token_type: str = token_type
         self.check_type: bool = check_type
-        self.enum_symbols: Optional[MutableSequence[str]] = enum_symbols
-        self.expression_lib: Optional[MutableSequence[str]] = expression_lib
-        self.file_format: Optional[str] = file_format
-        self.format_graph: Optional[Graph] = format_graph
+        self.enum_symbols: MutableSequence[str] | None = enum_symbols
+        self.expression_lib: MutableSequence[str] | None = expression_lib
+        self.file_format: str | None = file_format
+        self.format_graph: Graph | None = format_graph
         self.full_js: bool = full_js
-        self.load_contents: Optional[bool] = load_contents
-        self.load_listing: Optional[LoadListing] = load_listing
+        self.load_contents: bool | None = load_contents
+        self.load_listing: LoadListing | None = load_listing
         self.only_propagate_secondary_files: bool = only_propagate_secondary_files
         self.optional: bool = optional
         self.secondary_files: MutableSequence[SecondaryFile] = secondary_files or []
@@ -281,38 +281,38 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self,
         name: str,
         workflow: Workflow,
-        target: Optional[Target] = None,
-        token_type: Optional[str] = None,
-        enum_symbols: Optional[MutableSequence[str]] = None,
-        expression_lib: Optional[MutableSequence[str]] = None,
-        file_format: Optional[str] = None,
+        target: Target | None = None,
+        token_type: str | None = None,
+        enum_symbols: MutableSequence[str] | None = None,
+        expression_lib: MutableSequence[str] | None = None,
+        file_format: str | None = None,
         full_js: bool = False,
-        glob: Optional[str] = None,
+        glob: str | None = None,
         load_contents: bool = False,
         load_listing: LoadListing = LoadListing.no_listing,
         optional: bool = False,
-        output_eval: Optional[str] = None,
-        secondary_files: Optional[MutableSequence[SecondaryFile]] = None,
+        output_eval: str | None = None,
+        secondary_files: MutableSequence[SecondaryFile] | None = None,
         streamable: bool = False,
     ):
         super().__init__(name, workflow, target)
         self.token_type: str = token_type
-        self.enum_symbols: Optional[MutableSequence[str]] = enum_symbols
-        self.expression_lib: Optional[MutableSequence[str]] = expression_lib
-        self.file_format: Optional[str] = file_format
+        self.enum_symbols: MutableSequence[str] | None = enum_symbols
+        self.expression_lib: MutableSequence[str] | None = expression_lib
+        self.file_format: str | None = file_format
         self.full_js: bool = full_js
-        self.glob: Optional[str] = glob
+        self.glob: str | None = glob
         self.load_contents: bool = load_contents
         self.load_listing: LoadListing = load_listing
         self.optional: bool = optional
-        self.output_eval: Optional[str] = output_eval
+        self.output_eval: str | None = output_eval
         self.secondary_files: MutableSequence[SecondaryFile] = secondary_files or []
         self.streamable: bool = streamable
 
     async def _build_token(
         self,
         job: Job,
-        connector: Optional[Connector],
+        connector: Connector | None,
         context: MutableMapping[str, Any],
         token_value: Any,
     ) -> Token:
@@ -375,7 +375,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self,
         job: Job,
         command_output: CWLCommandOutput,
-        connector: Optional[Connector],
+        connector: Connector | None,
         context: MutableMapping[str, Any],
         output_directory: str,
     ):
@@ -553,8 +553,8 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self,
         job: Job,
         command_output: CWLCommandOutput,
-        connector: Optional[Connector] = None,
-    ) -> Optional[Token]:
+        connector: Connector | None = None,
+    ) -> Token | None:
         if command_output.status == Status.SKIPPED:
             return None
         else:
@@ -613,9 +613,7 @@ class CWLMapTokenProcessor(TokenProcessor):
         # Check if token value is a list
         if not isinstance(token, ListToken):
             raise WorkflowDefinitionException(
-                "Invalid value {} for token {}: it should be an array".format(
-                    token.value, self.name
-                )
+                f"Invalid value {token.value} for token {self.name}: it should be an array"
             )
         # Propagate evaluation to the inner processor
         return token.update(
@@ -654,8 +652,8 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
         self,
         job: Job,
         command_output: CommandOutput,
-        connector: Optional[Connector] = None,
-    ) -> Optional[Token]:
+        connector: Connector | None = None,
+    ) -> Token | None:
         if (
             isinstance(command_output.value, MutableMapping)
             and self.name in command_output.value
@@ -755,9 +753,7 @@ class CWLObjectTokenProcessor(TokenProcessor):
         # Check if token value is a dictionary
         if not isinstance(token.value, MutableMapping):
             raise WorkflowDefinitionException(
-                "Invalid value {} for token {}: it should be a record".format(
-                    token.value, self.name
-                )
+                f"Invalid value {token.value} for token {self.name}: it should be a record"
             )
         # Propagate evaluation to the inner processors
         return token.update(
@@ -786,15 +782,15 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         name: str,
         workflow: Workflow,
         processors: MutableMapping[str, CommandOutputProcessor],
-        expression_lib: Optional[MutableSequence[str]] = None,
+        expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
-        output_eval: Optional[str] = None,
+        output_eval: str | None = None,
     ):
         super().__init__(name, workflow)
         self.processors: MutableMapping[str, CommandOutputProcessor] = processors
-        self.expression_lib: Optional[MutableSequence[str]] = expression_lib
+        self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
-        self.output_eval: Optional[str] = output_eval
+        self.output_eval: str | None = output_eval
 
     async def _save_additional_params(self, context: StreamFlowContext):
         return {
@@ -822,8 +818,8 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         self,
         job: Job,
         command_output: CommandOutput,
-        connector: Optional[Connector] = None,
-    ) -> Optional[Token]:
+        connector: Connector | None = None,
+    ) -> Token | None:
         # Remap output and tmp directories when target is specified
         output_directory = self.target.workdir if self.target else job.output_directory
         tmp_directory = self.target.workdir if self.target else job.tmp_directory
@@ -894,7 +890,7 @@ class CWLUnionTokenProcessor(TokenProcessor):
     ):
         super().__init__(name, workflow)
         self.processors: MutableSequence[TokenProcessor] = processors
-        self.check_processor: MutableMapping[Type[TokenProcessor], Callable] = {
+        self.check_processor: MutableMapping[type[TokenProcessor], Callable] = {
             CWLTokenProcessor: self._check_default_processor,
             CWLObjectTokenProcessor: self._check_object_processor,
             CWLMapTokenProcessor: self._check_map_processor,
@@ -1000,7 +996,7 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
     ):
         super().__init__(name, workflow)
         self.processors: MutableSequence[CommandOutputProcessor] = processors
-        self.check_processor: MutableMapping[Type[CommandOutputProcessor], Callable] = {
+        self.check_processor: MutableMapping[type[CommandOutputProcessor], Callable] = {
             CWLCommandOutputProcessor: _check_default_processor,
             CWLObjectCommandOutputProcessor: self._check_object_processor,
             CWLMapCommandOutputProcessor: self._check_map_processor,
@@ -1078,8 +1074,8 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
         self,
         job: Job,
         command_output: CommandOutput,
-        connector: Optional[Connector] = None,
-    ) -> Optional[Token]:
+        connector: Connector | None = None,
+    ) -> Token | None:
         token_value = command_output.value
         # If `token_value` is a dictionary, directly extract the token value from it
         if isinstance(token_value, MutableMapping) and self.name in token_value:

@@ -20,7 +20,6 @@ from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location
-    from typing import Union, Optional
 
 
 def _check_status(
@@ -42,7 +41,7 @@ def _file_checksum_local(path: str) -> str:
         return sha1_checksum.hexdigest()
 
 
-def _listdir_local(path: str, file_type: Optional[FileType]) -> MutableSequence[str]:
+def _listdir_local(path: str, file_type: FileType | None) -> MutableSequence[str]:
     content = []
     dir_content = os.listdir(path)
     check = (
@@ -60,9 +59,9 @@ def _listdir_local(path: str, file_type: Optional[FileType]) -> MutableSequence[
 async def checksum(
     context: StreamFlowContext,
     connector: Connector,
-    location: Optional[Location],
+    location: Location | None,
     path: str,
-) -> Optional[str]:
+) -> str | None:
     if isinstance(connector, LocalConnector):
         if os.path.isfile(path):
             loop = asyncio.get_running_loop()
@@ -72,11 +71,7 @@ async def checksum(
         else:
             return None
     else:
-        command = [
-            'test -f "{path}" && sha1sum "{path}" | awk \'{{print $1}}\''.format(
-                path=path
-            )
-        ]
+        command = [f'test -f "{path}" && sha1sum "{path}" | awk \'{{print $1}}\'']
         result, status = await connector.run(
             location=location, command=command, capture_output=True
         )
@@ -91,7 +86,7 @@ async def checksum(
 
 async def download(
     connector: Connector,
-    locations: Optional[MutableSequence[Location]],
+    locations: MutableSequence[Location] | None,
     url: str,
     parent_dir: str,
 ) -> str:
@@ -107,9 +102,7 @@ async def download(
                     content = await response.read()
                 else:
                     raise Exception(
-                        "Downloading {} failed with status {}:\n{}".format(
-                            url, response.status, response.content
-                        )
+                        f"Downloading {url} failed with status {response.status}:\n{response.content}"
                     )
         with open(filepath, mode="wb") as f:
             f.write(content)
@@ -123,9 +116,7 @@ async def download(
                     filepath = posixpath.join(parent_dir, params["filename"])
                 else:
                     raise Exception(
-                        "Downloading {} failed with status {}:\n{}".format(
-                            url, response.status, response.content
-                        )
+                        f"Downloading {url} failed with status {response.status}:\n{response.content}"
                     )
         download_tasks = []
         for location in locations:
@@ -145,11 +136,11 @@ async def download(
     return filepath
 
 
-async def exists(connector: Connector, location: Optional[Location], path: str) -> bool:
+async def exists(connector: Connector, location: Location | None, path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.exists(path)
     else:
-        command = ['test -e "{path}"'.format(path=path)]
+        command = [f'test -e "{path}"']
         result, status = await connector.run(
             location=location, command=command, capture_output=True
         )
@@ -166,7 +157,7 @@ async def exists(connector: Connector, location: Optional[Location], path: str) 
 async def follow_symlink(
     context: StreamFlowContext,
     connector: Connector,
-    location: Optional[Location],
+    location: Location | None,
     path: str,
 ) -> str:
     if isinstance(connector, LocalConnector):
@@ -185,12 +176,11 @@ async def follow_symlink(
             # If multiple primary locations are present for the same path, raise an Exception
             else:
                 raise WorkflowExecutionException(
-                    "Multiple primary locations on site {} for path {} : {}".format(
-                        location, path, [loc.path for loc in locations]
-                    )
+                    f"Multiple primary locations on site {location} for path {path} "
+                    f": {[loc.path for loc in locations]}"
                 )
         # Otherwise, analyse the remote path
-        command = ['test -e "{path}" && readlink -f "{path}"'.format(path=path)]
+        command = [f'test -e "{path}" && readlink -f "{path}"']
         result, status = await connector.run(
             location=location, command=command, capture_output=True
         )
@@ -204,7 +194,7 @@ async def follow_symlink(
 
 
 async def head(
-    connector: Connector, location: Optional[Location], path: str, num_bytes: int
+    connector: Connector, location: Location | None, path: str, num_bytes: int
 ) -> str:
     if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
@@ -218,11 +208,11 @@ async def head(
         return result.strip()
 
 
-async def isdir(connector: Connector, location: Optional[Location], path: str) -> bool:
+async def isdir(connector: Connector, location: Location | None, path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.isdir(path)
     else:
-        command = ['test -d "{path}"'.format(path=path)]
+        command = [f'test -d "{path}"']
         result, status = await connector.run(
             location=location, command=command, capture_output=True
         )
@@ -236,11 +226,11 @@ async def isdir(connector: Connector, location: Optional[Location], path: str) -
             return not status
 
 
-async def isfile(connector: Connector, location: Optional[Location], path: str) -> bool:
+async def isfile(connector: Connector, location: Location | None, path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.isfile(path)
     else:
-        command = ['test -f "{path}"'.format(path=path)]
+        command = [f'test -f "{path}"']
         result, status = await connector.run(
             location=location, command=command, capture_output=True
         )
@@ -254,11 +244,11 @@ async def isfile(connector: Connector, location: Optional[Location], path: str) 
             return not status
 
 
-async def islink(connector: Connector, location: Optional[Location], path: str) -> bool:
+async def islink(connector: Connector, location: Location | None, path: str) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.islink(path)
     else:
-        command = ['test -L "{path}"'.format(path=path)]
+        command = [f'test -L "{path}"']
         result, status = await connector.run(
             location=location, command=command, capture_output=True
         )
@@ -274,9 +264,9 @@ async def islink(connector: Connector, location: Optional[Location], path: str) 
 
 async def listdir(
     connector: Connector,
-    location: Optional[Location],
+    location: Location | None,
     path: str,
-    file_type: Optional[FileType] = None,
+    file_type: FileType | None = None,
 ) -> MutableSequence[str]:
     if isinstance(connector, LocalConnector):
         return _listdir_local(path, file_type)
@@ -298,14 +288,14 @@ async def listdir(
 
 
 async def mkdir(
-    connector: Connector, locations: Optional[MutableSequence[Location]], path: str
+    connector: Connector, locations: MutableSequence[Location] | None, path: str
 ) -> None:
     return await mkdirs(connector, locations, [path])
 
 
 async def mkdirs(
     connector: Connector,
-    locations: Optional[MutableSequence[Location]],
+    locations: MutableSequence[Location] | None,
     paths: MutableSequence[str],
 ) -> None:
     if isinstance(connector, LocalConnector):
@@ -322,7 +312,7 @@ async def mkdirs(
         )
 
 
-async def read(connector: Connector, location: Optional[Location], path: str) -> str:
+async def read(connector: Connector, location: Location | None, path: str) -> str:
     if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
             return f.read().decode("utf-8")
@@ -336,8 +326,8 @@ async def read(connector: Connector, location: Optional[Location], path: str) ->
 
 
 async def resolve(
-    connector: Connector, location: Optional[Location], pattern: str
-) -> Optional[MutableSequence[str]]:
+    connector: Connector, location: Location | None, pattern: str
+) -> MutableSequence[str] | None:
     if isinstance(connector, LocalConnector):
         return sorted(glob.glob(pattern))
     else:
@@ -364,8 +354,8 @@ async def resolve(
 
 async def rm(
     connector: Connector,
-    location: Optional[Location],
-    path: Union[str, MutableSequence[str]],
+    location: Location | None,
+    path: str | MutableSequence[str],
 ) -> None:
     if isinstance(connector, LocalConnector):
         if isinstance(path, MutableSequence):
@@ -387,16 +377,16 @@ async def rm(
                     os.remove(path)
     else:
         if isinstance(path, MutableSequence):
-            path = " ".join(['"{path}"'.format(path=p) for p in path])
+            path = " ".join([f'"{p}"' for p in path])
         else:
-            path = '"{path}"'.format(path=path)
+            path = f'"{path}"'
         await connector.run(location=location, command=["".join(["rm -rf ", path])])
 
 
 async def size(
     connector: Connector,
-    location: Optional[Location],
-    path: Union[str, MutableSequence[str]],
+    location: Location | None,
+    path: str | MutableSequence[str],
 ) -> int:
     if not path:
         return 0
@@ -410,9 +400,9 @@ async def size(
             return utils.get_size(path)
     else:
         if isinstance(path, MutableSequence):
-            path = " ".join(['"{path}"'.format(path=p) for p in path])
+            path = " ".join([f'"{p}"' for p in path])
         else:
-            path = '"{path}"'.format(path=path)
+            path = f'"{path}"'
         command = [
             "".join(
                 [
@@ -432,7 +422,7 @@ async def size(
 
 
 async def symlink(
-    connector: Connector, location: Optional[Location], src: str, path: str
+    connector: Connector, location: Location | None, src: str, path: str
 ) -> None:
     if isinstance(connector, LocalConnector):
         try:
@@ -447,7 +437,7 @@ async def symlink(
 
 
 async def write(
-    connector: Connector, location: Optional[Location], path: str, content: str
+    connector: Connector, location: Location | None, path: str, content: str
 ) -> None:
     if isinstance(connector, LocalConnector):
         with open(path, "w") as f:

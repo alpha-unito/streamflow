@@ -13,12 +13,10 @@ from pathlib import Path
 from shutil import which
 from typing import (
     Any,
+    Awaitable,
     Coroutine,
     MutableMapping,
     MutableSequence,
-    Optional,
-    Tuple,
-    Union,
     cast,
 )
 
@@ -66,7 +64,7 @@ async def _get_helm_version():
 
 
 class KubernetesResponseWrapper(BaseStreamWrapper):
-    async def read(self, size: Optional[int] = None):
+    async def read(self, size: int | None = None):
         while not self.stream.closed:
             async for msg in self.stream:
                 channel = msg.data[0]
@@ -84,7 +82,7 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
 class KubernetesResponseWrapperContext(StreamWrapperContext):
     def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
-        self.response: Optional[KubernetesResponseWrapper] = None
+        self.response: KubernetesResponseWrapper | None = None
 
     async def __aenter__(self):
         response = await self.coro
@@ -101,9 +99,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self,
         deployment_name: str,
         config_dir: str,
-        inCluster: Optional[bool] = False,
-        kubeconfig: Optional[str] = os.path.join(str(Path.home()), ".kube", "config"),
-        namespace: Optional[str] = None,
+        inCluster: bool | None = False,
+        kubeconfig: str | None = None,
+        namespace: str | None = None,
         locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
         resourcesCacheSize: int = None,
@@ -117,7 +115,11 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             transferBufferSize=transferBufferSize,
         )
         self.inCluster = inCluster
-        self.kubeconfig = kubeconfig
+        self.kubeconfig = (
+            kubeconfig
+            if kubeconfig is not None
+            else os.path.join(str(Path.home()), ".kube", "config")
+        )
         self.namespace = namespace
         cacheSize = locationsCacheSize
         if cacheSize is None:
@@ -142,9 +144,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             else:
                 cacheTTL = 10
         self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
-        self.configuration: Optional[Configuration] = None
-        self.client: Optional[client.CoreV1Api] = None
-        self.client_ws: Optional[client.CoreV1Api] = None
+        self.configuration: Configuration | None = None
+        self.client: client.CoreV1Api | None = None
+        self.client_ws: client.CoreV1Api | None = None
         self.maxConcurrentConnections: int = maxConcurrentConnections
 
     def _configure_incluster_namespace(self):
@@ -197,9 +199,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 await tar.add(src, arcname=dst)
         except tarfile.TarError as e:
             raise WorkflowExecutionException(
-                "Error copying {} to {} on location {}: {}".format(
-                    src, dst, location, str(e)
-                )
+                f"Error copying {src} to {dst} on location {location}: {e}"
             ) from e
         finally:
             await response.close()
@@ -230,9 +230,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 await extract_tar_stream(tar, src, dst, self.transferBufferSize)
         except tarfile.TarError as e:
             raise WorkflowExecutionException(
-                "Error copying {} from location {} to {}: {}".format(
-                    src, location, dst, str(e)
-                )
+                f"Error copying {src} from location {location} to {dst}: {e}"
             ) from e
         finally:
             await response.close()
@@ -243,7 +241,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         dst: str,
         locations: MutableSequence[Location],
         source_location: Location,
-        source_connector: Optional[Connector] = None,
+        source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
@@ -300,7 +298,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                         )
                     )
 
-    async def _get_container(self, location: Location) -> Tuple[str, V1Container]:
+    async def _get_container(self, location: Location) -> tuple[str, V1Container]:
         pod_name, container_name = location.name.split(":")
         pod = await self.client.read_namespaced_pod(
             name=pod_name, namespace=self.namespace or "default"
@@ -309,9 +307,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             if container.name == container_name:
                 return container.name, container
         raise WorkflowExecutionException(
-            "No container with name {} available on pod {}.".format(
-                container_name, pod_name
-            )
+            f"No container with name {container_name} available on pod {pod_name}."
         )
 
     async def _get_configuration(self) -> Configuration:
@@ -330,7 +326,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self,
         locations: MutableSequence[Location],
         dest_path: str,
-        source_location: Optional[Location] = None,
+        source_location: Location | None = None,
     ) -> MutableSequence[Location]:
         # Get containers
         container_tasks = []
@@ -368,7 +364,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 self.get_option("namespace", self.namespace),
                 self.get_option("kubeconfig", self.kubeconfig),
                 "exec ",
-                "{} ".format(pod),
+                f"{pod} ",
                 self.get_option("i", interactive),
                 self.get_option("container", container),
                 "-- ",
@@ -415,14 +411,14 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         location: Location,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
         capture_output: bool = False,
-        timeout: Optional[int] = None,
-        job_name: Optional[str] = None,
-    ) -> Optional[Tuple[Optional[Any], int]]:
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
         command = utils.create_command(
             command, environment, workdir, stdin, stdout, stderr
         )
@@ -431,7 +427,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 "EXECUTING command {command} on {location} {job}".format(
                     command=command,
                     location=location,
-                    job="for job {job}".format(job=job_name) if job_name else "",
+                    job=f"for job {job_name}" if job_name else "",
                 )
             )
         command = utils.encode_command(command)
@@ -444,7 +440,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                     name=pod,
                     namespace=self.namespace or "default",
                     container=container,
-                    command=["sh", "-c", "{command}".format(command=command)],
+                    command=["sh", "-c", f"{command}"],
                     stderr=True,
                     stdin=False,
                     stdout=True,
@@ -498,49 +494,43 @@ class Helm3Connector(BaseKubernetesConnector):
         deployment_name: str,
         config_dir: str,
         chart: str,
-        debug: Optional[bool] = False,
-        kubeContext: Optional[str] = None,
-        kubeconfig: Optional[str] = None,
-        atomic: Optional[bool] = False,
-        caFile: Optional[str] = None,
-        certFile: Optional[str] = None,
-        depUp: Optional[bool] = False,
-        devel: Optional[bool] = False,
-        inCluster: Optional[bool] = False,
-        keepHistory: Optional[bool] = False,
-        keyFile: Optional[str] = None,
-        keyring: Optional[str] = None,
+        debug: bool | None = False,
+        kubeContext: str | None = None,
+        kubeconfig: str | None = None,
+        atomic: bool | None = False,
+        caFile: str | None = None,
+        certFile: str | None = None,
+        depUp: bool | None = False,
+        devel: bool | None = False,
+        inCluster: bool | None = False,
+        keepHistory: bool | None = False,
+        keyFile: str | None = None,
+        keyring: str | None = None,
         locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
-        nameTemplate: Optional[str] = None,
-        namespace: Optional[str] = None,
-        noHooks: Optional[bool] = False,
-        password: Optional[str] = None,
-        renderSubchartNotes: Optional[bool] = False,
-        repo: Optional[str] = None,
-        commandLineValues: Optional[MutableSequence[str]] = None,
-        fileValues: Optional[MutableSequence[str]] = None,
-        stringValues: Optional[MutableSequence[str]] = None,
-        registryConfig: Optional[str] = os.path.join(
-            str(Path.home()), ".config/helm/registry.json"
-        ),
-        releaseName: Optional[str] = "release-%s" % str(uuid.uuid1()),
-        repositoryCache: Optional[str] = os.path.join(
-            str(Path.home()), ".cache/helm/repository"
-        ),
-        repositoryConfig: Optional[str] = os.path.join(
-            str(Path.home()), ".config/helm/repositories.yaml"
-        ),
+        nameTemplate: str | None = None,
+        namespace: str | None = None,
+        noHooks: bool | None = False,
+        password: str | None = None,
+        renderSubchartNotes: bool | None = False,
+        repo: str | None = None,
+        commandLineValues: MutableSequence[str] | None = None,
+        fileValues: MutableSequence[str] | None = None,
+        stringValues: MutableSequence[str] | None = None,
+        registryConfig: str | None = None,
+        releaseName: str | None = None,
+        repositoryCache: str | None = None,
+        repositoryConfig: str | None = None,
         resourcesCacheSize: int = None,
         resourcesCacheTTL: int = None,
-        skipCrds: Optional[bool] = False,
-        timeout: Optional[str] = "1000m",
+        skipCrds: bool | None = False,
+        timeout: str | None = "1000m",
         transferBufferSize: int = (32 << 20) - 1,
-        username: Optional[str] = None,
-        yamlValues: Optional[MutableSequence[str]] = None,
-        verify: Optional[bool] = False,
-        chartVersion: Optional[str] = None,
-        wait: Optional[bool] = True,
+        username: str | None = None,
+        yamlValues: MutableSequence[str] | None = None,
+        verify: bool | None = False,
+        chartVersion: str | None = None,
+        wait: bool | None = True,
     ):
         super().__init__(
             deployment_name=deployment_name,
@@ -556,33 +546,47 @@ class Helm3Connector(BaseKubernetesConnector):
         )
         self.chart: str = os.path.join(self.config_dir, chart)
         self.debug: bool = debug
-        self.kubeContext: Optional[str] = kubeContext
+        self.kubeContext: str | None = kubeContext
         self.atomic: bool = atomic
-        self.caFile: Optional[str] = caFile
-        self.certFile: Optional[str] = certFile
+        self.caFile: str | None = caFile
+        self.certFile: str | None = certFile
         self.depUp: bool = depUp
         self.devel: bool = devel
         self.keepHistory: bool = keepHistory
-        self.keyFile: Optional[str] = keyFile
-        self.keyring: Optional[str] = keyring
-        self.nameTemplate: Optional[str] = nameTemplate
+        self.keyFile: str | None = keyFile
+        self.keyring: str | None = keyring
+        self.nameTemplate: str | None = nameTemplate
         self.noHooks: bool = noHooks
-        self.password: Optional[str] = password
+        self.password: str | None = password
         self.renderSubchartNotes: bool = renderSubchartNotes
-        self.repo: Optional[str] = repo
-        self.commandLineValues: Optional[MutableSequence[str]] = commandLineValues
-        self.fileValues: Optional[MutableSequence[str]] = fileValues
-        self.stringValues: Optional[MutableSequence[str]] = stringValues
+        self.repo: str | None = repo
+        self.commandLineValues: MutableSequence[str] | None = commandLineValues
+        self.fileValues: MutableSequence[str] | None = fileValues
+        self.stringValues: MutableSequence[str] | None = stringValues
         self.skipCrds: bool = skipCrds
-        self.registryConfig = registryConfig
-        self.releaseName: str = releaseName
-        self.repositoryCache = repositoryCache
-        self.repositoryConfig = repositoryConfig
-        self.timeout: Optional[str] = timeout
-        self.username: Optional[str] = username
-        self.yamlValues: Optional[MutableSequence[str]] = yamlValues
+        self.registryConfig = (
+            registryConfig
+            if registryConfig is not None
+            else os.path.join(str(Path.home()), ".config/helm/registry.json")
+        )
+        self.releaseName: str = (
+            releaseName if releaseName is not None else f"release-{uuid.uuid1()}"
+        )
+        self.repositoryCache = (
+            repositoryCache
+            if repositoryCache is not None
+            else os.path.join(str(Path.home()), ".cache/helm/repository")
+        )
+        self.repositoryConfig = (
+            repositoryConfig
+            if repositoryConfig is not None
+            else os.path.join(str(Path.home()), ".config/helm/repositories.yaml")
+        )
+        self.timeout: str | None = timeout
+        self.username: str | None = username
+        self.yamlValues: MutableSequence[str] | None = yamlValues
         self.verify: bool = verify
-        self.chartVersion: Optional[str] = chartVersion
+        self.chartVersion: str | None = chartVersion
         self.wait: bool = wait
 
     def base_command(self) -> str:
@@ -609,9 +613,7 @@ class Helm3Connector(BaseKubernetesConnector):
             version = await _get_helm_version()
             if not version.startswith("v3"):
                 raise WorkflowExecutionException(
-                    "Helm {version} is not compatible with Helm3Connector".format(
-                        version=version
-                    )
+                    f"Helm {version} is not compatible with Helm3Connector"
                 )
             # Deploy Helm charts
             deploy_command = self.base_command() + "".join(
@@ -639,12 +641,12 @@ class Helm3Connector(BaseKubernetesConnector):
                     self.get_option("verify", self.verify),
                     self.get_option("version", self.chartVersion),
                     self.get_option("wait", self.wait),
-                    "{} ".format(self.releaseName),
+                    f"{self.releaseName} ",
                     self.chart,
                 ]
             )
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("EXECUTING {command}".format(command=deploy_command))
+                logger.debug(f"EXECUTING {deploy_command}")
             proc = await asyncio.create_subprocess_exec(
                 *shlex.split(deploy_command),
                 stderr=asyncio.subprocess.DEVNULL,
@@ -655,14 +657,14 @@ class Helm3Connector(BaseKubernetesConnector):
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         pods = await self.client.list_namespaced_pod(
             namespace=self.namespace or "default",
-            label_selector="app.kubernetes.io/instance={}".format(self.releaseName),
+            label_selector=f"app.kubernetes.io/instance={self.releaseName}",
             field_selector="status.phase=Running",
         )
         valid_targets = {}
@@ -706,7 +708,7 @@ class Helm3Connector(BaseKubernetesConnector):
                 ]
             )
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("EXECUTING {command}".format(command=undeploy_command))
+                logger.debug(f"EXECUTING {undeploy_command}")
             proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
             await proc.wait()
         # Close connections
