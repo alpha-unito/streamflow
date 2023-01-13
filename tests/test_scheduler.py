@@ -1,22 +1,22 @@
 import pytest
 import asyncio
 
-from typing import MutableMapping, Optional
+from typing import MutableMapping, MutableSequence, Optional
 from tests.conftest import get_docker_deploy_config
 
 from streamflow.core import utils
 from streamflow.core.workflow import Job, Status
-from streamflow.core.config import BindingConfig
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.config import Config, BindingConfig
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.core.deployment import (
     LOCAL_LOCATION,
+    BindingFilter,
     LocalTarget,
     Target,
 )
 
 from streamflow.deployment.connector import LocalConnector
-
-from streamflow.core.context import StreamFlowContext
 
 
 class InjectedConnector(LocalConnector):
@@ -47,6 +47,17 @@ class InjectedConnector(LocalConnector):
                 hardware=self.hardware,
             )
         }
+
+
+class CustomBindingFilter(BindingFilter):
+    async def get_targets(
+        self, job: Job, targets: MutableSequence[Target]
+    ) -> MutableSequence[Target]:
+        return targets[::-1]
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return ""
 
 
 @pytest.mark.asyncio
@@ -384,3 +395,56 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     for j in jobs:
         await context.scheduler.notify_status(j.name, Status.COMPLETED)
         assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_binding_filter(context: StreamFlowContext):
+    """Test Binding Filter using a job with two targets both free. With the CustomBindingFilter the scheduling will choose the second target"""
+    job = Job(
+        name=utils.random_name(),
+        inputs={},
+        input_directory=utils.random_name(),
+        output_directory=utils.random_name(),
+        tmp_directory=utils.random_name(),
+    )
+    local_target = LocalTarget()
+    docker_target = Target(
+        deployment=get_docker_deploy_config(),
+        service="test-binding-target",
+        workdir=utils.random_name(),
+    )
+
+    # Inject custom filter that returns the targets list backwards
+    filter_config_name = "custom"
+    filter_config = Config(name=filter_config_name, type="shuffle", config={})
+    binding_config = BindingConfig(
+        targets=[local_target, docker_target], filters=[filter_config]
+    )
+    context.scheduler.binding_filter_map[filter_config_name] = CustomBindingFilter()
+
+    # Schedule the job
+    task_pending = [
+        asyncio.create_task(context.scheduler.schedule(job, binding_config, None))
+    ]
+    assert len(task_pending) == 1
+
+    # Both targets are available for scheduling (timeout parameter useful if a deadlock occurs)
+    _, task_pending = await asyncio.wait(
+        task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
+    )
+    assert len(task_pending) == 0
+    assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
+
+    # Check if the job has been scheduled into the second target
+    assert (
+        context.scheduler.job_allocations[job.name].target.deployment.name
+        == get_docker_deploy_config().name
+    )
+
+    # Job changes status to RUNNING
+    await context.scheduler.notify_status(job.name, Status.RUNNING)
+    assert context.scheduler.job_allocations[job.name].status == Status.RUNNING
+
+    # Job changes status to COMPLETED
+    await context.scheduler.notify_status(job.name, Status.COMPLETED)
+    assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
