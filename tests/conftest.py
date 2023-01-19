@@ -34,25 +34,23 @@ def get_docker_deployment_config():
     )
 
 
-def get_local_deployment_config():
-    return DeploymentConfig(
-        name=LOCAL_LOCATION,
-        type="local",
-        config={},
-        external=True,
-        lazy=False,
-        workdir=tempfile.gettempdir(),
-    )
-
-
 @pytest_asyncio.fixture(scope="session")
 async def context() -> StreamFlowContext:
     context = build_context(
         tempfile.gettempdir(),
         {},
-        os.path.join(tempfile.gettempdir(), "streamflow", "tests"),
+        os.path.join(tempfile.gettempdir(), "streamflow", "tests", utils.random_name()),
     )
-    await context.deployment_manager.deploy(get_local_deployment_config())
+    await context.deployment_manager.deploy(
+        DeploymentConfig(
+            name=LOCAL_LOCATION,
+            type="local",
+            config={},
+            external=True,
+            lazy=False,
+            workdir=tempfile.gettempdir(),
+        )
+    )
     await context.deployment_manager.deploy(get_docker_deployment_config())
     yield context
     await context.deployment_manager.undeploy_all()
