@@ -348,34 +348,41 @@ class Step(PersistableEntity, ABC):
             Status.FAILED,
             Status.SKIPPED,
         ]
-        ports = await context.database.get_input_ports(persistent_id)
+        ports_row = await context.database.get_input_ports(persistent_id)
         step.input_ports = {
             k: v
             for k, v in zip(
-                [p["name"] for p in ports],
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            loading_context.load_port(context, p["port"])
+                [p["name"] for p in ports_row],
+                [
+                    port.name
+                    for port in await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                loading_context.load_port(context, p["port"])
+                            )
+                            for p in ports_row
                         )
-                        for p in ports
                     )
-                ),
+                ],
             )
         }
-        ports = await context.database.get_output_ports(persistent_id)
+
+        ports_row = await context.database.get_output_ports(persistent_id)
         step.output_ports = {
             k: v
             for k, v in zip(
-                [p["name"] for p in ports],
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            loading_context.load_port(context, p["port"])
+                [p["name"] for p in ports_row],
+                [
+                    port.name
+                    for port in await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                loading_context.load_port(context, p["port"])
+                            )
+                            for p in ports_row
                         )
-                        for p in ports
                     )
-                ),
+                ],
             )
         }
         loading_context.add_step(persistent_id, step)
