@@ -181,7 +181,7 @@ class DeploymentConfig(Config):
         obj = cls(
             name=row["name"],
             type=row["type"],
-            config=row["config"],
+            config=json.loads(row["config"]),
             external=row["external"],
             lazy=row["lazy"],
             workdir=row["workdir"],
