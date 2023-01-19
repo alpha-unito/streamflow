@@ -56,6 +56,8 @@ async def context() -> StreamFlowContext:
     await context.deployment_manager.deploy(get_docker_deployment_config())
     yield context
     await context.deployment_manager.undeploy_all()
+    # close the database connection
+    await context.database.close()
 
 
 @pytest.fixture(scope="session")

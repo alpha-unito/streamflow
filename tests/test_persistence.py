@@ -63,9 +63,6 @@ async def test_deployment(context: StreamFlowContext):
     loaded = await DeploymentConfig.load(context, config.persistent_id, loading_context)
     assert are_equals(config, loaded)
 
-    # close the database connection
-    await context.database.close()
-
 
 @pytest.mark.asyncio
 async def test_port(context: StreamFlowContext):

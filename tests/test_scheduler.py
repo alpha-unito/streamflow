@@ -2,7 +2,7 @@ import pytest
 import asyncio
 
 from typing import MutableMapping, MutableSequence, Optional
-from tests.conftest import get_docker_deploy_config
+from tests.conftest import get_docker_deployment_config
 
 from streamflow.core import utils
 from streamflow.core.workflow import Job, Status
@@ -215,7 +215,7 @@ async def test_multi_env(context: StreamFlowContext):
     jobs = []
     local_target = LocalTarget()
     docker_target = Target(
-        deployment=get_docker_deploy_config(),
+        deployment=get_docker_deployment_config(),
         service="test-multi-env",
         workdir=utils.random_name(),
     )
@@ -284,7 +284,7 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     )
     local_target = LocalTarget()
     docker_target = Target(
-        deployment=get_docker_deploy_config(),
+        deployment=get_docker_deployment_config(),
         service="test-multi-targ-1",
         workdir=utils.random_name(),
     )
@@ -351,7 +351,7 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
         )
     local_target = LocalTarget()
     docker_target = Target(
-        deployment=get_docker_deploy_config(),
+        deployment=get_docker_deployment_config(),
         service="test-multi-targ-2",
         workdir=utils.random_name(),
     )
@@ -381,7 +381,7 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     )
     assert (
         context.scheduler.job_allocations[jobs[1].name].target.deployment.name
-        == get_docker_deploy_config().name
+        == get_docker_deployment_config().name
     )
 
     # Jobs change status to RUNNING
@@ -407,7 +407,7 @@ async def test_binding_filter(context: StreamFlowContext):
     )
     local_target = LocalTarget()
     docker_target = Target(
-        deployment=get_docker_deploy_config(),
+        deployment=get_docker_deployment_config(),
         service="test-binding-target",
         workdir=utils.random_name(),
     )
@@ -436,7 +436,7 @@ async def test_binding_filter(context: StreamFlowContext):
     # Check if the job has been scheduled into the second target
     assert (
         context.scheduler.job_allocations[job.name].target.deployment.name
-        == get_docker_deploy_config().name
+        == get_docker_deployment_config().name
     )
 
     # Job changes status to RUNNING
