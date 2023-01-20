@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from tests.conftest import get_docker_deployment_config
 
 from streamflow.core import utils
-from streamflow.core.deployment import Target
+from streamflow.core.deployment import Target, LocalTarget
 from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.core.context import StreamFlowContext
 
@@ -75,6 +75,7 @@ def are_equals(elem1, elem2, obj_compared=[]):
         dict1 = object_to_dict(elem1)
         dict2 = object_to_dict(elem2)
 
+    # WARN: if the key is an Object, override __eq__ and __hash__ for a correct result
     if dict1.keys() != dict2.keys():
         return False
 
@@ -104,6 +105,7 @@ def are_equals(elem1, elem2, obj_compared=[]):
     return True
 
 
+### Testing Workflow
 @pytest.mark.asyncio
 async def test_workflow(context: StreamFlowContext):
     """Test saving and loading Workflow from database"""
@@ -119,6 +121,7 @@ async def test_workflow(context: StreamFlowContext):
     assert are_equals(workflow, loaded)
 
 
+### Testing Port and its extension classes
 @pytest.mark.asyncio
 async def test_port(context: StreamFlowContext):
     """Test saving and loading Port from database"""
@@ -185,6 +188,7 @@ async def test_connector_port(context: StreamFlowContext):
     assert are_equals(port, loaded)
 
 
+### Testing Step and its extension classes
 @pytest.mark.asyncio
 async def test_step(context: StreamFlowContext):
     """Test saving and loading Step from database"""
@@ -217,9 +221,7 @@ async def test_step(context: StreamFlowContext):
     assert are_equals(step, loaded)
 
 
-### indipendet objects from the other ####
-
-
+### Testing the Target and its extension classes
 @pytest.mark.asyncio
 async def test_target(context: StreamFlowContext):
     """Test saving and loading Target from database"""
@@ -228,6 +230,22 @@ async def test_target(context: StreamFlowContext):
         service="test-persistence",
         workdir=utils.random_name(),
     )
+
+    assert target.persistent_id is None
+    await target.save(context)
+    assert target.persistent_id is not None
+
+    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # (and not take their reference saved in the attributes)
+    loading_context = DefaultDatabaseLoadingContext()
+    loaded = await loading_context.load_target(context, target.persistent_id)
+    assert are_equals(target, loaded)
+
+
+@pytest.mark.asyncio
+async def test_local_target(context: StreamFlowContext):
+    """Test saving and loading Target from database"""
+    target = LocalTarget(workdir=utils.random_name())
 
     assert target.persistent_id is None
     await target.save(context)

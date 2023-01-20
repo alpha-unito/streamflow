@@ -7,8 +7,9 @@ import posixpath
 import tempfile
 from abc import abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Type, cast
 
+from streamflow.core import utils
 from streamflow.core.config import Config
 from streamflow.core.context import SchemaEntity
 from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
@@ -231,14 +232,13 @@ class Target(PersistableEntity):
         return {}
 
     @classmethod
-    async def load(
+    async def _load(
         cls,
         context: StreamFlowContext,
-        persistent_id: int,
+        row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Target:
-        row = await context.database.get_target(persistent_id)
-        obj = cls(
+        return cls(
             deployment=await DeploymentConfig.load(
                 context, row["deployment"], loading_context
             ),
@@ -246,6 +246,17 @@ class Target(PersistableEntity):
             service=row["service"],
             workdir=row["workdir"],
         )
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        persistent_id: int,
+        loading_context: DatabaseLoadingContext,
+    ) -> Target:
+        row = await context.database.get_target(persistent_id)
+        type = cast(Type[Target], utils.get_class_from_name(row["type"]))
+        obj = await type._load(context, row, loading_context)
         obj.persistent_id = persistent_id
         loading_context.add_target(persistent_id, obj)
         return obj
@@ -279,3 +290,12 @@ class LocalTarget(Target):
                 name=LOCAL_LOCATION, type="local", config={}, external=True, lazy=False
             )
         return cls.__deployment_config
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Target:
+        return cls(workdir=row["workdir"])
