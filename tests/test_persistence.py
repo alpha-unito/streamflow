@@ -7,8 +7,12 @@ from tests.conftest import get_docker_deployment_config
 
 from streamflow.core import utils
 from streamflow.core.deployment import Target
-from streamflow.core.workflow import Token, Workflow
+from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.core.context import StreamFlowContext
+
+from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.workflow.token import JobToken, ListToken, TerminationToken
+
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 from streamflow.workflow.step import DeployStep, ConnectorPort
@@ -57,7 +61,7 @@ def are_equals(elem1, elem2, obj_compared=[]):
     if dict1.keys() != dict2.keys():
         return False
 
-    # if their reference are in the obj_compared list there is a circular reference to break
+    # if their references are in the obj_compared list there is a circular reference to break
     if elem1 in obj_compared:
         return True
     else:
@@ -175,6 +179,29 @@ async def test_target(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_token(context: StreamFlowContext):
     token = Token(value=["test", "token"])
+
+    assert token.persistent_id is None
+    await token.save(context)
+    assert token.persistent_id is not None
+
+    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # (and not take their reference saved in the attributes)
+    loading_context = DefaultDatabaseLoadingContext()
+    loaded = await loading_context.load_token(context, token.persistent_id)
+    assert are_equals(token, loaded)
+
+
+@pytest.mark.asyncio
+async def test_jobtoken(context: StreamFlowContext):
+    token = JobToken(
+        value=Job(
+            name=utils.random_name(),
+            inputs={"test": Token(value="jobtoken")},
+            input_directory=utils.random_name(),
+            output_directory=utils.random_name(),
+            tmp_directory=utils.random_name(),
+        ),
+    )
 
     assert token.persistent_id is None
     await token.save(context)
