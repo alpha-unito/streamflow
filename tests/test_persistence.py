@@ -11,7 +11,15 @@ from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.core.context import StreamFlowContext
 
 from streamflow.workflow.port import JobPort, ConnectorPort
-from streamflow.workflow.step import CombinatorStep, DeployStep, ExecuteStep, GatherStep, ScheduleStep, ScatterStep
+from streamflow.workflow.step import (
+    CombinatorStep,
+    DeployStep,
+    ExecuteStep,
+    GatherStep,
+    ScheduleStep,
+    ScatterStep,
+)
+
 # class extend CombinatorStep: LoopCombinatorStep
 # abstract class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
 from streamflow.workflow.token import (
@@ -232,6 +240,7 @@ async def test_target(context: StreamFlowContext):
     assert are_equals(target, loaded)
 
 
+### Testing the Token and its extension classes
 @pytest.mark.asyncio
 async def test_token(context: StreamFlowContext):
     """Test saving and loading Token from database"""
