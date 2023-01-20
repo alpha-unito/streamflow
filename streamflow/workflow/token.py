@@ -11,7 +11,9 @@ from streamflow.core.workflow import Token, Job
 
 
 class IterationTerminationToken(Token):
-    def __init__(self, tag: str):
+    def __init__(
+        self, tag: str, **kargs
+    ):  # kargs is necessary when the class is loaded from the database and try to init with the value param
         super().__init__(None, tag)
 
     def get_weight(self, context: StreamFlowContext):
@@ -158,7 +160,9 @@ class ObjectToken(Token):
 
 
 class TerminationToken(Token):
-    def __init__(self):
+    def __init__(
+        self, **kargs
+    ):  # kargs is necessary when the class is loaded from the database and try to init with the value param
         super().__init__(None)
 
     def get_weight(self, context: StreamFlowContext):

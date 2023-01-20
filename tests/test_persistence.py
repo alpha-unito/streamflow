@@ -7,15 +7,24 @@ from tests.conftest import get_docker_deployment_config
 
 from streamflow.core import utils
 from streamflow.core.deployment import Target
-from streamflow.core.workflow import Job, Token, Workflow
+from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.core.context import StreamFlowContext
 
-from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.token import JobToken, ListToken, TerminationToken
+from streamflow.workflow.port import JobPort, ConnectorPort
+from streamflow.workflow.step import CombinatorStep, DeployStep, ExecuteStep, GatherStep, ScheduleStep, ScatterStep
+# class extend CombinatorStep: LoopCombinatorStep
+# abstract class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
+from streamflow.workflow.token import (
+    JobToken,
+    ListToken,
+    ObjectToken,
+    TerminationToken,
+    IterationTerminationToken,
+)
+
+from streamflow.cwl.processor import CWLCommandOutputProcessor
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-
-from streamflow.workflow.step import DeployStep, ConnectorPort
 
 
 def is_primiteve_type(elem):
@@ -89,6 +98,7 @@ def are_equals(elem1, elem2, obj_compared=[]):
 
 @pytest.mark.asyncio
 async def test_workflow(context: StreamFlowContext):
+    """Test saving and loading Workflow from database"""
     workflow = Workflow(context=context, type="cwl", name=utils.random_name())
     assert workflow.persistent_id is None
     await workflow.save(context)
@@ -124,6 +134,7 @@ async def test_port(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_step(context: StreamFlowContext):
+    """Test saving and loading Step from database"""
     workflow = Workflow(context=context, type="cwl", name=utils.random_name())
     assert workflow.persistent_id is None
     await workflow.save(context)
@@ -158,7 +169,7 @@ async def test_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_target(context: StreamFlowContext):
-    """Test saving and loading deployment configuration from database"""
+    """Test saving and loading Target from database"""
     target = Target(
         deployment=get_docker_deployment_config(),
         service="test-persistence",
@@ -178,6 +189,7 @@ async def test_target(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_token(context: StreamFlowContext):
+    """Test saving and loading Token from database"""
     token = Token(value=["test", "token"])
 
     assert token.persistent_id is None
@@ -192,7 +204,8 @@ async def test_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_jobtoken(context: StreamFlowContext):
+async def test_job_token(context: StreamFlowContext):
+    """Test saving and loading JobToken from database"""
     token = JobToken(
         value=Job(
             name=utils.random_name(),
@@ -214,6 +227,54 @@ async def test_jobtoken(context: StreamFlowContext):
     assert are_equals(token, loaded)
 
 
+@pytest.mark.asyncio
+async def test_list_token(context: StreamFlowContext):
+    """Test saving and loading ListToken from database"""
+    token = ListToken(value=[Token("list"), Token("test")])
+
+    assert token.persistent_id is None
+    await token.save(context)
+    assert token.persistent_id is not None
+
+    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # (and not take their reference saved in the attributes)
+    loading_context = DefaultDatabaseLoadingContext()
+    loaded = await loading_context.load_token(context, token.persistent_id)
+    assert are_equals(token, loaded)
+
+@pytest.mark.asyncio
+async def test_termination_token(context: StreamFlowContext):
+    """Test saving and loading IterationTerminationToken from database"""
+    token = TerminationToken()
+
+    assert token.persistent_id is None
+    await token.save(context)
+    assert token.persistent_id is not None
+
+    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # (and not take their reference saved in the attributes)
+    loading_context = DefaultDatabaseLoadingContext()
+    loaded = await loading_context.load_token(context, token.persistent_id)
+    assert are_equals(token, loaded)
+
+
+@pytest.mark.asyncio
+async def test_iteration_termination_token(context: StreamFlowContext):
+    """Test saving and loading IterationTerminationToken from database"""
+    token = IterationTerminationToken("1")
+
+    assert token.persistent_id is None
+    await token.save(context)
+    assert token.persistent_id is not None
+
+    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # (and not take their reference saved in the attributes)
+    loading_context = DefaultDatabaseLoadingContext()
+    loaded = await loading_context.load_token(context, token.persistent_id)
+    assert are_equals(token, loaded)
+
+
+### Deployment test
 @pytest.mark.asyncio
 async def test_deployment(context: StreamFlowContext):
     """Test saving and loading deployment configuration from database"""
