@@ -113,6 +113,7 @@ async def test_workflow(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_port(context: StreamFlowContext):
+    """Test saving and loading Port from database"""
     workflow = Workflow(context=context, type="cwl", name=utils.random_name())
     assert workflow.persistent_id is None
     await workflow.save(context)
@@ -120,7 +121,51 @@ async def test_port(context: StreamFlowContext):
 
     # dependency with workflow for saving port
     port = workflow.create_port()
+    assert isinstance(port, Port)
+    assert port.persistent_id is None
+    await port.save(context)
+    assert port.persistent_id is not None
 
+    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # (and not take their reference saved in the attributes)
+    loading_context = DefaultDatabaseLoadingContext()
+    loaded = await loading_context.load_port(context, port.persistent_id)
+    assert are_equals(port, loaded)
+
+
+@pytest.mark.asyncio
+async def test_job_port(context: StreamFlowContext):
+    """Test saving and loading JobPort from database"""
+    workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+
+    # dependency with workflow for saving port
+    port = workflow.create_port(JobPort)
+    assert isinstance(port, JobPort)
+    assert port.persistent_id is None
+    await port.save(context)
+    assert port.persistent_id is not None
+
+    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # (and not take their reference saved in the attributes)
+    loading_context = DefaultDatabaseLoadingContext()
+    loaded = await loading_context.load_port(context, port.persistent_id)
+    assert are_equals(port, loaded)
+
+
+@pytest.mark.asyncio
+async def test_connector_port(context: StreamFlowContext):
+    """Test saving and loading ConnectorPort from database"""
+    workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+
+    # dependency with workflow for saving port
+    port = workflow.create_port(ConnectorPort)
+    assert isinstance(port, ConnectorPort)
     assert port.persistent_id is None
     await port.save(context)
     assert port.persistent_id is not None
