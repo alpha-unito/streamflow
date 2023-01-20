@@ -1,6 +1,7 @@
 import pytest
 import tempfile
 import posixpath
+from collections.abc import Iterable
 
 from tests.conftest import get_docker_deployment_config
 
@@ -12,6 +13,11 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 from streamflow.workflow.step import DeployStep, ConnectorPort
 
+
+def is_primiteve_type(elem):
+    return type(elem) in (int, float, str, bool)
+
+
 # The function given in input an object return a dictionary with attribute:value
 def object_to_dict(obj):
     return {
@@ -21,28 +27,27 @@ def object_to_dict(obj):
     }
 
 
-# The function return True if the elem is a type primitive like int, str, float, otherwise return False if it is an object with attributes
-def is_type_primitive(elem):
-    return (
-        type(elem) is not object
-        and type(elem) is not dict
-        and not hasattr(elem, "__dict__")
-    )
-
-
 # The function return True if the elems are the same, otherwise False
-#   the elems can be objects or primitive
-#   param list of obj_compared is usefull to break a circul reference inside the objects
+# The param obj_compared is usefull to break a circul reference inside the objects
+# remembering the objects already encountered
 def are_equals(elem1, elem2, obj_compared=[]):
-    # objects are same type
+
+    # if the objects are of different types, they are definitely not the same
     if type(elem1) != type(elem2):
         return False
 
-    # if are primitive is possible a direct equals
-    if is_type_primitive(elem1):
+    if is_primiteve_type(elem1):
         return elem1 == elem2
 
-    if type(elem1) is dict:
+    if isinstance(elem1, Iterable) and not isinstance(elem1, dict):
+        if len(elem1) != len(elem2):
+            return False
+        for e1, e2 in zip(elem1, elem2):
+            if not are_equals(e1, e2, obj_compared):
+                return False
+        return True
+
+    if isinstance(elem1, dict):
         dict1 = elem1
         dict2 = elem2
     else:
@@ -67,11 +72,11 @@ def are_equals(elem1, elem2, obj_compared=[]):
     #   - if we find objects in the list, they must be checked recursively on their attributes
     #   - if we find elems of primitive types, their values are actually different
     differences = [
-        (attr, dict1[attr], dict2[attr])
+        (dict1[attr], dict2[attr])
         for attr in dict1.keys()
         if dict1[attr] != dict2[attr]
     ]
-    for _, value1, value2 in differences:
+    for value1, value2 in differences:
         # check recursively the elements
         if not are_equals(value1, value2, obj_compared):
             return False
