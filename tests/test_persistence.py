@@ -21,8 +21,11 @@ from streamflow.workflow.step import (
     ScatterStep,
 )
 
-# class extend CombinatorStep: LoopCombinatorStep
 # abstract class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
+from streamflow.cwl.step import CWLConditionalStep  # ConditionalStep
+from streamflow.cwl.combinator import ListMergeCombinator  # CombinatorStep
+from streamflow.cwl.transformer import FirstNonNullTransformer  # Transformer
+from streamflow.cwl.processor import CWLCommandOutputProcessor  # param for ObjectToken
 from streamflow.workflow.token import (
     JobToken,
     ListToken,
@@ -30,8 +33,6 @@ from streamflow.workflow.token import (
     TerminationToken,
     IterationTerminationToken,
 )
-
-from streamflow.cwl.processor import CWLCommandOutputProcessor
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
@@ -183,35 +184,127 @@ async def test_connector_port(context: StreamFlowContext):
 
 ### Testing Step and its extension classes
 @pytest.mark.asyncio
-async def test_step(context: StreamFlowContext):
-    """Test saving and loading Step from database"""
+async def test_combinator_step(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
     workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    connector_port = workflow.create_port(cls=ConnectorPort)
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+
+    name = utils.random_name()
+    step = workflow.create_step(
+        cls=CombinatorStep,
+        name=name + "-combinator",
+        combinator=ListMergeCombinator(
+            name=utils.random_name(),
+            workflow=workflow,
+            input_names=[connector_port.name],
+            output_name=name,
+            flatten=False,
+        ),
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_deploy_step(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    connector_port = workflow.create_port(cls=ConnectorPort)
     assert workflow.persistent_id is None
     await workflow.save(context)
     assert workflow.persistent_id is not None
 
     deployment_config = get_docker_deployment_config()
 
-    connector_port = workflow.create_port(cls=ConnectorPort)
-    assert connector_port.persistent_id is None
-    await connector_port.save(context)
-    assert connector_port.persistent_id is not None
-
-    # dependency with workflow and connector_port for saving step
     step = workflow.create_step(
         cls=DeployStep,
         name=posixpath.join("__deploy__", deployment_config.name),
         deployment_config=deployment_config,
         connector_port=connector_port,
     )
-    assert step.persistent_id is None
-    await step.save(context)
-    assert step.persistent_id is not None
-    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
-    # (and not take their reference saved in the attributes)
-    loading_context = DefaultDatabaseLoadingContext()
-    loaded = await loading_context.load_step(context, step.persistent_id)
-    assert are_equals(step, loaded)
+    await save_load_and_test(step, context)
+
+@pytest.mark.asyncio
+async def test_execute_step(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_gather_step(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+
+    step = workflow.create_step(
+        cls=GatherStep, name=utils.random_name() + "-gather", depth=1
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_scatter_step(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+
+    step = workflow.create_step(cls=ScatterStep, name=utils.random_name() + "-scatter")
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_transformer_step(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    in_port = workflow.create_port()
+    out_port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+
+    name = utils.random_name()
+    transformer = workflow.create_step(
+        cls=FirstNonNullTransformer, name=name + "-transformer"
+    )
+    transformer.add_input_port(name, in_port)
+    transformer.add_output_port(name, out_port)
+    await save_load_and_test(transformer, context)
+
+
+@pytest.mark.asyncio
+async def test_conditional_step(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(context=context, type="cwl", name=utils.random_name())
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+
+    step = workflow.create_step(
+        cls=CWLConditionalStep,
+        name=utils.random_name() + "-when",
+        expression="inputs.name.length == 10",
+        expression_lib=[],  # MutableSequence[Any]
+        full_js=True,
+    )
+    await save_load_and_test(step, context)
 
 
 ### Testing the Target and its extension classes

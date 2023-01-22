@@ -118,6 +118,22 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             },
         }
 
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CWLConditionalStep:
+        params = json.loads(row["params"])
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            expression=params["expression"],
+            expression_lib=params["expression_lib"],
+            full_js=params["full_js"],
+        )
+
 
 class CWLLoopConditionalStep(CWLConditionalStep):
     async def _eval(self, inputs: MutableMapping[str, Token]):
