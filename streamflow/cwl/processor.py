@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, Callable, MutableMapping, MutableSequence, cast
 
 import cwl_utils.file_formats
@@ -308,6 +309,38 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self.output_eval: str | None = output_eval
         self.secondary_files: MutableSequence[SecondaryFile] = secondary_files or []
         self.streamable: bool = streamable
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CommandOutputProcessor:
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            target=(await loading_context.load_target(context, row["workflow"]))
+            if row["target"]
+            else None,
+            token_type=row["token_type"],
+            enum_symbols=row["enum_symbols"],
+            expression_lib=row["expression_lib"],
+            file_format=row["file_format"],
+            full_js=row["full_js"],
+            glob=row["glob"],
+            load_contents=row["load_contents"],
+            load_listing=LoadListing(row["load_listing"])
+            if row["load_listing"] is not None
+            else None,
+            optional=row["optional"],
+            output_eval=row["output_eval"],
+            secondary_files=[
+                SecondaryFile(sf["pattern"], sf["required"])
+                for sf in row["secondary_files"]
+            ],
+            streamable=row["streamable"],
+        )
 
     async def _build_token(
         self,
@@ -628,9 +661,13 @@ class CWLMapTokenProcessor(TokenProcessor):
 
 class CWLMapCommandOutputProcessor(CommandOutputProcessor):
     def __init__(
-        self, name: str, workflow: Workflow, processor: CommandOutputProcessor
+        self,
+        name: str,
+        workflow: Workflow,
+        processor: CommandOutputProcessor,
+        target: Target | None = None,
     ):
-        super().__init__(name, workflow)
+        super().__init__(name, workflow, target)
         self.processor: CommandOutputProcessor = processor
 
     @classmethod
@@ -646,6 +683,9 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
             processor=await CommandOutputProcessor.load(
                 context, row["processor"], loading_context
             ),
+            target=(await loading_context.load_target(context, row["workflow"]))
+            if row["target"]
+            else None,
         )
 
     async def process(
@@ -785,12 +825,46 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
         output_eval: str | None = None,
+        target: Target | None = None,
     ):
-        super().__init__(name, workflow)
+        super().__init__(name, workflow, target)
         self.processors: MutableMapping[str, CommandOutputProcessor] = processors
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
         self.output_eval: str | None = output_eval
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CommandOutputProcessor:
+        params = json.loads(row["params"])
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            target=(await loading_context.load_target(context, row["workflow"]))
+            if row["target"]
+            else None,
+            processors={
+                k: v
+                for k, v in zip(
+                    row["processors"].keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                CommandOutputProcessor.load(context, v, loading_context)
+                            )
+                            for v in row["processors"].values()
+                        )
+                    ),
+                )
+            },
+            expression_lib=params["expression_lib"],
+            full_js=params["full_js"],
+            output_eval=params["output_eval"],
+        )
 
     async def _save_additional_params(self, context: StreamFlowContext):
         return {

@@ -161,7 +161,7 @@ def _create_command(
         command_token = _get_command_token_from_input(
             cwl_element=input_port,
             port_type=input_port["type"],
-            input_name=_get_name("", cwl_name_prefix, input_port["id"]),
+            input_name=utils.get_name("", cwl_name_prefix, input_port["id"]),
             is_shell_command=command.is_shell_command,
             schema_def_types=schema_def_types,
         )
@@ -206,7 +206,7 @@ def _create_command_output_processor(
                 requirements = {**context["hints"], **context["requirements"]}
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 enum_prefix = (
-                    _get_name(posixpath.sep, posixpath.sep, port_type["name"])
+                    utils.get_name(posixpath.sep, posixpath.sep, port_type["name"])
                     if "name" in port_type
                     else cwl_name_prefix
                 )
@@ -218,7 +218,7 @@ def _create_command_output_processor(
                     token_type=port_type["type"],
                     enum_symbols=[
                         posixpath.relpath(
-                            _get_name(posixpath.sep, posixpath.sep, s), enum_prefix
+                            utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
                         )
                         for s in port_type["symbols"]
                     ],
@@ -232,14 +232,14 @@ def _create_command_output_processor(
                 requirements = {**context["hints"], **context["requirements"]}
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 # Create processor
-                record_name_prefix = _get_name(
+                record_name_prefix = utils.get_name(
                     posixpath.sep, posixpath.sep, port_type.get("name", port_name)
                 )
                 return CWLObjectCommandOutputProcessor(
                     name=port_name,
                     workflow=workflow,
                     processors={
-                        _get_name(
+                        utils.get_name(
                             "", record_name_prefix, port_type["name"]
                         ): _create_command_output_processor(
                             port_name=port_name,
@@ -249,7 +249,9 @@ def _create_command_output_processor(
                             cwl_element=port_type,
                             cwl_name_prefix=posixpath.join(
                                 record_name_prefix,
-                                _get_name("", record_name_prefix, port_type["name"]),
+                                utils.get_name(
+                                    "", record_name_prefix, port_type["name"]
+                                ),
                             ),
                             schema_def_types=schema_def_types,
                             context=context,
@@ -516,7 +518,7 @@ def _create_token_processor(
                 requirements = {**context["hints"], **context["requirements"]}
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 enum_prefix = (
-                    _get_name(posixpath.sep, posixpath.sep, port_type["name"])
+                    utils.get_name(posixpath.sep, posixpath.sep, port_type["name"])
                     if "name" in port_type
                     else cwl_name_prefix
                 )
@@ -528,7 +530,7 @@ def _create_token_processor(
                     check_type=check_type,
                     enum_symbols=[
                         posixpath.relpath(
-                            _get_name(posixpath.sep, posixpath.sep, s), enum_prefix
+                            utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
                         )
                         for s in port_type["symbols"]
                     ],
@@ -538,14 +540,14 @@ def _create_token_processor(
                 )
             # Record type: -> ObjectTokenProcessor
             elif port_type["type"] == "record":
-                record_name_prefix = _get_name(
+                record_name_prefix = utils.get_name(
                     posixpath.sep, posixpath.sep, port_type.get("name", port_name)
                 )
                 return CWLObjectTokenProcessor(
                     name=port_name,
                     workflow=workflow,
                     processors={
-                        _get_name(
+                        utils.get_name(
                             "", record_name_prefix, port_type["name"]
                         ): _create_token_processor(
                             port_name=port_name,
@@ -554,7 +556,9 @@ def _create_token_processor(
                             cwl_element=port_type,
                             cwl_name_prefix=posixpath.join(
                                 record_name_prefix,
-                                _get_name("", record_name_prefix, port_type["name"]),
+                                utils.get_name(
+                                    "", record_name_prefix, port_type["name"]
+                                ),
                             ),
                             schema_def_types=schema_def_types,
                             format_graph=format_graph,
@@ -800,12 +804,12 @@ def _get_command_token_from_input(
                 )
             # Object type: -> CWLObjectCommandToken
             elif port_type["type"] == "record":
-                record_name_prefix = _get_name(
+                record_name_prefix = utils.get_name(
                     posixpath.sep, posixpath.sep, port_type.get("name", input_name)
                 )
                 command_tokens = {}
                 for el in port_type["fields"]:
-                    key = _get_name("", record_name_prefix, el["name"])
+                    key = utils.get_name("", record_name_prefix, el["name"])
                     el_token = _get_command_token_from_input(
                         cwl_element=el,
                         port_type=el["type"],
@@ -948,23 +952,6 @@ def _get_load_listing(
         return LoadListing[requirements["LoadListingRequirement"]["loadListing"]]
     else:
         return LoadListing.no_listing
-
-
-def _get_name(
-    name_prefix: str,
-    cwl_name_prefix: str,
-    element_id: str,
-    preserve_cwl_prefix: bool = False,
-) -> str:
-    name = element_id.split("#")[-1]
-    return (
-        posixpath.join(posixpath.sep, name)
-        if preserve_cwl_prefix
-        else posixpath.join(
-            name_prefix,
-            posixpath.relpath(posixpath.join(posixpath.sep, name), cwl_name_prefix),
-        )
-    )
 
 
 def _get_path(element_id: str) -> str:
@@ -1578,7 +1565,9 @@ class CWLTranslator:
         input_ports = {}
         token_transformers = []
         for element_input in cwl_element.tool["inputs"]:
-            global_name = _get_name(name_prefix, cwl_name_prefix, element_input["id"])
+            global_name = utils.get_name(
+                name_prefix, cwl_name_prefix, element_input["id"]
+            )
             port_name = posixpath.relpath(global_name, name_prefix)
             # Retrieve or create input port
             input_port = self._get_input_port(
@@ -1621,7 +1610,9 @@ class CWLTranslator:
                 token_transformer.add_input_port(port_name, input_port)
         # Process outputs
         for element_output in cwl_element.tool["outputs"]:
-            global_name = _get_name(name_prefix, cwl_name_prefix, element_output["id"])
+            global_name = utils.get_name(
+                name_prefix, cwl_name_prefix, element_output["id"]
+            )
             port_name = posixpath.relpath(global_name, name_prefix)
             # Retrieve or create output port
             if global_name not in self.output_ports:
@@ -1704,7 +1695,9 @@ class CWLTranslator:
         token_transformers = {}
         input_dependencies = {}
         for element_input in cwl_element.tool["inputs"]:
-            global_name = _get_name(step_name, cwl_name_prefix, element_input["id"])
+            global_name = utils.get_name(
+                step_name, cwl_name_prefix, element_input["id"]
+            )
             port_name = posixpath.relpath(global_name, step_name)
             # Retrieve or create input port
             input_ports[global_name] = self._get_input_port(
@@ -1761,7 +1754,9 @@ class CWLTranslator:
             self.input_ports[input_name] = input_ports[input_name]
         # Process outputs
         for element_output in cwl_element.tool["outputs"]:
-            global_name = _get_name(name_prefix, cwl_name_prefix, element_output["id"])
+            global_name = utils.get_name(
+                name_prefix, cwl_name_prefix, element_output["id"]
+            )
             # If outputSource element is a list, the output element can depend on multiple ports
             if isinstance(element_output["outputSource"], MutableSequence):
                 # If the list contains only one element and no `linkMerge` or `pickValue` are specified
@@ -1771,7 +1766,7 @@ class CWLTranslator:
                     and "pickValue" not in element_output
                 ):
                     # Treat it as a singleton
-                    source_name = _get_name(
+                    source_name = utils.get_name(
                         name_prefix, cwl_name_prefix, element_output["outputSource"][0]
                     )
                     # If the output source is an input port, link the output to the input
@@ -1793,7 +1788,7 @@ class CWLTranslator:
                             "but MultipleInputFeatureRequirement is not declared."
                         )
                     source_names = [
-                        _get_name(name_prefix, cwl_name_prefix, src)
+                        utils.get_name(name_prefix, cwl_name_prefix, src)
                         for src in element_output["outputSource"]
                     ]
                     ports = {
@@ -1809,7 +1804,7 @@ class CWLTranslator:
                     )
             # Otherwise, the output element depends on a single output port
             else:
-                source_name = _get_name(
+                source_name = utils.get_name(
                     name_prefix, cwl_name_prefix, element_output["outputSource"]
                 )
                 # If `pickValue` is specified, create a ListMergeCombinator
@@ -1851,10 +1846,10 @@ class CWLTranslator:
         cwl_name_prefix: str,
     ):
         # Process content
-        step_name = _get_name(name_prefix, cwl_name_prefix, cwl_element.id)
+        step_name = utils.get_name(name_prefix, cwl_name_prefix, cwl_element.id)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating WorkflowStep {step_name}")
-        cwl_step_name = _get_name(
+        cwl_step_name = utils.get_name(
             name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
         )
         # Extract requirements
@@ -1868,11 +1863,13 @@ class CWLTranslator:
         # Find scatter elements
         if isinstance(cwl_element.tool.get("scatter"), str):
             scatter_inputs = [
-                _get_name(step_name, cwl_step_name, cwl_element.tool.get("scatter"))
+                utils.get_name(
+                    step_name, cwl_step_name, cwl_element.tool.get("scatter")
+                )
             ]
         else:
             scatter_inputs = [
-                _get_name(step_name, cwl_step_name, n)
+                utils.get_name(step_name, cwl_step_name, n)
                 for n in cwl_element.tool.get("scatter", [])
             ]
         # Process inputs
@@ -2067,7 +2064,7 @@ class CWLTranslator:
         external_output_ports = {}
         internal_output_ports = {}
         for element_output in cwl_element.tool["outputs"]:
-            global_name = _get_name(step_name, cwl_step_name, element_output["id"])
+            global_name = utils.get_name(step_name, cwl_step_name, element_output["id"])
             port_name = posixpath.relpath(global_name, step_name)
             # Retrieve or create output port
             if global_name not in self.output_ports:
@@ -2255,7 +2252,9 @@ class CWLTranslator:
         # Add skip ports if there is a condition
         if "when" in cwl_element.tool:
             for element_output in cwl_element.tool["outputs"]:
-                global_name = _get_name(step_name, cwl_step_name, element_output["id"])
+                global_name = utils.get_name(
+                    step_name, cwl_step_name, element_output["id"]
+                )
                 port_name = posixpath.relpath(global_name, step_name)
                 skip_port = (
                     external_output_ports[global_name]
@@ -2268,25 +2267,9 @@ class CWLTranslator:
         # Update output ports with the internal ones
         self.output_ports = {**self.output_ports, **internal_output_ports}
         # Process inner element
-        run_command = cwl_element.tool["run"]
-        if isinstance(run_command, MutableMapping):
-            if ":" in cwl_element.embedded_tool.tool["id"].split("#")[-1]:
-                inner_cwl_name_prefix = posixpath.join(cwl_step_name, "run")
-            else:
-                inner_cwl_name_prefix = _get_name(
-                    name_prefix,
-                    cwl_name_prefix,
-                    cwl_element.embedded_tool.tool["id"],
-                    preserve_cwl_prefix=True,
-                )
-        else:
-            inner_cwl_name_prefix = (
-                _get_name(
-                    posixpath.sep, posixpath.sep, cwl_element.embedded_tool.tool["id"]
-                )
-                if "#" in cwl_element.embedded_tool.tool["id"]
-                else posixpath.sep
-            )
+        inner_cwl_name_prefix = utils.get_inner_cwl_prefix(
+            cwl_name_prefix, name_prefix, cwl_element
+        )
         self._recursive_translate(
             workflow=workflow,
             cwl_element=cwl_element.embedded_tool,
@@ -2319,11 +2302,11 @@ class CWLTranslator:
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Extract names
-        step_name = _get_name(name_prefix, cwl_name_prefix, element_id)
-        cwl_step_name = _get_name(
+        step_name = utils.get_name(name_prefix, cwl_name_prefix, element_id)
+        cwl_step_name = utils.get_name(
             name_prefix, cwl_name_prefix, element_id, preserve_cwl_prefix=True
         )
-        global_name = _get_name(step_name, cwl_step_name, element_input["id"])
+        global_name = utils.get_name(step_name, cwl_step_name, element_input["id"])
         port_name = posixpath.relpath(global_name, step_name)
         # Adjust type to handle scatter
         if global_name in scatter_inputs:
@@ -2383,7 +2366,7 @@ class CWLTranslator:
                     and "linkMerge" not in element_input
                     and "pickValue" not in element_input
                 ):
-                    source_name = _get_name(
+                    source_name = utils.get_name(
                         name_prefix, cwl_name_prefix, element_input["source"][0]
                     )
                     source_port = self._get_source_port(workflow, source_name)
@@ -2412,7 +2395,7 @@ class CWLTranslator:
                             "but MultipleInputFeatureRequirement is not declared."
                         )
                     source_names = [
-                        _get_name(name_prefix, cwl_name_prefix, src)
+                        utils.get_name(name_prefix, cwl_name_prefix, src)
                         for src in element_input["source"]
                     ]
                     ports = {
@@ -2431,7 +2414,7 @@ class CWLTranslator:
                     input_ports[global_name] = list_merger.get_output_port()
             # Otherwise, the input element depends on a single output port
             else:
-                source_name = _get_name(
+                source_name = utils.get_name(
                     name_prefix, cwl_name_prefix, element_input["source"]
                 )
                 source_port = self._get_source_port(workflow, source_name)
@@ -2464,13 +2447,18 @@ class CWLTranslator:
             input_ports[global_name] = workflow.create_port()
 
     def translate(self) -> Workflow:
-        workflow = Workflow(context=self.context, type="cwl", name=self.name)
+        workflow = Workflow(
+            context=self.context,
+            type="cwl",
+            config=self.workflow_config.config,
+            name=self.name,
+        )
         # Create context
         context = _create_context()
         # Compute root prefix
         workflow_id = self.cwl_definition.tool["id"]
         cwl_root_prefix = (
-            _get_name(posixpath.sep, posixpath.sep, workflow_id)
+            utils.get_name(posixpath.sep, posixpath.sep, workflow_id)
             if "#" in workflow_id
             else posixpath.sep
         )
@@ -2506,7 +2494,7 @@ class CWLTranslator:
         requirements = {**context["hints"], **context["requirements"]}
         # Extract workflow outputs
         cwl_elements = {
-            _get_name("/", cwl_root_prefix, element["id"]): element
+            utils.get_name("/", cwl_root_prefix, element["id"]): element
             for element in self.cwl_definition.tool.get("outputs", [])
         }
         for output_name in self.output_ports:

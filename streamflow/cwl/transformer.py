@@ -40,6 +40,20 @@ class DefaultTransformer(ManyToOneTransformer):
         self.default_port: Port = default_port
         self.default_token: Token | None = None
 
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        params = json.loads(row["params"])
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            default_port=params["default_port"],
+        )
+
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
@@ -219,6 +233,26 @@ class ValueFromTransformer(ManyToOneTransformer):
         self.value_from: str = value_from
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        params = json.loads(row["params"])
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            port_name=params["port_name"],
+            processor=await TokenProcessor.load(
+                context, params["processor"], loading_context
+            ),
+            value_from=params["value_from"],
+            expression_lib=params["expression_lib"],
+            full_js=params["full_js"],
+        )
 
     async def _save_additional_params(
         self, context: StreamFlowContext

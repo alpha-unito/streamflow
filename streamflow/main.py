@@ -12,6 +12,9 @@ from streamflow import report
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.exception import WorkflowProvenanceException
+from streamflow.core.provenance import ProvenanceManager
+from streamflow.core.workflow import Workflow
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
@@ -19,51 +22,139 @@ from streamflow.ext.utils import load_extensions
 from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.persistence.sqlite import DEFAULT_SQLITE_CONNECTION
+from streamflow.provenance import prov_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
 
 
 async def _async_list(args: argparse.Namespace):
-    if os.path.exists(args.streamflow_file):
-        streamflow_config = SfValidator().validate_file(args.streamflow_file)
-        context = build_context(
-            os.path.dirname(args.streamflow_file), streamflow_config, args.outdir
-        )
+    if os.path.exists(args.file):
+        streamflow_config = SfValidator().validate_file(args.file)
+        context = build_context(os.path.dirname(args.file), streamflow_config)
     else:
-        context = build_context(os.getcwd(), {}, args.outdir)
+        context = build_context(os.getcwd(), {})
     try:
-        workflows = await context.database.list_workflows()
-        if workflows:
+        if workflows := await context.database.list_workflows(args.name):
             max_sizes = {
-                k: len(max(w[k] for w in workflows)) for k in workflows[0].keys()
+                k: len(max(str(w[k]) for w in workflows)) + 1
+                for k in workflows[0].keys()
             }
-            format_string = (
-                "{:<"
-                + str(max(max_sizes["name"], 4))
-                + "} "
-                + "{:<"
-                + str(max(max_sizes["type"], 4))
-                + "} "
-                + "{:<"
-                + str(max(max_sizes["status"], 6))
-                + "}"
-            )
-            print(format_string.format("NAME", "TYPE", "STATUS"))
-            for w in workflows:
-                print(format_string.format(w["name"], w["type"], w["status"]))
+            if args.name is not None:
+                format_string = (
+                    "{:<"
+                    + str(max(max_sizes["start_time"], 6))
+                    + "}"
+                    + "{:<"
+                    + str(max(max_sizes["end_time"], 6))
+                    + "}"
+                    + "{:<"
+                    + str(max(max_sizes["status"], 6))
+                    + "}"
+                )
+                print(f"NAME: {args.name}")
+                print(f"TYPE: {workflows[0]['type']}\n")
+                print(format_string.format("START_TIME", "END_TIME", "STATUS"))
+                for w in workflows:
+                    print(
+                        format_string.format(
+                            w["start_time"], w["end_time"] or "-", w["status"]
+                        )
+                    )
+            else:
+                format_string = (
+                    "{:<"
+                    + str(max(max_sizes["name"], 4))
+                    + "} "
+                    + "{:<"
+                    + str(max(max_sizes["type"], 4))
+                    + "} "
+                    + "{:<"
+                    + str(max(max_sizes["num"], 4))
+                    + "} "
+                )
+                print(format_string.format("NAME", "TYPE", "EXECUTIONS"))
+                for w in workflows:
+                    print(format_string.format(w["name"], w["type"], w["num"]))
         else:
             print("No workflow objects found.")
     finally:
         await context.close()
 
 
-async def _async_main(args: argparse.Namespace):
+async def _async_prov(args: argparse.Namespace):
+    if os.path.exists(args.file):
+        streamflow_config = SfValidator().validate_file(args.file)
+        context = build_context(os.path.dirname(args.file), streamflow_config)
+    else:
+        context = build_context(os.getcwd(), {})
+    try:
+        db_context = DefaultDatabaseLoadingContext()
+        workflows = await context.database.get_workflows_by_name(
+            args.workflow, last_only=not args.all
+        )
+        workflows = await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    Workflow.load(
+                        context=context,
+                        persistent_id=w["id"],
+                        loading_context=db_context,
+                    )
+                )
+                for w in workflows
+            )
+        )
+        wf_type = {w.type for w in workflows}
+        if len(wf_type) != 1:
+            raise WorkflowProvenanceException(
+                "Cannot mix different provenance types in the same file. "
+                f"Workflow {args.workflow} is associated to the following types: {','.join(wf_type)}"
+            )
+        wf_type = list(wf_type)[0]
+        if args.type not in prov_classes:
+            raise WorkflowProvenanceException(
+                f"{args.type} provenance format is not supported."
+            )
+        elif wf_type not in prov_classes[args.type]:
+            raise WorkflowProvenanceException(
+                "{} provenance format is not supported for workflows of type {}.".format(
+                    args.type, wf_type
+                )
+            )
+        else:
+            provenance_manager: ProvenanceManager = prov_classes[args.type][wf_type](
+                context, db_context, workflows
+            )
+            await provenance_manager.create_archive(
+                outdir=args.outdir,
+                filename=args.name,
+                config=args.file if os.path.exists(args.file) else None,
+            )
+    finally:
+        await context.close()
+
+
+async def _async_report(args: argparse.Namespace):
+    if os.path.exists(args.file):
+        streamflow_config = SfValidator().validate_file(args.file)
+        context = build_context(
+            os.path.dirname(args.streamflow_file), streamflow_config
+        )
+    else:
+        context = build_context(os.getcwd(), {})
+    try:
+        await report.create_report(context, args)
+    finally:
+        await context.close()
+
+
+async def _async_run(args: argparse.Namespace):
     args.name = args.name or str(uuid.uuid4())
     load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
-    context = build_context(
-        os.path.dirname(args.streamflow_file), streamflow_config, args.outdir
-    )
+    context = build_context(os.path.dirname(args.streamflow_file), streamflow_config)
     try:
         workflow_tasks = []
         for workflow in streamflow_config.get("workflows", {}):
@@ -73,20 +164,6 @@ async def _async_main(args: argparse.Namespace):
                     asyncio.create_task(cwl_main(workflow_config, context, args))
                 )
             await asyncio.gather(*workflow_tasks)
-    finally:
-        await context.close()
-
-
-async def _async_report(args: argparse.Namespace):
-    if os.path.exists(args.streamflow_file):
-        streamflow_config = SfValidator().validate_file(args.streamflow_file)
-        context = build_context(
-            os.path.dirname(args.streamflow_file), streamflow_config, args.outdir
-        )
-    else:
-        context = build_context(os.getcwd(), {}, args.outdir)
-    try:
-        await report.create_report(context, args)
     finally:
         await context.close()
 
@@ -110,11 +187,8 @@ def _get_instance_from_config(
 
 
 def build_context(
-    config_dir: str,
-    streamflow_config: MutableMapping[str, Any],
-    output_dir: str | None = None,
+    config_dir: str, streamflow_config: MutableMapping[str, Any]
 ) -> StreamFlowContext:
-    output_dir = output_dir or os.getcwd()
     context = StreamFlowContext(config_dir)
     context.checkpoint_manager = _get_instance_from_config(
         streamflow_config,
@@ -127,10 +201,7 @@ def build_context(
         streamflow_config,
         database_classes,
         "database",
-        {
-            "context": context,
-            "connection": os.path.join(output_dir, ".streamflow", "sqlite.db"),
-        },
+        {"context": context, "connection": DEFAULT_SQLITE_CONNECTION},
     )
     context.data_manager = _get_instance_from_config(
         streamflow_config, data_manager_classes, "dataManager", {"context": context}
@@ -166,6 +237,8 @@ def main(args):
             print(f"StreamFlow version {VERSION}")
         elif args.context == "list":
             asyncio.run(_async_list(args))
+        elif args.context == "prov":
+            asyncio.run(_async_prov(args))
         elif args.context == "report":
             asyncio.run(_async_report(args))
         elif args.context == "run":
@@ -179,10 +252,15 @@ def main(args):
                 logger.handlers = []
                 logger.addHandler(coloredStreamHandler)
                 logger.addFilter(HighlitingFilter())
-            asyncio.run(_async_main(args))
+            asyncio.run(_async_run(args))
         else:
-            raise Exception(f"Context {args.context} not supported.")
+            parser.print_help(file=sys.stderr)
+            return 1
         return 0
+    except SystemExit as se:
+        if se.code != 0:
+            logger.exception(se)
+        return se.code
     except Exception as e:
         logger.exception(e)
         return 1

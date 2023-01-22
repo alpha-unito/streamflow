@@ -26,7 +26,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.utils import flatten_list
+from streamflow.core.utils import flatten_list, get_tag
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -682,7 +682,9 @@ class CWLCommand(CWLBaseCommand):
             )
         # Persist command
         command_id = await self.step.workflow.context.database.add_command(
-            step_id=self.step.persistent_id, cmd=cmd_string
+            step_id=self.step.persistent_id,
+            tag=get_tag(job.inputs.values()),
+            cmd=cmd_string,
         )
         # Escape shell command when needed
         if self.is_shell_command:
@@ -1034,7 +1036,9 @@ class CWLExpressionCommand(CWLBaseCommand):
             )
         # Persist command
         command_id = await self.step.workflow.context.database.add_command(
-            self.step.persistent_id, self.expression
+            step_id=self.step.persistent_id,
+            tag=get_tag(job.inputs.values()),
+            cmd=self.expression,
         )
         # Execute command
         start_time = time.time_ns()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import datetime
 import importlib
 import itertools
 import os
@@ -129,6 +130,12 @@ def get_class_fullname(cls: type):
 def get_class_from_name(name: str) -> type:
     module_name, class_name = name.rsplit(".", 1)
     return getattr(importlib.import_module(module_name), class_name)
+
+
+def get_date_from_ns(timestamp: int) -> str:
+    base = datetime.datetime(1970, 1, 1)
+    delta = datetime.timedelta(microseconds=round(timestamp / 1000))
+    return (base + delta).replace(tzinfo=datetime.timezone.utc).isoformat()
 
 
 async def get_remote_to_remote_write_command(

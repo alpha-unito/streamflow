@@ -302,6 +302,7 @@ class DockerConnector(DockerBaseConnector):
         capDrop: MutableSequence[str] | None = None,
         cgroupParent: str | None = None,
         cidfile: str | None = None,
+        command: MutableSequence[str] | None = None,
         containerIds: MutableSequence | None = None,
         cpuPeriod: int | None = None,
         cpuQuota: int | None = None,
@@ -408,6 +409,7 @@ class DockerConnector(DockerBaseConnector):
         self.cgroupParent: str | None = cgroupParent
         self.cidfile: str | None = cidfile
         self.containerIds: MutableSequence[str] = containerIds or []
+        self.command: MutableSequence[str] = command
         self.cpuPeriod: int | None = cpuPeriod
         self.cpuQuota: int | None = cpuQuota
         self.cpuRTPeriod: int | None = cpuRTPeriod
@@ -596,7 +598,8 @@ class DockerConnector(DockerBaseConnector):
                         self.get_option("volume-driver", self.volumeDriver),
                         self.get_option("volumes-from", self.volumesFrom),
                         self.get_option("workdir", self.workdir),
-                        self.image,
+                        f"{self.image} ",
+                        " ".join(self.command) if self.command else "",
                     ]
                 )
                 if logger.isEnabledFor(logging.DEBUG):
@@ -869,6 +872,7 @@ class SingularityConnector(SingularityBaseConnector):
         bind: MutableSequence[str] | None = None,
         boot: bool = False,
         cleanenv: bool = False,
+        command: MutableSequence[str] | None = None,
         contain: bool = False,
         containall: bool = False,
         disableCache: bool = False,
@@ -925,6 +929,7 @@ class SingularityConnector(SingularityBaseConnector):
         self.bind: MutableSequence[str] | None = bind
         self.boot: bool = boot
         self.cleanenv: bool = cleanenv
+        self.command: MutableSequence[str] = command or []
         self.contain: bool = contain
         self.containall: bool = containall
         self.disableCache: bool = disableCache
@@ -1010,7 +1015,8 @@ class SingularityConnector(SingularityBaseConnector):
                         self.get_option("writable", self.writable),
                         self.get_option("writable-tmpfs", self.writableTmpfs),
                         f"{self.image} ",
-                        instance_name,
+                        f"{instance_name} ",
+                        " ".join(self.command) if self.command else "",
                     ]
                 )
                 if logger.isEnabledFor(logging.DEBUG):

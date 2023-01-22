@@ -84,7 +84,7 @@ async def _async_main(args: argparse.Namespace):
         ] = args.jobfile
     validator.validate(streamflow_config)
     workflow_config = WorkflowConfig(workflow_name, streamflow_config)
-    context = build_context(config_dir, streamflow_config, args.outdir)
+    context = build_context(config_dir, streamflow_config)
     try:
         await streamflow.cwl.main.main(
             workflow_config=workflow_config, context=context, args=args
@@ -107,13 +107,15 @@ def main(args) -> int:
             logger.setLevel(logging.DEBUG)
         asyncio.run(_async_main(args))
         return 0
+    except SystemExit as se:
+        if se.code != 0:
+            logger.exception(se)
+        return se.code
     except Exception as e:
         logger.exception(e)
         return 1
     except KeyboardInterrupt:
         return 1
-    except SystemExit as se:
-        return se.code
 
 
 def run():

@@ -348,35 +348,23 @@ class Step(PersistableEntity, ABC):
             Status.FAILED,
             Status.SKIPPED,
         ]
-        ports = await context.database.get_input_ports(persistent_id)
-        step.input_ports = {
-            k: v
-            for k, v in zip(
-                [p["name"] for p in ports],
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            loading_context.load_port(context, p["port"])
-                        )
-                        for p in ports
-                    )
-                ),
+        input_deps = await context.database.get_input_ports(persistent_id)
+        input_ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in input_deps
             )
-        }
-        ports = await context.database.get_output_ports(persistent_id)
+        )
+        step.input_ports = {d["name"]: p.name for d, p in zip(input_deps, input_ports)}
+        output_deps = await context.database.get_output_ports(persistent_id)
+        output_ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in output_deps
+            )
+        )
         step.output_ports = {
-            k: v
-            for k, v in zip(
-                [p["name"] for p in ports],
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            loading_context.load_port(context, p["port"])
-                        )
-                        for p in ports
-                    )
-                ),
-            )
+            d["name"]: p.name for d, p in zip(output_deps, output_ports)
         }
         loading_context.add_step(persistent_id, step)
         return step
@@ -542,10 +530,17 @@ if TYPE_CHECKING:
 
 
 class Workflow(PersistableEntity):
-    def __init__(self, context: StreamFlowContext, type: str, name: str = None):
+    def __init__(
+        self,
+        context: StreamFlowContext,
+        type: str,
+        config: MutableMapping[str, Any],
+        name: str = None,
+    ):
         super().__init__()
         self.context: StreamFlowContext = context
         self.type: str = type
+        self.config: MutableMapping[str, Any] = config
         self.name: str = name if name is not None else str(uuid.uuid4())
         self.output_ports: MutableMapping[str, str] = {}
         self.ports: MutableMapping[str, Port] = {}
@@ -554,7 +549,7 @@ class Workflow(PersistableEntity):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {}
+        return {"config": self.config, "output_ports": self.output_ports}
 
     def create_port(self, cls: type[P] = Port, name: str = None, **kwargs) -> P:
         if name is None:
@@ -584,7 +579,10 @@ class Workflow(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Workflow:
         row = await context.database.get_workflow(persistent_id)
-        workflow = cls(context=context, type=row["type"], name=row["name"])
+        params = json.loads(row["params"])
+        workflow = cls(
+            context=context, type=row["type"], config=params["config"], name=row["name"]
+        )
         workflow.persistent_id = row["id"]
         loading_context.add_workflow(persistent_id, workflow)
         rows = await context.database.get_workflow_ports(persistent_id)
@@ -602,6 +600,7 @@ class Workflow(PersistableEntity):
                 ),
             )
         }
+        workflow.output_ports = params["output_ports"]
         rows = await context.database.get_workflow_steps(persistent_id)
         workflow.steps = {
             r["name"]: v

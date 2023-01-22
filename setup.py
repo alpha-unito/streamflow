@@ -35,6 +35,7 @@ setup(
         "streamflow.deployment.filter",
         "streamflow.ext",
         "streamflow.persistence",
+        "streamflow.provenance",
         "streamflow.recovery",
         "streamflow.scheduling",
         "streamflow.scheduling.policy",
