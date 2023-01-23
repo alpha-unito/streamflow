@@ -1,9 +1,11 @@
+import os
 import asyncio
 import tempfile
 
 import pytest
 import pytest_asyncio
 
+from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import DeploymentConfig, LOCAL_LOCATION, Location
 from streamflow.main import build_context
@@ -22,7 +24,7 @@ async def get_location(
         raise Exception(f"{request.param} location type not supported")
 
 
-def get_docker_deploy_config():
+def get_docker_deployment_config():
     return DeploymentConfig(
         name="alpine",
         type="docker",
@@ -34,7 +36,11 @@ def get_docker_deploy_config():
 
 @pytest_asyncio.fixture(scope="session")
 async def context() -> StreamFlowContext:
-    context = build_context(tempfile.gettempdir(), {})
+    context = build_context(
+        tempfile.gettempdir(),
+        {},
+        os.path.join(tempfile.gettempdir(), "streamflow", "tests", utils.random_name()),
+    )
     await context.deployment_manager.deploy(
         DeploymentConfig(
             name=LOCAL_LOCATION,
@@ -45,9 +51,11 @@ async def context() -> StreamFlowContext:
             workdir=tempfile.gettempdir(),
         )
     )
-    await context.deployment_manager.deploy(get_docker_deploy_config())
+    await context.deployment_manager.deploy(get_docker_deployment_config())
     yield context
     await context.deployment_manager.undeploy_all()
+    # close the database connection
+    await context.database.close()
 
 
 @pytest.fixture(scope="session")

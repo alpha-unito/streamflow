@@ -7,11 +7,13 @@ from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.workflow import Token
+from streamflow.core.workflow import Token, Job
 
 
 class IterationTerminationToken(Token):
-    def __init__(self, tag: str):
+    def __init__(
+        self, tag: str, **kargs
+    ):  # kargs is necessary when the class is loaded from the database and try to init with the value param
         super().__init__(None, tag)
 
     def get_weight(self, context: StreamFlowContext):
@@ -32,7 +34,37 @@ class FileToken(Token, ABC):
 
 class JobToken(Token):
     async def _save_value(self, context: StreamFlowContext):
-        return self.value.name
+        to_save = {}
+        for attr in Job.__slots__:
+            to_save[attr] = getattr(self.value, attr)
+
+        await asyncio.gather(
+            *(asyncio.create_task(t.save(context)) for t in self.value.inputs.values())
+        )
+        to_save["inputs"] = {k: v.persistent_id for k, v in self.value.inputs.items()}
+        return to_save
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Token:
+        value = json.loads(row["value"])
+        value["inputs"] = {
+            k: v
+            for k, v in zip(
+                value["inputs"].keys(),
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(loading_context.load_token(context, t))
+                        for t in value["inputs"].values()
+                    )
+                ),
+            )
+        }
+        return cls(tag=row["tag"], value=Job(*value.values()))
 
 
 class ListToken(Token):
@@ -128,7 +160,9 @@ class ObjectToken(Token):
 
 
 class TerminationToken(Token):
-    def __init__(self):
+    def __init__(
+        self, **kargs
+    ):  # kargs is necessary when the class is loaded from the database and try to init with the value param
         super().__init__(None)
 
     def get_weight(self, context: StreamFlowContext):
