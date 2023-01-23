@@ -51,7 +51,7 @@ class BindingConfig:
     ) -> BindingConfig:
         return cls(
             targets=cast(
-                MutableSequence[Target],
+                MutableSequence,
                 await asyncio.gather(
                     *(
                         asyncio.create_task(loading_context.load_target(context, t))
@@ -60,7 +60,7 @@ class BindingConfig:
                 ),
             ),
             filters=cast(
-                MutableSequence[Config],
+                MutableSequence,
                 await asyncio.gather(
                     *(
                         asyncio.create_task(Config.load(context, f, loading_context))

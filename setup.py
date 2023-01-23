@@ -1,5 +1,4 @@
 import os.path
-import pathlib
 from os import path
 
 from setuptools import setup
@@ -9,15 +8,15 @@ from streamflow.version import VERSION
 this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
-with open(os.path.join(pathlib.Path(__file__).parent, "requirements.txt")) as f:
+with open(os.path.join(this_directory, "requirements.txt")) as f:
     install_requires = f.read().splitlines()
-with open(os.path.join(pathlib.Path(__file__).parent, "bandit-requirements.txt")) as f:
+with open(os.path.join(this_directory, "bandit-requirements.txt")) as f:
     extras_require_bandit = f.read().splitlines()
-with open(os.path.join(pathlib.Path(__file__).parent, "docs/requirements.txt")) as f:
+with open(os.path.join(this_directory, "docs/requirements.txt")) as f:
     extras_require_docs = f.read().splitlines()
-with open(os.path.join(pathlib.Path(__file__).parent, "lint-requirements.txt")) as f:
+with open(os.path.join(this_directory, "lint-requirements.txt")) as f:
     extras_require_lint = f.read().splitlines()
-with open(os.path.join(pathlib.Path(__file__).parent, "test-requirements.txt")) as f:
+with open(os.path.join(this_directory, "test-requirements.txt")) as f:
     tests_require = f.read().splitlines()
 
 setup(
@@ -35,6 +34,7 @@ setup(
         "streamflow.deployment.filter",
         "streamflow.ext",
         "streamflow.persistence",
+        "streamflow.provenance",
         "streamflow.recovery",
         "streamflow.scheduling",
         "streamflow.scheduling.policy",
@@ -76,12 +76,18 @@ setup(
     zip_safe=True,
     classifiers=[
         "Development Status :: 4 - Beta",
+        "Framework :: StreamFlow",
         "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
         "Operating System :: POSIX",
         "Operating System :: MacOS",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3 :: Only",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "Topic :: Scientific/Engineering",
         "Topic :: System :: Distributed Computing",
     ],

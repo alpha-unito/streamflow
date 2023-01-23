@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import MutableSequence, TYPE_CHECKING, cast
 
 from streamflow.core import utils
@@ -97,6 +98,9 @@ class StreamFlowExecutor(Executor):
         try:
             output_tokens = {}
             # Execute workflow
+            await self.workflow.context.database.update_workflow(
+                self.workflow.persistent_id, {"start_time": time.time_ns()}
+            )
             for step in self.workflow.steps.values():
                 execution = asyncio.create_task(
                     self._handle_exception(asyncio.create_task(step.run())),
@@ -131,14 +135,16 @@ class StreamFlowExecutor(Executor):
                     raise WorkflowExecutionException("FAILED Workflow execution")
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
-                    self.workflow.persistent_id, {"status": Status.COMPLETED.value}
+                    self.workflow.persistent_id,
+                    {"status": Status.COMPLETED.value, "end_time": time.time_ns()},
                 )
             # Print output tokens
             return output_tokens
         except Exception:
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
-                    self.workflow.persistent_id, {"status": Status.FAILED.value}
+                    self.workflow.persistent_id,
+                    {"status": Status.FAILED.value, "end_time": time.time_ns()},
                 )
             if not self.closed:
                 await self._shutdown()

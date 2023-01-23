@@ -209,7 +209,9 @@ class Combinator(ABC):
         combinator.combinators_map = row["params"]["combinators_map"]
         combinator.combinators = {}
         for k, c in row["params"]["combinators"].items():
-            combinator.combinators[k] = Combinator.load(context, c, loading_context)
+            combinator.combinators[k] = await Combinator.load(
+                context, c, loading_context
+            )
         return combinator
 
     async def save(self, context: StreamFlowContext):
@@ -1140,7 +1142,7 @@ class ScheduleStep(BaseStep):
             ),
             connector_ports={
                 k: cast(ConnectorPort, await loading_context.load_port(context, v))
-                for k, v in params["connector_port"]
+                for k, v in params["connector_ports"].items()
             },
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])

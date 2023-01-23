@@ -92,7 +92,7 @@ class Database(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def add_command(self, step_id: int, cmd: str) -> int:
+    async def add_command(self, step_id: int, tag: str, cmd: str) -> int:
         ...
 
     @abstractmethod
@@ -156,6 +156,16 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
+    async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
+        ...
+
+    @abstractmethod
+    async def get_commands_by_step(
+        self, step_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        ...
+
+    @abstractmethod
     async def get_deployment(self, deplyoment_id: int) -> MutableMapping[str, Any]:
         ...
 
@@ -180,9 +190,9 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_report(
-        self, workflow: str
-    ) -> MutableSequence[MutableMapping[str, Any]]:
+    async def get_reports(
+        self, workflow: str, last_only: bool = False
+    ) -> MutableSequence[MutableSequence[MutableMapping[str, Any]]]:
         ...
 
     @abstractmethod
@@ -202,6 +212,12 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
+    async def get_workflows_by_name(
+        self, workflow_name: str, last_only: bool = False
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        ...
+
+    @abstractmethod
     async def get_workflow_ports(
         self, workflow_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
@@ -214,7 +230,9 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def list_workflows(self) -> MutableSequence[MutableMapping[str, Any]]:
+    async def list_workflows(
+        self, name: str | None
+    ) -> MutableSequence[MutableMapping[str, Any]]:
         ...
 
     @abstractmethod

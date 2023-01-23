@@ -18,6 +18,10 @@ class WorkflowExecutionException(WorkflowException):
     ...
 
 
+class WorkflowProvenanceException(WorkflowException):
+    ...
+
+
 class FailureHandlingException(WorkflowException):
     ...
 

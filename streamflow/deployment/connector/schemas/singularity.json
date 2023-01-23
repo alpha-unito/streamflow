@@ -35,6 +35,13 @@
       "type": "boolean",
       "description": "Clean environment before running container"
     },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Command to run when deploying the container"
+    },
     "contain": {
       "type": "boolean",
       "description": "Use minimal /dev and empty other directories (e.g. /tmp and $HOME) instead of sharing filesystems from your host"
