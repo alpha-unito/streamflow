@@ -48,6 +48,7 @@ setup(
         "streamflow.deployment.filter": ["schemas/*.json"],
         "streamflow.persistence": ["schemas/*.sql", "schemas/*.json"],
         "streamflow.recovery": ["schemas/*.json"],
+        "streamflow.scheduling": ["schemas/*.json"],
         "streamflow.scheduling.policy": ["schemas/*.json"],
     },
     include_package_data=True,
