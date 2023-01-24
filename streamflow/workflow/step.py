@@ -26,7 +26,6 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import random_name
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -564,6 +563,7 @@ class ExecuteStep(BaseStep):
             raise WorkflowExecutionException(f"Step {self.name} received a null job")
         job = Job(
             name=job.name,
+            workflow_id=self.workflow.persistent_id,
             inputs=inputs,
             input_directory=job.input_directory,
             output_directory=job.output_directory,
@@ -1107,6 +1107,7 @@ class ScheduleStep(BaseStep):
         binding_config: BindingConfig,
         connector_ports: MutableMapping[str, ConnectorPort],
         job_port: JobPort | None = None,
+        job_prefix: str | None = None,
         hardware_requirement: HardwareRequirement | None = None,
         input_directory: str | None = None,
         output_directory: str | None = None,
@@ -1114,6 +1115,7 @@ class ScheduleStep(BaseStep):
     ):
         super().__init__(name, workflow)
         self.binding_config: BindingConfig = binding_config
+        self.job_prefix: str = job_prefix or name
         self.hardware_requirement: HardwareRequirement | None = hardware_requirement
         self.input_directory: str | None = input_directory
         self.output_directory: str | None = output_directory
@@ -1250,7 +1252,10 @@ class ScheduleStep(BaseStep):
                             inputs = inputs_map.pop(tag)
                             # Create Job
                             job = Job(
-                                name=random_name(),
+                                name=posixpath.join(
+                                    self.job_prefix, tag.split(".")[-1]
+                                ),
+                                workflow_id=self.workflow.persistent_id,
                                 inputs=inputs,
                                 input_directory=self.input_directory,
                                 output_directory=self.output_directory,
@@ -1274,7 +1279,8 @@ class ScheduleStep(BaseStep):
             else:
                 # Create Job
                 job = Job(
-                    name=random_name(),
+                    name=posixpath.join(self.job_prefix, "0"),
+                    workflow_id=self.workflow.persistent_id,
                     inputs={},
                     input_directory=self.input_directory,
                     output_directory=self.output_directory,

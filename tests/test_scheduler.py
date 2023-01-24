@@ -1,22 +1,21 @@
-import pytest
 import asyncio
-
 from typing import MutableMapping, MutableSequence, Optional
-from tests.conftest import get_docker_deploy_config
+
+import pytest
 
 from streamflow.core import utils
-from streamflow.core.workflow import Job, Status
+from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.config import Config, BindingConfig
-from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.core.deployment import (
-    LOCAL_LOCATION,
     BindingFilter,
+    LOCAL_LOCATION,
     LocalTarget,
     Target,
 )
-
+from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
+from tests.conftest import get_docker_deploy_config
 
 
 class CustomConnector(LocalConnector):
@@ -87,6 +86,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
         jobs.append(
             Job(
                 name=utils.random_name(),
+                workflow_id=0,
                 inputs={},
                 input_directory=utils.random_name(),
                 output_directory=utils.random_name(),
@@ -161,6 +161,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
         jobs.append(
             Job(
                 name=utils.random_name(),
+                workflow_id=0,
                 inputs={},
                 input_directory=utils.random_name(),
                 output_directory=utils.random_name(),
@@ -224,6 +225,7 @@ async def test_multi_env(context: StreamFlowContext):
             (
                 Job(
                     name=utils.random_name(),
+                    workflow_id=0,
                     inputs={},
                     input_directory=utils.random_name(),
                     output_directory=utils.random_name(),
@@ -277,6 +279,7 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     # Create fake job with two targets and schedule it
     job = Job(
         name=utils.random_name(),
+        workflow_id=0,
         inputs={},
         input_directory=utils.random_name(),
         output_directory=utils.random_name(),
@@ -343,6 +346,7 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
         jobs.append(
             Job(
                 name=utils.random_name(),
+                workflow_id=0,
                 inputs={},
                 input_directory=utils.random_name(),
                 output_directory=utils.random_name(),
@@ -400,6 +404,7 @@ async def test_binding_filter(context: StreamFlowContext):
     """Test Binding Filter using a job with two targets both free. With the CustomBindingFilter the scheduling will choose the second target"""
     job = Job(
         name=utils.random_name(),
+        workflow_id=0,
         inputs={},
         input_directory=utils.random_name(),
         output_directory=utils.random_name(),

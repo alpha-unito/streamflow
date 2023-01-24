@@ -128,6 +128,7 @@ class Executor(ABC):
 class Job:
     __slots__ = (
         "name",
+        "workflow_id",
         "inputs",
         "input_directory",
         "output_directory",
@@ -137,12 +138,14 @@ class Job:
     def __init__(
         self,
         name: str,
+        workflow_id: int,
         inputs: MutableMapping[str, Token],
         input_directory: str,
         output_directory: str,
         tmp_directory: str,
     ):
         self.name: str = name
+        self.workflow_id: int = workflow_id
         self.inputs: MutableMapping[str, Token] = inputs
         self.input_directory: str = input_directory
         self.output_directory: str = output_directory
