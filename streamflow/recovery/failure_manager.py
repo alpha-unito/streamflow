@@ -64,6 +64,7 @@ class DefaultFailureManager(FailureManager):
             self.jobs[job.name] = JobVersion(
                 job=Job(
                     name=job.name,
+                    workflow_id=step.workflow.persistent_id,
                     inputs=dict(job.inputs),
                     input_directory=job.input_directory,
                     output_directory=job.output_directory,
