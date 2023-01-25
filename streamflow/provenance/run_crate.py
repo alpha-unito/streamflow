@@ -492,6 +492,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                 "sha1": config_checksum,
             }
             self.files_map[config] = config_checksum
+            self.graph["./"]["hasPart"].append({"@id": config_file["@id"]})
             self.graph[config_file["@id"]] = config_file
         # Add executons
         for wf_id, workflow in enumerate(self.workflows):
@@ -916,6 +917,9 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 }
                 if collection["@id"] not in self.graph:
                     self.graph[collection["@id"]] = collection
+                    self.graph["./"]["hasPart"].append(
+                        {"@id": collection["mainEntity"]["@id"]}
+                    )
                     self.graph["./"].setdefault("mentions", []).append(
                         {"@id": collection["@id"]}
                     )
@@ -938,12 +942,16 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                     "".join(sorted([part["@id"] for part in has_part]))
                 )
                 dataset["alternateName"] = token_value["basename"]
-                if dataset["@id"] not in self.graph:
-                    self.graph["./"]["hasPart"].append({"@id": dataset["@id"]})
-                    self.graph[dataset["@id"]] = dataset
                 dataset["hasPart"] = self._rename_parts(
                     has_part, jsonld_map, dataset["@id"], dataset["alternateName"]
                 )
+                if dataset["@id"] not in self.graph:
+                    self.graph["./"]["hasPart"].append({"@id": dataset["@id"]})
+                    self.graph[dataset["@id"]] = dataset
+                    for entry in cast(
+                        MutableSequence[MutableMapping[str, Any]], dataset["hasPart"]
+                    ):
+                        self.graph["./"]["hasPart"].append({"@id": entry["@id"]})
                 self.files_map[token_value["path"]] = dataset["@id"]
             else:
                 dataset["@id"] = token_value["basename"]
