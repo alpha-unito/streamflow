@@ -68,7 +68,7 @@ async def _async_main(args: argparse.Namespace):
             workflow_name = list(workflows.keys())[0]
         elif len(workflows) == 0:
             workflow_name = "cwl-workflow"
-            streamflow_config["workflows"][workflow_name] = {}
+            streamflow_config.setdefault("workflows", {})[workflow_name] = {}
         else:
             raise WorkflowDefinitionException(
                 "A StreamFlow file must contain only one workflow definition when used with cwl-runner."
@@ -77,11 +77,13 @@ async def _async_main(args: argparse.Namespace):
         workflow_name = "cwl-workflow"
         streamflow_config = {"version": "v1.0", "workflows": {workflow_name: {}}}
     streamflow_config["workflows"][workflow_name]["type"] = "cwl"
-    streamflow_config["workflows"][workflow_name]["config"] = {"file": args.processfile}
+    streamflow_config["workflows"][workflow_name]["config"] = {
+        "file": os.path.abspath(args.processfile)
+    }
     if args.jobfile:
         streamflow_config["workflows"][workflow_name]["config"][
             "settings"
-        ] = args.jobfile
+        ] = os.path.abspath(args.jobfile)
     validator.validate(streamflow_config)
     workflow_config = WorkflowConfig(workflow_name, streamflow_config)
     context = build_context(config_dir, streamflow_config)
