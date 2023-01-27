@@ -1,5 +1,6 @@
 import pytest
 import posixpath
+from rdflib import Graph
 from collections.abc import Iterable
 
 from tests.conftest import get_docker_deployment_config
@@ -12,6 +13,8 @@ from streamflow.core.persistence import PersistableEntity
 from streamflow.core.workflow import Job, Step, Port, Token, Workflow
 
 from streamflow.workflow.port import JobPort, ConnectorPort
+
+# abstract class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
 from streamflow.workflow.step import (
     CombinatorStep,
     DeployStep,
@@ -36,9 +39,10 @@ from streamflow.workflow.token import (
 )
 
 
-# abstract class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
+from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.cwl.step import CWLConditionalStep  # ConditionalStep
 from streamflow.cwl.combinator import ListMergeCombinator  # CombinatorStep
+from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.transformer import (
     DefaultTransformer,
     DefaultRetagTransformer,
@@ -51,7 +55,6 @@ from streamflow.cwl.transformer import (
     ListToElementTransformer,
     OnlyNonNullTransformer,
 )
-from streamflow.cwl.processor import CWLCommandOutputProcessor  # param for ObjectToken
 
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -276,6 +279,33 @@ async def test_deploy_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
+async def test_schedule_step(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+    binding_config = BindingConfig(targets=[LocalTarget(workdir=utils.random_name())])
+    schedule_step = workflow.create_step(
+        cls=ScheduleStep,
+        name=posixpath.join(utils.random_name() + "-injector", "__schedule__"),
+        connector_ports={binding_config.targets[0].deployment.name: port},
+        input_directory=binding_config.targets[0].workdir,
+        output_directory=binding_config.targets[0].workdir,
+        tmp_directory=binding_config.targets[0].workdir,
+        binding_config=binding_config,
+    )
+
+    #
+    await schedule_step.get_output_port("__job__").save(context)
+
+    await save_load_and_test(schedule_step, context)
+
+
+@pytest.mark.asyncio
 async def test_execute_step(context: StreamFlowContext):
     """Test saving and loading DeployStep from database"""
     workflow = Workflow(
@@ -358,6 +388,97 @@ async def test_default_retag_transformer(context: StreamFlowContext):
     await save_load_and_test(transformer, context)
 
 
+@pytest.mark.asyncio
+async def test_cwl_token_transformer(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+    name = utils.random_name()
+    transformer = workflow.create_step(
+        cls=CWLTokenTransformer,
+        name=name + "-transformer",
+        port_name=port.name,
+        processor=CWLTokenProcessor(  # TODO: TokenProcessor subclasses
+            name=port.name,
+            workflow=workflow,
+            token_type="enum",
+            enum_symbols=["path1", "path2"],
+            expression_lib=["expr_lib1", "expr_lib2"],
+            secondary_files=[SecondaryFile("file1", True)],
+            format_graph=Graph(),
+            load_listing=LoadListing.no_listing,
+        ),
+    )
+    await save_load_and_test(transformer, context)
+
+
+@pytest.mark.asyncio
+async def test_value_from_transformer(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+    name = utils.random_name()
+    transformer = workflow.create_step(
+        cls=ValueFromTransformer,
+        name=name + "-value-from-transformer",
+        processor=CWLTokenProcessor(
+            name=port.name,
+            workflow=workflow,
+            token_type="enum",
+            enum_symbols=["path1", "path2"],
+            expression_lib=["expr_lib1", "expr_lib2"],
+            secondary_files=[SecondaryFile("file1", True)],
+            format_graph=Graph(),
+            load_listing=LoadListing.no_listing,
+        ),
+        port_name=port.name,
+        expression_lib=True,
+        full_js=False,
+        value_from="$(1 + 1)",
+    )
+    await save_load_and_test(transformer, context)
+
+
+@pytest.mark.asyncio
+async def test_loop_value_from_transformer(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+    name = utils.random_name()
+    transformer = workflow.create_step(
+        cls=LoopValueFromTransformer,
+        name=name + "loop-value-from-transformer",
+        processor=CWLTokenProcessor(
+            name=port.name,
+            workflow=workflow,
+            token_type="enum",
+            enum_symbols=["path1", "path2"],
+            expression_lib=["expr_lib1", "expr_lib2"],
+            secondary_files=[SecondaryFile("file1", True)],
+            format_graph=Graph(),
+            load_listing=LoadListing.no_listing,
+        ),
+        port_name=port.name,
+        expression_lib=True,
+        full_js=False,
+        value_from="$(1 + 1 == 0)",
+    )
+    await save_load_and_test(transformer, context)
 
 
 @pytest.mark.asyncio
