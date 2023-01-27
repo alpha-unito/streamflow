@@ -624,6 +624,19 @@ async def test_list_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
+async def test_object_token(context: StreamFlowContext):
+    """Test saving and loading ObjectToken from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+    token = ObjectToken(value=dict({"test": Token("object")}))
+    await save_load_and_test(token, context)
+
+
+@pytest.mark.asyncio
 async def test_termination_token(context: StreamFlowContext):
     """Test saving and loading IterationTerminationToken from database"""
     token = TerminationToken()
