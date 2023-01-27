@@ -11,9 +11,7 @@ from streamflow.core.workflow import Token, Job
 
 
 class IterationTerminationToken(Token):
-    def __init__(
-        self, tag: str, **kargs
-    ):  # kargs is necessary when the class is loaded from the database and try to init with the value param
+    def __init__(self, tag: str):
         super().__init__(None, tag)
 
     def get_weight(self, context: StreamFlowContext):
@@ -24,6 +22,15 @@ class IterationTerminationToken(Token):
 
     def retag(self, tag: str) -> Token:
         raise NotImplementedError
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> IterationTerminationToken:
+        return cls(tag=row["tag"])
 
 
 class FileToken(Token, ABC):
@@ -160,9 +167,7 @@ class ObjectToken(Token):
 
 
 class TerminationToken(Token):
-    def __init__(
-        self, **kargs
-    ):  # kargs is necessary when the class is loaded from the database and try to init with the value param
+    def __init__(self):
         super().__init__(None)
 
     def get_weight(self, context: StreamFlowContext):
@@ -173,3 +178,12 @@ class TerminationToken(Token):
 
     def retag(self, tag: str) -> Token:
         raise NotImplementedError
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> IterationTerminationToken:
+        return cls()
