@@ -41,15 +41,17 @@ class FileToken(Token, ABC):
 
 class JobToken(Token):
     async def _save_value(self, context: StreamFlowContext):
-        to_save = {}
-        for attr in Job.__slots__:
-            to_save[attr] = getattr(self.value, attr)
-
         await asyncio.gather(
             *(asyncio.create_task(t.save(context)) for t in self.value.inputs.values())
         )
-        to_save["inputs"] = {k: v.persistent_id for k, v in self.value.inputs.items()}
-        return to_save
+        job = {
+            "name": self.value.name,
+            "inputs": {k: v.persistent_id for k, v in self.value.inputs.items()},
+            "input_directory": self.value.input_directory,
+            "output_directory": self.value.output_directory,
+            "tmp_directory": self.value.tmp_directory,
+        }
+        return job
 
     @classmethod
     async def _load(
