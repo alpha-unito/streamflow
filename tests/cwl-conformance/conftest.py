@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from contextlib import redirect_stdout
 from typing import Any
 
@@ -14,7 +15,14 @@ def pytest_cwl_execute_test(
     from streamflow.core.exception import WorkflowException
     from streamflow.cwl.runner import main
 
-    args = ["--outdir", config.outdir, processfile]
+    this_directory = os.path.abspath(os.path.dirname(__file__))
+    args = [
+        "--streamflow-file",
+        os.path.join(this_directory, "streamflow.yml"),
+        "--outdir",
+        config.outdir,
+        processfile,
+    ]
     if jobfile is not None:
         args.append(jobfile)
 
