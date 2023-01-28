@@ -81,7 +81,7 @@ def object_to_dict(obj):
 
 
 # The function return True if the elems are the same, otherwise False
-# The param obj_compared is usefull to break a circul reference inside the objects
+# The param obj_compared is useful to break a circul reference inside the objects
 # remembering the objects already encountered
 def are_equals(elem1, elem2, obj_compared=None):
     obj_compared = obj_compared if obj_compared else []
