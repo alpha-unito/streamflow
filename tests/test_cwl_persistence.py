@@ -14,11 +14,11 @@ from streamflow.workflow.step import CombinatorStep
 # abstract classes the extend the Step class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
 from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.cwl.step import (
-    CWLTransferStep,  # CWLTransferStep
+    CWLTransferStep,  # TransferStep
     CWLConditionalStep,  # ConditionalStep
     CWLInputInjectorStep,  # InputInjectorStep
-    CWLLoopOutputAllStep,  # CWLLoopOutputAllStep
-    CWLLoopOutputLastStep,  # CWLLoopOutputLastStep
+    CWLLoopOutputAllStep,  # LoopOutputStep
+    CWLLoopOutputLastStep,  # LoopOutputStep
 )
 from streamflow.cwl.combinator import ListMergeCombinator  # CombinatorStep
 from streamflow.cwl.processor import (

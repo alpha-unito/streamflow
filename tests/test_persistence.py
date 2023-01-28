@@ -1,6 +1,6 @@
 import posixpath
-from collections.abc import Iterable
 from asyncio.locks import Lock
+from collections.abc import Iterable
 
 import pytest
 
@@ -40,10 +40,7 @@ from streamflow.workflow.token import (
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 
-# abstract classes the extend the Step class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
-
-
-def is_primiteve_type(elem):
+def is_primitive_type(elem):
     return type(elem) in (int, float, str, bool)
 
 
@@ -69,7 +66,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     if type(elem1) == Lock:
         return True
 
-    if is_primiteve_type(elem1):
+    if is_primitive_type(elem1):
         return elem1 == elem2
 
     if isinstance(elem1, Iterable) and not isinstance(elem1, dict):
