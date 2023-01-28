@@ -151,6 +151,62 @@ class Job:
         self.output_directory: str = output_directory
         self.tmp_directory: str = tmp_directory
 
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Job:
+        return cls(
+            name=row["name"],
+            workflow_id=row["workflow_id"],
+            inputs={
+                k: v
+                for k, v in zip(
+                    row["inputs"].keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(loading_context.load_token(context, t))
+                            for t in row["inputs"].values()
+                        )
+                    ),
+                )
+            },
+            input_directory=row["input_directory"],
+            output_directory=row["output_directory"],
+            tmp_directory=row["tmp_directory"],
+        )
+
+    async def _save_additional_params(self, context: StreamFlowContext):
+        await asyncio.gather(
+            *(asyncio.create_task(t.save(context)) for t in self.inputs.values())
+        )
+        return {
+            "name": self.name,
+            "workflow_id": self.workflow_id,
+            "inputs": {k: v.persistent_id for k, v in self.inputs.items()},
+            "input_directory": self.input_directory,
+            "output_directory": self.output_directory,
+            "tmp_directory": self.tmp_directory,
+        }
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        type = cast(Type[Job], utils.get_class_from_name(row["type"]))
+        return await type._load(context, row["params"], loading_context)
+
+    async def save(self, context: StreamFlowContext):
+        return {
+            "type": utils.get_class_fullname(type(self)),
+            "params": await self._save_additional_params(context),
+        }
+
 
 class Port(PersistableEntity):
     def __init__(self, workflow: Workflow, name: str):

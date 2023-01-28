@@ -41,17 +41,7 @@ class FileToken(Token, ABC):
 
 class JobToken(Token):
     async def _save_value(self, context: StreamFlowContext):
-        await asyncio.gather(
-            *(asyncio.create_task(t.save(context)) for t in self.value.inputs.values())
-        )
-        job = {
-            "name": self.value.name,
-            "inputs": {k: v.persistent_id for k, v in self.value.inputs.items()},
-            "input_directory": self.value.input_directory,
-            "output_directory": self.value.output_directory,
-            "tmp_directory": self.value.tmp_directory,
-        }
-        return job
+        return {"job": await self.value.save(context)}
 
     @classmethod
     async def _load(
@@ -59,21 +49,12 @@ class JobToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Token:
-        value = json.loads(row["value"])
-        value["inputs"] = {
-            k: v
-            for k, v in zip(
-                value["inputs"].keys(),
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(loading_context.load_token(context, t))
-                        for t in value["inputs"].values()
-                    )
-                ),
-            )
-        }
-        return cls(tag=row["tag"], value=Job(*value.values()))
+    ) -> JobToken:
+        params = json.loads(row["value"])
+        return cls(
+            tag=row["tag"],
+            value=await Job.load(context, params["job"], loading_context),
+        )
 
 
 class ListToken(Token):
