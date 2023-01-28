@@ -70,7 +70,8 @@ TEST_COMMAND="${TEST_COMMAND} --cov --cov-config ${SCRIPT_DIRECTORY}/.coveragerc
 rm -rf "${SCRIPT_DIRECTORY}/.coverage" "${SCRIPT_DIRECTORY}/coverage.xml"
 
 # Run test
-cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/conftest.py" "$(dirname "${CONFORMANCE_TEST}")/conftest.py"
+cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/conftest.py" "$(dirname "${CONFORMANCE_TEST}")/"
+cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/streamflow.yml" "$(dirname "${CONFORMANCE_TEST}")/"
 bash -c "${TEST_COMMAND}"
 RETURN_CODE=$?
 
