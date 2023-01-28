@@ -14,8 +14,6 @@ from streamflow.core.persistence import PersistableEntity
 from streamflow.core.workflow import Job, Step, Port, Token, Workflow
 
 from streamflow.workflow.port import JobPort, ConnectorPort
-
-# abstract class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
 from streamflow.workflow.step import (
     CombinatorStep,
     DeployStep,
@@ -39,8 +37,10 @@ from streamflow.workflow.token import (
     IterationTerminationToken,
 )
 
-
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+
+
+# abstract classes the extend the Step class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
 
 
 def is_primiteve_type(elem):
