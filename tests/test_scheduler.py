@@ -18,7 +18,6 @@ from streamflow.deployment.connector import LocalConnector
 from tests.conftest import get_docker_deployment_config
 
 
-
 class CustomConnector(LocalConnector):
     def __init__(
         self,

@@ -1,11 +1,9 @@
-import os
 import asyncio
 import tempfile
 
 import pytest
 import pytest_asyncio
 
-from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import DeploymentConfig, LOCAL_LOCATION, Location
 from streamflow.main import build_context

@@ -173,7 +173,7 @@ def create_cwl_token_processor(name, workflow):
     )
 
 
-### Testing Workflow
+# Testing Workflow
 @pytest.mark.asyncio
 async def test_workflow(context: StreamFlowContext):
     """Test saving and loading Workflow from database"""
@@ -183,7 +183,7 @@ async def test_workflow(context: StreamFlowContext):
     await save_load_and_test(workflow, context)
 
 
-### Testing Port and its extension classes
+# Testing Port and its extension classes
 @pytest.mark.asyncio
 async def test_port(context: StreamFlowContext):
     """Test saving and loading Port from database"""
@@ -232,10 +232,10 @@ async def test_connector_port(context: StreamFlowContext):
     await save_load_and_test(port, context)
 
 
-### Testing Step and its extension classes
+# Testing Step and its extension classes
 @pytest.mark.asyncio
 async def test_combinator_step(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CombinatorStep with CartesianProductCombinator from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -256,7 +256,7 @@ async def test_combinator_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_loop_combinator_step(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading LoopCombinatorStep from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -299,7 +299,7 @@ async def test_deploy_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_schedule_step(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading ScheduleStep from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -325,7 +325,7 @@ async def test_schedule_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_execute_step(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading ExecuteStep from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -342,7 +342,7 @@ async def test_execute_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_gather_step(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading GatherStep from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -358,7 +358,7 @@ async def test_gather_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_scatter_step(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading ScatterStep from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -372,7 +372,7 @@ async def test_scatter_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_default_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading DefaultTransformer from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -390,7 +390,7 @@ async def test_default_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_default_retag_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading DefaultRetagTransformer from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -408,7 +408,7 @@ async def test_default_retag_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_cwl_token_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CWLTokenTransformer with CWLTokenProcessor from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -428,7 +428,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_value_from_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading ValueFromTransformer with CWLTokenProcessor from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -451,7 +451,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_loop_value_from_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading LoopValueFromTransformer with CWLTokenProcessor from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -474,7 +474,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_cwl_map_token_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CWLTokenTransformer with CWLMapTokenProcessor from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -498,7 +498,7 @@ async def test_cwl_map_token_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_cwl_object_token_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CWLTokenTransformer with CWLObjectTokenProcessor from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -524,7 +524,7 @@ async def test_cwl_object_token_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_cwl_union_token_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CWLTokenTransformer with CWLUnionTokenProcessor from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -548,7 +548,7 @@ async def test_cwl_union_token_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_all_non_null_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading AllNonNullTransformer from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -569,7 +569,7 @@ async def test_all_non_null_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_first_non_null_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading FirstNonNullTransformer from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -590,7 +590,7 @@ async def test_first_non_null_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_forward_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading ForwardTransformer from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -611,7 +611,7 @@ async def test_forward_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_list_to_element_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading ListToElementTransformer from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -632,7 +632,7 @@ async def test_list_to_element_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_only_non_null_transformer(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading OnlyNonNullTransformer from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -653,7 +653,7 @@ async def test_only_non_null_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_conditional_step(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CWLConditionalStep from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -671,11 +671,10 @@ async def test_conditional_step(context: StreamFlowContext):
     await save_load_and_test(step, context)
 
 
-### Subtest - Step param combinator
-# CartesianProductCombinator tested with CombinatorStep
+# Subtest - Step param combinator
 @pytest.mark.asyncio
 async def test_dot_product_combinator(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CombinatorStep with DotProductCombinator from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -694,7 +693,7 @@ async def test_dot_product_combinator(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_list_merge_combinator(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CombinatorStep with ListMergeCombinator from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -720,11 +719,10 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_loop_combinator(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CombinatorStep with LoopCombinator from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    port = workflow.create_port()
     assert workflow.persistent_id is None
     await workflow.save(context)
     assert workflow.persistent_id is not None
@@ -740,11 +738,10 @@ async def test_loop_combinator(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_loop_termination_combinator(context: StreamFlowContext):
-    """Test saving and loading DeployStep from database"""
+    """Test saving and loading CombinatorStep with LoopTerminationCombinator from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    port = workflow.create_port()
     assert workflow.persistent_id is None
     await workflow.save(context)
     assert workflow.persistent_id is not None
@@ -760,7 +757,7 @@ async def test_loop_termination_combinator(context: StreamFlowContext):
     await save_load_and_test(step, context)
 
 
-### Testing the Target and its extension classes
+# Testing the Target and its extension classes
 @pytest.mark.asyncio
 async def test_target(context: StreamFlowContext):
     """Test saving and loading Target from database"""
@@ -774,12 +771,12 @@ async def test_target(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_local_target(context: StreamFlowContext):
-    """Test saving and loading Target from database"""
+    """Test saving and loading LocalTarget from database"""
     target = LocalTarget(workdir=utils.random_name())
     await save_load_and_test(target, context)
 
 
-### Testing the Token and its extension classes
+# Testing the Token and its extension classes
 @pytest.mark.asyncio
 async def test_token(context: StreamFlowContext):
     """Test saving and loading Token from database"""
@@ -792,6 +789,7 @@ async def test_job_token(context: StreamFlowContext):
     """Test saving and loading JobToken from database"""
     token = JobToken(
         value=Job(
+            workflow_id=0,
             name=utils.random_name(),
             inputs={"test": Token(value="jobtoken")},
             input_directory=utils.random_name(),
@@ -836,7 +834,7 @@ async def test_iteration_termination_token(context: StreamFlowContext):
     await save_load_and_test(token, context)
 
 
-### Deployment test
+# Deployment test
 @pytest.mark.asyncio
 async def test_deployment(context: StreamFlowContext):
     """Test saving and loading deployment configuration from database"""
