@@ -3,7 +3,7 @@ aiosqlite==0.18.0
 antlr4-python3-runtime==4.11.1
 asyncssh==2.13.0
 bcrypt==4.0.1
-cachetools==5.2.1
+cachetools==5.3.0
 cwltool==3.1.20221201130942
 cwl-utils==0.21
 importlib_metadata==6.0.0

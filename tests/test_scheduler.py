@@ -18,6 +18,7 @@ from streamflow.deployment.connector import LocalConnector
 from tests.conftest import get_docker_deployment_config
 
 
+
 class CustomConnector(LocalConnector):
     def __init__(
         self,
@@ -86,6 +87,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
         jobs.append(
             Job(
                 name=utils.random_name(),
+                workflow_id=0,
                 inputs={},
                 input_directory=utils.random_name(),
                 output_directory=utils.random_name(),
@@ -160,6 +162,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
         jobs.append(
             Job(
                 name=utils.random_name(),
+                workflow_id=0,
                 inputs={},
                 input_directory=utils.random_name(),
                 output_directory=utils.random_name(),
@@ -223,6 +226,7 @@ async def test_multi_env(context: StreamFlowContext):
             (
                 Job(
                     name=utils.random_name(),
+                    workflow_id=0,
                     inputs={},
                     input_directory=utils.random_name(),
                     output_directory=utils.random_name(),
@@ -276,6 +280,7 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     # Create fake job with two targets and schedule it
     job = Job(
         name=utils.random_name(),
+        workflow_id=0,
         inputs={},
         input_directory=utils.random_name(),
         output_directory=utils.random_name(),
@@ -342,6 +347,7 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
         jobs.append(
             Job(
                 name=utils.random_name(),
+                workflow_id=0,
                 inputs={},
                 input_directory=utils.random_name(),
                 output_directory=utils.random_name(),
@@ -399,6 +405,7 @@ async def test_binding_filter(context: StreamFlowContext):
     """Test Binding Filter using a job with two targets both free. With the CustomBindingFilter the scheduling will choose the second target"""
     job = Job(
         name=utils.random_name(),
+        workflow_id=0,
         inputs={},
         input_directory=utils.random_name(),
         output_directory=utils.random_name(),

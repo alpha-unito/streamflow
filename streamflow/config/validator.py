@@ -16,6 +16,7 @@ from streamflow.deployment.connector import connector_classes
 from streamflow.deployment.filter import binding_filter_classes
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
+from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes
 
 if TYPE_CHECKING:
@@ -67,6 +68,7 @@ class SfValidator:
         utils.inject_schema(schema, deployment_manager_classes, "deploymentManager")
         utils.inject_schema(schema, failure_manager_classes, "failureManager")
         utils.inject_schema(schema, policy_classes, "policy")
+        utils.inject_schema(schema, scheduler_classes, "scheduler")
         validator = Draft7Validator(schema)
         handle_errors(validator.iter_errors(streamflow_config))
         return streamflow_config

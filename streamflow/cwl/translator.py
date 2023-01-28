@@ -1366,7 +1366,8 @@ class CWLTranslator:
         # Create a schedule step and connect it to the local DeployStep
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
-            name=posixpath.join(global_name + "-injector", "__schedule__"),
+            name=posixpath.join(f"{global_name}-injector", "__schedule__"),
+            job_prefix=f"{global_name}-injector",
             connector_ports={target.deployment.name: deploy_step.get_output_port()},
             input_directory=target.workdir or output_directory,
             output_directory=target.workdir or output_directory,
@@ -1545,6 +1546,7 @@ class CWLTranslator:
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
             name=posixpath.join(name_prefix, "__schedule__"),
+            job_prefix=name_prefix,
             connector_ports={
                 name: step.get_output_port() for name, step in deploy_steps.items()
             },
@@ -2554,7 +2556,8 @@ class CWLTranslator:
                     # Create a schedule step and connect it to the local DeployStep
                     schedule_step = workflow.create_step(
                         cls=ScheduleStep,
-                        name=posixpath.join(port_name + "-collector", "__schedule__"),
+                        name=posixpath.join(f"{port_name}-collector", "__schedule__"),
+                        job_prefix=f"{port_name}-collector",
                         connector_ports={
                             target.deployment.name: deploy_step.get_output_port()
                         },
