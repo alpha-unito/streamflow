@@ -1,6 +1,7 @@
 import posixpath
 from rdflib import Graph
 from collections.abc import Iterable
+from asyncio.locks import Lock
 
 import pytest
 
@@ -82,11 +83,15 @@ def object_to_dict(obj):
 # The function return True if the elems are the same, otherwise False
 # The param obj_compared is usefull to break a circul reference inside the objects
 # remembering the objects already encountered
-def are_equals(elem1, elem2, obj_compared=[]):
+def are_equals(elem1, elem2, obj_compared=None):
+    obj_compared = obj_compared if obj_compared else []
 
     # if the objects are of different types, they are definitely not the same
     if type(elem1) != type(elem2):
         return False
+
+    if type(elem1) == Lock:
+        return True
 
     if is_primiteve_type(elem1):
         return elem1 == elem2
