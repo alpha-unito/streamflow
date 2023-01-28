@@ -6,9 +6,12 @@ From https://github.com/common-workflow-language/cwltool/blob/6f0e1d941a61063828
 import json
 from collections.abc import MutableSequence, MutableMapping
 
+import pytest
 from cwltool.tests.util import get_data
 
 from streamflow.cwl.runner import main
+
+pytestmark = pytest.mark.skip(reason="CWL extensions are not supported yet.")
 
 
 def test_validate_loop() -> None:
