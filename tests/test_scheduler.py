@@ -1,22 +1,21 @@
-import pytest
 import asyncio
-
 from typing import MutableMapping, MutableSequence, Optional
-from tests.conftest import get_docker_deployment_config
+
+import pytest
 
 from streamflow.core import utils
-from streamflow.core.workflow import Job, Status
+from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.config import Config, BindingConfig
-from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.core.deployment import (
-    LOCAL_LOCATION,
     BindingFilter,
+    LOCAL_LOCATION,
     LocalTarget,
     Target,
 )
-
+from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
+from tests.conftest import get_docker_deployment_config
 
 
 class CustomConnector(LocalConnector):

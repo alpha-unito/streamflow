@@ -1,7 +1,8 @@
-import pytest
 import posixpath
 from rdflib import Graph
 from collections.abc import Iterable
+
+import pytest
 
 from tests.conftest import get_docker_deployment_config
 
@@ -317,7 +318,6 @@ async def test_schedule_step(context: StreamFlowContext):
         binding_config=binding_config,
     )
 
-    #
     await schedule_step.get_output_port("__job__").save(context)
 
     await save_load_and_test(schedule_step, context)
