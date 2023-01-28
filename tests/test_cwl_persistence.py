@@ -427,7 +427,6 @@ async def test_cwl_loop_output_all_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    port = workflow.create_port()
     assert workflow.persistent_id is None
     await workflow.save(context)
     assert workflow.persistent_id is not None
@@ -446,7 +445,6 @@ async def test_cwl_loop_output_last_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    port = workflow.create_port()
     assert workflow.persistent_id is None
     await workflow.save(context)
     assert workflow.persistent_id is not None
