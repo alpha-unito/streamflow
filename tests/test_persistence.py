@@ -42,7 +42,12 @@ from streamflow.workflow.token import (
 from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.cwl.step import CWLConditionalStep  # ConditionalStep
 from streamflow.cwl.combinator import ListMergeCombinator  # CombinatorStep
-from streamflow.cwl.processor import CWLTokenProcessor
+from streamflow.cwl.processor import (
+    CWLTokenProcessor,
+    CWLMapTokenProcessor,
+    CWLObjectTokenProcessor,
+    CWLUnionTokenProcessor,
+)
 from streamflow.cwl.transformer import (
     DefaultTransformer,
     DefaultRetagTransformer,
@@ -152,6 +157,19 @@ async def save_load_and_test(elem: PersistableEntity, context):
     elif isinstance(elem, Config):
         loaded = await loading_context.load_deployment(context, elem.persistent_id)
     assert are_equals(elem, loaded)
+
+
+def create_cwl_token_processor(name, workflow):
+    return CWLTokenProcessor(
+        name=name,
+        workflow=workflow,
+        token_type="enum",
+        enum_symbols=["path1", "path2"],
+        expression_lib=["expr_lib1", "expr_lib2"],
+        secondary_files=[SecondaryFile("file1", True)],
+        format_graph=Graph(),
+        load_listing=LoadListing.no_listing,
+    )
 
 
 ### Testing Workflow
@@ -403,16 +421,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
         cls=CWLTokenTransformer,
         name=name + "-transformer",
         port_name=port.name,
-        processor=CWLTokenProcessor(  # TODO: TokenProcessor subclasses
-            name=port.name,
-            workflow=workflow,
-            token_type="enum",
-            enum_symbols=["path1", "path2"],
-            expression_lib=["expr_lib1", "expr_lib2"],
-            secondary_files=[SecondaryFile("file1", True)],
-            format_graph=Graph(),
-            load_listing=LoadListing.no_listing,
-        ),
+        processor=create_cwl_token_processor(port.name, workflow),
     )
     await save_load_and_test(transformer, context)
 
@@ -431,16 +440,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
     transformer = workflow.create_step(
         cls=ValueFromTransformer,
         name=name + "-value-from-transformer",
-        processor=CWLTokenProcessor(
-            name=port.name,
-            workflow=workflow,
-            token_type="enum",
-            enum_symbols=["path1", "path2"],
-            expression_lib=["expr_lib1", "expr_lib2"],
-            secondary_files=[SecondaryFile("file1", True)],
-            format_graph=Graph(),
-            load_listing=LoadListing.no_listing,
-        ),
+        processor=create_cwl_token_processor(port.name, workflow),
         port_name=port.name,
         expression_lib=True,
         full_js=False,
@@ -462,21 +462,86 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=LoopValueFromTransformer,
-        name=name + "loop-value-from-transformer",
-        processor=CWLTokenProcessor(
-            name=port.name,
-            workflow=workflow,
-            token_type="enum",
-            enum_symbols=["path1", "path2"],
-            expression_lib=["expr_lib1", "expr_lib2"],
-            secondary_files=[SecondaryFile("file1", True)],
-            format_graph=Graph(),
-            load_listing=LoadListing.no_listing,
-        ),
+        name=name + "-loop-value-from-transformer",
+        processor=create_cwl_token_processor(port.name, workflow),
         port_name=port.name,
         expression_lib=True,
         full_js=False,
         value_from="$(1 + 1 == 0)",
+    )
+    await save_load_and_test(transformer, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_map_token_transformer(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+    name = utils.random_name()
+    transformer = workflow.create_step(
+        cls=CWLTokenTransformer,
+        name=name + "-transformer",
+        port_name=port.name,
+        processor=CWLMapTokenProcessor(
+            name=port.name,
+            workflow=workflow,
+            processor=create_cwl_token_processor(port.name, workflow),
+        ),
+    )
+    await save_load_and_test(transformer, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_object_token_transformer(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+    name = utils.random_name()
+    transformer = workflow.create_step(
+        cls=CWLTokenTransformer,
+        name=name + "-transformer",
+        port_name=port.name,
+        processor=CWLObjectTokenProcessor(
+            name=port.name,
+            workflow=workflow,
+            processors={
+                utils.random_name(): create_cwl_token_processor(port.name, workflow)
+            },
+        ),
+    )
+    await save_load_and_test(transformer, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_union_token_transformer(context: StreamFlowContext):
+    """Test saving and loading DeployStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    assert workflow.persistent_id is None
+    await workflow.save(context)
+    assert workflow.persistent_id is not None
+    name = utils.random_name()
+    transformer = workflow.create_step(
+        cls=CWLTokenTransformer,
+        name=name + "-transformer",
+        port_name=port.name,
+        processor=CWLUnionTokenProcessor(
+            name=port.name,
+            workflow=workflow,
+            processors=[create_cwl_token_processor(port.name, workflow)],
+        ),
     )
     await save_load_and_test(transformer, context)
 
