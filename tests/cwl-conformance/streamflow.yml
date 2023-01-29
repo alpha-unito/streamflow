@@ -1,0 +1,5 @@
+version: v1.0
+database:
+  type: default
+  config:
+    connection: ":memory:"

@@ -73,19 +73,13 @@ class SqliteDatabase(CachedDatabase):
     def __init__(self, context: StreamFlowContext, connection: str, timeout: int = 20):
         super().__init__(context)
         # Open connection to database
-        if connection:
+        if connection != ":memory:":
             os.makedirs(os.path.dirname(connection), exist_ok=True)
-            self.connection: SqliteConnection = SqliteConnection(
-                connection=connection,
-                timeout=timeout,
-                init_db=not os.path.exists(connection),
-            )
-        else:
-            self.connection: SqliteConnection = SqliteConnection(
-                connection=IN_MEMORY_SQLITE,
-                timeout=timeout,
-                init_db=True,
-            )
+        self.connection: SqliteConnection = SqliteConnection(
+            connection=connection,
+            timeout=timeout,
+            init_db=not os.path.exists(connection),
+        )
 
     async def close(self):
         async with self.connection as db:
