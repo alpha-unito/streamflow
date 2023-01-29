@@ -22,7 +22,6 @@ from streamflow.version import VERSION
 DEFAULT_SQLITE_CONNECTION = os.path.join(
     os.path.expanduser("~"), ".streamflow", VERSION, "sqlite.db"
 )
-IN_MEMORY_SQLITE = ":memory:"
 
 
 class CachedDatabase(Database, ABC):

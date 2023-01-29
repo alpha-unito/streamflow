@@ -205,7 +205,7 @@ def build_context(
         "database",
         {
             "context": context,
-            "connection": DEFAULT_SQLITE_CONNECTION if not in_memory_db else None,
+            "connection": DEFAULT_SQLITE_CONNECTION if not in_memory_db else ":memory:",
         },
     )
     context.data_manager = _get_instance_from_config(
