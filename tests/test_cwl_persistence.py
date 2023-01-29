@@ -3,7 +3,7 @@ from rdflib import Graph
 
 import pytest
 
-from tests.test_persistence import save_load_and_test
+from tests.conftest import save_load_and_test
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
