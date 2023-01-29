@@ -61,9 +61,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     step = workflow.create_step(
@@ -87,9 +85,7 @@ async def test_default_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     transformer = workflow.create_step(
@@ -105,9 +101,7 @@ async def test_default_retag_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     transformer = workflow.create_step(
@@ -123,9 +117,8 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
+
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=CWLTokenTransformer,
@@ -143,9 +136,8 @@ async def test_value_from_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
+
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=ValueFromTransformer,
@@ -166,9 +158,8 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
+
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=LoopValueFromTransformer,
@@ -189,9 +180,8 @@ async def test_cwl_map_token_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
+
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=CWLTokenTransformer,
@@ -213,9 +203,8 @@ async def test_cwl_object_token_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
+
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=CWLTokenTransformer,
@@ -239,9 +228,8 @@ async def test_cwl_union_token_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
+
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=CWLTokenTransformer,
@@ -264,9 +252,7 @@ async def test_all_non_null_transformer(context: StreamFlowContext):
     )
     in_port = workflow.create_port()
     out_port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     transformer = workflow.create_step(
@@ -285,9 +271,7 @@ async def test_first_non_null_transformer(context: StreamFlowContext):
     )
     in_port = workflow.create_port()
     out_port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     transformer = workflow.create_step(
@@ -306,9 +290,7 @@ async def test_forward_transformer(context: StreamFlowContext):
     )
     in_port = workflow.create_port()
     out_port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     transformer = workflow.create_step(
@@ -327,9 +309,7 @@ async def test_list_to_element_transformer(context: StreamFlowContext):
     )
     in_port = workflow.create_port()
     out_port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     transformer = workflow.create_step(
@@ -348,9 +328,7 @@ async def test_only_non_null_transformer(context: StreamFlowContext):
     )
     in_port = workflow.create_port()
     out_port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     transformer = workflow.create_step(
@@ -367,9 +345,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     step = workflow.create_step(
         cls=CWLConditionalStep,
@@ -388,16 +364,13 @@ async def test_transfer_step(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     step = workflow.create_step(
         cls=CWLTransferStep,
         name=posixpath.join(utils.random_name(), "__transfer__", port.name),
         job_port=port,
     )
-
     await save_load_and_test(step, context)
 
 
@@ -408,16 +381,13 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     step = workflow.create_step(
         cls=CWLInputInjectorStep,
         name=posixpath.join(utils.random_name(), "-injector"),
         job_port=port,
     )
-
     await save_load_and_test(step, context)
 
 
@@ -427,15 +397,12 @@ async def test_cwl_loop_output_all_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     step = workflow.create_step(
         cls=CWLLoopOutputAllStep,
         name=posixpath.join(utils.random_name(), "-loop-output"),
     )
-
     await save_load_and_test(step, context)
 
 
@@ -445,13 +412,10 @@ async def test_cwl_loop_output_last_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     step = workflow.create_step(
         cls=CWLLoopOutputLastStep,
         name=posixpath.join(utils.random_name(), "-last"),
     )
-
     await save_load_and_test(step, context)

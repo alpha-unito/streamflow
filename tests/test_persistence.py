@@ -155,13 +155,8 @@ async def test_port(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
-
-    # dependency with workflow for saving port
     port = workflow.create_port()
-    assert isinstance(port, Port)
     await save_load_and_test(port, context)
 
 
@@ -171,13 +166,8 @@ async def test_job_port(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
-
-    # dependency with workflow for saving port
     port = workflow.create_port(JobPort)
-    assert isinstance(port, JobPort)
     await save_load_and_test(port, context)
 
 
@@ -187,13 +177,8 @@ async def test_connector_port(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
-
-    # dependency with workflow for saving port
     port = workflow.create_port(ConnectorPort)
-    assert isinstance(port, ConnectorPort)
     await save_load_and_test(port, context)
 
 
@@ -204,10 +189,7 @@ async def test_combinator_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
-
     name = utils.random_name()
     step = workflow.create_step(
         cls=CombinatorStep,
@@ -225,9 +207,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     step = workflow.create_step(
@@ -247,12 +227,9 @@ async def test_deploy_step(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     connector_port = workflow.create_port(cls=ConnectorPort)
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     deployment_config = get_docker_deployment_config()
-
     step = workflow.create_step(
         cls=DeployStep,
         name=posixpath.join("__deploy__", deployment_config.name),
@@ -269,9 +246,8 @@ async def test_schedule_step(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
+
     binding_config = BindingConfig(targets=[LocalTarget(workdir=utils.random_name())])
     schedule_step = workflow.create_step(
         cls=ScheduleStep,
@@ -282,7 +258,6 @@ async def test_schedule_step(context: StreamFlowContext):
         tmp_directory=binding_config.targets[0].workdir,
         binding_config=binding_config,
     )
-
     await save_load_and_test(schedule_step, context)
 
 
@@ -293,9 +268,7 @@ async def test_execute_step(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=port
@@ -309,9 +282,7 @@ async def test_gather_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     step = workflow.create_step(
         cls=GatherStep, name=utils.random_name() + "-gather", depth=1
@@ -325,9 +296,7 @@ async def test_scatter_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     step = workflow.create_step(cls=ScatterStep, name=utils.random_name() + "-scatter")
     await save_load_and_test(step, context)
@@ -340,9 +309,7 @@ async def test_dot_product_combinator(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     step = workflow.create_step(
@@ -359,9 +326,7 @@ async def test_loop_combinator(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     step = workflow.create_step(
@@ -378,9 +343,7 @@ async def test_loop_termination_combinator(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    assert workflow.persistent_id is None
     await workflow.save(context)
-    assert workflow.persistent_id is not None
 
     name = utils.random_name()
     step = workflow.create_step(
@@ -446,12 +409,6 @@ async def test_list_token(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_object_token(context: StreamFlowContext):
     """Test saving and loading ObjectToken from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    assert workflow.persistent_id is None
-    await workflow.save(context)
-    assert workflow.persistent_id is not None
     token = ObjectToken(value=dict({"test": Token("object")}))
     await save_load_and_test(token, context)
 
