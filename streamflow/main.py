@@ -201,7 +201,10 @@ def build_context(
         streamflow_config,
         database_classes,
         "database",
-        {"context": context, "connection": DEFAULT_SQLITE_CONNECTION},
+        {
+            "context": context,
+            "connection": DEFAULT_SQLITE_CONNECTION,
+        },
     )
     context.data_manager = _get_instance_from_config(
         streamflow_config, data_manager_classes, "dataManager", {"context": context}

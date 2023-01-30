@@ -7,7 +7,7 @@ from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.workflow import Token
+from streamflow.core.workflow import Token, Job
 
 
 class IterationTerminationToken(Token):
@@ -23,6 +23,15 @@ class IterationTerminationToken(Token):
     def retag(self, tag: str) -> Token:
         raise NotImplementedError
 
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> IterationTerminationToken:
+        return cls(tag=row["tag"])
+
 
 class FileToken(Token, ABC):
     @abstractmethod
@@ -32,7 +41,20 @@ class FileToken(Token, ABC):
 
 class JobToken(Token):
     async def _save_value(self, context: StreamFlowContext):
-        return self.value.name
+        return {"job": await self.value.save(context)}
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> JobToken:
+        params = json.loads(row["value"])
+        return cls(
+            tag=row["tag"],
+            value=await Job.load(context, params["job"], loading_context),
+        )
 
 
 class ListToken(Token):
@@ -139,3 +161,12 @@ class TerminationToken(Token):
 
     def retag(self, tag: str) -> Token:
         raise NotImplementedError
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> IterationTerminationToken:
+        return cls()

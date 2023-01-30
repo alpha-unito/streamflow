@@ -51,7 +51,9 @@ class DefaultTransformer(ManyToOneTransformer):
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
-            default_port=params["default_port"],
+            default_port=await loading_context.load_port(
+                context, params["default_port"]
+            ),
         )
 
     async def _save_additional_params(
