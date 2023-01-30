@@ -306,7 +306,7 @@ async def test_list_token(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_object_token(context: StreamFlowContext):
     """Test saving and loading ObjectToken from database"""
-    token = ObjectToken(value=dict({"test": Token("object")}))
+    token = ObjectToken(value={"test": Token("object")})
     await save_load_and_test(token, context)
 
 

@@ -26,6 +26,7 @@ from streamflow.cwl.processor import (
     CWLMapTokenProcessor,
     CWLObjectTokenProcessor,
     CWLUnionTokenProcessor,
+    CWLFileToken,
 )
 from streamflow.cwl.transformer import (
     DefaultTransformer,
@@ -52,6 +53,22 @@ def create_cwl_token_processor(name, workflow):
         format_graph=Graph(),
         load_listing=LoadListing.no_listing,
     )
+
+
+@pytest.mark.asyncio
+async def test_cwl_file_token(context: StreamFlowContext):
+    """Test saving and loading CWLFileToken from database"""
+    token = CWLFileToken(
+        value={
+            "location": "file:///home/ubuntu/output.txt",
+            "basename": "output.txt",
+            "class": "File",
+            "checksum": "sha1$aaaaaaaaaaaaaaaaaaaaaaaa",
+            "size": 100,
+            "path": "/home/ubuntu/output.txt",
+        }
+    )
+    await save_load_and_test(token, context)
 
 
 @pytest.mark.asyncio
