@@ -187,9 +187,7 @@ def _get_instance_from_config(
 
 
 def build_context(
-    config_dir: str,
-    streamflow_config: MutableMapping[str, Any],
-    in_memory_db: bool = False,
+    config_dir: str, streamflow_config: MutableMapping[str, Any]
 ) -> StreamFlowContext:
     context = StreamFlowContext(config_dir)
     context.checkpoint_manager = _get_instance_from_config(
@@ -205,7 +203,7 @@ def build_context(
         "database",
         {
             "context": context,
-            "connection": DEFAULT_SQLITE_CONNECTION if not in_memory_db else ":memory:",
+            "connection": DEFAULT_SQLITE_CONNECTION,
         },
     )
     context.data_manager = _get_instance_from_config(

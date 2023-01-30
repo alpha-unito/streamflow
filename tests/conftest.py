@@ -41,7 +41,10 @@ def get_docker_deployment_config():
 
 @pytest_asyncio.fixture(scope="session")
 async def context() -> StreamFlowContext:
-    context = build_context(tempfile.gettempdir(), {}, in_memory_db=True)
+    context = build_context(
+        tempfile.gettempdir(),
+        {"database": {"type": "default", "config": {"connection": ":memory:"}}},
+    )
     await context.deployment_manager.deploy(
         DeploymentConfig(
             name=LOCAL_LOCATION,
