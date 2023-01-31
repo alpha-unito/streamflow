@@ -27,7 +27,7 @@ jobs:
       - name: "Build base image"
         id: docker-base
         if: ${{ env.NEW_IMAGE == 1 }}
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v4
         with:
           build-args: |
             HELM_VERSION=v3.7.2
