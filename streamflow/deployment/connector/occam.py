@@ -315,7 +315,7 @@ class OccamConnector(SSHConnector):
         await super().deploy(external)
         if not external:
             deploy_tasks = []
-            for (name, service) in self.env_description.items():
+            for name, service in self.env_description.items():
                 nodes = service.get("nodes", ["node22"])
                 for node in nodes:
                     deploy_tasks.append(
