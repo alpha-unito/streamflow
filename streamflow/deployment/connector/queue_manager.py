@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import shlex
@@ -209,12 +210,13 @@ class QueueManagerConnector(SSHConnector, ABC):
 class SlurmConnector(QueueManagerConnector):
     async def _get_output(self, job_id: str, location: Location) -> str:
         async with self._get_ssh_client(location.name) as ssh_client:
-            output_path = (
-                await ssh_client.run(
-                    f"scontrol show -o job {job_id} | "
-                    "sed -n 's/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'"
-                )
-            ).stdout.strip()
+            command = (
+                f"scontrol show -o job {job_id} | "
+                "sed -n 's/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'"
+            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Running command {command}")
+            output_path = (await ssh_client.run(command)).stdout.strip()
             return (
                 (await ssh_client.run(f"cat {output_path}")).stdout.strip()
                 if output_path
@@ -223,14 +225,13 @@ class SlurmConnector(QueueManagerConnector):
 
     async def _get_returncode(self, job_id: str, location: Location) -> int:
         async with self._get_ssh_client(location.name) as ssh_client:
-            return int(
-                (
-                    await ssh_client.run(
-                        f"scontrol show -o job {job_id} | "
-                        "sed -n 's/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'"
-                    )
-                ).stdout.strip()
+            command = (
+                f"scontrol show -o job {job_id} | "
+                "sed -n 's/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'"
             )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Running command {command}")
+            return int((await ssh_client.run(command)).stdout.strip())
 
     @cachedmethod(
         lambda self: self.jobsCache,
@@ -238,30 +239,25 @@ class SlurmConnector(QueueManagerConnector):
     )
     async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
         async with self._get_ssh_client(location.name) as ssh_client:
-            return [
-                j.strip()
-                for j in (
-                    await ssh_client.run(
-                        "squeue -h -j {job_ids} -t {states} -O JOBID".format(
-                            job_ids=",".join(self.scheduledJobs),
-                            states=",".join(
-                                [
-                                    "PENDING",
-                                    "RUNNING",
-                                    "SUSPENDED",
-                                    "COMPLETING",
-                                    "CONFIGURING",
-                                    "RESIZING",
-                                    "REVOKED",
-                                    "SPECIAL_EXIT",
-                                ]
-                            ),
-                        )
-                    )
-                )
-                .stdout.strip()
-                .splitlines()
-            ]
+            command = "squeue -h -j {job_ids} -t {states} -O JOBID".format(
+                job_ids=",".join(self.scheduledJobs),
+                states=",".join(
+                    [
+                        "PENDING",
+                        "RUNNING",
+                        "SUSPENDED",
+                        "COMPLETING",
+                        "CONFIGURING",
+                        "RESIZING",
+                        "REVOKED",
+                        "SPECIAL_EXIT",
+                    ]
+                ),
+            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Running command {command}")
+            result = (await ssh_client.run(command)).stdout.strip()
+            return [j.strip() for j in result.splitlines()]
 
     async def _remove_jobs(self, location: str) -> None:
         async with self._get_ssh_client(location) as ssh_client:
@@ -313,12 +309,13 @@ class SlurmConnector(QueueManagerConnector):
 class PBSConnector(QueueManagerConnector):
     async def _get_output(self, job_id: str, location: Location) -> str:
         async with self._get_ssh_client(location.name) as ssh_client:
-            output_path = (
-                await ssh_client.run(
-                    f"qstat {job_id} -xf | "
-                    "sed -n 's/^\\s*Output_Path\\s=\\s.*:\\(.*\\)\\s*$/\\1/p'"
-                )
-            ).stdout.strip()
+            command = f"qstat {job_id} -xf -Fjson"
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Running command {command}")
+            result = json.loads((await ssh_client.run(command)).stdout.strip())
+            output_path = result["Jobs"][job_id]["Output_Path"]
+            if ":" in output_path:
+                output_path = "".join(output_path.split(":")[1:])
             return (
                 (await ssh_client.run(f"cat {output_path}")).stdout.strip()
                 if output_path
@@ -327,14 +324,11 @@ class PBSConnector(QueueManagerConnector):
 
     async def _get_returncode(self, job_id: str, location: Location) -> int:
         async with self._get_ssh_client(location.name) as ssh_client:
-            return int(
-                (
-                    await ssh_client.run(
-                        f"qstat {job_id} -xf | "
-                        "sed -n 's/^\\s*Exit_status\\s=\\s\\([0-9]\\+\\)\\s*$/\\1/p'"
-                    )
-                ).stdout.strip()
-            )
+            command = f"qstat {job_id} -xf -Fjson"
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Running command {command}")
+            result = json.loads((await ssh_client.run(command)).stdout.strip())
+            return int(result["Jobs"][job_id]["Exit_status"])
 
     @cachedmethod(
         lambda self: self.jobsCache,
@@ -342,20 +336,16 @@ class PBSConnector(QueueManagerConnector):
     )
     async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
         async with self._get_ssh_client(location.name) as ssh_client:
-            return (
-                (
-                    await ssh_client.run(
-                        "qstat -awx {job_ids} | "
-                        "grep '{grep_ids}' | "
-                        'awk \'{{if($10 != "E" && $10 != "F") {{print $1}}}}\''.format(
-                            job_ids=" ".join(self.scheduledJobs),
-                            grep_ids="\\|".join(self.scheduledJobs),
-                        )
-                    )
-                )
-                .stdout.strip()
-                .splitlines()
-            )
+            command = f"qstat {' '.join(self.scheduledJobs)} -xf -Fjson"
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Running command {command}")
+            result = json.loads((await ssh_client.run(command)).stdout.strip())
+            return [
+                j
+                for j in self.scheduledJobs
+                if j not in result["Jobs"]  # Job id has not been processed yet
+                or result["Jobs"][j]["job_state"] not in ["E", "F"]  # Job finished
+            ]
 
     async def _remove_jobs(self, location: str) -> None:
         async with self._get_ssh_client(location) as ssh_client:
