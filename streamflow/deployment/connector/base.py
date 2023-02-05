@@ -19,8 +19,8 @@ from streamflow.core.deployment import (
     Location,
 )
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.data import aiotarstream
-from streamflow.data.stream import (
+from streamflow.deployment import aiotarstream
+from streamflow.deployment.stream import (
     StreamReaderWrapper,
     StreamWriterWrapper,
     SubprocessStreamReaderWrapperContext,

@@ -16,7 +16,7 @@ from builtins import open as bltn_open
 from typing import Any
 
 from streamflow.core.data import StreamWrapper
-from streamflow.data.stream import BaseStreamWrapper
+from streamflow.deployment.stream import BaseStreamWrapper
 
 
 async def copyfileobj(src, dst, length=None, bufsize=None):

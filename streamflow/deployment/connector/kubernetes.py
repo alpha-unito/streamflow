@@ -38,8 +38,8 @@ from streamflow.core.data import StreamWrapperContext
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
-from streamflow.data import aiotarstream
-from streamflow.data.aiotarstream import BaseStreamWrapper
+from streamflow.deployment import aiotarstream
+from streamflow.deployment.aiotarstream import BaseStreamWrapper
 from streamflow.deployment.connector.base import BaseConnector, extract_tar_stream
 from streamflow.log_handler import logger
 
