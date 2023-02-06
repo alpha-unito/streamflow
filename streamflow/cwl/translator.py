@@ -87,6 +87,7 @@ from streamflow.cwl.transformer import (
     ValueFromTransformer,
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
+from streamflow.deployment.utils import get_binding_config
 from streamflow.log_handler import logger
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
@@ -1256,57 +1257,6 @@ class CWLTranslator:
         else:
             return self.input_ports[source_name]
 
-    def _get_binding_config(self, name: str, target_type: str) -> BindingConfig:
-        path = PurePosixPath(name)
-        config = self.workflow_config.propagate(path, target_type)
-        if config is not None:
-            targets = []
-            for target in config["targets"]:
-                workdir = target.get("workdir") if target is not None else None
-                if "deployment" in target:
-                    target_deployment = self.workflow_config.deplyoments[
-                        target["deployment"]
-                    ]
-                else:
-                    target_deployment = self.workflow_config.deplyoments[
-                        target["model"]
-                    ]
-                    if logger.isEnabledFor(logging.WARN):
-                        logger.warn(
-                            "The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `deployment` instead."
-                        )
-                locations = target.get("locations", None)
-                if locations is None:
-                    locations = target.get("resources")
-                    if locations is not None:
-                        if logger.isEnabledFor(logging.WARN):
-                            logger.warn(
-                                "The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                                "Use `locations` instead."
-                            )
-                    else:
-                        locations = 1
-                deployment = DeploymentConfig(
-                    name=target_deployment["name"],
-                    type=target_deployment["type"],
-                    config=target_deployment["config"],
-                    external=target_deployment.get("external", False),
-                    lazy=target_deployment.get("lazy", True),
-                    workdir=target_deployment.get("workdir"),
-                )
-                targets.append(
-                    Target(
-                        deployment=deployment,
-                        locations=locations,
-                        service=target.get("service"),
-                        workdir=workdir,
-                    )
-                )
-            return BindingConfig(targets=targets, filters=config.get("filters"))
-        else:
-            return BindingConfig(targets=[LocalTarget()])
-
     def _handle_default_port(
         self,
         global_name: str,
@@ -1350,8 +1300,8 @@ class CWLTranslator:
         output_directory: str,
         value: Any,
     ) -> None:
-        # Retrieve a local DeployStep
-        binding_config = self._get_binding_config(global_name, "port")
+        # Retrieve the DeployStep for the port target
+        binding_config = get_binding_config(global_name, "port", self.workflow_config)
         target = binding_config.targets[0]
         deploy_step = self._get_deploy_step(target.deployment, workflow)
         # Remap path if target's workdir is defined
@@ -1505,7 +1455,7 @@ class CWLTranslator:
         # Process InlineJavascriptRequirement
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Retrieve target
-        binding_config = self._get_binding_config(name_prefix, "step")
+        binding_config = get_binding_config(name_prefix, "step", self.workflow_config)
         # Process DockerRequirement
         if "DockerRequirement" in requirements:
             network_access = (
@@ -1622,7 +1572,9 @@ class CWLTranslator:
             output_port = self.output_ports[global_name]
             # If the port is bound to a remote target, add the connector dependency
             if self.workflow_config.propagate(PurePosixPath(global_name), "port"):
-                binding_config = self._get_binding_config(global_name, "port")
+                binding_config = get_binding_config(
+                    global_name, "port", self.workflow_config
+                )
                 port_target = binding_config.targets[0]
                 output_deploy_step = self._get_deploy_step(
                     port_target.deployment, workflow
