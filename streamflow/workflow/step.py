@@ -1176,6 +1176,18 @@ class ScheduleStep(BaseStep):
             locations=locations,
             paths=[job.input_directory, job.output_directory, job.tmp_directory],
         )
+        # Register paths
+        for location in locations:
+            for directory in [
+                job.input_directory,
+                job.output_directory,
+                job.tmp_directory,
+            ]:
+                self.workflow.context.data_manager.register_path(
+                    location=location,
+                    path=directory,
+                    relpath=directory,
+                )
         # Propagate job
         self.get_output_port().put(
             await self._persist_token(
