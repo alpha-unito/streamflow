@@ -1,4 +1,6 @@
-from typing import Any, Iterable, MutableSequence, Type, Union
+from __future__ import annotations
+
+from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core.workflow import Token
 from streamflow.workflow.token import (
@@ -8,16 +10,19 @@ from streamflow.workflow.token import (
     TerminationToken,
 )
 
+if TYPE_CHECKING:
+    from typing import Any, Iterable
 
-def check_iteration_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
+
+def check_iteration_termination(inputs: Token | Iterable[Token]) -> bool:
     return check_token_class(inputs, IterationTerminationToken)
 
 
-def check_termination(inputs: Union[Token, Iterable[Token]]) -> bool:
+def check_termination(inputs: Token | Iterable[Token]) -> bool:
     return check_token_class(inputs, TerminationToken)
 
 
-def check_token_class(inputs: Union[Token, Iterable[Token]], cls: Type[Token]):
+def check_token_class(inputs: Token | Iterable[Token], cls: type[Token]):
     if isinstance(inputs, Token):
         return isinstance(inputs, cls)
     else:
