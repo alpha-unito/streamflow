@@ -387,39 +387,6 @@ async def build_token_value(
     return token_value
 
 
-def check_token_type(
-    name: str,
-    token_value: Any,
-    token_type: str,
-    enum_symbols: MutableSequence[str] | None,
-    optional: bool,
-):
-    if isinstance(token_value, Token):
-        check_token_type(name, token_value.value, token_type, enum_symbols, optional)
-    elif token_type == "Any":  # nosec
-        if token_value is None:
-            raise WorkflowExecutionException(
-                f"Token {name} is of type `Any`: it cannot be null."
-            )
-    elif token_type == "null":  # nosec
-        if token_value is not None:
-            raise WorkflowExecutionException(f"Token {name} should be null.")
-    elif token_value is None:
-        if not optional:
-            raise WorkflowExecutionException(f"Token {name} is not optional.")
-    elif token_type == "enum":  # nosec
-        if token_value not in enum_symbols:
-            raise WorkflowExecutionException(
-                f"Value {token_value} is not valid for token {name}."
-            )
-    elif (inferred_type := infer_type_from_token(token_value)) != token_type:
-        # In CWL, long is considered as a subtype of double
-        if inferred_type != "long" or token_type != "double":  # nosec
-            raise WorkflowExecutionException(
-                f"Expected {name} token of type {token_type}, got {inferred_type}."
-            )
-
-
 def eval_expression(
     expression: str,
     context: MutableMapping[str, Any],
