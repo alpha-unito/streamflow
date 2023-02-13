@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - master
-      - test/persistence-fix-1
+      - feat/persistence-cmd
   pull_request:
     branches:
       - master
