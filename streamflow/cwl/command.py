@@ -164,7 +164,7 @@ async def _deserialize_value(value, context, loading_context):
 
         # It is a serialized CWLCommandToken
         # WARN: in the workflow using a record with only these two attributes, the deserialization will fail
-        if set(["type", "params"]) == value.keys():
+        if {"type", "params"} == value.keys():
             return await CWLCommandToken.load(context, value, loading_context)
 
         # it is a normal dictionary but maybe some elems can cast in CWLCommandToken
