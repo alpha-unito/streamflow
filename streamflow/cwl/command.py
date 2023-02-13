@@ -18,15 +18,23 @@ from typing import (
     MutableMapping,
     MutableSequence,
     cast,
+    Type,
 )
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation
 from streamflow.core.deployment import Connector
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.utils import flatten_list, get_tag
+from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.utils import (
+    flatten_list,
+    get_tag,
+    get_class_fullname,
+    get_class_from_name,
+)
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -69,6 +77,93 @@ def _adjust_cwl_output(base_path: str, path_processor: ModuleType, value: Any) -
             }
     else:
         return value
+
+
+async def _serialize_cwl_command_token_value(value: Any, context: StreamFlowContext):
+    if isinstance(value, CWLCommandToken):
+        return json.dumps(await value.save(context))
+    elif type(value) in (
+        int,
+        float,
+        bool,
+        str,
+    ):  # this check must be before the iterable check for the string case
+        return json.dumps(value)
+    elif isinstance(value, dict):
+        return (
+            "{"
+            + ",".join(
+                [
+                    await _serialize_cwl_command_token_value(k, context)
+                    + ":"
+                    + await _serialize_cwl_command_token_value(v, context)
+                    for k, v in value.items()
+                ]
+            )
+            + "}"
+        )
+    elif isinstance(value, Iterable):
+        return [
+            await _serialize_cwl_command_token_value(elem, context) for elem in value
+        ]
+    else:
+        return json.dumps(value)
+
+
+async def _deserialize_value_token(value_t, value, context, loading_context):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.decoder.JSONDecodeError:
+            pass
+    if value_t == "null":
+        return None
+    elif issubclass(get_class_from_name(value_t), CWLCommandToken):
+        return await CWLCommandToken.load(context, value, loading_context)
+    elif value_t == "builtins.list":
+        value_list = []
+        for elem in value:
+            value_list.append(await _deserialize_value(elem, context, loading_context))
+        return value_list
+    elif value_t == "builtins.dict":
+        return await _deserialize_value(value, context, loading_context)
+    else:
+        return value  # json.loads(row["value"])
+
+
+async def _deserialize_value(value, context, loading_context):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.decoder.JSONDecodeError:
+            pass
+    if isinstance(value, dict):
+        if "value_type" in value.keys():
+            value_loads = value["value"]
+            if isinstance(value, str):
+                try:
+                    value_loads = json.loads(value["value"])
+                except json.decoder.JSONDecodeError:
+                    pass
+            return await _deserialize_value_token(
+                value["value_type"], value_loads, context, loading_context
+            )
+
+        if (
+            "type" in value.keys() and "params" in value.keys()
+        ):  # is a serialized CWLCommandToken
+            return await CWLCommandToken.load(context, value, loading_context)
+        else:  # is a normal dictionary
+            value_dict = {}
+            for k, v in value.items():
+                value_dict[k] = await _deserialize_value(v, context, loading_context)
+            return value_dict
+    elif isinstance(value, Iterable):
+        value_list = []
+        for elem in value:
+            value_list.append(await _deserialize_value(elem, context, loading_context))
+        return value_list
+    return value
 
 
 def _adjust_inputs(
@@ -300,6 +395,21 @@ class CWLBaseCommand(Command, ABC):
         self.initial_work_dir: None | (str | MutableSequence[Any]) = initial_work_dir
         self.inplace_update: bool = inplace_update
         self.time_limit: int | str | None = time_limit
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {
+            **await super()._save_additional_params(context),
+            **{
+                "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
+                "expression_lib": self.expression_lib,
+                "initial_work_dir": self.initial_work_dir,
+                "inplace_update": self.inplace_update,
+                "full_js": self.full_js,
+                "time_limit": self.time_limit,
+            },
+        }
 
     def _get_timeout(self, job: Job, step: Step) -> int | None:
         timeout = 0
@@ -597,6 +707,56 @@ class CWLCommand(CWLBaseCommand):
         self.stdin: str | IO = step_stdin
         self.stdout: str | IO = step_stdout
 
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {
+            **await super()._save_additional_params(context),
+            **{
+                "base_command": self.base_command,
+                "command_tokens": [
+                    await command_token.save(context)
+                    for command_token in self.command_tokens
+                ],
+                "environment": self.environment,
+                "failure_codes": self.failure_codes,
+                "is_shell_command": self.is_shell_command,
+                "success_codes": self.success_codes,
+                "stderr": self.stderr,  # TODO: manage when is IO type
+                "stdin": self.stdin,  # TODO: manage when is IO type
+                "stdout": self.stdout,  # TODO: manage when is IO type
+            },
+        }
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CWLCommand:
+        params = json.loads(row["params"])
+        return cls(
+            step=None,  # await loading_context.load_step(context, row['step']),
+            absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
+            base_command=params["base_command"],
+            command_tokens=[
+                await CWLCommandToken.load(context, command_token, loading_context)
+                for command_token in params["command_tokens"]
+            ],
+            expression_lib=params["expression_lib"],
+            failure_codes=params["failure_codes"],
+            full_js=params["full_js"],
+            initial_work_dir=params["initial_work_dir"],
+            inplace_update=params["inplace_update"],
+            is_shell_command=params["is_shell_command"],
+            success_codes=params["success_codes"],
+            step_stderr=params["stderr"],
+            step_stdin=params["stdin"],
+            step_stdout=params["stdout"],
+            time_limit=params["time_limit"],
+        )
+
     def _get_executable_command(
         self, context: MutableMapping[str, Any]
     ) -> MutableSequence[str]:
@@ -681,11 +841,9 @@ class CWLCommand(CWLBaseCommand):
                 )
             )
         # Persist command
-        command_id = await self.step.workflow.context.database.add_command(
-            step_id=self.step.persistent_id,
-            tag=get_tag(job.inputs.values()),
-            cmd=cmd_string,
-        )
+        self.set_tag(get_tag(job.inputs.values()))
+        await self.save(context)
+
         # Escape shell command when needed
         if self.is_shell_command:
             cmd = [
@@ -763,7 +921,7 @@ class CWLCommand(CWLBaseCommand):
             status = Status.FAILED
         # Update command persistence
         await self.step.workflow.context.database.update_command(
-            command_id,
+            self.persistent_id,
             {
                 "status": status.value,
                 "output": str(result),
@@ -915,6 +1073,62 @@ class CWLCommandToken:
             expression_lib=expression_lib,
         )
 
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        row = json.loads(row)
+        des_val = {"value_type": row["value_type"], "value": row["value"]}
+        value = await _deserialize_value(des_val, context, loading_context)
+        return cls(
+            name=row["name"],
+            value=value,
+            token_type=row["token_type"],
+            is_shell_command=row["is_shell_command"],
+            item_separator=row["item_separator"],
+            position=row["position"],
+            prefix=row["prefix"],
+            separate=row["separate"],
+            shell_quote=row["shell_quote"],
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {
+            "name": self.name,
+            "value_type": get_class_fullname(type(self.value))
+            if self.value
+            else "null",
+            "value": await _serialize_cwl_command_token_value(self.value, context),
+            "token_type": self.token_type,
+            "is_shell_command": self.is_shell_command,
+            "item_separator": self.item_separator,
+            "position": self.position,
+            "prefix": self.prefix,
+            "separate": self.separate,
+            "shell_quote": self.shell_quote,
+        }
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CWLCommandToken:
+        type_t = cast(Type[CWLCommandToken], get_class_from_name(row["type"]))
+        return await type_t._load(context, row["params"], loading_context)
+
+    async def save(self, context: StreamFlowContext):
+        return {
+            "type": get_class_fullname(type(self)),
+            "params": json.dumps(await self._save_additional_params(context)),
+        }
+
 
 class CWLObjectCommandToken(CWLCommandToken):
     def _check_dict(self, value: Any):
@@ -1035,11 +1249,9 @@ class CWLExpressionCommand(CWLBaseCommand):
                 f"Evaluating expression for step {self.step.name} (job {job.name})"
             )
         # Persist command
-        command_id = await self.step.workflow.context.database.add_command(
-            step_id=self.step.persistent_id,
-            tag=get_tag(job.inputs.values()),
-            cmd=self.expression,
-        )
+        self.set_tag(get_tag(job.inputs.values()))
+        await self.save(context)
+
         # Execute command
         start_time = time.time_ns()
         result = utils.eval_expression(
@@ -1051,7 +1263,7 @@ class CWLExpressionCommand(CWLBaseCommand):
         end_time = time.time_ns()
         # Update command persistence
         await self.step.workflow.context.database.update_command(
-            command_id,
+            self.persistent_id,
             {
                 "status": Status.COMPLETED.value,
                 "output": str(result),
@@ -1061,6 +1273,32 @@ class CWLExpressionCommand(CWLBaseCommand):
         )
         # Return result
         return CWLCommandOutput(value=result, status=Status.COMPLETED, exit_code=0)
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {
+            **await super()._save_additional_params(context),
+            **{"expression": self.expression},
+        }
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CWLExpressionCommand:
+        params = json.loads(row["params"])
+        return cls(
+            step=None,  # await loading_context.load_step(context, row['step']),
+            absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
+            expression_lib=params["expression_lib"],
+            full_js=params["full_js"],
+            initial_work_dir=params["initial_work_dir"],
+            inplace_update=params["inplace_update"],
+            expression=params["expression"],
+        )
 
 
 class CWLStepCommand(CWLBaseCommand):
@@ -1084,6 +1322,27 @@ class CWLStepCommand(CWLBaseCommand):
             time_limit=time_limit,
         )
         self.input_expressions: MutableMapping[str, str] = {}
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CWLStepCommand:
+        params = json.loads(row["params"])
+        cwl_step_command = cls(
+            step=None,  # await loading_context.load_step(context, row['step']),
+            absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
+            expression_lib=params["expression_lib"],
+            full_js=params["full_js"],
+            initial_work_dir=params["initial_work_dir"],
+            inplace_update=params["inplace_update"],
+            time_limit=params["time_limit"],
+        )
+        # attribute input_expressions not saved because the method execute will ricreate it
+        # cwl_step_command.input_expressions = params['input_expressions']
+        return cwl_step_command
 
     async def execute(self, job: Job) -> CommandOutput:
         context = utils.build_context(

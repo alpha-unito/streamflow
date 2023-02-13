@@ -531,6 +531,10 @@ class ExecuteStep(BaseStep):
                 ),
             )
         }
+        rows = await context.database.get_commands_by_step(row["id"])
+        if rows:
+            step.command = await Command.load(context, rows[0]["id"], loading_context)
+            step.command.step = step
         return step
 
     async def _retrieve_output(
@@ -669,6 +673,10 @@ class ExecuteStep(BaseStep):
                 },
             },
         }
+
+    async def _post_save_additional(self, context):
+        if self.command:
+            await self.command.save(context)
 
     def add_output_port(
         self, name: str, port: Port, output_processor: CommandOutputProcessor = None

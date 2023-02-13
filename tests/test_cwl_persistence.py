@@ -9,7 +9,7 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Workflow
 
-from streamflow.workflow.step import CombinatorStep
+from streamflow.workflow.step import CombinatorStep, ExecuteStep
 
 # abstract classes the extend the Step class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
 from streamflow.cwl.utils import LoadListing, SecondaryFile
@@ -40,6 +40,15 @@ from streamflow.cwl.transformer import (
     ListToElementTransformer,
     OnlyNonNullTransformer,
 )
+from streamflow.cwl.command import (
+    CWLCommand,
+    CWLCommandToken,
+    CWLObjectCommandToken,
+    CWLExpressionCommand,
+    CWLStepCommand,
+    CWLUnionCommandToken,
+    CWLMapCommandToken,
+)
 
 
 def create_cwl_token_processor(name, workflow):
@@ -69,6 +78,532 @@ async def test_cwl_file_token(context: StreamFlowContext):
         }
     )
     await save_load_and_test(token, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_command(context: StreamFlowContext):
+    """Test saving and loading ExecuteStep with CWLCommand from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    step.command = CWLCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        base_command=["command", "tool"],
+        command_tokens=[],
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=False,
+        initial_work_dir="/home",
+        inplace_update=False,
+        is_shell_command=False,
+        success_codes=[1],
+        step_stderr=None,
+        step_stdin=None,
+        step_stdout=None,
+        time_limit=1000,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_expression_command(context: StreamFlowContext):
+    """Test saving and loading ExecuteStep with CWLExpressionCommand from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    step.command = CWLExpressionCommand(
+        step=step,
+        expression="some js expression",
+        absolute_initial_workdir_allowed=False,
+        expression_lib=["a", "b"],
+        full_js=False,
+        initial_work_dir="/tmp/workdir",
+        inplace_update=False,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_step_command(context: StreamFlowContext):
+    """Test saving and loading ExecuteStep with CWLStepCommand from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    step.command = CWLStepCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        expression_lib=["a", "b"],
+        full_js=False,
+        initial_work_dir="/tmp/workdir",
+        inplace_update=False,
+        time_limit=10000,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_command_token(context: StreamFlowContext):
+    """Test saving and loading CWLCommannd with CWLCommandTokens from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    step.command = CWLCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        base_command=["command", "tool"],
+        command_tokens=[
+            CWLCommandToken(
+                is_shell_command=False,
+                item_separator=None,
+                name="error",
+                position=2,
+                prefix="--error",
+                separate=True,
+                shell_quote=True,
+                token_type="string",
+                value=CWLCommandToken(
+                    name="inside",
+                    value="10",  # Any
+                    token_type="string",
+                    is_shell_command=False,
+                    item_separator="-",
+                    position=1,
+                    prefix="-b",
+                    separate=True,
+                    shell_quote=True,
+                ),
+            ),
+            CWLCommandToken(
+                name="other",
+                value=CWLMapCommandToken(
+                    name="inside",
+                    value={"zero": {"uno": 1, "due": 2}},  # Any
+                    token_type="string",
+                    is_shell_command=False,
+                    item_separator="-",
+                    position=1,
+                    prefix="-b",
+                    separate=True,
+                    shell_quote=True,
+                ),  # Any
+                token_type="string",
+                is_shell_command=False,
+                item_separator="&",
+                position=1,
+                prefix="-i",
+                separate=True,
+                shell_quote=True,
+            ),
+        ],
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=False,
+        initial_work_dir="/home",
+        inplace_update=False,
+        is_shell_command=False,
+        success_codes=[1],
+        step_stderr=None,
+        step_stdin=None,
+        step_stdout=None,
+        time_limit=1000,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_command_token_value_list(context: StreamFlowContext):
+    """Test saving and loading CWLCommandToken with value a list from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+
+    value_list = [
+        CWLCommandToken(
+            is_shell_command=False,
+            item_separator=None,
+            name="error",
+            position=2,
+            prefix="--error",
+            separate=True,
+            shell_quote=True,
+            token_type="string",
+            value=1234,
+        ),
+        CWLCommandToken(
+            is_shell_command=False,
+            item_separator=None,
+            name="error",
+            position=2,
+            prefix="--error",
+            separate=True,
+            shell_quote=True,
+            token_type="string",
+            value=CWLCommandToken(
+                name="inside",
+                value="10",  # Any
+                token_type="string",
+                is_shell_command=False,
+                item_separator="-",
+                position=1,
+                prefix="-b",
+                separate=True,
+                shell_quote=True,
+            ),
+        ),
+    ]
+    command_tokens = [
+        CWLCommandToken(
+            is_shell_command=False,
+            item_separator=None,
+            name="error",
+            position=2,
+            prefix="--error",
+            separate=True,
+            shell_quote=True,
+            token_type="string",
+            value=value_list,
+        ),
+    ]
+
+    step.command = CWLCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        base_command=["command", "tool"],
+        command_tokens=command_tokens,
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=False,
+        initial_work_dir="/home",
+        inplace_update=False,
+        is_shell_command=False,
+        success_codes=[1],
+        step_stderr=None,
+        step_stdin=None,
+        step_stdout=None,
+        time_limit=1000,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_command_token_value_record(context: StreamFlowContext):
+    """Test saving and loading CWLCommandToken with value a record/dictionary from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+
+    value_dict = {
+        "zero": {
+            "uno": CWLCommandToken(
+                is_shell_command=False,
+                item_separator=None,
+                name="error",
+                position=2,
+                prefix="--error",
+                separate=True,
+                shell_quote=True,
+                token_type="string",
+                value=CWLCommandToken(
+                    name="inside",
+                    value="10",  # Any
+                    token_type="string",
+                    is_shell_command=False,
+                    item_separator="-",
+                    position=1,
+                    prefix="-b",
+                    separate=True,
+                    shell_quote=True,
+                ),
+            ),
+            "due": CWLCommandToken(
+                is_shell_command=False,
+                item_separator=None,
+                name="error",
+                position=2,
+                prefix="--error",
+                separate=True,
+                shell_quote=True,
+                token_type="string",
+                value=CWLCommandToken(
+                    name="inside",
+                    value="10",  # Any
+                    token_type="string",
+                    is_shell_command=False,
+                    item_separator="-",
+                    position=1,
+                    prefix="-b",
+                    separate=True,
+                    shell_quote=True,
+                ),
+            ),
+        }
+    }
+
+    command_tokens = [
+        CWLCommandToken(
+            name="other",
+            value=value_dict,
+            token_type="string",
+            is_shell_command=False,
+            item_separator="&",
+            position=1,
+            prefix="-i",
+            separate=True,
+            shell_quote=True,
+        )
+    ]
+    step.command = CWLCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        base_command=["command", "tool"],
+        command_tokens=command_tokens,
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=False,
+        initial_work_dir="/home",
+        inplace_update=False,
+        is_shell_command=False,
+        success_codes=[1],
+        step_stderr=None,
+        step_stdin=None,
+        step_stdout=None,
+        time_limit=1000,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_command_token_nested(context: StreamFlowContext):
+    """Test saving and loading CWLCommandTokens nested into value from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    step.command = CWLCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        base_command=["command", "tool"],
+        command_tokens=[
+            CWLCommandToken(
+                is_shell_command=False,
+                item_separator=None,
+                name="error",
+                position=2,
+                prefix="--error",
+                separate=True,
+                shell_quote=True,
+                token_type="string",
+                value=CWLCommandToken(
+                    name="inside",
+                    value="10",  # Any
+                    token_type="string",
+                    is_shell_command=False,
+                    item_separator="-",
+                    position=1,
+                    prefix="-b",
+                    separate=True,
+                    shell_quote=True,
+                ),
+            ),
+            CWLCommandToken(
+                name="other",
+                value=CWLUnionCommandToken(
+                    name="inside",
+                    value="10",  # Any
+                    token_type="string",
+                    is_shell_command=False,
+                    item_separator="-",
+                    position=1,
+                    prefix="-b",
+                    separate=True,
+                    shell_quote=True,
+                ),  # Any
+                token_type="string",
+                is_shell_command=False,
+                item_separator="&",
+                position=1,
+                prefix="-i",
+                separate=True,
+                shell_quote=True,
+            ),
+        ],
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=False,
+        initial_work_dir="/home",
+        inplace_update=False,
+        is_shell_command=False,
+        success_codes=[1],
+        step_stderr=None,
+        step_stdin=None,
+        step_stdout=None,
+        time_limit=1000,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_object_command_token(context: StreamFlowContext):
+    """Test saving and loading CWLCommannd with CWLObjectCommandTokens from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    step.command = CWLCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        base_command=["command", "tool"],
+        command_tokens=[
+            CWLObjectCommandToken(
+                is_shell_command=False,
+                item_separator=None,
+                name="error",
+                position=2,
+                prefix="--error",
+                separate=True,
+                shell_quote=True,
+                token_type="string",
+                value=None,
+            )
+        ],
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=False,
+        initial_work_dir="/home",
+        inplace_update=False,
+        is_shell_command=False,
+        success_codes=[1],
+        step_stderr=None,
+        step_stdin=None,
+        step_stdout=None,
+        time_limit=1000,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_union_command_token(context: StreamFlowContext):
+    """Test saving and loading CWLCommannd with CWLUnionCommandTokens from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    step.command = CWLCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        base_command=["command", "tool"],
+        command_tokens=[
+            CWLUnionCommandToken(
+                is_shell_command=False,
+                item_separator=None,
+                name="error",
+                position=2,
+                prefix="--error",
+                separate=True,
+                shell_quote=True,
+                token_type="string",
+                value=None,
+            )
+        ],
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=False,
+        initial_work_dir="/home",
+        inplace_update=False,
+        is_shell_command=False,
+        success_codes=[1],
+        step_stderr=None,
+        step_stdin=None,
+        step_stdout=None,
+        time_limit=1000,
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_map_command_token(context: StreamFlowContext):
+    """Test saving and loading CWLCommannd with CWLMapCommandTokens from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+    step.command = CWLCommand(
+        step=step,
+        absolute_initial_workdir_allowed=False,
+        base_command=["command", "tool"],
+        command_tokens=[
+            CWLMapCommandToken(
+                is_shell_command=False,
+                item_separator=None,
+                name="error",
+                position=2,
+                prefix="--error",
+                separate=True,
+                shell_quote=True,
+                token_type="string",
+                value=None,
+            )
+        ],
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=False,
+        initial_work_dir="/home",
+        inplace_update=False,
+        is_shell_command=False,
+        success_codes=[1],
+        step_stderr=None,
+        step_stdin=None,
+        step_stdout=None,
+        time_limit=1000,
+    )
+    await save_load_and_test(step, context)
 
 
 @pytest.mark.asyncio

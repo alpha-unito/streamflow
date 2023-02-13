@@ -16,7 +16,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
 from streamflow.core.persistence import Database, DependencyType
 from streamflow.core.utils import get_date_from_ns
-from streamflow.core.workflow import Port, Status, Step, Token
+from streamflow.core.workflow import Port, Status, Step, Token, Command
 from streamflow.version import VERSION
 
 DEFAULT_SQLITE_CONNECTION = os.path.join(
@@ -91,11 +91,19 @@ class SqliteDatabase(CachedDatabase):
             __name__, os.path.join("schemas", "sqlite.json")
         )
 
-    async def add_command(self, step_id: int, tag: str, cmd: str) -> int:
+    async def add_command(
+        self, step_id: int, tag: str, type: type[Command], params: str
+    ) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO command(step, tag, cmd) " "VALUES(:step, :tag, :cmd)",
-                {"step": step_id, "tag": tag, "cmd": cmd},
+                "INSERT INTO command(step, tag, type, params) "
+                "VALUES(:step, :tag, :type, :params)",
+                {
+                    "step": step_id,
+                    "tag": tag,
+                    "type": utils.get_class_fullname(type),
+                    "params": params,
+                },
             ) as cursor:
                 return cursor.lastrowid
 
