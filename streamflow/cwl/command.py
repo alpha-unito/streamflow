@@ -156,7 +156,6 @@ async def _deserialize_value_token(value_t, value, context, loading_context):
 async def _deserialize_value(value, context, loading_context):
     value = _force_loads(value)
     if isinstance(value, dict):
-
         # value must be analyze
         if "value_type" in value.keys():
             return await _deserialize_value_token(
