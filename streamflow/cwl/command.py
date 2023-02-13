@@ -90,79 +90,105 @@ async def _serialize_cwl_command_token_value(value: Any, context: StreamFlowCont
     ):  # this check must be before the iterable check for the string case
         return json.dumps(value)
     elif isinstance(value, dict):
+        key_serialized = []
+        val_serialized = []
+        for k, v in value.items():
+            key_serialized.append(
+                asyncio.create_task(_serialize_cwl_command_token_value(k, context))
+            )
+            val_serialized.append(
+                asyncio.create_task(_serialize_cwl_command_token_value(v, context))
+            )
         return (
             "{"
             + ",".join(
                 [
-                    await _serialize_cwl_command_token_value(k, context)
-                    + ":"
-                    + await _serialize_cwl_command_token_value(v, context)
-                    for k, v in value.items()
+                    k + ":" + v
+                    for k, v in zip(
+                        await asyncio.gather(*key_serialized),
+                        await asyncio.gather(*val_serialized),
+                    )
                 ]
             )
             + "}"
         )
     elif isinstance(value, Iterable):
-        return [
-            await _serialize_cwl_command_token_value(elem, context) for elem in value
-        ]
+        return await asyncio.gather(
+            *[
+                asyncio.create_task(_serialize_cwl_command_token_value(elem, context))
+                for elem in value
+            ]
+        )
     else:
         return json.dumps(value)
 
 
-async def _deserialize_value_token(value_t, value, context, loading_context):
+def _force_loads(value):
     if isinstance(value, str):
         try:
-            value = json.loads(value)
+            return json.loads(value)
         except json.decoder.JSONDecodeError:
             pass
+    return value
+
+
+async def _deserialize_value_token(value_t, value, context, loading_context):
     if value_t == "null":
         return None
-    elif issubclass(get_class_from_name(value_t), CWLCommandToken):
+
+    value = _force_loads(value)
+    class_type = get_class_from_name(value_t)
+    if issubclass(class_type, CWLCommandToken):
         return await CWLCommandToken.load(context, value, loading_context)
-    elif value_t == "builtins.list":
-        value_list = []
-        for elem in value:
-            value_list.append(await _deserialize_value(elem, context, loading_context))
-        return value_list
-    elif value_t == "builtins.dict":
+    elif class_type == dict:
         return await _deserialize_value(value, context, loading_context)
+    elif class_type == list:
+        return await asyncio.gather(
+            *[
+                asyncio.create_task(_deserialize_value(elem, context, loading_context))
+                for elem in value
+            ]
+        )
     else:
-        return value  # json.loads(row["value"])
+        return value
 
 
 async def _deserialize_value(value, context, loading_context):
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except json.decoder.JSONDecodeError:
-            pass
+    value = _force_loads(value)
     if isinstance(value, dict):
+
+        # value must be analyze
         if "value_type" in value.keys():
-            value_loads = value["value"]
-            if isinstance(value, str):
-                try:
-                    value_loads = json.loads(value["value"])
-                except json.decoder.JSONDecodeError:
-                    pass
             return await _deserialize_value_token(
-                value["value_type"], value_loads, context, loading_context
+                value["value_type"], value["value"], context, loading_context
             )
 
-        if (
-            "type" in value.keys() and "params" in value.keys()
-        ):  # is a serialized CWLCommandToken
+        # It is a serialized CWLCommandToken
+        # WARN: in the workflow using a record with only these two attributes, the deserialization will fail
+        if set(["type", "params"]) == value.keys():
             return await CWLCommandToken.load(context, value, loading_context)
-        else:  # is a normal dictionary
-            value_dict = {}
-            for k, v in value.items():
-                value_dict[k] = await _deserialize_value(v, context, loading_context)
-            return value_dict
+
+        # it is a normal dictionary but maybe some elems can cast in CWLCommandToken
+        return dict(
+            zip(
+                value.keys(),
+                await asyncio.gather(
+                    *[
+                        asyncio.create_task(
+                            _deserialize_value(v, context, loading_context)
+                        )
+                        for v in value.values()
+                    ]
+                ),
+            )
+        )
     elif isinstance(value, Iterable):
         value_list = []
         for elem in value:
-            value_list.append(await _deserialize_value(elem, context, loading_context))
-        return value_list
+            value_list.append(
+                asyncio.create_task(_deserialize_value(elem, context, loading_context))
+            )
+        return asyncio.gather(*value_list)
     return value
 
 

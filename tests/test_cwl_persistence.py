@@ -323,6 +323,8 @@ async def test_cwl_command_token_value_record(context: StreamFlowContext):
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
 
+    # WARN: using a dictionary with a nested dictionary and only the keys "type" and "params" like below, the load will fail
+    # { something: {"type": something, "params": something } ... }
     value_dict = {
         "zero": {
             "uno": CWLCommandToken(
