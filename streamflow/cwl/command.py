@@ -141,7 +141,7 @@ async def _deserialize_value_token(value_t, value, context, loading_context):
         return await CWLCommandToken.load(context, value, loading_context)
     elif class_type == dict:
         return await _deserialize_value(value, context, loading_context)
-    elif class_type == list:
+    elif class_type == list:  # issubclass(class_type, Iterable)
         return await asyncio.gather(
             *[
                 asyncio.create_task(_deserialize_value(elem, context, loading_context))
@@ -149,7 +149,7 @@ async def _deserialize_value_token(value_t, value, context, loading_context):
             ]
         )
     else:
-        return value
+        return class_type(value)
 
 
 async def _deserialize_value(value, context, loading_context):

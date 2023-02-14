@@ -1,6 +1,6 @@
 import posixpath
 from rdflib import Graph
-from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+from ruamel.yaml.scalarstring import LiteralScalarString, DoubleQuotedScalarString
 
 import pytest
 
@@ -190,6 +190,9 @@ async def test_cwl_command_token(context: StreamFlowContext):
         base_command=["command", "tool"],
         command_tokens=[
             create_cwl_command_token(DoubleQuotedScalarString("10")),
+            create_cwl_command_token(
+                LiteralScalarString("${ return 10 + 20 - (5 * 4) }")
+            ),
             create_cwl_command_token(
                 CWLMapCommandToken(
                     name="inside",
