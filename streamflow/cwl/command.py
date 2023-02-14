@@ -762,7 +762,7 @@ class CWLCommand(CWLBaseCommand):
     ) -> CWLCommand:
         params = json.loads(row["params"])
         return cls(
-            step=None,  # await loading_context.load_step(context, row['step']),
+            step=None,
             absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
             base_command=params["base_command"],
             command_tokens=[
@@ -1316,7 +1316,7 @@ class CWLExpressionCommand(CWLBaseCommand):
     ) -> CWLExpressionCommand:
         params = json.loads(row["params"])
         return cls(
-            step=None,  # await loading_context.load_step(context, row['step']),
+            step=None,
             absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],
@@ -1357,7 +1357,7 @@ class CWLStepCommand(CWLBaseCommand):
     ) -> CWLStepCommand:
         params = json.loads(row["params"])
         cwl_step_command = cls(
-            step=None,  # await loading_context.load_step(context, row['step']),
+            step=None,
             absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],

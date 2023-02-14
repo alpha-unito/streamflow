@@ -1157,6 +1157,7 @@ class ScheduleStep(BaseStep):
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])
             ),
+            job_prefix=params["job_prefix"],
             hardware_requirement=hardware_requirement,
             input_directory=params["input_directory"],
             output_directory=params["output_directory"],
@@ -1212,13 +1213,14 @@ class ScheduleStep(BaseStep):
         params = {
             **await super()._save_additional_params(context),
             **{
+                "binding_config": await self.binding_config.save(context),
                 "connector_ports": {
                     name: self.get_input_port(name).persistent_id
                     for name in self.input_ports
                     if name.startswith("__connector__")
                 },
                 "job_port": self.get_output_port("__job__").persistent_id,
-                "binding_config": await self.binding_config.save(context),
+                "job_prefix": self.job_prefix,
                 "input_directory": self.input_directory,
                 "output_directory": self.output_directory,
                 "tmp_directory": self.tmp_directory,

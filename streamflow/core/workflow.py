@@ -39,7 +39,7 @@ class Command(PersistableEntity, ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        return cls(step=None)  # await loading_context.load_step(context, row['step']),
+        return cls(step=None)
 
     async def _save_additional_params(
         self, context: StreamFlowContext
