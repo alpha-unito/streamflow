@@ -82,11 +82,10 @@ def _adjust_cwl_output(base_path: str, path_processor: ModuleType, value: Any) -
 async def _serialize_cwl_command_token_value(value: Any, context: StreamFlowContext):
     if isinstance(value, CWLCommandToken):
         return json.dumps(await value.save(context))
-    elif type(value) in (
+    if issubclass(type(value), str) or type(value) in (
         int,
         float,
         bool,
-        str,
     ):  # this check must be before the iterable check for the string case
         return json.dumps(value)
     elif isinstance(value, dict):
@@ -112,7 +111,7 @@ async def _serialize_cwl_command_token_value(value: Any, context: StreamFlowCont
             )
             + "}"
         )
-    elif isinstance(value, Iterable):
+    elif isinstance(value, list):
         return await asyncio.gather(
             *[
                 asyncio.create_task(_serialize_cwl_command_token_value(elem, context))
@@ -181,7 +180,7 @@ async def _deserialize_value(value, context, loading_context):
                 ),
             )
         )
-    elif isinstance(value, Iterable):
+    elif isinstance(value, list):
         value_list = []
         for elem in value:
             value_list.append(

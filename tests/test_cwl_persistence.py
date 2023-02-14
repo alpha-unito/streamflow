@@ -1,5 +1,6 @@
 import posixpath
 from rdflib import Graph
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 import pytest
 
@@ -61,6 +62,20 @@ def create_cwl_token_processor(name, workflow):
         secondary_files=[SecondaryFile("file1", True)],
         format_graph=Graph(),
         load_listing=LoadListing.no_listing,
+    )
+
+
+def create_cwl_command_token(value):
+    return CWLCommandToken(
+        is_shell_command=False,
+        item_separator="&",
+        name="test",
+        position=2,
+        prefix="--test",
+        separate=True,
+        shell_quote=True,
+        token_type="string",
+        value=value,
     )
 
 
@@ -168,35 +183,15 @@ async def test_cwl_command_token(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
+
     step.command = CWLCommand(
         step=step,
         absolute_initial_workdir_allowed=False,
         base_command=["command", "tool"],
         command_tokens=[
-            CWLCommandToken(
-                is_shell_command=False,
-                item_separator=None,
-                name="error",
-                position=2,
-                prefix="--error",
-                separate=True,
-                shell_quote=True,
-                token_type="string",
-                value=CWLCommandToken(
-                    name="inside",
-                    value="10",  # Any
-                    token_type="string",
-                    is_shell_command=False,
-                    item_separator="-",
-                    position=1,
-                    prefix="-b",
-                    separate=True,
-                    shell_quote=True,
-                ),
-            ),
-            CWLCommandToken(
-                name="other",
-                value=CWLMapCommandToken(
+            create_cwl_command_token(DoubleQuotedScalarString("10")),
+            create_cwl_command_token(
+                CWLMapCommandToken(
                     name="inside",
                     value={"zero": {"uno": 1, "due": 2}},  # Any
                     token_type="string",
@@ -206,14 +201,7 @@ async def test_cwl_command_token(context: StreamFlowContext):
                     prefix="-b",
                     separate=True,
                     shell_quote=True,
-                ),  # Any
-                token_type="string",
-                is_shell_command=False,
-                item_separator="&",
-                position=1,
-                prefix="-i",
-                separate=True,
-                shell_quote=True,
+                )
             ),
         ],
         expression_lib=["Requirement"],
@@ -243,52 +231,13 @@ async def test_cwl_command_token_value_list(context: StreamFlowContext):
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
 
-    value_list = [
-        CWLCommandToken(
-            is_shell_command=False,
-            item_separator=None,
-            name="error",
-            position=2,
-            prefix="--error",
-            separate=True,
-            shell_quote=True,
-            token_type="string",
-            value=1234,
-        ),
-        CWLCommandToken(
-            is_shell_command=False,
-            item_separator=None,
-            name="error",
-            position=2,
-            prefix="--error",
-            separate=True,
-            shell_quote=True,
-            token_type="string",
-            value=CWLCommandToken(
-                name="inside",
-                value="10",  # Any
-                token_type="string",
-                is_shell_command=False,
-                item_separator="-",
-                position=1,
-                prefix="-b",
-                separate=True,
-                shell_quote=True,
-            ),
-        ),
-    ]
     command_tokens = [
-        CWLCommandToken(
-            is_shell_command=False,
-            item_separator=None,
-            name="error",
-            position=2,
-            prefix="--error",
-            separate=True,
-            shell_quote=True,
-            token_type="string",
-            value=value_list,
-        ),
+        create_cwl_command_token(
+            [
+                create_cwl_command_token(1234),
+                create_cwl_command_token(create_cwl_command_token("10")),
+            ]
+        )
     ]
 
     step.command = CWLCommand(
@@ -323,67 +272,18 @@ async def test_cwl_command_token_value_record(context: StreamFlowContext):
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
 
-    # WARN: using a dictionary with a nested dictionary and only the keys "type" and "params" like below, the load will fail
-    # { something: {"type": something, "params": something } ... }
-    value_dict = {
-        "zero": {
-            "uno": CWLCommandToken(
-                is_shell_command=False,
-                item_separator=None,
-                name="error",
-                position=2,
-                prefix="--error",
-                separate=True,
-                shell_quote=True,
-                token_type="string",
-                value=CWLCommandToken(
-                    name="inside",
-                    value="10",  # Any
-                    token_type="string",
-                    is_shell_command=False,
-                    item_separator="-",
-                    position=1,
-                    prefix="-b",
-                    separate=True,
-                    shell_quote=True,
-                ),
-            ),
-            "due": CWLCommandToken(
-                is_shell_command=False,
-                item_separator=None,
-                name="error",
-                position=2,
-                prefix="--error",
-                separate=True,
-                shell_quote=True,
-                token_type="string",
-                value=CWLCommandToken(
-                    name="inside",
-                    value="10",  # Any
-                    token_type="string",
-                    is_shell_command=False,
-                    item_separator="-",
-                    position=1,
-                    prefix="-b",
-                    separate=True,
-                    shell_quote=True,
-                ),
-            ),
-        }
-    }
-
+    # WARN: using a dictionary only the keys "type" and "params" like below, the load will fail
+    # { something: {"type": something, "params": something }, ... }
     command_tokens = [
-        CWLCommandToken(
-            name="other",
-            value=value_dict,
-            token_type="string",
-            is_shell_command=False,
-            item_separator="&",
-            position=1,
-            prefix="-i",
-            separate=True,
-            shell_quote=True,
-        )
+        create_cwl_command_token(  # in CWL this structure is named record
+            {
+                "zero": {
+                    "uno": create_cwl_command_token(create_cwl_command_token("10")),
+                    "due": create_cwl_command_token(create_cwl_command_token("29")),
+                }
+            }
+        ),
+        create_cwl_command_token(10),
     ]
     step.command = CWLCommand(
         step=step,
