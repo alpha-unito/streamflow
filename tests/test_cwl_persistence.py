@@ -169,6 +169,7 @@ async def test_cwl_step_command(context: StreamFlowContext):
         inplace_update=False,
         time_limit=10000,
     )
+    step.command.input_expressions["test"] = "test"
     await save_load_and_test(step, context)
 
 

@@ -1364,9 +1364,16 @@ class CWLStepCommand(CWLBaseCommand):
             inplace_update=params["inplace_update"],
             time_limit=params["time_limit"],
         )
-        # attribute input_expressions not saved because the method execute will ricreate it
-        # cwl_step_command.input_expressions = params['input_expressions']
+        cwl_step_command.input_expressions = json.loads(params["input_expressions"])
         return cwl_step_command
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {
+            **await super()._save_additional_params(context),
+            **{"input_expressions": json.dumps(self.input_expressions)},
+        }
 
     async def execute(self, job: Job) -> CommandOutput:
         context = utils.build_context(
