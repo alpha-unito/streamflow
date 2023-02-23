@@ -627,10 +627,12 @@ class CWLCommand(CWLBaseCommand):
             **await super()._save_additional_params(context),
             **{
                 "base_command": self.base_command,
-                "command_tokens": [
-                    await command_token.save(context)
-                    for command_token in self.command_tokens
-                ],
+                "command_tokens": await asyncio.gather(
+                    *(
+                        asyncio.create_task(command_token.save(context))
+                        for command_token in self.command_tokens
+                    )
+                ),
                 "environment": self.environment,
                 "failure_codes": self.failure_codes,
                 "is_shell_command": self.is_shell_command,
@@ -648,35 +650,29 @@ class CWLCommand(CWLBaseCommand):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLCommand:
-        # params = json.loads(row['params'])
-        params = row["params"]
         return cls(
             step=None,
-            absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
-            base_command=params["base_command"],
-            # TODO:
-            #     await asyncio.gather(
-            #         *(
-            #             asyncio.create_task(
-            #               CWLCommandToken.load(context, command_token, loading_context)
-            #             ) for command_token in params["command_tokens"]
-            #          )
-            #     )
-            command_tokens=[
-                await CWLCommandToken.load(context, command_token, loading_context)
-                for command_token in params["command_tokens"]
-            ],
-            expression_lib=params["expression_lib"],
-            failure_codes=params["failure_codes"],
-            full_js=params["full_js"],
-            initial_work_dir=params["initial_work_dir"],
-            inplace_update=params["inplace_update"],
-            is_shell_command=params["is_shell_command"],
-            success_codes=params["success_codes"],
-            step_stderr=params["stderr"],
-            step_stdin=params["stdin"],
-            step_stdout=params["stdout"],
-            time_limit=params["time_limit"],
+            absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
+            base_command=row["base_command"],
+            command_tokens=await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        CWLCommandToken.load(context, command_token, loading_context)
+                    )
+                    for command_token in row["command_tokens"]
+                )
+            ),
+            expression_lib=row["expression_lib"],
+            failure_codes=row["failure_codes"],
+            full_js=row["full_js"],
+            initial_work_dir=row["initial_work_dir"],
+            inplace_update=row["inplace_update"],
+            is_shell_command=row["is_shell_command"],
+            success_codes=row["success_codes"],
+            step_stderr=row["stderr"],
+            step_stdin=row["stdin"],
+            step_stdout=row["stdout"],
+            time_limit=row["time_limit"],
         )
 
     def _get_executable_command(
@@ -1004,13 +1000,11 @@ class CWLCommandToken:
             return None
         type_str, obj = value
         type_t = cast(Type[CWLCommandToken], get_class_from_name(type_str))
-        v = (
+        return (
             await type_t.load(context, obj, loading_context)
             if issubclass(type_t, CWLCommandToken)
             else type_t(obj)
         )
-        print("vvvv", value, "--->>", v)
-        return v
 
     @classmethod
     async def _load(
@@ -1019,18 +1013,16 @@ class CWLCommandToken:
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        print("\n\n\nHello", row["params"]["value"])
-        params = row["params"]
         return cls(
-            name=params["name"],
-            value=await cls._load_value(params["value"], context, loading_context),
-            token_type=params["token_type"],
-            is_shell_command=params["is_shell_command"],
-            item_separator=params["item_separator"],
-            position=params["position"],
-            prefix=params["prefix"],
-            separate=params["separate"],
-            shell_quote=params["shell_quote"],
+            name=row["name"],
+            value=await cls._load_value(row["value"], context, loading_context),
+            token_type=row["token_type"],
+            is_shell_command=row["is_shell_command"],
+            item_separator=row["item_separator"],
+            position=row["position"],
+            prefix=row["prefix"],
+            separate=row["separate"],
+            shell_quote=row["shell_quote"],
         )
 
     async def _save_value(self, context):
@@ -1068,8 +1060,7 @@ class CWLCommandToken:
         loading_context: DatabaseLoadingContext,
     ) -> CWLCommandToken:
         type_t = cast(Type[CWLCommandToken], get_class_from_name(row["type"]))
-        print("row", row)
-        return await type_t._load(context, row, loading_context)
+        return await type_t._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -1116,7 +1107,9 @@ class CWLObjectCommandToken(CWLCommandToken):
         i = 0
         values = {}
         for k, v in self.value.items():
-            if isinstance(v, CWLCommandToken):
+            if v is None:
+                values[k] = v
+            elif isinstance(v, CWLCommandToken):
                 values[k] = (get_class_fullname(type(v)), token_saved[i])
                 i += 1
             else:
@@ -1127,7 +1120,7 @@ class CWLObjectCommandToken(CWLCommandToken):
     async def _load_value(cls, value, context, loading_context):
         instance_value = {}
         for key, value_serialized in value.items():
-            if value_serialized is None or value_serialized == json.dumps(None):
+            if value_serialized is None:
                 instance_value[key] = None
             else:
                 type_str, obj = value_serialized
@@ -1184,7 +1177,9 @@ class CWLUnionCommandToken(CWLCommandToken):
         i = 0
         values = []
         for v in self.value:
-            if isinstance(v, CWLCommandToken):
+            if v is None:
+                values.append(v)
+            elif isinstance(v, CWLCommandToken):
                 values.append((get_class_fullname(type(v)), token_saved[i]))
                 i += 1
             else:
@@ -1197,8 +1192,8 @@ class CWLUnionCommandToken(CWLCommandToken):
             return None
         instance_value = []
         for value_serialized in value:
-            if value_serialized is None or value_serialized == json.dumps(None):
-                instance_value.append(None)
+            if value_serialized is None:
+                instance_value.append(value_serialized)
             else:
                 type_str, obj = value_serialized
                 type_t = get_class_from_name(type_str)
@@ -1240,41 +1235,19 @@ class CWLMapCommandToken(CWLCommandToken):
         return bindings_map
 
     async def _save_value(self, context):
-        token_saved = await asyncio.gather(
-            *(
-                asyncio.create_task(elem.save(context))
-                for elem in self.value
-                if isinstance(elem, CWLCommandToken)
-            )
-        )
-        i = 0
-        values = []
-        for v in self.value:
-            if isinstance(v, CWLCommandToken):
-                values.append((get_class_fullname(type(v)), token_saved[i]))
-                i += 1
-            else:
-                values.append((get_class_fullname(type(v)), v))
-        return values
+        return await self.value.save(context)
 
     @classmethod
     async def _load_value(cls, value, context, loading_context):
-        instance_value = []
-        for value_serialized in value:
-            if value_serialized is None or value_serialized == json.dumps(None):
-                instance_value.append(None)
-            else:
-                type_str, obj = value_serialized
-                type_t = get_class_from_name(type_str)
-                if issubclass(type_t, CWLCommandToken):
-                    type_t = cast(Type[CWLCommandToken], type_t)
-                    instance_value.append(
-                        await type_t.load(context, obj, loading_context)
-                    )
-                else:
-                    instance_value.append(type_t(obj))
-        return instance_value
-
+        if value is None:
+            return None
+        type_str, obj = value
+        type_t = get_class_from_name(type_str)
+        if issubclass(type_t, CWLCommandToken):
+            type_t = cast(Type[CWLCommandToken], type_t)
+            return await type_t.load(context, obj, loading_context)
+        else:
+            return type_t(obj)
 
 class CWLExpressionCommand(CWLBaseCommand):
     def __init__(
@@ -1354,15 +1327,14 @@ class CWLExpressionCommand(CWLBaseCommand):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLExpressionCommand:
-        params = row["params"]
         return cls(
             step=None,
-            absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
-            expression_lib=params["expression_lib"],
-            full_js=params["full_js"],
-            initial_work_dir=params["initial_work_dir"],
-            inplace_update=params["inplace_update"],
-            expression=params["expression"],
+            absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
+            expression_lib=row["expression_lib"],
+            full_js=row["full_js"],
+            initial_work_dir=row["initial_work_dir"],
+            inplace_update=row["inplace_update"],
+            expression=row["expression"],
         )
 
 
@@ -1395,18 +1367,16 @@ class CWLStepCommand(CWLBaseCommand):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLStepCommand:
-        # params = json.loads(row['params'])
-        params = row["params"]
         cwl_step_command = cls(
             step=None,
-            absolute_initial_workdir_allowed=params["absolute_initial_workdir_allowed"],
-            expression_lib=params["expression_lib"],
-            full_js=params["full_js"],
-            initial_work_dir=params["initial_work_dir"],
-            inplace_update=params["inplace_update"],
-            time_limit=params["time_limit"],
+            absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
+            expression_lib=row["expression_lib"],
+            full_js=row["full_js"],
+            initial_work_dir=row["initial_work_dir"],
+            inplace_update=row["inplace_update"],
+            time_limit=row["time_limit"],
         )
-        cwl_step_command.input_expressions = params["input_expressions"]
+        cwl_step_command.input_expressions = row["input_expressions"]
         return cwl_step_command
 
     async def _save_additional_params(
