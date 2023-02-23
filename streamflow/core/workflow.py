@@ -22,15 +22,31 @@ if TYPE_CHECKING:
     from typing import Any
 
 
-class Command(PersistableEntity, ABC):
+class Command(ABC):
     def __init__(self, step: Step):
         super().__init__()
         self.step: Step = step
-        self.tag = 0
 
     @abstractmethod
     async def execute(self, job: Job) -> CommandOutput:
         ...
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Command:
+        type = cast(Type[Command], utils.get_class_from_name(row["type"]))
+        command = await type._load(context, row, loading_context)
+        return command
+
+    async def save(self, context: StreamFlowContext):
+        return {
+            "type": utils.get_class_fullname(type(self)),
+            "params": await self._save_additional_params(context),
+        }
 
     @classmethod
     async def _load(
@@ -45,32 +61,6 @@ class Command(PersistableEntity, ABC):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         return {}
-
-    @classmethod
-    async def load(
-        cls,
-        context: StreamFlowContext,
-        persistent_id: int,
-        loading_context: DatabaseLoadingContext,
-    ) -> Step:
-        row = await context.database.get_command(persistent_id)
-        type = cast(Type[Command], utils.get_class_from_name(row["type"]))
-        command = await type._load(context, row, loading_context)
-        command.persistent_id = persistent_id
-        return command
-
-    def set_tag(self, tag: int):
-        self.tag = tag
-
-    async def save(self, context: StreamFlowContext) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                self.persistent_id = await context.database.add_command(
-                    step_id=self.step.persistent_id,
-                    type=type(self),
-                    params=json.dumps(await self._save_additional_params(context)),
-                    tag=self.tag,
-                )
 
 
 class CommandOutput:
@@ -473,9 +463,6 @@ class Step(PersistableEntity, ABC):
     async def run(self):
         ...
 
-    async def _post_save_additional(self, context):
-        pass
-
     async def save(self, context: StreamFlowContext) -> None:
         async with self.persistence_lock:
             if not self.persistent_id:
@@ -509,7 +496,6 @@ class Step(PersistableEntity, ABC):
                     )
                 )
             )
-        save_tasks.append(asyncio.create_task(self._post_save_additional(context)))
         await asyncio.gather(*save_tasks)
 
     @abstractmethod

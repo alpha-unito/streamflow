@@ -9,7 +9,7 @@ from streamflow.core.context import SchemaEntity, StreamFlowContext
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import DeploymentConfig, Target
-    from streamflow.core.workflow import Port, Step, Token, Workflow, Command
+    from streamflow.core.workflow import Port, Step, Token, Workflow
 
 
 class DatabaseLoadingContext(ABC):
@@ -92,9 +92,7 @@ class Database(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def add_command(
-        self, step_id: int, tag: str, type: type[Command], params: str
-    ) -> int:
+    async def add_command(self, step_id: int, tag: str, cmd: str) -> int:
         ...
 
     @abstractmethod
