@@ -39,8 +39,7 @@ class Command(ABC):
         loading_context: DatabaseLoadingContext,
     ) -> Command:
         type = cast(Type[Command], utils.get_class_from_name(row["type"]))
-        command = await type._load(context, row, loading_context)
-        return command
+        return await type._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
         return {

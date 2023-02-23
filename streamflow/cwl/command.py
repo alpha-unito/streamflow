@@ -764,7 +764,6 @@ class CWLCommand(CWLBaseCommand):
             tag=get_tag(job.inputs.values()),
             cmd=cmd_string,
         )
-
         # Escape shell command when needed
         if self.is_shell_command:
             cmd = [
@@ -1235,7 +1234,14 @@ class CWLMapCommandToken(CWLCommandToken):
         return bindings_map
 
     async def _save_value(self, context):
-        return await self.value.save(context)
+        if self.value is None:
+            return self.value
+        return (
+            get_class_fullname(type(self.value)),
+            await self.value.save(context)
+            if isinstance(self.value, CWLCommandToken)
+            else self.value,
+        )
 
     @classmethod
     async def _load_value(cls, value, context, loading_context):
@@ -1248,6 +1254,7 @@ class CWLMapCommandToken(CWLCommandToken):
             return await type_t.load(context, obj, loading_context)
         else:
             return type_t(obj)
+
 
 class CWLExpressionCommand(CWLBaseCommand):
     def __init__(
@@ -1289,7 +1296,6 @@ class CWLExpressionCommand(CWLBaseCommand):
             tag=get_tag(job.inputs.values()),
             cmd=self.expression,
         )
-
         # Execute command
         start_time = time.time_ns()
         result = utils.eval_expression(
