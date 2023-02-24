@@ -533,9 +533,8 @@ class ExecuteStep(BaseStep):
         }
         if params["command"]:
             step.command = await Command.load(
-                context, params["command"], loading_context
+                context, params["command"], loading_context, step
             )
-            step.command.step = step
         return step
 
     async def _retrieve_output(
