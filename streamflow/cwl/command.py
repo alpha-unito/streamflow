@@ -649,9 +649,10 @@ class CWLCommand(CWLBaseCommand):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        step: Step,
     ) -> CWLCommand:
         return cls(
-            step=None,
+            step=step,
             absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
             base_command=row["base_command"],
             command_tokens=await asyncio.gather(
@@ -995,15 +996,7 @@ class CWLCommandToken:
 
     @classmethod
     async def _load_value(cls, value, context, loading_context):
-        if value is None:
-            return None
-        type_str, obj = value
-        type_t = cast(Type[CWLCommandToken], get_class_from_name(type_str))
-        return (
-            await type_t.load(context, obj, loading_context)
-            if issubclass(type_t, CWLCommandToken)
-            else type_t(obj)
-        )
+        return value
 
     @classmethod
     async def _load(
@@ -1025,16 +1018,7 @@ class CWLCommandToken:
         )
 
     async def _save_value(self, context):
-        if self.value:
-            type_t = get_class_fullname(type(self.value))
-            return (
-                type_t,
-                await self.value.save(context)
-                if isinstance(self.value, CWLCommandToken)
-                else self.value,
-            )
-        else:
-            return self.value  # None
+        return self.value
 
     async def _save_additional_params(
         self, context: StreamFlowContext
@@ -1332,9 +1316,10 @@ class CWLExpressionCommand(CWLBaseCommand):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        step: Step,
     ) -> CWLExpressionCommand:
         return cls(
-            step=None,
+            step=step,
             absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
             expression_lib=row["expression_lib"],
             full_js=row["full_js"],
@@ -1372,9 +1357,10 @@ class CWLStepCommand(CWLBaseCommand):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        step: Step,
     ) -> CWLStepCommand:
         cwl_step_command = cls(
-            step=None,
+            step=step,
             absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
             expression_lib=row["expression_lib"],
             full_js=row["full_js"],

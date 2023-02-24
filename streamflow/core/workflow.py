@@ -40,9 +40,7 @@ class Command(ABC):
         step: Step,
     ) -> Command:
         type = cast(Type[Command], utils.get_class_from_name(row["type"]))
-        command = await type._load(context, row["params"], loading_context)
-        command.step = step
-        return command
+        return await type._load(context, row["params"], loading_context, step)
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -56,8 +54,9 @@ class Command(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        step: Step,
     ):
-        return cls(step=None)
+        return cls(step=step)
 
     async def _save_additional_params(
         self, context: StreamFlowContext

@@ -202,27 +202,6 @@ async def test_cwl_command_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_command_token_nested(context: StreamFlowContext):
-    """Test saving and loading CWLCommandTokens nested into value from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    port = workflow.create_port()
-    await workflow.save(context)
-    step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
-    )
-    step.command = create_cwl_command(
-        step,
-        [
-            create_cwl_command_token(value=create_cwl_command_token(value=89)),
-            create_cwl_command_token(value=create_cwl_command_token(value=None)),
-        ],
-    )
-    await save_load_and_test(step, context)
-
-
-@pytest.mark.asyncio
 async def test_cwl_object_command_token(context: StreamFlowContext):
     """Test saving and loading CWLCommannd with CWLObjectCommandTokens from database"""
     workflow = Workflow(
@@ -261,15 +240,9 @@ async def test_cwl_object_command_token_nested(context: StreamFlowContext):
                 "zero": create_cwl_command_token(
                     cls=CWLObjectCommandToken,
                     value={
-                        "one": create_cwl_command_token(
-                            value=create_cwl_command_token(value="10")
-                        ),
-                        "two": create_cwl_command_token(
-                            value=create_cwl_command_token(value="29")
-                        ),
-                        "three": create_cwl_command_token(
-                            value=create_cwl_command_token(value=None)
-                        ),
+                        "one": create_cwl_command_token(value="10"),
+                        "two": create_cwl_command_token(value="29"),
+                        "three": create_cwl_command_token(value=None),
                     },
                 )
             },
