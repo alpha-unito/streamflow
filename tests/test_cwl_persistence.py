@@ -214,7 +214,15 @@ async def test_cwl_object_command_token(context: StreamFlowContext):
     )
     step.command = create_cwl_command(
         step,
-        [create_cwl_command_token(cls=CWLObjectCommandToken, value={"a": 1, "b": 2})],
+        [
+            create_cwl_command_token(
+                cls=CWLObjectCommandToken,
+                value={
+                    "a": create_cwl_command_token(value=10),
+                    "b": create_cwl_command_token(value=234),
+                },
+            )
+        ],
     )
     await save_load_and_test(step, context)
 
@@ -269,7 +277,11 @@ async def test_cwl_union_command_token(context: StreamFlowContext):
         [
             create_cwl_command_token(
                 cls=CWLUnionCommandToken,
-                value=["a", "b", create_cwl_command_token(value="ab")],
+                value=[
+                    create_cwl_command_token(value="a"),
+                    create_cwl_command_token(value="b"),
+                    create_cwl_command_token(value="ab"),
+                ],
             )
         ],
     )
@@ -293,12 +305,20 @@ async def test_cwl_union_command_token_nested(context: StreamFlowContext):
             create_cwl_command_token(
                 cls=CWLUnionCommandToken,
                 value=[
-                    "d",
-                    "e",
                     create_cwl_command_token(
-                        cls=CWLUnionCommandToken, value=["de", "fg", None]
+                        cls=CWLUnionCommandToken,
+                        value=[
+                            create_cwl_command_token(value="a"),
+                            create_cwl_command_token(value="b"),
+                        ],
                     ),
-                    None,
+                    create_cwl_command_token(
+                        cls=CWLUnionCommandToken,
+                        value=[
+                            create_cwl_command_token(value="de"),
+                            create_cwl_command_token(value="fg"),
+                        ],
+                    ),
                 ],
             )
         ],
@@ -320,7 +340,9 @@ async def test_cwl_map_command_token(context: StreamFlowContext):
     step.command = create_cwl_command(
         step,
         [
-            create_cwl_command_token(cls=CWLMapCommandToken, value="z"),
+            create_cwl_command_token(
+                cls=CWLMapCommandToken, value=create_cwl_command_token(value="z")
+            ),
             create_cwl_command_token(
                 cls=CWLMapCommandToken, value=create_cwl_command_token(value="xy")
             ),
