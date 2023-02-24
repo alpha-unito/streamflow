@@ -996,7 +996,10 @@ class CWLCommandToken:
 
     @classmethod
     async def _load_value(cls, value, context, loading_context):
-        return value
+        if isinstance(value, MutableMapping):
+            return await CWLCommandToken.load(context, value, loading_context)
+        else:
+            return value
 
     @classmethod
     async def _load(
@@ -1018,7 +1021,10 @@ class CWLCommandToken:
         )
 
     async def _save_value(self, context):
-        return self.value
+        if isinstance(self.value, CWLCommandToken):
+            return await self.value.save(context)
+        else:
+            return self.value
 
     async def _save_additional_params(
         self, context: StreamFlowContext
@@ -1083,31 +1089,30 @@ class CWLObjectCommandToken(CWLCommandToken):
             k: v
             for k, v in zip(
                 self.value.keys(),
-                [
-                    (get_class_fullname(type(val)), val_serialized)
-                    for val, val_serialized in zip(
-                        self.value.values(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(elem.save(context))
-                                for elem in self.value.values()
-                            )
-                        ),
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(elem.save(context))
+                        for elem in self.value.values()
                     )
-                ],
+                ),
             )
         }
 
     @classmethod
     async def _load_value(cls, value, context, loading_context):
-        instance_value = []
-        for type_str, elem in value.values():
-            type_t = cast(Type[CWLCommandToken], get_class_from_name(type_str))
-            instance_value.append(
-                asyncio.create_task(type_t.load(context, elem, loading_context))
-            )
         return {
-            k: v for k, v in zip(value.keys(), await asyncio.gather(*instance_value))
+            k: v
+            for k, v in zip(
+                value.keys(),
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            CWLCommandToken.load(context, elem, loading_context)
+                        )
+                        for elem in value.values()
+                    )
+                ),
+            )
         }
 
 
@@ -1140,27 +1145,20 @@ class CWLUnionCommandToken(CWLCommandToken):
             return super()
 
     async def _save_value(self, context):
-        return [
-            (get_class_fullname(type(val)), val_serialized)
-            for val, val_serialized in zip(
-                self.value,
-                await asyncio.gather(
-                    *(asyncio.create_task(elem.save(context)) for elem in self.value)
-                ),
-            )
-        ]
+        return await asyncio.gather(
+            *(asyncio.create_task(elem.save(context)) for elem in self.value)
+        )
 
     @classmethod
     async def _load_value(cls, value, context, loading_context):
-        if value is None:
-            return None
-        instance_value = []
-        for type_str, elem in value:
-            type_t = cast(Type[CWLCommandToken], get_class_from_name(type_str))
-            instance_value.append(
-                asyncio.create_task(type_t.load(context, elem, loading_context))
+        return await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    CWLCommandToken.load(context, elem, loading_context)
+                )
+                for elem in value
             )
-        return await asyncio.gather(*instance_value)
+        )
 
 
 class CWLMapCommandToken(CWLCommandToken):
@@ -1191,22 +1189,11 @@ class CWLMapCommandToken(CWLCommandToken):
         return bindings_map
 
     async def _save_value(self, context):
-        if self.value is None:
-            return self.value
-        return (
-            get_class_fullname(type(self.value)),
-            await self.value.save(context)
-            if isinstance(self.value, CWLCommandToken)
-            else self.value,
-        )
+        return await self.value.save(context)
 
     @classmethod
     async def _load_value(cls, value, context, loading_context):
-        if value is None:
-            return None
-        type_str, elem = value
-        type_t = cast(Type[CWLCommandToken], get_class_from_name(type_str))
-        return await type_t.load(context, elem, loading_context)
+        return await CWLCommandToken.load(context, value, loading_context)
 
 
 class CWLExpressionCommand(CWLBaseCommand):

@@ -202,6 +202,28 @@ async def test_cwl_command_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
+async def test_cwl_command_token_nested(context: StreamFlowContext):
+    """Test saving and loading CWLCommannd with nested CWLCommandTokens from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+    step = workflow.create_step(
+        cls=ExecuteStep, name=utils.random_name(), job_port=port
+    )
+
+    step.command = create_cwl_command(
+        step,
+        [
+            create_cwl_command_token(value=create_cwl_command_token(value=1123)),
+            create_cwl_command_token(value=create_cwl_command_token(value="hello")),
+        ],
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
 async def test_cwl_object_command_token(context: StreamFlowContext):
     """Test saving and loading CWLCommannd with CWLObjectCommandTokens from database"""
     workflow = Workflow(
@@ -239,23 +261,37 @@ async def test_cwl_object_command_token_nested(context: StreamFlowContext):
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
 
-    # WARN: using a dictionary only the keys "type" and "params" like below, the load will fail
-    # { something: {"type": something, "params": something }, ... }
     command_tokens = [
         create_cwl_command_token(
             cls=CWLObjectCommandToken,
-            value={  # in CWL this structure is named record
+            # in CWL this structure is named record
+            # zero:
+            #   type: File
+            #   params: null
+            value={
                 "zero": create_cwl_command_token(
                     cls=CWLObjectCommandToken,
                     value={
-                        "one": create_cwl_command_token(value="10"),
-                        "two": create_cwl_command_token(value="29"),
+                        "type": create_cwl_command_token(value="File"),
+                        "params": create_cwl_command_token(value=None),
+                    },
+                )
+            },
+        ),
+        create_cwl_command_token(
+            cls=CWLObjectCommandToken,
+            value={
+                "zero": create_cwl_command_token(
+                    cls=CWLObjectCommandToken,
+                    value={
+                        "one": create_cwl_command_token(value="89"),
+                        "two": create_cwl_command_token(value=29),
                         "three": create_cwl_command_token(value=None),
                     },
                 )
             },
         ),
-        create_cwl_command_token(value=10),
+        create_cwl_command_token(value=11),
     ]
     step.command = create_cwl_command(step, command_tokens)
     await save_load_and_test(step, context)
@@ -278,9 +314,9 @@ async def test_cwl_union_command_token(context: StreamFlowContext):
             create_cwl_command_token(
                 cls=CWLUnionCommandToken,
                 value=[
-                    create_cwl_command_token(value="a"),
-                    create_cwl_command_token(value="b"),
-                    create_cwl_command_token(value="ab"),
+                    create_cwl_command_token(value="qwerty"),
+                    create_cwl_command_token(value=987),
+                    create_cwl_command_token(value="qaz"),
                 ],
             )
         ],
@@ -308,15 +344,15 @@ async def test_cwl_union_command_token_nested(context: StreamFlowContext):
                     create_cwl_command_token(
                         cls=CWLUnionCommandToken,
                         value=[
-                            create_cwl_command_token(value="a"),
-                            create_cwl_command_token(value="b"),
+                            create_cwl_command_token(value="aaa"),
+                            create_cwl_command_token(value="bbb"),
                         ],
                     ),
                     create_cwl_command_token(
                         cls=CWLUnionCommandToken,
                         value=[
-                            create_cwl_command_token(value="de"),
-                            create_cwl_command_token(value="fg"),
+                            create_cwl_command_token(value="ccc"),
+                            create_cwl_command_token(value="ddd"),
                         ],
                     ),
                 ],
