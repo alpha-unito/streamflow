@@ -531,6 +531,10 @@ class ExecuteStep(BaseStep):
                 ),
             )
         }
+        if params["command"]:
+            step.command = await Command.load(
+                context, params["command"], loading_context, step
+            )
         return step
 
     async def _retrieve_output(
@@ -667,6 +671,7 @@ class ExecuteStep(BaseStep):
                         ),
                     )
                 },
+                "command": await self.command.save(context) if self.command else None,
             },
         }
 
@@ -1149,6 +1154,7 @@ class ScheduleStep(BaseStep):
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])
             ),
+            job_prefix=params["job_prefix"],
             hardware_requirement=hardware_requirement,
             input_directory=params["input_directory"],
             output_directory=params["output_directory"],
@@ -1211,6 +1217,7 @@ class ScheduleStep(BaseStep):
                 },
                 "job_port": self.get_output_port("__job__").persistent_id,
                 "binding_config": await self.binding_config.save(context),
+                "job_prefix": self.job_prefix,
                 "input_directory": self.input_directory,
                 "output_directory": self.output_directory,
                 "tmp_directory": self.tmp_directory,

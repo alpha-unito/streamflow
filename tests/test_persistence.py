@@ -149,6 +149,7 @@ async def test_schedule_step(context: StreamFlowContext):
     schedule_step = workflow.create_step(
         cls=ScheduleStep,
         name=posixpath.join(utils.random_name() + "-injector", "__schedule__"),
+        job_prefix="something",
         connector_ports={binding_config.targets[0].deployment.name: port},
         input_directory=binding_config.targets[0].workdir,
         output_directory=binding_config.targets[0].workdir,

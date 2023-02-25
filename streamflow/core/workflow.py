@@ -31,6 +31,38 @@ class Command(ABC):
     async def execute(self, job: Job) -> CommandOutput:
         ...
 
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+        step: Step,
+    ) -> Command:
+        type = cast(Type[Command], utils.get_class_from_name(row["type"]))
+        return await type._load(context, row["params"], loading_context, step)
+
+    async def save(self, context: StreamFlowContext):
+        return {
+            "type": utils.get_class_fullname(type(self)),
+            "params": await self._save_additional_params(context),
+        }
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+        step: Step,
+    ):
+        return cls(step=step)
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {}
+
 
 class CommandOutput:
     __slots__ = ("value", "status")
