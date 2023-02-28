@@ -1039,19 +1039,21 @@ def _process_docker_requirement(
         "image": image_name,
         "logDriver": "none",
         "network": "default" if network_access else "none",
-        "volume": [f"{target.workdir}:{target.workdir}"],
+        "volume": [f"{target.workdir}:/tmp/streamflow"],
     }
     # Manage dockerOutputDirectory directive
     if "dockerOutputDirectory" in docker_requirement:
         docker_config["workdir"] = docker_requirement["dockerOutputDirectory"]
         context["output_directory"] = docker_config["workdir"]
-        local_dir = os.path.join(tempfile.gettempdir(), "streamflow", random_name())
+        local_dir = os.path.join(
+            os.path.realpath(tempfile.gettempdir()), "streamflow", random_name()
+        )
         os.makedirs(local_dir, exist_ok=True)
         docker_config["volume"].append(f"{local_dir}:{docker_config['workdir']}")
     # Build step target
     deployment = DeploymentConfig(name=name, type="docker", config=docker_config)
-    step_target = Target(
-        deployment=deployment, service=image_name, workdir=target.workdir
+    step_target = Target(  # nosec
+        deployment=deployment, service=image_name, workdir="/tmp/streamflow"
     )
     return step_target
 

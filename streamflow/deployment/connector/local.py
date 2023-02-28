@@ -33,9 +33,17 @@ class LocalConnector(BaseConnector):
         self, command: str, location: Location, interactive: bool = False
     ):
         if sys.platform == "win32":
-            return f"cmd /C '{command}'"
+            return f"{self._get_shell()} /C '{command}'"
         else:
-            return f"sh -c '{command}'"
+            return f"{self._get_shell()} -c '{command}'"
+
+    def _get_shell(self) -> str:
+        if sys.platform == "win32":
+            return "cmd"
+        elif sys.platform == "darwin":
+            return "bash"
+        else:
+            return "sh"
 
     async def _copy_remote_to_remote(
         self,
@@ -64,7 +72,10 @@ class LocalConnector(BaseConnector):
             )
 
     async def deploy(self, external: bool) -> None:
-        os.makedirs(os.path.join(tempfile.gettempdir(), "streamflow"), exist_ok=True)
+        os.makedirs(
+            os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow"),
+            exist_ok=True,
+        )
 
     async def get_available_locations(
         self,
