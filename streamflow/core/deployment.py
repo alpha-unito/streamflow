@@ -27,7 +27,7 @@ def _init_workdir(deployment_name: str) -> str:
     if deployment_name != LOCAL_LOCATION:
         return posixpath.join("/tmp", "streamflow")  # nosec
     else:
-        return os.path.join(tempfile.gettempdir(), "streamflow")
+        return os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow")
 
 
 class Location:

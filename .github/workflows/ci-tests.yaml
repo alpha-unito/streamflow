@@ -24,9 +24,9 @@ jobs:
       - uses: github/codeql-action/analyze@v2
   cwl-conformance:
     name: "CWL conformance tests"
-    runs-on: ubuntu-22.04
     strategy:
       matrix:
+        on: [ "ubuntu-22.04" ]
         python: [ "3.8", "3.9", "3.10", "3.11" ]
         version: [ "v1.0", "v1.1", "v1.2" ]
         include:
@@ -39,6 +39,12 @@ jobs:
           - commit: "ad6f77c648ae9f0eaa2fd53ba7032b0523e12de8"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.2"
+          - on: "macos-12"
+            python: "3.11"
+            commit: "ad6f77c648ae9f0eaa2fd53ba7032b0523e12de8"
+            exclude: "docker_entrypoint,modify_file_content,step_input_default_value_noexp,step_input_default_value_overriden_noexp,nested_workflow_noexp,step_input_default_value_overriden_2nd_step_noexp,step_input_default_value_overriden_2nd_step_null_noexp"
+            version: "v1.2"
+    runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -47,6 +53,8 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
+      - uses: douglascamata/setup-docker-macos-action@v1-alpha
+        if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v2
       - name: "Install Streamflow"
         run: |
@@ -89,10 +97,14 @@ jobs:
         run: tox
   unit-tests:
     name: "StreamFlow unit tests"
-    runs-on: ubuntu-22.04
     strategy:
       matrix:
+        on: [ "ubuntu-22.04"]
         python: [ "3.8", "3.9", "3.10", "3.11" ]
+        include:
+          - on: "macos-12"
+            python: "3.11"
+    runs-on: ${{ matrix.on }}
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
     steps:
@@ -107,13 +119,15 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
+      - uses: douglascamata/setup-docker-macos-action@v1-alpha
+        if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v2
       - name: "Install Python Dependencies and Streamflow"
         run: |
           python -m pip install tox --user
           python -m pip install . --user
       - name: "Run StreamFlow tests via Tox"
-        run: tox
+        run: python -m tox
       - name: "Upload coverage report for unit tests"
         uses: actions/upload-artifact@v3
         with:

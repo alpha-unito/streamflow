@@ -22,7 +22,10 @@ class DefaultCheckpointManager(CheckpointManager):
     def __init__(self, context: StreamFlowContext, checkpoint_dir: str | None = None):
         super().__init__(context)
         self.checkpoint_dir = checkpoint_dir or os.path.join(
-            tempfile.gettempdir(), "streamflow", "checkpoint", utils.random_name()
+            os.path.realpath(tempfile.gettempdir()),
+            "streamflow",
+            "checkpoint",
+            utils.random_name(),
         )
         self.copy_tasks: MutableSequence = []
 

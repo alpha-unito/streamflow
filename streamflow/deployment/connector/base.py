@@ -249,6 +249,9 @@ class BaseConnector(Connector, FutureAware):
     ) -> str:
         ...
 
+    def _get_shell(self) -> str:
+        return "sh"
+
     def _get_stream_reader(self, location: Location, src: str) -> StreamWrapperContext:
         dirname, basename = posixpath.split(src)
         return SubprocessStreamReaderWrapperContext(
@@ -369,7 +372,7 @@ class BaseConnector(Connector, FutureAware):
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        command = utils.encode_command(command)
+        command = utils.encode_command(command, self._get_shell())
         run_command = self._get_run_command(command, location)
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(run_command),

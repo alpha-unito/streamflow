@@ -1,4 +1,5 @@
 import asyncio
+import os
 import tempfile
 from asyncio.locks import Lock
 from collections.abc import Iterable
@@ -42,7 +43,7 @@ def get_docker_deployment_config():
 @pytest_asyncio.fixture(scope="session")
 async def context() -> StreamFlowContext:
     context = build_context(
-        tempfile.gettempdir(),
+        os.path.realpath(tempfile.gettempdir()),
         {"database": {"type": "default", "config": {"connection": ":memory:"}}},
     )
     await context.deployment_manager.deploy(
@@ -52,7 +53,7 @@ async def context() -> StreamFlowContext:
             config={},
             external=True,
             lazy=False,
-            workdir=tempfile.gettempdir(),
+            workdir=os.path.realpath(tempfile.gettempdir()),
         )
     )
     await context.deployment_manager.deploy(get_docker_deployment_config())

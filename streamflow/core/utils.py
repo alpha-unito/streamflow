@@ -97,9 +97,10 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
         yield dict(zip(keys, list(instance)))
 
 
-def encode_command(command: str):
-    return "echo {command} | base64 -d | sh".format(
-        command=base64.b64encode(command.encode("utf-8")).decode("utf-8")
+def encode_command(command: str, shell: str = "sh"):
+    return "echo {command} | base64 -d | {shell}".format(
+        command=base64.b64encode(command.encode("utf-8")).decode("utf-8"),
+        shell=shell,  # nosec
     )
 
 
