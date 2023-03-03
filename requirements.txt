@@ -13,4 +13,4 @@ jsonschema==4.17.3
 kubernetes_asyncio==24.2.2
 psutil==5.9.4
 rdflib==6.2.0
-yattag==1.15.0
+yattag==1.15.1
