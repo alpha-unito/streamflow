@@ -9,7 +9,7 @@ from rdflib import Graph
 from schema_salad.exceptions import ValidationException
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Connector, Target, LOCAL_LOCATION
+from streamflow.core.deployment import Connector, LOCAL_LOCATION, Target
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -34,16 +34,66 @@ from streamflow.workflow.token import ListToken, ObjectToken
 
 def _check_default_processor(processor: CWLCommandOutputProcessor, token_value: Any):
     try:
-        utils.check_token_type(
+        _check_token_type(
             name=processor.name,
             token_value=token_value,
             token_type=processor.token_type,
             enum_symbols=processor.enum_symbols,
             optional=processor.optional,
+            check_file=False,
         )
         return True
     except WorkflowExecutionException:
         return False
+
+
+def _check_token_type(
+    name: str,
+    token_value: Any,
+    token_type: str | MutableSequence[str],
+    enum_symbols: MutableSequence[str] | None,
+    optional: bool,
+    check_file: bool,
+) -> None:
+    if isinstance(token_type, MutableSequence):
+        messages = []
+        for t in token_type:
+            try:
+                _check_token_type(
+                    name, token_value, t, enum_symbols, optional, check_file
+                )
+                return
+            except WorkflowExecutionException as e:
+                messages.append(str(e))
+        raise WorkflowExecutionException("\n".join(messages))
+    if isinstance(token_value, Token):
+        _check_token_type(
+            name, token_value.value, token_type, enum_symbols, optional, check_file
+        )
+    elif token_type == "Any":  # nosec
+        if not optional and token_value is None:
+            raise WorkflowExecutionException(
+                f"Token {name} is of type `Any`: it cannot be null."
+            )
+    elif token_type == "null":  # nosec
+        if token_value is not None:
+            raise WorkflowExecutionException(f"Token {name} should be null.")
+    elif token_value is None:
+        if not optional:
+            raise WorkflowExecutionException(f"Token {name} is not optional.")
+    elif token_type == "enum":  # nosec
+        if token_value not in enum_symbols:
+            raise WorkflowExecutionException(
+                f"Value {token_value} is not valid for token {name}."
+            )
+    elif (inferred_type := utils.infer_type_from_token(token_value)) != token_type:
+        if check_file or token_type not in ["File", "Directory"]:
+            # In CWL, long is considered as a subtype of double
+            if inferred_type != "long" or token_type != "double":  # nosec
+                raise WorkflowExecutionException(
+                    f"Expected {name} token of type {token_type}, got {inferred_type}."
+                )
+    return
 
 
 class CWLCommandOutput(CommandOutput):
@@ -249,9 +299,9 @@ class CWLTokenProcessor(TokenProcessor):
                 "enum_symbols": self.enum_symbols,
                 "expression_lib": self.expression_lib,
                 "file_format": self.file_format,
-                "format_graph": self.format_graph.serialize()
-                if self.format_graph
-                else None,
+                "format_graph": (
+                    self.format_graph.serialize() if self.format_graph else None
+                ),
                 "full_js": self.full_js,
                 "load_contents": self.load_contents,
                 "load_listing": self.load_listing.value if self.load_listing else None,
@@ -271,20 +321,32 @@ class CWLTokenProcessor(TokenProcessor):
         # If value is token, propagate the process call
         if isinstance(token.value, Token):
             return token.update(await self.process(inputs, token.value))
+        # Process file token
+        if utils.get_token_class(token.value) in ["File", "Directory"]:
+            token = token.update(await self._process_file_token(inputs, token.value))
         # Check type
         if self.check_type and self.token_type:
-            utils.check_token_type(
-                name=self.name,
-                token_value=token.value,
-                token_type=self.token_type,
-                enum_symbols=self.enum_symbols,
-                optional=self.optional,
-            )
-        # Process token
-        if utils.get_token_class(token.value) in ["File", "Directory"]:
-            return token.update(await self._process_file_token(inputs, token.value))
-        else:
-            return token
+            if isinstance(token.value, MutableSequence):
+                for v in token.value:
+                    _check_token_type(
+                        name=self.name,
+                        token_value=v,
+                        token_type=self.token_type,
+                        enum_symbols=self.enum_symbols,
+                        optional=self.optional,
+                        check_file=True,
+                    )
+            else:
+                _check_token_type(
+                    name=self.name,
+                    token_value=token.value,
+                    token_type=self.token_type,
+                    enum_symbols=self.enum_symbols,
+                    optional=self.optional,
+                    check_file=True,
+                )
+        # Return the token
+        return token
 
 
 class CWLCommandOutputProcessor(CommandOutputProcessor):
@@ -293,7 +355,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         name: str,
         workflow: Workflow,
         target: Target | None = None,
-        token_type: str | None = None,
+        token_type: str | MutableSequence[str] | None = None,
         enum_symbols: MutableSequence[str] | None = None,
         expression_lib: MutableSequence[str] | None = None,
         file_format: str | None = None,
@@ -307,7 +369,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         streamable: bool = False,
     ):
         super().__init__(name, workflow, target)
-        self.token_type: str = token_type
+        self.token_type: str | MutableSequence[str] | None = token_type
         self.enum_symbols: MutableSequence[str] | None = enum_symbols
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
@@ -465,15 +527,21 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                             connector=connector,
                             workflow=self.workflow,
                             location=location,
-                            input_directory=self.target.workdir
-                            if self.target
-                            else job.input_directory,
-                            output_directory=self.target.workdir
-                            if self.target
-                            else job.output_directory,
-                            tmp_directory=self.target.workdir
-                            if self.target
-                            else job.tmp_directory,
+                            input_directory=(
+                                self.target.workdir
+                                if self.target
+                                else job.input_directory
+                            ),
+                            output_directory=(
+                                self.target.workdir
+                                if self.target
+                                else job.output_directory
+                            ),
+                            tmp_directory=(
+                                self.target.workdir
+                                if self.target
+                                else job.tmp_directory
+                            ),
                             path=(
                                 path_processor.join(output_directory, path)
                                 if not path_processor.isabs(path)
@@ -613,14 +681,29 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 tmp_directory=tmp_directory,
                 hardware=self.workflow.context.scheduler.get_hardware(job.name),
             )
-            return await self._build_token(
-                job,
-                connector,
-                context,
-                await self._process_command_output(
-                    job, command_output, connector, context, output_directory
-                ),
+            token_value = await self._process_command_output(
+                job, command_output, connector, context, output_directory
             )
+            if isinstance(token_value, MutableSequence):
+                for value in token_value:
+                    _check_token_type(
+                        name=self.name,
+                        token_value=value,
+                        token_type=self.token_type,
+                        enum_symbols=self.enum_symbols,
+                        optional=self.optional,
+                        check_file=True,
+                    )
+            else:
+                _check_token_type(
+                    name=self.name,
+                    token_value=token_value,
+                    token_type=self.token_type,
+                    enum_symbols=self.enum_symbols,
+                    optional=self.optional,
+                    check_file=True,
+                )
+            return await self._build_token(job, connector, context, token_value)
 
 
 class CWLMapTokenProcessor(TokenProcessor):
@@ -982,16 +1065,15 @@ class CWLUnionTokenProcessor(TokenProcessor):
         }
 
     # noinspection PyMethodMayBeStatic
-    def _check_default_processor(
-        self, processor: CWLCommandOutputProcessor, token_value: Any
-    ):
+    def _check_default_processor(self, processor: CWLTokenProcessor, token_value: Any):
         try:
-            utils.check_token_type(
+            _check_token_type(
                 name=processor.name,
                 token_value=token_value,
                 token_type=processor.token_type,
                 enum_symbols=processor.enum_symbols,
                 optional=processor.optional,
+                check_file=True,
             )
             return True
         except WorkflowExecutionException:

@@ -36,13 +36,13 @@ jobs:
           - commit: "6397014050177074c9ccd0d771577f7fa9f728a3"
             exclude: "docker_entrypoint,stdin_shorcut,inplace_update_on_file_content"
             version: "v1.1"
-          - commit: "ad6f77c648ae9f0eaa2fd53ba7032b0523e12de8"
+          - commit: "5411b8cad173121641b23ba9a0da2cf36e6df2d6"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.2"
           - on: "macos-12"
             python: "3.11"
-            commit: "ad6f77c648ae9f0eaa2fd53ba7032b0523e12de8"
-            exclude: "docker_entrypoint,modify_file_content,step_input_default_value_noexp,step_input_default_value_overriden_noexp,nested_workflow_noexp,step_input_default_value_overriden_2nd_step_noexp,step_input_default_value_overriden_2nd_step_null_noexp"
+            commit: "5411b8cad173121641b23ba9a0da2cf36e6df2d6"
+            exclude: "docker_entrypoint,modify_file_content"
             version: "v1.2"
     runs-on: ${{ matrix.on }}
     steps:

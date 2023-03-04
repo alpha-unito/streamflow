@@ -171,6 +171,70 @@ def _create_command(
     return command
 
 
+def _create_command_output_processor_base(
+    port_name: str,
+    workflow: Workflow,
+    port_target: Target | None,
+    port_type: Any,
+    cwl_element: MutableMapping[str, Any],
+    context: MutableMapping[str, Any],
+    optional: bool = False,
+) -> CWLCommandOutputProcessor:
+    if not isinstance(port_type, MutableSequence):
+        port_type = [port_type]
+    # Normalize port type (Python does not distinguish among all CWL number types)
+    port_type = [
+        "long" if t == "int" else "double" if t == "float" else t for t in port_type
+    ]
+    # Process InlineJavascriptRequirement
+    requirements = {**context["hints"], **context["requirements"]}
+    expression_lib, full_js = _process_javascript_requirement(requirements)
+    # Create OutputProcessor
+    if "File" in port_type:
+        return CWLCommandOutputProcessor(
+            name=port_name,
+            workflow=workflow,
+            target=port_target,
+            token_type=port_type[0] if len(port_type) == 1 else port_type,
+            expression_lib=expression_lib,
+            file_format=cwl_element.get("format"),
+            full_js=full_js,
+            glob=cwl_element.get("outputBinding", {}).get(
+                "glob", cwl_element.get("path")
+            ),
+            load_contents=cwl_element.get(
+                "loadContents",
+                cwl_element.get("outputBinding", {}).get("loadContents", False),
+            ),
+            load_listing=_get_load_listing(cwl_element, context),
+            optional=optional,
+            output_eval=cwl_element.get("outputBinding", {}).get("outputEval"),
+            secondary_files=_get_secondary_files(
+                cwl_element.get("secondaryFiles"), default_required=False
+            ),
+            streamable=cwl_element.get("streamable", False),
+        )
+    else:
+        return CWLCommandOutputProcessor(
+            name=port_name,
+            workflow=workflow,
+            target=port_target,
+            token_type=port_type[0] if len(port_type) == 1 else port_type,
+            expression_lib=expression_lib,
+            full_js=full_js,
+            glob=cwl_element.get("outputBinding", {}).get(
+                "glob", cwl_element.get("path")
+            ),
+            load_contents=cwl_element.get(
+                "loadContents",
+                cwl_element.get("outputBinding", {}).get("loadContents", False),
+            ),
+            load_listing=_get_load_listing(cwl_element, context),
+            optional=optional,
+            output_eval=cwl_element.get("outputBinding", {}).get("outputEval"),
+        )
+
+
 def _create_command_output_processor(
     port_name: str,
     workflow: Workflow,
@@ -291,10 +355,14 @@ def _create_command_output_processor(
             )
         # List of types: -> UnionOutputProcessor
         else:
-            return CWLUnionCommandOutputProcessor(
-                name=port_name,
-                workflow=workflow,
-                processors=[
+            types = [
+                schema_def_types[t] if isinstance(t, str) and "#" in t else t
+                for t in types
+            ]
+            complex_types = [t for t in types if isinstance(t, MutableMapping)]
+            simple_types = [t for t in types if t not in complex_types]
+            if complex_types:
+                processors = [
                     _create_command_output_processor(
                         port_name=port_name,
                         workflow=workflow,
@@ -306,8 +374,26 @@ def _create_command_output_processor(
                         context=context,
                         optional=optional,
                     )
-                    for port_type in types
-                ],
+                    for port_type in complex_types
+                ]
+            else:
+                processors = []
+            if simple_types:
+                processors.append(
+                    _create_command_output_processor_base(
+                        port_name=port_name,
+                        workflow=workflow,
+                        port_target=port_target,
+                        port_type=simple_types,
+                        cwl_element=cwl_element,
+                        context=context,
+                        optional=optional,
+                    )
+                )
+            return CWLUnionCommandOutputProcessor(
+                name=port_name,
+                workflow=workflow,
+                processors=processors,
             )
     # Complex type -> Extract from schema definitions and propagate
     elif "#" in port_type:
@@ -324,61 +410,15 @@ def _create_command_output_processor(
         )
     # Simple type -> Create typed processor
     else:
-        # Process InlineJavascriptRequirement
-        requirements = {**context["hints"], **context["requirements"]}
-        expression_lib, full_js = _process_javascript_requirement(requirements)
-        # Create OutputProcessor
-        if port_type == "File":
-            return CWLCommandOutputProcessor(
-                name=port_name,
-                workflow=workflow,
-                target=port_target,
-                token_type=port_type,
-                expression_lib=expression_lib,
-                file_format=cwl_element.get("format"),
-                full_js=full_js,
-                glob=cwl_element.get("outputBinding", {}).get(
-                    "glob", cwl_element.get("path")
-                ),
-                load_contents=cwl_element.get(
-                    "loadContents",
-                    cwl_element.get("outputBinding", {}).get("loadContents", False),
-                ),
-                load_listing=_get_load_listing(cwl_element, context),
-                optional=optional,
-                output_eval=cwl_element.get("outputBinding", {}).get("outputEval"),
-                secondary_files=_get_secondary_files(
-                    cwl_element.get("secondaryFiles"), default_required=False
-                ),
-                streamable=cwl_element.get("streamable", False),
-            )
-        else:
-            # Normalize port type (Python does not distinguish among all CWL number types)
-            port_type = (
-                "long"
-                if port_type == "int"
-                else "double"
-                if port_type == "float"
-                else port_type
-            )
-            return CWLCommandOutputProcessor(
-                name=port_name,
-                workflow=workflow,
-                target=port_target,
-                token_type=port_type,
-                expression_lib=expression_lib,
-                full_js=full_js,
-                glob=cwl_element.get("outputBinding", {}).get(
-                    "glob", cwl_element.get("path")
-                ),
-                load_contents=cwl_element.get(
-                    "loadContents",
-                    cwl_element.get("outputBinding", {}).get("loadContents", False),
-                ),
-                load_listing=_get_load_listing(cwl_element, context),
-                optional=optional,
-                output_eval=cwl_element.get("outputBinding", {}).get("outputEval"),
-            )
+        return _create_command_output_processor_base(
+            port_name=port_name,
+            workflow=workflow,
+            port_target=port_target,
+            port_type=port_type,
+            cwl_element=cwl_element,
+            context=context,
+            optional=optional,
+        )
 
 
 def _create_context() -> MutableMapping[str, Any]:
@@ -1587,6 +1627,30 @@ class CWLTranslator:
                 step.output_connectors[port_name] = port_name + "__connector__"
             else:
                 port_target = None
+            # In CWL <= v1.2, ExpressionTool output is never type-checked
+            if isinstance(
+                cwl_element, cwltool.command_line_tool.ExpressionTool
+            ) and self.loading_context.metadata["cwlVersion"] in [
+                "v1.0",
+                "v1.1",
+                "v1.2",
+            ]:
+                if isinstance(element_output["type"], MutableSequence):
+                    port_type = element_output["type"]
+                    if "null" not in port_type:
+                        port_type.append("null")
+                    if "Any" not in port_type:
+                        port_type.append("Any")
+                elif isinstance(element_output["type"], str):
+                    port_type = [element_output["type"]]
+                    if element_output["type"] != "null":
+                        port_type.append("null")
+                    if element_output["type"] != "Any":
+                        port_type.append("Any")
+                else:
+                    port_type = ["null", element_output["type"], "Any"]
+            else:
+                port_type = element_output["type"]
             # Add output port to ExecuteStep
             step.add_output_port(
                 name=port_name,
@@ -1595,7 +1659,7 @@ class CWLTranslator:
                     port_name=port_name,
                     workflow=workflow,
                     port_target=port_target,
-                    port_type=element_output["type"],
+                    port_type=port_type,
                     cwl_element=element_output,
                     cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
                     schema_def_types=schema_def_types,
