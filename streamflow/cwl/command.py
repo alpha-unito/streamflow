@@ -146,7 +146,10 @@ def _check_command_token(command_token: CWLCommandToken, input_value: Any) -> bo
     # CWLMapCommandToken is suitable for input lists
     if isinstance(command_token, CWLMapCommandToken):
         if isinstance(input_value, MutableSequence):
-            return _check_command_token(command_token.value, input_value[0])
+            if len(input_value) > 0:
+                return _check_command_token(command_token.value, input_value[0])
+            else:
+                return True
         else:
             return False
     # At least one command token in a CWLUnionCommandToken must be suitable for the input value

@@ -1080,9 +1080,15 @@ class CWLUnionTokenProcessor(TokenProcessor):
             return False
 
     def _check_map_processor(self, processor: CWLMapTokenProcessor, token_value: Any):
-        return isinstance(token_value, MutableSequence) and self.check_processor[
-            type(processor.processor)
-        ](processor.processor, token_value[0])
+        if isinstance(token_value, MutableSequence):
+            if len(token_value) > 0:
+                return self.check_processor[type(processor.processor)](
+                    processor.processor, token_value[0]
+                )
+            else:
+                return True
+        else:
+            return False
 
     def _check_object_processor(
         self, processor: CWLObjectTokenProcessor, token_value: Any
@@ -1173,9 +1179,15 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
     def _check_map_processor(
         self, processor: CWLMapCommandOutputProcessor, token_value: Any
     ):
-        return isinstance(token_value, MutableSequence) and self.check_processor[
-            type(processor.processor)
-        ](processor.processor, token_value[0])
+        if isinstance(token_value, MutableSequence):
+            if len(token_value) > 0:
+                return self.check_processor[type(processor.processor)](
+                    processor.processor, token_value[0]
+                )
+            else:
+                return True
+        else:
+            return False
 
     def _check_object_processor(
         self, processor: CWLObjectCommandOutputProcessor, token_value: Any
