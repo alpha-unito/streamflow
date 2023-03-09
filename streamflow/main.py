@@ -140,7 +140,7 @@ async def _async_report(args: argparse.Namespace):
     if os.path.exists(args.file):
         streamflow_config = SfValidator().validate_file(args.file)
         context = build_context(
-            os.path.dirname(args.streamflow_file), streamflow_config
+            os.path.dirname(args.file), streamflow_config
         )
     else:
         context = build_context(os.getcwd(), {})
