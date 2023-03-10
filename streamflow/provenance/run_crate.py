@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import hashlib
 import json
 import os.path
 import posixpath
 import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
-from hashlib import sha1
 from typing import Any, MutableMapping, MutableSequence, cast
 from zipfile import ZipFile
 
@@ -35,7 +35,7 @@ from streamflow.workflow.utils import get_token_value
 
 
 def _checksum(data: str) -> str:
-    sha1_checksum = sha1()  # nosec
+    sha1_checksum = hashlib.new("sha1", usedforsecurity=False)
     sha1_checksum.update(data.encode("utf-8"))
     return sha1_checksum.hexdigest()
 
@@ -483,7 +483,9 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         # Add StreamFlow configuration file
         config_file = None
         if config:
-            config_checksum = _file_checksum(config, sha1())  # nosec
+            config_checksum = _file_checksum(
+                config, hashlib.new("sha1", usedforsecurity=False)
+            )
             config_file = {
                 "@id": config_checksum,
                 "@type": "File",
@@ -828,7 +830,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             "name": entity_id.split("#")[-1],
             "input": [],
             "output": [],
-            "sha1": _file_checksum(path, sha1()),  # nosec
+            "sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False)),
             "@type": ["SoftwareApplication", "File"],
         }
         # Add description
@@ -845,7 +847,9 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         entity_id = _get_cwl_entity_id(cwl_workflow.tool["id"])
         jsonld_workflow = _get_workflow_template(entity_id, entity_id.split("#")[-1])
         path = cwl_workflow.tool["id"].split("#")[0][7:]
-        jsonld_workflow.update({"sha1": _file_checksum(path, sha1())})  # nosec
+        jsonld_workflow.update(
+            {"sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False))}
+        )
         if (path := cwl_workflow.tool["id"].split("#")[0][7:]) not in self.files_map:
             self.graph["./"]["hasPart"].append({"@id": entity_id})
             self.files_map[path] = os.path.basename(path)
@@ -980,7 +984,9 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                     else:
                         jsonld_object["@id"] = os.path.basename(element_path)
                 else:
-                    checksum = _file_checksum(element_path, sha1())  # nosec
+                    checksum = _file_checksum(
+                        element_path, hashlib.new("sha1", usedforsecurity=False)
+                    )
                     jsonld_object = {
                         "@id": checksum,
                         "@type": "File",
@@ -1117,7 +1123,9 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         entity_id = _get_cwl_entity_id(self.cwl_definition.tool["id"]).split("#")[0]
         main_entity = _get_workflow_template(entity_id, entity_id)
         main_entity["@type"].append("File")
-        main_entity["sha1"] = _file_checksum(path, sha1())  # nosec
+        main_entity["sha1"] = _file_checksum(
+            path, hashlib.new("sha1", usedforsecurity=False)
+        )
         # Add programming language
         programming_language = _get_cwl_programming_language(self.loading_context)
         self.graph[programming_language["@id"]] = programming_language
