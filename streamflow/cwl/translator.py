@@ -1092,8 +1092,8 @@ def _process_docker_requirement(
         docker_config["volume"].append(f"{local_dir}:{docker_config['workdir']}")
     # Build step target
     deployment = DeploymentConfig(name=name, type="docker", config=docker_config)
-    step_target = Target(  # nosec
-        deployment=deployment, service=image_name, workdir="/tmp/streamflow"
+    step_target = Target(
+        deployment=deployment, service=image_name, workdir="/tmp/streamflow"  # nosec
     )
     return step_target
 

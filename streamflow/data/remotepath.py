@@ -4,10 +4,10 @@ import asyncio
 import cgi
 import errno
 import glob
+import hashlib
 import os
 import posixpath
 import shutil
-from hashlib import sha1
 from typing import MutableSequence, TYPE_CHECKING
 
 import aiohttp
@@ -35,7 +35,7 @@ def _check_status(
 
 def _file_checksum_local(path: str) -> str:
     with open(path, "rb") as f:
-        sha1_checksum = sha1()  # nosec
+        sha1_checksum = hashlib.new("sha1", usedforsecurity=False)
         while data := f.read(2**16):
             sha1_checksum.update(data)
         return sha1_checksum.hexdigest()
