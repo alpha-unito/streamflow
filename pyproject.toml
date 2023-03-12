@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "streamflow"
+authors = [
+    {name = "Iacopo Colonnelli", email = "iacopo.colonnelli@unito.it"}
+]
+description = "StreamFlow framework"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "LGPL-3.0-or-later"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: StreamFlow",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX",
+    "Operating System :: MacOS",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: System :: Distributed Computing"
+]
+dynamic = ["dependencies", "optional-dependencies", "version"]
+
+[project.scripts]
+cwl-runner = "streamflow.cwl.runner:run"
+streamflow = "streamflow.main:run"
+
+[project.urls]
+Homepage = "https://streamflow.di.unito.it"
+Package = "https://pypi.org/project/streamflow"
+Repository = "https://github.com/alpha-unito/streamflow"
+Docker = "https://hub.docker.com/r/alphaunito/streamflow"
+
+[tool.setuptools]
+packages = [
+    "streamflow",
+    "streamflow.config",
+    "streamflow.core",
+    "streamflow.cwl",
+    "streamflow.cwl.antlr",
+    "streamflow.data",
+    "streamflow.deployment",
+    "streamflow.deployment.connector",
+    "streamflow.deployment.filter",
+    "streamflow.ext",
+    "streamflow.persistence",
+    "streamflow.provenance",
+    "streamflow.recovery",
+    "streamflow.scheduling",
+    "streamflow.scheduling.policy",
+    "streamflow.workflow"
+]
+zip-safe = true
+
+[tool.setuptools.package-data]
+"streamflow.config" = ["schemas/v1.0/*.json"]
+"streamflow.data" = ["schemas/*.json"]
+"streamflow.deployment" = ["schemas/*.json"]
+"streamflow.deployment.connector" = ["schemas/*.json"]
+"streamflow.deployment.filter" = ["schemas/*.json"]
+"streamflow.persistence" = ["schemas/*.sql", "schemas/*.json"]
+"streamflow.recovery" = ["schemas/*.json"]
+"streamflow.scheduling" = ["schemas/*.json"]
+"streamflow.scheduling.policy" = ["schemas/*.json"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = "requirements.txt"}
+version = {attr = "streamflow.version.VERSION"}
+
+[tool.setuptools.dynamic.optional-dependencies]
+bandit = {file = "bandit-requirements.txt"}
+docs = {file = "docs/requirements.txt"}
+lint = {file = "lint-requirements.txt"}
+report = {file = "report-requirements.txt"}
+test = {file = "test-requirements.txt"}
+
+[tool.codespell]
+ignore-words-list = "Crate,crate"
+
+[tool.coverage.run]
+branch = true
+source_pkgs = ["streamflow"]
+omit = ["streamflow/cwl/antlr/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    # Exclude not implemented methods
+    "raise NotImplementedError",
+    # Exclude abstract methods
+    "@(abc\\.)?abstractmethod",
+    # Exclude Python script entrypoints
+    "if __name__ == .__main__.:",
+    # Exclude type checking lines
+    "if TYPE_CHECKING:",
+    # Exclude log messages
+    "if logger.isEnabledFor"
+]
+ignore_errors = true
+omit = [
+    "streamflow/__main__.py",
+    "tests/*"
+]

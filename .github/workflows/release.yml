@@ -23,9 +23,8 @@ jobs:
       - name: "Get StreamFlow version"
         run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
       - name: "Check if Docker image already exists"
-        run: echo "NEW_IMAGE=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect alphaunito/streamflow:${STREAMFLOW_VERSION}-base > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
-      - name: "Build base image"
-        id: docker-base
+        run: echo "NEW_IMAGE=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect alphaunito/streamflow:${STREAMFLOW_VERSION} > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
+      - name: "Build Docker image"
         if: ${{ env.NEW_IMAGE == 1 }}
         uses: docker/build-push-action@v4
         with:
@@ -33,7 +32,7 @@ jobs:
             HELM_VERSION=v3.7.2
           push: true
           tags: |
-            alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-base
+            alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}
             alphaunito/streamflow:latest
   github:
     name: "Create GitHub Release"
