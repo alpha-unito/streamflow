@@ -64,7 +64,7 @@ TEST_COMMAND="python -m pytest ${CONFORMANCE_TEST} -n auto -rs"
 if [[ -n "${EXCLUDE}" ]] ; then
   TEST_COMMAND="${TEST_COMMAND} --cwl-exclude ${EXCLUDE}"
 fi
-TEST_COMMAND="${TEST_COMMAND} --cov --cov-config ${SCRIPT_DIRECTORY}/.coveragerc --cov-report= ${PYTEST_EXTRA}"
+TEST_COMMAND="${TEST_COMMAND} --cov --cov-report= ${PYTEST_EXTRA}"
 
 # Cleanup coverage
 rm -rf "${SCRIPT_DIRECTORY}/.coverage" "${SCRIPT_DIRECTORY}/coverage.xml"
