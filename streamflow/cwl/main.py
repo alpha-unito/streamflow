@@ -18,7 +18,12 @@ from streamflow.workflow.executor import StreamFlowExecutor
 
 
 def _parse_arg(path: str, context: StreamFlowContext):
-    return os.path.join(context.config_dir, path) if not os.path.isabs(path) else path
+    if "://" in path:
+        return path
+    elif os.path.isabs(path):
+        return os.path.join(os.path.dirname(context.config["path"]), path)
+    else:
+        return path
 
 
 def _parse_args(workflow_config: WorkflowConfig, context: StreamFlowContext):

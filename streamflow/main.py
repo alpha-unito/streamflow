@@ -30,11 +30,7 @@ from streamflow.scheduling import scheduler_classes
 
 
 async def _async_list(args: argparse.Namespace):
-    if os.path.exists(args.file):
-        streamflow_config = SfValidator().validate_file(args.file)
-        context = build_context(os.path.dirname(args.file), streamflow_config)
-    else:
-        context = build_context(os.getcwd(), {})
+    context = _get_context_from_config(args.file)
     try:
         if workflows := await context.database.list_workflows(args.name):
             max_sizes = {
@@ -84,11 +80,7 @@ async def _async_list(args: argparse.Namespace):
 
 
 async def _async_prov(args: argparse.Namespace):
-    if os.path.exists(args.file):
-        streamflow_config = SfValidator().validate_file(args.file)
-        context = build_context(os.path.dirname(args.file), streamflow_config)
-    else:
-        context = build_context(os.getcwd(), {})
+    context = _get_context_from_config(args.file)
     try:
         db_context = DefaultDatabaseLoadingContext()
         workflows = await context.database.get_workflows_by_name(
@@ -137,13 +129,7 @@ async def _async_prov(args: argparse.Namespace):
 
 
 async def _async_report(args: argparse.Namespace):
-    if os.path.exists(args.file):
-        streamflow_config = SfValidator().validate_file(args.file)
-        context = build_context(
-            os.path.dirname(args.streamflow_file), streamflow_config
-        )
-    else:
-        context = build_context(os.getcwd(), {})
+    context = _get_context_from_config(args.streamflow_file, args.outdir)
     try:
         await report.create_report(context, args)
     finally:
@@ -154,7 +140,8 @@ async def _async_run(args: argparse.Namespace):
     args.name = args.name or str(uuid.uuid4())
     load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
-    context = build_context(os.path.dirname(args.streamflow_file), streamflow_config)
+    streamflow_config["path"] = args.streamflow_file
+    context = build_context(streamflow_config)
     try:
         workflow_tasks = []
         for workflow in streamflow_config.get("workflows", {}):
@@ -166,6 +153,15 @@ async def _async_run(args: argparse.Namespace):
             await asyncio.gather(*workflow_tasks)
     finally:
         await context.close()
+
+
+def _get_context_from_config(streamflow_file: str | None) -> StreamFlowContext:
+    if os.path.exists(streamflow_file):
+        streamflow_config = SfValidator().validate_file(streamflow_file)
+        streamflow_config["path"] = streamflow_file
+        return build_context(streamflow_config)
+    else:
+        return build_context({"path": os.getcwd()})
 
 
 def _get_instance_from_config(
@@ -186,19 +182,17 @@ def _get_instance_from_config(
     return class_(**kwargs)
 
 
-def build_context(
-    config_dir: str, streamflow_config: MutableMapping[str, Any]
-) -> StreamFlowContext:
-    context = StreamFlowContext(config_dir)
+def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
+    context = StreamFlowContext(config)
     context.checkpoint_manager = _get_instance_from_config(
-        streamflow_config,
+        config,
         checkpoint_manager_classes,
         "checkpointManager",
         {"context": context},
         enabled_by_default=False,
     )
     context.database = _get_instance_from_config(
-        streamflow_config,
+        config,
         database_classes,
         "database",
         {
@@ -207,23 +201,20 @@ def build_context(
         },
     )
     context.data_manager = _get_instance_from_config(
-        streamflow_config, data_manager_classes, "dataManager", {"context": context}
+        config, data_manager_classes, "dataManager", {"context": context}
     )
     context.deployment_manager = _get_instance_from_config(
-        streamflow_config,
-        deployment_manager_classes,
-        "deploymentManager",
-        {"context": context},
+        config, deployment_manager_classes, "deploymentManager", {"context": context}
     )
     context.failure_manager = _get_instance_from_config(
-        streamflow_config,
+        config,
         failure_manager_classes,
         "failureManager",
         {"context": context},
         enabled_by_default=False,
     )
     context.scheduler = _get_instance_from_config(
-        streamflow_config.get("scheduling", {}),
+        config.get("scheduling", {}),
         scheduler_classes,
         "scheduler",
         {"context": context},

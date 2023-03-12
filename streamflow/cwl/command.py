@@ -11,15 +11,7 @@ import time
 from abc import ABC
 from asyncio.subprocess import STDOUT
 from types import ModuleType
-from typing import (
-    Any,
-    IO,
-    Iterable,
-    MutableMapping,
-    MutableSequence,
-    cast,
-    Type,
-)
+from typing import Any, IO, Iterable, MutableMapping, MutableSequence, Type, cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation
@@ -31,9 +23,9 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import (
     flatten_list,
-    get_tag,
-    get_class_fullname,
     get_class_from_name,
+    get_class_fullname,
+    get_tag,
 )
 from streamflow.core.workflow import (
     Command,
@@ -658,13 +650,18 @@ class CWLCommand(CWLBaseCommand):
             step=step,
             absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
             base_command=row["base_command"],
-            command_tokens=await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        CWLCommandToken.load(context, command_token, loading_context)
+            command_tokens=cast(
+                MutableSequence[CWLCommandToken],
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            CWLCommandToken.load(
+                                context, command_token, loading_context
+                            )
+                        )
+                        for command_token in row["command_tokens"]
                     )
-                    for command_token in row["command_tokens"]
-                )
+                ),
             ),
             expression_lib=row["expression_lib"],
             failure_codes=row["failure_codes"],

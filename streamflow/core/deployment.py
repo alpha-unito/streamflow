@@ -155,7 +155,7 @@ class DeploymentManager(SchemaEntity):
 
 
 class DeploymentConfig(Config):
-    __slots__ = ("name", "type", "config", "external", "lazy", "workdir")
+    __slots__ = ("name", "type", "config", "external", "lazy", "workdir", "wraps")
 
     def __init__(
         self,
@@ -165,11 +165,13 @@ class DeploymentConfig(Config):
         external: bool = False,
         lazy: bool = True,
         workdir: str | None = None,
+        wraps: str | None = None,
     ) -> None:
         super().__init__(name, type, config)
-        self.external = external
+        self.external: bool = external
         self.lazy: bool = lazy
         self.workdir: str | None = workdir
+        self.wraps: str | None = wraps
 
     @classmethod
     async def load(

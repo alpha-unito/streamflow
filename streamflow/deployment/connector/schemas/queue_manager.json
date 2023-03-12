@@ -5,7 +5,7 @@
   "properties": {
     "checkHostKey": {
       "type": "boolean",
-      "description": "Perform a strict validation of the host SSH keys (and return exception if key is not recognized as valid)",
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Perform a strict validation of the host SSH keys (and return exception if key is not recognized as valid)",
       "default": true
     },
     "dataTransferConnection": {
@@ -18,7 +18,7 @@
           "$ref": "ssh.json#/definitions/connection"
         }
       ],
-      "description": "Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"
     },
     "file": {
       "type": "string",
@@ -26,7 +26,7 @@
     },
     "hostname": {
       "type": "string",
-      "description": "Hostname of the HPC facility"
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Hostname of the HPC facility"
     },
     "maxConcurrentJobs": {
       "type": "integer",
@@ -35,7 +35,7 @@
     },
     "maxConcurrentSessions": {
       "type": "integer",
-      "description": "Maximum number of concurrent session to open for a single SSH client connection",
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Maximum number of concurrent session to open for a single SSH client connection",
       "default": 10
     },
     "maxConnections": {
@@ -45,7 +45,7 @@
     },
     "passwordFile": {
       "type": "string",
-      "description": "Path to a file containing the password to use for authentication"
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Path to a file containing the password to use for authentication"
     },
     "pollingInterval": {
       "type": "integer",
@@ -63,11 +63,11 @@
     },
     "sshKey": {
       "type": "string",
-      "description": "Path to the SSH key needed to connect with Slurm environment"
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Path to the SSH key needed to connect with Slurm environment"
     },
     "sshKeyPassphraseFile": {
       "type": "string",
-      "description": "Path to a file containing the passphrase protecting the SSH key"
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Path to a file containing the passphrase protecting the SSH key"
     },
     "transferBufferSize": {
       "type": "integer",
@@ -76,17 +76,13 @@
     },
     "tunnel": {
       "type": "object",
-      "description": "External SSH connection parameters for tunneling",
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) External SSH connection parameters for tunneling",
       "$ref": "ssh.json#/definitions/connection"
     },
     "username": {
       "type": "string",
-      "description": "Username needed to connect with the SSH environment"
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Username needed to connect with the SSH environment"
     }
   },
-  "required": [
-    "hostname",
-    "username"
-  ],
   "additionalProperties": false
 }

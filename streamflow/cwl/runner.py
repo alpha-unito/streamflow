@@ -56,13 +56,11 @@ parser.add_argument(
 
 async def _async_main(args: argparse.Namespace):
     validator = SfValidator()
-    config_dir = os.getcwd()
     args.name = args.name or str(uuid.uuid4())
     if args.streamflow_file:
         load_extensions()
         with open(args.streamflow_file) as f:
             streamflow_config = validator.yaml.load(f)
-        config_dir = os.path.dirname(args.streamflow_file)
         workflows = streamflow_config.get("workflows", {})
         if len(workflows) == 1:
             workflow_name = list(workflows.keys())[0]
@@ -85,8 +83,11 @@ async def _async_main(args: argparse.Namespace):
             "settings"
         ] = os.path.abspath(args.jobfile)
     validator.validate(streamflow_config)
+    streamflow_config["path"] = (
+        args.streamflow_file if args.streamflow_file is not None else os.getcwd()
+    )
     workflow_config = WorkflowConfig(workflow_name, streamflow_config)
-    context = build_context(config_dir, streamflow_config)
+    context = build_context(streamflow_config)
     try:
         await streamflow.cwl.main.main(
             workflow_config=workflow_config, context=context, args=args

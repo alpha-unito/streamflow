@@ -20,12 +20,12 @@ from streamflow.core.deployment import (
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment import aiotarstream
+from streamflow.deployment.future import FutureConnector
 from streamflow.deployment.stream import (
     StreamReaderWrapper,
     StreamWriterWrapper,
     SubprocessStreamReaderWrapperContext,
 )
-from streamflow.deployment.future import FutureConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:

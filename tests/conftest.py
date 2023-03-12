@@ -18,12 +18,12 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 
 async def get_location(
-    context: StreamFlowContext, request: pytest.FixtureRequest
+    _context: StreamFlowContext, request: pytest.FixtureRequest
 ) -> Location:
     if request.param == "local":
         return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
     elif request.param == "docker":
-        connector = context.deployment_manager.get_connector("alpine")
+        connector = _context.deployment_manager.get_connector("alpine")
         locations = await connector.get_available_locations()
         return Location(deployment="alpine", name=next(iter(locations.keys())))
     else:
@@ -42,11 +42,10 @@ def get_docker_deployment_config():
 
 @pytest_asyncio.fixture(scope="session")
 async def context() -> StreamFlowContext:
-    context = build_context(
-        os.path.realpath(tempfile.gettempdir()),
+    _context = build_context(
         {"database": {"type": "default", "config": {"connection": ":memory:"}}},
     )
-    await context.deployment_manager.deploy(
+    await _context.deployment_manager.deploy(
         DeploymentConfig(
             name=LOCAL_LOCATION,
             type="local",
@@ -56,11 +55,11 @@ async def context() -> StreamFlowContext:
             workdir=os.path.realpath(tempfile.gettempdir()),
         )
     )
-    await context.deployment_manager.deploy(get_docker_deployment_config())
-    yield context
-    await context.deployment_manager.undeploy_all()
-    # close the database connection
-    await context.database.close()
+    await _context.deployment_manager.deploy(get_docker_deployment_config())
+    yield _context
+    await _context.deployment_manager.undeploy_all()
+    # Close the database connection
+    await _context.database.close()
 
 
 @pytest.fixture(scope="session")
