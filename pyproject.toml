@@ -13,7 +13,6 @@ requires-python = ">=3.8"
 license = {text = "LGPL-3.0-or-later"}
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Framework :: StreamFlow",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
