@@ -50,6 +50,10 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            test-requirements.txt
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
@@ -88,6 +92,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements.txt
+            test-requirements.txt
             tox.ini
       - name: "Install Python Dependencies and Streamflow"
         run: |
