@@ -28,5 +28,6 @@ deployments:
     type: helm
     config:
       chart: environment/helm/openmpi
-      kubeconfig: /home/glassofwhiskey/.kube/config-streamflow
+      kubeconfig: ~/.kube/config-streamflow
       releaseName: openmpi-rel
+    workdir: /tmp

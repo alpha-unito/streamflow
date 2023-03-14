@@ -78,7 +78,7 @@ class DefaultScheduler(Scheduler):
             else:
                 logger.debug(
                     f"Job {job.name} allocated on locations "
-                    ", ".join([str(loc) for loc in selected_locations])
+                    f"{', '.join([str(loc) for loc in selected_locations])}"
                 )
         self.job_allocations[job.name] = JobAllocation(
             job=job.name,

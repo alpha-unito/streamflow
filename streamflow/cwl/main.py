@@ -20,7 +20,7 @@ from streamflow.workflow.executor import StreamFlowExecutor
 def _parse_arg(path: str, context: StreamFlowContext):
     if "://" in path:
         return path
-    elif os.path.isabs(path):
+    elif not os.path.isabs(path):
         return os.path.join(os.path.dirname(context.config["path"]), path)
     else:
         return path

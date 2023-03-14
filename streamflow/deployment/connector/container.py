@@ -760,8 +760,16 @@ class DockerComposeConnector(DockerBaseConnector):
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING command {deploy_command}")
-            proc = await asyncio.create_subprocess_exec(*shlex.split(deploy_command))
-            await proc.wait()
+            proc = await asyncio.create_subprocess_exec(
+                *shlex.split(deploy_command),
+                stderr=asyncio.subprocess.STDOUT,
+                stdout=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode != 0:
+                raise WorkflowExecutionException(
+                    f"FAILED Deployment of {self.deployment_name} environment:\n\t{stdout.decode().strip()}"
+                )
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
@@ -771,24 +779,30 @@ class DockerComposeConnector(DockerBaseConnector):
         output_directory: str | None = None,
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
-        ps_command = self.base_command() + "".join(["ps ", service or ""])
+        ps_command = self.base_command() + "".join(
+            ["ps ", "--format ", "json ", service or ""]
+        )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"EXECUTING command {ps_command}")
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(ps_command),
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
         stdout, _ = await proc.communicate()
-        lines = (line for line in stdout.decode().strip().split("\n"))
-        locations = {}
-        for line in lines:
-            if line.startswith("---------"):
-                break
-        for line in lines:
-            location_name = line.split()[0].strip()
-            locations[location_name] = await self._get_location(location_name)
-        return locations
+        locations = json.loads(stdout.decode().strip())
+        return {
+            loc["Name"]: v
+            for loc, v in zip(
+                locations,
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(self._get_location(location["Name"]))
+                        for location in locations
+                    )
+                ),
+            )
+        }
 
     @classmethod
     def get_schema(cls) -> str:
@@ -804,8 +818,16 @@ class DockerComposeConnector(DockerBaseConnector):
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING command {undeploy_command}")
-            proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
-            await proc.wait()
+            proc = await asyncio.create_subprocess_exec(
+                *shlex.split(undeploy_command),
+                stderr=asyncio.subprocess.STDOUT,
+                stdout=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode != 0:
+                raise WorkflowExecutionException(
+                    f"FAILED Undeployment of {self.deployment_name} environment:\n\t{stdout.decode().strip()}"
+                )
 
 
 class SingularityBaseConnector(ContainerConnector, ABC):
@@ -1073,7 +1095,7 @@ class SingularityConnector(SingularityBaseConnector):
                 proc = await asyncio.create_subprocess_exec(
                     *shlex.split(undeploy_command),
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
                 )
-                await proc.wait()
+                stdout, _ = await proc.communicate()
             self.instanceNames = []
