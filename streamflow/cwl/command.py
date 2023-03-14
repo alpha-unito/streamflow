@@ -778,14 +778,9 @@ class CWLCommand(CWLBaseCommand):
             ]
         # If step is assigned to multiple locations, add the STREAMFLOW_HOSTS environment variable
         if len(locations) > 1:
-            service = self.step.workflow.context.scheduler.get_service(job.name)
-            available_locations = await connector.get_available_locations(
-                service=service
+            parsed_env["STREAMFLOW_HOSTS"] = ",".join(
+                [loc.hostname for loc in locations]
             )
-            hosts = {
-                k: v.hostname for k, v in available_locations.items() if k in locations
-            }
-            parsed_env["STREAMFLOW_HOSTS"] = ",".join(hosts.values())
         # Process streams
         stdin = utils.eval_expression(
             expression=self.stdin,

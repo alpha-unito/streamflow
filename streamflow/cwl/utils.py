@@ -189,7 +189,7 @@ async def _register_path(
                 ):
                     data_location = data_locations[0]
                 else:
-                    raise WorkflowExecutionException(f"Error registering path {path}")
+                    return None
             link_location = context.data_manager.register_path(
                 location=location,
                 path=path,

@@ -64,14 +64,36 @@ async def _get_helm_version():
 
 
 class KubernetesResponseWrapper(BaseStreamWrapper):
+    def __init__(self, stream):
+        super().__init__(stream)
+        self.msg: bytes = b""
+
     async def read(self, size: int | None = None):
-        while not self.stream.closed:
+        if len(self.msg) > 0:
+            if len(self.msg) > size:
+                data = self.msg[0:size]
+                self.msg = self.msg[size:]
+                return data
+            else:
+                data = self.msg
+                size -= len(self.msg)
+                self.msg = b""
+        else:
+            data = b""
+        while size > 0 and not self.stream.closed:
             async for msg in self.stream:
                 channel = msg.data[0]
-                data = msg.data[1:]
-                if data and channel == ws_client.STDOUT_CHANNEL:
-                    return data
-        return None
+                self.msg = msg.data[1:]
+                if self.msg and channel == ws_client.STDOUT_CHANNEL:
+                    if len(self.msg) > size:
+                        data += self.msg[0:size]
+                        self.msg = self.msg[size:]
+                        return data
+                    else:
+                        data += self.msg
+                        size -= len(self.msg)
+                        self.msg = b""
+        return data if len(data) > 0 else None
 
     async def write(self, data: Any):
         channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
@@ -116,7 +138,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         )
         self.inCluster = inCluster
         self.kubeconfig = (
-            kubeconfig
+            str(Path(kubeconfig).expanduser())
             if kubeconfig is not None
             else os.path.join(str(Path.home()), ".kube", "config")
         )
@@ -207,33 +229,18 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     async def _copy_remote_to_local(
         self, src: str, dst: str, location: Location, read_only: bool = False
     ):
-        pod, container = location.name.split(":")
-        command = ["tar", "chf", "-", "-C", "/", posixpath.relpath(src, "/")]
-        # noinspection PyUnresolvedReferences
-        response = await self.client_ws.connect_get_namespaced_pod_exec(
-            name=pod,
-            namespace=self.namespace or "default",
-            container=container,
-            command=command,
-            stderr=True,
-            stdin=False,
-            stdout=True,
-            tty=False,
-            _preload_content=False,
-        )
-        try:
-            async with aiotarstream.open(
-                stream=KubernetesResponseWrapper(response),
-                mode="r",
-                copybufsize=self.transferBufferSize,
-            ) as tar:
-                await extract_tar_stream(tar, src, dst, self.transferBufferSize)
-        except tarfile.TarError as e:
-            raise WorkflowExecutionException(
-                f"Error copying {src} from location {location} to {dst}: {e}"
-            ) from e
-        finally:
-            await response.close()
+        async with self._get_stream_reader(location, src) as reader:
+            try:
+                async with aiotarstream.open(
+                    stream=reader,
+                    mode="r",
+                    copybufsize=self.transferBufferSize,
+                ) as tar:
+                    await extract_tar_stream(tar, src, dst, self.transferBufferSize)
+            except tarfile.TarError as e:
+                raise WorkflowExecutionException(
+                    f"Error copying {src} from location {location} to {dst}: {e}"
+                ) from e
 
     async def _copy_remote_to_remote(
         self,
@@ -277,9 +284,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                                         namespace=self.namespace or "default",
                                         container=location.name.split(":")[1],
                                         command=write_command,
-                                        stderr=True,
-                                        stdin=False,
-                                        stdout=True,
+                                        stderr=False,
+                                        stdin=True,
+                                        stdout=False,
                                         tty=False,
                                         _preload_content=False,
                                     ),
@@ -383,9 +390,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                     namespace=self.namespace or "default",
                     container=container,
                     command=["tar", "chf", "-", "-C", dirname, basename],
-                    stderr=False,
-                    stdin=True,
-                    stdout=False,
+                    stderr=True,
+                    stdin=False,
+                    stdout=True,
                     tty=False,
                     _preload_content=False,
                 ),
@@ -565,7 +572,7 @@ class Helm3Connector(BaseKubernetesConnector):
         self.stringValues: MutableSequence[str] | None = stringValues
         self.skipCrds: bool = skipCrds
         self.registryConfig = (
-            registryConfig
+            str(Path(registryConfig).expanduser())
             if registryConfig is not None
             else os.path.join(str(Path.home()), ".config/helm/registry.json")
         )
@@ -573,12 +580,12 @@ class Helm3Connector(BaseKubernetesConnector):
             releaseName if releaseName is not None else f"release-{uuid.uuid1()}"
         )
         self.repositoryCache = (
-            repositoryCache
+            str(Path(repositoryCache).expanduser())
             if repositoryCache is not None
             else os.path.join(str(Path.home()), ".cache/helm/repository")
         )
         self.repositoryConfig = (
-            repositoryConfig
+            str(Path(repositoryConfig).expanduser())
             if repositoryConfig is not None
             else os.path.join(str(Path.home()), ".config/helm/repositories.yaml")
         )
@@ -589,7 +596,7 @@ class Helm3Connector(BaseKubernetesConnector):
         self.chartVersion: str | None = chartVersion
         self.wait: bool = wait
 
-    def base_command(self) -> str:
+    def _get_base_command(self) -> str:
         return "".join(
             [
                 "helm ",
@@ -616,7 +623,7 @@ class Helm3Connector(BaseKubernetesConnector):
                     f"Helm {version} is not compatible with Helm3Connector"
                 )
             # Deploy Helm charts
-            deploy_command = self.base_command() + "".join(
+            deploy_command = self._get_base_command() + "".join(
                 [
                     "install ",
                     self.get_option("atomic", self.atomic),
@@ -649,10 +656,14 @@ class Helm3Connector(BaseKubernetesConnector):
                 logger.debug(f"EXECUTING {deploy_command}")
             proc = await asyncio.create_subprocess_exec(
                 *shlex.split(deploy_command),
-                stderr=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.STDOUT,
+                stdout=asyncio.subprocess.PIPE,
             )
-            await proc.wait()
+            stdout, _ = await proc.communicate()
+            if proc.returncode != 0:
+                raise WorkflowExecutionException(
+                    f"FAILED Deployment of {self.deployment_name} environment:\n\t{stdout.decode().strip()}"
+                )
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
@@ -698,7 +709,7 @@ class Helm3Connector(BaseKubernetesConnector):
     async def undeploy(self, external: bool) -> None:
         if not external:
             # Undeploy
-            undeploy_command = self.base_command() + "".join(
+            undeploy_command = self._get_base_command() + "".join(
                 [
                     "uninstall ",
                     self.get_option("keep-history", self.keepHistory),
@@ -709,7 +720,15 @@ class Helm3Connector(BaseKubernetesConnector):
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING {undeploy_command}")
-            proc = await asyncio.create_subprocess_exec(*shlex.split(undeploy_command))
-            await proc.wait()
+            proc = await asyncio.create_subprocess_exec(
+                *shlex.split(undeploy_command),
+                stderr=asyncio.subprocess.STDOUT,
+                stdout=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode != 0:
+                raise WorkflowExecutionException(
+                    f"FAILED Undeployment of {self.deployment_name} environment:\n\t{stdout.decode().strip()}"
+                )
         # Close connections
         await super().undeploy(external)

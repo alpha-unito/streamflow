@@ -129,13 +129,13 @@ class JobAllocation:
         self,
         job: str,
         target: Target,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[AvailableLocation],
         status: Status,
         hardware: Hardware,
     ):
         self.job: str = job
         self.target: Target = target
-        self.locations: MutableSequence[Location] = locations
+        self.locations: MutableSequence[AvailableLocation] = locations
         self.status: Status = status
         self.hardware: Hardware = hardware
 
@@ -232,7 +232,7 @@ class Scheduler(SchemaEntity):
 
     def get_locations(
         self, job_name: str, statuses: MutableSequence[Status] | None = None
-    ) -> MutableSequence[Location]:
+    ) -> MutableSequence[AvailableLocation]:
         allocation = self.get_allocation(job_name)
         return (
             allocation.locations
