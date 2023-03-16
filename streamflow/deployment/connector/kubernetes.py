@@ -622,6 +622,8 @@ class Helm3Connector(BaseKubernetesConnector):
                 raise WorkflowExecutionException(
                     f"Helm {version} is not compatible with Helm3Connector"
                 )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Using Helm {version}.")
             # Deploy Helm charts
             deploy_command = self._get_base_command() + "".join(
                 [

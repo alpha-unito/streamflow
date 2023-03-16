@@ -7,6 +7,7 @@ import os
 import posixpath
 import shlex
 from abc import ABC, abstractmethod
+from shutil import which
 from typing import Any, MutableMapping, MutableSequence
 
 import pkg_resources
@@ -21,10 +22,23 @@ from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
+def _check_docker_compose_installed():
+    if which("docker-compose") is None:
+        raise WorkflowExecutionException(
+            "Docker Compose must be installed on the system to use the Docker Compose connector."
+        )
+
+
+def _check_docker_installed(connector):
+    if which("docker") is None:
+        raise WorkflowExecutionException(
+            f"Docker must be installed on the system to use the {connector} connector."
+        )
+
+
 async def _exists_docker_image(image_name: str) -> bool:
-    exists_command = "".join(["docker ", "image ", "inspect ", image_name])
     proc = await asyncio.create_subprocess_exec(
-        *shlex.split(exists_command),
+        *shlex.split(f"docker image inspect {image_name}"),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -32,10 +46,29 @@ async def _exists_docker_image(image_name: str) -> bool:
     return proc.returncode == 0
 
 
-async def _pull_docker_image(image_name: str) -> None:
-    exists_command = "".join(["docker ", "pull ", "--quiet ", image_name])
+async def _get_docker_compose_version() -> str:
     proc = await asyncio.create_subprocess_exec(
-        *shlex.split(exists_command),
+        *shlex.split("docker-compose version --short"),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
+
+
+async def _get_docker_version() -> str:
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split("docker version --format '{{.Client.Version}}'"),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
+
+
+async def _pull_docker_image(image_name: str) -> None:
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split(f"docker pull --quiet {image_name}"),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -496,6 +529,9 @@ class DockerConnector(DockerBaseConnector):
 
     async def deploy(self, external: bool) -> None:
         if not external:
+            _check_docker_installed("Docker")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Using Docker {await _get_docker_version()}.")
             # Pull image if it doesn't exist
             if not await _exists_docker_image(self.image):
                 await _pull_docker_image(self.image)
@@ -723,7 +759,7 @@ class DockerComposeConnector(DockerBaseConnector):
         self.tlskey = tlskey
         self.tlsverify = tlsverify
 
-    def base_command(self) -> str:
+    def _get_base_command(self) -> str:
         return "".join(
             [
                 "docker-compose ",
@@ -746,7 +782,20 @@ class DockerComposeConnector(DockerBaseConnector):
 
     async def deploy(self, external: bool) -> None:
         if not external:
-            deploy_command = self.base_command() + "".join(
+            _check_docker_installed("Docker Compose")
+            version = await _get_docker_compose_version()
+            major = int(version.split(".")[0])
+            if not major >= 2:
+                raise WorkflowExecutionException(
+                    f"Docker Compose {version} is not compatible with DockerComposeConnector. "
+                    f"Docker Compose version 2.x or later is required."
+                )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Using Docker {await _get_docker_version()} "
+                    f"and Docker Compose {version}."
+                )
+            deploy_command = self._get_base_command() + "".join(
                 [
                     "up ",
                     "--detach ",
@@ -779,7 +828,7 @@ class DockerComposeConnector(DockerBaseConnector):
         output_directory: str | None = None,
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
-        ps_command = self.base_command() + "".join(
+        ps_command = self._get_base_command() + "".join(
             ["ps ", "--format ", "json ", service or ""]
         )
         if logger.isEnabledFor(logging.DEBUG):
@@ -813,7 +862,7 @@ class DockerComposeConnector(DockerBaseConnector):
     async def undeploy(self, external: bool) -> None:
         if not external:
             undeploy_command = (
-                self.base_command()
+                self._get_base_command()
                 + f"down {self.get_option('volumes', self.removeVolumes)}"
             )
             if logger.isEnabledFor(logging.DEBUG):
