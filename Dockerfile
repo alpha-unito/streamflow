@@ -1,17 +1,17 @@
-FROM python:3.8-alpine3.13 AS builder
+FROM python:3.11-alpine3.16 AS builder
 ARG HELM_VERSION
 
-ENV PYTHONPATH="${PYTHONPATH}:/build"
-ENV PATH="/root/.local/bin:${PATH}"
+ENV VIRTUAL_ENV="/opt/streamflow"
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 COPY ./pyproject.toml ./MANIFEST.in ./LICENSE ./README.md /build/
 COPY ./requirements.txt           \
-     ./docs/requirements.txt      \
      ./bandit-requirements.txt    \
      ./lint-requirements.txt      \
      ./report-requirements.txt    \
      ./test-requirements.txt      \
      /build/
+COPY ./docs/requirements.txt /build/docs
 COPY ./streamflow /build/streamflow
 
 RUN apk --no-cache add \
@@ -26,19 +26,20 @@ RUN apk --no-cache add \
         musl-dev \
         openssl \
         openssl-dev \
-    && curl -L https://git.io/get_helm.sh -o /tmp/get_helm.sh \
+    && curl -fsSL https://git.io/get_helm.sh -o /tmp/get_helm.sh \
     && chmod +x /tmp/get_helm.sh \
     && /tmp/get_helm.sh --version ${HELM_VERSION} \
     && cd /build \
-    && pip install --user .
+    && python -m venv ${VIRTUAL_ENV} \
+    && pip install .
 
-FROM python:3.8-alpine3.13
+FROM python:3.11-alpine3.16
 LABEL maintainer="iacopo.colonnelli@unito.it"
 
-ENV PATH="/root/.local/bin:${PATH}"
-ENV PYTHONPATH="/root/.local:${PYTHONPATH}"
+ENV VIRTUAL_ENV="/opt/streamflow"
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
-COPY --from=builder "/root/.local/" "/root/.local/"
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 COPY --from=builder /usr/local/bin/helm /usr/local/bin/helm
 
 RUN apk --no-cache add \
