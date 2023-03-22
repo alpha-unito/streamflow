@@ -1,47 +1,225 @@
 from __future__ import annotations
 
+import posixpath
+import re
 import asyncio
 import logging
-from collections.abc import MutableMapping
-from importlib.resources import files
-from typing import cast
+import os
+import itertools
+from asyncio import Lock
+from typing import MutableMapping, MutableSequence, cast
 
-from streamflow.core.command import CommandOutput
+import pkg_resources
+
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import ExecutionLocation
+from streamflow.core.data import DataLocation, DataType
+from streamflow.core.utils import random_name, get_class_fullname
+from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
     UnrecoverableTokenException,
 )
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
-from streamflow.core.workflow import Job, Status, Step, Token, TokenProcessor
-from streamflow.data.remotepath import StreamFlowPath
+from streamflow.core.workflow import (
+    CommandOutput,
+    Job,
+    Status,
+    Step,
+    Port,
+    Token,
+    TokenProcessor,
+)
+from streamflow.cwl.processor import CWLCommandOutput
+from streamflow.cwl.step import CWLTransferStep
+from streamflow.cwl.token import CWLFileToken
+from streamflow.cwl.transformer import CWLTokenTransformer
+from streamflow.data import remotepath
+from streamflow.data.data_manager import RemotePathMapper
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
 from streamflow.workflow.step import ExecuteStep
+from streamflow.workflow.executor import StreamFlowExecutor
+from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.workflow.step import (
+    ExecuteStep,
+    DeployStep,
+    ScheduleStep,
+    CombinatorStep,
+)
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.workflow.token import TerminationToken, JobToken, ListToken, ObjectToken
+
+# from streamflow.workflow.utils import get_token_value, get_files_from_token
+
+# from streamflow.main import build_context
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.workflow import Workflow
+
+# import networkx as nx
+# import matplotlib.pyplot as plt
+# from dyngraphplot import DynGraphPlot
 
 
 async def _cleanup_dir(
-    context: StreamFlowContext, location: ExecutionLocation, directory: str
+    connector: Connector, location: Location, directory: str
 ) -> None:
-    path = StreamFlowPath(directory, context=context, location=location)
-    async for dirpath, dirnames, filenames in path.walk():
-        await asyncio.gather(
+    await remotepath.rm(
+        connector, location, await remotepath.listdir(connector, location, directory)
+    )
+
+
+async def _load_prev_tokens(token_id, loading_context, context):
+    rows = await context.database.get_dependee(token_id)
+
+    return await asyncio.gather(
+        *(
+            asyncio.create_task(loading_context.load_token(context, row["dependee"]))
+            for row in rows
+        )
+    )
+
+
+async def _load_steps_from_token(token, context, loading_context):
+    # TODO: quando interrogo sulla tabella dependency (tra step e port) meglio recuperare anche il nome della dipendenza
+    # così posso associare subito token -> step e a quale porta appartiene
+    # edit. Impossibile. Recuperiamo lo step dalla porta di output. A noi serve la port di input
+    row_token = await context.database.get_token(token.persistent_id)
+    steps = []
+    if row_token:
+        row_steps = await context.database.get_step_from_output_port(row_token["port"])
+        for r in row_steps:
+            steps.append(await loading_context.load_step(context, r["step"]))
+    return steps
+
+
+async def _load_ports_from_token(token, context, loading_context):
+    ports_id = await context.database.get_token_ports(token.persistent_id)
+    # TODO: un token ha sempre una port? Da verificare
+    if ports_id:
+        return await asyncio.gather(
             *(
-                asyncio.create_task((dirpath / filename).rmtree())
-                for filename in filenames
+                asyncio.create_task(loading_context.load_port(context, port_id))
+                for port_id in ports_id
             )
         )
-        await asyncio.gather(
-            *(asyncio.create_task((dirpath / dirname).rmtree()) for dirname in dirnames)
+    return None
+
+
+async def data_location_exists(data_locations, context, token):
+    for data_loc in data_locations:
+        connector = context.deployment_manager.get_connector(data_loc.deployment)
+        # location_allocation = job_version.step.workflow.context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
+        # available_locations = job_version.step.workflow.context.scheduler.get_locations(location_allocation.jobs[0])
+        if exists := await remotepath.exists(connector, data_loc, token.value["path"]):
+            return True
+        print(
+            f"t {token.persistent_id} ({get_class_fullname(type(token))}) in loc {data_loc} -> exists {exists} "
         )
-        break
+    return False
 
 
-async def _replace_token(
-    job: Job, token_processor: TokenProcessor, token: Token, recovered_token: Token
-):
+def add_step(step, steps):
+    found = False
+    for s in steps:
+        found = found or s.name == step.name
+    if not found:
+        steps.append(step)
+
+
+async def print_graph(job_version, loading_context):
+    """
+    FUNCTION FOR DEBUGGING
+    """
+    rows = await job_version.step.workflow.context.database.get_all_provenance()
+    tokens = {}
+    graph = {}
+    for row in rows:
+        dependee = (
+            await loading_context.load_token(
+                job_version.step.workflow.context, row["dependee"]
+            )
+            if row["dependee"]
+            else -1
+        )
+        depender = (
+            await loading_context.load_token(
+                job_version.step.workflow.context, row["depender"]
+            )
+            if row["depender"]
+            else -1
+        )
+        curr_key = dependee.persistent_id if dependee != -1 else -1
+        if curr_key not in graph.keys():
+            graph[curr_key] = set()
+        graph[curr_key].add(depender.persistent_id)
+        tokens[depender.persistent_id] = depender
+        tokens[curr_key] = dependee
+
+    for k, v in graph.items():
+        print(f"{k}: {v}")
+
+    graph_steps = {}
+    steps = []
+    steps_name = set()
+    for k, values in graph.items():
+        if k != -1:
+            k_step = (
+                await _load_steps_from_token(
+                    tokens[k], job_version.step.workflow.context, loading_context
+                )
+            ).pop()
+            add_step(k_step, steps)
+            steps_name.add(k_step.name)
+        step_name = k_step.name if k != -1 else "None"
+        if step_name not in graph_steps.keys():
+            graph_steps[step_name] = set()
+        for v in values:
+            s = (
+                await _load_steps_from_token(
+                    tokens[v], job_version.step.workflow.context, loading_context
+                )
+            ).pop()
+            graph_steps[step_name].add(s.name)
+            add_step(s, steps)
+            steps_name.add(s.name)
+    steps_name = sorted(steps_name)
+    wf_steps = sorted(job_version.step.workflow.steps.keys())
     pass
+
+
+async def is_token_available(token, context):
+    if isinstance(token, CWLFileToken):
+        return await data_location_exists(
+            context.data_manager.get_data_locations(token.value["path"]),
+            context,
+            token,
+        )
+    if isinstance(token, ListToken):
+        # if at least one file doesn't exist, returns false
+        return all(
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(is_token_available(inner_token, context))
+                    for inner_token in token.value
+                )
+            )
+        )
+    if isinstance(token, ObjectToken):
+        # TODO: sistemare
+        return True
+    if isinstance(token, JobToken):
+        return False
+    return True
+
+
+async def _load_and_add_port(token, context, loading_context, curr_dict):
+    ports = await _load_ports_from_token(token, context, loading_context)
+    # TODO: ports, in teoria, è sempre solo una. Sarebbe la port di output dello step che genera il token
+    for p in ports:
+        if p.name not in curr_dict.keys():
+            curr_dict[p.name] = set()
+        curr_dict[p.name].add(token)
+
 
 
 class DefaultFailureManager(FailureManager):
@@ -79,89 +257,63 @@ class DefaultFailureManager(FailureManager):
         command_output = await self._replay_job(self.jobs[job.name])
         return command_output
 
+    async def _recover_jobs(self, job_version, loading_context):
+        # await print_graph(job_version, loading_context)
+
+        tokens = set(job_version.job.inputs.values())  # tokens to check
+
+        # the step is a ExecuteStep, thus it has the get_job_token method...
+        # but, is it necessary add this job_token in the tokens list?
+        # in the provenance there is not because the step is failed before the _persist_token call
+        # evaluate it when will be created the new workflow
+        job_token = job_version.step.get_job_token(job_version.job)
+        tokens.add(job_token)
+        steps_token = {job_version.step: tokens.copy()} # step to rollback
+        token_visited = set()  # to break cyclic in token dependencies
+        # tokens_step = {
+        #     k: set((job_version.step,)) for k in job_version.job.inputs.values()
+        # } # dict{ token : list of steps with token some input port }
+        # tokens_step[job_token] = set((job_version.step,))
+
+        while tokens:
+            token = tokens.pop()
+            token_visited.add(token)
+            res = await is_token_available(token, job_version.step.workflow.context)
+            if not res:
+                steps = await _load_steps_from_token(
+                    token, job_version.step.workflow.context, loading_context
+                )
+                # TODO: un token è generato da un solo step, quindi modificare il metodo affinche ritorna un solo step e non una lista (in sqlite.py cambiare il catchall in catchone)
+                step = steps.pop()
+                if step not in steps_token.keys():
+                    steps_token[step] = set()
+
+                prev_tokens = await _load_prev_tokens(
+                    token.persistent_id,
+                    loading_context,
+                    job_version.step.workflow.context,
+                )
+                for pt in prev_tokens:
+                    if pt not in token_visited:
+                        tokens.add(pt)
+                    steps_token[step].add(pt)
+                    # if pt not in tokens_step.keys():
+                    #     tokens_step[pt] = set()
+                    # tokens_step[pt].add(step)
+        return steps_token
+
+
     async def _replay_job(self, job_version: JobVersion) -> CommandOutput:
         job = job_version.job
-        # Retry job execution until the max number of retries is reached
         if self.max_retries is None or self.jobs[job.name].version < self.max_retries:
             # Update version
             self.jobs[job.name].version += 1
             try:
-                # Manage job rescheduling
-                allocation = self.context.scheduler.get_allocation(job.name)
-                connector = self.context.scheduler.get_connector(job.name)
-                locations = self.context.scheduler.get_locations(job.name)
-                available_locations = await connector.get_available_locations(
-                    service=allocation.target.service
-                )
-                active_locations = self.context.scheduler.get_locations(
-                    job.name, [Status.RUNNING]
-                )
-                # If there are active locations, the job just failed
-                if active_locations:
-                    # If some locations are dead
-                    if not all(res in available_locations for res in active_locations):
-                        # Notify job failure
-                        await self.context.scheduler.notify_status(
-                            job.name, Status.FAILED
-                        )
-                        # Invalidate locations
-                        for location in set(active_locations) - set(
-                            available_locations
-                        ):
-                            self.context.data_manager.invalidate_location(location, "/")
-                        # TODO
-                    # Otherwise, empty output and tmp folders and re-execute the job
-                    cleanup_tasks = []
-                    for location in locations:
-                        for directory in [job.output_directory, job.tmp_directory]:
-                            cleanup_tasks.append(
-                                asyncio.create_task(
-                                    _cleanup_dir(self.context, location, directory)
-                                )
-                            )
-                            self.context.data_manager.invalidate_location(
-                                location, directory
-                            )
-                    await asyncio.gather(*cleanup_tasks)
-                    # TODO: try to do this in a more general way
-                    return await cast(ExecuteStep, job_version.step).command.execute(
-                        job
-                    )
-                # Otherwise, the job already completed but must be rescheduled
-                else:
-                    # TODO
-                    # Recover input tokens
-                    recovered_tokens = []
-                    for token_name, token in job.inputs.items():
-                        token_processor = job.step.input_token_processors[token_name]
-                        version = 0
-                        while True:
-                            try:
-                                recovered_tokens.append(
-                                    await token_processor.recover_token(
-                                        job, locations, token
-                                    )
-                                )
-                                break
-                            except UnrecoverableTokenException as e:
-                                version += 1
-                                reply_response = await self.replay_job(
-                                    ReplayRequest(job.name, e.token.job, version)
-                                )
-                                input_port = job.step.workflow.ports[
-                                    job.step.input_ports[token.name]
-                                ]
-                                recovered_token = reply_response.outputs[
-                                    input_port.name
-                                ]
-                                token = await _replace_token(
-                                    job, token_processor, token, recovered_token
-                                )
-                                token.name = input_port.name
-                    job.inputs = recovered_tokens
-                    return await cast(ExecuteStep, job_version.step).command.execute(
-                        job
-                    )
+                loading_context = DefaultDatabaseLoadingContext()
+
+                rollback_steps = await self._recover_jobs(job_version, loading_context)
+
+                return None
             # When receiving a FailureHandlingException, simply fail
             except FailureHandlingException as e:
                 logger.exception(e)
@@ -183,11 +335,8 @@ class DefaultFailureManager(FailureManager):
 
     @classmethod
     def get_schema(cls) -> str:
-        return (
-            files(__package__)
-            .joinpath("schemas")
-            .joinpath("default_failure_manager.json")
-            .read_text("utf-8")
+        return pkg_resources.resource_filename(
+            __name__, os.path.join("schemas", "default_failure_manager.json")
         )
 
     async def handle_exception(
@@ -206,87 +355,23 @@ class DefaultFailureManager(FailureManager):
             logger.info(f"Handling command failure for job {job.name}")
         return await self._do_handle_failure(job, step)
 
-    async def replay_job(self, replay_request: ReplayRequest) -> ReplayResponse:
-        sender_job = replay_request.sender
-        target_job = replay_request.target
-        if target_job not in self.wait_queues:
-            self.wait_queues[target_job] = asyncio.Condition()
-        wait_queue = self.wait_queues[target_job]
-        async with wait_queue:
-            if (
-                target_job not in self.replay_cache
-                or self.replay_cache[target_job].version < replay_request.version
-            ):
-                # Reschedule job
-                if logger.isEnabledFor(logging.INFO):
-                    logger.info(f"Rescheduling job {target_job}")
-                command_output = CommandOutput(value=None, status=Status.FAILED)
-                self.replay_cache[target_job] = ReplayResponse(
-                    job=target_job,
-                    outputs=None,
-                    version=self.jobs[target_job].version + 1,
-                )
-                try:
-                    await self.context.scheduler.notify_status(
-                        sender_job, Status.WAITING
-                    )
-                    command_output = await self._replay_job(self.jobs[target_job])
-                finally:
-                    await self.context.scheduler.notify_status(
-                        target_job, command_output.status
-                    )
-                # Retrieve output
-                output_ports = target_job.step.output_ports
-                output_tasks = []
-                for output_port in output_ports:
-                    output_tasks.append(
-                        asyncio.create_task(
-                            target_job.step.output_token_processors[
-                                output_port
-                            ].compute_token(target_job, command_output)
-                        )
-                    )
-                self.replay_cache[target_job].outputs = {
-                    port.name: token
-                    for (port, token) in zip(
-                        output_ports, await asyncio.gather(*output_tasks)
-                    )
-                }
-                wait_queue.notify_all()
-            elif self.replay_cache[target_job].outputs is None:
-                # Wait for job completion
-                await wait_queue.wait()
-            return self.replay_cache[target_job]
-
 
 class DummyFailureManager(FailureManager):
-    async def close(self): ...
+    async def close(self):
+        ...
 
     @classmethod
     def get_schema(cls) -> str:
-        return (
-            files(__package__)
-            .joinpath("schemas")
-            .joinpath("dummy_failure_manager.json")
-            .read_text("utf-8")
+        return pkg_resources.resource_filename(
+            __name__, os.path.join("schemas", "dummy_failure_manager.json")
         )
 
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
     ) -> CommandOutput:
-        if logger.isEnabledFor(logging.WARNING):
-            logger.warning(
-                f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
-            )
         raise exception
 
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> CommandOutput:
-        if logger.isEnabledFor(logging.WARNING):
-            logger.warning(
-                f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
-            )
-        raise FailureHandlingException(
-            f"FAILED Job {job.name} with error:\n\t{command_output.value}"
-        )
+        return command_output
