@@ -280,6 +280,39 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
+    async def get_ports_from_step(
+        self, step_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM dependency WHERE step = :step",
+                {"step": step_id},
+            ) as cursor:
+                return await cursor.fetchall()
+
+    async def get_steps_from_input_port(
+        self, port_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM dependency WHERE port = :port AND type = :type",
+                {"port": port_id, "type": DependencyType.INPUT.value},
+            ) as cursor:
+                return await cursor.fetchall()
+
+    async def get_steps_from_output_port(
+        self, port_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM dependency WHERE port = :port AND type = :type",
+                {"port": port_id, "type": DependencyType.OUTPUT.value},
+            ) as cursor:
+                return await cursor.fetchall()
+
     @cachedmethod(lambda self: self.port_cache)
     async def get_port(self, port_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:

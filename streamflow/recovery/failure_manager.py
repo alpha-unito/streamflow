@@ -79,7 +79,7 @@ async def _load_prev_tokens(token_id, loading_context, context):
     )
 
 
-async def _load_steps_from_token(token, context, loading_context):
+async def _load_steps_from_token(token, context, loading_context, new_workflow):
     # TODO: quando interrogo sulla tabella dependency (tra step e port) meglio recuperare anche il nome della dipendenza
     # così posso associare subito token -> step e a quale porta appartiene
     # edit. Impossibile. Recuperiamo lo step dalla porta di output. A noi serve la port di input
@@ -88,7 +88,14 @@ async def _load_steps_from_token(token, context, loading_context):
     if row_token:
         row_steps = await context.database.get_step_from_output_port(row_token["port"])
         for r in row_steps:
-            steps.append(await loading_context.load_step(context, r["step"]))
+            steps.append(
+                await Step.load(
+                    context,
+                    r["step"],
+                    loading_context,
+                    new_workflow,
+                )
+            )
     return steps
 
 
@@ -107,14 +114,17 @@ async def _load_ports_from_token(token, context, loading_context):
 
 async def data_location_exists(data_locations, context, token):
     for data_loc in data_locations:
-        connector = context.deployment_manager.get_connector(data_loc.deployment)
-        # location_allocation = job_version.step.workflow.context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
-        # available_locations = job_version.step.workflow.context.scheduler.get_locations(location_allocation.jobs[0])
-        if exists := await remotepath.exists(connector, data_loc, token.value["path"]):
-            return True
-        print(
-            f"t {token.persistent_id} ({get_class_fullname(type(token))}) in loc {data_loc} -> exists {exists} "
-        )
+        if data_loc.path == token.value["path"]:
+            connector = context.deployment_manager.get_connector(data_loc.deployment)
+            # location_allocation = job_version.step.workflow.context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
+            # available_locations = job_version.step.workflow.context.scheduler.get_locations(location_allocation.jobs[0])
+            if exists := await remotepath.exists(
+                connector, data_loc, token.value["path"]
+            ):
+                return True
+            print(
+                f"t {token.persistent_id} ({get_class_fullname(type(token))}) in loc {data_loc} -> exists {exists} "
+            )
     return False
 
 
@@ -189,11 +199,15 @@ async def print_graph(job_version, loading_context):
 
 async def is_token_available(token, context):
     if isinstance(token, CWLFileToken):
-        return await data_location_exists(
-            context.data_manager.get_data_locations(token.value["path"]),
-            context,
-            token,
-        )
+        data_locs = context.data_manager.get_data_locations(token.value["path"])
+        if not await data_location_exists(data_locs, context, token):
+            for data_loc in data_locs:
+                if data_loc.path == token.value["path"]:
+                    context.data_manager.invalidate_location(
+                        data_loc, token.value["path"]
+                    )
+            return False
+        return True
     if isinstance(token, ListToken):
         # if at least one file doesn't exist, returns false
         return all(
@@ -220,6 +234,82 @@ async def _load_and_add_port(token, context, loading_context, curr_dict):
             curr_dict[p.name] = set()
         curr_dict[p.name].add(token)
 
+
+def find_step_by_id(step_id, workflow):
+    for step in workflow.steps.values():
+        if step.persistent_id == step_id:
+            return step
+    return None
+
+
+async def _put_tokens(new_workflow, workflow, token_lost):
+    missing_port = set()
+    for step in new_workflow.steps.values():
+        for port_name in step.input_ports.values():
+            for row in await workflow.context.database.get_steps_from_output_port(
+                workflow.ports[port_name].persistent_id
+            ):
+                step = find_step_by_id(int(row["step"]), workflow)
+                if step.name not in new_workflow.steps.keys():
+                    missing_port.add(port_name)
+    for port_name in missing_port:
+        for token in workflow.ports[port_name].token_list:
+            new_workflow.ports[port_name].put(token)
+    # for port in new_workflow.ports.values():
+    #     added = False
+    #     for port_token in workflow.ports[port.name].token_list:
+    #         # todo: gestire i ListToken delle scatter, quando deve eseguire solo le istanze perse
+    #         if (
+    #                 not isinstance(port_token, JobToken)
+    #                 and not isinstance(port_token, TerminationToken)
+    #                 and port_token.persistent_id not in token_lost
+    #         ):
+    #             if isinstance(port_token, ListToken):
+    #                 port_tokens_lost = []
+    #                 for t in port_token.value:
+    #                     if (
+    #                             not isinstance(port_token, JobToken)
+    #                             and t.persistent_id in token_lost
+    #                     ):
+    #                         port_tokens_lost.append(t)
+    #
+    #                 # se non ha perso token
+    #                 if not port_tokens_lost:
+    #                     port.put(port_token)
+    #                     added = True
+    #             else:
+    #                 port.put(port_token)
+    #                 added = True
+    #     if (
+    #             added
+    #     ):  # TODO: se la port.value è > 0 allora aggiungi terminationtoken ? è giusto?
+    #         port.put(TerminationToken())
+
+
+async def _fill_holes(steps: set, new_workflow, workflow, loading_context):
+    steps_visited = set()
+    missing_steps = set()
+    while steps:
+        step = steps.pop()
+        steps_visited.add(step)
+        # for port in workflow.steps[step.name].get_output_ports().values():
+        for port_name in step.output_ports.values():
+            # port = workflow.ports[port_name]
+            for row in await workflow.context.database.get_steps_from_input_port(
+                workflow.ports[port_name].persistent_id
+            ):
+                found_step = find_step_by_id(int(row["step"]), workflow)
+                if found_step.name not in new_workflow.steps.keys():
+                    missing_steps.add(found_step)
+                    steps.add(found_step)
+                    new_workflow.add_step(
+                        await Step.load(
+                            workflow.context,
+                            found_step.persistent_id,
+                            loading_context,
+                            new_workflow,
+                        )
+                    )
 
 
 class DefaultFailureManager(FailureManager):
@@ -260,6 +350,14 @@ class DefaultFailureManager(FailureManager):
     async def _recover_jobs(self, job_version, loading_context):
         # await print_graph(job_version, loading_context)
 
+        workflow = job_version.step.workflow
+        new_workflow = Workflow(
+            context=workflow.context,
+            type="cwl",
+            name=random_name(),
+            config=workflow.config,
+        )
+
         tokens = set(job_version.job.inputs.values())  # tokens to check
 
         # the step is a ExecuteStep, thus it has the get_job_token method...
@@ -268,40 +366,95 @@ class DefaultFailureManager(FailureManager):
         # evaluate it when will be created the new workflow
         job_token = job_version.step.get_job_token(job_version.job)
         tokens.add(job_token)
-        steps_token = {job_version.step: tokens.copy()} # step to rollback
+        steps_token = {job_version.step: tokens.copy()}  # step to rollback
         token_visited = set()  # to break cyclic in token dependencies
-        # tokens_step = {
-        #     k: set((job_version.step,)) for k in job_version.job.inputs.values()
-        # } # dict{ token : list of steps with token some input port }
-        # tokens_step[job_token] = set((job_version.step,))
 
+        token_lost = set()
+
+        new_workflow.add_step(
+            await Step.load(
+                workflow.context,
+                job_version.step.persistent_id,
+                loading_context,
+                new_workflow,
+            )
+        )
         while tokens:
             token = tokens.pop()
             token_visited.add(token)
-            res = await is_token_available(token, job_version.step.workflow.context)
+            res = await is_token_available(token, workflow.context)
             if not res:
+                if isinstance(token, ListToken):
+                    for t in token.value:
+                        tokens.add(t)
+                if isinstance(token, CWLFileToken):
+                    token_lost.add(token.persistent_id)
                 steps = await _load_steps_from_token(
-                    token, job_version.step.workflow.context, loading_context
+                    token, workflow.context, loading_context, new_workflow
                 )
                 # TODO: un token è generato da un solo step, quindi modificare il metodo affinche ritorna un solo step e non una lista (in sqlite.py cambiare il catchall in catchone)
-                step = steps.pop()
-                if step not in steps_token.keys():
-                    steps_token[step] = set()
+                if steps:
+                    step = steps.pop()
+                    if step not in steps_token.keys():
+                        steps_token[step] = set()
+                    if step.name not in new_workflow.steps.keys():
+                        new_workflow.add_step(step)
 
-                prev_tokens = await _load_prev_tokens(
-                    token.persistent_id,
-                    loading_context,
-                    job_version.step.workflow.context,
+                    prev_tokens = await _load_prev_tokens(
+                        token.persistent_id,
+                        loading_context,
+                        workflow.context,
+                    )
+                    for pt in prev_tokens:
+                        if pt not in token_visited:
+                            tokens.add(pt)
+                        steps_token[step].add(pt)
+        pass
+
+        await _fill_holes(
+            {step for step in steps_token.keys() if step.name != job_version.step.name},
+            new_workflow,
+            workflow,
+            loading_context,
+        )
+
+        # todo: gestire le port che viene aggiunta mentre si caricano gli step (una JobPort che al momento sovrascriviamo). L'ideale sarebbe che non venga aggiunta
+        for step in new_workflow.steps.values():
+            dependency_step_port = await workflow.context.database.get_ports_from_step(
+                workflow.steps[step.name].persistent_id
+            )
+            for row in dependency_step_port:
+                port = await Port.load(
+                    workflow.context, row["port"], loading_context, new_workflow
                 )
-                for pt in prev_tokens:
-                    if pt not in token_visited:
-                        tokens.add(pt)
-                    steps_token[step].add(pt)
-                    # if pt not in tokens_step.keys():
-                    #     tokens_step[pt] = set()
-                    # tokens_step[pt].add(step)
-        return steps_token
+                new_workflow.add_port(port)
+        pass
 
+        await _put_tokens(new_workflow, workflow, token_lost)
+
+        pass
+
+        for step, s_tokens in steps_token.items():
+            if isinstance(step, ExecuteStep):
+                for token in s_tokens:
+                    if isinstance(token, JobToken):
+                        await workflow.context.scheduler.notify_status(
+                            token.value.name, Status.WAITING
+                        )
+
+        print("VIAAAAAAAAAAAAAA")
+        await new_workflow.save(workflow.context)
+        executor = StreamFlowExecutor(new_workflow)
+        try:
+            output_tokens = await executor.run()
+        except Exception as err:
+            print("ERROR", err)
+            raise Exception("EXCEPTION ERR")
+        print("output_tokens", output_tokens)
+        print("Finito")
+        return CWLCommandOutput(value="", status=Status.COMPLETED, exit_code=0)
+
+    #        return steps_token
 
     async def _replay_job(self, job_version: JobVersion) -> CommandOutput:
         job = job_version.job
