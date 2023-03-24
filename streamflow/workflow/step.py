@@ -141,10 +141,13 @@ class Combinator(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> Combinator:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
         )
 
     async def _save_additional_params(self, context: StreamFlowContext):
@@ -200,9 +203,12 @@ class Combinator(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> Combinator:
         type = cast(Combinator, utils.get_class_from_name(row["type"]))
-        combinator = await type._load(context, row["params"], loading_context)
+        combinator = await type._load(
+            context, row["params"], loading_context, change_wf
+        )
         combinator.items = row["params"]["items"]
         combinator.combinators_map = row["params"]["combinators_map"]
         combinator.combinators = {}
@@ -230,13 +236,16 @@ class CombinatorStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> CombinatorStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
             combinator=await Combinator.load(
-                context, params["combinator"], loading_context
+                context, params["combinator"], loading_context, change_wf
             ),
         )
 
@@ -395,11 +404,14 @@ class DeployStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> DeployStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
             deployment_config=await loading_context.load_deployment(
                 context, params["deployment_config"]
             ),
@@ -506,11 +518,14 @@ class ExecuteStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> ExecuteStep:
         params = json.loads(row["params"])
         step = cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])
             ),
@@ -536,7 +551,7 @@ class ExecuteStep(BaseStep):
             )
         return step
 
-    def _get_job_token(self, job):
+    def get_job_token(self, job):
         for token in self.get_input_port("__job__").token_list:
             if isinstance(token, JobToken) and token.value.name == job.name:
                 return token
@@ -558,7 +573,7 @@ class ExecuteStep(BaseStep):
             )
         ) is not None:
             # TODO: aggiungere il JobToken anche negli altri step che usano i job e.g. TransferStep (self._persist_token(..., inputs=...))
-            job_token = self._get_job_token(job)
+            job_token = self.get_job_token(job)
             output_port.put(
                 await self._persist_token(
                     token=token,
@@ -785,11 +800,14 @@ class GatherStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> GatherStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
             depth=params["depth"],
         )
 
@@ -870,11 +888,14 @@ class InputInjectorStep(BaseStep, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> InputInjectorStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])
             ),
@@ -1150,6 +1171,7 @@ class ScheduleStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> ScheduleStep:
         params = json.loads(row["params"])
         if hardware_requirement := params.get("hardware_requirement"):
@@ -1158,7 +1180,9 @@ class ScheduleStep(BaseStep):
             )
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
             binding_config=await BindingConfig.load(
                 context, params["binding_config"], loading_context
             ),
@@ -1416,11 +1440,14 @@ class TransferStep(BaseStep, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> TransferStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])
             ),
