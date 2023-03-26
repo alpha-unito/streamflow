@@ -103,7 +103,12 @@ class BaseStep(Step, ABC):
         self, token: Token, port: Port, inputs: Iterable[Token]
     ) -> Token:
         await token.save(self.workflow.context, port_id=port.persistent_id)
-        if inputs:
+        # not list-comprehension: if the token is among its inputs, don't save the dependency
+        if inputs and not [i for i in inputs if i.persistent_id == token.persistent_id]:
+            # TODO: in inputs i token devono avere un id per la provenance, a meno che non siano i token iniziali del workflow
+            # Correggere situazione injector (inputs non salvati: possibile soluzione non passare gli inputs)
+            # if [i for i in inputs if i.persistent_id is None]:
+            #     raise Exception("Inputs tokens must be saved in persistence")
             await self.workflow.context.database.add_provenance(
                 inputs=[i.persistent_id for i in inputs], token=token.persistent_id
             )
@@ -291,15 +296,15 @@ class CombinatorStep(BaseStep):
                                 f"Step {self.name} received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
-                        async for schema in cast(
+                        async for schema, new_schema in cast(
                             AsyncIterable, self.combinator.combine(task_name, token)
                         ):
-                            for port_name, curr_token in schema.items():
+                            for port_name, curr_token in new_schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
                                         token=curr_token,
                                         port=self.get_output_port(port_name),
-                                        inputs=[token],  # schema.values(),
+                                        inputs=schema.values(),
                                     )
                                 )
                     # Create a new task in place of the completed one if the port is not terminated
@@ -1234,11 +1239,19 @@ class ScheduleStep(BaseStep):
                     relpath=directory,
                 )
         # Propagate job
+        token_inputs = []
+        for step_port_name, port_name in self.input_ports.items():
+            if step_port_name in job.inputs.keys():
+                token_inputs.append(job.inputs[step_port_name])
+            else:
+                for t in self.get_input_port(step_port_name).token_list:
+                    if t.persistent_id:
+                        token_inputs.append(t)
         self.get_output_port().put(
             await self._persist_token(
                 token=JobToken(value=job),
                 port=self.get_output_port(),
-                inputs=job.inputs.values(),
+                inputs=token_inputs,
             )
         )
 
@@ -1378,13 +1391,20 @@ class ScatterStep(BaseStep):
         elif isinstance(token, ListToken):
             output_port = self.get_output_port()
             for i, t in enumerate(token.value):
-                output_port.put(
-                    await self._persist_token(
-                        token=t.retag(token.tag + "." + str(i)),
-                        port=output_port,
-                        inputs=[token],
+                if self.workflow.context.failure_manager.get_retag(
+                    self.workflow.name, t, output_port
+                ):
+                    output_port.put(
+                        await self._persist_token(
+                            token=t.retag(token.tag + "." + str(i)),
+                            port=output_port,
+                            inputs=[token],
+                        )
                     )
-                )
+                else:
+                    logger.debug(
+                        f"Step {self.name} skipped token retag {token.tag + '.' + str(i)}"
+                    )
         else:
             raise WorkflowDefinitionException("Scatter ports require iterable inputs")
 
@@ -1550,9 +1570,14 @@ class Transformer(BaseStep, ABC):
                                 for port_name, token in (
                                     await self.transform(inputs)
                                 ).items():
+                                    # TODO: correggere direttamente nel trasform (generare token nuovi oltre il CWLTokenFile)
+                                    if token.persistent_id:
+                                        token_clone = token.retag(tag=token.tag)
+                                    else:
+                                        token_clone = token
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
-                                            token=token,
+                                            token=token_clone,
                                             port=self.get_output_port(port_name),
                                             inputs=inputs.values(),
                                         )

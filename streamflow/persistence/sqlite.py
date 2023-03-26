@@ -329,6 +329,14 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return [row[0] for row in await cursor.fetchall()]
 
+
+    async def get_port_from_token(self, port_id: int) -> MutableSequence[int]:
+        async with self.connection as db:
+            async with db.execute(
+                "SELECT id FROM token WHERE port = :port", {"port": port_id}
+            ) as cursor:
+                return [row[0] for row in await cursor.fetchall()]
+
     async def get_reports(
         self, workflow: str, last_only: bool = False
     ) -> MutableSequence[MutableSequence[MutableMapping[str, Any]]]:
@@ -429,12 +437,12 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    async def get_token_ports(self, token_id: int) -> MutableSequence[int]:
+    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
-                "SELECT port FROM token WHERE id = :token_id", {"token_id": token_id}
+                "SELECT port.* FROM token JOIN port ON token.port = port.id WHERE token.id = :token_id", {"token_id": token_id}
             ) as cursor:
-                return [row[0] for row in await cursor.fetchall()]
+                return await cursor.fetchone()
 
     async def get_dependee(
         self, token_id: int

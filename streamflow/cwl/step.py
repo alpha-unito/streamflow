@@ -205,7 +205,14 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
     async def _on_true(self, inputs: MutableMapping[str, Token]):
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
-            port.put(inputs[port_name])
+            token_clone = inputs[port_name].retag(inputs[port_name].tag)
+            port.put(
+                await self._persist_token(
+                    token=token_clone,
+                    port=port,
+                    inputs=inputs.values(),
+                )
+            )
 
     async def _on_false(self, inputs: MutableMapping[str, Token]):
         # Get empty scatter return value
@@ -217,7 +224,14 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
             token_value = []
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
-            port.put(ListToken(value=token_value, tag=get_tag(inputs.values())))
+            token = ListToken(value=token_value, tag=get_tag(inputs.values()))
+            port.put(
+                await self._persist_token(
+                    token=token,
+                    port=port,
+                    inputs=inputs.values(),
+                )
+            )
 
     async def _save_additional_params(
         self, context: StreamFlowContext
