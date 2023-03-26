@@ -10,7 +10,7 @@
       "properties": {
         "beginTime": {
           "type": "string",
-          "description": "Convenience option for setting a ``begin-time`` dependency for a job. The job is guaranteed to start after the specified date and time"
+          "description": "Convenience option for setting a begin-time dependency for a job. The job is guaranteed to start after the specified date and time"
         },
         "brokerOpts": {
           "type": "array",

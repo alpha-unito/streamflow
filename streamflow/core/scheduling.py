@@ -129,13 +129,13 @@ class JobAllocation:
         self,
         job: str,
         target: Target,
-        locations: MutableSequence[AvailableLocation],
+        locations: MutableSequence[Location],
         status: Status,
         hardware: Hardware,
     ):
         self.job: str = job
         self.target: Target = target
-        self.locations: MutableSequence[AvailableLocation] = locations
+        self.locations: MutableSequence[Location] = locations
         self.status: Status = status
         self.hardware: Hardware = hardware
 
@@ -192,7 +192,6 @@ class Policy(SchemaEntity):
         self,
         context: StreamFlowContext,
         job: Job,
-        deployment: str,
         hardware_requirement: Hardware,
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
@@ -210,7 +209,7 @@ class Scheduler(SchemaEntity):
         ] = {}
 
     @abstractmethod
-    async def close(self):
+    async def close(self) -> None:
         ...
 
     def get_allocation(self, job_name: str) -> JobAllocation | None:
@@ -246,7 +245,7 @@ class Scheduler(SchemaEntity):
         return allocation.target.service if allocation else None
 
     @abstractmethod
-    async def notify_status(self, job_name: str, status: Status):
+    async def notify_status(self, job_name: str, status: Status) -> None:
         ...
 
     @abstractmethod

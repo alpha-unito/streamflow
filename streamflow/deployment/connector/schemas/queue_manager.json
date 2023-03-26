@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/queue_manager.json",
+  "$$target": "queue_manager.json",
   "type": "object",
   "properties": {
     "checkHostKey": {
@@ -40,7 +41,7 @@
     },
     "maxConnections": {
       "type": "integer",
-      "description": "Maximum number of concurrent connection to open for a single SSH node",
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Maximum number of concurrent connection to open for a single SSH node",
       "default": 1
     },
     "passwordFile": {
@@ -62,7 +63,7 @@
     },
     "transferBufferSize": {
       "type": "integer",
-      "description": "Buffer size allocated for local and remote data transfers",
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Buffer size allocated for local and remote data transfers",
       "default": "64kiB"
     },
     "tunnel": {

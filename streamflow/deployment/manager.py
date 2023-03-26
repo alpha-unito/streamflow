@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from asyncio import Event
 from typing import TYPE_CHECKING
 
 import pkg_resources
@@ -41,7 +40,7 @@ class DefaultDeploymentManager(DeploymentManager):
         while True:
             if deployment_name not in self.config_map:
                 self.config_map[deployment_name] = deployment_config
-                self.events_map[deployment_name] = Event()
+                self.events_map[deployment_name] = asyncio.Event()
                 self.dependency_graph[deployment_name] = set()
                 connector_type = connector_classes[deployment_config.type]
                 deployment_config = await self._inner_deploy(
@@ -102,7 +101,7 @@ class DefaultDeploymentManager(DeploymentManager):
             # If it has already been processed by the DeploymentManager
             if deployment_name in self.config_map:
                 # If the DeploymentManager is creating the environment, wait for it to finish
-                if not self.is_deployed(deployment_name):
+                if deployment_name not in self.deployments_map:
                     await self.events_map[deployment_name].wait()
                 # Check for recursive definitions
                 wrappers_stack.update(deployment_name)
@@ -154,10 +153,10 @@ class DefaultDeploymentManager(DeploymentManager):
                     )
             return deployment_config
 
-    async def close(self):
+    async def close(self) -> None:
         await self.undeploy_all()
 
-    async def deploy(self, deployment_config: DeploymentConfig):
+    async def deploy(self, deployment_config: DeploymentConfig) -> None:
         deployment_name = deployment_config.name
         await self._deploy(deployment_config, {deployment_name})
         self.dependency_graph[deployment_name].add(deployment_name)
@@ -171,10 +170,7 @@ class DefaultDeploymentManager(DeploymentManager):
             __name__, os.path.join("schemas", "deployment_manager.json")
         )
 
-    def is_deployed(self, deployment_name: str):
-        return deployment_name in self.deployments_map
-
-    async def undeploy(self, deployment_name: str):
+    async def undeploy(self, deployment_name: str) -> None:
         if deployment_name in dict(self.deployments_map):
             await self.events_map[deployment_name].wait()
             # Remove the deployment from the dependency graph
@@ -204,7 +200,7 @@ class DefaultDeploymentManager(DeploymentManager):
                 if len(deps) == 0:
                     await self.undeploy(name)
 
-    async def undeploy_all(self):
+    async def undeploy_all(self) -> None:
         undeployments = []
         for name in dict(self.deployments_map):
             undeployments.append(asyncio.create_task(self.undeploy(name)))

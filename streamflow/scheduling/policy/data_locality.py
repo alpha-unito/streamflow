@@ -9,6 +9,7 @@ import pkg_resources
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.deployment import Location
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, JobAllocation, Policy
 from streamflow.workflow.token import FileToken
 
@@ -23,13 +24,17 @@ class DataLocalityPolicy(Policy):
         self,
         context: StreamFlowContext,
         job: Job,
-        deployment: str,
         hardware_requirement: Hardware,
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
     ) -> Location | None:
         valid_locations = list(available_locations.keys())
+        deployments = {loc.deployment for loc in available_locations.values()}
+        if len(deployments) > 1:
+            raise WorkflowExecutionException(
+                f"Available locations coming from multiple deployments: {deployments}"
+            )
         # For each input token sorted by weight
         weights = {
             k: v
@@ -55,8 +60,8 @@ class DataLocalityPolicy(Policy):
                             loc.name
                             for loc in context.data_manager.get_data_locations(
                                 path=path,
-                                deployment=deployment,
-                                location_type=DataType.PRIMARY,
+                                deployment=next(iter(deployments)),
+                                data_type=DataType.PRIMARY,
                             )
                         ]
                     )

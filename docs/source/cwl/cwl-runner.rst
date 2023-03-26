@@ -22,13 +22,13 @@ command is equivalent to a ``streamflow run`` command with the following ``strea
 
 In addition to the standard parameters, it is possible to pass a ``--streamflow-file`` argument to the ``cwl-runner`` CLI with the path of a StreamFlow file containing deployments and bindings (see the :ref:`StreamFlow file <Put it all together>` section). The ``workflows`` section of this file must have a single entry containing a list of ``bindings``. If present, the ``type`` and ``config`` entries will be ignored. Files containing multiple workflow entries will throw an exception.
 
-For example, the workflow described in the :ref:`operations <Operations>` section of this guide can also be executed with the following command
+For example, the workflow described :ref:`here <Write your workflow>` can also be executed with the following command
 
 .. code-block:: bash
 
     cwl-runner --streamflow-file /path/to/streamflow.yml main.cwl config.cwl
 
-where the `streamflow.yml` fail contains these lines
+where the ``streamflow.yml`` fail contains these lines
 
 .. code-block:: yaml
 

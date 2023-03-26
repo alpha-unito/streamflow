@@ -167,8 +167,8 @@ async def follow_symlink(
         if locations := context.data_manager.get_data_locations(
             path=path,
             deployment=connector.deployment_name,
-            location=location.name,
-            location_type=DataType.PRIMARY,
+            location_name=location.name,
+            data_type=DataType.PRIMARY,
         ):
             # If there is only one primary location on the site, return its path
             if len(locations) == 1:

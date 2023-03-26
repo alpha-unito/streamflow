@@ -44,7 +44,7 @@ async def _async_ext(args: argparse.Namespace):
 async def _async_list(args: argparse.Namespace):
     context = _get_context_from_config(args.file)
     try:
-        if workflows := await context.database.list_workflows(args.name):
+        if workflows := await context.database.get_workflows_list(args.name):
             max_sizes = {
                 k: len(max(str(w[k]) for w in workflows)) + 1
                 for k in workflows[0].keys()

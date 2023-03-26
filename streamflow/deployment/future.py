@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from abc import ABCMeta
 from typing import Any, MutableMapping, MutableSequence
 
-from streamflow.core.deployment import Connector, ConnectorCopyKind, Location
+from streamflow.core.deployment import Connector, Location
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
 
@@ -26,14 +27,53 @@ class FutureConnector(Connector):
         self.deploy_event: asyncio.Event = asyncio.Event()
         self.connector: Connector | None = None
 
-    async def copy(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
         locations: MutableSequence[Location],
-        kind: ConnectorCopyKind,
+        read_only: bool = False,
+    ) -> None:
+        if self.connector is None:
+            if not self.deploying:
+                self.deploying = True
+                await self.deploy(self.external)
+            else:
+                await self.deploy_event.wait()
+        await self.connector.copy_local_to_remote(
+            src=src,
+            dst=dst,
+            locations=locations,
+            read_only=read_only,
+        )
+
+    async def copy_remote_to_local(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[Location],
+        read_only: bool = False,
+    ) -> None:
+        if self.connector is None:
+            if not self.deploying:
+                self.deploying = True
+                await self.deploy(self.external)
+            else:
+                await self.deploy_event.wait()
+        await self.connector.copy_remote_to_local(
+            src=src,
+            dst=dst,
+            locations=locations,
+            read_only=read_only,
+        )
+
+    async def copy_remote_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[Location],
+        source_location: Location,
         source_connector: Connector | None = None,
-        source_location: str | None = None,
         read_only: bool = False,
     ) -> None:
         if self.connector is None:
@@ -44,13 +84,12 @@ class FutureConnector(Connector):
                 await self.deploy_event.wait()
         if isinstance(source_connector, FutureConnector):
             source_connector = source_connector.connector
-        await self.connector.copy(
+        await self.connector.copy_remote_to_remote(
             src=src,
             dst=dst,
             locations=locations,
-            kind=kind,
-            source_connector=source_connector,
             source_location=source_location,
+            source_connector=source_connector,
             read_only=read_only,
         )
 
@@ -125,3 +164,15 @@ class FutureConnector(Connector):
     async def undeploy(self, external: bool) -> None:
         if self.connector is not None:
             await self.connector.undeploy(external)
+
+
+class FutureMeta(ABCMeta):
+    def __instancecheck__(cls, instance):
+        if isinstance(instance, FutureConnector):
+            return super().__subclasscheck__(instance.type)
+        else:
+            return super().__instancecheck__(instance)
+
+
+class FutureAware(metaclass=FutureMeta):
+    __slots__ = ()

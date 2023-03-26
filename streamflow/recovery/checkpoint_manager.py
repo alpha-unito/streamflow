@@ -33,7 +33,7 @@ class DefaultCheckpointManager(CheckpointManager):
         parent_directory = os.path.join(self.checkpoint_dir, random_name())
         local_path = os.path.join(parent_directory, data_location.relpath)
         await self.context.data_manager.transfer_data(
-            src_locations=[data_location],
+            src_location=data_location,
             src_path=data_location.path,
             dst_locations=[Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)],
             dst_path=local_path,

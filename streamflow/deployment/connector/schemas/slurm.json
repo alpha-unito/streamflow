@@ -22,7 +22,7 @@
         },
         "batch": {
           "type": "string",
-          "description": "Nodes can have features assigned to them by the Slurm administrator. Users can specify which of these features are required by their batch script using this options. The ``batch`` argument must be a subset of the job's ``constraint`` argument"
+          "description": "Nodes can have features assigned to them by the Slurm administrator. Users can specify which of these features are required by their batch script using this options. The batch argument must be a subset of the job's constraint argument"
         },
         "bb": {
           "type": "string",
@@ -38,7 +38,7 @@
         },
         "clusterConstraint": {
           "type": "string",
-          "description": "Specifies features that a federated cluster must have to have a sibling job submitted to it. Slurm will attempt to submit a sibling job to a cluster if it has at least one of the specified features. If the ``!`` option is included, Slurm will attempt to submit a sibling job to a cluster that has none of the specified features"
+          "description": "Specifies features that a federated cluster must have to have a sibling job submitted to it. Slurm will attempt to submit a sibling job to a cluster if it has at least one of the specified features. If the ! option is included, Slurm will attempt to submit a sibling job to a cluster that has none of the specified features"
         },
         "clusters": {
           "type": "string",
@@ -74,7 +74,7 @@
         },
         "cpusPerGpu": {
           "type": "integer",
-          "description": "Advise Slurm that ensuing job steps will require ncpus processors per allocated GPU. Not compatible with the ``cpusPerTask`` option"
+          "description": "Advise Slurm that ensuing job steps will require ncpus processors per allocated GPU. Not compatible with the cpusPerTask option"
         },
         "cpusPerTask": {
           "type": "integer",
@@ -105,7 +105,7 @@
               "type": "string"
             }
           ],
-          "description": "The job allocation can not share nodes with other running jobs (or just other users with the ``user`` option or with the ``mcs`` option). If ``user``/``mcs`` are not specified (i.e. the job allocation can not share nodes with other running jobs), the job is allocated all CPUs and GRES on all nodes in the allocation, but is only allocated as much memory as it requested"
+          "description": "The job allocation can not share nodes with other running jobs (or just other users with the user option or with the mcs option). If user/mcs are not specified (i.e. the job allocation can not share nodes with other running jobs), the job is allocated all CPUs and GRES on all nodes in the allocation, but is only allocated as much memory as it requested"
         },
         "export": {
           "type": "string",
@@ -120,7 +120,7 @@
               "type": "string"
             }
           ],
-          "description": "If a number between 3 and ``OPEN_MAX`` is specified as the argument to this option, a readable file descriptor will be assumed (``STDIN`` and ``STDOUT`` are not supported as valid arguments). Otherwise a filename is assumed. Export environment variables defined in ``filename`` or read from ``fd`` to the job's execution environment"
+          "description": "If a number between 3 and OPEN_MAX is specified as the argument to this option, a readable file descriptor will be assumed (STDIN and STDOUT are not supported as valid arguments). Otherwise a filename is assumed. Export environment variables defined in filename or read from fd to the job's execution environment"
         },
         "extraNodeInfo": {
           "type": "string",
@@ -139,7 +139,7 @@
               "type": "string"
             }
           ],
-          "description": "This option will tell sbatch to retrieve the login environment variables for the user specified in the ``uid`` option. Be aware that any environment variables already set in sbatch's environment will take precedence over any environment variables in the user's login environment. The optional timeout value is in seconds (default: 8)"
+          "description": "This option will tell sbatch to retrieve the login environment variables for the user specified in the uid option. Be aware that any environment variables already set in sbatch's environment will take precedence over any environment variables in the user's login environment. The optional timeout value is in seconds (default: 8)"
         },
         "gid": {
           "anyOf": [
@@ -150,7 +150,7 @@
               "type": "string"
             }
           ],
-          "description": "Submit the job with group's group access permissions. The ``gid`` option may be the group name or the numerical group ID"
+          "description": "Submit the job with group's group access permissions. The gid option may be the group name or the numerical group ID"
         },
         "gpuBind": {
           "type": "string",
@@ -162,19 +162,19 @@
         },
         "gpus": {
           "type": "string",
-          "description": "Specify the total number of GPUs required for the job. An optional GPU type specification can be supplied (e.g., ``volta:3``)"
+          "description": "Specify the total number of GPUs required for the job. An optional GPU type specification can be supplied (e.g., volta:3)"
         },
         "gpusPerNode": {
           "type": "string",
-          "description": "Specify the number of GPUs required for the job on each node included in the job's resource allocation. An optional GPU type specification can be supplied (e.g., ``volta:3``)"
+          "description": "Specify the number of GPUs required for the job on each node included in the job's resource allocation. An optional GPU type specification can be supplied (e.g., volta:3)"
         },
         "gpusPerSocket": {
           "type": "string",
-          "description": "Specify the number of GPUs required for the job on each socket included in the job's resource allocation. An optional GPU type specification can be supplied (e.g., ``volta:3``)"
+          "description": "Specify the number of GPUs required for the job on each socket included in the job's resource allocation. An optional GPU type specification can be supplied (e.g., volta:3)"
         },
         "gpusPerTask": {
           "type": "string",
-          "description": "Specify the number of GPUs required for the job on each task to be spawned in the job's resource allocation. An optional GPU type specification can be supplied (e.g., ``volta:3``)"
+          "description": "Specify the number of GPUs required for the job on each task to be spawned in the job's resource allocation. An optional GPU type specification can be supplied (e.g., volta:3)"
         },
         "gres": {
           "type": "string",
@@ -186,11 +186,11 @@
         },
         "hint": {
           "type": "string",
-          "description": "Bind tasks according to application hints. This option cannot be used in conjunction with ``ntasksPerCore``, ``threadsPerCore``, or ``extraNodeInfo``"
+          "description": "Bind tasks according to application hints. This option cannot be used in conjunction with ntasksPerCore, threadsPerCore, or extraNodeInfo"
         },
         "ignorePBS": {
           "type": "boolean",
-          "description": "Ignore all ``#PBS`` and ``#BSUB`` options specified in the batch script"
+          "description": "Ignore all #PBS and #BSUB options specified in the batch script"
         },
         "jobName": {
           "type": "string",
@@ -206,7 +206,7 @@
         },
         "mailUser": {
           "type": "string",
-          "description": "User to receive email notification of state changes as defined by ``mailType``. The default value is the submitting user"
+          "description": "User to receive email notification of state changes as defined by mailType. The default value is the submitting user"
         },
         "mcsLabel": {
           "type": "string",
@@ -250,7 +250,7 @@
         },
         "nodefile": {
           "type": "string",
-          "description": "Much like ``nodelist``, but the list is contained in a file of name node file"
+          "description": "Much like nodelist, but the list is contained in a file of name node file"
         },
         "nodelist": {
           "type": "string",
@@ -258,7 +258,7 @@
         },
         "nodes": {
           "type": "string",
-          "description": "Request that a minimum of minnodes nodes be allocated to this job. A maximum node count may also be specified with maxnodes. If only one number is specified, this is used as both the minimum and maximum node count. Node count can be also specified as ``size_string``. The ``size_string`` specification identifies what nodes values should be used"
+          "description": "Request that a minimum of minnodes nodes be allocated to this job. A maximum node count may also be specified with maxnodes. If only one number is specified, this is used as both the minimum and maximum node count. Node count can be also specified as size_string. The size_string specification identifies what nodes values should be used"
         },
         "ntasks": {
           "type": "integer",
@@ -302,7 +302,7 @@
         },
         "prefer": {
           "type": "string",
-          "description": "Nodes can have features assigned to them by the Slurm administrator. Users can specify which of these features are desired but not required by their job using the prefer option. This option operates independently from ``constraint`` and will override whatever is set there if possible"
+          "description": "Nodes can have features assigned to them by the Slurm administrator. Users can specify which of these features are desired but not required by their job using the prefer option. This option operates independently from constraint and will override whatever is set there if possible"
         },
         "priority": {
           "type": "string",
@@ -310,7 +310,7 @@
         },
         "profile": {
           "type": "string",
-          "description": "Enables detailed data collection by the ``acct_gather_profile`` plugin"
+          "description": "Enables detailed data collection by the acct_gather_profile plugin"
         },
         "propagate": {
           "type": "string",
@@ -334,7 +334,7 @@
         },
         "signal": {
           "type": "string",
-          "description": "When a job is within ``sig_time`` seconds of its end time, send it the signal ``sig_num``. Due to the resolution of event handling by Slurm, the signal may be sent up to 60 seconds earlier than specified"
+          "description": "When a job is within sig_time seconds of its end time, send it the signal sig_num. Due to the resolution of event handling by Slurm, the signal may be sent up to 60 seconds earlier than specified"
         },
         "socketsPerNode": {
           "type": "integer",
@@ -358,7 +358,7 @@
         },
         "timeMin": {
           "type": "string",
-          "description": "Set a minimum time limit on the job allocation. If specified, the job may have its ``time`` limit lowered to a value no lower than ``timeMin`` if doing so permits the job to begin execution earlier than otherwise possible"
+          "description": "Set a minimum time limit on the job allocation. If specified, the job may have its time limit lowered to a value no lower than timeMin if doing so permits the job to begin execution earlier than otherwise possible"
         },
         "tmp": {
           "type": "integer",
@@ -377,7 +377,7 @@
               "type": "string"
             }
           ],
-          "description": "Attempt to submit and/or run a job as ``user`` instead of the invoking user id. ``user`` may be the user name or numerical user ID"
+          "description": "Attempt to submit and/or run a job as user instead of the invoking user id. user may be the user name or numerical user ID"
         },
         "useMinNodes": {
           "type": "boolean",

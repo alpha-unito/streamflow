@@ -172,16 +172,16 @@ class Job:
         name: str,
         workflow_id: int,
         inputs: MutableMapping[str, Token],
-        input_directory: str,
-        output_directory: str,
-        tmp_directory: str,
+        input_directory: str | None,
+        output_directory: str | None,
+        tmp_directory: str | None,
     ):
         self.name: str = name
         self.workflow_id: int = workflow_id
         self.inputs: MutableMapping[str, Token] = inputs
-        self.input_directory: str = input_directory
-        self.output_directory: str = output_directory
-        self.tmp_directory: str = tmp_directory
+        self.input_directory: str | None = input_directory
+        self.output_directory: str | None = output_directory
+        self.tmp_directory: str | None = tmp_directory
 
     @classmethod
     async def _load(
@@ -326,7 +326,7 @@ class Port(PersistableEntity):
                     name=self.name,
                     workflow_id=self.workflow.persistent_id,
                     type=type(self),
-                    params=json.dumps(await self._save_additional_params(context)),
+                    params=await self._save_additional_params(context),
                 )
 
 
@@ -472,7 +472,7 @@ class Step(PersistableEntity, ABC):
                     workflow_id=self.workflow.persistent_id,
                     status=cast(int, self.status.value),
                     type=type(self),
-                    params=json.dumps(await self._save_additional_params(context)),
+                    params=await self._save_additional_params(context),
                 )
         save_tasks = []
         for name, port in self.get_input_ports().items():
@@ -716,7 +716,7 @@ class Workflow(PersistableEntity):
             if not self.persistent_id:
                 self.persistent_id = await self.context.database.add_workflow(
                     name=self.name,
-                    params=json.dumps(await self._save_additional_params(context)),
+                    params=await self._save_additional_params(context),
                     status=Status.WAITING.value,
                     type=self.type,
                 )

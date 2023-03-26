@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from typing import Any, MutableMapping, MutableSequence
 
@@ -126,7 +127,11 @@ class SqliteDatabase(CachedDatabase):
                 return cursor.lastrowid
 
     async def add_port(
-        self, name: str, workflow_id: int, type: type[Port], params: str
+        self,
+        name: str,
+        workflow_id: int,
+        type: type[Port],
+        params: MutableMapping[str, Any],
     ) -> int:
         async with self.connection as db:
             async with db.execute(
@@ -136,7 +141,7 @@ class SqliteDatabase(CachedDatabase):
                     "name": name,
                     "workflow": workflow_id,
                     "type": utils.get_class_fullname(type),
-                    "params": params,
+                    "params": json.dumps(params),
                 },
             ) as cursor:
                 return cursor.lastrowid
@@ -158,7 +163,12 @@ class SqliteDatabase(CachedDatabase):
             )
 
     async def add_step(
-        self, name: str, workflow_id: int, status: int, type: type[Step], params: str
+        self,
+        name: str,
+        workflow_id: int,
+        status: int,
+        type: type[Step],
+        params: MutableMapping[str, Any],
     ) -> int:
         async with self.connection as db:
             async with db.execute(
@@ -169,7 +179,7 @@ class SqliteDatabase(CachedDatabase):
                     "workflow": workflow_id,
                     "status": status,
                     "type": utils.get_class_fullname(type),
-                    "params": params,
+                    "params": json.dumps(params),
                 },
             ) as cursor:
                 return cursor.lastrowid
@@ -178,7 +188,7 @@ class SqliteDatabase(CachedDatabase):
         self,
         deployment: int,
         type: type[Target],
-        params: str,
+        params: MutableMapping[str, Any],
         locations: int = 1,
         service: str | None = None,
         workdir: str | None = None,
@@ -188,7 +198,7 @@ class SqliteDatabase(CachedDatabase):
                 "INSERT INTO target(params, type, deployment, locations, service, workdir) "
                 "VALUES (:params, :type, :deployment, :locations, :service, :workdir)",
                 {
-                    "params": params,
+                    "params": json.dumps(params),
                     "type": utils.get_class_fullname(type),
                     "deployment": deployment,
                     "locations": locations,
@@ -214,12 +224,19 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return cursor.lastrowid
 
-    async def add_workflow(self, name: str, params: str, status: int, type: str) -> int:
+    async def add_workflow(
+        self, name: str, params: MutableMapping[str, Any], status: int, type: str
+    ) -> int:
         async with self.connection as db:
             async with db.execute(
                 "INSERT INTO workflow(name, params, status, type) "
                 "VALUES(:name, :params, :status, :type)",
-                {"name": name, "params": params, "status": status, "type": type},
+                {
+                    "name": name,
+                    "params": json.dumps(params),
+                    "status": status,
+                    "type": type,
+                },
             ) as cursor:
                 return cursor.lastrowid
 
@@ -375,19 +392,6 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchone()
 
-    async def get_workflows_by_name(
-        self, workflow_name: str, last_only: bool = False
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM workflow WHERE name = :name ORDER BY id desc",
-                {"name": workflow_name},
-            ) as cursor:
-                return (
-                    [await cursor.fetchone()] if last_only else await cursor.fetchall()
-                )
-
     async def get_workflow_ports(
         self, workflow_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
@@ -410,7 +414,20 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    async def list_workflows(
+    async def get_workflows_by_name(
+        self, workflow_name: str, last_only: bool = False
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM workflow WHERE name = :name ORDER BY id desc",
+                {"name": workflow_name},
+            ) as cursor:
+                return (
+                    [await cursor.fetchone()] if last_only else await cursor.fetchall()
+                )
+
+    async def get_workflows_list(
         self, name: str | None
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:

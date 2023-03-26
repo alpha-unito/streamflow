@@ -440,7 +440,7 @@ class CWLTransferStep(TransferStep):
             )
             # Perform and transfer
             await self.workflow.context.data_manager.transfer_data(
-                src_locations=[selected_location],
+                src_location=selected_location,
                 src_path=selected_location.path,
                 dst_locations=dst_locations,
                 dst_path=filepath,
@@ -460,7 +460,7 @@ class CWLTransferStep(TransferStep):
                 data_locations = self.workflow.context.data_manager.get_data_locations(
                     path=filepath,
                     deployment=dst_connector.deployment_name,
-                    location_type=DataType.SYMBOLIC_LINK,
+                    data_type=DataType.SYMBOLIC_LINK,
                 )
                 # If the remote location is not a symbolic link, perform remote checksum
                 original_checksum = token_value["checksum"]

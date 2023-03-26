@@ -6,21 +6,20 @@ import os
 import posixpath
 import shlex
 import tarfile
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContext
 from streamflow.core.deployment import (
     Connector,
-    ConnectorCopyKind,
     LOCAL_LOCATION,
     Location,
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.utils import get_local_to_remote_destination
 from streamflow.deployment import aiotarstream
-from streamflow.deployment.future import FutureConnector
+from streamflow.deployment.future import FutureAware
 from streamflow.deployment.stream import (
     StreamReaderWrapper,
     StreamWriterWrapper,
@@ -56,23 +55,10 @@ async def extract_tar_stream(
             await tar.extract(member, os.path.normpath(os.path.join(dst, member.path)))
 
 
-class FutureMeta(ABCMeta):
-    def __instancecheck__(cls, instance):
-        if isinstance(instance, FutureConnector):
-            return super().__subclasscheck__(instance.type)
-        else:
-            return super().__instancecheck__(instance)
-
-
-class FutureAware(metaclass=FutureMeta):
-    __slots__ = ()
-
-
 class BaseConnector(Connector, FutureAware):
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
         super().__init__(deployment_name, config_dir)
         self.transferBufferSize: int = transferBufferSize
-        self.is_deployed: bool = False
 
     async def _copy_local_to_remote(
         self,
@@ -249,85 +235,91 @@ class BaseConnector(Connector, FutureAware):
             )
         )
 
-    async def copy(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
         locations: MutableSequence[Location],
-        kind: ConnectorCopyKind,
-        source_connector: Connector | None = None,
-        source_location: Location | None = None,
         read_only: bool = False,
     ) -> None:
-        if kind == ConnectorCopyKind.REMOTE_TO_REMOTE:
-            if source_location is None:
-                raise Exception(
-                    "Source location is mandatory for remote to remote copy"
-                )
-            if logger.isEnabledFor(logging.INFO):
-                if len(locations) > 1:
-                    logger.info(
-                        "COPYING {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
-                            src_loc=source_location,
-                            src=src,
-                            dst=dst,
-                            locations="\n\t".join([str(loc) for loc in locations]),
-                        )
-                    )
-                else:
-                    logger.info(
-                        "COPYING {src} on location {src_loc} to {dst} on location {location}".format(
-                            src_loc=source_location,
-                            src=src,
-                            dst=dst,
-                            location=locations[0],
-                        )
-                    )
-            await self._copy_remote_to_remote(
-                src=src,
-                dst=dst,
-                locations=locations,
-                source_connector=source_connector,
-                source_location=source_location,
-                read_only=read_only,
-            )
-        elif kind == ConnectorCopyKind.LOCAL_TO_REMOTE:
-            if logger.isEnabledFor(logging.INFO):
-                if len(locations) > 1:
-                    logger.info(
-                        "COPYING {src} on local file-system to {dst} on locations:\n\t{locations}".format(
-                            src=src,
-                            dst=dst,
-                            locations="\n\t".join([str(loc) for loc in locations]),
-                        )
-                    )
-                else:
-                    logger.info(
-                        "COPYING {src} on local file-system to {dst} {location}".format(
-                            src=src,
-                            dst=dst,
-                            location=(
-                                "on local file-system"
-                                if locations[0].name == LOCAL_LOCATION
-                                else f"on location {locations[0]}"
-                            ),
-                        )
-                    )
-            await self._copy_local_to_remote(
-                src=src, dst=dst, locations=locations, read_only=read_only
-            )
-        elif kind == ConnectorCopyKind.REMOTE_TO_LOCAL:
+        if logger.isEnabledFor(logging.INFO):
             if len(locations) > 1:
-                raise Exception("Copy from multiple locations is not supported")
-            if logger.isEnabledFor(logging.INFO):
                 logger.info(
-                    f"COPYING {src} on location {locations[0]} to {dst} on local file-system"
+                    "COPYING {src} on local file-system to {dst} on locations:\n\t{locations}".format(
+                        src=src,
+                        dst=dst,
+                        locations="\n\t".join([str(loc) for loc in locations]),
+                    )
                 )
-            await self._copy_remote_to_local(
-                src=src, dst=dst, location=locations[0], read_only=read_only
+            else:
+                logger.info(
+                    "COPYING {src} on local file-system to {dst} {location}".format(
+                        src=src,
+                        dst=dst,
+                        location=(
+                            "on local file-system"
+                            if locations[0].name == LOCAL_LOCATION
+                            else f"on location {locations[0]}"
+                        ),
+                    )
+                )
+        await self._copy_local_to_remote(
+            src=src, dst=dst, locations=locations, read_only=read_only
+        )
+
+    async def copy_remote_to_local(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[Location],
+        read_only: bool = False,
+    ) -> None:
+        if len(locations) > 1:
+            raise Exception("Copy from multiple locations is not supported")
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                f"COPYING {src} on location {locations[0]} to {dst} on local file-system"
             )
-        else:
-            raise NotImplementedError
+        await self._copy_remote_to_local(
+            src=src, dst=dst, location=locations[0], read_only=read_only
+        )
+
+    async def copy_remote_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[Location],
+        source_location: Location,
+        source_connector: Connector | None = None,
+        read_only: bool = False,
+    ):
+        if logger.isEnabledFor(logging.INFO):
+            if len(locations) > 1:
+                logger.info(
+                    "COPYING {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
+                        src_loc=source_location,
+                        src=src,
+                        dst=dst,
+                        locations="\n\t".join([str(loc) for loc in locations]),
+                    )
+                )
+            else:
+                logger.info(
+                    "COPYING {src} on location {src_loc} to {dst} on location {location}".format(
+                        src_loc=source_location,
+                        src=src,
+                        dst=dst,
+                        location=locations[0],
+                    )
+                )
+        await self._copy_remote_to_remote(
+            src=src,
+            dst=dst,
+            locations=locations,
+            source_location=source_location,
+            source_connector=source_connector,
+            read_only=read_only,
+        )
 
     async def run(
         self,
