@@ -204,10 +204,10 @@ def search_step_name_into_graph(graph_tokens):
                 return s
     raise Exception("Step name non trovato")
 
-async def printa_token(token_visited_2, workflow, graph_tokens, loading_context):
+async def printa_token(token_visited, workflow, graph_tokens, loading_context):
     token_values = {}
-    for id, token in token_visited_2.items():
-        token_values[id] = str_token_value(token)
+    for token_id, (token, _) in token_visited.items():
+        token_values[token_id] = str_token_value(token)
     token_values[INIT_DAG_FLAG] = INIT_DAG_FLAG
     step_name = search_step_name_into_graph(graph_tokens)
     token_values[step_name] = step_name
@@ -217,7 +217,7 @@ async def printa_token(token_visited_2, workflow, graph_tokens, loading_context)
         step_1 = (
             (
                 await _load_steps_from_token(
-                    token_visited_2[token_id],
+                    token_visited[token_id][0],
                     workflow.context,
                     loading_context,
                     workflow,
@@ -230,7 +230,7 @@ async def printa_token(token_visited_2, workflow, graph_tokens, loading_context)
         )
         steps_2 = set()
         label = (
-            str_token_value(token_visited_2[token_id]) + f"({token_id})"
+            str_token_value(token_visited[token_id][0]) + f"({token_id})"
             if isinstance(token_id, int)
             else token_values[token_id]
         )
@@ -238,7 +238,7 @@ async def printa_token(token_visited_2, workflow, graph_tokens, loading_context)
             step_2 = (
                 (
                     await _load_steps_from_token(
-                        token_visited_2[token_id_2],
+                        token_visited[token_id_2][0],
                         workflow.context,
                         loading_context,
                         workflow,
@@ -252,20 +252,7 @@ async def printa_token(token_visited_2, workflow, graph_tokens, loading_context)
             steps_2.add(step_2)
         if step_1 != INIT_DAG_FLAG:
             graph_steps[step_1] = [(s, label) for s in steps_2]
-
-    # print_graph_figure(
-    #     {
-    #         f"{token_values[k]}({k})": {f"{token_values[v]}({v})" for v in vals}
-    #         for k, vals in graph_tokens.items()
-    #     },
-    #     "graph_tokens recovery",
-    # )
     print_graph_figure_label(graph_steps, "graph_steps recovery")
-
-
-
-
-
 
 async def _cleanup_dir(
     connector: Connector, location: Location, directory: str
@@ -273,7 +260,6 @@ async def _cleanup_dir(
     await remotepath.rm(
         connector, location, await remotepath.listdir(connector, location, directory)
     )
-
 
 async def _load_prev_tokens(token_id, loading_context, context):
     rows = await context.database.get_dependee(token_id)
@@ -414,15 +400,13 @@ async def _put_tokens(
     workflow: Workflow,
     dag_tokens: MutableMapping[int, MutableSet[int]],
     token_visited: MutableMapping[int, bool],
-    token_visited_2: MutableMapping[int, Token],
-    token_in_dag: MutableSet,
     loading_context,
 ):
     token_port = {}
     port_tokens = {}
     # recupero le port associate ai token
     # TODO: doppio lavoro. trovare un modo per ricavarlo quando popolo il workflow.
-    for token_id in token_in_dag:
+    for token_id in token_visited.keys():
         rows = await workflow.context.database.get_port_from_token(token_id)
         if rows:
             token_port[token_id] = await loading_context.load_port(
@@ -439,25 +423,21 @@ async def _put_tokens(
     # add tokens into the ports
     for token_id in dag_tokens[INIT_DAG_FLAG]:
         port = new_workflow.ports[token_port[token_id].name]
-        port.put(token_visited_2[token_id])
+        port.put(token_visited[token_id][0])
         if len(port.token_list) == len(port_tokens[port.name]):
             port.put(TerminationToken())
 
-
-
 async def _populate_workflow(
-    token_in_dag,
     token_visited,
-    token_visited_2,
     workflow,
     new_workflow,
     loading_context,
 ):
-    for token_id in token_in_dag:
-        if not token_visited[token_id]:
+    for token, is_available in token_visited.values():
+        if not is_available:
             step = (
                 await _load_steps_from_token(
-                    token_visited_2[token_id],
+                    token,
                     workflow.context,
                     loading_context,
                     new_workflow,
@@ -479,8 +459,6 @@ async def _populate_workflow(
                     new_workflow,
                 )
             )
-
-
 
 INIT_DAG_FLAG = "init"
 
@@ -587,10 +565,7 @@ class DefaultFailureManager(FailureManager):
         for t in job_version.job.inputs.values():
             dag_token[t.persistent_id] = set((job_version.step.name,))
 
-        # todo: unire questi tre in un unico dizionario. Portano alla fine le stesse info { token_id: (token, is_available)}
-        token_in_dag = set()
-        token_visited = {}  # token.id -> is_available
-        token_visited_2 = {}  # token.id -> token
+        token_visited = {}  # { token_id: (token, is_available)}
 
         new_workflow.add_step(
             await Step.load(
@@ -605,8 +580,7 @@ class DefaultFailureManager(FailureManager):
             res = await is_token_available(token, workflow.context)
             # controllo inutile. Aggiungo in tokens solo token che non sono stati visitati
             if token.persistent_id not in token_visited.keys():
-                token_visited[token.persistent_id] = res
-                token_visited_2[token.persistent_id] = token
+                token_visited[token.persistent_id] = (token, res)
             else:
                 raise Exception("DOPPIONEEEE")
 
@@ -620,30 +594,23 @@ class DefaultFailureManager(FailureManager):
                     if INIT_DAG_FLAG not in dag_token.keys():
                         dag_token[INIT_DAG_FLAG] = set()
                     dag_token[INIT_DAG_FLAG].add(token.persistent_id)
-                    token_in_dag.add(token.persistent_id)
                 for pt in prev_tokens:
                     if pt.persistent_id not in dag_token.keys():
                         dag_token[pt.persistent_id] = set()
                     dag_token[pt.persistent_id].add(token.persistent_id)
-                    token_in_dag.add(pt.persistent_id)
-                    token_in_dag.add(token.persistent_id)
                     if pt.persistent_id not in token_visited.keys():
                         tokens.add(pt)
             else:
                 if INIT_DAG_FLAG not in dag_token.keys():
                     dag_token[INIT_DAG_FLAG] = set()
                 dag_token[INIT_DAG_FLAG].add(token.persistent_id)
-                token_in_dag.add(token.persistent_id)
 
         token_visited = dict(sorted(token_visited.items()))
-        token_visited_2 = dict(sorted(token_visited_2.items()))
-        await printa_token(token_visited_2, workflow, dag_token, loading_context)
+        await printa_token(token_visited, workflow, dag_token, loading_context)
         pass
 
         await _populate_workflow(
-            token_in_dag,
             token_visited,
-            token_visited_2,
             workflow,
             new_workflow,
             loading_context,
@@ -655,8 +622,6 @@ class DefaultFailureManager(FailureManager):
             workflow,
             dag_token,
             token_visited,
-            token_visited_2,
-            token_in_dag,
             loading_context,
         )
         pass
@@ -664,10 +629,10 @@ class DefaultFailureManager(FailureManager):
         self._save_for_retag(workflow, new_workflow, dag_token)
 
         # sblocca scheduler
-        for token_id in token_in_dag:
-            if isinstance(token_visited_2[token_id], JobToken):
+        for token, _ in token_visited.values():
+            if isinstance(token, JobToken):
                 await workflow.context.scheduler.notify_status(
-                    token_visited_2[token_id].value.name, Status.WAITING
+                    token.value.name, Status.WAITING
                 )
 
         print("VIAAAAAAAAAAAAAA")
