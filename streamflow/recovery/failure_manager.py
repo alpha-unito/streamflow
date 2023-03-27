@@ -63,6 +63,210 @@ from streamflow.core.workflow import Workflow
 import graphviz
 
 
+
+def add_step(step, steps):
+    found = False
+    for s in steps:
+        found = found or s.name == step.name
+    if not found:
+        steps.append(step)
+
+
+def add_pair(step_name, label, step_labels, tokens):
+    for curr_step_name, curr_label in step_labels:
+        if curr_step_name == step_name and curr_label == label:
+            return
+    step_labels.append((step_name, label))
+
+
+def valid_step_name(step_name, sep="_"):
+    return step_name
+    # return step_name[1:].replace('/', sep).replace('-', sep)
+
+
+def print_graph_figure(graph, title):
+    dot = graphviz.Digraph(title)
+    for vertex, neighbors in graph.items():
+        dot.node(str(vertex))
+        for n in neighbors:
+            dot.edge(str(vertex), str(n))
+    # print(dot.source)
+    dot.view("dev/" + title + ".gv")  # tempfile.mktemp('.gv')
+
+
+def print_graph_figure_label(graph, title):
+    dot = graphviz.Digraph(title)
+    for vertex, neighbors in graph.items():
+        dot.node(str(vertex))
+        for n, l in neighbors:
+            dot.edge(str(vertex), str(n), label=str(l))
+    # print(dot.source)
+    dot.view("dev/" + title + ".gv")  # tempfile.mktemp('.gv')
+
+
+async def print_graph(job_version, loading_context):
+    """
+    FUNCTION FOR DEBUGGING
+    """
+    rows = await job_version.step.workflow.context.database.get_all_provenance()
+    tokens = {}
+    graph = {}
+    for row in rows:
+        dependee = (
+            await loading_context.load_token(
+                job_version.step.workflow.context, row["dependee"]
+            )
+            if row["dependee"]
+            else -1
+        )
+        depender = (
+            await loading_context.load_token(
+                job_version.step.workflow.context, row["depender"]
+            )
+            if row["depender"]
+            else -1
+        )
+        curr_key = dependee.persistent_id if dependee != -1 else -1
+        if curr_key not in graph.keys():
+            graph[curr_key] = set()
+        graph[curr_key].add(depender.persistent_id)
+        tokens[depender.persistent_id] = depender
+        tokens[curr_key] = dependee
+
+    steps_token = {}
+    graph_steps = {}
+    for k, values in graph.items():
+        if k != -1:
+            k_step = (
+                await _load_steps_from_token(
+                    tokens[k],
+                    job_version.step.workflow.context,
+                    loading_context,
+                    job_version.step.workflow,
+                )
+            ).pop()
+        step_name = k_step.name if k != -1 else INIT_DAG_FLAG
+        if step_name not in graph_steps.keys():
+            graph_steps[step_name] = set()
+        if step_name not in steps_token.keys():
+            steps_token[step_name] = set()
+        steps_token[step_name].add(k)
+
+        for v in values:
+            s = (
+                await _load_steps_from_token(
+                    tokens[v],
+                    job_version.step.workflow.context,
+                    loading_context,
+                    job_version.step.workflow,
+                )
+            ).pop()
+            graph_steps[step_name].add(s.name)
+            if s.name not in steps_token.keys():
+                steps_token[s.name] = set()
+            steps_token[s.name].add(v)
+
+    valid_steps_graph = {}
+    for step_name_1, steps_name in graph_steps.items():
+        valid_steps_graph[step_name_1] = []
+        for step_name_2 in steps_name:
+            for label in steps_token[step_name_1]:
+                add_pair(
+                    step_name_2,
+                    str_token_value(tokens[label]) + f"({label})",
+                    valid_steps_graph[step_name_1],
+                    tokens,
+                )
+
+    print_graph_figure_label(valid_steps_graph, "get_all_provenance_steps")
+    wf_steps = sorted(job_version.step.workflow.steps.keys())
+    pass
+
+
+def str_token_value(token):
+    if isinstance(token, CWLFileToken):
+        return token.value["class"]  # token.value['path']
+    if isinstance(token, ListToken):
+        return str([str_token_value(t) for t in token.value])
+    if isinstance(token, JobToken):
+        return token.value.name
+    if isinstance(token, TerminationToken):
+        return "T"
+    if isinstance(token, Token):
+        return str(token.value)
+    return "None"
+
+
+def search_step_name_into_graph(graph_tokens):
+    for tokens in graph_tokens.values():
+        for s in tokens:
+            if isinstance(s, str) and s != INIT_DAG_FLAG:
+                return s
+    raise Exception("Step name non trovato")
+
+async def printa_token(token_visited_2, workflow, graph_tokens, loading_context):
+    token_values = {}
+    for id, token in token_visited_2.items():
+        token_values[id] = str_token_value(token)
+    token_values[INIT_DAG_FLAG] = INIT_DAG_FLAG
+    step_name = search_step_name_into_graph(graph_tokens)
+    token_values[step_name] = step_name
+
+    graph_steps = {}
+    for token_id, tokens_id in graph_tokens.items():
+        step_1 = (
+            (
+                await _load_steps_from_token(
+                    token_visited_2[token_id],
+                    workflow.context,
+                    loading_context,
+                    workflow,
+                )
+            )
+            .pop()
+            .name
+            if isinstance(token_id, int)
+            else token_values[token_id]
+        )
+        steps_2 = set()
+        label = (
+            str_token_value(token_visited_2[token_id]) + f"({token_id})"
+            if isinstance(token_id, int)
+            else token_values[token_id]
+        )
+        for token_id_2 in tokens_id:
+            step_2 = (
+                (
+                    await _load_steps_from_token(
+                        token_visited_2[token_id_2],
+                        workflow.context,
+                        loading_context,
+                        workflow,
+                    )
+                )
+                .pop()
+                .name
+                if isinstance(token_id_2, int)
+                else token_values[token_id_2]
+            )
+            steps_2.add(step_2)
+        if step_1 != INIT_DAG_FLAG:
+            graph_steps[step_1] = [(s, label) for s in steps_2]
+
+    # print_graph_figure(
+    #     {
+    #         f"{token_values[k]}({k})": {f"{token_values[v]}({v})" for v in vals}
+    #         for k, vals in graph_tokens.items()
+    #     },
+    #     "graph_tokens recovery",
+    # )
+    print_graph_figure_label(graph_steps, "graph_steps recovery")
+
+
+
+
+
+
 async def _cleanup_dir(
     connector: Connector, location: Location, directory: str
 ) -> None:
@@ -136,117 +340,6 @@ async def data_location_exists(data_locations, context, token):
     return False
 
 
-def add_step(step, steps):
-    found = False
-    for s in steps:
-        found = found or s.name == step.name
-    if not found:
-        steps.append(step)
-
-
-def add_pair(step_name, label, step_labels, tokens):
-    for curr_step_name, curr_label in step_labels:
-        if curr_step_name == step_name and curr_label == label:
-            return
-    step_labels.append((step_name, label))
-
-
-def valid_step_name(step_name, sep="_"):
-    return step_name
-    # return step_name[1:].replace('/', sep).replace('-', sep)
-
-
-async def print_graph(job_version, loading_context):
-    """
-    FUNCTION FOR DEBUGGING
-    """
-    rows = await job_version.step.workflow.context.database.get_all_provenance()
-    tokens = {}
-    graph = {}
-    for row in rows:
-        dependee = (
-            await loading_context.load_token(
-                job_version.step.workflow.context, row["dependee"]
-            )
-            if row["dependee"]
-            else -1
-        )
-        depender = (
-            await loading_context.load_token(
-                job_version.step.workflow.context, row["depender"]
-            )
-            if row["depender"]
-            else -1
-        )
-        curr_key = dependee.persistent_id if dependee != -1 else -1
-        if curr_key not in graph.keys():
-            graph[curr_key] = set()
-        graph[curr_key].add(depender.persistent_id)
-        tokens[depender.persistent_id] = depender
-        tokens[curr_key] = dependee
-
-    steps_token = {}
-    graph_steps = {}
-    for k, values in graph.items():
-        if k != -1:
-            k_step = (
-                await _load_steps_from_token(
-                    tokens[k],
-                    job_version.step.workflow.context,
-                    loading_context,
-                    job_version.step.workflow,
-                )
-            ).pop()
-        step_name = k_step.name if k != -1 else "init"
-        if step_name not in graph_steps.keys():
-            graph_steps[step_name] = set()
-        if step_name not in steps_token.keys():
-            steps_token[step_name] = set()
-        steps_token[step_name].add(k)
-
-        for v in values:
-            s = (
-                await _load_steps_from_token(
-                    tokens[v],
-                    job_version.step.workflow.context,
-                    loading_context,
-                    job_version.step.workflow,
-                )
-            ).pop()
-            graph_steps[step_name].add(s.name)
-            if s.name not in steps_token.keys():
-                steps_token[s.name] = set()
-            steps_token[s.name].add(v)
-
-    valid_steps_graph = {}
-    for step_name_1, steps_name in graph_steps.items():
-        valid_steps_graph[step_name_1] = []
-        for step_name_2 in steps_name:
-            for label in steps_token[step_name_1]:
-                add_pair(
-                    step_name_2,
-                    str_token_value(tokens[label]) + f"({label})",
-                    valid_steps_graph[step_name_1],
-                    tokens,
-                )
-
-    print_graph_figure_label(valid_steps_graph, "get_all_provenance_steps")
-    wf_steps = sorted(job_version.step.workflow.steps.keys())
-    pass
-
-
-def str_token_value(token):
-    if isinstance(token, CWLFileToken):
-        return token.value["class"]  # token.value['path']
-    if isinstance(token, ListToken):
-        return str([str_token_value(t) for t in token.value])
-    if isinstance(token, JobToken):
-        return token.value.name
-    if isinstance(token, TerminationToken):
-        return "T"
-    if isinstance(token, Token):
-        return str(token.value)
-    return "None"
 
 
 def _get_data_location(path, context):
@@ -302,25 +395,6 @@ def find_step_by_id(step_id, workflow):
     return None
 
 
-def print_graph_figure(graph, title):
-    dot = graphviz.Digraph(title)
-    for vertex, neighbors in graph.items():
-        dot.node(str(vertex))
-        for n in neighbors:
-            dot.edge(str(vertex), str(n))
-    # print(dot.source)
-    dot.view("dev/" + title + ".gv")  # tempfile.mktemp('.gv')
-
-
-def print_graph_figure_label(graph, title):
-    dot = graphviz.Digraph(title)
-    for vertex, neighbors in graph.items():
-        dot.node(str(vertex))
-        for n, l in neighbors:
-            dot.edge(str(vertex), str(n), label=str(l))
-    # print(dot.source)
-    dot.view("dev/" + title + ".gv")  # tempfile.mktemp('.gv')
-
 
 def clean_lists(steps_token, ports_token, token_visited):
     for port_name, p_token in ports_token.items():
@@ -346,7 +420,8 @@ async def _put_tokens(
 ):
     token_port = {}
     port_tokens = {}
-    # recupero le port associate ai token # TODO: doppio lavoro. trovare un modo per ricavarlo quando popolo il workflow.
+    # recupero le port associate ai token
+    # TODO: doppio lavoro. trovare un modo per ricavarlo quando popolo il workflow.
     for token_id in token_in_dag:
         rows = await workflow.context.database.get_port_from_token(token_id)
         if rows:
@@ -360,70 +435,14 @@ async def _put_tokens(
             port_tokens[token_port[token_id].name] = set()
         port_tokens[token_port[token_id].name].add(token_id)
 
-    init_tokens = set()
-    for token_id in dag_tokens.keys():
-        for tokens_id in dag_tokens.values():
-            if token_id not in tokens_id and token_visited[token_id]:
-                init_tokens.add(token_id)
-    for token_id in init_tokens:
+
+    # add tokens into the ports
+    for token_id in dag_tokens[INIT_DAG_FLAG]:
         port = new_workflow.ports[token_port[token_id].name]
         port.put(token_visited_2[token_id])
         if len(port.token_list) == len(port_tokens[port.name]):
             port.put(TerminationToken())
 
-
-async def printa_token(token_visited_2, workflow, graph_tokens, loading_context):
-    token_values = {}
-    for id, token in token_visited_2.items():
-        token_values[id] = str_token_value(token)
-    token_values[-1] = "init"
-
-    graph_steps = {}
-    for token_id, tokens_id in graph_tokens.items():
-        step_1 = (
-            (
-                await _load_steps_from_token(
-                    token_visited_2[token_id],
-                    workflow.context,
-                    loading_context,
-                    workflow,
-                )
-            )
-            .pop()
-            .name
-            if token_id != -1
-            else "init"
-        )
-        steps_2 = set()
-        label = (
-            str_token_value(token_visited_2[token_id]) + f"({token_id})"
-            if token_id != -1
-            else "init"
-        )
-        for token_id_2 in tokens_id:
-            step_2 = (
-                (
-                    await _load_steps_from_token(
-                        token_visited_2[token_id_2],
-                        workflow.context,
-                        loading_context,
-                        workflow,
-                    )
-                )
-                .pop()
-                .name
-            )
-            steps_2.add(step_2)
-        graph_steps[step_1] = [(s, label) for s in steps_2]
-
-    # print_graph_figure(
-    #     {
-    #         f"{token_values[k]}({k})": {f"{token_values[v]}({v})" for v in vals}
-    #         for k, vals in graph_tokens.items()
-    #     },
-    #     "graph_tokens recovery",
-    # )
-    print_graph_figure_label(graph_steps, "graph_steps recovery")
 
 
 async def _populate_workflow(
@@ -434,8 +453,6 @@ async def _populate_workflow(
     new_workflow,
     loading_context,
 ):
-    # TODO: dire che se il token è disponibile, non serve caricare lo step (per togliere le injector di combine e i CWLTokenTransformer di tosort). controllare che tutti gli altri step ci siano
-
     for token_id in token_in_dag:
         if not token_visited[token_id]:
             step = (
@@ -445,7 +462,7 @@ async def _populate_workflow(
                     loading_context,
                     new_workflow,
                 )
-            ).pop()  # if token_id != -1 else None
+            ).pop()
             if step and step.name not in new_workflow.steps.keys():
                 new_workflow.add_step(step)
 
@@ -462,6 +479,10 @@ async def _populate_workflow(
                     new_workflow,
                 )
             )
+
+
+
+INIT_DAG_FLAG = "init"
 
 
 class DefaultFailureManager(FailureManager):
@@ -563,6 +584,10 @@ class DefaultFailureManager(FailureManager):
         tokens.add(job_version.step.get_job_token(job_version.job))
 
         dag_token = {}  # token.id -> set of next tokens id
+        for t in job_version.job.inputs.values():
+            dag_token[t.persistent_id] = set((job_version.step.name,))
+
+        # todo: unire questi tre in un unico dizionario. Portano alla fine le stesse info { token_id: (token, is_available)}
         token_in_dag = set()
         token_visited = {}  # token.id -> is_available
         token_visited_2 = {}  # token.id -> token
@@ -586,19 +611,15 @@ class DefaultFailureManager(FailureManager):
                 raise Exception("DOPPIONEEEE")
 
             if not res:
-                # if token.persistent_id not in dag_token.keys():
-                #     dag_token[token.persistent_id] = set()
-                #     token_in_dag.add(token.persistent_id)
-
                 prev_tokens = await _load_prev_tokens(
                     token.persistent_id,
                     loading_context,
                     workflow.context,
                 )
                 if not prev_tokens:
-                    if -1 not in dag_token.keys():
-                        dag_token[-1] = set()
-                    dag_token[-1].add(token.persistent_id)
+                    if INIT_DAG_FLAG not in dag_token.keys():
+                        dag_token[INIT_DAG_FLAG] = set()
+                    dag_token[INIT_DAG_FLAG].add(token.persistent_id)
                     token_in_dag.add(token.persistent_id)
                 for pt in prev_tokens:
                     if pt.persistent_id not in dag_token.keys():
@@ -608,6 +629,11 @@ class DefaultFailureManager(FailureManager):
                     token_in_dag.add(token.persistent_id)
                     if pt.persistent_id not in token_visited.keys():
                         tokens.add(pt)
+            else:
+                if INIT_DAG_FLAG not in dag_token.keys():
+                    dag_token[INIT_DAG_FLAG] = set()
+                dag_token[INIT_DAG_FLAG].add(token.persistent_id)
+                token_in_dag.add(token.persistent_id)
 
         token_visited = dict(sorted(token_visited.items()))
         token_visited_2 = dict(sorted(token_visited_2.items()))
@@ -636,14 +662,6 @@ class DefaultFailureManager(FailureManager):
         pass
 
         self._save_for_retag(workflow, new_workflow, dag_token)
-
-        # TODO: automatizzare
-        for step_port_name, port_name in workflow.steps[
-            "/tocombine"
-        ].input_ports.items():
-            if step_port_name not in ("__job__", "files"):
-                for t in workflow.ports[port_name].token_list:
-                    new_workflow.ports[port_name].put(t)
 
         # sblocca scheduler
         for token_id in token_in_dag:
