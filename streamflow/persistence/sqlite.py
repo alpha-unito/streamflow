@@ -329,7 +329,7 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return [row[0] for row in await cursor.fetchall()]
 
-    async def get_port_from_token(self, port_id: int) -> MutableSequence[int]:
+    async def get_tokens_from_port(self, port_id: int) -> MutableSequence[int]:
         async with self.connection as db:
             async with db.execute(
                 "SELECT id FROM token WHERE port = :port", {"port": port_id}

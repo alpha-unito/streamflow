@@ -63,7 +63,6 @@ from streamflow.core.workflow import Workflow
 import graphviz
 
 
-
 def add_step(step, steps):
     found = False
     for s in steps:
@@ -204,6 +203,7 @@ def search_step_name_into_graph(graph_tokens):
                 return s
     raise Exception("Step name non trovato")
 
+
 async def printa_token(token_visited, workflow, graph_tokens, loading_context):
     token_values = {}
     for token_id, (token, _) in token_visited.items():
@@ -254,12 +254,14 @@ async def printa_token(token_visited, workflow, graph_tokens, loading_context):
             graph_steps[step_1] = [(s, label) for s in steps_2]
     print_graph_figure_label(graph_steps, "graph_steps recovery")
 
+
 async def _cleanup_dir(
     connector: Connector, location: Location, directory: str
 ) -> None:
     await remotepath.rm(
         connector, location, await remotepath.listdir(connector, location, directory)
     )
+
 
 async def _load_prev_tokens(token_id, loading_context, context):
     rows = await context.database.get_dependee(token_id)
@@ -326,8 +328,6 @@ async def data_location_exists(data_locations, context, token):
     return False
 
 
-
-
 def _get_data_location(path, context):
     data_locs = context.data_manager.get_data_locations(path)
     for data_loc in data_locs:
@@ -381,7 +381,6 @@ def find_step_by_id(step_id, workflow):
     return None
 
 
-
 def clean_lists(steps_token, ports_token, token_visited):
     for port_name, p_token in ports_token.items():
         if not token_visited[p_token.persistent_id]:
@@ -397,70 +396,89 @@ def clean_lists(steps_token, ports_token, token_visited):
 
 async def _put_tokens(
     new_workflow: Workflow,
-    workflow: Workflow,
+    token_port: MutableMapping[int, str],
+    port_tokens_counter: MutableMapping[str, int],
     dag_tokens: MutableMapping[int, MutableSet[int]],
     token_visited: MutableMapping[int, bool],
-    loading_context,
 ):
-    token_port = {}
-    port_tokens = {}
-    # recupero le port associate ai token
-    # TODO: doppio lavoro. trovare un modo per ricavarlo quando popolo il workflow.
-    for token_id in token_visited.keys():
-        rows = await workflow.context.database.get_port_from_token(token_id)
-        if rows:
-            token_port[token_id] = await loading_context.load_port(
-                workflow.context, rows["id"]
-            )
-        else:
-            raise Exception("Token senza porta che lo genera")
-
-        if token_port[token_id].name not in port_tokens.keys():
-            port_tokens[token_port[token_id].name] = set()
-        port_tokens[token_port[token_id].name].add(token_id)
-
-
     # add tokens into the ports
     for token_id in dag_tokens[INIT_DAG_FLAG]:
-        port = new_workflow.ports[token_port[token_id].name]
+        port = new_workflow.ports[token_port[token_id]]
         port.put(token_visited[token_id][0])
-        if len(port.token_list) == len(port_tokens[port.name]):
+        if len(port.token_list) == port_tokens_counter[port.name]:
             port.put(TerminationToken())
 
+
 async def _populate_workflow(
+    failed_step,
     token_visited,
-    workflow,
     new_workflow,
     loading_context,
 ):
-    for token, is_available in token_visited.values():
-        if not is_available:
-            step = (
-                await _load_steps_from_token(
-                    token,
-                    workflow.context,
-                    loading_context,
-                    new_workflow,
-                )
-            ).pop()
-            if step and step.name not in new_workflow.steps.keys():
-                new_workflow.add_step(step)
+    steps = set()
+    ports = {p.persistent_id: False for p in failed_step.get_output_ports().values()}
 
-    # todo: gestire le port che viene aggiunta mentre si caricano gli step (una JobPort che al momento sovrascriviamo). L'ideale sarebbe che non venga aggiunta
-    for step in new_workflow.steps.values():
-        for port_name in list(step.input_ports.values()) + list(
-            step.output_ports.values()
-        ):
-            new_workflow.add_port(
-                await Port.load(
-                    workflow.context,
-                    workflow.ports[port_name].persistent_id,
-                    loading_context,
-                    new_workflow,
-                )
+    token_port = {}  # { token.id : port.name }
+    port_tokens_counter = {}  # {port.name : n.of tokens}
+    for token_id, (_, is_available) in token_visited.items():
+        row = await failed_step.workflow.context.database.get_port_from_token(token_id)
+        if row["id"] in ports.keys():
+            ports[row["id"]] = ports[row["id"]] and is_available
+        else:
+            ports[row["id"]] = is_available
+
+        # save the token and its port name
+        token_port[token_id] = row["name"]
+
+        # save the port name and tokens number in the DAG it produces
+        if row["name"] not in port_tokens_counter.keys():
+            port_tokens_counter[row["name"]] = 0
+        port_tokens_counter[row["name"]] += 1
+
+    for port in await asyncio.gather(
+        *(
+            Port.load(
+                failed_step.workflow.context,
+                port_id,
+                loading_context,
+                new_workflow,
             )
+            for port_id in ports.keys()
+        )
+    ):
+        new_workflow.add_port(port)
+
+    for rows_dependency in await asyncio.gather(
+        *(
+            failed_step.workflow.context.database.get_step_from_output_port(port_id)
+            for port_id, is_available in ports.items()
+            if not is_available
+        )
+    ):
+        for row_dependency in rows_dependency:
+            steps.add(row_dependency["step"])
+    for step in await asyncio.gather(
+        *(
+            Step.load(
+                failed_step.workflow.context,
+                step_id,
+                loading_context,
+                new_workflow,
+            )
+            for step_id in steps
+        )
+    ):
+        new_workflow.add_step(step)
+    return token_port, port_tokens_counter
+
 
 INIT_DAG_FLAG = "init"
+
+
+def add_elem_dictionary(key, elem, dictionary):
+    if key not in dictionary.keys():
+        dictionary[key] = set()
+    dictionary[key].add(elem)
 
 
 class DefaultFailureManager(FailureManager):
@@ -476,7 +494,9 @@ class DefaultFailureManager(FailureManager):
         self.replay_cache: MutableMapping[str, ReplayResponse] = {}
         self.retry_delay: int | None = retry_delay
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
-        self.retags = {}
+
+        # {workflow.name : { port.id: [ token.id ] } }
+        self.retags: MutableMapping[str, MutableMapping[int, MutableSequence[int]]] = {}
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -508,6 +528,7 @@ class DefaultFailureManager(FailureManager):
 
         tokens = self.retags[workflow_name][output_port.name]
         for t in tokens:
+            # if the token is available (so it is saved in self.retags), return False
             if type(token) == type(t):
                 if isinstance(token, CWLFileToken):
                     # un confronto un po' semplicistico.
@@ -535,20 +556,20 @@ class DefaultFailureManager(FailureManager):
     def _save_for_retag(self, workflow, new_workflow, dag_token):
         if new_workflow.name not in self.retags.keys():
             self.retags[new_workflow.name] = {}
-        for s in new_workflow.steps.values():
-            if isinstance(s, ScatterStep):
-                port = s.get_output_port()
+
+        for step in new_workflow.steps.values():
+            if isinstance(step, ScatterStep):
+                port = step.get_output_port()
                 for t in workflow.ports[port.name].token_list:
                     if not isinstance(t, TerminationToken):
-                        if t.persistent_id in dag_token:
-                            pass
-                        else:
-                            if port.name not in self.retags[new_workflow.name].keys():
-                                self.retags[new_workflow.name][port.name] = set()
-                            self.retags[new_workflow.name][port.name].add(t)
+                        # save the available tokens created by the original ScatterStep
+                        if t.persistent_id not in dag_token:
+                            add_elem_dictionary(
+                                port.name, t, self.retags[new_workflow.name]
+                            )
 
     async def _recover_jobs(self, job_version, loading_context):
-        await print_graph(job_version, loading_context)
+        # await print_graph(job_version, loading_context)
 
         workflow = job_version.step.workflow
         new_workflow = Workflow(
@@ -561,57 +582,46 @@ class DefaultFailureManager(FailureManager):
         tokens = set(job_version.job.inputs.values())  # tokens to check
         tokens.add(job_version.step.get_job_token(job_version.job))
 
-        dag_token = {}  # token.id -> set of next tokens id
+        dag_tokens = {}  # { token.id : set of next tokens id }
         for t in job_version.job.inputs.values():
-            dag_token[t.persistent_id] = set((job_version.step.name,))
+            dag_tokens[t.persistent_id] = set((job_version.step.name,))
 
         token_visited = {}  # { token_id: (token, is_available)}
 
-        new_workflow.add_step(
-            await Step.load(
-                workflow.context,
-                job_version.step.persistent_id,
-                loading_context,
-                new_workflow,
-            )
-        )
         while tokens:
             token = tokens.pop()
-            res = await is_token_available(token, workflow.context)
-            # controllo inutile. Aggiungo in tokens solo token che non sono stati visitati
-            if token.persistent_id not in token_visited.keys():
-                token_visited[token.persistent_id] = (token, res)
-            else:
-                raise Exception("DOPPIONEEEE")
+            is_available = await is_token_available(token, workflow.context)
 
-            if not res:
+            # impossible case because when added in tokens, the elem is checked
+            if token.persistent_id in token_visited.keys():
+                raise Exception("Token already visited")
+            token_visited[token.persistent_id] = (token, is_available)
+
+            if not is_available:
                 prev_tokens = await _load_prev_tokens(
                     token.persistent_id,
                     loading_context,
                     workflow.context,
                 )
-                if not prev_tokens:
-                    if INIT_DAG_FLAG not in dag_token.keys():
-                        dag_token[INIT_DAG_FLAG] = set()
-                    dag_token[INIT_DAG_FLAG].add(token.persistent_id)
-                for pt in prev_tokens:
-                    if pt.persistent_id not in dag_token.keys():
-                        dag_token[pt.persistent_id] = set()
-                    dag_token[pt.persistent_id].add(token.persistent_id)
-                    if pt.persistent_id not in token_visited.keys():
-                        tokens.add(pt)
+                if prev_tokens:
+                    for pt in prev_tokens:
+                        add_elem_dictionary(
+                            pt.persistent_id, token.persistent_id, dag_tokens
+                        )
+                        if pt.persistent_id not in token_visited.keys():
+                            tokens.add(pt)
+                else:
+                    add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
             else:
-                if INIT_DAG_FLAG not in dag_token.keys():
-                    dag_token[INIT_DAG_FLAG] = set()
-                dag_token[INIT_DAG_FLAG].add(token.persistent_id)
+                add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
 
         token_visited = dict(sorted(token_visited.items()))
-        await printa_token(token_visited, workflow, dag_token, loading_context)
+        # await printa_token(token_visited, workflow, dag_tokens, loading_context)
         pass
 
-        await _populate_workflow(
+        token_port, port_tokens_counter = await _populate_workflow(
+            job_version.step,
             token_visited,
-            workflow,
             new_workflow,
             loading_context,
         )
@@ -619,16 +629,16 @@ class DefaultFailureManager(FailureManager):
         pass
         await _put_tokens(
             new_workflow,
-            workflow,
-            dag_token,
+            token_port,
+            port_tokens_counter,
+            dag_tokens,
             token_visited,
-            loading_context,
         )
         pass
 
-        self._save_for_retag(workflow, new_workflow, dag_token)
+        self._save_for_retag(workflow, new_workflow, dag_tokens)
 
-        # sblocca scheduler
+        # free resources scheduler
         for token, _ in token_visited.values():
             if isinstance(token, JobToken):
                 await workflow.context.scheduler.notify_status(
@@ -655,9 +665,7 @@ class DefaultFailureManager(FailureManager):
             try:
                 loading_context = DefaultDatabaseLoadingContext()
 
-                rollback_steps = await self._recover_jobs(job_version, loading_context)
-
-                return None
+                return await self._recover_jobs(job_version, loading_context)
             # When receiving a FailureHandlingException, simply fail
             except FailureHandlingException as e:
                 logger.exception(e)
