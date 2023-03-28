@@ -416,7 +416,8 @@ async def _populate_workflow(
     loading_context,
 ):
     steps = set()
-    ports = {p.persistent_id: False for p in failed_step.get_output_ports().values()}
+    # ports = {p.persistent_id: False for p in failed_step.get_output_ports().values()}
+    ports = {}
 
     token_port = {}  # { token.id : port.name }
     port_tokens_counter = {}  # {port.name : n.of tokens}
@@ -481,6 +482,21 @@ def add_elem_dictionary(key, elem, dictionary):
     dictionary[key].add(elem)
 
 
+def get_token_by_tag(token_tag, token_list):
+    for token in token_list:
+        if token_tag == token.tag:
+            return token
+    return None
+
+
+def get_job_from_token_list(job_name, token_list):
+    for token in token_list:
+        if isinstance(token, JobToken):  # discard TerminationToken
+            if token.value.name == job_name:
+                return token.value
+    return None
+
+
 class DefaultFailureManager(FailureManager):
     def __init__(
         self,
@@ -516,6 +532,10 @@ class DefaultFailureManager(FailureManager):
                 step=step,
                 version=1,
             )
+
+        # todo: sistemarlo meglio
+        self.jobs[job.name].job = job
+        self.jobs[job.name].step = step
         command_output = await self._replay_job(self.jobs[job.name])
         return command_output
 
@@ -582,7 +602,7 @@ class DefaultFailureManager(FailureManager):
         tokens = set(job_version.job.inputs.values())  # tokens to check
         tokens.add(job_version.step.get_job_token(job_version.job))
 
-        dag_tokens = {}  # { token.id : set of next tokens id }
+        dag_tokens = {}  # { token.id : set of next tokens' id }
         for t in job_version.job.inputs.values():
             dag_tokens[t.persistent_id] = set((job_version.step.name,))
 
@@ -645,17 +665,53 @@ class DefaultFailureManager(FailureManager):
                     token.value.name, Status.WAITING
                 )
 
+        pass
+
         print("VIAAAAAAAAAAAAAA")
         await new_workflow.save(workflow.context)
         executor = StreamFlowExecutor(new_workflow)
         try:
-            output_tokens = await executor.run()
+            await executor.run()
         except Exception as err:
             print("ERROR", err)
             raise Exception("EXCEPTION ERR")
-        print("output_tokens", output_tokens)
+
+        # get job created by ScheduleStep
+        job_new = get_job_from_token_list(
+            job_version.job.name,
+            new_workflow.ports[
+                token_port[
+                    job_version.step.get_job_token(job_version.job).persistent_id
+                ]
+            ].token_list
+        )
+        job_version.job = job_new
+
+        new_inputs = {}
+        for step_port_name, token in job_new.inputs.items():
+            original_port = job_version.step.get_input_port(step_port_name)
+            if original_port.name in new_workflow.ports.keys():
+                new_inputs[step_port_name] = get_token_by_tag(
+                    token.tag, new_workflow.ports[original_port.name].token_list
+                )
+            else:
+                new_inputs[step_port_name] = get_token_by_tag(
+                    token.tag, original_port.token_list
+                )
+        job_new.inputs = new_inputs
+
         print("Finito")
-        return CWLCommandOutput(value="", status=Status.COMPLETED, exit_code=0)
+        cmd_out = await cast(ExecuteStep, job_version.step).command.execute(job_new)
+        if cmd_out.status == Status.FAILED:
+            logger.error(f"FAILED Job {job_new.name} with error:\n\t{cmd_out.value}")
+            cmd_out = await self.handle_failure(job_new, job_version.step, cmd_out)
+        return cmd_out
+
+    # todo: aggiungere metodo in dummy
+    async def get_valid_job(self, job):
+        if job.name in self.jobs.keys():
+            return self.jobs[job.name].job
+        return job
 
     async def _replay_job(self, job_version: JobVersion) -> CommandOutput:
         job = job_version.job

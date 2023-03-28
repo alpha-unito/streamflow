@@ -658,11 +658,14 @@ class ExecuteStep(BaseStep):
         # Retrieve output tokens
         if not self.terminated:
             try:
+                job_used = await self.workflow.context.failure_manager.get_valid_job(
+                    job
+                )
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
                             self._retrieve_output(
-                                job=job,
+                                job=job_used,
                                 output_name=output_name,
                                 output_port=self.workflow.ports[output_port],
                                 command_output=command_output,
