@@ -78,9 +78,29 @@ def add_pair(step_name, label, step_labels, tokens):
     step_labels.append((step_name, label))
 
 
-def valid_step_name(step_name, sep="_"):
-    return step_name
-    # return step_name[1:].replace('/', sep).replace('-', sep)
+async def _load_steps_from_token(token, context, loading_context, new_workflow):
+    # TODO: quando interrogo sulla tabella dependency (tra step e port) meglio recuperare anche il nome della dipendenza
+    # così posso associare subito token -> step e a quale porta appartiene
+    # edit. Impossibile. Recuperiamo lo step dalla porta di output. A noi serve la port di input
+    row_token = await context.database.get_token(token.persistent_id)
+    steps = []
+    if row_token:
+        row_steps = await context.database.get_step_from_output_port(row_token["port"])
+        for r in row_steps:
+            st = await Step.load(
+                context,
+                r["step"],
+                loading_context,
+                new_workflow,
+            )
+            steps.append(
+                st,
+            )
+            # due modi alternativi per ottenre il nome della output_port che genera il token in questione
+            #    [ op.name for op in workflow.steps[st.name].output_ports if op.persistent_id == int(row_token['port'])][0]
+            # (await context.database.get_port(row_token['port']))['name']
+
+    return steps
 
 
 def print_graph_figure(graph, title):
@@ -255,6 +275,14 @@ async def printa_token(token_visited, workflow, graph_tokens, loading_context):
     print_graph_figure_label(graph_steps, "graph_steps recovery")
 
 
+#################################################
+#################################################
+#################################################
+#################################################
+#################################################
+#################################################
+
+
 async def _cleanup_dir(
     connector: Connector, location: Location, directory: str
 ) -> None:
@@ -272,44 +300,6 @@ async def _load_prev_tokens(token_id, loading_context, context):
             for row in rows
         )
     )
-
-
-async def _load_steps_from_token(token, context, loading_context, new_workflow):
-    # TODO: quando interrogo sulla tabella dependency (tra step e port) meglio recuperare anche il nome della dipendenza
-    # così posso associare subito token -> step e a quale porta appartiene
-    # edit. Impossibile. Recuperiamo lo step dalla porta di output. A noi serve la port di input
-    row_token = await context.database.get_token(token.persistent_id)
-    steps = []
-    if row_token:
-        row_steps = await context.database.get_step_from_output_port(row_token["port"])
-        for r in row_steps:
-            st = await Step.load(
-                context,
-                r["step"],
-                loading_context,
-                new_workflow,
-            )
-            steps.append(
-                st,
-            )
-            # due modi alternativi per ottenre il nome della output_port che genera il token in questione
-            #    [ op.name for op in workflow.steps[st.name].output_ports if op.persistent_id == int(row_token['port'])][0]
-            # (await context.database.get_port(row_token['port']))['name']
-
-    return steps
-
-
-async def _load_ports_from_token(token, context, loading_context):
-    ports_id = await context.database.get_token_ports(token.persistent_id)
-    # TODO: un token ha sempre una port? Da verificare
-    if ports_id:
-        return await asyncio.gather(
-            *(
-                asyncio.create_task(loading_context.load_port(context, port_id))
-                for port_id in ports_id
-            )
-        )
-    return None
 
 
 async def data_location_exists(data_locations, context, token):
@@ -367,22 +357,6 @@ async def is_token_available(token, context):
     if isinstance(token, JobToken):
         return False
     return True
-
-
-async def _load_and_add_port(token, context, loading_context, curr_dict):
-    ports = await _load_ports_from_token(token, context, loading_context)
-    # TODO: ports, in teoria, è sempre solo una. Sarebbe la port di output dello step che genera il token
-    for p in ports:
-        if p.name not in curr_dict.keys():
-            curr_dict[p.name] = set()
-        curr_dict[p.name].add(token)
-
-
-def find_step_by_id(step_id, workflow):
-    for step in workflow.steps.values():
-        if step.persistent_id == step_id:
-            return step
-    return None
 
 
 async def _put_tokens(
@@ -510,6 +484,7 @@ class DefaultFailureManager(FailureManager):
 
         # {workflow.name : { port.id: [ token.id ] } }
         self.retags: MutableMapping[str, MutableMapping[int, MutableSequence[int]]] = {}
+        self.job_tokens = {}
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -533,7 +508,7 @@ class DefaultFailureManager(FailureManager):
         # todo: sistemarlo meglio
         self.jobs[job.name].job = job
         self.jobs[job.name].step = step
-        command_output = await self._replay_job(self.jobs[job.name])
+        command_output = await self._replay_job(self.jobs[job.name], job, step)
         return command_output
 
     # TODO: aggiungere nella classe dummy.
@@ -568,10 +543,10 @@ class DefaultFailureManager(FailureManager):
                             port.name, t_id, self.retags[new_workflow.name]
                         )
 
-    async def _recover_jobs(self, job_version, loading_context):
+    async def _recover_jobs(self, failed_job, failed_step, loading_context):
         # await print_graph(job_version, loading_context)
 
-        workflow = job_version.step.workflow
+        workflow = failed_step.workflow
         new_workflow = Workflow(
             context=workflow.context,
             type="cwl",
@@ -579,17 +554,20 @@ class DefaultFailureManager(FailureManager):
             config=workflow.config,
         )
 
+        if failed_step.persistent_id is None:
+            raise Exception("step id NONEEEEEEEEEEE")
+
         job_token = get_job_token_from_token_list(
-            job_version.job.name,
-            workflow.steps[job_version.step.name].get_input_port("__job__").token_list,
+            failed_job.name,
+            failed_step.get_input_port("__job__").token_list,
         )
 
-        tokens = list(job_version.job.inputs.values())  # tokens to check
+        tokens = list(failed_job.inputs.values())  # tokens to check
         tokens.append(job_token)
 
         dag_tokens = {}  # { token.id : set of next tokens' id }
-        for t in job_version.job.inputs.values():
-            dag_tokens[t.persistent_id] = set((job_version.step.name,))
+        for t in failed_job.inputs.values():
+            dag_tokens[t.persistent_id] = set((failed_step.name,))
 
         token_visited = {}  # { token_id: (token, is_available)}
 
@@ -624,11 +602,11 @@ class DefaultFailureManager(FailureManager):
                 add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
 
         token_visited = dict(sorted(token_visited.items()))
-        await printa_token(token_visited, workflow, dag_tokens, loading_context)
+        # await printa_token(token_visited, workflow, dag_tokens, loading_context)
         pass
 
         token_port, port_tokens_counter = await _populate_workflow(
-            job_version.step,
+            failed_step,
             token_visited,
             new_workflow,
             loading_context,
@@ -652,10 +630,19 @@ class DefaultFailureManager(FailureManager):
                 await workflow.context.scheduler.notify_status(
                     token.value.name, Status.WAITING
                 )
-
         pass
 
         print("VIAAAAAAAAAAAAAA")
+        for port in await asyncio.gather(
+            *(
+                Port.load(
+                    new_workflow.context, p.persistent_id, loading_context, new_workflow
+                )
+                for p in failed_step.get_output_ports().values()
+            )
+        ):
+            new_workflow.add_port(port)
+
         await new_workflow.save(workflow.context)
         executor = StreamFlowExecutor(new_workflow)
         try:
@@ -664,20 +651,16 @@ class DefaultFailureManager(FailureManager):
             print("ERROR", err)
             raise Exception("EXCEPTION ERR")
 
-        # get job created by ScheduleStep
-        job_port = job_version.step.get_input_port("__job__")
-        job_token_new = get_job_token_from_token_list(
-            job_version.job.name, new_workflow.ports[job_port.name].token_list
+        # get new job created by ScheduleStep
+        new_job_token = get_job_token_from_token_list(
+            failed_job.name,
+            new_workflow.ports[failed_step.get_input_port("__job__").name].token_list,
         )
-        if not job_token_new:
-            raise Exception(
-                f"Job {job_version.job.name} not rescheduled in new workflow {new_workflow.name}"
-            )
-        job_version.job = job_token_new.value
 
+        # get new job inputs
         new_inputs = {}
-        for step_port_name, token in job_version.job.inputs.items():
-            original_port = job_version.step.get_input_port(step_port_name)
+        for step_port_name, token in failed_job.inputs.items():
+            original_port = failed_step.get_input_port(step_port_name)
             if original_port.name in new_workflow.ports.keys():
                 new_inputs[step_port_name] = get_token_by_tag(
                     token.tag, new_workflow.ports[original_port.name].token_list
@@ -686,35 +669,36 @@ class DefaultFailureManager(FailureManager):
                 new_inputs[step_port_name] = get_token_by_tag(
                     token.tag, original_port.token_list
                 )
-        job_version.job.inputs = new_inputs
+        new_job_token.value.inputs = new_inputs
 
-        # update job token into the step port for provenance and future handling failure
-        for i, t in enumerate(job_port.token_list):
-            if isinstance(t, JobToken) and t.value.name == job_version.job.name:
-                job_port.token_list[i] = job_token_new
-                break
+        self.job_tokens[failed_job.name] = new_job_token
+        new_job = new_job_token.value
+        new_step = await Step.load(
+            new_workflow.context,
+            failed_step.persistent_id,
+            loading_context,
+            new_workflow,
+        )
+        new_workflow.add_step(new_step)
+        await new_step.save(new_workflow.context)
 
         print("Finito")
-        cmd_out = await cast(ExecuteStep, job_version.step).command.execute(
-            job_version.job
-        )
+        cmd_out = await cast(ExecuteStep, new_step).command.execute(new_job)
         if cmd_out.status == Status.FAILED:
-            logger.error(
-                f"FAILED Job {job_version.job.name} with error:\n\t{cmd_out.value}"
-            )
-            cmd_out = await self.handle_failure(
-                job_version.job, job_version.step, cmd_out
-            )
+            logger.error(f"FAILED Job {new_job.name} with error:\n\t{cmd_out.value}")
+            cmd_out = await self.handle_failure(new_job, new_step, cmd_out)
 
         return cmd_out
 
-    # todo: aggiungere metodo in dummy
-    async def get_valid_job(self, job):
-        if job.name in self.jobs.keys():
-            return self.jobs[job.name].job
-        return job
+    # todo: aggiungere metodo in dummy. ritorna direttamente job_token
+    async def get_valid_job_token(self, job_token):
+        if job_token.value.name in self.job_tokens.keys():
+            return self.job_tokens[job_token.value.name]
+        return job_token
 
-    async def _replay_job(self, job_version: JobVersion) -> CommandOutput:
+    async def _replay_job(
+        self, job_version: JobVersion, failed_job, failed_step
+    ) -> CommandOutput:
         job = job_version.job
         if self.max_retries is None or self.jobs[job.name].version < self.max_retries:
             # Update version
@@ -722,7 +706,9 @@ class DefaultFailureManager(FailureManager):
             try:
                 loading_context = DefaultDatabaseLoadingContext()
 
-                return await self._recover_jobs(job_version, loading_context)
+                return await self._recover_jobs(
+                    failed_job, failed_step, loading_context
+                )
             # When receiving a FailureHandlingException, simply fail
             except FailureHandlingException as e:
                 logger.exception(e)
