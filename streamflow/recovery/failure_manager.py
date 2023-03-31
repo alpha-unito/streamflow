@@ -692,9 +692,12 @@ class DefaultFailureManager(FailureManager):
 
     # todo: aggiungere metodo in dummy. ritorna direttamente job_token
     async def get_valid_job_token(self, job_token):
-        if job_token.value.name in self.job_tokens.keys():
-            return self.job_tokens[job_token.value.name]
-        return job_token
+        return self.job_tokens.pop(job_token.value.name, job_token)
+        # otherwise (to test)
+        # if job_token.value.name in self.job_tokens.keys() and (out := self.job_tokens[job_token.value.name]):
+        #     self.job_tokens[job_token.value.name] = None
+        #     return out
+        # return job_token
 
     async def _replay_job(
         self, job_version: JobVersion, failed_job, failed_step
