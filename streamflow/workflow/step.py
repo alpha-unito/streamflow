@@ -104,6 +104,7 @@ class BaseStep(Step, ABC):
     ) -> Token:
         await token.save(self.workflow.context, port_id=port.persistent_id)
         # not list-comprehension: if the token is among its inputs, don't save the dependency
+        tmp = [i for i in inputs]
         if inputs and not [i for i in inputs if i.persistent_id == token.persistent_id]:
             # TODO: in inputs i token devono avere un id per la provenance, a meno che non siano i token iniziali del workflow
             # Correggere situazione injector (inputs non salvati: possibile soluzione non passare gli inputs)
@@ -1394,12 +1395,13 @@ class ScatterStep(BaseStep):
         elif isinstance(token, ListToken):
             output_port = self.get_output_port()
             for i, t in enumerate(token.value):
-                if self.workflow.context.failure_manager.get_retag(
-                    self.workflow.name, t, output_port
+                tag = token.tag + "." + str(i)
+                if self.workflow.context.failure_manager.is_valid_tag(
+                    self.workflow.name, tag, output_port
                 ):
                     output_port.put(
                         await self._persist_token(
-                            token=t.retag(token.tag + "." + str(i)),
+                            token=t.retag(tag),
                             port=output_port,
                             inputs=[token],
                         )

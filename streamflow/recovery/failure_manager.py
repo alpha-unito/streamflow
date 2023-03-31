@@ -540,37 +540,16 @@ class DefaultFailureManager(FailureManager):
         return command_output
 
     # TODO: aggiungere nella classe dummy.
-    def get_retag(self, workflow_name, token, output_port):
+    def is_valid_tag(self, workflow_name, tag, output_port):
         if workflow_name not in self.retags.keys():
             return True
         if output_port.name not in self.retags[workflow_name].keys():
             return True
 
-        tokens = self.retags[workflow_name][output_port.name]
-        for t in tokens:
-            # if the token is available (so it is saved in self.retags), return False
-            if type(token) == type(t):
-                if isinstance(token, CWLFileToken):
-                    # un confronto un po' semplicistico.
-                    if token.value["basename"] == t.value["basename"]:
-                        return False
-                elif isinstance(token, ListToken):
-                    # TODO: WIP
-                    raise Exception(f"Not implemented (ListToken)")
-                elif isinstance(token, ObjectToken):
-                    # TODO: WIP
-                    raise Exception(f"Not implemented (ObjectToken)")
-                elif isinstance(token, JobToken):
-                    # scatter sui jobtoken non dovrebbe essere un caso possibile
-                    raise Exception(f"In port {output_port} can have JobToken")
-                else:
-                    # ok su workflow "normali", in token troviamo oggetti gestibili come strings e numbers.
-                    # Nel caso di workflow particolari possiamo avere oggetti strani e questo confronto non va assolutamente bene
-                    return token.value == t.value
-            else:
-                raise Exception(
-                    f"For port {output_port}: token {token} and tokens saved for fault tolerance have different types"
-                )
+        token_list = self.retags[workflow_name][output_port.name]
+        for t in token_list:
+            if t.tag == tag:
+                return False
         return True
 
     def _save_for_retag(self, workflow, new_workflow, dag_token):
