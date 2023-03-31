@@ -337,6 +337,7 @@ async def is_token_available(token, context):
         if not data_loc:  # if the data are in invalid locations, data_loc is None
             return False
         if not await data_location_exists([data_loc], context, token):
+            # todo: invalidare tutti i path del data_loc
             context.data_manager.invalidate_location(data_loc, token.value["path"])
             # context.data_manager.invalidate_location(data_loc, "/")
             return False
@@ -490,28 +491,21 @@ class DefaultFailureManager(FailureManager):
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
-        if job.name not in self.jobs:
-            self.jobs[job.name] = JobVersion(
-                job=Job(
-                    name=job.name,
-                    workflow_id=step.workflow.persistent_id,
-                    inputs=dict(job.inputs),
-                    input_directory=job.input_directory,
-                    output_directory=job.output_directory,
-                    tmp_directory=job.tmp_directory,
-                ),
-                outputs=None,
-                step=step,
-                version=1,
-            )
 
-        # todo: sistemarlo meglio
-        self.jobs[job.name].job = job
-        self.jobs[job.name].step = step
-        command_output = await self._replay_job(self.jobs[job.name], job, step)
+        try:
+            command_output = await self._recover_jobs(job, step)
+            # When receiving a FailureHandlingException, simply fail
+        except FailureHandlingException as e:
+            logger.exception(e)
+            raise
+        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            logger.exception(e)
+            return await self.handle_exception(job, step, e)
         return command_output
 
-    # TODO: aggiungere nella classe dummy.
     def is_valid_tag(self, workflow_name, tag, output_port):
         if workflow_name not in self.retags.keys():
             return True
@@ -543,8 +537,9 @@ class DefaultFailureManager(FailureManager):
                             port.name, t_id, self.retags[new_workflow.name]
                         )
 
-    async def _recover_jobs(self, failed_job, failed_step, loading_context):
+    async def _recover_jobs(self, failed_job, failed_step):
         # await print_graph(job_version, loading_context)
+        loading_context = DefaultDatabaseLoadingContext()
 
         workflow = failed_step.workflow
         new_workflow = Workflow(
@@ -554,8 +549,11 @@ class DefaultFailureManager(FailureManager):
             config=workflow.config,
         )
 
+        # should be an impossible case
         if failed_step.persistent_id is None:
-            raise Exception("step id NONEEEEEEEEEEE")
+            raise FailureHandlingException(
+                f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
+            )
 
         job_token = get_job_token_from_token_list(
             failed_job.name,
@@ -577,7 +575,9 @@ class DefaultFailureManager(FailureManager):
 
             # impossible case because when added in tokens, the elem is checked
             if token.persistent_id in token_visited.keys():
-                raise Exception("Token already visited")
+                raise FailureHandlingException(
+                    f"Token {token.persistent_id} already visited"
+                )
             token_visited[token.persistent_id] = (token, is_available)
 
             if not is_available:
@@ -603,7 +603,6 @@ class DefaultFailureManager(FailureManager):
 
         token_visited = dict(sorted(token_visited.items()))
         # await printa_token(token_visited, workflow, dag_tokens, loading_context)
-        pass
 
         token_port, port_tokens_counter = await _populate_workflow(
             failed_step,
@@ -612,7 +611,6 @@ class DefaultFailureManager(FailureManager):
             loading_context,
         )
 
-        pass
         await _put_tokens(
             new_workflow,
             token_port,
@@ -620,17 +618,32 @@ class DefaultFailureManager(FailureManager):
             dag_tokens,
             token_visited,
         )
-        pass
 
         self._save_for_retag(new_workflow, dag_tokens, token_port)
 
-        # free resources scheduler
+        # free resources scheduler and check if the job can be re-executed
         for token, _ in token_visited.values():
             if isinstance(token, JobToken):
                 await workflow.context.scheduler.notify_status(
                     token.value.name, Status.WAITING
                 )
-        pass
+                if token.value.name not in self.jobs.keys():
+                    self.jobs[token.value.name] = JobVersion(
+                        job=None,
+                        step=None,
+                        outputs=None,
+                        version=1,
+                    )
+                if (
+                    self.max_retries is None
+                    or self.jobs[token.value.name].version < self.max_retries
+                ):
+                    self.jobs[token.value.name].version += 1
+                else:
+                    logger.error(
+                        f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
+                    )
+                    raise FailureHandlingException()
 
         print("VIAAAAAAAAAAAAAA")
         for port in await asyncio.gather(
@@ -648,8 +661,10 @@ class DefaultFailureManager(FailureManager):
         try:
             await executor.run()
         except Exception as err:
-            print("ERROR", err)
-            raise Exception("EXCEPTION ERR")
+            logger.exception(
+                f"Sub workflow {new_workflow.name} to handle the failed job {failed_job.name} throws a exception."
+            )
+            raise err
 
         # get new job created by ScheduleStep
         new_job_token = get_job_token_from_token_list(
@@ -690,43 +705,13 @@ class DefaultFailureManager(FailureManager):
 
         return cmd_out
 
-    # todo: aggiungere metodo in dummy. ritorna direttamente job_token
     async def get_valid_job_token(self, job_token):
         return self.job_tokens.pop(job_token.value.name, job_token)
-        # otherwise (to test)
+        # otherwise set the value to None (it is to test)
         # if job_token.value.name in self.job_tokens.keys() and (out := self.job_tokens[job_token.value.name]):
         #     self.job_tokens[job_token.value.name] = None
         #     return out
         # return job_token
-
-    async def _replay_job(
-        self, job_version: JobVersion, failed_job, failed_step
-    ) -> CommandOutput:
-        job = job_version.job
-        if self.max_retries is None or self.jobs[job.name].version < self.max_retries:
-            # Update version
-            self.jobs[job.name].version += 1
-            try:
-                loading_context = DefaultDatabaseLoadingContext()
-
-                return await self._recover_jobs(
-                    failed_job, failed_step, loading_context
-                )
-            # When receiving a FailureHandlingException, simply fail
-            except FailureHandlingException as e:
-                logger.exception(e)
-                raise
-            # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-            except KeyboardInterrupt:
-                raise
-            except Exception as e:
-                logger.exception(e)
-                return await self.handle_exception(job, job_version.step, e)
-        else:
-            logger.error(
-                f"FAILED Job {job.name} {self.jobs[job.name].version} times. Execution aborted"
-            )
-            raise FailureHandlingException()
 
     async def close(self):
         pass
@@ -773,3 +758,9 @@ class DummyFailureManager(FailureManager):
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> CommandOutput:
         return command_output
+
+    async def get_valid_job_token(self, job_token):
+        return job_token
+
+    def is_valid_tag(self, workflow_name, tag, output_port):
+        return True
