@@ -321,9 +321,12 @@ async def data_location_exists(data_locations, context, token):
             if exists := await remotepath.exists(
                 connector, data_loc, token.value["path"]
             ):
+                print(
+                    f"token.id: {token.persistent_id} in loc {data_loc} -> exists {exists} "
+                )
                 return True
             print(
-                f"t {token.persistent_id} ({get_class_fullname(type(token))}) in loc {data_loc} -> exists {exists} "
+                f"token.id: {token.persistent_id} in loc {data_loc} -> exists {exists} "
             )
     return False
 
@@ -338,25 +341,26 @@ def _get_data_location(path, context):
 
 async def is_token_available(token, context):
     if isinstance(token, CWLFileToken):
-        # data_locs = context.data_manager.get_data_locations(token.value["path"])
         # TODO: è giusto cercare una loc dal suo path? se va bene aggiustare data_location_exists method
         data_loc = _get_data_location(token.value["path"], context)
-        if not data_loc:
+        print(f"token.id: {token.persistent_id} ({token.value['path']})")
+        if not data_loc:  # if the data are in invalid locations, data_loc is None
             return False
         if not await data_location_exists([data_loc], context, token):
             context.data_manager.invalidate_location(data_loc, token.value["path"])
+            # context.data_manager.invalidate_location(data_loc, "/")
             return False
         return True
     if isinstance(token, ListToken):
-        # if at least one file doesn't exist, returns false
-        return all(
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(is_token_available(inner_token, context))
-                    for inner_token in token.value
-                )
+        # if at least one file does not exist, returns false
+        a = await asyncio.gather(
+            *(
+                asyncio.create_task(is_token_available(inner_token, context))
+                for inner_token in token.value
             )
         )
+        b = all(a)
+        return b
     if isinstance(token, ObjectToken):
         # TODO: sistemare
         return True
@@ -381,19 +385,6 @@ def find_step_by_id(step_id, workflow):
     return None
 
 
-def clean_lists(steps_token, ports_token, token_visited):
-    for port_name, p_token in ports_token.items():
-        if not token_visited[p_token.persistent_id]:
-            ports_token[port_name] = None
-    for step_name, s_tokens in steps_token.items():
-        to_remove = []
-        for s_token in s_tokens:
-            if not token_visited[s_token.persistent_id]:
-                to_remove.append(s_token)
-        for rm_tok in to_remove:
-            steps_token[step_name].remove(rm_tok)
-
-
 async def _put_tokens(
     new_workflow: Workflow,
     token_port: MutableMapping[int, str],
@@ -416,7 +407,6 @@ async def _populate_workflow(
     loading_context,
 ):
     steps = set()
-    # ports = {p.persistent_id: False for p in failed_step.get_output_ports().values()}
     ports = {}
 
     token_port = {}  # { token.id : port.name }
@@ -489,12 +479,19 @@ def get_token_by_tag(token_tag, token_list):
     return None
 
 
-def get_job_from_token_list(job_name, token_list):
+def get_job_token_from_token_list(job_name, token_list):
     for token in token_list:
         if isinstance(token, JobToken):  # discard TerminationToken
             if token.value.name == job_name:
-                return token.value
+                return token
     return None
+
+
+def contains_token_id(token_id, token_list):
+    for token in token_list:
+        if token_id == token.persistent_id:
+            return True
+    return False
 
 
 class DefaultFailureManager(FailureManager):
@@ -552,20 +549,24 @@ class DefaultFailureManager(FailureManager):
                 return False
         return True
 
-    def _save_for_retag(self, workflow, new_workflow, dag_token):
+    def _save_for_retag(self, new_workflow, dag_token, token_port):
         if new_workflow.name not in self.retags.keys():
             self.retags[new_workflow.name] = {}
+
+        port_token = {}
+        for t_id, p_name in token_port.items():
+            if p_name not in port_token:
+                port_token[p_name] = set()
+            port_token[p_name].add(t_id)
 
         for step in new_workflow.steps.values():
             if isinstance(step, ScatterStep):
                 port = step.get_output_port()
-                for t in workflow.ports[port.name].token_list:
-                    if not isinstance(t, TerminationToken):
-                        # save the available tokens created by the original ScatterStep
-                        if t.persistent_id not in dag_token:
-                            add_elem_dictionary(
-                                port.name, t, self.retags[new_workflow.name]
-                            )
+                for t_id in port_token[port.name]:
+                    if t_id not in dag_token.keys():
+                        add_elem_dictionary(
+                            port.name, t_id, self.retags[new_workflow.name]
+                        )
 
     async def _recover_jobs(self, job_version, loading_context):
         # await print_graph(job_version, loading_context)
@@ -578,8 +579,13 @@ class DefaultFailureManager(FailureManager):
             config=workflow.config,
         )
 
-        tokens = set(job_version.job.inputs.values())  # tokens to check
-        tokens.add(job_version.step.get_job_token(job_version.job))
+        job_token = get_job_token_from_token_list(
+            job_version.job.name,
+            workflow.steps[job_version.step.name].get_input_port("__job__").token_list,
+        )
+
+        tokens = list(job_version.job.inputs.values())  # tokens to check
+        tokens.append(job_token)
 
         dag_tokens = {}  # { token.id : set of next tokens' id }
         for t in job_version.job.inputs.values():
@@ -607,15 +613,18 @@ class DefaultFailureManager(FailureManager):
                         add_elem_dictionary(
                             pt.persistent_id, token.persistent_id, dag_tokens
                         )
-                        if pt.persistent_id not in token_visited.keys():
-                            tokens.add(pt)
+                        if (
+                            pt.persistent_id not in token_visited.keys()
+                            and not contains_token_id(pt.persistent_id, tokens)
+                        ):
+                            tokens.append(pt)
                 else:
                     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
             else:
                 add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
 
         token_visited = dict(sorted(token_visited.items()))
-        # await printa_token(token_visited, workflow, dag_tokens, loading_context)
+        await printa_token(token_visited, workflow, dag_tokens, loading_context)
         pass
 
         token_port, port_tokens_counter = await _populate_workflow(
@@ -635,7 +644,7 @@ class DefaultFailureManager(FailureManager):
         )
         pass
 
-        self._save_for_retag(workflow, new_workflow, dag_tokens)
+        self._save_for_retag(new_workflow, dag_tokens, token_port)
 
         # free resources scheduler
         for token, _ in token_visited.values():
@@ -656,18 +665,18 @@ class DefaultFailureManager(FailureManager):
             raise Exception("EXCEPTION ERR")
 
         # get job created by ScheduleStep
-        job_new = get_job_from_token_list(
-            job_version.job.name,
-            new_workflow.ports[
-                token_port[
-                    job_version.step.get_job_token(job_version.job).persistent_id
-                ]
-            ].token_list
+        job_port = job_version.step.get_input_port("__job__")
+        job_token_new = get_job_token_from_token_list(
+            job_version.job.name, new_workflow.ports[job_port.name].token_list
         )
-        job_version.job = job_new
+        if not job_token_new:
+            raise Exception(
+                f"Job {job_version.job.name} not rescheduled in new workflow {new_workflow.name}"
+            )
+        job_version.job = job_token_new.value
 
         new_inputs = {}
-        for step_port_name, token in job_new.inputs.items():
+        for step_port_name, token in job_version.job.inputs.items():
             original_port = job_version.step.get_input_port(step_port_name)
             if original_port.name in new_workflow.ports.keys():
                 new_inputs[step_port_name] = get_token_by_tag(
@@ -677,13 +686,26 @@ class DefaultFailureManager(FailureManager):
                 new_inputs[step_port_name] = get_token_by_tag(
                     token.tag, original_port.token_list
                 )
-        job_new.inputs = new_inputs
+        job_version.job.inputs = new_inputs
+
+        # update job token into the step port for provenance and future handling failure
+        for i, t in enumerate(job_port.token_list):
+            if isinstance(t, JobToken) and t.value.name == job_version.job.name:
+                job_port.token_list[i] = job_token_new
+                break
 
         print("Finito")
-        cmd_out = await cast(ExecuteStep, job_version.step).command.execute(job_new)
+        cmd_out = await cast(ExecuteStep, job_version.step).command.execute(
+            job_version.job
+        )
         if cmd_out.status == Status.FAILED:
-            logger.error(f"FAILED Job {job_new.name} with error:\n\t{cmd_out.value}")
-            cmd_out = await self.handle_failure(job_new, job_version.step, cmd_out)
+            logger.error(
+                f"FAILED Job {job_version.job.name} with error:\n\t{cmd_out.value}"
+            )
+            cmd_out = await self.handle_failure(
+                job_version.job, job_version.step, cmd_out
+            )
+
         return cmd_out
 
     # todo: aggiungere metodo in dummy
