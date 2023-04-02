@@ -99,6 +99,37 @@ jobs:
             --mount type=bind,source="${TMPDIR:-/tmp}"/streamflow,target="/tmp/streamflow" \
             alphaunito/streamflow:latest \
             streamflow run /streamflow/project/streamflow.yml
+  test-flux:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ["fluxrm/flux-sched:focal"]
+    container:
+      image: ${{ matrix.container }}
+      options: "--platform=linux/amd64 --user root -it"
+    name: ${{ matrix.container }}
+    steps:
+      - name: Make Space
+        run: |
+          rm -rf /usr/share/dotnet
+          rm -rf /opt/ghc
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Streamflow
+        run: |
+         pip install . 
+         pip install lockfile
+         chown -R fluxuser .
+      - name: Start Flux and Test Workflow
+        run: |
+          su fluxuser
+          cd examples/flux
+          which streamflow
+          flux start streamflow run streamflow.yml
   static-checks:
     name: "StreamFlow static checks"
     runs-on: ubuntu-22.04

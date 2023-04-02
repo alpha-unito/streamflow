@@ -502,3 +502,124 @@ class PBSConnector(QueueManagerConnector):
             capture_output=True,
         )
         return stdout.strip()
+
+
+class FluxConnector(QueueManagerConnector):
+    async def _get_output(self, job_id: str, location: Location) -> str:
+        # This will hang if the job is not complete
+        command = [
+            "flux",
+            "job",
+            "attach",
+            job_id,
+        ]
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Running command {' '.join(command)}")
+        stdout, _ = await self.connector.run(
+            location=location,
+            command=command,
+            capture_output=True,
+        )
+        if output_path := stdout.strip():
+            stdout, _ = await self.connector.run(
+                location=location, command=["cat", output_path], capture_output=True
+            )
+            return stdout.strip()
+        else:
+            return ""
+
+    async def _get_returncode(self, job_id: str, location: Location) -> int:
+        command = [
+            "flux",
+            "jobs",
+            "--no-header",
+            "-o",
+            "{returncode}",
+            job_id,
+        ]
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Running command {' '.join(command)}")
+        stdout, _ = await self.connector.run(
+            location=location,
+            command=command,
+            capture_output=True,
+        )
+        return int(stdout.strip())
+
+    @cachedmethod(
+        lambda self: self.jobsCache,
+        key=partial(cachetools.keys.hashkey, "running_jobs"),
+    )
+    async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
+        # If we add the job id, the filter is ignored
+        command = [
+            "flux",
+            "jobs",
+            "--no-header",
+            "--filter=pending,running",
+            '-o "{id}"',
+        ]
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Running command {' '.join(command)}")
+        stdout, _ = await self.connector.run(
+            location=location,
+            command=command,
+            capture_output=True,
+        )
+        # Filter down to the job ids we are interested in
+        return [
+            j.strip()
+            for j in stdout.strip().splitlines()
+            if j.strip() in self.scheduledJobs
+        ]
+
+    async def _remove_jobs(self, location: Location) -> None:
+        await self.connector.run(
+            location=location,
+            command=["flux", "job", "cancel", " ".join(self.scheduledJobs)],
+        )
+
+    async def _run_batch_command(
+        self,
+        command: str,
+        job_name: str,
+        location: Location,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        timeout: int | None = None,
+    ) -> str:
+        batch_command = [
+            "echo",
+            base64.b64encode(command.encode("utf-8")).decode("utf-8"),
+            "|",
+            "base64",
+            "-d",
+            "|",
+            "flux",
+            "batch",
+            "-N",
+            "1",
+        ]
+        if workdir is not None:
+            batch_command.extend(["--cwd", workdir])
+        if stdin is not None:
+            batch_command.extend(["--input", shlex.quote(stdin)])
+        if stdout != asyncio.subprocess.STDOUT:
+            batch_command.extend(["--output", shlex.quote(stdout)])
+        if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
+            batch_command.extend(["--error", shlex.quote(stderr)])
+        if timeout:
+            batch_command.extend(["-t", utils.format_seconds_to_hhmmss(timeout)])
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Running command {' '.join(batch_command)}")
+        stdout, returncode = await self.connector.run(
+            location=location, command=batch_command, capture_output=True
+        )
+        if returncode == 0:
+            return stdout.strip()
+        else:
+            raise WorkflowExecutionException(
+                f"Error submitting job {job_name} to Flux: {stdout.strip()}"
+            )
