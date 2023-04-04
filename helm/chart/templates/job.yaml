@@ -8,9 +8,6 @@ metadata:
     "helm.sh/hook": post-install
     "helm.sh/hook-delete-policy": hook-succeeded
 spec:
-  selector:
-    matchLabels:
-      {{- include "streamflow.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:

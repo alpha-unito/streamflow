@@ -50,5 +50,3 @@ RUN apk --no-cache add \
     && mkdir -p /streamflow/results
 
 WORKDIR /streamflow/results
-
-ENTRYPOINT ["streamflow"]
