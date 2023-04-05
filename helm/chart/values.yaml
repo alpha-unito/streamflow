@@ -4,7 +4,7 @@ image:
   repository: alphaunito/streamflow
   pullPolicy: Always
 
-args: ["/streamflow/project/streamflow.yml"]
+args: ["streamflow", "version"]
 restartPolicy: OnFailure
 imagePullSecrets: []
 nameOverride: ""

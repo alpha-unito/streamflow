@@ -1,0 +1,7 @@
+version: v1.0
+workflows:
+  extract-and-compile:
+    type: cwl
+    config:
+      file: main.cwl
+      settings: config.yml
