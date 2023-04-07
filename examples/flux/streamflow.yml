@@ -1,0 +1,19 @@
+#!/usr/bin/env streamflow
+version: v1.0
+workflows:
+  master:
+    type: cwl
+    config:
+      file: cwl/main.cwl
+      settings: cwl/config.yml
+    bindings:
+      - step: /compile
+        target:
+          deployment: dc-mpi
+      - step: /execute
+        target:
+          deployment: dc-mpi
+deployments:
+  dc-mpi:
+    type: flux
+    config: {}

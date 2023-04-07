@@ -1,0 +1,4 @@
+source_file:
+  class: File
+  path: data/cs.cxx
+num_processes: 2

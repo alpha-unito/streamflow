@@ -91,6 +91,3 @@ venv/
 */*.swp
 */*/*.swp
 */*/*/*.swp
-
-# Project specific
-examples/
