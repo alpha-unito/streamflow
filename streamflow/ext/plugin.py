@@ -9,6 +9,8 @@ from streamflow.core.deployment import BindingFilter, Connector, DeploymentManag
 from streamflow.core.persistence import Database
 from streamflow.core.recovery import CheckpointManager, FailureManager
 from streamflow.core.scheduling import Policy, Scheduler
+from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
+from streamflow.cwl.requirement.docker.translator import CWLDockerTranslator
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
 from streamflow.deployment.connector import connector_classes
@@ -40,6 +42,9 @@ class StreamFlowPlugin(ABC):
 
     def register_checkpoint_manager(self, name: str, cls: type[CheckpointManager]):
         self._register(name, cls, checkpoint_manager_classes)
+
+    def register_cwl_docker_translator(self, name: str, cls: type[CWLDockerTranslator]):
+        self._register(name, cls, cwl_docker_translator_classes)
 
     def register_connector(self, name: str, cls: type[Connector]):
         self._register(name, cls, connector_classes)

@@ -340,9 +340,10 @@ class SSHConnector(BaseConnector):
     async def _copy_remote_to_local(
         self, src: str, dst: str, location: Location, read_only: bool = False
     ) -> None:
+        dirname, basename = posixpath.split(src)
         async with self._get_data_transfer_client(location.name) as ssh_client:
             async with ssh_client.create_process(
-                "tar chf - -C / " + posixpath.relpath(src, "/"),
+                f"tar chf - -C {dirname} {basename}",
                 stdin=asyncio.subprocess.DEVNULL,
                 encoding=None,
             ) as proc:

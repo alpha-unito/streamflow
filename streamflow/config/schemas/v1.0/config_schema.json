@@ -104,6 +104,30 @@
         ]
       }
     },
+    "cwl": {
+      "$id": "#/definitions/cwl",
+      "type": "object",
+      "docker": {
+        "$id": "#/definitions/cwl/docker",
+        "type": "object",
+        "definitions": {},
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "wrapper": {
+            "type": "boolean",
+            "description": "If true, the Docker target wraps the original target bound to the step. If false, it overrides it.",
+            "default": true
+          }
+        },
+        "$comment": "The `config` property is injected by each CWLDockerTranslator extension",
+        "required": [
+          "type",
+          "config"
+        ]
+      }
+    },
     "database": {
       "$id": "#/definitions/database",
       "type": "object",
@@ -308,6 +332,26 @@
             },
             "settings": {
               "type": "string"
+            },
+            "docker": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "step": {
+                    "type": "string"
+                  },
+                  "deployment": {
+                    "type": "object",
+                    "$ref": "#/definitions/cwl/docker"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "step",
+                  "deployment"
+                ]
+              }
             }
           },
           "required": [

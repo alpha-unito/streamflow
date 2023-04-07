@@ -1,0 +1,534 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docker.json",
+  "type": "object",
+  "properties": {
+    "addHost": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Add a custom host-to-IP mapping (host:ip)"
+    },
+    "blkioWeight": {
+      "type": "integer",
+      "description": "Block IO (relative weight), between 10 and 1000, or 0 to disable",
+      "default": 0
+    },
+    "blkioWeightDevice": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "description": "Block IO weight (relative device weight)"
+    },
+    "capAdd": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Add Linux capabilities"
+    },
+    "capDrop": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Drop Linux capabilities"
+    },
+    "cgroupParent": {
+      "type": "string",
+      "description": "Optional parent cgroup for the container"
+    },
+    "cgroupns": {
+      "type": "string",
+      "enum": [
+        "host",
+        "private"
+      ],
+      "description": "Cgroup namespace to use. `host` runs the container in the Docker host's cgroup namespace, `private` runs the container in its own private cgroup namespace. By default, DOcker uses the cgroup namespace as configured by the `default-cgroupns-mode` option on the daemon"
+    },
+    "cidfile": {
+      "type": "string",
+      "description": "Write the container ID to the file"
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Command to run when deploying the container"
+    },
+    "cpuPeriod": {
+      "type": "integer",
+      "description": "Limit CPU CFS (Completely Fair Scheduler) period"
+    },
+    "cpuQuota": {
+      "type": "integer",
+      "description": "Limit CPU CFS (Completely Fair Scheduler) quota"
+    },
+    "cpuRTPeriod": {
+      "type": "integer",
+      "description": "Limit CPU real-time period in microseconds"
+    },
+    "cpuRTRuntime": {
+      "type": "integer",
+      "description": "Limit CPU real-time runtime in microseconds"
+    },
+    "cpuShares": {
+      "type": "integer",
+      "description": "CPU shares (relative weight)"
+    },
+    "cpus": {
+      "type": "number",
+      "description": "Number of CPUs"
+    },
+    "cpusetCpus": {
+      "type": "string",
+      "description": "CPUs in which to allow execution (0-3, 0,1)"
+    },
+    "cpusetMems": {
+      "type": "string",
+      "description": "MEMs in which to allow execution (0-3, 0,1)"
+    },
+    "detachKeys": {
+      "type": "string",
+      "description": "Overrude the key sequence for detaching a container"
+    },
+    "device": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Add a host device to the container"
+    },
+    "deviceCgroupRule": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Add a rule to the cgroup allowed devices list"
+    },
+    "deviceReadBps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Limit read rate (bytes per second) from a device"
+    },
+    "deviceReadIops": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Limit read rate (IO per second) from a device"
+    },
+    "deviceWriteBps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Limit write rate (bytes per second) from a device"
+    },
+    "deviceWriteIops": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Limit write rate (IO per second) from a device"
+    },
+    "disableContentTrust": {
+      "type": "boolean",
+      "description": "Skip image verification",
+      "default": true
+    },
+    "dns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Set custom DNS servers"
+    },
+    "dnsOption": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Set DNS options"
+    },
+    "dnsSearch": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Set custom DNS search domains"
+    },
+    "domainname": {
+      "type": "string",
+      "description": "Container NIS domain name"
+    },
+    "entrypoint": {
+      "type": "string",
+      "description": "Overwrite the default ENTRYPOINT of the image"
+    },
+    "env": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Set environment variables"
+    },
+    "envFile": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Read in a file of environment variables"
+    },
+    "expose": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "uniqueItems": true,
+      "description": "Expose a port or a range of ports"
+    },
+    "gpus": {
+      "type": "string",
+      "description": "GPU devices to add to the container ('all' to pass all GPUs)"
+    },
+    "groupAdd": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Add additional groups to join"
+    },
+    "healthCmd": {
+      "type": "string",
+      "description": "Command to run to check health"
+    },
+    "healthInterval": {
+      "type": "string",
+      "description": "Time between running the check (ms|s|m|h)",
+      "default": "0s"
+    },
+    "healthRetries": {
+      "type": "integer",
+      "description": "Consecutive failures needed to report unhealthy"
+    },
+    "healthStartPeriod": {
+      "type": "string",
+      "description": "Start period for the container to initialize before starting health-retries countdown (ms|s|m|h)",
+      "default": "0s"
+    },
+    "healthTimeout": {
+      "type": "string",
+      "description": "Maximum time to allow one check to run (ms|s|m|h)",
+      "default": "0s"
+    },
+    "hostname": {
+      "type": "string",
+      "description": "Container host name"
+    },
+    "init": {
+      "type": "boolean",
+      "description": "Run an init inside the container that forwards signals and reaps processes",
+      "default": true
+    },
+    "ip": {
+      "type": "string",
+      "description": "IPv4 address"
+    },
+    "ip6": {
+      "type": "string",
+      "description": "IPv6 address"
+    },
+    "ipc": {
+      "type": "string",
+      "description": "IPC mode to use"
+    },
+    "isolation": {
+      "type": "string",
+      "description": "Container isolation technology"
+    },
+    "kernelMemory": {
+      "type": "integer",
+      "description": "Kernel memory limit (bytes)"
+    },
+    "label": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Set metadata on a container"
+    },
+    "labelFile": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Read in a line delimited file of labels"
+    },
+    "link": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Add link to another container"
+    },
+    "linkLocalIP": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Contaiener IPv4/IPv6 link-local addresses"
+    },
+    "logDriver": {
+      "type": "string",
+      "description": "Logging driver for the container",
+      "default": "none"
+    },
+    "logOpt": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Log driver options"
+    },
+    "macAddress": {
+      "type": "string",
+      "description": "Container MAC address"
+    },
+    "memory": {
+      "type": "integer",
+      "description": "Memory limit (bytes)"
+    },
+    "memoryReservation": {
+      "type": "integer",
+      "description": "Memory soft limit"
+    },
+    "memorySwap": {
+      "type": "integer",
+      "description": "Swap limit equal to memory plus swap (-1 to enable unlimited swap)"
+    },
+    "memorySwappiness": {
+      "type": "integer",
+      "description": "Tune container memory swappiness (0 to 100)",
+      "default": -1
+    },
+    "mount": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Attach a filesystem mount to the container"
+    },
+    "network": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Connect a container to a network"
+    },
+    "networkAlias": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Attach a network-scoped alias for the container"
+    },
+    "noHealthcheck": {
+      "type": "boolean",
+      "description": "Disable any container-specified HEALTHCHECK"
+    },
+    "oomKillDisable": {
+      "type": "boolean",
+      "description": "Disable OOM Killer"
+    },
+    "oomScoreAdj": {
+      "type": "integer",
+      "description": "Tune host's OOM preferences (-1000 to 1000)"
+    },
+    "pid": {
+      "type": "string",
+      "description": "PID namespace to use"
+    },
+    "pidsLimit": {
+      "type": "integer",
+      "description": "Tune container pids limit (-1 for unlimited"
+    },
+    "privileged": {
+      "type": "boolean",
+      "description": "Give extended privileges to this container"
+    },
+    "publish": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Publish container ports to the host"
+    },
+    "publishAll": {
+      "type": "boolean",
+      "description": "Publish all exposed ports to random ports"
+    },
+    "readOnly": {
+      "type": "boolean",
+      "description": "Mount the container's root filesystem as read only"
+    },
+    "replicas": {
+      "type": "integer",
+      "description": "Number of instances to be co-allocated",
+      "default": 1
+    },
+    "locationsCacheSize": {
+      "type": "integer",
+      "description": "Available locations cache size",
+      "default": 10
+    },
+    "locationsCacheTTL": {
+      "type": "integer",
+      "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
+      "default": 10
+    },
+    "restart": {
+      "type": "string",
+      "description": "Restart policy to apply when a container exists",
+      "default": "no"
+    },
+    "rm": {
+      "type": "boolean",
+      "description": "Automatically remove the container when it exits",
+      "default": true
+    },
+    "runtime": {
+      "type": "string",
+      "description": "Runtime to use for this container"
+    },
+    "securityOpt": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Security options"
+    },
+    "shmSize": {
+      "type": "integer",
+      "description": "Size of /dev/shm"
+    },
+    "sigProxy": {
+      "type": "boolean",
+      "description": "Proxy received signals to the process",
+      "default": true
+    },
+    "stopSignal": {
+      "type": "string",
+      "description": "Signal to stop a container",
+      "default": "SIGTERM"
+    },
+    "stopTimeout": {
+      "type": "integer",
+      "description": "Timeout (in seconds) to stop a container"
+    },
+    "storageOpt": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Storage driver options for the container"
+    },
+    "sysctl": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Sysctl options"
+    },
+    "tmpfs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Mount a tmpfs directory"
+    },
+    "transferBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": "64kiB"
+    },
+    "ulimit": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Ulimit options"
+    },
+    "user": {
+      "type": "string",
+      "description": "Username or UID (format: <name|uid>[:<group|gid>])"
+    },
+    "userns": {
+      "type": "string",
+      "description": "User namespace to use"
+    },
+    "uts": {
+      "type": "string",
+      "description": "UTS namespace to use"
+    },
+    "volume": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Bind mount a volume"
+    },
+    "volumeDriver": {
+      "type": "string",
+      "description": "Optional volume driver for the container"
+    },
+    "volumesFrom": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Mount volumes from the specified containers"
+    },
+    "workdir": {
+      "type": "string",
+      "description": "Working directory inside the container"
+    }
+  },
+  "additionalProperties": false
+}

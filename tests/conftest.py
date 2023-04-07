@@ -1,12 +1,16 @@
 import asyncio
 import os
+import platform
 import tempfile
 from asyncio.locks import Lock
 from collections.abc import Iterable
 
+import pkg_resources
 import pytest
 import pytest_asyncio
+from jinja2 import Template
 
+from streamflow.core import utils
 from streamflow.main import build_context
 from streamflow.core.config import Config
 from streamflow.core.deployment import Target
@@ -17,24 +21,69 @@ from streamflow.core.deployment import DeploymentConfig, LOCAL_LOCATION, Locatio
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 
+def deployment_types():
+    deplyoments_ = ["local", "docker"]
+    if platform.system() == "Linux":
+        deplyoments_.extend(["kubernetes", "singularity"])
+    return deplyoments_
+
+
 async def get_location(
     _context: StreamFlowContext, request: pytest.FixtureRequest
 ) -> Location:
     if request.param == "local":
         return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
     elif request.param == "docker":
-        connector = _context.deployment_manager.get_connector("alpine")
+        connector = _context.deployment_manager.get_connector("alpine-docker")
         locations = await connector.get_available_locations()
-        return Location(deployment="alpine", name=next(iter(locations.keys())))
+        return Location(deployment="alpine-docker", name=next(iter(locations.keys())))
+    elif request.param == "kubernetes":
+        connector = _context.deployment_manager.get_connector("alpine-kubernetes")
+        locations = await connector.get_available_locations(service="sf-test")
+        return Location(
+            deployment="alpine-kubernetes",
+            service="sf-test",
+            name=next(iter(locations.keys())),
+        )
+    elif request.param == "singularity":
+        connector = _context.deployment_manager.get_connector("alpine-singularity")
+        locations = await connector.get_available_locations()
+        return Location(
+            deployment="alpine-singularity", name=next(iter(locations.keys()))
+        )
     else:
         raise Exception(f"{request.param} location type not supported")
 
 
 def get_docker_deployment_config():
     return DeploymentConfig(
-        name="alpine",
+        name="alpine-docker",
         type="docker",
         config={"image": "alpine:3.16.2"},
+        external=False,
+        lazy=False,
+    )
+
+
+def get_kubernetes_deployment_config():
+    with open(pkg_resources.resource_filename(__name__, "pod.jinja2")) as t:
+        template = Template(t.read())
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        template.stream(name=utils.random_name()).dump(f.name)
+    return DeploymentConfig(
+        name="alpine-kubernetes",
+        type="kubernetes",
+        config={"files": [f.name]},
+        external=False,
+        lazy=False,
+    )
+
+
+def get_singularity_deployment_config():
+    return DeploymentConfig(
+        name="alpine-singularity",
+        type="singularity",
+        config={"image": "docker://alpine:3.16.2"},
         external=False,
         lazy=False,
     )
@@ -56,6 +105,9 @@ async def context() -> StreamFlowContext:
         )
     )
     await _context.deployment_manager.deploy(get_docker_deployment_config())
+    if platform.system() == "Linux":
+        await _context.deployment_manager.deploy(get_kubernetes_deployment_config())
+        await _context.deployment_manager.deploy(get_singularity_deployment_config())
     yield _context
     await _context.deployment_manager.undeploy_all()
     # Close the database connection

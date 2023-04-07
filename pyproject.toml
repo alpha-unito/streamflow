@@ -46,6 +46,8 @@ packages = [
     "streamflow.core",
     "streamflow.cwl",
     "streamflow.cwl.antlr",
+    "streamflow.cwl.requirement",
+    "streamflow.cwl.requirement.docker",
     "streamflow.data",
     "streamflow.deployment",
     "streamflow.deployment.connector",
@@ -62,6 +64,7 @@ zip-safe = true
 
 [tool.setuptools.package-data]
 "streamflow.config" = ["schemas/v1.0/*.json"]
+"streamflow.cwl.requirement.docker" = ["schemas/*.jinja2", "schemas/*.json"]
 "streamflow.data" = ["schemas/*.json"]
 "streamflow.deployment" = ["schemas/*.json"]
 "streamflow.deployment.connector" = ["schemas/*.json"]

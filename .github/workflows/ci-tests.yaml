@@ -29,6 +29,7 @@ jobs:
         on: [ "ubuntu-22.04" ]
         python: [ "3.8", "3.9", "3.10", "3.11" ]
         version: [ "v1.0", "v1.1", "v1.2" ]
+        docker: [ "docker" ]
         include:
           - commit: "1c1f122f780075d910fdfdea7e15e46eef3c078d"
             exclude: "docker_entrypoint"
@@ -38,6 +39,18 @@ jobs:
             version: "v1.1"
           - commit: "5411b8cad173121641b23ba9a0da2cf36e6df2d6"
             exclude: "docker_entrypoint,modify_file_content"
+            version: "v1.2"
+          - docker: "singularity"
+            commit: "5411b8cad173121641b23ba9a0da2cf36e6df2d6"
+            exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
+            on: "ubuntu-22.04"
+            python: "3.11"
+            version: "v1.2"
+          - docker: "kubernetes"
+            commit: "5411b8cad173121641b23ba9a0da2cf36e6df2d6"
+            exclude: "docker_entrypoint,modify_file_content"
+            on: "ubuntu-22.04"
+            python: "3.11"
             version: "v1.2"
           - on: "macos-12"
             python: "3.11"
@@ -57,9 +70,27 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
-      - uses: douglascamata/setup-docker-macos-action@v1-alpha
+      - name: "Install Docker (MacOS X)"
+        uses: douglascamata/setup-docker-macos-action@v1-alpha
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v2
+      - name: "Install Apptainer"
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.1.7
+        if: ${{ matrix.docker == 'singularity' }}
+      - name: "Install KinD"
+        uses: helm/kind-action@v1
+        with:
+          config: .github/kind/config.yaml
+          kubectl_version: v1.26.3
+          version: v0.18.0
+        if: ${{ matrix.docker == 'kubernetes' }}
+      - name: "Configure Calico on KinD"
+        run: |
+          kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+          kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
+        if: ${{ matrix.docker == 'kubernetes' }}
       - name: "Install Streamflow"
         run: |
           python -m pip install . --user
@@ -68,6 +99,7 @@ jobs:
           VERSION: ${{ matrix.version }}
           COMMIT: ${{ matrix.commit }}
           EXCLUDE: ${{ matrix.exclude }}
+          DOCKER: ${{ matrix.docker }}
         run: ./cwl-conformance-test.sh
       - name: "Upload coverage report for conformance tests"
         uses: actions/upload-artifact@v3
@@ -118,7 +150,6 @@ jobs:
           rm -rf /opt/ghc
       - name: Checkout
         uses: actions/checkout@v3
-
       - name: Install Streamflow
         run: |
          pip install . 
@@ -178,9 +209,27 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: "15"
-      - uses: douglascamata/setup-docker-macos-action@v1-alpha
+      - name: "Install Docker (MacOs X)"
+        uses: douglascamata/setup-docker-macos-action@v1-alpha
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v2
+      - name: "Install Apptainer"
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.1.7
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+      - name: "Install KinD"
+        uses: helm/kind-action@v1
+        with:
+          config: .github/kind/config.yaml
+          kubectl_version: v1.26.3
+          version: v0.18.0
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+      - name: "Configure Calico on KinD"
+        run: |
+          kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+          kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Python Dependencies and Streamflow"
         run: |
           python -m pip install tox --user

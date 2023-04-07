@@ -3,7 +3,10 @@ from streamflow.deployment.connector.container import (
     DockerConnector,
     SingularityConnector,
 )
-from streamflow.deployment.connector.kubernetes import Helm3Connector
+from streamflow.deployment.connector.kubernetes import (
+    Helm3Connector,
+    KubernetesConnector,
+)
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.connector.occam import OccamConnector
 from streamflow.deployment.connector.queue_manager import (
@@ -19,6 +22,7 @@ connector_classes = {
     "flux": FluxConnector,
     "helm": Helm3Connector,
     "helm3": Helm3Connector,
+    "kubernetes": KubernetesConnector,
     "local": LocalConnector,
     "occam": OccamConnector,
     "pbs": PBSConnector,

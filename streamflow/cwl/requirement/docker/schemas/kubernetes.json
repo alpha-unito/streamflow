@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "kubernetes.json",
+  "type": "object",
+  "properties": {
+    "file":{
+      "type": "string",
+      "description": "Path to a file containing a Jinja2 template, describing how the Docker container should be deployed on Kubernetes",
+      "default": "./kubernetes.jinja2"
+    },
+    "debug": {
+      "type": "boolean",
+      "description": "Enable verbose output"
+    },
+    "inCluster": {
+      "type": "boolean",
+      "description": "If true, the Helm connector will use a ServiceAccount to connect to the Kubernetes cluster. This is useful when StreamFlow runs directly inside a Kubernetes Pod",
+      "default": false
+    },
+    "kubeContext": {
+      "type": "string",
+      "description": "Name of the kubeconfig context to use"
+    },
+    "kubeconfig": {
+      "type": "string",
+      "description": "Absolute path of the kubeconfig file to be used"
+    },
+    "maxConcurrentConnections": {
+      "type": "integer",
+      "description": "Maximum number of concurrent connections to open for a single Kubernetes client",
+      "default": 4096
+    },
+    "namespace": {
+      "type": "string",
+      "description": "Namespace to install the release into",
+      "default": "Current kube config namespace"
+    },
+    "locationsCacheSize": {
+      "type": "integer",
+      "description": "Available locations cache size",
+      "default": 10
+    },
+    "locationsCacheTTL": {
+      "type": "integer",
+      "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
+      "default": 10
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "Time (in seconds) to wait for any individual Kubernetes operation",
+      "default": "60000"
+    },
+    "transferBufferSize": {
+      "type": "integer",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": "32MiB - 1B",
+      "$comment": "Kubernetes Python client talks with its server counterpart, written in Golang, via Websocket protocol. The standard websocket package in Golang defines DefaultMaxPayloadBytes equal to 32 MB. Nevertheless, since kubernetes-client prepends channel number to the actual payload (which is always 0 for STDIN), we must reserve 1 byte for this purpose"
+    },
+    "wait": {
+      "type": "boolean",
+      "description": "If set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment are in a ready state before marking the release as successful. It will wait for as long as timeout",
+      "default": true
+    }
+  },
+  "additionalProperties": false
+}
