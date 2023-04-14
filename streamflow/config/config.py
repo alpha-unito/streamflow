@@ -59,18 +59,7 @@ class WorkflowConfig(Config):
                 self._process_binding(binding)
         set_targets(self.filesystem, None)
 
-    def _build_config(self, path: PurePosixPath) -> MutableMapping[str, Any]:
-        current_node = self.filesystem
-        for part in path.parts:
-            if part not in current_node["children"]:
-                current_node["children"][part] = {"children": {}}
-            current_node = current_node["children"][part]
-        return current_node
-
     def _process_binding(self, binding: MutableMapping[str, Any]):
-        current_config = self._build_config(
-            PurePosixPath(binding["step"] if "step" in binding else binding["port"])
-        )
         targets = (
             binding["target"]
             if isinstance(binding["target"], MutableSequence)
@@ -97,7 +86,8 @@ class WorkflowConfig(Config):
                 config["filters"].append(self.binding_filters[f])
             else:
                 raise WorkflowDefinitionException(f"Binding filter {f} is not defined")
-        current_config[target_type] = config
+        path = PurePosixPath(binding["step"] if "step" in binding else binding["port"])
+        self.put(path, target_type, config)
 
     def get(
         self, path: PurePosixPath, name: str, default: Any | None = None
@@ -119,3 +109,11 @@ class WorkflowConfig(Config):
             if name in current_node:
                 value = current_node[name]
         return value
+
+    def put(self, path: PurePosixPath, name: str, value: Any) -> None:
+        current_node = self.filesystem
+        for part in path.parts:
+            if part not in current_node["children"]:
+                current_node["children"][part] = {"children": {}}
+            current_node = current_node["children"][part]
+        current_node[name] = value

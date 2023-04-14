@@ -1,0 +1,13 @@
+version: v1.0
+workflows:
+  conformance-test:
+    config:
+      docker:
+        - step: /
+          deployment:
+            type: kubernetes
+            config: {}
+database:
+  type: default
+  config:
+    connection: ":memory:"

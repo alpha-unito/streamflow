@@ -8,10 +8,10 @@ from streamflow.core.data import FileType
 from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
-from tests.conftest import get_location
+from tests.conftest import deployment_types, get_location
 
 
-@pytest_asyncio.fixture(scope="module", params=["local", "docker"])
+@pytest_asyncio.fixture(scope="module", params=deployment_types())
 async def location(context, request) -> Location:
     return await get_location(context, request)
 

@@ -75,9 +75,9 @@ async def _async_main(args: argparse.Namespace):
         workflow_name = "cwl-workflow"
         streamflow_config = {"version": "v1.0", "workflows": {workflow_name: {}}}
     streamflow_config["workflows"][workflow_name]["type"] = "cwl"
-    streamflow_config["workflows"][workflow_name]["config"] = {
-        "file": os.path.abspath(args.processfile)
-    }
+    streamflow_config["workflows"][workflow_name].setdefault("config", {}).update(
+        {"file": os.path.abspath(args.processfile)}
+    )
     if args.jobfile:
         streamflow_config["workflows"][workflow_name]["config"][
             "settings"

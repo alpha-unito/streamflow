@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+from pathlib import PurePosixPath
 
 import cwltool.context
 import cwltool.load_tool
@@ -11,6 +12,7 @@ import cwltool.utils
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
+from streamflow.cwl.requirement.docker.translator import CWLDockerTranslatorConfig
 from streamflow.cwl.translator import CWLTranslator
 from streamflow.cwl.utils import load_cwl_inputs, load_cwl_workflow
 from streamflow.log_handler import logger
@@ -26,13 +28,28 @@ def _parse_arg(path: str, context: StreamFlowContext):
         return path
 
 
-def _parse_args(workflow_config: WorkflowConfig, context: StreamFlowContext):
+def _parse_args(
+    workflow_config: WorkflowConfig,
+    context: StreamFlowContext,
+):
     cwl_config = workflow_config.config
     cwl_config["file"] = _parse_arg(cwl_config["file"], context)
     args = [cwl_config["file"]]
     if "settings" in cwl_config:
         cwl_config["settings"] = _parse_arg(cwl_config["settings"], context)
         args.append(cwl_config["settings"])
+    for entry in cwl_config.get("docker", []):
+        path = PurePosixPath(entry["step"])
+        workflow_config.put(
+            path,
+            "docker",
+            CWLDockerTranslatorConfig(
+                name=str(path),
+                type=entry["deployment"]["type"],
+                config=entry["deployment"].get("config", {}),
+                wrapper=entry["deployment"].get("wrapper", True),
+            ),
+        )
     return args
 
 

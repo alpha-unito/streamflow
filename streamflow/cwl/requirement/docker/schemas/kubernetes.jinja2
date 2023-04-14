@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ name }}
+  labels:
+    name: {{ name }}
+spec:
+  containers:
+    - name: {{ name }}
+      image: {{ image }}
+      stdin: true
+      {% if output_directory is not none %}
+      workingDir: {{ output_directory }}
+      {% endif %}
+      volumeMounts:
+        - mountPath: /tmp/streamflow
+          name: {{ name }}-sf-volume
+        {% if output_directory is not none %}
+        - mountPath: {{ output_directory }}
+          name: {{ name }}-workdir
+        {% endif %}
+  volumes:
+    - name: {{ name }}-sf-volume
+      emptyDir: {}
+    {% if output_directory is not none %}
+    - name: {{ name }}-workdir
+      emptyDir: {}
+    {% endif %}
+{% if not network_access %}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ name }}-network-policy
+spec:
+  podSelector:
+    matchLabels:
+      name: {{ name }}
+  policyTypes:
+    - Ingress
+    - Egress
+{% endif %}

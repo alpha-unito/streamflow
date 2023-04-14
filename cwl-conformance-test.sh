@@ -23,6 +23,10 @@ COMMIT=${COMMIT:-"1.2.1_proposed"}
 # Defaults to "docker_entrypoint, inplace_update_on_file_content"
 EXCLUDE=${EXCLUDE:-"docker_entrypoint,modify_file_content"}
 
+# Name of the CWLDockerTranslator plugin to use for test execution
+# This parameter allows to test automatic CWL requirements translators
+DOCKER=${DOCKER:-"docker"}
+
 # Additional arguments for the pytest command
 # Defaults to none
 # PYTEST_EXTRA=
@@ -71,7 +75,7 @@ rm -rf "${SCRIPT_DIRECTORY}/.coverage" "${SCRIPT_DIRECTORY}/coverage.xml"
 
 # Run test
 cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/conftest.py" "$(dirname "${CONFORMANCE_TEST}")/"
-cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/streamflow.yml" "$(dirname "${CONFORMANCE_TEST}")/"
+cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/streamflow-${DOCKER}.yml" "$(dirname "${CONFORMANCE_TEST}")/streamflow.yml"
 bash -c "${TEST_COMMAND}"
 RETURN_CODE=$?
 

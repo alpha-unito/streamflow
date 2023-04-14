@@ -3,10 +3,6 @@
   "$id": "singularity.json",
   "type": "object",
   "properties": {
-    "image": {
-      "type": "string",
-      "description": "The name of the Singularity image to run"
-    },
     "addCaps": {
       "type": "string",
       "description": "A comma separated capability list to add"
@@ -44,7 +40,8 @@
     },
     "cleanenv": {
       "type": "boolean",
-      "description": "Clean environment before running container"
+      "description": "Clean environment before running container",
+      "default": true
     },
     "command": {
       "type": "array",
@@ -59,7 +56,8 @@
     },
     "contain": {
       "type": "boolean",
-      "description": "Use minimal /dev and empty other directories (e.g. /tmp and $HOME) instead of sharing filesystems from your host"
+      "description": "Use minimal /dev and empty other directories (e.g. /tmp and $HOME) instead of sharing filesystems from your host",
+      "default": true
     },
     "containall": {
       "type": "boolean",
@@ -129,14 +127,6 @@
     "hostname": {
       "type": "string",
       "description": "Set container hostname"
-    },
-    "instanceNames": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "uniqueItems": true,
-      "description": "When referencing an external environment, names of existing instances must be explicitly listed"
     },
     "ipc": {
       "type": "boolean",
@@ -261,16 +251,6 @@
       "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
       "default": 10
     },
-    "resourcesCacheSize": {
-      "type": "integer",
-      "description": "(**Deprecated.** Use locationsCacheSize.) Available resources cache size",
-      "default": 10
-    },
-    "resourcesCacheTTL": {
-      "type": "integer",
-      "description": "(**Deprecated.** Use locationsCacheTTL.) Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
-      "default": 10
-    },
     "rocm": {
       "type": "boolean",
       "description": "Enable experimental ROCM support"
@@ -317,8 +297,5 @@
       "description": "Makes the file system accessible as read/write with non persistent data (with overlay support only)"
     }
   },
-  "required": [
-    "image"
-  ],
   "additionalProperties": false
 }

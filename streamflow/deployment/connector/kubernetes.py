@@ -5,10 +5,12 @@ import io
 import logging
 import os
 import posixpath
+import re
 import shlex
 import tarfile
 import uuid
-from abc import ABC
+from abc import ABC, abstractmethod
+from math import ceil, floor
 from pathlib import Path
 from shutil import which
 from typing import (
@@ -31,12 +33,16 @@ from kubernetes_asyncio.config import (
     load_kube_config,
 )
 from kubernetes_asyncio.stream import WsApiClient, ws_client
+from kubernetes_asyncio.utils import create_from_yaml
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapperContext
 from streamflow.core.deployment import Connector, Location
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.exception import (
+    WorkflowDefinitionException,
+    WorkflowExecutionException,
+)
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment import aiotarstream
 from streamflow.deployment.aiotarstream import BaseStreamWrapper
@@ -61,6 +67,36 @@ async def _get_helm_version():
     )
     stdout, _ = await proc.communicate()
     return stdout.decode().strip()
+
+
+def _label_selector_as_selector(selector: Any) -> str | None:
+    if not (selector.match_labels or selector.match_expressions):
+        return None
+    else:
+        requirements = []
+        for label, value in (selector.match_labels or {}).items():
+            requirements.append(f"{label}={value}")
+        for expr in selector.match_expressions or []:
+            if expr.operator == "In":
+                requirements.append(f"{expr.key} in ({','.join(expr.values)})")
+            elif expr.operator == "NotIn":
+                requirements.append(f"{expr.key} notin ({','.join(expr.values)})")
+            elif expr.operator == "Exists":
+                requirements.append(f"{expr.key}")
+            elif expr.operator == "DoesNotExist":
+                requirements.append(f"!{expr.key}")
+            else:
+                raise WorkflowDefinitionException(
+                    f"Invalid Kubernetes operator `{expr.operator}` for LabelSelector"
+                )
+        return ",".join(requirements)
+
+
+def _selector_from_set(selector: MutableMapping[str, Any]) -> str:
+    requirements = []
+    for label, value in (selector or {}).items():
+        requirements.append(f"{label}={value}")
+    return ",".join(requirements)
 
 
 class KubernetesResponseWrapper(BaseStreamWrapper):
@@ -123,11 +159,12 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         config_dir: str,
         inCluster: bool | None = False,
         kubeconfig: str | None = None,
+        kubeContext: str | None = None,
         namespace: str | None = None,
-        locationsCacheSize: int = None,
-        locationsCacheTTL: int = None,
-        resourcesCacheSize: int = None,
-        resourcesCacheTTL: int = None,
+        locationsCacheSize: int | None = None,
+        locationsCacheTTL: int | None = None,
+        resourcesCacheSize: int | None = None,
+        resourcesCacheTTL: int | None = None,
         transferBufferSize: int = (2**25) - 1,
         maxConcurrentConnections: int = 4096,
     ):
@@ -140,9 +177,12 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self.kubeconfig = (
             str(Path(kubeconfig).expanduser())
             if kubeconfig is not None
-            else os.path.join(str(Path.home()), ".kube", "config")
+            else os.environ.get(
+                "KUBECONFIG", os.path.join(str(Path.home()), ".kube", "config")
+            )
         )
-        self.namespace = namespace
+        self.kubeContext: str | None = kubeContext
+        self.namespace: str | None = namespace
         cacheSize = locationsCacheSize
         if cacheSize is None:
             cacheSize = resourcesCacheSize
@@ -260,13 +300,15 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 locations.remove(source_location)
         if locations:
             # Get write command
-            write_command = await utils.get_remote_to_remote_write_command(
-                src_connector=source_connector,
-                src_location=source_location,
-                src=src,
-                dst_connector=self,
-                dst_locations=locations,
-                dst=dst,
+            write_command = " ".join(
+                await utils.get_remote_to_remote_write_command(
+                    src_connector=source_connector,
+                    src_location=source_location,
+                    src=src,
+                    dst_connector=self,
+                    dst_locations=locations,
+                    dst=dst,
+                )
             )
             async with source_connector._get_stream_reader(
                 source_location, src
@@ -283,7 +325,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                                         name=location.name.split(":")[0],
                                         namespace=self.namespace or "default",
                                         container=location.name.split(":")[1],
-                                        command=write_command,
+                                        command=["sh", "-c", write_command],
                                         stderr=False,
                                         stdin=True,
                                         stdout=False,
@@ -325,7 +367,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 self._configure_incluster_namespace()
             else:
                 await load_kube_config(
-                    config_file=self.kubeconfig, client_configuration=self.configuration
+                    config_file=self.kubeconfig,
+                    context=self.kubeContext,
+                    client_configuration=self.configuration,
                 )
         return self.configuration
 
@@ -379,6 +423,10 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             ]
         )
 
+    @abstractmethod
+    async def _get_running_pods(self) -> MutableSequence[Any]:
+        ...
+
     def _get_stream_reader(self, location: Location, src: str) -> StreamWrapperContext:
         pod, container = location.name.split(":")
         dirname, basename = posixpath.split(src)
@@ -412,6 +460,37 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         ws_api_client = WsApiClient(configuration=configuration, heartbeat=30)
         ws_api_client.set_default_header("Connection", "upgrade,keep-alive")
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
+
+    @cachedmethod(lambda self: self.locationsCache)
+    async def get_available_locations(
+        self,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
+    ) -> MutableMapping[str, AvailableLocation]:
+        pods = await self._get_running_pods()
+        valid_targets = {}
+        for pod in pods.items:
+            # Check if pod is ready
+            is_ready = True
+            for condition in pod.status.conditions:
+                if condition.status != "True":
+                    is_ready = False
+                    break
+            # Filter out not ready and Terminating locations
+            if is_ready and pod.metadata.deletion_timestamp is None:
+                for container in pod.spec.containers:
+                    if not service or service == container.name:
+                        location_name = pod.metadata.name + ":" + service
+                        valid_targets[location_name] = AvailableLocation(
+                            name=location_name,
+                            deployment=self.deployment_name,
+                            service=service,
+                            hostname=pod.status.pod_ip,
+                        )
+                        break
+        return valid_targets
 
     async def run(
         self,
@@ -447,7 +526,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                     name=pod,
                     namespace=self.namespace or "default",
                     container=container,
-                    command=["sh", "-c", f"{command}"],
+                    command=["sh", "-c", command],
                     stderr=True,
                     stdin=False,
                     stdout=True,
@@ -495,31 +574,326 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self.configuration = None
 
 
+class KubernetesConnector(BaseKubernetesConnector):
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        files: MutableSequence[str],
+        debug: bool = False,
+        inCluster: bool | None = False,
+        kubeconfig: str | None = None,
+        kubeContext: str | None = None,
+        maxConcurrentConnections: int = 4096,
+        namespace: str | None = None,
+        locationsCacheSize: int | None = None,
+        locationsCacheTTL: int | None = None,
+        resourcesCacheSize: int | None = None,
+        resourcesCacheTTL: int | None = None,
+        transferBufferSize: int = (2**25) - 1,
+        timeout: int | None = 60000,
+        wait: bool = True,
+    ):
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            inCluster=inCluster,
+            kubeconfig=kubeconfig,
+            kubeContext=kubeContext,
+            namespace=namespace,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL,
+            transferBufferSize=transferBufferSize,
+            maxConcurrentConnections=maxConcurrentConnections,
+        )
+        self.files = [
+            f if os.path.isabs(f) else os.path.join(self.config_dir, f) for f in files
+        ]
+        self.debug: bool = debug
+        self.timeout: int | None = timeout
+        self.wait: bool = wait
+        self.k8s_objects: MutableMapping[str, MutableSequence[Any]] = {}
+
+    def _get_api(self, k8s_object: Any) -> Any:
+        group, _, version = k8s_object.api_version.partition("/")
+        if version == "":
+            version = group
+            group = "core"
+        group = "".join(group.rsplit(".k8s.io", 1))
+        group = "".join(word.capitalize() for word in group.split("."))
+        fcn_to_call = f"{group}{version.capitalize()}Api"
+        return getattr(client, fcn_to_call)(self.client.api_client)
+
+    async def _get_running_pods(self) -> MutableSequence[Any]:
+        return await self.client.list_namespaced_pod(
+            namespace=self.namespace or "default",
+            field_selector="status.phase=Running",
+        )
+
+    async def _is_ready(self, k8s_object: Any) -> bool:
+        kind = k8s_object.kind
+        if kind == "Pod":
+            for condition in k8s_object.status.conditions or []:
+                if condition.type == "Ready" and condition.status == "True":
+                    return True
+            return False
+        elif kind == "Deployment":
+            if k8s_object.spec.paused:
+                return True
+            else:
+                k8s_api = self._get_api(k8s_object)
+                replica_sets = await k8s_api.list_namespaced_replica_set(
+                    namespace=k8s_object.metadata.namespace,
+                    label_selector=_label_selector_as_selector(
+                        k8s_object.spec.selector
+                    ),
+                )
+                replica_sets = [
+                    rs
+                    for rs in replica_sets.items
+                    if (
+                        k8s_object.metadata.uid
+                        in [ref.uid for ref in rs.metadata.owner_references]
+                    )
+                ]
+                if len(replica_sets) == 0:
+                    return False
+                else:
+                    replicas = int(k8s_object.spec.replicas)
+                    ready_replicas = int(k8s_object.status.ready_replicas or 0)
+                    if k8s_object.spec.strategy.type == "RollingUpdate":
+                        max_unavailable = (
+                            k8s_object.spec.strategy.rolling_update.max_unavailable
+                        )
+                        if str(max_unavailable).endswith("%"):
+                            max_unavailable = floor(
+                                replicas * (int(max_unavailable[:-1]) / 100)
+                            )
+                    else:
+                        max_unavailable = 0
+                    return ready_replicas >= replicas - max_unavailable
+        elif kind == "PersistentVolumeClaim":
+            return k8s_object.status.phase == "Bound"
+        elif kind == "Service":
+            if k8s_object.spec.type == "ExternalName":
+                return True
+            elif not k8s_object.spec.cluster_ip:
+                return False
+            elif k8s_object.spec.type == "LoadBalancer":
+                if len(k8s_object.spec.external_ips or []) > 0:
+                    return True
+                elif k8s_object.status.load_balancer.ingress is None:
+                    return False
+                else:
+                    return True
+            else:
+                return True
+        elif kind == "DaemonSet":
+            replicas = int(k8s_object.status.desired_number_scheduled)
+            ready_replicas = int(k8s_object.status.updated_number_scheduled or 0)
+            if k8s_object.spec.update_strategy.type != "RollingUpdate":
+                return True
+            elif ready_replicas != replicas:
+                return False
+            else:
+                max_unavailable = (
+                    k8s_object.spec.update_trategy.rolling_update.max_unavailable
+                )
+                if str(max_unavailable).endswith("%"):
+                    max_unavailable = ceil(replicas * (int(max_unavailable[:-1]) / 100))
+                return (
+                    int(k8s_object.status.number_ready or 0)
+                    >= replicas - max_unavailable
+                )
+        elif kind == "CustomResourceDefinition":
+            for condition in k8s_object.status.conditions or []:
+                if condition.type == "Established":
+                    if condition.status == "True":
+                        return True
+                elif condition.type == "NamesAccepted":
+                    if condition.status == "False":
+                        return True
+            return False
+        elif kind == "StatefulSet":
+            if k8s_object.spec.update_strategy.type != "RollingUpdate":
+                return True
+            elif int(k8s_object.status.observed_generation or 0) < int(
+                k8s_object.generation
+            ):
+                return False
+            else:
+                replicas = int(k8s_object.spec.replicas or 1)
+                partition = (
+                    int(k8s_object.spec.update_trategy.partition)
+                    if (
+                        k8s_object.spec.update_trategy.rolling_update is not None
+                        and k8s_object.spec.update_trategy.partition is not None
+                    )
+                    else 0
+                )
+                if k8s_object.status.updated_replicas < (replicas - partition):
+                    return False
+                elif k8s_object.status.ready_replicas != replicas:
+                    return False
+                elif partition == 0 and (
+                    k8s_object.status.current_revision
+                    != k8s_object.status.update_revision
+                ):
+                    return False
+                else:
+                    return True
+        elif kind == "ReplicationController":
+            pods = await self.client.list_namespaced_pod(
+                namespace=k8s_object.metadata.namespace,
+                label_selector=_selector_from_set(k8s_object.spec.selector),
+            )
+            return all(
+                await asyncio.gather(
+                    *(asyncio.create_task(self._is_ready(p)) for p in pods)
+                )
+            )
+        elif kind == "ReplicaSet":
+            pods = await self.client.list_namespaced_pod(
+                namespace=k8s_object.metadata.namespace,
+                label_selector=_label_selector_as_selector(k8s_object.spec.selector),
+            )
+            return all(
+                await asyncio.gather(
+                    *(asyncio.create_task(self._is_ready(p)) for p in pods)
+                )
+            )
+        else:
+            return True
+
+    async def _undeploy(self, k8s_object: Any):
+        k8s_api = self._get_api(k8s_object)
+        kind = k8s_object.kind
+        kind = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", kind)
+        kind = re.sub("([a-z0-9])([A-Z])", r"\1_\2", kind).lower()
+        if hasattr(k8s_api, f"delete_namespaced_{kind}"):
+            resp = await getattr(k8s_api, f"delete_namespaced_{kind}")(
+                name=k8s_object.metadata.name, namespace=k8s_object.metadata.namespace
+            )
+        else:
+            resp = await getattr(k8s_api, f"delete_{kind}")(
+                name=k8s_object.metadata.name
+            )
+        if self.debug:
+            print(f"{kind} deleted. status='{str(resp.status)}'")
+        return resp
+
+    async def _wait(self, k8s_object: Any) -> None:
+        k8s_api = self._get_api(k8s_object)
+        kind = k8s_object.kind
+        kind = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", kind)
+        kind = re.sub("([a-z0-9])([A-Z])", r"\1_\2", kind).lower()
+        if hasattr(k8s_api, f"read_namespaced_{kind}"):
+            while not await self._is_ready(
+                await getattr(k8s_api, f"read_namespaced_{kind}")(
+                    name=k8s_object.metadata.name,
+                    namespace=k8s_object.metadata.namespace,
+                )
+            ):
+                await asyncio.sleep(2)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"{k8s_object.metadata.name} is Ready")
+        else:
+            while not await self._is_ready(
+                await getattr(k8s_api, f"read_{kind}")(
+                    name=k8s_object.metadata.name,
+                )
+            ):
+                await asyncio.sleep(2)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"{k8s_object.metadata.name} is Ready")
+
+    async def deploy(self, external: bool) -> None:
+        # Create clients
+        await super().deploy(external)
+        if not external:
+            try:
+                for f in self.files:
+                    self.k8s_objects[f] = utils.flatten_list(
+                        await create_from_yaml(
+                            k8s_client=self.client.api_client,
+                            yaml_file=f,
+                            namespace=self.namespace or "default",
+                            verbose=self.debug,
+                        )
+                    )
+                    if self.wait:
+                        if stateful_objects := [
+                            obj for obj in self.k8s_objects[f] if hasattr(obj, "status")
+                        ]:
+                            await asyncio.wait_for(
+                                asyncio.gather(
+                                    *(
+                                        asyncio.create_task(self._wait(obj))
+                                        for obj in stateful_objects
+                                    )
+                                ),
+                                timeout=self.timeout,
+                            )
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"COMPLETED deployment of {f}")
+            except BaseException as e:
+                raise WorkflowExecutionException(
+                    f"FAILED Deployment of {self.deployment_name} environment."
+                ) from e
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join("schemas", "kubernetes.json")
+        )
+
+    async def undeploy(self, external: bool) -> None:
+        if not external:
+            try:
+                for f in self.k8s_objects:
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(self._undeploy(k8s_object))
+                            for k8s_object in self.k8s_objects[f]
+                        )
+                    )
+            except BaseException as e:
+                raise WorkflowExecutionException(
+                    f"FAILED Undeployment of {self.deployment_name} environment."
+                ) from e
+
+        # Close connections
+        await super().undeploy(external)
+
+
 class Helm3Connector(BaseKubernetesConnector):
     def __init__(
         self,
         deployment_name: str,
         config_dir: str,
         chart: str,
-        debug: bool | None = False,
+        debug: bool = False,
         kubeContext: str | None = None,
         kubeconfig: str | None = None,
-        atomic: bool | None = False,
+        atomic: bool = False,
         caFile: str | None = None,
         certFile: str | None = None,
-        depUp: bool | None = False,
-        devel: bool | None = False,
-        inCluster: bool | None = False,
-        keepHistory: bool | None = False,
+        depUp: bool = False,
+        devel: bool = False,
+        inCluster: bool = False,
+        keepHistory: bool = False,
         keyFile: str | None = None,
         keyring: str | None = None,
         locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
+        maxConcurrentConnections: int = 4096,
         nameTemplate: str | None = None,
         namespace: str | None = None,
-        noHooks: bool | None = False,
+        noHooks: bool = False,
         password: str | None = None,
-        renderSubchartNotes: bool | None = False,
+        renderSubchartNotes: bool = False,
         repo: str | None = None,
         commandLineValues: MutableSequence[str] | None = None,
         fileValues: MutableSequence[str] | None = None,
@@ -530,30 +904,33 @@ class Helm3Connector(BaseKubernetesConnector):
         repositoryConfig: str | None = None,
         resourcesCacheSize: int = None,
         resourcesCacheTTL: int = None,
-        skipCrds: bool | None = False,
+        skipCrds: bool = False,
         timeout: str | None = "1000m",
         transferBufferSize: int = (32 << 20) - 1,
         username: str | None = None,
         yamlValues: MutableSequence[str] | None = None,
-        verify: bool | None = False,
+        verify: bool = False,
         chartVersion: str | None = None,
-        wait: bool | None = True,
+        wait: bool = True,
     ):
         super().__init__(
             deployment_name=deployment_name,
             config_dir=config_dir,
             inCluster=inCluster,
             kubeconfig=kubeconfig,
+            kubeContext=kubeContext,
             namespace=namespace,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
             resourcesCacheSize=resourcesCacheSize,
             resourcesCacheTTL=resourcesCacheTTL,
             transferBufferSize=transferBufferSize,
+            maxConcurrentConnections=maxConcurrentConnections,
         )
-        self.chart: str = os.path.join(self.config_dir, chart)
+        self.chart: str = (
+            chart if os.path.isabs(chart) else os.path.join(self.config_dir, chart)
+        )
         self.debug: bool = debug
-        self.kubeContext: str | None = kubeContext
         self.atomic: bool = atomic
         self.caFile: str | None = caFile
         self.certFile: str | None = certFile
@@ -608,6 +985,13 @@ class Helm3Connector(BaseKubernetesConnector):
                 self.get_option("repository-cache", self.repositoryCache),
                 self.get_option("repository-config", self.repositoryConfig),
             ]
+        )
+
+    async def _get_running_pods(self) -> MutableSequence[Any]:
+        return await self.client.list_namespaced_pod(
+            namespace=self.namespace or "default",
+            label_selector=f"app.kubernetes.io/instance={self.releaseName}",
+            field_selector="status.phase=Running",
         )
 
     async def deploy(self, external: bool) -> None:
@@ -666,41 +1050,6 @@ class Helm3Connector(BaseKubernetesConnector):
                 raise WorkflowExecutionException(
                     f"FAILED Deployment of {self.deployment_name} environment:\n\t{stdout.decode().strip()}"
                 )
-
-    @cachedmethod(lambda self: self.locationsCache)
-    async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
-    ) -> MutableMapping[str, AvailableLocation]:
-        pods = await self.client.list_namespaced_pod(
-            namespace=self.namespace or "default",
-            label_selector=f"app.kubernetes.io/instance={self.releaseName}",
-            field_selector="status.phase=Running",
-        )
-        valid_targets = {}
-        for pod in pods.items:
-            # Check if pod is ready
-            is_ready = True
-            for condition in pod.status.conditions:
-                if condition.status != "True":
-                    is_ready = False
-                    break
-            # Filter out not ready and Terminating locations
-            if is_ready and pod.metadata.deletion_timestamp is None:
-                for container in pod.spec.containers:
-                    if not service or service == container.name:
-                        location_name = pod.metadata.name + ":" + service
-                        valid_targets[location_name] = AvailableLocation(
-                            name=location_name,
-                            deployment=self.deployment_name,
-                            service=service,
-                            hostname=pod.status.pod_ip,
-                        )
-                        break
-        return valid_targets
 
     @classmethod
     def get_schema(cls) -> str:

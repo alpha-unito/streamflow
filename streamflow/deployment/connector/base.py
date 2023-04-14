@@ -7,7 +7,6 @@ import posixpath
 import shlex
 import tarfile
 from abc import ABCMeta, abstractmethod
-from pathlib import Path
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
@@ -19,6 +18,7 @@ from streamflow.core.deployment import (
     Location,
 )
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.utils import get_local_to_remote_destination
 from streamflow.deployment import aiotarstream
 from streamflow.deployment.future import FutureConnector
 from streamflow.deployment.stream import (
@@ -39,24 +39,21 @@ async def extract_tar_stream(
     transferBufferSize: int | None = None,
 ) -> None:
     async for member in tar:
-        if os.path.isdir(dst):
-            if posixpath.join("/", member.path) == src:
-                member.path = posixpath.basename(member.path)
-                await tar.extract(member, dst)
-                if member.isdir():
-                    dst = os.path.join(dst, member.path)
-            else:
-                member.path = posixpath.relpath(posixpath.join("/", member.path), src)
-                await tar.extract(member, dst)
+        if os.path.isdir(dst) and member.path == posixpath.basename(src):
+            await tar.extract(member, dst)
         elif member.isfile():
             async with await tar.extractfile(member) as inputfile:
-                with open(dst, "wb") as outputfile:
+                path = os.path.normpath(
+                    os.path.join(
+                        dst, posixpath.relpath(member.path, posixpath.basename(src))
+                    )
+                )
+                with open(path, "wb") as outputfile:
                     while content := await inputfile.read(transferBufferSize):
                         outputfile.write(content)
         else:
-            parent_dir = str(Path(dst).parent)
-            member.path = posixpath.basename(member.path)
-            await tar.extract(member, parent_dir)
+            member.path = posixpath.relpath(member.path, posixpath.basename(src))
+            await tar.extract(member, os.path.normpath(os.path.join(dst, member.path)))
 
 
 class FutureMeta(ABCMeta):
@@ -102,6 +99,7 @@ class BaseConnector(Connector, FutureAware):
         locations: MutableSequence[Location],
         read_only: bool = False,
     ) -> None:
+        dst = await get_local_to_remote_destination(self, locations[0], src, dst)
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -146,14 +144,15 @@ class BaseConnector(Connector, FutureAware):
     async def _copy_remote_to_local(
         self, src: str, dst: str, location: Location, read_only: bool = False
     ) -> None:
+        dirname, basename = posixpath.split(src)
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(
                 self._get_run_command(
-                    command="tar chf - -C / " + posixpath.relpath(src, "/"),
+                    command=f"tar chf - -C {dirname} {basename}",
                     location=location,
                 )
             ),
-            stdin=None,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -262,7 +261,7 @@ class BaseConnector(Connector, FutureAware):
                         location=location,
                     )
                 ),
-                stdin=None,
+                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -377,12 +376,16 @@ class BaseConnector(Connector, FutureAware):
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(run_command),
             stdin=None,
-            stdout=asyncio.subprocess.PIPE
-            if capture_output
-            else asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE
-            if capture_output
-            else asyncio.subprocess.DEVNULL,
+            stdout=(
+                asyncio.subprocess.PIPE
+                if capture_output
+                else asyncio.subprocess.DEVNULL
+            ),
+            stderr=(
+                asyncio.subprocess.PIPE
+                if capture_output
+                else asyncio.subprocess.DEVNULL
+            ),
         )
         if capture_output:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)

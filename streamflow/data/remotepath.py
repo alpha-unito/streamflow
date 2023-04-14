@@ -425,9 +425,12 @@ async def symlink(
     connector: Connector, location: Location | None, src: str, path: str
 ) -> None:
     if isinstance(connector, LocalConnector):
+        src = os.path.abspath(src)
+        if os.path.isdir(path):
+            path = os.path.join(path, os.path.basename(src))
         try:
             os.symlink(
-                os.path.abspath(src), path, target_is_directory=os.path.isdir(path)
+                os.path.abspath(src), path, target_is_directory=os.path.isdir(src)
             )
         except OSError as e:
             if not e.errno == errno.EEXIST:

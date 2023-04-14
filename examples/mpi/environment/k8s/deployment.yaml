@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmpi
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openmpi
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openmpi
+    spec:
+      containers:
+        - name: openmpi
+          image: "everpeace/kube-openmpi:0.7.0"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 2022
+          volumeMounts:
+            - name: ssh-key
+              mountPath: /ssh-key/openmpi
+      volumes:
+        - name: ssh-key
+          secret:
+            secretName: streamflow-ssh-key
+            defaultMode: 256

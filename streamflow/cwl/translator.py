@@ -4,7 +4,6 @@ import copy
 import logging
 import os
 import posixpath
-import tempfile
 import urllib.parse
 from enum import Enum
 from pathlib import PurePosixPath
@@ -35,7 +34,6 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.exception import WorkflowDefinitionException
-from streamflow.core.utils import random_name
 from streamflow.core.workflow import (
     CommandOutputProcessor,
     Port,
@@ -64,6 +62,11 @@ from streamflow.cwl.processor import (
     CWLTokenProcessor,
     CWLUnionCommandOutputProcessor,
     CWLUnionTokenProcessor,
+)
+from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
+from streamflow.cwl.requirement.docker.translator import (
+    CWLDockerTranslator,
+    CWLDockerTranslatorConfig,
 )
 from streamflow.cwl.step import (
     CWLConditionalStep,
@@ -1063,39 +1066,39 @@ def _process_docker_image(docker_requirement: MutableMapping[str, Any]) -> str:
         raise WorkflowDefinitionException(
             "DockerRequirements without `dockerPull` or `dockerImageId` are not supported yet"
         )
-    return image_name
+    return str(image_name)
 
 
 def _process_docker_requirement(
-    name: str,
-    target: Target,
+    config_dir: str,
+    config: CWLDockerTranslatorConfig,
     context: MutableMapping[str, Any],
     docker_requirement: MutableMapping[str, Any],
     network_access: bool,
+    target: Target,
 ) -> Target:
-    image_name = _process_docker_image(docker_requirement=docker_requirement)
-    # Build configuration
-    docker_config = {
-        "image": image_name,
-        "logDriver": "none",
-        "network": "default" if network_access else "none",
-        "volume": [f"{target.workdir}:/tmp/streamflow"],
-    }
-    # Manage dockerOutputDirectory directive
+    # Process output directory
     if "dockerOutputDirectory" in docker_requirement:
-        docker_config["workdir"] = docker_requirement["dockerOutputDirectory"]
-        context["output_directory"] = docker_config["workdir"]
-        local_dir = os.path.join(
-            os.path.realpath(tempfile.gettempdir()), "streamflow", random_name()
+        output_directory = docker_requirement["dockerOutputDirectory"]
+        context["output_directory"] = output_directory
+    else:
+        output_directory = None
+    # Build CWLDockerTranslator
+    if config.type not in cwl_docker_translator_classes:
+        raise WorkflowDefinitionException(
+            f"Container type `{config.type}` not supported"
         )
-        os.makedirs(local_dir, exist_ok=True)
-        docker_config["volume"].append(f"{local_dir}:{docker_config['workdir']}")
-    # Build step target
-    deployment = DeploymentConfig(name=name, type="docker", config=docker_config)
-    step_target = Target(
-        deployment=deployment, service=image_name, workdir="/tmp/streamflow"  # nosec
+    translator_type = cwl_docker_translator_classes[config.type]
+    translator = cast(
+        CWLDockerTranslator,
+        translator_type(config_dir=config_dir, wrapper=config.wrapper, **config.config),
     )
-    return step_target
+    return translator.get_target(
+        image=_process_docker_image(docker_requirement=docker_requirement),
+        output_directory=output_directory,
+        network_access=network_access,
+        target=target,
+    )
 
 
 def _process_input_value(
@@ -1505,29 +1508,35 @@ class CWLTranslator:
                 if "NetworkAccess" in requirements
                 else False
             )
-            if (
-                len(binding_config.targets) == 1
-                and binding_config.targets[0].deployment.name == LOCAL_LOCATION
-            ):
-                binding_config.targets[0] = _process_docker_requirement(
-                    name=posixpath.join(name_prefix, "docker-requirement"),
-                    target=binding_config.targets[0],
-                    context=context,
-                    docker_requirement=requirements["DockerRequirement"],
-                    network_access=network_access,
-                )
-            else:
-                for target in binding_config.targets:
-                    if (
-                        target.deployment.type == "docker"
-                        and "image" in target.deployment.config
-                        and target.deployment.config["image"] == ""
-                    ):
-                        # Overwrite image configuration
-                        image_name = _process_docker_image(
-                            docker_requirement=requirements["DockerRequirement"]
+            targets = []
+            for target in binding_config.targets:
+                # If original target is local, use a container
+                if target.deployment.type == "local":
+                    targets.append(
+                        _process_docker_requirement(
+                            config_dir=os.path.dirname(self.context.config["path"]),
+                            config=self.workflow_config.get(
+                                path=PurePosixPath(name_prefix),
+                                name="docker",
+                                default=CWLDockerTranslatorConfig(
+                                    name="default", type="default", config={}
+                                ),
+                            ),
+                            context=context,
+                            docker_requirement=requirements["DockerRequirement"],
+                            network_access=network_access,
+                            target=target,
                         )
-                        target.deployment.config["image"] = image_name
+                    )
+                # Otherwise, throw a warning and skip the DockerRequirement conversion
+                else:
+                    if logger.isEnabledFor(logging.WARN):
+                        logger.warn(
+                            f"Skipping DockerRequirement conversion for step `{name_prefix}` "
+                            f"when executing on `{target.deployment.name}` deployment."
+                        )
+                    targets.append(target)
+            binding_config.targets = targets
         # Create DeploySteps to initialise the execution environment
         deployments = {t.deployment.name: t.deployment for t in binding_config.targets}
         deploy_steps = {

@@ -10,6 +10,7 @@ from ruamel.yaml import YAML
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
 from streamflow.deployment.connector import connector_classes
@@ -62,6 +63,7 @@ class SfValidator:
         schema = load_jsonschema(streamflow_config)
         utils.inject_schema(schema, binding_filter_classes, "bindingFilter")
         utils.inject_schema(schema, checkpoint_manager_classes, "checkpointManager")
+        utils.inject_schema(schema, cwl_docker_translator_classes, "cwl/docker")
         utils.inject_schema(schema, database_classes, "database")
         utils.inject_schema(schema, data_manager_classes, "dataManager")
         utils.inject_schema(schema, connector_classes, "deployment")

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ name }}
+  labels:
+    name: {{ name }}
+spec:
+  containers:
+    - name: sf-test
+      image: alpine:3.16.2
+      stdin: true
+      volumeMounts:
+        - mountPath: /tmp/streamflow
+          name: sf-volume
+  volumes:
+    - name: sf-volume
+      emptyDir: {}
