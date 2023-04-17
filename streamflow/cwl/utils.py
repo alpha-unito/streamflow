@@ -56,21 +56,33 @@ async def _check_glob_path(
         effective_path.startswith(output_directory)
         or effective_path.startswith(input_directory)
         or effective_path.startswith(tmp_directory)
-        or workflow.context.data_manager.get_data_locations(path=path)
     ):
         path_processor = get_path_processor(connector)
-        input_dirs = await remotepath.listdir(
-            connector, location, input_directory, FileType.DIRECTORY
+        relpath = path_processor.relpath(path, output_directory)
+        base_path = (
+            path_processor.normpath(effective_path[: -len(relpath)])
+            if effective_path.endswith(relpath)
+            else path_processor.dirname(effective_path)
         )
-        for input_dir in input_dirs:
-            input_path = path_processor.join(
-                input_dir, path_processor.relpath(path, output_directory)
+        if not await search_in_parent_locations(
+            context=workflow.context,
+            connector=connector,
+            path=effective_path,
+            relpath=path_processor.relpath(path, output_directory),
+            base_path=base_path,
+        ):
+            input_dirs = await remotepath.listdir(
+                connector, location, input_directory, FileType.DIRECTORY
             )
-            if await remotepath.exists(connector, location, input_path):
-                return
-        raise WorkflowDefinitionException(
-            "Globs outside the job's output folder are not allowed"
-        )
+            for input_dir in input_dirs:
+                input_path = path_processor.join(
+                    input_dir, path_processor.relpath(path, output_directory)
+                )
+                if await remotepath.exists(connector, location, input_path):
+                    return
+            raise WorkflowDefinitionException(
+                "Globs outside the job's output folder are not allowed"
+            )
 
 
 async def _process_secondary_file(
@@ -928,7 +940,12 @@ async def search_in_parent_locations(
                         previous_location = current_location
                 if not actual_locations:
                     raise WorkflowExecutionException(f"Error registering path {path}")
-            return list(actual_locations.values())
+                return list(actual_locations.values())
+            else:
+                return sorted(
+                    data_locations,
+                    key=lambda loc: 0 if loc.data_type == DataType.PRIMARY else 1,
+                )
         path_tokens = [path_processor.sep]
         path_tokens.extend(
             current_path.lstrip(path_processor.sep).split(path_processor.sep)[:-1]
