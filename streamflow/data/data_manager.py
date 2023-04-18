@@ -247,8 +247,8 @@ class DefaultDataManager(DataManager):
         else:
             return None
 
-    def invalidate_location(self, location: Location, path: str) -> None:
-        self.path_mapper.invalidate_location(location, path)
+    def invalidate_location(self, location: Location, path: str, test_path) -> None:
+        self.path_mapper.invalidate_location(location, path, test_path)
 
     def register_path(
         self,
@@ -373,7 +373,7 @@ class RemotePathMapper:
                 )
         return result
 
-    def invalidate_location(self, location: Location, path: str) -> None:
+    def invalidate_location(self, location: Location, path: str, test_path: str) -> None:
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
         for token in path.parts:
@@ -382,12 +382,15 @@ class RemotePathMapper:
             location.name, []
         ):
             loc.data_type = DataType.INVALID
-
-        # for node in node.children.values():
-        #     for data_loc in node.locations.setdefault(location.deployment, {}).get(
+        pass
+        # for node_child in node.children.values():
+        #     for data_loc in node_child.locations.setdefault(location.deployment, {}).get(
         #         location.name, []
         #     ):
-        #         self.invalidate_location(data_loc, data_loc.path)
+        #         pass
+        #         self.invalidate_location(data_loc, data_loc.path, test_path)
+        #         data_loc.data_type = DataType.INVALID
+        #         pass
         pass
 
     def put(

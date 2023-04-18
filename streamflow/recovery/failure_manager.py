@@ -9,7 +9,7 @@ import itertools
 import tempfile
 import token
 from asyncio import Lock
-from typing import MutableMapping, MutableSequence, cast, MutableSet
+from typing import MutableMapping, MutableSequence, cast, MutableSet, Tuple
 
 import pkg_resources
 
@@ -224,7 +224,7 @@ def search_step_name_into_graph(graph_tokens):
     raise Exception("Step name non trovato")
 
 
-async def printa_token(token_visited, workflow, graph_tokens, loading_context):
+async def printa_token(token_visited, workflow, graph_tokens, loading_context, pdf_name="graph_steps recovery"):
     token_values = {}
     for token_id, (token, _) in token_visited.items():
         token_values[token_id] = str_token_value(token)
@@ -272,7 +272,7 @@ async def printa_token(token_visited, workflow, graph_tokens, loading_context):
             steps_2.add(step_2)
         if step_1 != INIT_DAG_FLAG:
             graph_steps[step_1] = [(s, label) for s in steps_2]
-    print_graph_figure_label(graph_steps, "graph_steps recovery")
+    print_graph_figure_label(graph_steps, pdf_name)
 
 
 #################################################
@@ -311,13 +311,13 @@ async def data_location_exists(data_locations, context, token):
             if exists := await remotepath.exists(
                 connector, data_loc, token.value["path"]
             ):
-                print(
-                    f"token.id: {token.persistent_id} in loc {data_loc} -> exists {exists} "
-                )
+                # print(
+                #     f"token.id: {token.persistent_id} in loc {data_loc} -> exists {exists} "
+                # )
                 return True
-            print(
-                f"token.id: {token.persistent_id} in loc {data_loc} -> exists {exists} "
-            )
+            # print(
+            #     f"token.id: {token.persistent_id} in loc {data_loc} -> exists {exists} "
+            # )
     return False
 
 
@@ -333,13 +333,14 @@ async def is_token_available(token, context):
     if isinstance(token, CWLFileToken):
         # TODO: è giusto cercare una loc dal suo path? se va bene aggiustare data_location_exists method
         data_loc = _get_data_location(token.value["path"], context)
-        print(f"token.id: {token.persistent_id} ({token.value['path']})")
+        # print(f"token.id: {token.persistent_id} ({token.value['path']})")
         if not data_loc:  # if the data are in invalid locations, data_loc is None
             return False
         if not await data_location_exists([data_loc], context, token):
             # todo: invalidare tutti i path del data_loc
-            context.data_manager.invalidate_location(data_loc, token.value["path"])
-            # context.data_manager.invalidate_location(data_loc, "/")
+            logger.debug(f"Invalidated path {token.value['path']}")
+            context.data_manager.invalidate_location(data_loc, token.value["path"], "test")
+            # context.data_manager.invalidate_location(data_loc, "/", token.value["path"])
             return False
         return True
     if isinstance(token, ListToken):
@@ -469,6 +470,27 @@ def contains_token_id(token_id, token_list):
     return False
 
 
+def inner_qualcosa(k, a, visited, tokens_to_discard):
+    if isinstance(k, int) and k > 0 and k not in a.keys() and k not in tokens_to_discard:
+        a[k] = (visited[k][0], visited[k][1] if k not in tokens_to_discard else True)
+
+def qualcosa(dag_tokens, visited, tokens_to_discard):
+    a = {}
+    for k, vals in dag_tokens.items():
+        inner_qualcosa(k, a, visited, tokens_to_discard)
+        for v in vals:
+            inner_qualcosa(v, a, visited, tokens_to_discard)
+    return dict(sorted(a.items()))
+
+
+class RequestJob:
+    def __init__(self):
+        self.job_token: JobToken = None
+        self.token_output: Token = None
+        self.is_running: bool = False
+
+
+
 class DefaultFailureManager(FailureManager):
     def __init__(
         self,
@@ -479,13 +501,21 @@ class DefaultFailureManager(FailureManager):
         super().__init__(context)
         self.jobs: MutableMapping[str, JobVersion] = {}
         self.max_retries: int = max_retries
-        self.replay_cache: MutableMapping[str, ReplayResponse] = {}
         self.retry_delay: int | None = retry_delay
+
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
         # {workflow.name : { port.id: [ token.id ] } }
         self.retags: MutableMapping[str, MutableMapping[int, MutableSequence[int]]] = {}
-        self.job_tokens = {}
+
+        # job.name : RequestJob
+        self.jobs_request: MutableMapping[str, RequestJob] = {}
+
+    async def wait_jobs(self, job_name):
+        async with self.wait_queues[job_name]:
+            # if job_name not in self.jobs_request.keys() or not self.jobs_request[job_name].token_output:
+            #     await self.wait_queues[job_name].wait()
+            pass
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -515,8 +545,8 @@ class DefaultFailureManager(FailureManager):
         token_list = self.retags[workflow_name][output_port.name]
         for t in token_list:
             if t.tag == tag:
-                return False
-        return True
+                return True
+        return False
 
     def _save_for_retag(self, new_workflow, dag_token, token_port, token_visited):
         if new_workflow.name not in self.retags.keys():
@@ -601,7 +631,56 @@ class DefaultFailureManager(FailureManager):
                 add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
 
         token_visited = dict(sorted(token_visited.items()))
-        # await printa_token(token_visited, workflow, dag_tokens, loading_context)
+        # await printa_token(token_visited, workflow, dag_tokens, loading_context, "graph_steps_recovery")
+        pass
+
+        # check if the jobs are already running. If true, it removes from dag the steps depenendicies and wait that jobs have finished to use their outputs
+        # TODO: ottimizzare -> non creare duplicato. Scorri, trova tutti i tokens da togliere e poi correggi dag_tokens
+        dag_tokens_2 = { k: v for k, v in dag_tokens.items() }
+        tokens_to_discard = set()
+        token_jobs_to_wait = []
+        jobs_to_wait = []
+        for token, _ in token_visited.values():
+            if isinstance(token, JobToken):
+                if token.value.name not in self.wait_queues.keys():
+                    self.wait_queues[token.value.name] = asyncio.Condition()
+                if token.value.name not in self.jobs_request.keys():
+                    self.jobs_request[token.value.name] = RequestJob()
+                else: # job output is not available
+                    self.jobs_request[token.value.name].job_token = None
+                await workflow.context.scheduler.notify_status(
+                    token.value.name, Status.WAITING
+                )
+                # vvvv codice da cambiare/togliere vvvvv
+                if self.jobs_request[token.value.name].is_running:
+                    jobs_to_wait.append(asyncio.create_task(self.wait_jobs(token.value.name)))
+                    to_discard = dag_tokens_2.pop(token.persistent_id, None)
+                    token_jobs_to_wait.append((token, to_discard))
+                    if to_discard:
+                        for elem in to_discard:
+                            tokens_to_discard.add(elem)
+                        for k, v in dag_tokens.items():
+                            if k in dag_tokens_2.keys():
+                                for elem in to_discard:
+                                    dag_tokens_2[k].discard(elem)
+                                if not len(dag_tokens_2[k]):
+                                    dag_tokens_2.pop(k, None)
+        token_visited_2 = qualcosa(dag_tokens_2, token_visited, tokens_to_discard)
+        # await printa_token(token_visited, workflow, dag_tokens_2, loading_context, "graph_steps_recovery_2")
+        # ^^^^ codice da cambiare/togliere ^^^^
+        pass
+
+        # wait and rescue job output
+        await asyncio.gather(*jobs_to_wait)
+        pass
+        for job_token, next_tokens in token_jobs_to_wait:
+            new_t = self.jobs_request[job_token.value.name].token_output
+            if next_tokens:
+                for nt in next_tokens:
+                    dag_tokens_2[new_t.persistent_id] = dag_tokens_2.pop(nt)
+            pass
+        # todo: recuperare il token dal job generato e metterlo nel dag
+
 
         token_port, port_tokens_counter = await _populate_workflow(
             failed_step,
@@ -635,11 +714,15 @@ class DefaultFailureManager(FailureManager):
                         outputs=None,
                         version=1,
                     )
+                self.jobs_request[token.value.name].is_running = True
                 if (
                     self.max_retries is None
                     or self.jobs[token.value.name].version < self.max_retries
                 ):
                     self.jobs[token.value.name].version += 1
+                    logger.debug(
+                        f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times"
+                    )
                 else:
                     logger.error(
                         f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
@@ -687,7 +770,7 @@ class DefaultFailureManager(FailureManager):
                 )
         new_job_token.value.inputs = new_inputs
 
-        self.job_tokens[failed_job.name] = new_job_token
+        self.jobs_request[failed_job.name].job_token = new_job_token
         new_job = new_job_token.value
         new_step = await Step.load(
             new_workflow.context,
@@ -704,18 +787,31 @@ class DefaultFailureManager(FailureManager):
             logger.error(f"FAILED Job {new_job.name} with error:\n\t{cmd_out.value}")
             cmd_out = await self.handle_failure(new_job, new_step, cmd_out)
 
+
+        for token, _ in token_visited.values():
+            if isinstance(token, JobToken):
+                await workflow.context.scheduler.notify_status(
+                    token.value.name, Status.WAITING
+                )
+
         return cmd_out
 
     async def get_valid_job_token(self, job_token):
-        return self.job_tokens.pop(job_token.value.name, job_token)
-        # otherwise set the value to None (it is to test)
-        # if job_token.value.name in self.job_tokens.keys() and (out := self.job_tokens[job_token.value.name]):
-        #     self.job_tokens[job_token.value.name] = None
-        #     return out
-        # return job_token
+        request = self.jobs_request[job_token.value.name] if job_token.value.name in self.jobs_request.keys() else None
+        if request and request.job_token:
+            return request.job_token
+        else:
+            return job_token
 
     async def close(self):
         pass
+
+    async def notify_jobs(self, job_name, token):
+        if job_name in self.wait_queues.keys():
+            self.jobs_request[job_name].is_running = False
+            self.jobs_request[job_name].token_output = token
+            async with self.wait_queues[job_name]:
+                self.wait_queues[job_name].notify_all()
 
     @classmethod
     def get_schema(cls) -> str:
@@ -765,3 +861,6 @@ class DummyFailureManager(FailureManager):
 
     def is_valid_tag(self, workflow_name, tag, output_port):
         return True
+
+    async def notify_jobs(self, job_name):
+        pass

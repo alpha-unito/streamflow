@@ -587,6 +587,7 @@ class ExecuteStep(BaseStep):
                     inputs=list(job_token.value.inputs.values()) + [job_token],
                 )
             )
+            await self.workflow.context.failure_manager.notify_jobs(job_token.value.name, token)
 
     async def _run_job(
         self,
@@ -659,11 +660,14 @@ class ExecuteStep(BaseStep):
         # Retrieve output tokens
         if not self.terminated:
             try:
-                # job_token in the port has the job with old inputs, so it is necessary update with the new job
+                # job_token in the port has the job with old inputs, so for the persistence it is necessary update with the new job
                 original_job_token = self.get_job_token(job)
+
+                # todo: controllare che updated_job_token sia ancora necessario, invece di utilizzare direttamente original_job_token
                 updated_job_token = original_job_token.retag(original_job_token.tag)
                 updated_job_token.persistent_id = original_job_token.persistent_id
                 updated_job_token.value = job
+
                 job_token = (
                     await self.workflow.context.failure_manager.get_valid_job_token(
                         updated_job_token
