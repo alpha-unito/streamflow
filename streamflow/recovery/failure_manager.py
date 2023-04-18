@@ -365,7 +365,7 @@ async def _put_tokens(
     token_port: MutableMapping[int, str],
     port_tokens_counter: MutableMapping[str, int],
     dag_tokens: MutableMapping[int, MutableSet[int]],
-    token_visited: MutableMapping[int, bool],
+    token_visited: MutableMapping[int, Tuple[Token, bool]],
 ):
     # add tokens into the ports
     for token_id in dag_tokens[INIT_DAG_FLAG]:
@@ -459,7 +459,7 @@ def get_job_token_from_token_list(job_name, token_list):
         if isinstance(token, JobToken):  # discard TerminationToken
             if token.value.name == job_name:
                 return token
-    return None
+    raise Exception(f"Job {job_name} not found in {token_list}")
 
 
 def contains_token_id(token_id, token_list):
@@ -518,7 +518,7 @@ class DefaultFailureManager(FailureManager):
                 return False
         return True
 
-    def _save_for_retag(self, new_workflow, dag_token, token_port):
+    def _save_for_retag(self, new_workflow, dag_token, token_port, token_visited):
         if new_workflow.name not in self.retags.keys():
             self.retags[new_workflow.name] = {}
 
@@ -532,10 +532,9 @@ class DefaultFailureManager(FailureManager):
             if isinstance(step, ScatterStep):
                 port = step.get_output_port()
                 for t_id in port_token[port.name]:
-                    if t_id not in dag_token.keys():
-                        add_elem_dictionary(
-                            port.name, t_id, self.retags[new_workflow.name]
-                        )
+                    add_elem_dictionary(
+                        port.name, token_visited[t_id][0], self.retags[new_workflow.name]
+                    )
 
     async def _recover_jobs(self, failed_job, failed_step):
         # await print_graph(job_version, loading_context)
@@ -544,7 +543,7 @@ class DefaultFailureManager(FailureManager):
         workflow = failed_step.workflow
         new_workflow = Workflow(
             context=workflow.context,
-            type="cwl",
+            type=workflow.type,
             name=random_name(),
             config=workflow.config,
         )
@@ -563,7 +562,7 @@ class DefaultFailureManager(FailureManager):
         tokens = list(failed_job.inputs.values())  # tokens to check
         tokens.append(job_token)
 
-        dag_tokens = {}  # { token.id : set of next tokens' id }
+        dag_tokens = {}  # { token.id : set of next tokens' id | string }
         for t in failed_job.inputs.values():
             dag_tokens[t.persistent_id] = set((failed_step.name,))
 
@@ -619,7 +618,9 @@ class DefaultFailureManager(FailureManager):
             token_visited,
         )
 
-        self._save_for_retag(new_workflow, dag_tokens, token_port)
+        pass
+        self._save_for_retag(new_workflow, dag_tokens, token_port, token_visited)
+        pass
 
         # free resources scheduler and check if the job can be re-executed
         for token, _ in token_visited.values():
