@@ -2,7 +2,10 @@ name: "CWL Conformance"
 on:
   push:
     branches:
-      - master
+      - 0.1.x
+  pull_request:
+    branches:
+      - 0.1.x
 jobs:
   test:
     runs-on: ubuntu-20.04

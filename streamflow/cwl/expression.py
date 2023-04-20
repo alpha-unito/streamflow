@@ -5,8 +5,8 @@ from enum import Enum
 from typing import Optional, MutableMapping, Any, Mapping, MutableSequence, Set
 
 import antlr4
-import cwltool.sandboxjs
-from cwltool.sandboxjs import JavascriptException
+import cwl_utils.sandboxjs
+from cwl_utils.sandboxjs import JavascriptException
 from schema_salad.utils import json_dumps
 
 from streamflow.core.exception import WorkflowDefinitionException, WorkflowExecutionException
@@ -156,7 +156,7 @@ class Evaluator(ABC):
 class DependencyResolver(Evaluator):
 
     def _ecmascript_evaluate(self, expr: str) -> Optional[Any]:
-        code = cwltool.sandboxjs.code_fragment_to_js(expr, self.jslib)
+        code = cwl_utils.sandboxjs.code_fragment_to_js(expr, self.jslib)
         lexer = ECMAScriptLexer(antlr4.InputStream(code))
         parser = ECMAScriptParser(antlr4.CommonTokenStream(lexer))
         listener = CWLDependencyListener()
@@ -184,7 +184,7 @@ class DependencyResolver(Evaluator):
 class RuntimeEvaluator(Evaluator):
 
     def _ecmascript_evaluate(self, expr: str) -> Optional[Any]:
-        return cwltool.sandboxjs.execjs(expr, self.jslib, self.timeout)
+        return cwl_utils.sandboxjs.get_js_engine().eval(expr, self.jslib, timeout=self.timeout)
 
     def _regex_evaluate(self,
                         parsed_string: str,

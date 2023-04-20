@@ -4,7 +4,7 @@ on:
     workflows:
       - "CWL Conformance"
     branches:
-      - master
+      - 0.1.x
     types:
       - completed
 jobs:
@@ -21,7 +21,7 @@ jobs:
       - name: "Get StreamFlow version"
         run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
       - name: "Check if Docker image already exists"
-        run : echo "NEW_IMAGE=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect alphaunito/streamflow:${STREAMFLOW_VERSION}-base > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
+        run : echo "NEW_IMAGE=$(docker buildx imagetools inspect alphaunito/streamflow:${STREAMFLOW_VERSION} > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
       - name: "Build base image"
         id: docker-base
         if: ${{ env.NEW_IMAGE }}
