@@ -36,3 +36,93 @@ jobs:
         env:
           PYTEST_MARK: ${{ matrix.mark }}
         run: pytest -m $PYTEST_MARK
+  docker:
+    needs: test
+    name: "Build Docker container"
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: docker/setup-qemu-action@v1
+      - uses: docker/setup-buildx-action@v1
+      - uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: "Get StreamFlow version"
+        run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
+      - name: "Check if Docker image already exists"
+        run: echo "NEW_IMAGE=$(docker buildx imagetools inspect alphaunito/streamflow:${STREAMFLOW_VERSION} > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
+      - name: "Build base image"
+        id: docker-base
+        if: ${{ env.NEW_IMAGE }}
+        uses: docker/build-push-action@v2
+        with:
+          build-args: |
+            HELM_VERSION=v3.7.2
+          push: true
+          tags: |
+            alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-base
+            alphaunito/streamflow:latest
+      - name: "Build Helm 2 image"
+        id: docker-helm
+        if: ${{ env.NEW_IMAGE }}
+        uses: docker/build-push-action@v2
+        with:
+          file: helm/docker/helm2/Dockerfile
+          build-args: |
+            BASE_IMAGE=alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-base
+            HELM_VERSION=v2.17.0
+          push: true
+          tags: alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}-helm2
+  github:
+    needs: test
+    name: "Create GitHub Release"
+    runs-on: ubuntu-20.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v2
+      - name: "Get StreamFlow version"
+        run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
+      - name: "Check tag existence"
+        uses: mukunku/tag-exists-action@v1.0.0
+        id: check-tag
+        with:
+          tag: ${{ env.STREAMFLOW_VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: "Create Release"
+        id: create-release
+        uses: actions/create-release@v1
+        if: ${{ steps.check-tag.outputs.exists == 'false' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.STREAMFLOW_VERSION }}
+          release_name: ${{ env.STREAMFLOW_VERSION }}
+          draft: false
+          prerelease: false
+  pypi:
+    needs: test
+    name: "Publish on PyPI"
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+      - name: "Get StreamFlow version"
+        run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
+      - name: "Get PyPI version"
+        run: echo "PYPI_VERSION=$(pip index versions --pre streamflow | grep streamflow | sed 's/.*(\(.*\))/\1/')" >> $GITHUB_ENV
+      - name: "Build Python packages"
+        if: ${{ env.STREAMFLOW_VERSION != env.PYPI_VERSION }}
+        run: |
+          python -m pip install build --user
+          python -m build --sdist --wheel --outdir dist/ .
+      - name: "Publish package to PyPI"
+        uses: pypa/gh-action-pypi-publish@release/v1
+        if: ${{ env.STREAMFLOW_VERSION != env.PYPI_VERSION }}
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_TOKEN }}
