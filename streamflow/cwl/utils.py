@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, MutableSequence, Set, MutableMapping
 
-import cwltool.expression
+import cwl_utils.expression
 
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.utils import get_token_value
@@ -44,7 +44,7 @@ def eval_expression(expression: str,
             expression,
             context,
             full_js=full_js,
-            jslib=cwltool.expression.jshead(expression_lib or [], context) if full_js else "",
+            jslib=cwl_utils.expression.jshead(expression_lib or [], context) if full_js else "",
             strip_whitespace=strip_whitespace,
             timeout=timeout)
     else:
@@ -90,7 +90,7 @@ def resolve_dependencies(expression: str,
             expression,
             context,
             full_js=full_js,
-            jslib=cwltool.expression.jshead(expression_lib or [], context) if full_js else "",
+            jslib=cwl_utils.expression.jshead(expression_lib or [], context) if full_js else "",
             strip_whitespace=strip_whitespace,
             timeout=timeout,
             resolve_dependencies=True)

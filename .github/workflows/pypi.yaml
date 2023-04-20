@@ -4,7 +4,7 @@ on:
     workflows:
       - "CWL Conformance"
     branches:
-      - master
+      - 0.1.x
     types:
       - completed
 jobs:
@@ -15,12 +15,10 @@ jobs:
       - uses: actions/setup-python@v2
         with:
           python-version: "3.8"
-      - name: "Install pypisearch package"
-        run: python -m pip install pypisearch --user
       - name: "Get StreamFlow version"
         run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
       - name: "Get PyPI version"
-        run: echo "PYPI_VERSION=$(python -m pypisearch streamflow | grep -oP '(?<=^streamflow \()(.*)(?=\))')" >> $GITHUB_ENV
+        run: echo "PYPI_VERSION=$(pip index versions --pre streamflow | grep streamflow | sed 's/.*(\(.*\))/\1/')" >> $GITHUB_ENV
       - name: "Build Python packages"
         if: ${{ env.STREAMFLOW_VERSION != env.PYPI_VERSION }}
         run: |
