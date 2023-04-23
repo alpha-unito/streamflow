@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import MutableSequence, TYPE_CHECKING
+from typing import MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.persistence import DatabaseLoadingContext
 
@@ -23,6 +23,11 @@ class ProvenanceManager:
 
     @abstractmethod
     async def create_archive(
-        self, outdir: str, filename: str | None, config: str | None
+        self,
+        outdir: str,
+        filename: str | None,
+        config: str | None,
+        additional_files: MutableSequence[MutableMapping[str, str]] | None,
+        additional_properties: MutableSequence[MutableMapping[str, str]] | None,
     ):
         ...

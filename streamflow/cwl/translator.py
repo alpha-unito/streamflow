@@ -1515,7 +1515,7 @@ class CWLTranslator:
                     targets.append(
                         _process_docker_requirement(
                             config_dir=os.path.dirname(self.context.config["path"]),
-                            config=self.workflow_config.get(
+                            config=self.workflow_config.propagate(
                                 path=PurePosixPath(name_prefix),
                                 name="docker",
                                 default=CWLDockerTranslatorConfig(
