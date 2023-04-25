@@ -557,6 +557,7 @@ class ExecuteStep(BaseStep):
             )
         return step
 
+    # todo: duplicato in transferStep e in failure_manager
     def get_job_token(self, job):
         for token in self.get_input_port("__job__").token_list:
             if isinstance(token, JobToken) and token.value.name == job.name:
@@ -587,7 +588,9 @@ class ExecuteStep(BaseStep):
                     inputs=list(job_token.value.inputs.values()) + [job_token],
                 )
             )
-            await self.workflow.context.failure_manager.notify_jobs(job_token.value.name, token)
+            await self.workflow.context.failure_manager.notify_jobs(
+                job_token.value.name, token
+            )
 
     async def _run_job(
         self,
@@ -1497,6 +1500,15 @@ class TransferStep(BaseStep, ABC):
             **{"job_port": self.get_input_port("__job__").persistent_id},
         }
 
+    # todo: duplicato in ExecuteStep. da fixare e in failure_manager
+    def get_job_token(self, job):
+        for token in self.get_input_port("__job__").token_list:
+            if isinstance(token, JobToken) and token.value.name == job.name:
+                return token
+        raise WorkflowDefinitionException(
+            f"Impossible find {job.name} into the port of step {self.name}"
+        )  # is it the correct exception to raise?
+
     async def run(self):
         # Set default status as SKIPPED
         status = Status.SKIPPED
@@ -1531,7 +1543,8 @@ class TransferStep(BaseStep, ABC):
                                     await self._persist_token(
                                         token=await self.transfer(job, token),
                                         port=self.get_output_port(port_name),
-                                        inputs=inputs.values(),
+                                        inputs=list(inputs.values())
+                                        + [self.get_job_token(job)],
                                     )
                                 )
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)

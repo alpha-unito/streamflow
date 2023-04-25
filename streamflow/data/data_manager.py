@@ -373,7 +373,9 @@ class RemotePathMapper:
                 )
         return result
 
-    def invalidate_location(self, location: Location, path: str, test_path: str) -> None:
+    def invalidate_location(
+        self, location: Location, path: str, test_path: str
+    ) -> None:
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
         for token in path.parts:
