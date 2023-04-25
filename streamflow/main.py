@@ -123,6 +123,8 @@ async def _async_prov(args: argparse.Namespace):
                 outdir=args.outdir,
                 filename=args.name,
                 config=args.file if os.path.exists(args.file) else None,
+                additional_files=args.add_file,
+                additional_properties=args.add_property,
             )
     finally:
         await context.close()

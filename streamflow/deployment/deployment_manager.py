@@ -196,9 +196,9 @@ class DefaultDeploymentManager(DeploymentManager):
                         logger.info(f"COMPLETED Undeployment of {deployment_name}")
                 self.events_map[deployment_name].set()
             # Remove the current environment from all the other dependency graphs
-            for name, deps in {
-                k: v for k, v in self.dependency_graph.items() if k != deployment_name
-            }.items():
+            for name, deps in (
+                (k, v) for k, v in self.dependency_graph.items() if k != deployment_name
+            ):
                 deps.discard(deployment_name)
                 # If there are no more dependencies, undeploy the environment
                 if len(deps) == 0:

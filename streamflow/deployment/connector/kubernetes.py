@@ -346,6 +346,10 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                             for writer in writers
                         )
                     )
+                # Close writers
+                await asyncio.gather(
+                    *(asyncio.create_task(writer.close()) for writer in writers)
+                )
 
     async def _get_container(self, location: Location) -> tuple[str, V1Container]:
         pod_name, container_name = location.name.split(":")

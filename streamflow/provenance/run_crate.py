@@ -4,11 +4,14 @@ import asyncio
 import datetime
 import hashlib
 import json
+import logging
 import os.path
 import posixpath
+import re
 import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
+from json import JSONDecodeError
 from typing import Any, MutableMapping, MutableSequence, cast
 from zipfile import ZipFile
 
@@ -34,6 +37,11 @@ from streamflow.workflow.token import FileToken, ListToken, ObjectToken
 from streamflow.workflow.utils import get_token_value
 
 
+ESCAPED_COMMA = re.compile(r"\\,")
+ESCAPED_DOT = re.compile(r"\\.")
+ESCAPED_EQUAL = re.compile(r"\\=")
+
+
 def _checksum(data: str) -> str:
     sha1_checksum = hashlib.new("sha1", usedforsecurity=False)
     sha1_checksum.update(data.encode("utf-8"))
@@ -47,13 +55,13 @@ def _file_checksum(path: str, hash_function) -> str:
     return hash_function.hexdigest()
 
 
-def _has_type(obj: MutableMapping[str, Any], type: str) -> bool:
+def _has_type(obj: MutableMapping[str, Any], _type: str) -> bool:
     if "@type" not in obj:
         return False
     elif isinstance(obj["@type"], str):
-        return obj["@type"] == type
+        return obj["@type"] == _type
     elif isinstance(obj["@type"], MutableSequence):
-        return type in obj["@type"]
+        return _type in obj["@type"]
     else:
         raise WorkflowProvenanceException(
             f"Invalid type {obj['@type']} for object {obj['@id']}"
@@ -158,6 +166,14 @@ def _get_workflow_template(entity_id: str, name: str) -> MutableMapping[str, Any
     }
 
 
+def _is_existing_directory(path: str, graph: MutableMapping[str, Any]) -> bool:
+    if path == posixpath.sep:
+        return True
+    else:
+        path = posixpath.relpath(posixpath.normpath(path), posixpath.sep)
+        return graph.get(path, {}).get("@type") == "Directory"
+
+
 def _process_cwl_type(
     cwl_type: str | MutableSequence[Any] | MutableMapping[str, Any],
     jsonld_param: MutableMapping[str, Any],
@@ -211,6 +227,12 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
             "./": {
                 "@id": "./",
                 "@type": "Dataset",
+                "conformsTo": [
+                    {"@id": "https://w3id.org/ro/wfrun/process/0.1"},
+                    {"@id": "https://w3id.org/ro/wfrun/workflow/0.1"},
+                    {"@id": "https://w3id.org/ro/wfrun/provenance/0.1"},
+                    {"@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"},
+                ],
                 "datePublished": (
                     datetime.datetime.utcnow()
                     .replace(tzinfo=datetime.timezone.utc)
@@ -227,6 +249,30 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                     {"@id": "https://w3id.org/ro/crate/1.1"},
                     {"@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"},
                 ],
+            },
+            "https://w3id.org/ro/wfrun/process/0.1": {
+                "@id": "https://w3id.org/ro/wfrun/process/0.1",
+                "@type": "CreativeWork",
+                "name": "Process Run Crate",
+                "version": "0.1",
+            },
+            "https://w3id.org/ro/wfrun/workflow/0.1": {
+                "@id": "https://w3id.org/ro/wfrun/workflow/0.1",
+                "@type": "CreativeWork",
+                "name": "Workflow Run Crate",
+                "version": "0.1",
+            },
+            "https://w3id.org/ro/wfrun/provenance/0.1": {
+                "@id": "https://w3id.org/ro/wfrun/provenance/0.1",
+                "@type": "CreativeWork",
+                "name": "Provenance Run Crate",
+                "version": "0.1",
+            },
+            "https://w3id.org/workflowhub/workflow-ro-crate/1.0": {
+                "@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0",
+                "@type": "CreativeWork",
+                "name": "Workflow RO-Crate",
+                "version": "1.0",
             },
         }
         self.create_action_map: MutableMapping[
@@ -423,6 +469,64 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                 property_value["exampleOfWork"] = {"@id": next(iter(example_of_work))}
         return property_values
 
+    async def _list_dir(
+        self, path: str, jsonld_map: [MutableMapping[str, Any]]
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        has_part = []
+        if os.path.exists(path):
+            dir_content = os.listdir(path)
+            for element in dir_content:
+                element_path = os.path.join(path, element)
+                if os.path.isdir(element_path):
+                    jsonld_object = {"@type": "Dataset"}
+                    if inner_has_part := await self._list_dir(element_path, jsonld_map):
+                        jsonld_object["hasPart"] = inner_has_part
+                        jsonld_object["@id"] = _checksum(
+                            "".join(sorted([part["@id"] for part in inner_has_part]))
+                        )
+                        jsonld_object["alternateName"] = os.path.basename(element_path)
+                    else:
+                        jsonld_object["@id"] = os.path.basename(element_path)
+                else:
+                    checksum = _file_checksum(
+                        element_path, hashlib.new("sha1", usedforsecurity=False)
+                    )
+                    jsonld_object = {
+                        "@id": checksum,
+                        "@type": "File",
+                        "alternateName": os.path.basename(element_path),
+                        "sha1": checksum,
+                    }
+                jsonld_map[jsonld_object["@id"]] = element_path
+                has_part.append(jsonld_object)
+        return has_part
+
+    def _rename_parts(
+        self,
+        parts: MutableSequence[MutableMapping[str, Any]],
+        jsonld_map: MutableMapping[str, str],
+        prefix: str,
+        alternatePrefix: str,
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        for part in parts:
+            path = jsonld_map.pop(part["@id"])
+            part["@id"] = os.path.join(prefix, part["@id"])
+            if "alternateName" in part:
+                part["alternateName"] = os.path.join(
+                    alternatePrefix, part["alternateName"]
+                )
+            self.files_map[path] = part["@id"]
+            if part["@id"] not in self.graph:
+                self.graph[part["@id"]] = part
+            if part["@type"] == "Dataset" and "hasPart" in part:
+                part["hasPart"] = self._rename_parts(
+                    part["hasPart"],
+                    jsonld_map,
+                    part["@id"],
+                    part.get("alternateName", part["@id"]),
+                )
+        return [{"@id": part["@id"]} for part in parts]
+
     def _update_actions(
         self,
         wf_id: int,
@@ -459,12 +563,143 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                             ]:
                                 jsonld_result.append({"@id": property_value["@id"]})
 
+    async def add_file(self, file: MutableMapping[str, str]) -> None:
+        if "src" not in file:
+            raise WorkflowProvenanceException(
+                "Property `src` is mandatory when specifying the `--add-file` option."
+            )
+        src = file["src"]
+        dst = file.get("dst", posixpath.sep)
+        dst_parent = posixpath.dirname(posixpath.normpath(dst))
+        if logger.isEnabledFor(logging.WARN):
+            if src in self.files_map:
+                logger.warn(f"File {src} is already present in the archive.")
+        else:
+            if os.path.isfile(os.path.realpath(src)):
+                checksum = _file_checksum(
+                    src, hashlib.new("sha1", usedforsecurity=False)
+                )
+                jsonld_file = {
+                    "@type": "File",
+                    "sha1": checksum,
+                }
+
+                if _is_existing_directory(dst, self.graph):
+                    dst = posixpath.relpath(
+                        posixpath.join(dst, checksum), posixpath.sep
+                    )
+                    jsonld_file["alternateName"] = os.path.basename(src)
+                    if dst_parent != posixpath.dirname:
+                        self.graph[dst_parent].setdefault("hasPart", []).append(
+                            {"@id": dst}
+                        )
+                elif _is_existing_directory(dst_parent, self.graph):
+                    dst = posixpath.relpath(dst, posixpath.sep)
+                    if dst_parent != posixpath.sep:
+                        self.graph[dst_parent].setdefault("hasPart", []).append(
+                            {"@id": dst}
+                        )
+                else:
+                    raise WorkflowProvenanceException(
+                        f"Property `dst` points to the non-existing location `{dst}`."
+                    )
+                jsonld_file["@id"] = dst
+                self.graph[dst] = jsonld_file
+            else:
+                jsonld_dataset = {"@type": "Dataset"}
+                jsonld_map = {}
+                has_part = await self._list_dir(src, jsonld_map)
+                if _is_existing_directory(dst, self.graph):
+                    if has_part:
+                        dst = posixpath.relpath(
+                            posixpath.join(
+                                dst,
+                                _checksum(
+                                    "".join(sorted([part["@id"] for part in has_part]))
+                                ),
+                            ),
+                            posixpath.sep,
+                        )
+                        jsonld_dataset["alternateName"] = os.path.basename(src)
+                    else:
+                        dst = posixpath.relpath(os.path.basename(src), posixpath.sep)
+                    if dst_parent != posixpath.sep:
+                        self.graph[dst_parent].setdefault("hasPart", []).append(
+                            {"@id": dst}
+                        )
+                elif _is_existing_directory(dst_parent, self.graph):
+                    dst = posixpath.relpath(dst, posixpath.sep)
+                    if dst_parent != posixpath.sep:
+                        self.graph[dst_parent].setdefault("hasPart", []).append(
+                            {"@id": dst}
+                        )
+                else:
+                    raise WorkflowProvenanceException(
+                        f"Property `dst` points to the non-existing location `{dst}`."
+                    )
+                jsonld_dataset["@id"] = dst
+                if has_part:
+                    jsonld_dataset["hasPart"] = self._rename_parts(
+                        has_part,
+                        jsonld_map,
+                        dst,
+                        os.path.basename(src),
+                    )
+                    for entry in cast(
+                        MutableSequence[MutableMapping[str, Any]],
+                        jsonld_dataset["hasPart"],
+                    ):
+                        self.graph["./"]["hasPart"].append({"@id": entry["@id"]})
+                self.graph[dst] = jsonld_dataset
+            self.graph["./"]["hasPart"].append({"@id": self.graph[dst]["@id"]})
+            self.files_map[src] = dst
+            for k, v in (
+                (k, v)
+                for k, v in file.items()
+                if k not in ["src", "dst", "@id", "@type"]
+            ):
+                v = ESCAPED_EQUAL.sub("=", v)
+                v = ESCAPED_COMMA.sub(",", v)
+                try:
+                    self.graph[dst][k] = json.loads(v)
+                except JSONDecodeError:
+                    self.graph[dst][k] = v
+
     @abstractmethod
     async def add_initial_inputs(self, wf_id: int, workflow: Workflow) -> None:
         ...
 
+    async def add_property(self, key: str, value: str):
+        current_obj = self.graph
+        keys = re.split(r"(?<!\\)\.", key)
+        for k in keys[:-1]:
+            k = ESCAPED_EQUAL.sub("=", k)
+            k = ESCAPED_COMMA.sub(",", k)
+            k = ESCAPED_DOT.sub(".", k)
+            if k not in current_obj:
+                raise WorkflowProvenanceException(
+                    f"Token `{k}` of key `{key}` does not exist in archive manifest."
+                )
+            current_obj = current_obj[k]
+        if logger.isEnabledFor(logging.WARN):
+            if keys[-1] in current_obj:
+                logger.warn(
+                    f"Key {key} already exists in archive manifest and will be overridden."
+                )
+        value = ESCAPED_EQUAL.sub("=", value)
+        value = ESCAPED_COMMA.sub(",", value)
+        try:
+            current_obj[keys[-1]] = json.loads(value)
+        except JSONDecodeError:
+            current_obj[keys[-1]] = value
+
     async def create_archive(
-        self, outdir: str, filename: str | None, config: str | None
+        self,
+        outdir: str,
+        filename: str | None,
+        config: str | None,
+        additional_files: MutableSequence[MutableMapping[str, str]] | None,
+        additional_properties: MutableSequence[MutableMapping[str, str]] | None,
     ):
         # Add main entity
         main_entity = await self.get_main_entity()
@@ -616,6 +851,14 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                                     step_name=step_name,
                                     is_input=False,
                                 )
+        # Add additional files
+        for file in additional_files or []:
+            await self.add_file(file)
+        # Add additional properties
+        for prop in additional_properties or []:
+            await asyncio.gather(
+                *(asyncio.create_task(self.add_property(k, v)) for k, v in prop.items())
+            )
         # Create metadata
         metadata = {
             "@context": [
@@ -689,7 +932,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         for workflow in self.workflows:
             path = workflow.config["file"]
             if not os.path.isabs(path):
-                path = os.path.join(context.config_dir, path)
+                path = os.path.join(os.path.dirname(context.config["path"]), path)
             paths.add(path)
         if len(paths) != 1:
             raise WorkflowProvenanceException(
@@ -700,6 +943,48 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             self.loading_context,
         ) = streamflow.cwl.utils.load_cwl_workflow(list(paths)[0])
         self.scatter_map: MutableMapping[str, MutableSequence[str]] = {}
+
+    def _add_metadata(
+        self,
+        cwl_object: cwltool.process.Process,
+        jsonld_object: MutableMapping[str, Any],
+    ) -> None:
+        for key, value in cwl_object.metadata.items():
+            if key.startswith("http://schema.org/"):
+                jsonld_object[key[18:]] = self._add_metadata_entry(value)
+            elif key.startswith("https://schema.org/"):
+                jsonld_object[key[19:]] = self._add_metadata_entry(value)
+
+    def _add_metadata_entry(self, metadata: Any) -> Any:
+        if isinstance(metadata, MutableMapping):
+            jsonld_metadata = {}
+            for key in metadata:
+                value = self._add_metadata_entry(metadata[key])
+                if key.startswith("http://schema.org/"):
+                    key = key[18:]
+                elif key.startswith("https://schema.org/"):
+                    key = key[19:]
+                if key == "class":
+                    jsonld_metadata["@type"] = value
+                elif key == "identifier":
+                    jsonld_metadata["@id"] = value
+                else:
+                    jsonld_metadata[key] = value
+            if "@id" not in jsonld_metadata:
+                jsonld_metadata["@id"] = "#" + str(uuid.uuid4())
+            self.graph[jsonld_metadata["@id"]] = jsonld_metadata
+            return {"@id": jsonld_metadata["@id"]}
+        elif isinstance(metadata, MutableSequence):
+            return [self._add_metadata_entry(v) for v in metadata]
+        elif isinstance(metadata, str):
+            if metadata.startswith("http://schema.org/"):
+                return metadata[18:]
+            elif metadata.startswith("https://schema.org/"):
+                return metadata[19:]
+            else:
+                return metadata
+        else:
+            return metadata
 
     def _add_params(
         self,
@@ -836,6 +1121,8 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         # Add description
         if "doc" in cwl_tool.tool:
             jsonld_tool["description"] = cwl_tool.tool["doc"]
+        # Add metadata
+        self._add_metadata(cwl_tool, jsonld_tool)
         # Add inputs and outputs
         self._add_params(cwl_prefix, prefix, jsonld_tool, cwl_tool)
         return jsonld_tool
@@ -857,6 +1144,8 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         # Add description
         if "doc" in cwl_workflow.tool:
             jsonld_workflow["description"] = cwl_workflow.tool["doc"]
+        # Add metadata
+        self._add_metadata(cwl_workflow, jsonld_workflow)
         # Add inputs and outputs
         self._add_params(cwl_prefix, prefix, jsonld_workflow, cwl_workflow)
         # Add steps
@@ -965,38 +1254,6 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 f"Invalid class {token_value['class']} for file token."
             )
 
-    async def _list_dir(
-        self, path: str, jsonld_map: [MutableMapping[str, Any]]
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        has_part = []
-        if os.path.exists(path):
-            dir_content = os.listdir(path)
-            for element in dir_content:
-                element_path = os.path.join(path, element)
-                if os.path.isdir(element_path):
-                    jsonld_object = {"@type": "Dataset"}
-                    if inner_has_part := await self._list_dir(element_path, jsonld_map):
-                        jsonld_object["hasPart"] = inner_has_part
-                        jsonld_object["@id"] = _checksum(
-                            "".join(sorted([part["@id"] for part in inner_has_part]))
-                        )
-                        jsonld_object["alternateName"] = os.path.basename(element_path)
-                    else:
-                        jsonld_object["@id"] = os.path.basename(element_path)
-                else:
-                    checksum = _file_checksum(
-                        element_path, hashlib.new("sha1", usedforsecurity=False)
-                    )
-                    jsonld_object = {
-                        "@id": checksum,
-                        "@type": "File",
-                        "alternateName": os.path.basename(element_path),
-                        "sha1": checksum,
-                    }
-                jsonld_map[jsonld_object["@id"]] = element_path
-                has_part.append(jsonld_object)
-        return has_part
-
     def _register_steps(
         self,
         cwl_prefix: str,
@@ -1061,26 +1318,6 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                             break
         jsonld_entity["hasPart"] = [{"@id": p} for p in has_part]
 
-    def _rename_parts(
-        self,
-        parts: MutableSequence[MutableMapping[str, Any]],
-        jsonld_map: MutableMapping[str, str],
-        prefix: str,
-        alternatePrefix: str,
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        for part in parts:
-            path = jsonld_map.pop(part["@id"])
-            part["@id"] = os.path.join(prefix, part["@id"])
-            part["alternateName"] = os.path.join(alternatePrefix, part["alternateName"])
-            self.files_map[path] = part["@id"]
-            if part["@id"] not in self.graph:
-                self.graph[part["@id"]] = part
-            if part["@type"] == "Dataset" and "hasPart" in part:
-                part["hasPart"] = self._rename_parts(
-                    part["hasPart"], jsonld_map, part["@id"], part["alternateName"]
-                )
-        return [{"@id": part["@id"]} for part in parts]
-
     async def add_initial_inputs(self, wf_id: int, workflow: Workflow) -> None:
         if "settings" in workflow.config:
             cwl_prefix = (
@@ -1130,6 +1367,8 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         programming_language = _get_cwl_programming_language(self.loading_context)
         self.graph[programming_language["@id"]] = programming_language
         main_entity["programmingLanguage"] = {"@id": programming_language["@id"]}
+        # Add metadata
+        self._add_metadata(self.cwl_definition, main_entity)
         # Add inputs and outputs
         self._add_params(cwl_prefix, posixpath.sep, main_entity, self.cwl_definition)
         # Add steps if present

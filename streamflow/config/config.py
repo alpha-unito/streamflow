@@ -99,9 +99,11 @@ class WorkflowConfig(Config):
             current_node = current_node["children"][part]
         return current_node.get(name)
 
-    def propagate(self, path: PurePosixPath, name: str) -> Any | None:
+    def propagate(
+        self, path: PurePosixPath, name: str, default: Any | None = None
+    ) -> Any | None:
         current_node = self.filesystem
-        value = None
+        value = default
         for part in path.parts:
             if part not in current_node["children"]:
                 return value
