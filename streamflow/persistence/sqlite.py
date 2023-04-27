@@ -231,6 +231,28 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return cursor.lastrowid
 
+    async def get_dependee(
+        self, token_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM provenance WHERE depender = :depender",
+                {"depender": token_id},
+            ) as cursor:
+                return await cursor.fetchall()
+
+    async def get_depender(
+        self, token_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM provenance WHERE dependee = :dependee",
+                {"dependee": token_id},
+            ) as cursor:
+                return await cursor.fetchall()
+
     async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
