@@ -41,7 +41,11 @@ from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
-from streamflow.workflow.utils import check_iteration_termination, check_termination
+from streamflow.workflow.utils import (
+    check_iteration_termination,
+    check_termination,
+    get_job_token,
+)
 
 
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
@@ -103,7 +107,8 @@ class BaseStep(Step, ABC):
         self, token: Token, port: Port, inputs: Iterable[Token]
     ) -> Token:
         await token.save(self.workflow.context, port_id=port.persistent_id)
-        if inputs:
+        # if the token is among its inputs, don't save the dependency
+        if inputs and not [i for i in inputs if i.persistent_id == token.persistent_id]:
             await self.workflow.context.database.add_provenance(
                 inputs=[i.persistent_id for i in inputs], token=token.persistent_id
             )
@@ -551,7 +556,14 @@ class ExecuteStep(BaseStep):
         ) is not None:
             output_port.put(
                 await self._persist_token(
-                    token=token, port=output_port, inputs=job.inputs.values()
+                    token=token,
+                    port=output_port,
+                    inputs=list(job.inputs.values())
+                    + [
+                        get_job_token(
+                            job.name, self.get_input_port("__job__").token_list
+                        )
+                    ],
                 )
             )
 
@@ -683,6 +695,7 @@ class ExecuteStep(BaseStep):
     async def run(self) -> None:
         jobs = []
         # If there are input connector ports, retrieve connectors
+
         connector_ports = {
             k: self.get_input_port(v)
             for k, v in self.output_connectors.items()
@@ -1198,11 +1211,19 @@ class ScheduleStep(BaseStep):
                     relpath=directory,
                 )
         # Propagate job
+        token_inputs = []
+        for step_port_name in self.input_ports.keys():
+            if step_port_name in job.inputs.keys():
+                token_inputs.append(job.inputs[step_port_name])
+            else:
+                for t in self.get_input_port(step_port_name).token_list:
+                    if t.persistent_id:
+                        token_inputs.append(t)
         self.get_output_port().put(
             await self._persist_token(
                 token=JobToken(value=job),
                 port=self.get_output_port(),
-                inputs=job.inputs.values(),
+                inputs=token_inputs,
             )
         )
 
@@ -1456,7 +1477,15 @@ class TransferStep(BaseStep, ABC):
                                     await self._persist_token(
                                         token=await self.transfer(job, token),
                                         port=self.get_output_port(port_name),
-                                        inputs=inputs.values(),
+                                        inputs=list(inputs.values())
+                                        + [
+                                            get_job_token(
+                                                job.name,
+                                                self.get_input_port(
+                                                    "__job__"
+                                                ).token_list,
+                                            )
+                                        ],
                                     )
                                 )
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
