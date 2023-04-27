@@ -226,6 +226,13 @@ def search_step_name_into_graph(graph_tokens):
     raise Exception("Step name non trovato")
 
 
+def add_graph_tuple(graph_steps, step_1, tuple):
+    for s, l in graph_steps[step_1]:
+        if s == tuple[0] and l == tuple[1]:
+            return
+    graph_steps[step_1].append(tuple)
+
+
 async def printa_token(
     token_visited,
     workflow,
@@ -234,15 +241,10 @@ async def printa_token(
     pdf_name="graph_steps recovery",
 ):
     token_values = {}
+    steps = {}
     for token_id, (token, _) in token_visited.items():
         token_values[token_id] = str_token_value(token)
-    token_values[INIT_DAG_FLAG] = INIT_DAG_FLAG
-    step_name = search_step_name_into_graph(graph_tokens)
-    token_values[step_name] = step_name
-
-    graph_steps = {}
-    for token_id, tokens_id in graph_tokens.items():
-        step_1 = (
+        steps[token_id] = (
             (
                 await _load_steps_from_token(
                     token_visited[token_id][0],
@@ -256,30 +258,26 @@ async def printa_token(
             if isinstance(token_id, int)
             else token_values[token_id]
         )
-        steps_2 = set()
+    token_values[INIT_DAG_FLAG] = INIT_DAG_FLAG
+    step_name = search_step_name_into_graph(graph_tokens)
+    token_values[step_name] = step_name
+
+    graph_steps = {}
+    for token_id, tokens_id in graph_tokens.items():
+        step_1 = steps[token_id] if isinstance(token_id, int) else token_id
+        if step_1 == INIT_DAG_FLAG:
+            continue
+        if step_1 not in graph_steps.keys():
+            graph_steps[step_1] = []
         label = (
             str_token_value(token_visited[token_id][0]) + f"({token_id})"
             if isinstance(token_id, int)
             else token_values[token_id]
         )
         for token_id_2 in tokens_id:
-            step_2 = (
-                (
-                    await _load_steps_from_token(
-                        token_visited[token_id_2][0],
-                        workflow.context,
-                        loading_context,
-                        workflow,
-                    )
-                )
-                .pop()
-                .name
-                if isinstance(token_id_2, int)
-                else token_values[token_id_2]
-            )
-            steps_2.add(step_2)
-        if step_1 != INIT_DAG_FLAG:
-            graph_steps[step_1] = [(s, label) for s in steps_2]
+            step_2 = steps[token_id_2] if isinstance(token_id_2, int) else token_id_2
+
+            add_graph_tuple(graph_steps, step_1, (step_2, label))
     print_graph_figure_label(graph_steps, pdf_name)
 
 
@@ -502,50 +500,6 @@ def contains_token_id(token_id, token_list):
     return False
 
 
-async def _build_dag(tokens, failed_job, failed_step, workflow, loading_context):
-    dag_tokens = {}  # { token.id : set of next tokens' id | string }
-    for t in failed_job.inputs.values():
-        dag_tokens[t.persistent_id] = set((failed_step.name,))
-
-    token_visited = {}  # { token_id: (token, is_available)}
-
-    while tokens:
-        token = tokens.pop()
-        is_available = await is_token_available(token, workflow.context)
-
-        # impossible case because when added in tokens, the elem is checked
-        if token.persistent_id in token_visited.keys():
-            raise FailureHandlingException(
-                f"Token {token.persistent_id} already visited"
-            )
-        token_visited[token.persistent_id] = (token, is_available)
-
-        if not is_available:
-            prev_tokens = await _load_prev_tokens(
-                token.persistent_id,
-                loading_context,
-                workflow.context,
-            )
-            if prev_tokens:
-                for pt in prev_tokens:
-                    add_elem_dictionary(
-                        pt.persistent_id, token.persistent_id, dag_tokens
-                    )
-                    if (
-                        pt.persistent_id not in token_visited.keys()
-                        and not contains_token_id(pt.persistent_id, tokens)
-                    ):
-                        tokens.append(pt)
-            else:
-                add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
-        else:
-            add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
-        # alternativa ai due else ... però è più difficile la lettura del codice
-        # if is_available or not prev_tokens:
-        #     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
-    return dag_tokens, token_visited
-
-
 class RequestJob:
     def __init__(self):
         self.job_token: JobToken = None
@@ -572,6 +526,130 @@ class DefaultFailureManager(FailureManager):
 
         # job.name : RequestJob
         self.jobs_request: MutableMapping[str, RequestJob] = {}
+
+    def _remove_token(self, dag_tokens, remove_tokens):
+        d = {}
+        other_remove = set()
+        for k, vals in dag_tokens.items():
+            if k not in remove_tokens:
+                d[k] = set()
+                for v in vals:
+                    if v not in remove_tokens:
+                        d[k].add(v)
+                if not d[k]:
+                    other_remove.add(k)
+        if other_remove:
+            d = self._remove_token(d, other_remove)
+        return d
+
+    async def _build_dag(
+        self, tokens, failed_job, failed_step, workflow, loading_context
+    ):
+        dag_tokens = {}  # { token.id : set of next tokens' id | string }
+        for t in failed_job.inputs.values():
+            dag_tokens[t.persistent_id] = set((failed_step.name,))
+
+        token_visited = {}  # { token_id: (token, is_available)}
+        available_new_job_tokens = {}  # {old token id : new token id}
+
+        while tokens:
+            token = tokens.pop()
+            if (
+                isinstance(token, JobToken)
+                and token.value.name in self.jobs_request.keys()
+                and self.jobs_request[token.value.name].token_output
+            ):
+                token_1 = self.jobs_request[token.value.name].job_token
+                token_visited[token.persistent_id] = (token, True)
+                token_visited[token_1.persistent_id] = (token_1, True)
+                available_new_job_tokens[token.persistent_id] = token_1.persistent_id
+            else:
+                is_available = await is_token_available(token, workflow.context)
+
+                # impossible case because when added in tokens, the elem is checked
+                if token.persistent_id in token_visited.keys():
+                    raise FailureHandlingException(
+                        f"Token {token.persistent_id} already visited"
+                    )
+                token_visited[token.persistent_id] = (token, is_available)
+
+                if not is_available:
+                    prev_tokens = await _load_prev_tokens(
+                        token.persistent_id,
+                        loading_context,
+                        workflow.context,
+                    )
+                    if prev_tokens:
+                        for pt in prev_tokens:
+                            add_elem_dictionary(
+                                pt.persistent_id, token.persistent_id, dag_tokens
+                            )
+                            if (
+                                pt.persistent_id not in token_visited.keys()
+                                and not contains_token_id(pt.persistent_id, tokens)
+                            ):
+                                tokens.append(pt)
+                    else:
+                        add_elem_dictionary(
+                            INIT_DAG_FLAG, token.persistent_id, dag_tokens
+                        )
+                else:
+                    add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
+                # alternativa ai due else ... però è più difficile la lettura del codice
+                # if is_available or not prev_tokens:
+                #     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
+
+        token_visited = dict(sorted(token_visited.items()))
+        await printa_token(
+            token_visited, workflow, dag_tokens, loading_context, "graph_steps_recovery"
+        )
+        # print_graph_figure(dag_tokens, "graph_token_recovery")
+        pass
+
+        # replace in the graph the old token output with the old
+        # { token output id of new job : { tokens output is of old job } }
+        replace_token_outputs = {}
+
+        remove_tokens = set()
+        for k, v in available_new_job_tokens.items():
+            # recovery token generated by the new job
+            t = self.jobs_request[token_visited[v][0].value.name].token_output
+            token_visited[t.persistent_id] = (t, True)
+            pass
+            # save subsequent tokens, before deleting the token
+            replace_token_outputs[t.persistent_id] = {
+                t2 for t1 in dag_tokens[k] for t2 in dag_tokens[t1]
+            }
+            # replace_token_outputs[t.persistent_id] = set()
+            # for t1 in dag_tokens[k]:
+            #     for t2 in dag_tokens[t1]:
+            #         replace_token_outputs[t.persistent_id].add(t2)
+            pass
+            # add to the list the tokens to be removed in the graph
+            for t in dag_tokens[k]:
+                remove_tokens.add(t)
+
+        # remove token in the graph
+        d = self._remove_token({k: v for k, v in dag_tokens.items()}, remove_tokens)
+
+        # add old token dependecies but with the new token
+        for k, vals in replace_token_outputs.items():
+            d[k] = {v for v in vals if v not in remove_tokens}
+
+        # add new tokens in init
+        for v in available_new_job_tokens.values():
+            d[INIT_DAG_FLAG].add(
+                self.jobs_request[
+                    token_visited[v][0].value.name
+                ].token_output.persistent_id
+            )
+        pass
+        await printa_token(
+            token_visited, workflow, d, loading_context, "graph_steps_recovery_d"
+        )
+        print_graph_figure(d, "graph_token_d")
+        pass
+        return d, token_visited
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -623,15 +701,9 @@ class DefaultFailureManager(FailureManager):
         tokens = list(failed_job.inputs.values())  # tokens to check
         tokens.append(job_token)
 
-        dag_tokens, token_visited = await _build_dag(
+        dag_tokens, token_visited = await self._build_dag(
             tokens, failed_job, failed_step, workflow, loading_context
         )
-
-        token_visited = dict(sorted(token_visited.items()))
-        await printa_token(
-            token_visited, workflow, dag_tokens, loading_context, "graph_steps_recovery"
-        )
-        pass
 
         # create RequestJob
         for token, _ in token_visited.values():
