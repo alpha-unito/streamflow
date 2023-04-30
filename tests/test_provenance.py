@@ -330,73 +330,44 @@ async def test_execute_step(context: StreamFlowContext):
         context,
         "execute-1.",
     )
+    job_token = step.get_input_port("__job__").token_list[0]
     await verify_dependency_tokens(
         step.get_output_port("out-1").token_list[0],
         [],
-        [
-            t
-            for v in step.get_input_ports().values()
-            for t in v.token_list
-            if not isinstance(t, TerminationToken)
-        ],
+        list(job_token.value.inputs.values()) + [job_token],
         context,
         "execute-2.",
     )
 
 
-#
-#
-# @pytest.mark.asyncio
-# async def test_gather_step(context: StreamFlowContext):
-#     """Test saving and loading GatherStep from database"""
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     step = workflow.create_step(
-#         cls=GatherStep, name=utils.random_name() + "-gather", depth=1
-#     )
-#     await workflow.save(context)
-#
-#
-# @pytest.mark.asyncio
-# async def test_dot_product_combinator(context: StreamFlowContext):
-#     """ """
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     step = workflow.create_step(
-#         cls=CombinatorStep,
-#         name=utils.random_name() + "-combinator",
-#         combinator=DotProductCombinator(name=utils.random_name(), workflow=workflow),
-#     )
-#     await workflow.save(context)
-#
-#
-# @pytest.mark.asyncio
-# async def test_loop_combinator(context: StreamFlowContext):
-#     """Test saving and loading CombinatorStep with LoopCombinator from database"""
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     step = workflow.create_step(
-#         cls=CombinatorStep,
-#         name=utils.random_name() + "-combinator",
-#         combinator=LoopCombinator(name=utils.random_name(), workflow=workflow),
-#     )
-#     await workflow.save(context)
-#
-#
-# @pytest.mark.asyncio
-# async def test_loop_termination_combinator(context: StreamFlowContext):
-#     """ """
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     step = workflow.create_step(
-#         cls=CombinatorStep,
-#         name=utils.random_name() + "-combinator",
-#         combinator=LoopTerminationCombinator(
-#             name=utils.random_name(), workflow=workflow
-#         ),
-#     )
-#     await workflow.save(context)
+@pytest.mark.asyncio
+async def test_gather_step(context: StreamFlowContext):
+    """Test saving and loading GatherStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    step = workflow.create_step(
+        cls=GatherStep, name=utils.random_name() + "-gather", depth=1
+    )
+
+    port_name = "test"
+    step.add_input_port(port_name, workflow.create_port())
+    step.add_output_port(port_name, workflow.create_port())
+    for i in range(3):
+        step.get_input_port(port_name).put(Token(i))
+    step.get_input_port(port_name).put(TerminationToken())
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+
+    await verify_dependency_tokens(
+        step.get_output_port(port_name).token_list[0],
+        (),
+        [
+            t
+            for t in step.get_input_port(port_name).token_list
+            if not isinstance(t, TerminationToken)
+        ],
+        context,
+        "gather",
+    )
