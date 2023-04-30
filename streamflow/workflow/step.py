@@ -287,13 +287,13 @@ class CombinatorStep(BaseStep):
                                 f"Step {self.name} received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
-                        async for schema in cast(
+                        async for schema, new_schema in cast(
                             AsyncIterable, self.combinator.combine(task_name, token)
                         ):
-                            for port_name, token in schema.items():
+                            for port_name, curr_token in new_schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=token,
+                                        token=curr_token,
                                         port=self.get_output_port(port_name),
                                         inputs=schema.values(),
                                     )
@@ -1215,7 +1215,7 @@ class ScheduleStep(BaseStep):
         for step_port_name in self.input_ports.keys():
             if step_port_name in job.inputs.keys():
                 token_inputs.append(job.inputs[step_port_name])
-            else:
+            else:  # other tokens from connector ports
                 for t in self.get_input_port(step_port_name).token_list:
                     if t.persistent_id:
                         token_inputs.append(t)

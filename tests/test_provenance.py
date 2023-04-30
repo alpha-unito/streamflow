@@ -1,5 +1,6 @@
 import asyncio
 import posixpath
+from typing import MutableSequence
 
 import pytest
 
@@ -21,17 +22,18 @@ from streamflow.workflow.step import (
     ExecuteStep,
     ScheduleStep,
     ScatterStep,
+    CombinatorStep,
+    GatherStep,
 )
 
 #    LoopCombinatorStep,
-#    CombinatorStep,
 #    GatherStep,
-# from streamflow.workflow.combinator import (
-#     CartesianProductCombinator,
-#     DotProductCombinator,
 #     LoopCombinator,
 #     LoopTerminationCombinator,
-# )
+from streamflow.workflow.combinator import (
+    CartesianProductCombinator,
+    DotProductCombinator,
+)
 from streamflow.workflow.token import ListToken, TerminationToken
 
 
@@ -180,20 +182,59 @@ async def test_deploy_step(context: StreamFlowContext):
     )
 
 
-# @pytest.mark.asyncio
-# async def test_combinator_step(context: StreamFlowContext):
-#     """ """
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     step = workflow.create_step(
-#         cls=CombinatorStep,
-#         name=utils.random_name() + "-combinator",
-#         combinator=CartesianProductCombinator(
-#             name=utils.random_name(), workflow=workflow, depth=1
-#         ),
-#     )
-#     await workflow.save(context)
+async def _combinator_step(workflow, step, context):
+    in_port = workflow.create_port()
+    step.add_input_port("fst", in_port)
+    step.add_output_port("fst", workflow.create_port())
+    list_token = ListToken([Token("a"), Token("b"), Token("c")])
+    await list_token.save(context, in_port.persistent_id)
+    in_port.put(list_token)
+    in_port.put(TerminationToken())
+
+    step.combinator.add_item("fst")
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+
+    await verify_dependency_tokens(
+        step.get_input_port("fst").token_list[0],
+        [step.get_output_port("fst").token_list[0]],
+        [],
+        context,
+        "combinator.",
+    )
+
+
+@pytest.mark.asyncio
+async def test_combinator_step_dot_product(context: StreamFlowContext):
+    """ """
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    step = workflow.create_step(
+        cls=CombinatorStep,
+        name=utils.random_name() + "-combinator",
+        combinator=DotProductCombinator(name=utils.random_name(), workflow=workflow),
+    )
+    await _combinator_step(workflow, step, context)
+
+
+@pytest.mark.asyncio
+async def test_combinator_step_cartesian_product(context: StreamFlowContext):
+    """ """
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    step = workflow.create_step(
+        cls=CombinatorStep,
+        name=utils.random_name() + "-combinator",
+        combinator=CartesianProductCombinator(
+            name=utils.random_name(), workflow=workflow
+        ),
+    )
+    await _combinator_step(workflow, step, context)
+
+
 #
 #
 # @pytest.mark.asyncio
