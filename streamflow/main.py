@@ -18,7 +18,7 @@ from streamflow.core.workflow import Workflow
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
-from streamflow.ext.utils import load_extensions
+from streamflow.ext.utils import list_extensions, load_extensions, show_extension
 from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
@@ -77,6 +77,13 @@ async def _async_list(args: argparse.Namespace):
             print("No workflow objects found.")
     finally:
         await context.close()
+
+
+async def _async_plugin(args: argparse.Namespace):
+    if args.plugin_context == "list":
+        list_extensions()
+    elif args.plugin_context == "show":
+        show_extension(args.plugin, args.name, args.type, args.show_schema)
 
 
 async def _async_prov(args: argparse.Namespace):
@@ -231,6 +238,8 @@ def main(args):
             print(f"StreamFlow version {VERSION}")
         elif args.context == "list":
             asyncio.run(_async_list(args))
+        elif args.context == "plugin":
+            asyncio.run(_async_plugin(args))
         elif args.context == "prov":
             asyncio.run(_async_prov(args))
         elif args.context == "report":
