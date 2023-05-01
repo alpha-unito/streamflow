@@ -74,7 +74,7 @@ class CartesianProductCombinator(Combinator):
 
     async def _product(
         self, port_name: str, token: Token | MutableSequence[Token]
-    ) -> AsyncIterable[MutableSequence[MutableMapping[str, Token]]]:
+    ) -> AsyncIterable[MutableMapping[str, Token]]:
         # Get all combinations of the new element with the others
         tag = ".".join(token.tag.split(".")[: -self.depth])
         if len(self.token_values[tag]) == len(self.items):
@@ -98,7 +98,7 @@ class CartesianProductCombinator(Combinator):
                     k: t.retag(".".join(t.tag.split(".")[:-1] + suffix))
                     for k, t in schema.items()
                 }
-                yield (schema, new_schema)
+                yield new_schema
 
     async def _save_additional_params(self, context: StreamFlowContext):
         return {
@@ -136,7 +136,7 @@ class DotProductCombinator(Combinator):
 
     async def _product(
         self,
-    ) -> AsyncIterable[MutableSequence[MutableMapping[str, Token]]]:
+    ) -> AsyncIterable[MutableMapping[str, Token]]:
         # Check if some complete input sets are available
         print(f"dot.{self.token_values}")
         for tag in list(self.token_values):
@@ -153,7 +153,7 @@ class DotProductCombinator(Combinator):
                             schema[key] = element
                     tag = utils.get_tag(schema.values())
                     new_schema = {k: t.retag(tag) for k, t in schema.items()}
-                    yield (schema, new_schema)
+                    yield new_schema
 
     async def combine(
         self, port_name: str, token: Token
@@ -183,7 +183,7 @@ class LoopCombinator(DotProductCombinator):
 
     async def _product(
         self,
-    ) -> AsyncIterable[MutableSequence[MutableMapping[str, Token]]]:
+    ) -> AsyncIterable[MutableMapping[str, Token]]:
         async for schema in super()._product():
             tag = utils.get_tag(schema.values())
             prefix = ".".join(tag.split(".")[:-1])
@@ -194,7 +194,7 @@ class LoopCombinator(DotProductCombinator):
                 self.iteration_map[prefix] += 1
                 tag = ".".join(tag.split(".")[:-1] + [str(self.iteration_map[prefix])])
             new_schema = {k: t.retag(tag) for k, t in schema.items()}
-            yield (schema, new_schema)
+            yield new_schema
 
 
 class LoopTerminationCombinator(DotProductCombinator):

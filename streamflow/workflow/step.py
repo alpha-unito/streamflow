@@ -287,10 +287,11 @@ class CombinatorStep(BaseStep):
                                 f"Step {self.name} received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
-                        async for schema, new_schema in cast(
+                        # todo: fix combinator provenance
+                        async for schema in cast(
                             AsyncIterable, self.combinator.combine(task_name, token)
                         ):
-                            for port_name, curr_token in new_schema.items():
+                            for port_name, curr_token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
                                         token=curr_token,
