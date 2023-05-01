@@ -99,12 +99,24 @@ class CWLConditionalStep(CWLBaseConditionalStep):
     async def _on_true(self, inputs: MutableMapping[str, Token]):
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
-            port.put(inputs[port_name])
+            port.put(
+                await self._persist_token(
+                    token=inputs[port_name].retag(inputs[port_name].tag),
+                    port=port,
+                    inputs=inputs.values(),
+                )
+            )
 
     async def _on_false(self, inputs: MutableMapping[str, Token]):
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
-            port.put(Token(value=None, tag=get_tag(inputs.values())))
+            port.put(
+                await self._persist_token(
+                    token=Token(value=None, tag=get_tag(inputs.values())),
+                    port=port,
+                    inputs=inputs.values(),
+                )
+            )
 
     async def _save_additional_params(
         self, context: StreamFlowContext

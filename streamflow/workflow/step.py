@@ -934,7 +934,12 @@ class InputInjectorStep(BaseStep, ABC):
                         await self._persist_token(
                             token=await self.process_input(job, token.value),
                             port=self.get_output_port(),
-                            inputs=[token],
+                            inputs=[
+                                token,
+                                get_job_token(
+                                    job.name, self.get_input_port("__job__").token_list
+                                ),
+                            ],
                         )
                     )
                 finally:
@@ -1531,7 +1536,7 @@ class Transformer(BaseStep, ABC):
                                 for port_name, token in inputs.items():
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
-                                            token=token,
+                                            token=token.retag(token.tag),
                                             port=self.get_output_port(port_name),
                                             inputs=inputs.values(),
                                         )
@@ -1543,7 +1548,7 @@ class Transformer(BaseStep, ABC):
                                 ).items():
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
-                                            token=token,
+                                            token=token.retag(token.tag),
                                             port=self.get_output_port(port_name),
                                             inputs=inputs.values(),
                                         )
@@ -1552,7 +1557,9 @@ class Transformer(BaseStep, ABC):
                 for port_name, token in (await self.transform({})).items():
                     self.get_output_port(port_name).put(
                         await self._persist_token(
-                            token=token, port=self.get_output_port(port_name), inputs=[]
+                            token=token.retag(token.tag),
+                            port=self.get_output_port(port_name),
+                            inputs=[],
                         )
                     )
             # Terminate step
