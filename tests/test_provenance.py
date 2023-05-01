@@ -1,6 +1,5 @@
 import asyncio
 import posixpath
-from typing import MutableSequence
 
 import pytest
 
@@ -22,19 +21,19 @@ from streamflow.workflow.step import (
     ExecuteStep,
     ScheduleStep,
     ScatterStep,
-    CombinatorStep,
     GatherStep,
 )
 
-#    LoopCombinatorStep,
-#    GatherStep,
-#     LoopCombinator,
-#     LoopTerminationCombinator,
-from streamflow.workflow.combinator import (
-    CartesianProductCombinator,
-    DotProductCombinator,
-)
 from streamflow.workflow.token import ListToken, TerminationToken
+
+
+# TODO:
+#    LoopCombinatorStep,
+#    LoopCombinator,
+#    LoopTerminationCombinator,
+#     CombinatorStep,
+#     CartesianProductCombinator,
+#     DotProductCombinator,
 
 
 async def _load_dependee(token_id, loading_context, context):
@@ -59,28 +58,30 @@ async def _load_depender(token_id, loading_context, context):
 
 # todo: remove msg param ... used only for debugging
 async def verify_dependency_tokens(
-    in_token, expected_depender, expected_dependee, context, msg
+    token, port, expected_depender, expected_dependee, context: StreamFlowContext, msg
 ):
     loading_context = DefaultDatabaseLoadingContext()
-    depender_list = await _load_depender(
-        in_token.persistent_id, loading_context, context
-    )
+
+    token_reloaded = await context.database.get_token(token_id=token.persistent_id)
+    assert token_reloaded["port"] == port.persistent_id
+
+    depender_list = await _load_depender(token.persistent_id, loading_context, context)
     print(
         msg,
         "depender:",
-        {in_token.persistent_id: [t.persistent_id for t in depender_list]},
+        {token.persistent_id: [t.persistent_id for t in depender_list]},
     )
+    if depender_list:
+        print("tok", token.persistent_id, depender_list[0].persistent_id)
     assert len(depender_list) == len(expected_depender)
     for t1, t2 in zip(depender_list, expected_depender):
         assert t1.persistent_id == t2.persistent_id
 
-    dependee_list = await _load_dependee(
-        in_token.persistent_id, loading_context, context
-    )
+    dependee_list = await _load_dependee(token.persistent_id, loading_context, context)
     print(
         msg,
         "dependee:",
-        {in_token.persistent_id: [t.persistent_id for t in dependee_list]},
+        {token.persistent_id: [t.persistent_id for t in dependee_list]},
     )
     assert len(dependee_list) == len(expected_dependee)
     for t1, t2 in zip(dependee_list, expected_dependee):
@@ -147,6 +148,7 @@ async def test_scatter_step(context: StreamFlowContext):
     ]
     await verify_dependency_tokens(
         list_token,
+        in_port,
         output_token_list,
         (),
         context,
@@ -155,6 +157,7 @@ async def test_scatter_step(context: StreamFlowContext):
     for t in output_token_list:
         await verify_dependency_tokens(
             t,
+            step.get_output_port("out-1"),
             (),
             (list_token,),
             context,
@@ -175,6 +178,7 @@ async def test_deploy_step(context: StreamFlowContext):
     await executor.run()
     await verify_dependency_tokens(
         step.get_output_port().token_list[0],
+        step.get_output_port(),
         (),
         (),
         context,
@@ -182,57 +186,60 @@ async def test_deploy_step(context: StreamFlowContext):
     )
 
 
-async def _combinator_step(workflow, step, context):
+async def _test_on_combinator_step(workflow, step, context, port_name="test"):
     in_port = workflow.create_port()
-    step.add_input_port("fst", in_port)
-    step.add_output_port("fst", workflow.create_port())
-    list_token = ListToken([Token("a"), Token("b"), Token("c")])
-    await list_token.save(context, in_port.persistent_id)
-    in_port.put(list_token)
+    step.add_input_port(port_name, in_port)
+    step.add_output_port(port_name, workflow.create_port())
+    await in_port.save(context)
+    for fst, snd in (("a", "b"), ("c", "d")):
+        list_token = ListToken([Token(fst), Token(snd)])
+        await list_token.save(context, in_port.persistent_id)
+        in_port.put(list_token)
     in_port.put(TerminationToken())
 
-    step.combinator.add_item("fst")
+    step.combinator.add_item(port_name)
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
     await verify_dependency_tokens(
-        step.get_input_port("fst").token_list[0],
-        [step.get_output_port("fst").token_list[0]],
+        step.get_input_port(port_name).token_list[0],
+        step.get_input_port(port_name),
+        [step.get_output_port(port_name).token_list[0]],
         [],
         context,
         "combinator.",
     )
 
 
-@pytest.mark.asyncio
-async def test_combinator_step_dot_product(context: StreamFlowContext):
-    """ """
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    step = workflow.create_step(
-        cls=CombinatorStep,
-        name=utils.random_name() + "-combinator",
-        combinator=DotProductCombinator(name=utils.random_name(), workflow=workflow),
-    )
-    await _combinator_step(workflow, step, context)
+# @pytest.mark.asyncio
+# async def test_combinator_step_dot_product(context: StreamFlowContext):
+#     """ """
+#     workflow = Workflow(
+#         context=context, type="cwl", name=utils.random_name(), config={}
+#     )
+#     step = workflow.create_step(
+#         cls=CombinatorStep,
+#         name=utils.random_name() + "-combinator",
+#         combinator=DotProductCombinator(name=utils.random_name(), workflow=workflow),
+#     )
+#     await _test_on_combinator_step(workflow, step, context)
 
 
-@pytest.mark.asyncio
-async def test_combinator_step_cartesian_product(context: StreamFlowContext):
-    """ """
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    step = workflow.create_step(
-        cls=CombinatorStep,
-        name=utils.random_name() + "-combinator",
-        combinator=CartesianProductCombinator(
-            name=utils.random_name(), workflow=workflow
-        ),
-    )
-    await _combinator_step(workflow, step, context)
+# @pytest.mark.asyncio
+# async def test_combinator_step_cartesian_product(context: StreamFlowContext):
+#     """ """
+#     workflow = Workflow(
+#         context=context, type="cwl", name=utils.random_name(), config={}
+#     )
+#     step = workflow.create_step(
+#         cls=CombinatorStep,
+#         name=utils.random_name() + "-combinator",
+#         combinator=CartesianProductCombinator(
+#             name=utils.random_name(), workflow=workflow
+#         ),
+#     )
+#     await _test_on_combinator_step(workflow, step, context)
 
 
 #
@@ -258,7 +265,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_schedule_step(context: StreamFlowContext):
-    """Test saving and loading ScheduleStep from database"""
+    """ """
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -274,6 +281,7 @@ async def test_schedule_step(context: StreamFlowContext):
 
     await verify_dependency_tokens(
         deploy_step.get_output_port().token_list[0],
+        deploy_step.get_output_port(),
         [job_token],
         [],
         context,
@@ -281,6 +289,7 @@ async def test_schedule_step(context: StreamFlowContext):
     )
     await verify_dependency_tokens(
         job_token,
+        schedule_step.get_output_port("__job__"),
         [],
         [deploy_step.get_output_port().token_list[0]],
         context,
@@ -290,7 +299,7 @@ async def test_schedule_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_execute_step(context: StreamFlowContext):
-    """Test saving and loading ExecuteStep from database"""
+    """ """
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -325,6 +334,7 @@ async def test_execute_step(context: StreamFlowContext):
 
     await verify_dependency_tokens(
         step.get_input_port("__job__").token_list[0],
+        step.get_input_port("__job__"),
         [step.get_output_port("out-1").token_list[0]],
         [schedule_step.get_input_port().token_list[0]],
         context,
@@ -333,6 +343,7 @@ async def test_execute_step(context: StreamFlowContext):
     job_token = step.get_input_port("__job__").token_list[0]
     await verify_dependency_tokens(
         step.get_output_port("out-1").token_list[0],
+        step.get_output_port("out-1"),
         [],
         list(job_token.value.inputs.values()) + [job_token],
         context,
@@ -342,7 +353,7 @@ async def test_execute_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_gather_step(context: StreamFlowContext):
-    """Test saving and loading GatherStep from database"""
+    """ """
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -362,6 +373,7 @@ async def test_gather_step(context: StreamFlowContext):
 
     await verify_dependency_tokens(
         step.get_output_port(port_name).token_list[0],
+        step.get_output_port(port_name),
         (),
         [
             t

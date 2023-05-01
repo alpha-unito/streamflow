@@ -143,7 +143,7 @@ async def test_cwl_expression_command(context: StreamFlowContext):
     )
     step.command = CWLExpressionCommand(
         step=step,
-        expression="some js expression",
+        expression="$(some.js.expression)",
         absolute_initial_workdir_allowed=False,
         expression_lib=["a", "b"],
         full_js=False,
@@ -683,7 +683,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
     step = workflow.create_step(
         cls=CWLConditionalStep,
         name=utils.random_name() + "-when",
-        expression="inputs.name.length == 10",
+        expression="$(inputs.name.length == 10)",
         expression_lib=[],  # MutableSequence[Any]
         full_js=True,
     )
