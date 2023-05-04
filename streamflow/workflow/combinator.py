@@ -73,7 +73,7 @@ class CartesianProductCombinator(Combinator):
         )
 
     async def _product(
-        self, port_name: str, token: Token | MutableSequence[Token]
+        self, port_name: str, token: Token | MutableSequence[Token], enable_retag: bool
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # Get all combinations of the new element with the others
         tag = ".".join(token.tag.split(".")[: -self.depth])
@@ -93,12 +93,13 @@ class CartesianProductCombinator(Combinator):
                     else:
                         schema[key] = config[key]
                         schema[key] = config[key]
-                suffix = [t.tag.split(".")[-1] for t in schema.values()]
-                new_schema = {
-                    k: t.retag(".".join(t.tag.split(".")[:-1] + suffix))
-                    for k, t in schema.items()
-                }
-                yield new_schema
+                if enable_retag:
+                    suffix = [t.tag.split(".")[-1] for t in schema.values()]
+                    schema = {
+                        k: t.retag(".".join(t.tag.split(".")[:-1] + suffix))
+                        for k, t in schema.items()
+                    }
+                yield schema
 
     async def _save_additional_params(self, context: StreamFlowContext):
         return {
@@ -107,18 +108,24 @@ class CartesianProductCombinator(Combinator):
         }
 
     async def combine(
-        self, port_name: str, token: Token
+        self, port_name: str, token: Token, enable_retag=True
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # If port is associated to an inner combinator, call it and put shcemas in their related list
         if c := self.get_combinator(port_name):
-            async for schema in cast(AsyncIterable, c.combine(port_name, token)):
+            async for schema in cast(
+                AsyncIterable, c.combine(port_name, token, enable_retag=enable_retag)
+            ):
                 _add_to_list(schema, self.token_values, c.name, self.depth)
-                async for product in self._product(port_name, token):
+                async for product in self._product(
+                    port_name, token, enable_retag=enable_retag
+                ):
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
             _add_to_list(token, self.token_values, port_name, self.depth)
-            async for product in self._product(port_name, token):
+            async for product in self._product(
+                port_name, token, enable_retag=enable_retag
+            ):
                 yield product
         # Otherwise throw Exception
         else:
@@ -134,11 +141,8 @@ class DotProductCombinator(Combinator):
             str, MutableMapping[str, MutableSequence[Any]]
         ] = {}
 
-    async def _product(
-        self,
-    ) -> AsyncIterable[MutableMapping[str, Token]]:
+    async def _product(self, enable_retag):
         # Check if some complete input sets are available
-        print(f"dot.{self.token_values}")
         for tag in list(self.token_values):
             if len(self.token_values[tag]) == len(self.items):
                 num_items = min(len(i) for i in self.token_values[tag].values())
@@ -151,23 +155,26 @@ class DotProductCombinator(Combinator):
                             schema = {**schema, **element}
                         else:
                             schema[key] = element
-                    tag = utils.get_tag(schema.values())
-                    new_schema = {k: t.retag(tag) for k, t in schema.items()}
-                    yield new_schema
+                    if enable_retag:
+                        tag = utils.get_tag(schema.values())
+                        schema = {k: t.retag(tag) for k, t in schema.items()}
+                    yield schema
 
     async def combine(
-        self, port_name: str, token: Token
+        self, port_name: str, token: Token, enable_retag: bool = True
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # If port is associated to an inner combinator, call it and put schemas in their related list
         if c := self.get_combinator(port_name):
-            async for schema in cast(AsyncIterable, c.combine(port_name, token)):
+            async for schema in cast(
+                AsyncIterable, c.combine(port_name, token, enable_retag=enable_retag)
+            ):
                 _add_to_list(schema, self.token_values, c.name)
-                async for product in self._product():
+                async for product in self._product(enable_retag):
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
             _add_to_list(token, self.token_values, port_name)
-            async for product in self._product():
+            async for product in self._product(enable_retag):
                 yield product
         # Otherwise throw Exception
         else:

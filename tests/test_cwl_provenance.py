@@ -2,7 +2,10 @@ import posixpath
 
 import pytest
 
-from streamflow.workflow.token import ListToken
+from streamflow.cwl.combinator import ListMergeCombinator
+from streamflow.workflow.executor import StreamFlowExecutor
+from streamflow.workflow.step import CombinatorStep
+from streamflow.workflow.token import ListToken, TerminationToken
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -415,14 +418,49 @@ async def test_empty_scatter_conditional_step(context: StreamFlowContext):
         )
 
 
+@pytest.mark.asyncio
+async def test_list_merge_combinator(context: StreamFlowContext):
+    """ """
+    workflow, in_port, out_port = await _create_workflow(context)
+    port_name = "test"
+    step_name = utils.random_name()
+    step = workflow.create_step(
+        cls=CombinatorStep,
+        name=step_name + "-combinator",
+        combinator=ListMergeCombinator(
+            name=utils.random_name(),
+            workflow=workflow,
+            input_names=[port_name],
+            output_name=port_name,
+            flatten=False,
+        ),
+    )
+    port_name = "test"
+    step.add_input_port(port_name, in_port)
+    step.add_output_port(port_name, out_port)
+    list_token = ListToken([Token("a"), Token("b")])
+    await list_token.save(context, in_port.persistent_id)
+    in_port.put(list_token)
+    in_port.put(TerminationToken())
+    step.combinator.add_item(port_name)
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+
+    await verify_dependency_tokens(
+        out_port.token_list[0],
+        out_port,
+        [],
+        [list_token],
+        context,
+        "combinator.",
+    )
+
+
 # @pytest.mark.asyncio
 # async def test_loop_value_from_transformer(context: StreamFlowContext):
 #     """ """
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     in_port = workflow.create_port()
-#     out_port = workflow.create_port()
+#     workflow, in_port, out_port = await _create_workflow(context)
 #     await workflow.save(context)
 #     name = utils.random_name()
 #     port_name = "test"
@@ -435,13 +473,16 @@ async def test_empty_scatter_conditional_step(context: StreamFlowContext):
 #         ),
 #         port_name=port_name,
 #         full_js=True,
-#         value_from=f"$(inputs.{port_name} + 1)",
+#         value_from=f"$(parseInt(inputs.{port_name}) + 11)",
 #     )
-#     # transformer.add_loop_input_port(port_name, in_port)
-#     # transformer.add_output_port(port_name, out_port)
+#     loop_port = workflow.create_port()
+#     transformer.add_loop_input_port(port_name, in_port)
+#     transformer.add_loop_source_port(port_name, loop_port)
+#     transformer.add_output_port(port_name, out_port)
 #
-#     token = Token(10)
+#     token = ListToken([Token(10)])
 #     await token.save(context, in_port.persistent_id)
+#     loop_port.put(token)
 #     in_port.put(token)
 #     in_port.put(TerminationToken())
 #
@@ -456,29 +497,6 @@ async def test_empty_scatter_conditional_step(context: StreamFlowContext):
 #         context,
 #         "value_from_transformer.",
 #     )
-
-
-# @pytest.mark.asyncio
-# async def test_list_merge_combinator(context: StreamFlowContext):
-#     """ """
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#
-#     port_name = "test"
-#     step_name = utils.random_name()
-#     step = workflow.create_step(
-#         cls=CombinatorStep,
-#         name=step_name + "-combinator",
-#         combinator=ListMergeCombinator(
-#             name=utils.random_name(),
-#             workflow=workflow,
-#             input_names=[port_name],
-#             output_name=port_name,
-#             flatten=False,
-#         ),
-#     )
-#     await _test_on_combinator_step(workflow, step, context, port_name=port_name)
 
 
 # @pytest.mark.asyncio

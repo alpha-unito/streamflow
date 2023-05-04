@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from aiostream import stream  # todo: add aiostream in requirement
 import asyncio
 import json
 import logging
@@ -287,18 +288,24 @@ class CombinatorStep(BaseStep):
                                 f"Step {self.name} received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
-                        # todo: fix combinator provenance
-                        async for schema in cast(
-                            AsyncIterable, self.combinator.combine(task_name, token)
-                        ):
-                            for port_name, curr_token in schema.items():
-                                self.get_output_port(port_name).put(
-                                    await self._persist_token(
-                                        token=curr_token,
-                                        port=self.get_output_port(port_name),
-                                        inputs=schema.values(),
+
+                        stream_zip = stream.zip(
+                            self.combinator.combine(
+                                task_name, token, enable_retag=False
+                            ),
+                            self.combinator.combine(task_name, token),
+                        )
+                        # todo: there is not check if the streams have different lengths. Throws an exception in that case
+                        async with stream_zip.stream() as streamer:
+                            async for schema, new_schema in streamer:
+                                for port_name, curr_token in new_schema.items():
+                                    self.get_output_port(port_name).put(
+                                        await self._persist_token(
+                                            token=curr_token,
+                                            port=self.get_output_port(port_name),
+                                            inputs=schema.values(),
+                                        )
                                     )
-                                )
                     # Create a new task in place of the completed one if the port is not terminated
                     if task_name not in terminated:
                         input_tasks.append(
