@@ -23,7 +23,6 @@ from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.persistence.sqlite import DEFAULT_SQLITE_CONNECTION
 from streamflow.provenance import prov_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
@@ -204,10 +203,7 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
         config,
         database_classes,
         "database",
-        {
-            "context": context,
-            "connection": DEFAULT_SQLITE_CONNECTION,
-        },
+        {"context": context},
     )
     context.data_manager = _get_instance_from_config(
         config, data_manager_classes, "dataManager", {"context": context}

@@ -52,29 +52,49 @@ def _get_type_repr(obj: MutableMapping[str, Any]) -> str | None:
 def list_extensions():
     if plugins := entry_points(group=PLUGIN_ENTRY_POINT):
         plugin_objs = []
-        max_sizes = [0, 0]
+        max_sizes = {
+            "name": 0,
+            "package": 0,
+            "version": 0,
+            "class": 0,
+        }
         for plugin in plugins:
             plugin_class = (plugin.load())()
             if isinstance(plugin_class, StreamFlowPlugin):
                 plugin_objs.append(
                     {
                         "name": plugin.name,
+                        "package": plugin.dist.name,
+                        "version": plugin.dist.version,
                         "class": get_class_fullname(type(plugin_class)),
                     }
                 )
-                max_sizes[0] = max(max_sizes[0], len(plugin_objs[-1]["name"]))
-                max_sizes[1] = max(max_sizes[1], len(plugin_objs[-1]["class"]))
+                for k in max_sizes:
+                    max_sizes[k] = max(max_sizes[k], len(plugin_objs[-1][k]))
         format_string = (
             "{:<"
-            + str(max(max_sizes[0] + 2, 6))
+            + str(max(max_sizes["name"] + 2, 6))
             + "}"
             + "{:<"
-            + str(max(max_sizes[1], 10))
+            + str(max(max_sizes["package"] + 2, 9))
+            + "}"
+            + "{:<"
+            + str(max(max_sizes["version"] + 2, 9))
+            + "}"
+            + "{:<"
+            + str(max(max_sizes["class"], 10))
             + "}"
         )
-        print(format_string.format("NAME", "CLASS_NAME"))
+        print(format_string.format("NAME", "PACKAGE", "VERSION", "CLASS_NAME"))
         for plugin_obj in plugin_objs:
-            print(format_string.format(plugin_obj["name"], plugin_obj["class"]))
+            print(
+                format_string.format(
+                    plugin_obj["name"],
+                    plugin_obj["package"],
+                    plugin_obj["version"],
+                    plugin_obj["class"],
+                )
+            )
     else:
         print("No StreamFlow plugins detected.", file=sys.stderr)
 
@@ -104,6 +124,8 @@ def show_extension(
         if isinstance(plugin_class, StreamFlowPlugin):
             plugin_class.register()
             print(f"NAME: {plugin.name}")
+            print(f"PACKAGE: {plugin.dist.name}")
+            print(f"VERSION: {plugin.dist.version}")
             print(f"CLASS_NAME: {get_class_fullname(type(plugin_class))}\n")
             plugin_classes = plugin_class.classes_
             if type_ is not None:
@@ -129,7 +151,7 @@ def show_extension(
                 print("It does not provide any StreamFlow extension")
             if len(plugin_classes) > 0:
                 ext_objs = {}
-                max_sizes = [0, 0]
+                max_sizes = {"name": 0, "class": 0}
                 for extension_point, items in plugin_classes.items():
                     for item in items:
                         ext_objs.setdefault(extension_point, []).append(
@@ -138,12 +160,10 @@ def show_extension(
                                 "class": get_class_fullname(item["class"]),
                             }
                         )
-                        max_sizes[0] = max(
-                            max_sizes[0], len(ext_objs[extension_point][-1]["name"])
-                        )
-                        max_sizes[1] = max(
-                            max_sizes[1], len(ext_objs[extension_point][-1]["class"])
-                        )
+                        for k in max_sizes:
+                            max_sizes[k] = max(
+                                max_sizes[k], len(ext_objs[extension_point][-1][k])
+                            )
                         if show_schema:
                             entity_schema = item["class"].get_schema()
                             with open(entity_schema) as f:
@@ -154,10 +174,10 @@ def show_extension(
                                 )
                 format_string = (
                     "{:<"
-                    + str(max(max_sizes[0] + 2, 6))
+                    + str(max(max_sizes["name"] + 2, 6))
                     + "}"
                     + "{:<"
-                    + str(max(max_sizes[1] + 2, 10))
+                    + str(max(max_sizes["class"] + 2, 10))
                     + "}"
                 )
                 for extension_point, ext_obj in ext_objs.items():
