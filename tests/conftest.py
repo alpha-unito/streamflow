@@ -3,7 +3,7 @@ import os
 import platform
 import tempfile
 from asyncio.locks import Lock
-from collections.abc import Iterable
+from typing import Collection
 
 import pkg_resources
 import pytest
@@ -11,13 +11,17 @@ import pytest_asyncio
 from jinja2 import Template
 
 from streamflow.core import utils
-from streamflow.main import build_context
 from streamflow.core.config import Config
-from streamflow.core.deployment import Target
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.deployment import (
+    DeploymentConfig,
+    LOCAL_LOCATION,
+    Location,
+    Target,
+)
 from streamflow.core.persistence import PersistableEntity
-from streamflow.core.workflow import Step, Port, Token, Workflow
-from streamflow.core.deployment import DeploymentConfig, LOCAL_LOCATION, Location
+from streamflow.core.workflow import Port, Step, Token, Workflow
+from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 
@@ -151,7 +155,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     if is_primitive_type(elem1):
         return elem1 == elem2
 
-    if isinstance(elem1, Iterable) and not isinstance(elem1, dict):
+    if isinstance(elem1, Collection) and not isinstance(elem1, dict):
         if len(elem1) != len(elem2):
             return False
         for e1, e2 in zip(elem1, elem2):
