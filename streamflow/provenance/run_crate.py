@@ -571,8 +571,8 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         src = file["src"]
         dst = file.get("dst", posixpath.sep)
         dst_parent = posixpath.dirname(posixpath.normpath(dst))
-        if logger.isEnabledFor(logging.WARN):
-            if src in self.files_map:
+        if src in self.files_map:
+            if logger.isEnabledFor(logging.WARN):
                 logger.warn(f"File {src} is already present in the archive.")
         else:
             if os.path.isfile(os.path.realpath(src)):
