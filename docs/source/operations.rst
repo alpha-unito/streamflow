@@ -44,12 +44,13 @@ The following snippet contain a simple example of CWL workflow, which extracts a
            tarfile:
              type: File
              inputBinding:
-              prefix: --file
+               prefix: --file
+           extractfile: string
          outputs:
-           example_out:
+           extracted_file:
              type: File
              outputBinding:
-               glob: hello.txt
+               glob: $(inputs.extractfile)
        in:
          tarfile: tarball
          extractfile: name_of_file_to_extract
@@ -143,9 +144,9 @@ The following snippet contains an example of a minimal ``streamflow.yml`` file, 
          file: main.cwl
          settings: config.yml
        bindings:
-        - step: /compile
-          target:
-            model: docker-openjdk
+         - step: /compile
+           target:
+             model: docker-openjdk
 
    models:
      docker-openjdk:
