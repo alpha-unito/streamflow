@@ -137,7 +137,7 @@ async def _async_prov(args: argparse.Namespace):
 
 
 async def _async_report(args: argparse.Namespace):
-    context = _get_context_from_config(args.streamflow_file, args.outdir)
+    context = _get_context_from_config(args.file)
     try:
         await report.create_report(context, args)
     finally:
@@ -165,6 +165,7 @@ async def _async_run(args: argparse.Namespace):
 
 def _get_context_from_config(streamflow_file: str | None) -> StreamFlowContext:
     if os.path.exists(streamflow_file):
+        load_extensions()
         streamflow_config = SfValidator().validate_file(streamflow_file)
         streamflow_config["path"] = streamflow_file
         return build_context(streamflow_config)
