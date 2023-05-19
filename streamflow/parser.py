@@ -38,6 +38,7 @@ list_parser.add_argument(
 list_parser.add_argument(
     "name",
     metavar="NAME",
+    nargs="?",
     type=str,
     help="List all executions for the given workflow",
 )
