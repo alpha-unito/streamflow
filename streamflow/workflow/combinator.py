@@ -188,20 +188,21 @@ class LoopCombinator(DotProductCombinator):
         super().__init__(name, workflow)
         self.iteration_map: MutableMapping[str, int] = {}
 
-    async def _product(
-        self,
-    ) -> AsyncIterable[MutableMapping[str, Token]]:
-        async for schema in super()._product():
-            tag = utils.get_tag(schema.values())
-            prefix = ".".join(tag.split(".")[:-1])
-            if prefix not in self.iteration_map:
-                self.iteration_map[tag] = 0
-                tag = ".".join(tag.split(".") + ["0"])
-            else:
-                self.iteration_map[prefix] += 1
-                tag = ".".join(tag.split(".")[:-1] + [str(self.iteration_map[prefix])])
-            new_schema = {k: t.retag(tag) for k, t in schema.items()}
-            yield new_schema
+    async def _product(self, enable_retag) -> AsyncIterable[MutableMapping[str, Token]]:
+        async for schema in super()._product(enable_retag):
+            if enable_retag:
+                tag = utils.get_tag(schema.values())
+                prefix = ".".join(tag.split(".")[:-1])
+                if prefix not in self.iteration_map:
+                    self.iteration_map[tag] = 0
+                    tag = ".".join(tag.split(".") + ["0"])
+                else:
+                    self.iteration_map[prefix] += 1
+                    tag = ".".join(
+                        tag.split(".")[:-1] + [str(self.iteration_map[prefix])]
+                    )
+                schema = {k: t.retag(tag) for k, t in schema.items()}
+            yield schema
 
 
 class LoopTerminationCombinator(DotProductCombinator):
@@ -215,7 +216,10 @@ class LoopTerminationCombinator(DotProductCombinator):
     def add_output_item(self, item: str) -> None:
         self.output_items.append(item)
 
-    async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
-        async for schema in super()._product():
-            tag = utils.get_tag(schema.values())
-            yield {k: IterationTerminationToken(tag=tag) for k in self.output_items}
+    async def _product(self, enable_retag) -> AsyncIterable[MutableMapping[str, Token]]:
+        async for schema in super()._product(enable_retag):
+            if enable_retag:
+                tag = utils.get_tag(schema.values())
+                yield {k: IterationTerminationToken(tag=tag) for k in self.output_items}
+            else:
+                yield schema

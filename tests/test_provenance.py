@@ -28,9 +28,14 @@ from streamflow.workflow.step import (
     ScatterStep,
     GatherStep,
     CombinatorStep,
+    LoopCombinatorStep,
 )
 
-from streamflow.workflow.token import ListToken, TerminationToken
+from streamflow.workflow.token import (
+    ListToken,
+    TerminationToken,
+    IterationTerminationToken,
+)
 
 
 # TODO:
@@ -328,31 +333,35 @@ async def test_gather_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_combinator_step_dot_product(context: StreamFlowContext):
     """ """
-    workflow, in_port, out_port = await _create_workflow(context)
+    workflow, in_port, out_port, in_port_2, out_port_2 = await _create_workflow(
+        context, num_port=4
+    )
     step = workflow.create_step(
         cls=CombinatorStep,
         name=utils.random_name() + "-combinator",
         combinator=DotProductCombinator(name=utils.random_name(), workflow=workflow),
     )
     port_name = "test"
-    port_name_2 = f"{port_name}_2"
-    in_port_2 = workflow.create_port()
     step.add_input_port(port_name, in_port)
-    step.add_input_port(port_name_2, in_port_2)
     step.add_output_port(port_name, out_port)
-    out_port_2 = workflow.create_port()
+
+    port_name_2 = f"{port_name}_2"
+    step.add_input_port(port_name_2, in_port_2)
     step.add_output_port(port_name_2, out_port_2)
+
     await workflow.save(context)
     list_token = ListToken([Token("fst"), Token("snd")])
     await list_token.save(context, in_port.persistent_id)
     in_port.put(list_token)
     in_port.put(TerminationToken())
+    step.combinator.add_item(port_name)
+
     tt = Token("4")
     await tt.save(context, in_port_2.persistent_id)
     in_port_2.put(tt)
     in_port_2.put(TerminationToken())
-    step.combinator.add_item(port_name)
     step.combinator.add_item(port_name_2)
+
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
@@ -378,7 +387,9 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_combinator_step_cartesian_product(context: StreamFlowContext):
     """ """
-    workflow, in_port, out_port = await _create_workflow(context)
+    workflow, in_port, out_port, in_port_2, out_port_2 = await _create_workflow(
+        context, num_port=4
+    )
     step = workflow.create_step(
         cls=CombinatorStep,
         name=utils.random_name() + "-combinator",
@@ -387,24 +398,26 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
         ),
     )
     port_name = "test"
-    port_name_2 = f"{port_name}_2"
-    in_port_2 = workflow.create_port()
     step.add_input_port(port_name, in_port)
-    step.add_input_port(port_name_2, in_port_2)
     step.add_output_port(port_name, out_port)
-    out_port_2 = workflow.create_port()
+
+    port_name_2 = f"{port_name}_2"
+    step.add_input_port(port_name_2, in_port_2)
     step.add_output_port(port_name_2, out_port_2)
+
     await workflow.save(context)
     list_token = ListToken([Token("a"), Token("b")])
     await list_token.save(context, in_port.persistent_id)
     in_port.put(list_token)
     in_port.put(TerminationToken())
+    step.combinator.add_item(port_name)
+
     tt = Token("4")
     await tt.save(context, in_port_2.persistent_id)
     in_port_2.put(tt)
     in_port_2.put(TerminationToken())
-    step.combinator.add_item(port_name)
     step.combinator.add_item(port_name_2)
+
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
@@ -427,22 +440,51 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
     )
 
 
-#
-#
-# @pytest.mark.asyncio
-# async def test_loop_combinator_step(context: StreamFlowContext):
-#     """ """
-#
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     step = workflow.create_step(
-#         cls=LoopCombinatorStep,
-#         name=utils.random_name() + "-combinator",
-#         combinator=CartesianProductCombinator(
-#             name=utils.random_name(), workflow=workflow, depth=1
-#         ),
-#     )
-#     await workflow.save(context)
-#
-#
+@pytest.mark.asyncio
+async def test_loop_combinator_step(context: StreamFlowContext):
+    """ """
+    workflow, in_port, out_port, in_port_2, out_port_2 = await _create_workflow(
+        context, num_port=4
+    )
+    await workflow.save(context)
+    name = utils.random_name()
+    step = workflow.create_step(
+        cls=LoopCombinatorStep,
+        name=name + "-combinator",
+        combinator=CartesianProductCombinator(name=name, workflow=workflow, depth=1),
+    )
+    port_name = "test"
+    step.add_input_port(port_name, in_port)
+    step.add_output_port(port_name, out_port)
+
+    port_name_2 = f"{port_name}_2"
+    step.add_input_port(port_name_2, in_port_2)
+    step.add_output_port(port_name_2, out_port_2)
+
+    await workflow.save(context)
+    list_token = ListToken([Token("a"), Token("b")])
+    await list_token.save(context, in_port.persistent_id)
+    in_port.put(list_token)
+    in_port.put(IterationTerminationToken(list_token.tag))
+    in_port.put(TerminationToken())
+    step.combinator.add_item(port_name)
+
+    tt = Token("4")
+    await tt.save(context, in_port_2.persistent_id)
+    in_port_2.put(tt)
+    in_port_2.put(IterationTerminationToken(tt.tag))
+    in_port_2.put(TerminationToken())
+    step.combinator.add_item(port_name_2)
+
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+
+    await verify_dependency_tokens(
+        out_port.token_list[0],
+        out_port,
+        [],
+        [list_token, tt],
+        context,
+        "loopcombinatorstep.",
+    )

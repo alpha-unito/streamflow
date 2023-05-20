@@ -5,17 +5,22 @@ import pytest
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import CombinatorStep
-from streamflow.workflow.token import ListToken, TerminationToken
+from streamflow.workflow.token import (
+    ListToken,
+    TerminationToken,
+    IterationTerminationToken,
+)
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Token, Status
 
 from streamflow.cwl.step import (
-    CWLTransferStep,  # TransferStep
-    CWLConditionalStep,  # ConditionalStep
-    CWLInputInjectorStep,  # InputInjectorStep
-    CWLEmptyScatterConditionalStep,  # LoopOutputStep
+    CWLTransferStep,
+    CWLConditionalStep,
+    CWLInputInjectorStep,
+    CWLEmptyScatterConditionalStep,
+    CWLLoopOutputAllStep,  # CWLLoopOutputLastStep,  # LoopOutputStep
 )
 from streamflow.cwl.processor import CWLTokenProcessor
 
@@ -29,6 +34,7 @@ from streamflow.cwl.transformer import (
     ForwardTransformer,
     ListToElementTransformer,
     OnlyNonNullTransformer,
+    LoopValueFromTransformer,
 )
 
 from tests.test_provenance import (
@@ -38,12 +44,6 @@ from tests.test_provenance import (
     _general_test,
     _create_workflow,
 )
-
-# TODO
-#  ListMergeCombinator
-#  LoopValueFromTransformer,
-#  CWLLoopOutputAllStep,
-#  CWLLoopOutputLastStep,
 
 
 @pytest.mark.asyncio
@@ -457,73 +457,77 @@ async def test_list_merge_combinator(context: StreamFlowContext):
     )
 
 
-# @pytest.mark.asyncio
-# async def test_loop_value_from_transformer(context: StreamFlowContext):
-#     """ """
-#     workflow, in_port, out_port = await _create_workflow(context)
-#     await workflow.save(context)
-#     name = utils.random_name()
-#     port_name = "test"
-#     transformer = workflow.create_step(
-#         cls=LoopValueFromTransformer,
-#         name=name + "-loop-value-from-transformer",
-#         processor=CWLTokenProcessor(
-#             name=in_port.name,
-#             workflow=workflow,
-#         ),
-#         port_name=port_name,
-#         full_js=True,
-#         value_from=f"$(parseInt(inputs.{port_name}) + 11)",
-#     )
-#     loop_port = workflow.create_port()
-#     transformer.add_loop_input_port(port_name, in_port)
-#     transformer.add_loop_source_port(port_name, loop_port)
-#     transformer.add_output_port(port_name, out_port)
-#
-#     token = ListToken([Token(10)])
-#     await token.save(context, in_port.persistent_id)
-#     loop_port.put(token)
-#     in_port.put(token)
-#     in_port.put(TerminationToken())
-#
-#     await workflow.save(context)
-#     executor = StreamFlowExecutor(workflow)
-#     await executor.run()
-#     await verify_dependency_tokens(
-#         transformer.get_output_port(port_name).token_list[0],
-#         out_port,
-#         (),
-#         [token],
-#         context,
-#         "value_from_transformer.",
-#     )
+@pytest.mark.asyncio
+async def test_loop_value_from_transformer(context: StreamFlowContext):
+    """ """
+    workflow, in_port, out_port = await _create_workflow(context)
+    await workflow.save(context)
+    name = utils.random_name()
+    port_name = "test"
+    transformer = workflow.create_step(
+        cls=LoopValueFromTransformer,
+        name=name + "-loop-value-from-transformer",
+        processor=CWLTokenProcessor(
+            name=in_port.name,
+            workflow=workflow,
+        ),
+        port_name=port_name,
+        full_js=True,
+        value_from=f"$(inputs.{port_name} + 1)",
+    )
+    loop_port = workflow.create_port()
+    transformer.add_loop_input_port(port_name, in_port)
+    transformer.add_loop_source_port(port_name, loop_port)
+    transformer.add_output_port(port_name, out_port)
+
+    token = Token(10)
+    await token.save(context, in_port.persistent_id)
+    in_port.put(token)
+    in_port.put(TerminationToken())
+    loop_port.put(token)
+    loop_port.put(TerminationToken())
+
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+    await verify_dependency_tokens(
+        transformer.get_output_port(port_name).token_list[0],
+        out_port,
+        (),
+        [token],
+        context,
+        "LoopValueFromTransformer.",
+    )
 
 
-# @pytest.mark.asyncio
-# async def test_cwl_loop_output_all_step(context: StreamFlowContext):
-#     """ """
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     await workflow.save(context)
-#
-#     step = workflow.create_step(
-#         cls=CWLLoopOutputAllStep,
-#         name=posixpath.join(utils.random_name(), "-loop-output"),
-#     )
-#     await save_load_and_test(step, context)
+@pytest.mark.asyncio
+async def test_cwl_loop_output_all_step(context: StreamFlowContext):
+    """ """
+    workflow, in_port, out_port = await _create_workflow(context)
+    await workflow.save(context)
 
-#
-# @pytest.mark.asyncio
-# async def test_cwl_loop_output_last_step(context: StreamFlowContext):
-#     """ """
-#     workflow = Workflow(
-#         context=context, type="cwl", name=utils.random_name(), config={}
-#     )
-#     await workflow.save(context)
-#
-#     step = workflow.create_step(
-#         cls=CWLLoopOutputLastStep,
-#         name=posixpath.join(utils.random_name(), "-last"),
-#     )
-#     await save_load_and_test(step, context)
+    step = workflow.create_step(
+        cls=CWLLoopOutputAllStep,
+        name=posixpath.join(utils.random_name(), "-loop-output"),
+    )
+    port_name = "test"
+    step.add_input_port(port_name, in_port)
+    step.add_output_port(port_name, out_port)
+    list_token = ListToken([Token("a"), Token("b")], tag="0.1")
+    await list_token.save(context, in_port.persistent_id)
+    in_port.put(list_token)
+    in_port.put(IterationTerminationToken(list_token.tag))
+    in_port.put(TerminationToken())
+
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+
+    await verify_dependency_tokens(
+        out_port.token_list[0],
+        out_port,
+        [],
+        [list_token],
+        context,
+        "combinator.",
+    )

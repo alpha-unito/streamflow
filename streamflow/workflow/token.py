@@ -23,6 +23,9 @@ class IterationTerminationToken(Token):
     def retag(self, tag: str) -> Token:
         raise NotImplementedError
 
+    def renew(self) -> Token:
+        return self.__class__(tag=self.tag)
+
     @classmethod
     async def _load(
         cls,
