@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import logging
 from pathlib import PurePosixPath
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
 from streamflow.core.config import Config
 from streamflow.core.exception import WorkflowDefinitionException
-from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import MutableMapping, Any
@@ -38,14 +36,6 @@ class WorkflowConfig(Config):
             k: Config(name=k, type=v["type"], config=v["config"])
             for k, v in config.get("bindingFilters", {}).items()
         }
-        if not self.deployments:
-            self.deployments = config.get("models", {})
-            if self.deployments:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `models` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `deployments` instead."
-                    )
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         for name, deployment in self.deployments.items():
             deployment["name"] = name
@@ -68,7 +58,7 @@ class WorkflowConfig(Config):
         for target in targets:
             policy = target.get(
                 "policy",
-                self.deployments[target.get("deployment", target.get("model", {}))].get(
+                self.deployments[target.get("deployment", {})].get(
                     "policy", "__DEFAULT__"
                 ),
             )

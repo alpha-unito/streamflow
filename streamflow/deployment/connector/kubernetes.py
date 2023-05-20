@@ -164,8 +164,6 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         namespace: str | None = None,
         locationsCacheSize: int | None = None,
         locationsCacheTTL: int | None = None,
-        resourcesCacheSize: int | None = None,
-        resourcesCacheTTL: int | None = None,
         transferBufferSize: int = (2**25) - 1,
         maxConcurrentConnections: int = 4096,
     ):
@@ -184,28 +182,8 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         )
         self.kubeContext: str | None = kubeContext
         self.namespace: str | None = namespace
-        cacheSize = locationsCacheSize
-        if cacheSize is None:
-            cacheSize = resourcesCacheSize
-            if cacheSize is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheSize` instead."
-                    )
-            else:
-                cacheSize = 10
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheTTL` instead."
-                    )
-            else:
-                cacheTTL = 10
+        cacheSize = locationsCacheSize if locationsCacheSize is not None else 10
+        cacheTTL = locationsCacheTTL if locationsCacheTTL is not None else 10
         self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
         self.configuration: Configuration | None = None
         self.client: client.CoreV1Api | None = None
@@ -604,8 +582,6 @@ class KubernetesConnector(BaseKubernetesConnector):
         namespace: str | None = None,
         locationsCacheSize: int | None = None,
         locationsCacheTTL: int | None = None,
-        resourcesCacheSize: int | None = None,
-        resourcesCacheTTL: int | None = None,
         transferBufferSize: int = (2**25) - 1,
         timeout: int | None = 60000,
         wait: bool = True,
@@ -619,8 +595,6 @@ class KubernetesConnector(BaseKubernetesConnector):
             namespace=namespace,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
-            resourcesCacheSize=resourcesCacheSize,
-            resourcesCacheTTL=resourcesCacheTTL,
             transferBufferSize=transferBufferSize,
             maxConcurrentConnections=maxConcurrentConnections,
         )
@@ -921,8 +895,6 @@ class Helm3Connector(BaseKubernetesConnector):
         releaseName: str | None = None,
         repositoryCache: str | None = None,
         repositoryConfig: str | None = None,
-        resourcesCacheSize: int = None,
-        resourcesCacheTTL: int = None,
         skipCrds: bool = False,
         timeout: str | None = "1000m",
         transferBufferSize: int = (32 << 20) - 1,
@@ -941,8 +913,6 @@ class Helm3Connector(BaseKubernetesConnector):
             namespace=namespace,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
-            resourcesCacheSize=resourcesCacheSize,
-            resourcesCacheTTL=resourcesCacheTTL,
             transferBufferSize=transferBufferSize,
             maxConcurrentConnections=maxConcurrentConnections,
         )

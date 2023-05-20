@@ -110,32 +110,10 @@ class ContainerConnector(BaseConnector, ABC):
         transferBufferSize: int,
         locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
-        resourcesCacheSize: int = None,
-        resourcesCacheTTL: int = None,
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
-        cacheSize = locationsCacheSize
-        if cacheSize is None:
-            cacheSize = resourcesCacheSize
-            if cacheSize is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheSize` instead."
-                    )
-            else:
-                cacheSize = 10
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheTTL` instead."
-                    )
-            else:
-                cacheTTL = 10
+        cacheSize = locationsCacheSize if locationsCacheSize is not None else 10
+        cacheTTL = locationsCacheTTL if locationsCacheTTL is not None else 10
         self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
 
     async def _check_effective_location(
@@ -455,8 +433,6 @@ class DockerConnector(DockerBaseConnector):
             transferBufferSize=transferBufferSize,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
-            resourcesCacheSize=resourcesCacheSize,
-            resourcesCacheTTL=resourcesCacheTTL,
         )
         self.image: str = image
         self.addHost: MutableSequence[str] | None = addHost
@@ -747,8 +723,6 @@ class DockerComposeConnector(DockerBaseConnector):
             transferBufferSize=transferBufferSize,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
-            resourcesCacheSize=resourcesCacheSize,
-            resourcesCacheTTL=resourcesCacheTTL,
         )
         self.files = [
             file if os.path.isabs(file) else os.path.join(self.config_dir, file)
@@ -992,8 +966,6 @@ class SingularityConnector(ContainerConnector):
         pidFile: str | None = None,
         pidsLimit: int | None = None,
         replicas: int = 1,
-        resourcesCacheSize: int = None,
-        resourcesCacheTTL: int = None,
         rocm: bool = False,
         scratch: MutableSequence[str] | None = None,
         security: MutableSequence[str] | None = None,
@@ -1010,8 +982,6 @@ class SingularityConnector(ContainerConnector):
             transferBufferSize=transferBufferSize,
             locationsCacheSize=locationsCacheSize,
             locationsCacheTTL=locationsCacheTTL,
-            resourcesCacheSize=resourcesCacheSize,
-            resourcesCacheTTL=resourcesCacheTTL,
         )
         self.image: str = image
         self.addCaps: str | None = addCaps

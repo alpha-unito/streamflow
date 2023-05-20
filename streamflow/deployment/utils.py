@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import posixpath
 from pathlib import PurePosixPath
@@ -18,7 +17,6 @@ from streamflow.core.deployment import (
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector import LocalConnector
-from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.config.config import WorkflowConfig
@@ -34,26 +32,8 @@ def get_binding_config(
         targets = []
         for target in config["targets"]:
             workdir = target.get("workdir") if target is not None else None
-            if "deployment" in target:
-                target_deployment = workflow_config.deployments[target["deployment"]]
-            else:
-                target_deployment = workflow_config.deployments[target["model"]]
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `deployment` instead."
-                    )
-            locations = target.get("locations", None)
-            if locations is None:
-                locations = target.get("resources")
-                if locations is not None:
-                    if logger.isEnabledFor(logging.WARNING):
-                        logger.warning(
-                            "The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                            "Use `locations` instead."
-                        )
-                else:
-                    locations = 1
+            target_deployment = workflow_config.deployments[target["deployment"]]
+            locations = target.get("locations", 1)
             deployment = DeploymentConfig(
                 name=target_deployment["name"],
                 type=target_deployment["type"],

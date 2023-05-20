@@ -22,7 +22,6 @@ from streamflow.core.exception import (
 )
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
-from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.deployment.utils import get_inner_location
 from streamflow.deployment.wrapper import ConnectorWrapper
@@ -324,78 +323,28 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         deployment_name: str,
         config_dir: str,
         connector: Connector,
-        service: str | None,
-        hostname: str | None = None,
-        username: str | None = None,
-        checkHostKey: bool = True,
-        dataTransferConnection: str | MutableMapping[str, Any] | None = None,
-        file: str | None = None,
         maxConcurrentJobs: int | None = 1,
-        maxConcurrentSessions: int | None = 10,
-        maxConnections: int | None = 1,
-        passwordFile: str | None = None,
         pollingInterval: int = 5,
-        services: MutableMapping[str, QueueManagerService] | None = None,
-        sshKey: str | None = None,
-        sshKeyPassphraseFile: str | None = None,
-        transferBufferSize: int = 2**16,
+        services: MutableMapping[str, MutableMapping[str, Any]] | None = None,
     ) -> None:
-        self._inner_ssh_connector: bool = False
-        if hostname is not None:
-            if logger.isEnabledFor(logging.WARNING):
-                logger.warning(
-                    "Inline SSH options are deprecated and will be removed in StreamFlow 0.3.0. "
-                    f"Define a standalone `SSHConnector` and link the `{self.__class__.__name__}` "
-                    "to it using the `wraps` property."
-                )
-            self._inner_ssh_connector = True
-            connector: Connector = SSHConnector(
-                deployment_name=f"{deployment_name}-ssh",
-                config_dir=config_dir,
-                checkHostKey=checkHostKey,
-                dataTransferConnection=dataTransferConnection,
-                maxConcurrentSessions=maxConcurrentSessions,
-                maxConnections=maxConnections,
-                nodes=[hostname],
-                passwordFile=passwordFile,
-                sshKey=sshKey,
-                sshKeyPassphraseFile=sshKeyPassphraseFile,
-                transferBufferSize=transferBufferSize,
-                username=username,
-            )
         super().__init__(
-            deployment_name=deployment_name,
-            config_dir=config_dir,
-            connector=connector,
-            service=service,
-            transferBufferSize=transferBufferSize,
+            deployment_name=deployment_name, config_dir=config_dir, connector=connector
         )
-        files_map: MutableMapping[str, Any] = {}
         self.services = (
             {k: self._service_class(**v) for k, v in services.items()}
             if services
             else {}
         )
+        files_map: MutableMapping[str, Any] = {}
         if self.services:
             for name, service in self.services.items():
                 if service.file is not None:
                     with open(os.path.join(self.config_dir, service.file)) as f:
                         files_map[name] = f.read()
-        if file is not None:
-            if logger.isEnabledFor(logging.WARNING):
-                logger.warning(
-                    "The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                    "Use `services` instead."
-                )
-            with open(os.path.join(self.config_dir, file)) as f:
-                self.template_map: CommandTemplateMap = CommandTemplateMap(
-                    default=f.read(), template_map=files_map
-                )
-        else:
-            self.template_map: CommandTemplateMap = CommandTemplateMap(
-                default="#!/bin/sh\n\n{{streamflow_command}}",
-                template_map=files_map,
-            )
+        self.template_map: CommandTemplateMap = CommandTemplateMap(
+            default="#!/bin/sh\n\n{{streamflow_command}}",
+            template_map=files_map,
+        )
         self.maxConcurrentJobs: int = maxConcurrentJobs
         if self.maxConcurrentJobs == 1:
             if logger.isEnabledFor(logging.WARNING):
@@ -579,16 +528,6 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         for location, jobs in jobs_map.items():
             await self._remove_jobs(location, jobs)
         self._scheduled_jobs = {}
-        if self._inner_ssh_connector:
-            if logger.isEnabledFor(logging.INFO):
-                logger.warning(
-                    f"UNDEPLOYING inner SSH connector for {self.deployment_name} deployment."
-                )
-            await self.connector.undeploy(external)
-            if logger.isEnabledFor(logging.INFO):
-                logger.warning(
-                    f"COMPLETED Undeployment of inner SSH connector for {self.deployment_name} deployment."
-                )
 
 
 class SlurmConnector(QueueManagerConnector):

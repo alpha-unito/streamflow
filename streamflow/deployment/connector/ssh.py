@@ -334,21 +334,10 @@ class SSHConnector(BaseConnector):
             for name, service in services.items():
                 with open(os.path.join(self.config_dir, service)) as f:
                     services_map[name] = f.read()
-        if file is not None:
-            if logger.isEnabledFor(logging.WARNING):
-                logger.warning(
-                    "The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                    "Use `services` instead."
-                )
-            with open(os.path.join(self.config_dir, file)) as f:
-                self.template_map: CommandTemplateMap = CommandTemplateMap(
-                    default=f.read(), template_map=services_map
-                )
-        else:
-            self.template_map: CommandTemplateMap = CommandTemplateMap(
-                default="#!/bin/sh\n\n{{streamflow_command}}",
-                template_map=services_map,
-            )
+        self.template_map: CommandTemplateMap = CommandTemplateMap(
+            default="#!/bin/sh\n\n{{streamflow_command}}",
+            template_map=services_map,
+        )
         self.checkHostKey: bool = checkHostKey
         self.passwordFile: str | None = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
