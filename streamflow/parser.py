@@ -2,6 +2,7 @@ import argparse
 import os
 import re
 
+import streamflow.ext.plugin
 
 UNESCAPED_COMMA = re.compile(r"(?<!\\),")
 UNESCAPED_EQUAL = re.compile(r"(?<!\\)=")
@@ -25,6 +26,40 @@ class _KeyValueAction(argparse.Action):
 parser = argparse.ArgumentParser(description="StreamFlow Command Line")
 subparsers = parser.add_subparsers(dest="context")
 
+
+# streamflow ext
+ext_parser = subparsers.add_parser(
+    "ext", help="Retrieve information on the available StreamFlow extensions"
+)
+ext_subparsers = ext_parser.add_subparsers(dest="ext_context")
+
+# streamflow ext list
+ext_list_parser = ext_subparsers.add_parser(
+    "list", help="List the available StreamFlow extensions"
+)
+ext_list_parser.add_argument("--name", "-n", type=str, help="Filter extensions by name")
+ext_list_parser.add_argument(
+    "--type",
+    "-t",
+    type=str,
+    choices=streamflow.ext.plugin.extension_points,
+    help="Filter extensions by type",
+)
+
+# streamflow ext show
+ext_show_parser = ext_subparsers.add_parser(
+    "show", help="Show the details of a StreamFlow extension"
+)
+ext_show_parser.add_argument(
+    "type",
+    metavar="TYPE",
+    type=str,
+    choices=streamflow.ext.plugin.extension_points,
+    help="Type of the extension to show",
+)
+ext_show_parser.add_argument(
+    "name", metavar="NAME", type=str, help="Name of the extension to show"
+)
 
 # streamflow list
 list_parser = subparsers.add_parser("list", help="List the executed workflows")
@@ -59,32 +94,6 @@ plugin_show_parser = plugin_subparsers.add_parser(
 )
 plugin_show_parser.add_argument(
     "plugin", metavar="PLUGIN", type=str, help="Name of the plugin to show"
-)
-plugin_show_parser.add_argument(
-    "--name", "-n", type=str, help="Filter extensions by name"
-)
-plugin_show_parser.add_argument(
-    "--type",
-    "-t",
-    type=str,
-    choices=[
-        "binding_filter",
-        "checkpoint_manager",
-        "cwl_docker_translator",
-        "connector",
-        "data_manager",
-        "database",
-        "deployment_manager",
-        "failure_manager",
-        "policy",
-        "scheduler",
-    ],
-    help="Filter extensions by type",
-)
-plugin_show_parser.add_argument(
-    "--show-schema",
-    action="store_true",
-    help="Print property schemas for selected extension points",
 )
 
 # streamflow prov

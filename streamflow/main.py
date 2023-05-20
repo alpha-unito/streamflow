@@ -18,7 +18,13 @@ from streamflow.core.workflow import Workflow
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
-from streamflow.ext.utils import list_extensions, load_extensions, show_extension
+from streamflow.ext.utils import (
+    list_extensions,
+    list_plugins,
+    load_extensions,
+    show_extension,
+    show_plugin,
+)
 from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
@@ -26,6 +32,13 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.provenance import prov_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
+
+
+async def _async_ext(args: argparse.Namespace):
+    if args.ext_context == "list":
+        list_extensions(args.name, args.type)
+    elif args.ext_context == "show":
+        show_extension(args.name, args.type)
 
 
 async def _async_list(args: argparse.Namespace):
@@ -80,9 +93,9 @@ async def _async_list(args: argparse.Namespace):
 
 async def _async_plugin(args: argparse.Namespace):
     if args.plugin_context == "list":
-        list_extensions()
+        list_plugins()
     elif args.plugin_context == "show":
-        show_extension(args.plugin, args.name, args.type, args.show_schema)
+        show_plugin(args.plugin)
 
 
 async def _async_prov(args: argparse.Namespace):
@@ -234,6 +247,8 @@ def main(args):
             from streamflow.version import VERSION
 
             print(f"StreamFlow version {VERSION}")
+        elif args.context == "ext":
+            asyncio.run(_async_ext(args))
         elif args.context == "list":
             asyncio.run(_async_list(args))
         elif args.context == "plugin":
