@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+import jsonref
 import pkg_resources
-from jsonref import loads
 from jsonschema import Draft7Validator
 from ruamel.yaml import YAML
 
@@ -46,7 +46,7 @@ def load_jsonschema(config_file: MutableMapping[str, Any]):
     if not os.path.exists(filename):
         raise Exception(f'Version in "{filename}" is unsupported')
     with open(filename) as f:
-        return loads(f.read(), base_uri=f"file://{base_path}/", jsonschema=True)
+        return jsonref.loads(f.read(), base_uri=f"file://{base_path}/", jsonschema=True)
 
 
 class SfValidator:

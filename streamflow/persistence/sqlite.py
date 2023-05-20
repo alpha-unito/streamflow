@@ -2,37 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
-from abc import ABC
 from typing import Any, MutableMapping, MutableSequence
 
 import aiosqlite
 import pkg_resources
-from cachetools import Cache, LRUCache
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
-from streamflow.core.persistence import Database, DependencyType
+from streamflow.core.persistence import DependencyType
 from streamflow.core.utils import get_date_from_ns
 from streamflow.core.workflow import Port, Status, Step, Token
+from streamflow.persistence.base import CachedDatabase
 from streamflow.version import VERSION
 
 DEFAULT_SQLITE_CONNECTION = os.path.join(
     os.path.expanduser("~"), ".streamflow", VERSION, "sqlite.db"
 )
-
-
-class CachedDatabase(Database, ABC):
-    def __init__(self, context: StreamFlowContext):
-        super().__init__(context)
-        self.deployment_cache: Cache = LRUCache(maxsize=sys.maxsize)
-        self.port_cache: Cache = LRUCache(maxsize=sys.maxsize)
-        self.step_cache: Cache = LRUCache(maxsize=sys.maxsize)
-        self.target_cache: Cache = LRUCache(maxsize=sys.maxsize)
-        self.token_cache: Cache = LRUCache(maxsize=sys.maxsize)
-        self.workflow_cache: Cache = LRUCache(maxsize=sys.maxsize)
 
 
 class SqliteConnection:
@@ -69,7 +56,12 @@ class SqliteConnection:
 
 
 class SqliteDatabase(CachedDatabase):
-    def __init__(self, context: StreamFlowContext, connection: str, timeout: int = 20):
+    def __init__(
+        self,
+        context: StreamFlowContext,
+        connection: str = DEFAULT_SQLITE_CONNECTION,
+        timeout: int = 20,
+    ):
         super().__init__(context)
         # Open connection to database
         if connection != ":memory:":

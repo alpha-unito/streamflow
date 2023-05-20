@@ -2,6 +2,7 @@ import argparse
 import os
 import re
 
+import streamflow.ext.plugin
 
 UNESCAPED_COMMA = re.compile(r"(?<!\\),")
 UNESCAPED_EQUAL = re.compile(r"(?<!\\)=")
@@ -26,6 +27,40 @@ parser = argparse.ArgumentParser(description="StreamFlow Command Line")
 subparsers = parser.add_subparsers(dest="context")
 
 
+# streamflow ext
+ext_parser = subparsers.add_parser(
+    "ext", help="Retrieve information on the available StreamFlow extensions"
+)
+ext_subparsers = ext_parser.add_subparsers(dest="ext_context")
+
+# streamflow ext list
+ext_list_parser = ext_subparsers.add_parser(
+    "list", help="List the available StreamFlow extensions"
+)
+ext_list_parser.add_argument("--name", "-n", type=str, help="Filter extensions by name")
+ext_list_parser.add_argument(
+    "--type",
+    "-t",
+    type=str,
+    choices=streamflow.ext.plugin.extension_points,
+    help="Filter extensions by type",
+)
+
+# streamflow ext show
+ext_show_parser = ext_subparsers.add_parser(
+    "show", help="Show the details of a StreamFlow extension"
+)
+ext_show_parser.add_argument(
+    "type",
+    metavar="TYPE",
+    type=str,
+    choices=streamflow.ext.plugin.extension_points,
+    help="Type of the extension to show",
+)
+ext_show_parser.add_argument(
+    "name", metavar="NAME", type=str, help="Name of the extension to show"
+)
+
 # streamflow list
 list_parser = subparsers.add_parser("list", help="List the executed workflows")
 list_parser.add_argument(
@@ -38,8 +73,28 @@ list_parser.add_argument(
 list_parser.add_argument(
     "name",
     metavar="NAME",
+    nargs="?",
     type=str,
     help="List all executions for the given workflow",
+)
+
+# streamflow plugin
+plugin_parser = subparsers.add_parser(
+    "plugin", help="Retrieve information on the installed StreamFlow plugins"
+)
+plugin_subparsers = plugin_parser.add_subparsers(dest="plugin_context")
+
+# streamflow plugin list
+plugin_list_parser = plugin_subparsers.add_parser(
+    "list", help="List the installed StreamFlow plugins"
+)
+
+# streamflow plugin show
+plugin_show_parser = plugin_subparsers.add_parser(
+    "show", help="Show the details of a StreamFlow plugin"
+)
+plugin_show_parser.add_argument(
+    "plugin", metavar="PLUGIN", type=str, help="Name of the plugin to show"
 )
 
 # streamflow prov

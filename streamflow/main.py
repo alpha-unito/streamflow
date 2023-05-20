@@ -18,15 +18,27 @@ from streamflow.core.workflow import Workflow
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
-from streamflow.ext.utils import load_extensions
+from streamflow.ext.utils import (
+    list_extensions,
+    list_plugins,
+    load_extensions,
+    show_extension,
+    show_plugin,
+)
 from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.persistence.sqlite import DEFAULT_SQLITE_CONNECTION
 from streamflow.provenance import prov_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
+
+
+async def _async_ext(args: argparse.Namespace):
+    if args.ext_context == "list":
+        list_extensions(args.name, args.type)
+    elif args.ext_context == "show":
+        show_extension(args.name, args.type)
 
 
 async def _async_list(args: argparse.Namespace):
@@ -77,6 +89,13 @@ async def _async_list(args: argparse.Namespace):
             print("No workflow objects found.")
     finally:
         await context.close()
+
+
+async def _async_plugin(args: argparse.Namespace):
+    if args.plugin_context == "list":
+        list_plugins()
+    elif args.plugin_context == "show":
+        show_plugin(args.plugin)
 
 
 async def _async_prov(args: argparse.Namespace):
@@ -131,7 +150,7 @@ async def _async_prov(args: argparse.Namespace):
 
 
 async def _async_report(args: argparse.Namespace):
-    context = _get_context_from_config(args.streamflow_file, args.outdir)
+    context = _get_context_from_config(args.file)
     try:
         await report.create_report(context, args)
     finally:
@@ -159,6 +178,7 @@ async def _async_run(args: argparse.Namespace):
 
 def _get_context_from_config(streamflow_file: str | None) -> StreamFlowContext:
     if os.path.exists(streamflow_file):
+        load_extensions()
         streamflow_config = SfValidator().validate_file(streamflow_file)
         streamflow_config["path"] = streamflow_file
         return build_context(streamflow_config)
@@ -197,10 +217,7 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
         config,
         database_classes,
         "database",
-        {
-            "context": context,
-            "connection": DEFAULT_SQLITE_CONNECTION,
-        },
+        {"context": context},
     )
     context.data_manager = _get_instance_from_config(
         config, data_manager_classes, "dataManager", {"context": context}
@@ -231,8 +248,12 @@ def main(args):
             from streamflow.version import VERSION
 
             print(f"StreamFlow version {VERSION}")
+        elif args.context == "ext":
+            asyncio.run(_async_ext(args))
         elif args.context == "list":
             asyncio.run(_async_list(args))
+        elif args.context == "plugin":
+            asyncio.run(_async_plugin(args))
         elif args.context == "prov":
             asyncio.run(_async_prov(args))
         elif args.context == "report":

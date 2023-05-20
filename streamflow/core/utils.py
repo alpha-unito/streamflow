@@ -16,7 +16,7 @@ from typing import (
     TYPE_CHECKING,
 )
 
-from jsonref import loads
+import jsonref
 
 from streamflow.core.exception import WorkflowExecutionException
 
@@ -237,7 +237,7 @@ def inject_schema(
     for name, entity in classes.items():
         if entity_schema := entity.get_schema():
             with open(entity_schema) as f:
-                entity_schema = loads(
+                entity_schema = jsonref.loads(
                     f.read(),
                     base_uri=f"file://{os.path.dirname(entity_schema)}/",
                     jsonschema=True,
