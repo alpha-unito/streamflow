@@ -82,10 +82,6 @@
       ],
       "description": "Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"
     },
-    "file": {
-      "type": "string",
-      "description": "(**Deprecated.** Use services.) Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
-    },
     "nodes": {
       "type": "array",
       "items": {

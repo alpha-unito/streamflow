@@ -427,16 +427,6 @@
       "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
       "default": 10
     },
-    "resourcesCacheSize": {
-      "type": "integer",
-      "description": "(**Deprecated.** Use locationsCacheSize.) Available resources cache size",
-      "default": 10
-    },
-    "resourcesCacheTTL": {
-      "type": "integer",
-      "description": "(**Deprecated.** Use locationsCacheTTL.) Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
-      "default": 10
-    },
     "restart": {
       "type": "string",
       "description": "Restart policy to apply when a container exists",
