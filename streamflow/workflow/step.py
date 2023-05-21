@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aiostream import stream  # todo: add aiostream in requirement
+# from aiostream import stream  # todo: add aiostream in requirement
 import asyncio
 import json
 import logging
@@ -297,23 +297,61 @@ class CombinatorStep(BaseStep):
                             )
                         status = Status.COMPLETED
 
-                        stream_zip = stream.zip(
+                        # async for schema in cast(
+                        #         AsyncIterable, self.combinator.combine(task_name, token)
+                        # ):
+                        #     for port_name, token in schema.items():
+                        #         # print("insert", token.value)
+                        #         self.get_output_port(port_name).put(
+                        #             await self._persist_token(
+                        #                 token=token,
+                        #                 port=self.get_output_port(port_name),
+                        #                 inputs=schema.values(),
+                        #             )
+                        #         )
+
+                        # todo: riuscire a fare tutto solo con enable_retag (senza add_list)
+                        # idea: ciclare su combine che fa retag, chiamare all'interno combine senza retag e andare avanti con il next
+                        s = []
+                        async for schema in cast(
+                            AsyncIterable,
                             self.combinator.combine(
                                 task_name, token, enable_retag=False
                             ),
-                            self.combinator.combine(task_name, token),
-                        )
-                        # todo: there is not check if the streams have different lengths. Throws an exception in that case
-                        async with stream_zip.stream() as streamer:
-                            async for schema, new_schema in streamer:
-                                for port_name, curr_token in new_schema.items():
-                                    self.get_output_port(port_name).put(
-                                        await self._persist_token(
-                                            token=curr_token,
-                                            port=self.get_output_port(port_name),
-                                            inputs=schema.values(),
-                                        )
+                        ):
+                            s = schema.values()
+
+                        async for new_schema in cast(
+                            AsyncIterable,
+                            self.combinator.combine(task_name, token, add_list=False),
+                        ):
+                            for port_name, curr_token in new_schema.items():
+                                self.get_output_port(port_name).put(
+                                    await self._persist_token(
+                                        token=curr_token,
+                                        port=self.get_output_port(port_name),
+                                        inputs=s,
                                     )
+                                )
+
+                        # stream_zip = stream.zip(
+                        #     self.combinator.combine(
+                        #             task_name, token, enable_retag=False
+                        #         ), self.combinator.combine(task_name, token),
+                        #
+                        # )
+                        # # todo: there is not check if the streams have different lengths. Throws an exception in that case
+                        # async with stream_zip.stream() as streamer:
+                        #     async for schema, new_schema in streamer:
+                        #         # todo: decidere se fare il .renew() tutti in step.py (considerando che qualche token sarà già nuovo per via dei vari retag), oppure fare i renew nei metodi opportuni nei combinator, transformer e così via
+                        #         for port_name, curr_token in new_schema.items():
+                        #             self.get_output_port(port_name).put(
+                        #                 await self._persist_token(
+                        #                     token=curr_token,
+                        #                     port=self.get_output_port(port_name),
+                        #                     inputs=schema.values(),
+                        #                 )
+                        #             )
                     # Create a new task in place of the completed one if the port is not terminated
                     if task_name not in terminated:
                         input_tasks.append(
@@ -1030,23 +1068,35 @@ class LoopCombinatorStep(CombinatorStep):
                             self.iteration_terminaton_checklist[task_name].add(
                                 token.tag
                             )
-                        stream_zip = stream.zip(
-                            self.combinator.combine(
-                                task_name, token, enable_retag=False
-                            ),
-                            self.combinator.combine(task_name, token),
-                        )
-                        # todo: there is not check if the streams have different lengths. Throws an exception in that case
-                        async with stream_zip.stream() as streamer:
-                            async for schema, new_schema in streamer:
-                                for port_name, curr_token in new_schema.items():
-                                    self.get_output_port(port_name).put(
-                                        await self._persist_token(
-                                            token=curr_token,
-                                            port=self.get_output_port(port_name),
-                                            inputs=schema.values(),
-                                        )
+                        # stream_zip = stream.zip(
+                        #     self.combinator.combine(
+                        #         task_name, token, enable_retag=False
+                        #     ),
+                        #     self.combinator.combine(task_name, token),
+                        # )
+                        # # todo: there is not check if the streams have different lengths. Throws an exception in that case
+                        # async with stream_zip.stream() as streamer:
+                        #     async for schema, new_schema in streamer:
+                        #         for port_name, curr_token in new_schema.items():
+                        #             self.get_output_port(port_name).put(
+                        #                 await self._persist_token(
+                        #                     token=curr_token,
+                        #                     port=self.get_output_port(port_name),
+                        #                     inputs=schema.values(),
+                        #                 )
+                        #             )
+                        async for schema in cast(
+                            AsyncIterable, self.combinator.combine(task_name, token)
+                        ):
+                            for port_name, token in schema.items():
+                                # print("insert", token.value)
+                                self.get_output_port(port_name).put(
+                                    await self._persist_token(
+                                        token=token,
+                                        port=self.get_output_port(port_name),
+                                        inputs=schema.values(),
                                     )
+                                )
 
                     # Create a new task in place of the completed one if the port is not terminated
                     if not (

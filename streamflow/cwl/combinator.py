@@ -61,10 +61,12 @@ class ListMergeCombinator(DotProductCombinator):
         }
 
     async def combine(
-        self, port_name: str, token: Token, enable_retag=True
+        self, port_name: str, token: Token, enable_retag=True, add_list: bool = True
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         if not isinstance(token, IterationTerminationToken):
-            async for schema in super().combine(port_name, token, enable_retag):
+            async for schema in super().combine(
+                port_name, token, enable_retag=enable_retag, add_list=add_list
+            ):
                 # If there is only one input, merge its value
                 if enable_retag:
                     if len(self.input_names) == 1:
