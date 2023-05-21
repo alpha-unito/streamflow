@@ -92,7 +92,6 @@ class CartesianProductCombinator(Combinator):
                         schema = {**schema, **config[key]}
                     else:
                         schema[key] = config[key]
-                        schema[key] = config[key]
                 if enable_retag:
                     suffix = [t.tag.split(".")[-1] for t in schema.values()]
                     schema = {
@@ -110,7 +109,7 @@ class CartesianProductCombinator(Combinator):
     async def combine(
         self, port_name: str, token: Token, enable_retag=True
     ) -> AsyncIterable[MutableMapping[str, Token]]:
-        # If port is associated to an inner combinator, call it and put shcemas in their related list
+        # If port is associated to an inner combinator, call it and put schemas in their related list
         if c := self.get_combinator(port_name):
             async for schema in cast(
                 AsyncIterable, c.combine(port_name, token, enable_retag=enable_retag)

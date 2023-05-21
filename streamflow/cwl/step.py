@@ -101,7 +101,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         for port_name, port in self.get_output_ports().items():
             port.put(
                 await self._persist_token(
-                    token=inputs[port_name].retag(inputs[port_name].tag),
+                    token=inputs[port_name].renew(),
                     port=port,
                     inputs=inputs.values(),
                 )
@@ -211,10 +211,9 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
     async def _on_true(self, inputs: MutableMapping[str, Token]):
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
-            token_clone = inputs[port_name].retag(inputs[port_name].tag)
             port.put(
                 await self._persist_token(
-                    token=token_clone,
+                    token=inputs[port_name].renew(),
                     port=port,
                     inputs=inputs.values(),
                 )
@@ -230,10 +229,9 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
             token_value = []
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
-            token = ListToken(value=token_value, tag=get_tag(inputs.values()))
             port.put(
                 await self._persist_token(
-                    token=token,
+                    token=ListToken(value=token_value, tag=get_tag(inputs.values())),
                     port=port,
                     inputs=inputs.values(),
                 )
