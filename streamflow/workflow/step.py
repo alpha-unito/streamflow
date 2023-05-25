@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-# from aiostream import stream  # todo: add aiostream in requirement
 import asyncio
 import json
 import logging
@@ -297,21 +296,21 @@ class CombinatorStep(BaseStep):
                             )
                         status = Status.COMPLETED
 
-
-                        ss = []
+                        schema_no_retag = []
                         async for schema in cast(
-                                AsyncIterable, self.combinator.combine(task_name, token, enable_retag=False)
+                            AsyncIterable,
+                            self.combinator.combine(
+                                task_name, token, enable_retag=False
+                            ),
                         ):
-                            ss = schema.values()
-                        async for schema in cast(
-                            AsyncIterable, self.combinator.combine(task_name, token)
-                        ):
+                            schema_no_retag = schema.values()
+                        async for schema in self.combinator.combine(task_name, token):
                             for port_name, token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
                                         token=token,
                                         port=self.get_output_port(port_name),
-                                        inputs=ss,
+                                        inputs=schema_no_retag,
                                     )
                                 )
 
@@ -1032,21 +1031,21 @@ class LoopCombinatorStep(CombinatorStep):
                                 token.tag
                             )
 
-
-                        ss = []
+                        schema_no_retag = []
                         async for schema in cast(
-                                AsyncIterable, self.combinator.combine(task_name, token, enable_retag=False)
+                            AsyncIterable,
+                            self.combinator.combine(
+                                task_name, token, enable_retag=False
+                            ),
                         ):
-                            ss = schema.values()
-                        async for schema in cast(
-                            AsyncIterable, self.combinator.combine(task_name, token)
-                        ):
+                            schema_no_retag = schema.values()
+                        async for schema in self.combinator.combine(task_name, token):
                             for port_name, token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
                                         token=token,
                                         port=self.get_output_port(port_name),
-                                        inputs=ss,
+                                        inputs=schema_no_retag,
                                     )
                                 )
 

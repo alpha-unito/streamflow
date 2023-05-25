@@ -30,7 +30,7 @@ def _add_to_list(
         if tag == key:
             continue
         elif key.startswith(tag):
-            _add_to_port(token, token_values[key], port_name, cartesian)
+            _add_to_port(token, token_values[key], port_name, is_cartesian)
         elif tag.startswith(key):
             if tag not in token_values:
                 token_values[tag] = {}
@@ -121,14 +121,18 @@ class CartesianProductCombinator(Combinator):
                 AsyncIterable,
                 c.combine(port_name, token, enable_retag=enable_retag),
             ):
-                _add_to_list(schema, self.token_values, c.name, self.depth, is_cartesian=True)
+                _add_to_list(
+                    schema, self.token_values, c.name, self.depth, is_cartesian=True
+                )
                 async for product in self._product(
                     port_name, token, enable_retag=enable_retag
                 ):
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
-            _add_to_list(token, self.token_values, port_name, self.depth, is_cartesian=True)
+            _add_to_list(
+                token, self.token_values, port_name, self.depth, is_cartesian=True
+            )
             async for product in self._product(
                 port_name, token, enable_retag=enable_retag
             ):
