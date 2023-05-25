@@ -261,6 +261,25 @@ class CombinatorStep(BaseStep):
             **{"combinator": await self.combinator.save(context)},
         }
 
+    async def _combine(self, task_name, token):
+        schema_no_retag = []
+        async for schema in cast(
+            AsyncIterable,
+            self.combinator.combine(task_name, token, enable_retag=False),
+        ):
+            schema_no_retag.append(schema.values())
+        i = 0
+        async for schema in self.combinator.combine(task_name, token):
+            for port_name, token in schema.items():
+                self.get_output_port(port_name).put(
+                    await self._persist_token(
+                        token=token,
+                        port=self.get_output_port(port_name),
+                        inputs=schema_no_retag[i],
+                    )
+                )
+            i += 1
+
     async def run(self):
         # Set default status to SKIPPED
         status = Status.SKIPPED
@@ -295,24 +314,7 @@ class CombinatorStep(BaseStep):
                                 f"Step {self.name} received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
-
-                        schema_no_retag = []
-                        async for schema in cast(
-                            AsyncIterable,
-                            self.combinator.combine(
-                                task_name, token, enable_retag=False
-                            ),
-                        ):
-                            schema_no_retag = schema.values()
-                        async for schema in self.combinator.combine(task_name, token):
-                            for port_name, token in schema.items():
-                                self.get_output_port(port_name).put(
-                                    await self._persist_token(
-                                        token=token,
-                                        port=self.get_output_port(port_name),
-                                        inputs=schema_no_retag,
-                                    )
-                                )
+                        await self._combine(task_name, token)
 
                     # Create a new task in place of the completed one if the port is not terminated
                     if task_name not in terminated:
@@ -1031,24 +1033,7 @@ class LoopCombinatorStep(CombinatorStep):
                                 token.tag
                             )
 
-                        schema_no_retag = []
-                        async for schema in cast(
-                            AsyncIterable,
-                            self.combinator.combine(
-                                task_name, token, enable_retag=False
-                            ),
-                        ):
-                            schema_no_retag = schema.values()
-                        async for schema in self.combinator.combine(task_name, token):
-                            for port_name, token in schema.items():
-                                self.get_output_port(port_name).put(
-                                    await self._persist_token(
-                                        token=token,
-                                        port=self.get_output_port(port_name),
-                                        inputs=schema_no_retag,
-                                    )
-                                )
-
+                        await self._combine(task_name, token)
                     # Create a new task in place of the completed one if the port is not terminated
                     if not (
                         task_name in terminated

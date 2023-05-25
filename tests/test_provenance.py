@@ -145,12 +145,13 @@ async def verify_dependency_tokens(
         {token.persistent_id: [t.persistent_id for t in dependee_list]},
     )
     assert len(dependee_list) == len(expected_dependee) or (
-        alternative_dependee_expered
+        alternative_dependee_expered is not None
         and len(dependee_list) == len(alternative_dependee_expered)
     )
     for t1 in dependee_list:
-        assert contains_id(t1.persistent_id, expected_dependee) or contains_id(
-            t1.persistent_id, alternative_dependee_expered
+        assert contains_id(t1.persistent_id, expected_dependee) or (
+            alternative_dependee_expered is not None
+            and contains_id(t1.persistent_id, alternative_dependee_expered)
         )
 
 
