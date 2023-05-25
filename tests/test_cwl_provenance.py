@@ -43,6 +43,7 @@ from tests.test_provenance import (
     _create_schedule_step,
     _general_test,
     _create_workflow,
+    _put_tokens,
 )
 
 
@@ -438,10 +439,16 @@ async def test_list_merge_combinator(context: StreamFlowContext):
     port_name = "test"
     step.add_input_port(port_name, in_port)
     step.add_output_port(port_name, out_port)
-    list_token = ListToken([Token("a"), Token("b")])
-    await list_token.save(context, in_port.persistent_id)
-    in_port.put(list_token)
-    in_port.put(TerminationToken())
+
+    list_token = [ListToken([Token("a"), Token("b")]), TerminationToken()]
+    await _put_tokens(list_token, in_port, context)
+    print(
+        "list_token.id",
+        list_token[0].persistent_id,
+        list_token[:-1],
+        [t.persistent_id for t in list_token[:-1]],
+    )
+
     step.combinator.add_item(port_name)
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
@@ -451,9 +458,9 @@ async def test_list_merge_combinator(context: StreamFlowContext):
         out_port.token_list[0],
         out_port,
         [],
-        [list_token],
+        list_token[:-1],
         context,
-        "combinator.",
+        "test_list_merge_combinator.",
     )
 
 
@@ -480,12 +487,9 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     transformer.add_loop_source_port(port_name, loop_port)
     transformer.add_output_port(port_name, out_port)
 
-    token = Token(10)
-    await token.save(context, in_port.persistent_id)
-    in_port.put(token)
-    in_port.put(TerminationToken())
-    loop_port.put(token)
-    loop_port.put(TerminationToken())
+    token_list = [Token(10)]
+    await _put_tokens(token_list, in_port, context)
+    await _put_tokens(token_list, loop_port, context)
 
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
@@ -494,7 +498,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         transformer.get_output_port(port_name).token_list[0],
         out_port,
         (),
-        [token],
+        token_list,
         context,
         "LoopValueFromTransformer.",
     )
@@ -513,11 +517,13 @@ async def test_cwl_loop_output_all_step(context: StreamFlowContext):
     port_name = "test"
     step.add_input_port(port_name, in_port)
     step.add_output_port(port_name, out_port)
-    list_token = ListToken([Token("a"), Token("b")], tag="0.1")
-    await list_token.save(context, in_port.persistent_id)
-    in_port.put(list_token)
-    in_port.put(IterationTerminationToken(list_token.tag))
-    in_port.put(TerminationToken())
+    tag = "0.1"
+    list_token = [
+        ListToken([Token("a"), Token("b")], tag=tag),
+        IterationTerminationToken(tag),
+    ]
+
+    await _put_tokens(list_token, in_port, context)
 
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
@@ -527,7 +533,7 @@ async def test_cwl_loop_output_all_step(context: StreamFlowContext):
         out_port.token_list[0],
         out_port,
         [],
-        [list_token],
+        [list_token[0]],
         context,
-        "combinator.",
+        "CWLLoopOutputAllStep.",
     )
