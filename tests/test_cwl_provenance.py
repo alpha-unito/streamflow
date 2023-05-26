@@ -52,7 +52,7 @@ async def test_default_transformer(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [Token("a")]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -62,12 +62,7 @@ async def test_default_transformer(context: StreamFlowContext):
         token_list,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -76,7 +71,7 @@ async def test_default_retag_transformer(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [Token("a")]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -86,12 +81,7 @@ async def test_default_retag_transformer(context: StreamFlowContext):
         token_list,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -102,7 +92,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
     port_name = "test"
     step_name = utils.random_name()
     token_list = [Token("a")]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -120,12 +110,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
         port_name,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -135,7 +120,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
     workflow, in_port, out_port = await _create_workflow(context)
     port_name = "test"
     token_list = [Token(10)]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -155,12 +140,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
         port_name,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -169,7 +149,7 @@ async def test_all_non_null_transformer(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [ListToken([Token("a"), Token(None), Token("b")])]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -181,12 +161,7 @@ async def test_all_non_null_transformer(context: StreamFlowContext):
         token_list,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -195,7 +170,7 @@ async def test_first_non_null_transformer(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [ListToken([Token(None), Token("a")])]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -207,12 +182,7 @@ async def test_first_non_null_transformer(context: StreamFlowContext):
         token_list,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -221,7 +191,7 @@ async def test_forward_transformer(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [ListToken([Token("a")])]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -233,12 +203,7 @@ async def test_forward_transformer(context: StreamFlowContext):
         token_list,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -247,7 +212,7 @@ async def test_list_to_element_transformer(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [ListToken([Token("a")])]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -259,12 +224,7 @@ async def test_list_to_element_transformer(context: StreamFlowContext):
         token_list,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -273,7 +233,7 @@ async def test_only_non_null_transformer(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [ListToken([Token(None), Token("a")])]
-    transformer = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -285,12 +245,7 @@ async def test_only_non_null_transformer(context: StreamFlowContext):
         token_list,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transformer.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -300,7 +255,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
     workflow, in_port, out_port = await _create_workflow(context)
     port_name = "test"
     token_list = [ListToken([Token("a")])]
-    conditional_step = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -315,12 +270,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
         port_name=port_name,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        conditional_step.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -349,12 +299,7 @@ async def test_transfer_step(context: StreamFlowContext):
     await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
     token_list.append(job_token)
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        transfer_step.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -381,12 +326,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
     await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
     token_list.append(job_token)
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        injector.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -410,12 +350,7 @@ async def test_empty_scatter_conditional_step(context: StreamFlowContext):
     for i in range(len(in_port.token_list) - 1):
         curr_token = out_port.token_list[i]
         await verify_dependency_tokens(
-            curr_token,
-            out_port,
-            (),
-            [in_port.token_list[i]],
-            context,
-            f"CWLEmptyScatterConditionalStep-out-{curr_token.persistent_id}",
+            curr_token, out_port, (), [in_port.token_list[i]], context
         )
 
 
@@ -455,12 +390,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
     await executor.run()
 
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        [],
-        list_token[:-1],
-        context,
-        "test_list_merge_combinator.",
+        out_port.token_list[0], out_port, [], list_token[:-1], context
     )
 
 
@@ -500,7 +430,6 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         (),
         token_list,
         context,
-        "LoopValueFromTransformer.",
     )
 
 
@@ -530,10 +459,5 @@ async def test_cwl_loop_output_all_step(context: StreamFlowContext):
     await executor.run()
 
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        [],
-        [list_token[0]],
-        context,
-        "CWLLoopOutputAllStep.",
+        out_port.token_list[0], out_port, [], [list_token[0]], context
     )

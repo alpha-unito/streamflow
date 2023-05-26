@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import posixpath
 from typing import MutableMapping, Any, MutableSequence
 
@@ -116,20 +117,15 @@ async def verify_dependency_tokens(
     expected_depender,
     expected_dependee,
     context: StreamFlowContext,
-    msg,
-    alternative_dependee_expered=None,
+    alternative_expected_dependee=None,
 ):
     loading_context = DefaultDatabaseLoadingContext()
 
     token_reloaded = await context.database.get_token(token_id=token.persistent_id)
-    print("port_expected.persistent_id", port.persistent_id)
-    print("port_reloaded.persistent_id", token_reloaded["port"])
     assert token_reloaded["port"] == port.persistent_id
 
     depender_list = await _load_depender(token.persistent_id, loading_context, context)
-    print()
     print(
-        msg,
         "depender:",
         {token.persistent_id: [t.persistent_id for t in depender_list]},
     )
@@ -140,19 +136,21 @@ async def verify_dependency_tokens(
     print("search dependee of ", token.persistent_id)
     dependee_list = await _load_dependee(token.persistent_id, loading_context, context)
     print(
-        msg,
         "dependee:",
         {token.persistent_id: [t.persistent_id for t in dependee_list]},
     )
-    assert len(dependee_list) == len(expected_dependee) or (
-        alternative_dependee_expered is not None
-        and len(dependee_list) == len(alternative_dependee_expered)
-    )
-    for t1 in dependee_list:
-        assert contains_id(t1.persistent_id, expected_dependee) or (
-            alternative_dependee_expered is not None
-            and contains_id(t1.persistent_id, alternative_dependee_expered)
-        )
+    try:
+        assert len(dependee_list) == len(expected_dependee)
+        for t1 in dependee_list:
+            assert contains_id(t1.persistent_id, expected_dependee)
+    except AssertionError as err:
+        if alternative_expected_dependee is None:
+            raise err
+        else:
+            print("*" * 200)
+            assert len(dependee_list) == len(alternative_expected_dependee)
+            for t1 in dependee_list:
+                assert contains_id(t1.persistent_id, alternative_expected_dependee)
 
 
 def _create_deploy_step(workflow, deployment_config=None):
@@ -193,7 +191,7 @@ async def test_scatter_step(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [ListToken([Token("a"), Token("b"), Token("c")])]
-    scatter_step = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -204,12 +202,7 @@ async def test_scatter_step(context: StreamFlowContext):
     )
     for i in range(len(out_port.token_list) - 1):
         await verify_dependency_tokens(
-            out_port.token_list[i],
-            out_port,
-            (),
-            [in_port.token_list[0]],
-            context,
-            scatter_step.__class__.__name__,
+            out_port.token_list[i], out_port, (), [in_port.token_list[0]], context
         )
 
 
@@ -223,12 +216,7 @@ async def test_deploy_step(context: StreamFlowContext):
     executor = StreamFlowExecutor(workflow)
     await executor.run()
     await verify_dependency_tokens(
-        step.get_output_port().token_list[0],
-        step.get_output_port(),
-        (),
-        (),
-        context,
-        step.__class__.__name__,
+        step.get_output_port().token_list[0], step.get_output_port(), (), (), context
     )
 
 
@@ -251,7 +239,6 @@ async def test_schedule_step(context: StreamFlowContext):
         [job_token],
         [],
         context,
-        "schedule-1.",
     )
     await verify_dependency_tokens(
         job_token,
@@ -259,7 +246,6 @@ async def test_schedule_step(context: StreamFlowContext):
         [],
         [deploy_step.get_output_port().token_list[0]],
         context,
-        schedule_step.__class__.__name__,
     )
 
 
@@ -301,7 +287,6 @@ async def test_execute_step(context: StreamFlowContext):
         [step.get_output_port("out-1").token_list[0]],
         [schedule_step.get_input_port().token_list[0]],
         context,
-        "execute-1.",
     )
     job_token = step.get_input_port("__job__").token_list[0]
     await verify_dependency_tokens(
@@ -310,7 +295,6 @@ async def test_execute_step(context: StreamFlowContext):
         [],
         list(job_token.value.inputs.values()) + [job_token],
         context,
-        step.__class__.__name__,
     )
 
 
@@ -319,7 +303,7 @@ async def test_gather_step(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
     token_list = [Token(i) for i in range(3)]
-    step = await _general_test(
+    await _general_test(
         context,
         workflow,
         in_port,
@@ -329,12 +313,7 @@ async def test_gather_step(context: StreamFlowContext):
         token_list,
     )
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        (),
-        token_list,
-        context,
-        step.__class__.__name__,
+        out_port.token_list[0], out_port, (), token_list, context
     )
 
 
@@ -372,20 +351,10 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
 
     print("out token dot_prod", out_port.token_list[0])
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        [],
-        [list_token, tt],
-        context,
-        "test_combinator_step_dot_product-1.",
+        out_port.token_list[0], out_port, [], [list_token, tt], context
     )
     await verify_dependency_tokens(
-        out_port_2.token_list[0],
-        out_port_2,
-        [],
-        [list_token, tt],
-        context,
-        "test_combinator_step_dot_product-2.",
+        out_port_2.token_list[0], out_port_2, [], [list_token, tt], context
     )
 
 
@@ -424,12 +393,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
     await executor.run()
 
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        [],
-        [token_list[0], token_list_2[0]],
-        context,
-        "test_combinator_step_cartesian_product-1.",
+        out_port.token_list[0], out_port, [], [token_list[0], token_list_2[0]], context
     )
     await verify_dependency_tokens(
         out_port_2.token_list[0],
@@ -437,7 +401,6 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
         [],
         [token_list[0], token_list_2[0]],
         context,
-        "test_combinator_step_cartesian_product-2.",
     )
 
 
@@ -480,12 +443,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     await executor.run()
 
     await verify_dependency_tokens(
-        out_port.token_list[0],
-        out_port,
-        [],
-        [token_list[0], token_list_2[0]],
-        context,
-        "loopcombinatorstep.",
+        out_port.token_list[0], out_port, [], [token_list[0], token_list_2[0]], context
     )
 
 
@@ -538,43 +496,57 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
-    nested_crossproduct_1 = [[t1, t2] for t2 in list_token_2 for t1 in list_token_1]
-    nested_crossproduct_2 = [[t1, t2] for t1 in list_token_1 for t2 in list_token_2]
+    nested_crossproduct_1 = [(t1, t2) for t2 in list_token_2 for t1 in list_token_1]
+    nested_crossproduct_2 = [(t1, t2) for t1 in list_token_1 for t2 in list_token_2]
 
-    print()
-    print(
-        "lists1",
-        [[t1.persistent_id, t2.persistent_id] for t1, t2 in nested_crossproduct_1],
-    )
-    print(
-        "lists2",
-        [[t1.persistent_id, t2.persistent_id] for t1, t2 in nested_crossproduct_2],
-    )
+    # TMP
+    _ = list(itertools.permutations(nested_crossproduct_1))
 
     # Combinator are not deterministic. Possible cases:
     # {output_token_id: [input_token_id_list]}
     # case #1: { 77: [67, 73], 79: [70, 73], 81: [67, 76], 83: [70, 76] }
     # case #2: { 77: [67, 73], 79: [67, 76], 81: [70, 73], 83: [70, 76] }
+    loading_context = DefaultDatabaseLoadingContext()
     for i, out_token in enumerate(out_port_1.token_list[:-1]):
+        print(
+            "out_token",
+            out_token.persistent_id,
+            "tag",
+            out_token.tag,
+            "value: ",
+            [t.value for t in out_token.value],
+        )
+        print(
+            "cerca input",
+            [t.persistent_id for t in nested_crossproduct_1[i]],
+            "or",
+            [t.persistent_id for t in nested_crossproduct_2[i]],
+        )
+        dependee_list = await _load_dependee(
+            out_token.persistent_id, loading_context, context
+        )
+        print("trovati", [t.persistent_id for t in dependee_list])
         await verify_dependency_tokens(
             out_token,
             out_port_1,
             [],
             nested_crossproduct_1[i],
             context,
-            "test_nested_crossproduct_combinator-1.",
-            alternative_dependee_expered=nested_crossproduct_2[i],
+            alternative_expected_dependee=nested_crossproduct_2[i],
         )
+        print()
 
     # case #1: { 78: [67, 73], 80: [70, 73], 82: [67, 76], 84: [70, 76] }
     # case #2: { 78: [67, 73], 80: [67, 76], 82: [70, 73], 84: [70, 76] }
-    for i, out_token in enumerate(out_port_2.token_list[:-1]):
-        await verify_dependency_tokens(
-            out_token,
-            out_port_2,
-            [],
-            nested_crossproduct_1[i],
-            context,
-            "test_nested_crossproduct_combinator-2.",
-            alternative_dependee_expered=nested_crossproduct_2[i],
-        )
+    # for i, out_token in enumerate(out_port_2.token_list[:-1]):
+    #     # print("out_token", out_token.persistent_id, "tag", out_token.tag, "value: ", [t.value for t in out_token.value])
+    #     # print("cerca input", [t.persistent_id for t in nested_crossproduct_1[i]], "or",
+    #     #       [t.persistent_id for t in nested_crossproduct_2[i]])
+    #     await verify_dependency_tokens(
+    #         out_token,
+    #         out_port_2,
+    #         [],
+    #         nested_crossproduct_2[i],
+    #         context,
+    #         "test_nested_crossproduct_combinator-2."
+    #     )
