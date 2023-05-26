@@ -17,7 +17,7 @@ def _add_to_list(
     token_values: MutableMapping[str, MutableMapping[str, MutableSequence[Any]]],
     port_name: str,
     depth: int = 0,
-    is_cartesian=False,
+    is_cartesian: bool = False,
 ):
     tag = (
         utils.get_tag(token.values())
@@ -98,8 +98,8 @@ class CartesianProductCombinator(Combinator):
                         schema = {**schema, **config[key]}
                     else:
                         schema[key] = config[key]
+                suffix = [t.tag.split(".")[-1] for t in schema.values()]
                 if enable_retag:
-                    suffix = [t.tag.split(".")[-1] for t in schema.values()]
                     schema = {
                         k: t.retag(".".join(t.tag.split(".")[:-1] + suffix))
                         for k, t in schema.items()
@@ -165,8 +165,8 @@ class DotProductCombinator(Combinator):
                             schema = {**schema, **element}
                         else:
                             schema[key] = element
+                    tag = utils.get_tag(schema.values())
                     if enable_retag:
-                        tag = utils.get_tag(schema.values())
                         schema = {k: t.retag(tag) for k, t in schema.items()}
                     yield schema
 
@@ -232,8 +232,5 @@ class LoopTerminationCombinator(DotProductCombinator):
 
     async def _product(self, enable_retag) -> AsyncIterable[MutableMapping[str, Token]]:
         async for schema in super()._product(enable_retag):
-            if enable_retag:
-                tag = utils.get_tag(schema.values())
-                yield {k: IterationTerminationToken(tag=tag) for k in self.output_items}
-            else:
-                yield schema
+            tag = utils.get_tag(schema.values())
+            yield {k: IterationTerminationToken(tag=tag) for k in self.output_items}
