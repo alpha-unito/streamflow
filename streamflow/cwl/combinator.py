@@ -61,7 +61,7 @@ class ListMergeCombinator(DotProductCombinator):
         }
 
     async def combine(
-        self, port_name: str, token: Token, trace_token_id=False
+        self, port_name: str, token: Token, trace_token_id: bool = False
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         if not isinstance(token, IterationTerminationToken):
             async for schema in super().combine(

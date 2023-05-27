@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+
 import asyncio
 import json
 import logging
 import posixpath
+from aiostream import stream
 from abc import ABC, abstractmethod
 from types import ModuleType
 from typing import (
@@ -213,7 +215,7 @@ class Combinator(ABC):
 
     @abstractmethod
     async def combine(
-        self, port_name: str, token: Token
+        self, port_name: str, token: Token, trace_token_id: bool = False
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         ...
 
@@ -279,16 +281,19 @@ class CombinatorStep(BaseStep):
         ):
             schema_input_tokens.append(schema_in.values())
         i = 0
-        async for schema in self.combinator.combine(task_name, token):
-            for port_name, token in schema.items():
-                self.get_output_port(port_name).put(
-                    await self._persist_token(
-                        token=token,
-                        port=self.get_output_port(port_name),
-                        inputs=schema_input_tokens[i],
+
+        async with stream.enumerate(
+            self.combinator.combine(task_name, token)
+        ).stream() as streamer:
+            async for i, schema in streamer:
+                for port_name, token in schema.items():
+                    self.get_output_port(port_name).put(
+                        await self._persist_token(
+                            token=token,
+                            port=self.get_output_port(port_name),
+                            inputs=schema_input_tokens[i],
+                        )
                     )
-                )
-            i += 1
 
     async def run(self):
         # Set default status to SKIPPED
