@@ -263,13 +263,19 @@ class CombinatorStep(BaseStep):
 
     async def _combine(self, task_name, token):
         schema_no_retag = []
-        async for schema in cast(
+        j = 0
+        # print("token.id", token.persistent_id, token.value if not isinstance(token, ListToken) else [t.value for t in token.value])
+        async for schema_in in cast(
             AsyncIterable,
             self.combinator.combine(task_name, token, enable_retag=False),
-        ):
-            schema_no_retag.append(schema.values())
+        ): # todo: cambiare enable_retag in trace_token_id
+            # print(f"old_schema[{j}]", [t.persistent_id for t in schema_in.values()])
+            schema_no_retag.append(schema_in.values())
+            j += 1
         i = 0
         async for schema in self.combinator.combine(task_name, token):
+            str_tok =  [[tr.value for tr in t.value] if isinstance(t, ListToken) else t.value for t in schema.values()]
+            # print(f"new_schema[{i}]", str_tok)
             for port_name, token in schema.items():
                 self.get_output_port(port_name).put(
                     await self._persist_token(

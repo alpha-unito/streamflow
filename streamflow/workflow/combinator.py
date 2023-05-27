@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections import deque
 from typing import Any, AsyncIterable, MutableMapping, MutableSequence, cast
 
@@ -84,14 +85,19 @@ class CartesianProductCombinator(Combinator):
         # Get all combinations of the new element with the others
         tag = ".".join(token.tag.split(".")[: -self.depth])
         if len(self.token_values[tag]) == len(self.items):
+            a = self.token_values[tag].items()
             cartesian_product = utils.dict_product(
                 **{
                     k: [token] if k == port_name else v
-                    for k, v in self.token_values[tag].items()
+                    for k, v in a
                 }
             )
+            # print("len(token)", len(a))
             # Return all combination schemas
+            i = 0
             for config in cartesian_product:
+                # print("config", i)
+                i += 1
                 schema = {}
                 for key in self.items:
                     if key in self.combinators:
@@ -102,6 +108,11 @@ class CartesianProductCombinator(Combinator):
                 if enable_retag:
                     schema = {
                         k: t.retag(".".join(t.tag.split(".")[:-1] + suffix))
+                        for k, t in schema.items()
+                    }
+                else:
+                    schema = {
+                        k: t.fake_retag(".".join(t.tag.split(".")[:-1] + suffix))
                         for k, t in schema.items()
                     }
                 yield schema
@@ -154,12 +165,19 @@ class DotProductCombinator(Combinator):
     async def _product(self, enable_retag):
         # Check if some complete input sets are available
         for tag in list(self.token_values):
+            # print("tag", tag)
             if len(self.token_values[tag]) == len(self.items):
-                num_items = min(len(i) for i in self.token_values[tag].values())
+                # l = [len(i) for i in self.token_values[tag].values() if len(i) > 0]
+                # if not l:
+                #     continue
+                l = [len(i) for i in self.token_values[tag].values()]
+                num_items = min(l)
+                # print("num_items", num_items)
                 for _ in range(num_items):
                     # Return the relative combination schema
                     schema = {}
                     for key, elements in self.token_values[tag].items():
+                        # print("len(self.token_values[tag])", len(self.token_values[tag]))
                         element = elements.pop()
                         if key in self.combinators:
                             schema = {**schema, **element}
@@ -168,6 +186,8 @@ class DotProductCombinator(Combinator):
                     tag = utils.get_tag(schema.values())
                     if enable_retag:
                         schema = {k: t.retag(tag) for k, t in schema.items()}
+                    else:
+                        schema = {k: t.fake_retag(tag) for k, t in schema.items()}
                     yield schema
 
     async def combine(

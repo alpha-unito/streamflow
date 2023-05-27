@@ -147,7 +147,6 @@ async def verify_dependency_tokens(
         if alternative_expected_dependee is None:
             raise err
         else:
-            print("*" * 200)
             assert len(dependee_list) == len(alternative_expected_dependee)
             for t1 in dependee_list:
                 assert contains_id(t1.persistent_id, alternative_expected_dependee)

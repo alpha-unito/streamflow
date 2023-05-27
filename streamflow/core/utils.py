@@ -95,6 +95,7 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
     vals = kwargs.values()
     for instance in itertools.product(*vals):
         yield dict(zip(keys, list(instance)))
+        # yield dict(sorted(zip(keys, list(instance)), key=lambda tup: tup[0]))
 
 
 def encode_command(command: str, shell: str = "sh"):
