@@ -1,5 +1,4 @@
 import asyncio
-import itertools
 import posixpath
 from typing import MutableMapping, Any, MutableSequence
 
@@ -11,6 +10,7 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.workflow.combinator import (
     DotProductCombinator,
     CartesianProductCombinator,
+    LoopCombinator,
 )
 from streamflow.workflow.executor import StreamFlowExecutor
 from tests.conftest import get_docker_deployment_config
@@ -414,7 +414,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     step = workflow.create_step(
         cls=LoopCombinatorStep,
         name=name + "-combinator",
-        combinator=CartesianProductCombinator(name=name, workflow=workflow, depth=1),
+        combinator=LoopCombinator(name=name, workflow=workflow),
     )
     port_name = "test"
     step.add_input_port(port_name, in_port)
@@ -498,33 +498,41 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
     nested_crossproduct_1 = [(t1, t2) for t2 in list_token_2 for t1 in list_token_1]
     nested_crossproduct_2 = [(t1, t2) for t1 in list_token_1 for t2 in list_token_2]
 
-    # TMP
-    _ = list(itertools.permutations(nested_crossproduct_1))
+    # The tokens id produced by combinators depend on the order of input tokens.
+    # The use of the alternative_expected_dependee parameter is necessary
+    # For example:
+    # input port_1 token: (id, tag, value)
+    #   (  3, 0.0, ['a', 'b'] )
+    #   (  6, 0.1, ['c', 'd'] )
+    # input port_2 token: (id, tag, value)
+    #   (  9, 0.0, ['1', '2'] )
+    #   ( 12, 0.1, ['3', '4'] )
 
-    # Combinator are not deterministic. Possible cases:
-    # {output_token_id: [input_token_id_list]}
-    # case #1: { 77: [67, 73], 79: [70, 73], 81: [67, 76], 83: [70, 76] }
-    # case #2: { 77: [67, 73], 79: [67, 76], 81: [70, 73], 83: [70, 76] }
-    loading_context = DefaultDatabaseLoadingContext()
+    # output port_1 token: (id, tag, value)
+    #   ( 13, 0.0.0, ['a', 'b'] )
+    #   ( 15, 0.1.0, ['c', 'd'] )
+    #   ( 17, 0.0.1, ['a', 'b'] )
+    #   ( 19, 0.1.1, ['c', 'd'] )
+    # output port_2 token: (id, tag, value)
+    #   ( 14, 0.0.0, ['1', '2'] )
+    #   ( 16, 0.0.1, ['3', '4'] )
+    #   ( 18, 0.1.0, ['1', '2'] )
+    #   ( 20, 0.1.1, ['3', '4'] )
+
+    # case #1: port_1 input tokens arrive first
+    #   - port_1: { output token id : input token id list }
+    #       { 13 : [3, 9], 15 : [3, 12], 17 : [6, 9], 19 : [6, 12] }
+    #   - port_2: { output token id : input token id list }
+    #       { 14 : [3, 9], 16 : [3, 12], 18 : [6, 9], 20 : [6, 12] }
+
+    # case #2: port_2 input tokens arrive first
+    #   - port_1: { output token id : input token id list }
+    #       { 13 : [3, 9], 15 : [6, 9], 17 : [3, 12], 19 : [6, 12] }
+    #   - port_2: { output token id : input token id list }
+    #       { 14 : [3, 9], 16 : [6, 9], 18 : [3, 12], 20 : [6, 12] }
+
+    # check port_1 outputs
     for i, out_token in enumerate(out_port_1.token_list[:-1]):
-        print(
-            "out_token",
-            out_token.persistent_id,
-            "tag",
-            out_token.tag,
-            "value: ",
-            [t.value for t in out_token.value],
-        )
-        print(
-            "cerca input",
-            [t.persistent_id for t in nested_crossproduct_1[i]],
-            "or",
-            [t.persistent_id for t in nested_crossproduct_2[i]],
-        )
-        dependee_list = await _load_dependee(
-            out_token.persistent_id, loading_context, context
-        )
-        print("trovati", [t.persistent_id for t in dependee_list])
         await verify_dependency_tokens(
             out_token,
             out_port_1,
@@ -533,19 +541,14 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
             context,
             alternative_expected_dependee=nested_crossproduct_2[i],
         )
-        print()
 
-    # case #1: { 78: [67, 73], 80: [70, 73], 82: [67, 76], 84: [70, 76] }
-    # case #2: { 78: [67, 73], 80: [67, 76], 82: [70, 73], 84: [70, 76] }
-    # for i, out_token in enumerate(out_port_2.token_list[:-1]):
-    #     # print("out_token", out_token.persistent_id, "tag", out_token.tag, "value: ", [t.value for t in out_token.value])
-    #     # print("cerca input", [t.persistent_id for t in nested_crossproduct_1[i]], "or",
-    #     #       [t.persistent_id for t in nested_crossproduct_2[i]])
-    #     await verify_dependency_tokens(
-    #         out_token,
-    #         out_port_2,
-    #         [],
-    #         nested_crossproduct_2[i],
-    #         context,
-    #         "test_nested_crossproduct_combinator-2."
-    #     )
+    # check port_2 outputs
+    for i, out_token in enumerate(out_port_2.token_list[:-1]):
+        await verify_dependency_tokens(
+            out_token,
+            out_port_2,
+            [],
+            nested_crossproduct_1[i],
+            context,
+            alternative_expected_dependee=nested_crossproduct_2[i],
+        )

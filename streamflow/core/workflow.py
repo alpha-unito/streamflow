@@ -557,8 +557,11 @@ class Token(PersistableEntity):
         else:
             return True
 
-    def retag(self, tag: str) -> Token:
-        return self.__class__(tag=tag, value=self.value)
+    def retag(self, tag: str, keep_persistent_id: bool = False) -> Token:
+        token = self.__class__(tag=tag, value=self.value)
+        if keep_persistent_id:
+            token.persistent_id = self.persistent_id
+        return token
 
     def renew(self) -> Token:
         return self.__class__(tag=self.tag, value=self.value)
