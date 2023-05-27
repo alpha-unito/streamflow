@@ -346,7 +346,7 @@ class CWLTokenProcessor(TokenProcessor):
                     check_file=True,
                 )
         # Return the token
-        return token
+        return token.renew()
 
 
 class CWLCommandOutputProcessor(CommandOutputProcessor):
@@ -815,7 +815,7 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
             token = await self.processor.process(job, command_output, connector)
         if not isinstance(token, ListToken):
             token = ListToken(value=[token], tag=token.tag)
-        return token.update(token.value)
+        return token.update(token.value)  # token.renew()
 
     async def _save_additional_params(self, context: StreamFlowContext):
         return {

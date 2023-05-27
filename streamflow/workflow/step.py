@@ -111,14 +111,24 @@ class BaseStep(Step, ABC):
     async def _persist_token(
         self, token: Token, port: Port, inputs: Iterable[Token]
     ) -> Token:
-        # todo: sia CombinatorStep che ForwardTransformer salvano itt
+        # todo: CombinatorStep and ForwardTransformer generate IterationTerminationToken.
+        #       Save it in provenance?
         if isinstance(token, IterationTerminationToken):
             return token
+        if token.persistent_id:
+            raise WorkflowDefinitionException(
+                f"Token already has an id {token.persistent_id}"
+            )
         await token.save(self.workflow.context, port_id=port.persistent_id)
-        # if the token is among its inputs, don't save the dependency
-        if inputs and not [i for i in inputs if i.persistent_id == token.persistent_id]:
+        if inputs and (
+            ins := [
+                i.persistent_id
+                for i in inputs
+                if i.persistent_id and i.persistent_id != token.persistent_id
+            ]
+        ):
             await self.workflow.context.database.add_provenance(
-                inputs=[i.persistent_id for i in inputs], token=token.persistent_id
+                inputs=ins, token=token.persistent_id
             )
         return token
 
@@ -1558,7 +1568,7 @@ class Transformer(BaseStep, ABC):
                                 ).items():
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
-                                            token=token.renew(),
+                                            token=token,
                                             port=self.get_output_port(port_name),
                                             inputs=inputs.values(),
                                         )
@@ -1567,7 +1577,7 @@ class Transformer(BaseStep, ABC):
                 for port_name, token in (await self.transform({})).items():
                     self.get_output_port(port_name).put(
                         await self._persist_token(
-                            token=token.renew(),
+                            token=token,
                             port=self.get_output_port(port_name),
                             inputs=[],
                         )
