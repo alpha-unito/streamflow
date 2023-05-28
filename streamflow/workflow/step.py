@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import asyncio
 import json
 import logging
@@ -714,7 +713,6 @@ class ExecuteStep(BaseStep):
     async def run(self) -> None:
         jobs = []
         # If there are input connector ports, retrieve connectors
-
         connector_ports = {
             k: self.get_input_port(v)
             for k, v in self.output_connectors.items()

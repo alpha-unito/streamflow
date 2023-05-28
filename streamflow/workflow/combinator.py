@@ -156,7 +156,9 @@ class DotProductCombinator(Combinator):
             str, MutableMapping[str, MutableSequence[Any]]
         ] = {}
 
-    async def _product(self, trace_token_id):
+    async def _product(
+        self, trace_token_id
+    ) -> AsyncIterable[MutableMapping[str, Token]]:
         # Check if some complete input sets are available
         for tag in list(self.token_values):
             if len(self.token_values[tag]) == len(self.items):
@@ -216,6 +218,7 @@ class LoopCombinator(DotProductCombinator):
             tag = utils.get_tag(schema.values())
             prefix = ".".join(tag.split(".")[:-1])
             if prefix not in self.iteration_map:
+                # It is necessary first execute with trace_token_id = True, then with trace_token_id = False
                 if not trace_token_id:
                     self.iteration_map[tag] = 0
                 tag = ".".join(tag.split(".") + ["0"])

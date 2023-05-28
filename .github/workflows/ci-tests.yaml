@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - test/provenance
   pull_request:
     branches:
       - master
