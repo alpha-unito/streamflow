@@ -185,7 +185,7 @@ class ListToElementTransformer(OneToOneTransformer):
             return token.update(self._transform(token.value))
         else:
             raise WorkflowDefinitionException(
-                f"Invalid input: Token required, but received {type(token)}"
+                f"Invalid token value: Token required, but received {type(token.value)}"
             )
 
     async def transform(

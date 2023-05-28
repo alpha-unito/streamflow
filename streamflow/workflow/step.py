@@ -112,6 +112,14 @@ class BaseStep(Step, ABC):
             )
         await token.save(self.workflow.context, port_id=port.persistent_id)
         if inputs:
+            if [
+                i.persistent_id
+                for i in inputs
+                if not i.persistent_id or i.persistent_id == token.persistent_id
+            ]:
+                raise WorkflowDefinitionException(
+                    "Invalid input tokens for provenance."
+                )
             await self.workflow.context.database.add_provenance(
                 inputs=[i.persistent_id for i in inputs], token=token.persistent_id
             )
