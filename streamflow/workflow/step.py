@@ -5,7 +5,6 @@ import asyncio
 import json
 import logging
 import posixpath
-from aiostream import stream
 from abc import ABC, abstractmethod
 from types import ModuleType
 from typing import (
@@ -281,19 +280,16 @@ class CombinatorStep(BaseStep):
         ):
             schema_input_tokens.append(schema_in.values())
         i = 0
-
-        async with stream.enumerate(
-            self.combinator.combine(task_name, token)
-        ).stream() as streamer:
-            async for i, schema in streamer:
-                for port_name, token in schema.items():
-                    self.get_output_port(port_name).put(
-                        await self._persist_token(
-                            token=token,
-                            port=self.get_output_port(port_name),
-                            inputs=schema_input_tokens[i],
-                        )
+        async for schema in self.combinator.combine(task_name, token):
+            for port_name, token in schema.items():
+                self.get_output_port(port_name).put(
+                    await self._persist_token(
+                        token=token,
+                        port=self.get_output_port(port_name),
+                        inputs=schema_input_tokens[i],
                     )
+                )
+            i += 1
 
     async def run(self):
         # Set default status to SKIPPED
