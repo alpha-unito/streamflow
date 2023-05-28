@@ -563,9 +563,6 @@ class Token(PersistableEntity):
             token.persistent_id = self.persistent_id
         return token
 
-    def renew(self) -> Token:
-        return self.__class__(tag=self.tag, value=self.value)
-
     async def save(self, context: StreamFlowContext, port_id: int | None = None):
         async with self.persistence_lock:
             if not self.persistent_id:

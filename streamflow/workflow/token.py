@@ -23,9 +23,6 @@ class IterationTerminationToken(Token):
     def retag(self, tag: str, keep_persistent_id: bool = False) -> Token:
         raise NotImplementedError
 
-    def renew(self) -> Token:
-        raise NotImplementedError
-
     @classmethod
     async def _load(
         cls,
@@ -163,9 +160,6 @@ class TerminationToken(Token):
         raise NotImplementedError
 
     def retag(self, tag: str, keep_persistent_id: bool = False) -> Token:
-        raise NotImplementedError
-
-    def renew(self) -> Token:
         raise NotImplementedError
 
     @classmethod

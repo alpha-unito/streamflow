@@ -77,7 +77,7 @@ class DefaultTransformer(ManyToOneTransformer):
             )
         primary_token = next(iter(inputs[k] for k in inputs))
         if get_token_value(primary_token) is not None:
-            return {self.get_output_name(): primary_token.renew()}
+            return {self.get_output_name(): primary_token.update(primary_token.value)}
         else:
             if not self.default_token:
                 self.default_token = (
@@ -153,7 +153,7 @@ class FirstNonNullTransformer(OneToOneTransformer):
         if isinstance(token, ListToken):
             for t in token.value:
                 if get_token_value(t) is not None:
-                    return t.renew()
+                    return t.update(t.value)
             raise WorkflowExecutionException(f"All sources are null in token {name}")
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
@@ -170,14 +170,15 @@ class ForwardTransformer(OneToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
-        return {self.get_output_name(): next(iter(inputs.values())).renew()}
+        token = next(iter(inputs.values()))
+        return {self.get_output_name(): token.update(token.value)}
 
 
 class ListToElementTransformer(OneToOneTransformer):
     def _transform(self, token: Token) -> Token:
         if isinstance(token, ListToken):
             if len(token.value) == 1:
-                return token.value[0].renew()
+                return token.value[0].update(token.value[0].value)
             else:
                 return token.update(token.value)
         elif isinstance(token.value, Token):
@@ -208,7 +209,7 @@ class OnlyNonNullTransformer(OneToOneTransformer):
                 raise WorkflowExecutionException(
                     f"All sources are null in token {name}"
                 )
-            return ret.renew() if isinstance(ret, Token) else ret
+            return ret.update(ret.value) if isinstance(ret, Token) else ret
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
         else:

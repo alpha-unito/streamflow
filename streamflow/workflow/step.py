@@ -1561,7 +1561,7 @@ class Transformer(BaseStep, ABC):
                                 for port_name, token in inputs.items():
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
-                                            token=token.renew(),
+                                            token=token.update(token.value),
                                             port=self.get_output_port(port_name),
                                             inputs=inputs.values(),
                                         )

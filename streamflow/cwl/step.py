@@ -101,7 +101,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         for port_name, port in self.get_output_ports().items():
             port.put(
                 await self._persist_token(
-                    token=inputs[port_name].renew(),
+                    token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
                     inputs=inputs.values(),
                 )
@@ -213,7 +213,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         for port_name, port in self.get_output_ports().items():
             port.put(
                 await self._persist_token(
-                    token=inputs[port_name].renew(),
+                    token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
                     inputs=inputs.values(),
                 )
