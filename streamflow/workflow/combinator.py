@@ -216,10 +216,12 @@ class LoopCombinator(DotProductCombinator):
             tag = utils.get_tag(schema.values())
             prefix = ".".join(tag.split(".")[:-1])
             if prefix not in self.iteration_map:
-                self.iteration_map[tag] = 0
+                if not trace_token_id:
+                    self.iteration_map[tag] = 0
                 tag = ".".join(tag.split(".") + ["0"])
             else:
-                self.iteration_map[prefix] += 1
+                if not trace_token_id:
+                    self.iteration_map[prefix] += 1
                 tag = ".".join(tag.split(".")[:-1] + [str(self.iteration_map[prefix])])
             schema = {
                 k: t.retag(tag, keep_persistent_id=trace_token_id)
@@ -247,7 +249,7 @@ class LoopTerminationCombinator(DotProductCombinator):
             if trace_token_id:
                 yield {
                     k: t.retag(tag=tag, keep_persistent_id=trace_token_id)
-                    for k, t in schema.values()
+                    for k, t in schema.items()
                 }
             else:
                 yield {k: IterationTerminationToken(tag=tag) for k in self.output_items}

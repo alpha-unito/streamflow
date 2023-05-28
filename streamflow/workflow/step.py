@@ -41,12 +41,7 @@ from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.token import (
-    JobToken,
-    ListToken,
-    TerminationToken,
-    IterationTerminationToken,
-)
+from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
     check_termination,
@@ -112,10 +107,6 @@ class BaseStep(Step, ABC):
     async def _persist_token(
         self, token: Token, port: Port, inputs: Iterable[Token]
     ) -> Token:
-        # todo: CombinatorStep and ForwardTransformer generate IterationTerminationToken.
-        #       Save it in provenance?
-        if isinstance(token, IterationTerminationToken):
-            return token
         if token.persistent_id:
             raise WorkflowDefinitionException(
                 f"Token already has an id {token.persistent_id}"

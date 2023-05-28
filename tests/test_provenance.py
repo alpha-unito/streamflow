@@ -11,6 +11,7 @@ from streamflow.workflow.combinator import (
     DotProductCombinator,
     CartesianProductCombinator,
     LoopCombinator,
+    LoopTerminationCombinator,
 )
 from streamflow.workflow.executor import StreamFlowExecutor
 from tests.conftest import get_docker_deployment_config
@@ -409,7 +410,6 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     workflow, in_port, out_port, in_port_2, out_port_2 = await _create_workflow(
         context, num_port=4
     )
-    await workflow.save(context)
     name = utils.random_name()
     step = workflow.create_step(
         cls=LoopCombinatorStep,
@@ -444,6 +444,39 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     await verify_dependency_tokens(
         out_port.token_list[0], out_port, [], [token_list[0], token_list_2[0]], context
     )
+
+
+@pytest.mark.asyncio
+async def test_loop_termination_combinator(context: StreamFlowContext):
+    """ """
+    workflow, in_port, out_port = await _create_workflow(context, num_port=2)
+    step_name = utils.random_name()
+    loop_terminator_combinator = LoopTerminationCombinator(
+        workflow=workflow, name=step_name + "-loop-termination-combinator"
+    )
+    loop_terminator_step = workflow.create_step(
+        cls=CombinatorStep,
+        name=step_name + "-loop-terminator",
+        combinator=loop_terminator_combinator,
+    )
+    port_name = "test"
+    loop_terminator_step.add_input_port(port_name, in_port)
+    loop_terminator_step.add_output_port(port_name, out_port)
+    loop_terminator_combinator.add_output_item(port_name)
+    loop_terminator_combinator.add_item(port_name)
+
+    list_token = [
+        ListToken([Token("a"), Token("b")], tag="0.0"),
+        ListToken([Token("c"), Token("d")], tag="0.1"),
+    ]
+    await _put_tokens(list_token, in_port, context)
+
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+
+    for out_token, in_token in zip(out_port.token_list[:-1], list_token):
+        await verify_dependency_tokens(out_token, out_port, [], [in_token], context)
 
 
 @pytest.mark.asyncio
