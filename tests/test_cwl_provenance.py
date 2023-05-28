@@ -377,12 +377,6 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 
     list_token = [ListToken([Token("a"), Token("b")]), TerminationToken()]
     await _put_tokens(list_token, in_port, context)
-    print(
-        "list_token.id",
-        list_token[0].persistent_id,
-        list_token[:-1],
-        [t.persistent_id for t in list_token[:-1]],
-    )
 
     step.combinator.add_item(port_name)
     await workflow.save(context)

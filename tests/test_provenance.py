@@ -111,7 +111,6 @@ def contains_id(id, token_list):
     return False
 
 
-# todo: remove msg param ... used only for debugging
 async def verify_dependency_tokens(
     token,
     port,
@@ -134,7 +133,6 @@ async def verify_dependency_tokens(
     for t1 in depender_list:
         assert contains_id(t1.persistent_id, expected_depender)
 
-    print("search dependee of ", token.persistent_id)
     dependee_list = await _load_dependee(token.persistent_id, loading_context, context)
     print(
         "dependee:",
@@ -349,7 +347,6 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
-    print("out token dot_prod", out_port.token_list[0])
     await verify_dependency_tokens(
         out_port.token_list[0], out_port, [], [list_token, tt], context
     )
