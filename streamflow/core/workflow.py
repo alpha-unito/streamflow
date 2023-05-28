@@ -525,6 +525,8 @@ class Token(PersistableEntity):
         return cls(tag=row["tag"], value=value)
 
     async def _save_value(self, context: StreamFlowContext):
+        if isinstance(self.value, Token) and not self.value.persistent_id:
+            await self.value.save(context)
         return (
             {"token": self.value.persistent_id}
             if isinstance(self.value, Token)
