@@ -14,6 +14,7 @@ from ruamel.yaml import YAML
 from streamflow.core import utils
 from streamflow.core.deployment import Location
 from streamflow.core.scheduling import AvailableLocation
+from streamflow.core.utils import get_option
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.log_handler import logger
 
@@ -274,18 +275,19 @@ class OccamConnector(SSHConnector):
     async def _deploy_node(
         self, name: str, service: MutableMapping[str, Any], node: str
     ):
-        deploy_command = "".join(
-            [
-                (f"cd {service.get('workdir')} && " if "workdir" in service else ""),
-                "occam-run ",
-                self.get_option("x", service.get("x11")),
-                self.get_option("n", node),
-                self.get_option("i", service.get("stdin")),
-                self.get_option("c", service.get("jobidFile")),
-                self.get_option("s", service.get("shmSize")),
-                self.get_option("v", service.get("volumes")),
-                f"{service['image']} " " ".join(service.get("command", "")),
-            ]
+        deploy_command = (
+            f"cd {service.get('workdir')} && "
+            if "workdir" in service
+            else ""
+            f"occam-run "
+            f"{get_option('x', service.get('x11'))}"
+            f"{get_option('n', node)}"
+            f"{get_option('i', service.get('stdin'))}"
+            f"{get_option('c', service.get('jobidFile'))}"
+            f"{get_option('s', service.get('shmSize'))}"
+            f"{get_option('v', service.get('volumes'))}"
+            f"{service['image']} "
+            f"{' '.join(service.get('command', ''))}"
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"EXECUTING {deploy_command}")

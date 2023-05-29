@@ -1,0 +1,162 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "flux.json",
+  "type": "object",
+  "definitions": {
+    "service": {
+      "$id": "#/definitions/service",
+      "type": "object",
+      "title": "FluxService",
+      "description": "This complex type represents a submission to the Flux queue manager.",
+      "properties": {
+        "beginTime": {
+          "type": "string",
+          "description": "Convenience option for setting a ``begin-time`` dependency for a job. The job is guaranteed to start after the specified date and time"
+        },
+        "brokerOpts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "For batch jobs, pass specified options to the Flux brokers of the new instance"
+        },
+        "cores": {
+          "type": "integer",
+          "description": "Set the total number of cores"
+        },
+        "coresPerSlot": {
+          "type": "integer",
+          "description": "Set the number of cores to assign to each slot"
+        },
+        "coresPerTask": {
+          "type": "integer",
+          "description": "Set the number of cores to assign to each task"
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Control how environment variables are exported"
+        },
+        "envFile": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Read a set of environment rules from a file"
+        },
+        "envRemove": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Remove all environment variables matching the pattern from the current generated environment"
+        },
+        "exclusive": {
+          "type": "boolean",
+          "description": "Indicate to the scheduler that nodes should be exclusively allocated to this job"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+        },
+        "flags": {
+          "type": "string",
+          "description": "Set comma separated list of job submission flags"
+        },
+        "gpusPerNode": {
+          "type": "integer",
+          "description": "Request a specific number of GPUs per node"
+        },
+        "gpusPerSlot": {
+          "type": "integer",
+          "description": "Set the number of GPU devices to assign to each slot"
+        },
+        "gpusPerTask": {
+          "type": "integer",
+          "description": "Set the number of GPU devices to assign to each task"
+        },
+        "jobName": {
+          "type": "string",
+          "description": "Set an alternate job name for the job"
+        },
+        "labelIO": {
+          "type": "boolean",
+          "description": "Add task rank prefixes to each line of output"
+        },
+        "nodes": {
+          "type": "integer",
+          "description": "Set the number of nodes to assign to the job"
+        },
+        "nslots": {
+          "type": "integer",
+          "description": "Set the number of slots requested"
+        },
+        "ntasks": {
+          "type": "integer",
+          "description": "Set the number of tasks to launch"
+        },
+        "queue": {
+          "type": "string",
+          "description": "Submit a job to a specific named queue"
+        },
+        "requires": {
+          "type": "string",
+          "description": "Specify a set of allowable properties and other attributes to consider when matching resources for a job"
+        },
+        "rlimit": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Control how process resource limits are propagated"
+        },
+        "setattr": {
+          "type": "object",
+          "description": "Set jobspec attribute. Keys may include periods to denote hierarchy"
+        },
+        "setopt": {
+          "type": "object",
+          "description": "Set shell option. Keys may include periods to denote hierarchy"
+        },
+        "taskmap": {
+          "type": "string",
+          "description": "Choose an alternate method for mapping job task IDs to nodes of the job"
+        },
+        "tasksPerCore": {
+          "type": "integer",
+          "description": "Force a number of tasks per core"
+        },
+        "tasksPerNode": {
+          "type": "integer",
+          "description": "Set the number of tasks per node to run"
+        },
+        "unbuffered": {
+          "type": "boolean",
+          "description": "Disable buffering of standard input and output as much as practical"
+        },
+        "urgency": {
+          "type": "integer",
+          "description": "Specify job urgency, which affects queue order. Numerically higher urgency jobs are considered by the scheduler first"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "queue_manager.json"
+    }
+  ],
+  "properties": {
+    "services": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "$ref": "#/definitions/service"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

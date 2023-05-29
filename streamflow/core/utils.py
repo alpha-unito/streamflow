@@ -159,6 +159,24 @@ async def get_local_to_remote_destination(
         return dst
 
 
+def get_option(
+    name: str,
+    value: Any,
+) -> str:
+    if len(name) > 1:
+        name = f"-{name} "
+    if isinstance(value, bool):
+        return f"-{name} " if value else ""
+    elif isinstance(value, str) or isinstance(value, int):
+        return f'-{name} "{value}" '
+    elif isinstance(value, MutableSequence):
+        return "".join([f'-{name} "{item}" ' for item in value])
+    elif value is None:
+        return ""
+    else:
+        raise TypeError("Unsupported value type")
+
+
 async def get_remote_to_remote_write_command(
     src_connector: Connector,
     src_location: Location,

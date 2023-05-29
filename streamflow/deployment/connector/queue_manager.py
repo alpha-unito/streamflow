@@ -8,7 +8,7 @@ import os
 import shlex
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, MutableMapping, MutableSequence
+from typing import Any, MutableMapping, MutableSequence, cast
 
 import cachetools
 import pkg_resources
@@ -21,10 +21,296 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.scheduling import AvailableLocation
+from streamflow.core.utils import get_option
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
+
+
+class QueueManagerService:
+    def __init__(self, file: str | None = None):
+        self.file: str | None = file
+
+
+class SlurmService(QueueManagerService):
+    def __init__(
+        self,
+        file: str | None = None,
+        account: str | None = None,
+        acctgFreq: str | None = None,
+        array: str | None = None,
+        batch: str | None = None,
+        bb: str | None = None,
+        bbf: str | None = None,
+        begin: str | None = None,
+        clusterConstraint: str | None = None,
+        clusters: str | None = None,
+        constraint: str | None = None,
+        container: str | None = None,
+        containerId: str | None = None,
+        contiguous: bool = False,
+        coreSpec: int | None = None,
+        coresPerSocket: int | None = None,
+        cpuFreq: str | None = None,
+        cpusPerGpu: int | None = None,
+        cpusPerTask: int | None = None,
+        deadline: str | None = None,
+        delayBoot: str | None = None,
+        exclude: str | None = None,
+        exclusive: bool | str = False,
+        export: str | None = None,
+        exportFile: int | str | None = None,
+        extraNodeInfo: str | None = None,
+        getUserEnv: bool | str = False,
+        gid: int | str | None = None,
+        gpuBind: str | None = None,
+        gpuFreq: str | None = None,
+        gpus: str | None = None,
+        gpusPerNode: str | None = None,
+        gpusPerSocket: str | None = None,
+        gpusPerTask: str | None = None,
+        gres: str | None = None,
+        gresFlags: str | None = None,
+        hint: str | None = None,
+        ignorePBS: bool = False,
+        jobName: str | None = None,
+        licenses: str | None = None,
+        mailType: str | None = None,
+        mailUser: str | None = None,
+        mcsLabel: str | None = None,
+        mem: str | None = None,
+        memBind: str | None = None,
+        memPerCpu: str | None = None,
+        memPerGpu: str | None = None,
+        mincpus: int | None = None,
+        network: str | None = None,
+        nice: int | None = None,
+        noKill: bool = False,
+        noRequeue: bool = False,
+        nodefile: str | None = None,
+        nodelist: str | None = None,
+        nodes: str | None = None,
+        ntasks: int | None = None,
+        ntasksPerCore: int | None = None,
+        ntasksPerGpu: int | None = None,
+        ntasksPerNode: int | None = None,
+        ntasksPerSocket: int | None = None,
+        openMode: str | None = None,
+        overcommit: bool = False,
+        oversubscribe: bool = False,
+        partition: str | None = None,
+        power: str | None = None,
+        prefer: str | None = None,
+        priority: str | None = None,
+        profile: str | None = None,
+        propagate: str | None = None,
+        qos: str | None = None,
+        reboot: bool = False,
+        requeue: bool = False,
+        reservation: str | None = None,
+        signal: str | None = None,
+        socketsPerNode: int | None = None,
+        spreadJob: bool = False,
+        switches: str | None = None,
+        threadSpec: int | None = None,
+        threadsPerCore: int | None = None,
+        timeMin: int | None = None,
+        tmp: int | None = None,
+        tresPerTask: str | None = None,
+        uid: int | str | None = None,
+        useMinNodes: bool = False,
+        waitAllNodes: bool = False,
+        wckey: str | None = None,
+    ):
+        super().__init__(file)
+        self.account: str | None = account
+        self.acctgFreq: str | None = acctgFreq
+        self.array: str | None = array
+        self.batch: str | None = batch
+        self.bb: str | None = bb
+        self.bbf: str | None = bbf
+        self.begin: str | None = begin
+        self.clusterConstraint: str | None = clusterConstraint
+        self.clusters: str | None = clusters
+        self.constraint: str | None = constraint
+        self.container: str | None = container
+        self.containerId: str | None = containerId
+        self.contiguous: bool = contiguous
+        self.coreSpec: int | None = coreSpec
+        self.coresPerSocket: int | None = coresPerSocket
+        self.cpuFreq: str | None = cpuFreq
+        self.cpusPerGpu: int | None = cpusPerGpu
+        self.cpusPerTask: int | None = cpusPerTask
+        self.deadline: str | None = deadline
+        self.delayBoot: str | None = delayBoot
+        self.exclude: str | None = exclude
+        self.exclusive: bool | str = exclusive
+        self.export: str | None = export
+        self.exportFile: int | str | None = exportFile
+        self.extraNodeInfo: str | None = extraNodeInfo
+        self.getUserEnv: bool | str = getUserEnv
+        self.gid: int | str | None = gid
+        self.gpuBind: str | None = gpuBind
+        self.gpuFreq: str | None = gpuFreq
+        self.gpus: str | None = gpus
+        self.gpusPerNode: str | None = gpusPerNode
+        self.gpusPerSocket: str | None = gpusPerSocket
+        self.gpusPerTask: str | None = gpusPerTask
+        self.gres: str | None = gres
+        self.gresFlags: str | None = gresFlags
+        self.hint: str | None = hint
+        self.ignorePBS: bool = ignorePBS
+        self.jobName: str | None = jobName
+        self.licenses: str | None = licenses
+        self.mailType: str | None = mailType
+        self.mailUser: str | None = mailUser
+        self.mcsLabel: str | None = mcsLabel
+        self.mem: str | None = mem
+        self.memBind: str | None = memBind
+        self.memPerCpu: str | None = memPerCpu
+        self.memPerGpu: str | None = memPerGpu
+        self.mincpus: int | None = mincpus
+        self.network: str | None = network
+        self.nice: int | None = nice
+        self.noKill: bool = noKill
+        self.noRequeue: bool = noRequeue
+        self.nodefile: str | None = nodefile
+        self.nodelist: str | None = nodelist
+        self.nodes: str | None = nodes
+        self.ntasks: int | None = ntasks
+        self.ntasksPerCore: int | None = ntasksPerCore
+        self.ntasksPerGpu: int | None = ntasksPerGpu
+        self.ntasksPerNode: int | None = ntasksPerNode
+        self.ntasksPerSocket: int | None = ntasksPerSocket
+        self.openMode: str | None = openMode
+        self.overcommit: bool = overcommit
+        self.oversubscribe: bool = oversubscribe
+        self.partition: str | None = partition
+        self.power: str | None = power
+        self.prefer: str | None = prefer
+        self.priority: str | None = priority
+        self.profile: str | None = profile
+        self.propagate: str | None = propagate
+        self.qos: str | None = qos
+        self.reboot: bool = reboot
+        self.requeue: bool = requeue
+        self.reservation: str | None = reservation
+        self.signal: str | None = signal
+        self.socketsPerNode: int | None = socketsPerNode
+        self.spreadJob: bool = spreadJob
+        self.switches: str | None = switches
+        self.threadSpec: int | None = threadSpec
+        self.threadsPerCore: int | None = threadsPerCore
+        self.timeMin: str | None = timeMin
+        self.tmp: int | None = tmp
+        self.tresPerTask: str | None = tresPerTask
+        self.uid: int | str | None = uid
+        self.useMinNodes: bool = useMinNodes
+        self.waitAllNodes: bool = waitAllNodes
+        self.wckey: str | None = wckey
+
+
+class PBSService(QueueManagerService):
+    def __init__(
+        self,
+        file: str | None = None,
+        account: str | None = None,
+        additionalAttributes: MutableMapping[str, str] | None = None,
+        begin: str | None = None,
+        checkpoint: str | None = None,
+        destination: str | None = None,
+        exportAllVariables: bool = False,
+        jobName: str | None = None,
+        mailOptions: str | None = None,
+        prefix: str | None = None,
+        priority: int | None = None,
+        rerunnable: bool = True,
+        resources: MutableMapping[str, str] | None = None,
+        shellList: str | None = None,
+        userList: str | None = None,
+        variableList: str | None = None,
+    ):
+        super().__init__(file)
+        self.account: str | None = account
+        self.additionalAttributes: MutableMapping[str, str] = additionalAttributes or {}
+        self.begin: str | None = begin
+        self.checkpoint: str | None = checkpoint
+        self.destination: str | None = destination
+        self.exportAllVariables: bool = exportAllVariables
+        self.jobName: str | None = jobName
+        self.mailOptions: str | None = mailOptions
+        self.prefix: str | None = prefix
+        self.priority: int | None = priority
+        self.rerunnable: bool = rerunnable
+        self.resources: MutableMapping[str, str] = resources or {}
+        self.shellList: str | None = shellList
+        self.userList: str | None = userList
+        self.variableList: str | None = variableList
+
+
+class FluxService(QueueManagerService):
+    def __init__(
+        self,
+        file: str | None = None,
+        beginTime: str | None = None,
+        brokerOpts: MutableSequence[str] | None = None,
+        cores: int | None = None,
+        coresPerSlot: int | None = None,
+        coresPerTask: int | None = None,
+        env: MutableSequence[str] | None = None,
+        envFile: MutableSequence[str] | None = None,
+        envRemove: MutableSequence[str] | None = None,
+        exclusive: bool = False,
+        flags: str | None = None,
+        gpusPerNode: int | None = None,
+        gpusPerSlot: int | None = None,
+        gpusPerTask: int | None = None,
+        jobName: str | None = None,
+        labelIO: bool = False,
+        nodes: int | None = None,
+        nslots: int | None = None,
+        ntasks: int | None = None,
+        queue: str | None = None,
+        requires: str | None = None,
+        rlimit: MutableSequence[str] | None = None,
+        setattr: MutableMapping[str, str] | None = None,
+        setopt: MutableMapping[str, str] | None = None,
+        taskmap: str | None = None,
+        tasksPerCore: int | None = None,
+        tasksPerNode: int | None = None,
+        unbuffered: bool = False,
+        urgency: int | None = None,
+    ):
+        super().__init__(file)
+        self.beginTime: str | None = beginTime
+        self.brokerOpts: MutableSequence[str] | None = brokerOpts or []
+        self.cores: int | None = cores
+        self.coresPerSlot: int | None = coresPerSlot
+        self.coresPerTask: int | None = coresPerTask
+        self.env: MutableSequence[str] | None = env or []
+        self.envFile: MutableSequence[str] | None = envFile or []
+        self.envRemove: MutableSequence[str] | None = envRemove or []
+        self.exclusive: bool = exclusive
+        self.flags: str | None = flags
+        self.gpusPerNode: int | None = gpusPerNode
+        self.gpusPerSlot: int | None = gpusPerSlot
+        self.gpusPerTask: int | None = gpusPerTask
+        self.jobName: str | None = jobName
+        self.labelIO: bool = labelIO
+        self.nodes: int | None = nodes
+        self.nslots: int | None = nslots
+        self.ntasks: int | None = ntasks
+        self.queue: str | None = queue
+        self.requires: str | None = requires
+        self.rlimit: MutableSequence[str] | None = rlimit or []
+        self.setattr: MutableMapping[str, str] | None = setattr or {}
+        self.setopt: MutableMapping[str, str] | None = setopt or {}
+        self.taskmap: str | None = taskmap
+        self.tasksPerCore: int | None = tasksPerCore
+        self.tasksPerNode: int | None = tasksPerNode
+        self.unbuffered: bool = unbuffered
+        self.urgency: int | None = urgency
 
 
 class QueueManagerConnector(ConnectorWrapper, ABC):
@@ -43,7 +329,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         maxConnections: int | None = 1,
         passwordFile: str | None = None,
         pollingInterval: int = 5,
-        services: MutableMapping[str, str] | None = None,
+        services: MutableMapping[str, QueueManagerService] | None = None,
         sshKey: str | None = None,
         sshKeyPassphraseFile: str | None = None,
         transferBufferSize: int = 2**16,
@@ -71,11 +357,13 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 username=username,
             )
         super().__init__(deployment_name, config_dir, connector)
-        services_map: MutableMapping[str, Any] = {}
+        files_map: MutableMapping[str, Any] = {}
+        self.services: MutableMapping[str, QueueManagerService] = services or {}
         if services:
             for name, service in services.items():
-                with open(os.path.join(self.config_dir, service)) as f:
-                    services_map[name] = f.read()
+                if service.file is not None:
+                    with open(os.path.join(self.config_dir, service.file)) as f:
+                        files_map[name] = f.read()
         if file is not None:
             if logger.isEnabledFor(logging.WARN):
                 logger.warn(
@@ -84,12 +372,12 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 )
             with open(os.path.join(self.config_dir, file)) as f:
                 self.template_map: CommandTemplateMap = CommandTemplateMap(
-                    default=f.read(), template_map=services_map
+                    default=f.read(), template_map=files_map
                 )
         else:
             self.template_map: CommandTemplateMap = CommandTemplateMap(
                 default="#!/bin/sh\n\n{{streamflow_command}}",
-                template_map=services_map,
+                template_map=files_map,
             )
         self.maxConcurrentJobs: int = maxConcurrentJobs
         self.pollingInterval: int = pollingInterval
@@ -145,7 +433,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         output_directory: str | None = None,
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
-        if service is not None and service not in self.template_map.templates:
+        if service is not None and service not in self.services:
             raise WorkflowDefinitionException(
                 f"Invalid service {service} for deployment {self.deployment_name}."
             )
@@ -159,12 +447,6 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 slots=self.maxConcurrentJobs,
             )
         }
-
-    @classmethod
-    def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "queue_manager.json")
-        )
 
     async def run(
         self,
@@ -256,6 +538,12 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
 
 
 class SlurmConnector(QueueManagerConnector):
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join("schemas", "slurm.json")
+        )
+
     async def _get_output(self, job_id: str, location: Location) -> str:
         command = [
             "scontrol",
@@ -365,16 +653,107 @@ class SlurmConnector(QueueManagerConnector):
             "sbatch",
             "--parsable",
         ]
-        if workdir is not None:
-            batch_command.extend(["-D", workdir])
         if stdin is not None:
-            batch_command.extend(["-i", shlex.quote(stdin)])
-        if stdout != asyncio.subprocess.STDOUT:
-            batch_command.extend(["-o", shlex.quote(stdout)])
+            batch_command.append(get_option("input", shlex.quote(stdin)))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
-            batch_command.extend(["-e", shlex.quote(stderr)])
+            batch_command.append(get_option("error", shlex.quote(stderr)))
+        if stdout != asyncio.subprocess.STDOUT:
+            batch_command.append(get_option("output", shlex.quote(stdout)))
         if timeout:
-            batch_command.extend(["-t", utils.format_seconds_to_hhmmss(timeout)])
+            batch_command.append(
+                get_option("time", utils.format_seconds_to_hhmmss(timeout))
+            )
+        if service := cast(SlurmService, self.services.get(location.service)):
+            batch_command.extend(
+                [
+                    get_option("account", service.account),
+                    get_option("acctg-freq", service.acctgFreq),
+                    get_option("array", service.array),
+                    get_option("batch", service.batch),
+                    get_option("bb", service.bb),
+                    get_option("bbf", service.bbf),
+                    get_option("begin", service.begin),
+                    get_option("chdir", workdir),
+                    get_option("cluster-constraint", service.clusterConstraint),
+                    get_option("clusters", service.clusters),
+                    get_option("constraint", service.constraint),
+                    get_option("container", service.container),
+                    get_option("container-id", service.containerId),
+                    get_option("contiguous", service.contiguous),
+                    get_option("core-spec", service.coreSpec),
+                    get_option("cores-per-socket", service.coresPerSocket),
+                    get_option("cpu-freq", service.cpuFreq),
+                    get_option("cpus-per-gpu", service.cpusPerGpu),
+                    get_option("cpus-per-task", service.cpusPerTask),
+                    get_option("deadline", service.deadline),
+                    get_option("delay-boot", service.delayBoot),
+                    get_option("exclude", service.exclude),
+                    get_option("exclusive", service.exclusive),
+                    get_option("export", service.export),
+                    get_option("export-file", service.exportFile),
+                    get_option("extra-node-info", service.extraNodeInfo),
+                    get_option("get-user-env", service.getUserEnv),
+                    get_option("gid", service.gid),
+                    get_option("gpu-bind", service.gpuBind),
+                    get_option("gpu-freq", service.gpuFreq),
+                    get_option("gpus", service.gpus),
+                    get_option("gpus-per-node", service.gpusPerNode),
+                    get_option("gpus-per-socket", service.gpusPerSocket),
+                    get_option("gpus-per-task", service.gpusPerTask),
+                    get_option("gres", service.gres),
+                    get_option("gres-flags", service.gresFlags),
+                    get_option("hint", service.hint),
+                    get_option("ignore-pbs", service.ignorePBS),
+                    get_option("job-name", service.jobName),
+                    get_option("licenses", service.licenses),
+                    get_option("mail-type", service.mailType),
+                    get_option("mail-user", service.mailUser),
+                    get_option("mcs-label", service.mcsLabel),
+                    get_option("mem", service.mem),
+                    get_option("mem-bind", service.memBind),
+                    get_option("mem-per-cpu", service.memPerCpu),
+                    get_option("mem-per-gpu", service.memPerGpu),
+                    get_option("minpucs", service.mincpus),
+                    get_option("network", service.network),
+                    get_option("nice", service.nice),
+                    get_option("no-kill", service.noKill),
+                    get_option("no-requeue", service.noRequeue),
+                    get_option("nodefile", service.nodefile),
+                    get_option("nodelist", service.nodelist),
+                    get_option("nodes", service.nodes),
+                    get_option("ntasks", service.ntasks),
+                    get_option("ntasks-per-core", service.ntasksPerCore),
+                    get_option("ntasks-per-gpu", service.ntasksPerGpu),
+                    get_option("ntasks-per-node", service.ntasksPerNode),
+                    get_option("ntasks-per-socket", service.ntasksPerSocket),
+                    get_option("open-mode", service.openMode),
+                    get_option("overcommit", service.overcommit),
+                    get_option("oversubscribe", service.oversubscribe),
+                    get_option("partition", service.partition),
+                    get_option("power", service.power),
+                    get_option("prefer", service.prefer),
+                    get_option("priority", service.priority),
+                    get_option("profile", service.profile),
+                    get_option("propagate", service.propagate),
+                    get_option("qos", service.qos),
+                    get_option("reboot", service.reboot),
+                    get_option("requeue", service.requeue),
+                    get_option("reservation", service.reservation),
+                    get_option("signal", service.signal),
+                    get_option("sockets-per-node", service.socketsPerNode),
+                    get_option("spread-job", service.spreadJob),
+                    get_option("switches", service.switches),
+                    get_option("thread-spec", service.threadSpec),
+                    get_option("threads-per-core", service.threadsPerCore),
+                    get_option("time-min", service.timeMin),
+                    get_option("tmp", service.tmp),
+                    get_option("tres-per-task", service.tresPerTask),
+                    get_option("uid", service.uid),
+                    get_option("use-min_nodes", service.useMinNodes),
+                    get_option("wait-all-nodes", 1 if service.waitAllNodes else 0),
+                    get_option("wckey", service.wckey),
+                ]
+            )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(batch_command)}")
         stdout, returncode = await self.connector.run(
@@ -389,6 +768,12 @@ class SlurmConnector(QueueManagerConnector):
 
 
 class PBSConnector(QueueManagerConnector):
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join("schemas", "pbs.json")
+        )
+
     async def _get_output(self, job_id: str, location: Location) -> str:
         result = json.loads(await self._run_qstat_command(job_id, location))
         output_path = result["Jobs"][job_id]["Output_Path"]
@@ -451,6 +836,9 @@ class PBSConnector(QueueManagerConnector):
         batch_command = ["sh", "-c"]
         if workdir is not None:
             batch_command.extend(["cd", workdir, "&&"])
+        resources = (
+            {"walltime": utils.format_seconds_to_hhmmss(timeout)} if timeout else {}
+        )
         batch_command.extend(
             [
                 "echo",
@@ -460,21 +848,48 @@ class PBSConnector(QueueManagerConnector):
                 "-d",
                 "|",
                 "qsub",
+                get_option(
+                    "o",
+                    (
+                        stdout
+                        if stdout != asyncio.subprocess.STDOUT
+                        else utils.random_name()
+                    ),
+                ),
             ]
         )
         if stdin is not None:
-            batch_command.extend(["-i", stdin])
-        batch_command.extend(
-            [
-                "-i",
-                stdout if stdout != asyncio.subprocess.STDOUT else utils.random_name(),
-            ]
-        )
+            batch_command.append(get_option("i", stdin))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
-            batch_command.extend(["-e", stderr])
-        if timeout:
+            batch_command.append(get_option("e", stderr))
+        if stderr == stdout:
+            batch_command.append(get_option("j", "oe"))
+        if service := cast(PBSService, self.services.get(location.service)):
+            resources = {**service.resources, **resources}
             batch_command.extend(
-                ["-l", f"walltime={utils.format_seconds_to_hhmmss(timeout)}"]
+                [
+                    get_option("a", service.begin),
+                    get_option("A", service.account),
+                    get_option("c", service.checkpoint),
+                    get_option("C", service.prefix),
+                    get_option("m", service.mailOptions),
+                    get_option("N", service.jobName),
+                    get_option("p", service.priority),
+                    get_option("q", service.destination),
+                    get_option("r", "y" if service.rerunnable else "n"),
+                    get_option("S", service.shellList),
+                    get_option("u", service.userList),
+                    get_option("v", service.variableList),
+                    get_option("V", service.exportAllVariables),
+                    get_option(
+                        "W",
+                        ",".join([f"{k}={v}" for k, v in service.additionalAttributes]),
+                    ),
+                ]
+            )
+        if resources:
+            batch_command.append(
+                get_option("l", ",".join([f"{k}={v}" for k, v in resources]))
             )
         batch_command.append("-")
         stdout, returncode = await self.connector.run(
@@ -505,6 +920,12 @@ class PBSConnector(QueueManagerConnector):
 
 
 class FluxConnector(QueueManagerConnector):
+    @classmethod
+    def get_schema(cls) -> str:
+        return pkg_resources.resource_filename(
+            __name__, os.path.join("schemas", "flux.json")
+        )
+
     async def _get_output(self, job_id: str, location: Location) -> str:
         # This will hang if the job is not complete
         command = [
@@ -599,19 +1020,56 @@ class FluxConnector(QueueManagerConnector):
             "|",
             "flux",
             "batch",
-            "-N",
-            "1",
         ]
         if workdir is not None:
-            batch_command.extend(["--cwd", workdir])
+            batch_command.append(get_option("cwd", workdir))
         if stdin is not None:
-            batch_command.extend(["--input", shlex.quote(stdin)])
+            batch_command.append(get_option("input", shlex.quote(stdin)))
         if stdout != asyncio.subprocess.STDOUT:
-            batch_command.extend(["--output", shlex.quote(stdout)])
+            batch_command.append(get_option("output", shlex.quote(stdout)))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
-            batch_command.extend(["--error", shlex.quote(stderr)])
+            batch_command.append(get_option("error", shlex.quote(stderr)))
         if timeout:
             batch_command.extend(["-t", utils.format_seconds_to_hhmmss(timeout)])
+        nodes = 1
+        if service := cast(FluxService, self.services.get(location.service)):
+            nodes = service.nodes
+            batch_command.extend(
+                [
+                    get_option("begin-time", service.beginTime),
+                    get_option("broker-opts", service.brokerOpts),
+                    get_option("cores", service.cores),
+                    get_option("cores-per-slot", service.coresPerSlot),
+                    get_option("cores-per-task", service.coresPerTask),
+                    get_option("env", service.env),
+                    get_option("env-file", service.envFile),
+                    get_option("env-remove", service.envRemove),
+                    get_option("exclusive", service.exclusive),
+                    get_option("flags", service.flags),
+                    get_option("gpus-per-node", service.gpusPerNode),
+                    get_option("gpus-per-slot", service.gpusPerSlot),
+                    get_option("gpus-per-task", service.gpusPerTask),
+                    get_option("job-name", service.jobName),
+                    get_option("label-io", service.labelIO),
+                    get_option("nslots", service.nslots),
+                    get_option("ntasks", service.ntasks),
+                    get_option("queue", service.queue),
+                    get_option("requires", service.requires),
+                    get_option("rlimit", service.rlimit),
+                    get_option(
+                        "setattr", ",".join([f"{k}={v}" for k, v in service.setattr])
+                    ),
+                    get_option(
+                        "setopt", ",".join([f"{k}={v}" for k, v in service.setopt])
+                    ),
+                    get_option("taskmap", service.taskmap),
+                    get_option("tasks-per-core", service.tasksPerCore),
+                    get_option("tasks-per-node", service.tasksPerNode),
+                    get_option("unbuffered", service.unbuffered),
+                    get_option("urgency", service.urgency),
+                ]
+            )
+        batch_command.append(get_option("nodes", nodes))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(batch_command)}")
         stdout, returncode = await self.connector.run(

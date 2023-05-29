@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "pbs.json",
+  "type": "object",
+  "definitions": {
+    "service": {
+      "$id": "#/definitions/service",
+      "type": "object",
+      "title": "PBSService",
+      "description": "This complex type represents a submission to the PBS queue manager.",
+      "properties": {
+        "account": {
+          "type": "string",
+          "description": "Defines the account string associated with the job"
+        },
+        "additionalAttributes": {
+          "type": "object",
+          "description": "Specify additional job attributes"
+        },
+        "begin": {
+          "type": "string",
+          "description": "Declares the time after which the job is eligible for execution"
+        },
+        "checkpoint": {
+          "type": "string",
+          "description": "Defines the interval at which the job will be checkpointed"
+        },
+        "destination": {
+          "type": "string",
+          "description": "Defines the destination of the job. The destination names a queue, a server, or a queue at a server"
+        },
+        "exportAllVariables": {
+          "type": "boolean",
+          "description": "Declares that all environment variables in the qsub command's environment are to be exported to the batch job"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+        },
+        "jobName": {
+          "type": "string",
+          "description": "Declares a name for the job. The name specified may be up to and including 15 characters in length. It must consist of printable characters with the first character alphabetic"
+        },
+        "mailOptions": {
+          "type": "string",
+          "description": "Defines the set of conditions under which the execution server will send a mail message about the job"
+        },
+        "prefix": {
+          "type": "string",
+          "description": "Defines the prefix that declares a directive to the qsub command within the script file"
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Defines the priority of the job. The priority argument must be a integer between -1024 and +1023 inclusive"
+        },
+        "rerunnable": {
+          "type": "boolean",
+          "description": "Declares whether the job is rerunable"
+        },
+        "resources": {
+          "type": "object",
+          "description": "Defines the resources that are required by the job and establishes a limit to the amount of resource that can be consumed"
+        },
+        "shellList": {
+          "type": "string",
+          "description": "Declares the shell that interprets the job script"
+        },
+        "userList": {
+          "type": "string",
+          "description": "Defines the user name under which the job is to run on the execution system"
+        },
+        "variableList": {
+          "type": "string",
+          "description": "Expands the list of environment variables that are exported to the job"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "queue_manager.json"
+    }
+  ],
+  "properties": {
+    "services": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "$ref": "#/definitions/service"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

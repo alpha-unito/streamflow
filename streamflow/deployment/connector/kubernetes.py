@@ -44,6 +44,7 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.scheduling import AvailableLocation
+from streamflow.core.utils import get_option
 from streamflow.deployment import aiotarstream
 from streamflow.deployment.aiotarstream import BaseStreamWrapper
 from streamflow.deployment.connector.base import BaseConnector, extract_tar_stream
@@ -413,18 +414,14 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self, command: str, location: Location, interactive: bool = False
     ):
         pod, container = location.name.split(":")
-        return "".join(
-            [
-                "kubectl ",
-                self.get_option("namespace", self.namespace),
-                self.get_option("kubeconfig", self.kubeconfig),
-                "exec ",
-                f"{pod} ",
-                self.get_option("i", interactive),
-                self.get_option("container", container),
-                "-- ",
-                command,
-            ]
+        return (
+            f"kubectl "
+            f"{get_option('namespace', self.namespace)}"
+            f"{get_option('kubeconfig', self.kubeconfig)}"
+            f"exec {pod} "
+            f"{get_option('i', interactive)}"
+            f"{get_option('container', container)}"
+            f"-- {command}"
         )
 
     @abstractmethod
@@ -978,17 +975,15 @@ class Helm3Connector(BaseKubernetesConnector):
         self.wait: bool = wait
 
     def _get_base_command(self) -> str:
-        return "".join(
-            [
-                "helm ",
-                self.get_option("debug", self.debug),
-                self.get_option("kube-context", self.kubeContext),
-                self.get_option("kubeconfig", self.kubeconfig),
-                self.get_option("namespace", self.namespace),
-                self.get_option("registry-config", self.registryConfig),
-                self.get_option("repository-cache", self.repositoryCache),
-                self.get_option("repository-config", self.repositoryConfig),
-            ]
+        return (
+            f"helm "
+            f"{get_option('debug', self.debug)}"
+            f"{get_option('kube-context', self.kubeContext)}"
+            f"{get_option('kubeconfig', self.kubeconfig)}"
+            f"{get_option('namespace', self.namespace)}"
+            f"{get_option('registry-config', self.registryConfig)}"
+            f"{get_option('repository-cache', self.repositoryCache)}"
+            f"{get_option('repository-config', self.repositoryConfig)}"
         )
 
     async def _get_running_pods(self) -> MutableSequence[Any]:
@@ -1013,34 +1008,32 @@ class Helm3Connector(BaseKubernetesConnector):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Using Helm {version}.")
             # Deploy Helm charts
-            deploy_command = self._get_base_command() + "".join(
-                [
-                    "install ",
-                    self.get_option("atomic", self.atomic),
-                    self.get_option("ca-file", self.caFile),
-                    self.get_option("cert-file", self.certFile),
-                    self.get_option("dep-up", self.depUp),
-                    self.get_option("devel", self.devel),
-                    self.get_option("key-file", self.keyFile),
-                    self.get_option("keyring", self.keyring),
-                    self.get_option("name-template", self.nameTemplate),
-                    self.get_option("no-hooks", self.noHooks),
-                    self.get_option("password", self.password),
-                    self.get_option("render-subchart-notes", self.renderSubchartNotes),
-                    self.get_option("repo", self.repo),
-                    self.get_option("set", self.commandLineValues),
-                    self.get_option("set-file", self.fileValues),
-                    self.get_option("set-string", self.stringValues),
-                    self.get_option("skip-crds", self.skipCrds),
-                    self.get_option("timeout", self.timeout),
-                    self.get_option("username", self.username),
-                    self.get_option("values", self.yamlValues),
-                    self.get_option("verify", self.verify),
-                    self.get_option("version", self.chartVersion),
-                    self.get_option("wait", self.wait),
-                    f"{self.releaseName} ",
-                    self.chart,
-                ]
+            deploy_command = (
+                f"{self._get_base_command()} install "
+                f"{get_option('atomic', self.atomic)}"
+                f"{get_option('ca-file', self.caFile)}"
+                f"{get_option('cert-file', self.certFile)}"
+                f"{get_option('dep-up', self.depUp)}"
+                f"{get_option('devel', self.devel)}"
+                f"{get_option('key-file', self.keyFile)}"
+                f"{get_option('keyring', self.keyring)}"
+                f"{get_option('name-template', self.nameTemplate)}"
+                f"{get_option('no-hooks', self.noHooks)}"
+                f"{get_option('password', self.password)}"
+                f"{get_option('render-subchart-notes', self.renderSubchartNotes)}"
+                f"{get_option('repo', self.repo)}"
+                f"{get_option('set', self.commandLineValues)}"
+                f"{get_option('set-file', self.fileValues)}"
+                f"{get_option('set-string', self.stringValues)}"
+                f"{get_option('skip-crds', self.skipCrds)}"
+                f"{get_option('timeout', self.timeout)}"
+                f"{get_option('username', self.username)}"
+                f"{get_option('values', self.yamlValues)}"
+                f"{get_option('verify', self.verify)}"
+                f"{get_option('version', self.chartVersion)}"
+                f"{get_option('wait', self.wait)}"
+                f"{self.releaseName} "
+                f"{self.chart}"
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING {deploy_command}")
@@ -1064,14 +1057,12 @@ class Helm3Connector(BaseKubernetesConnector):
     async def undeploy(self, external: bool) -> None:
         if not external:
             # Undeploy
-            undeploy_command = self._get_base_command() + "".join(
-                [
-                    "uninstall ",
-                    self.get_option("keep-history", self.keepHistory),
-                    self.get_option("no-hooks", self.noHooks),
-                    self.get_option("timeout", self.timeout),
-                    self.releaseName,
-                ]
+            undeploy_command = (
+                f"{self._get_base_command()}  uninstall "
+                f"{get_option('keep-history', self.keepHistory)}"
+                f"{get_option('no-hooks', self.noHooks)}"
+                f"{get_option('timeout', self.timeout)}"
+                f"{self.releaseName}"
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING {undeploy_command}")
