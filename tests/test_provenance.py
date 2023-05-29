@@ -42,9 +42,7 @@ from streamflow.workflow.token import (
 
 async def _put_tokens(token_list, in_port, context):
     for t in token_list:
-        if not isinstance(t, TerminationToken) and not isinstance(
-            t, IterationTerminationToken
-        ):
+        if not isinstance(t, TerminationToken):
             await t.save(context, in_port.persistent_id)
         in_port.put(t)
     in_port.put(TerminationToken())

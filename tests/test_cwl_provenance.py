@@ -7,7 +7,6 @@ from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import CombinatorStep
 from streamflow.workflow.token import (
     ListToken,
-    TerminationToken,
     IterationTerminationToken,
 )
 
@@ -375,7 +374,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
     step.add_input_port(port_name, in_port)
     step.add_output_port(port_name, out_port)
 
-    list_token = [ListToken([Token("a"), Token("b")]), TerminationToken()]
+    list_token = [ListToken([Token("a"), Token("b")])]
     await _put_tokens(list_token, in_port, context)
 
     step.combinator.add_item(port_name)
@@ -384,7 +383,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
     await executor.run()
 
     await verify_dependency_tokens(
-        out_port.token_list[0], out_port, [], list_token[:-1], context
+        out_port.token_list[0], out_port, [], list_token, context
     )
 
 
@@ -392,7 +391,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 async def test_loop_value_from_transformer(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
-    await workflow.save(context)
+
     name = utils.random_name()
     port_name = "test"
     transformer = workflow.create_step(
@@ -431,7 +430,6 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
 async def test_cwl_loop_output_all_step(context: StreamFlowContext):
     """ """
     workflow, in_port, out_port = await _create_workflow(context)
-    await workflow.save(context)
 
     step = workflow.create_step(
         cls=CWLLoopOutputAllStep,
