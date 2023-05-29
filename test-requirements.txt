@@ -1,4 +1,4 @@
-cwltest==2.3.20230108193615
+cwltest==2.3.20230527113600
 pytest==7.3.1
 pytest-asyncio==0.21.0
 pytest-cov==4.1.0
