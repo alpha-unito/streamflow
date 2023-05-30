@@ -4,7 +4,7 @@ from typing import MutableMapping, Any, MutableSequence
 
 import pytest
 
-from streamflow.cwl.command import CWLCommand
+from streamflow.cwl.command import CWLCommand, CWLCommandToken
 from streamflow.cwl.translator import _create_command_output_processor_base
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.workflow.combinator import (
@@ -248,10 +248,14 @@ async def test_schedule_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_execute_step(context: StreamFlowContext):
     """ """
-    workflow, out_port = await _create_workflow(context, num_port=1)
+    workflow, in_port_schedule, in_port, out_port = await _create_workflow(
+        context, num_port=3
+    )
     deploy_step = _create_deploy_step(workflow)
     schedule_step = _create_schedule_step(workflow, deploy_step)
-    # todo: add inputs in job
+
+    in_port_name = "in-1"
+    out_port_name = "out-1"
     step = workflow.create_step(
         cls=ExecuteStep,
         name=utils.random_name(),
@@ -259,10 +263,11 @@ async def test_execute_step(context: StreamFlowContext):
     )
     step.command = CWLCommand(
         step=step,
-        base_command=["ls"],
+        base_command=["echo"],
+        command_tokens=[CWLCommandToken(name=in_port_name, value=None)],
     )
     step.add_output_port(
-        "out-1",
+        out_port_name,
         out_port,
         _create_command_output_processor_base(
             out_port.name,
@@ -273,21 +278,38 @@ async def test_execute_step(context: StreamFlowContext):
             {"hints": {}, "requirements": {}},
         ),
     )
+    step.add_input_port(in_port_name, in_port)
+    hello = "Hello"
+    token_list = [Token(hello)]
+    await _put_tokens(token_list, in_port, context)
+
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
+    schedule_step.get_output_port().token_list[0].value.inputs[
+        in_port_name
+    ] = token_list[0]
 
+    print("token", token_list[0].persistent_id, token_list[0].tag, token_list[0].value)
     await verify_dependency_tokens(
         step.get_input_port("__job__").token_list[0],
         step.get_input_port("__job__"),
-        [step.get_output_port("out-1").token_list[0]],
+        [step.get_output_port(out_port_name).token_list[0]],
         [schedule_step.get_input_port().token_list[0]],
         context,
     )
     job_token = step.get_input_port("__job__").token_list[0]
+    print("job_token", job_token.value.inputs.keys())
+    print(
+        "out_token id",
+        step.get_output_port(out_port_name).token_list[0].persistent_id,
+        "value",
+        step.get_output_port(out_port_name).token_list[0].value,
+    )
+    assert step.get_output_port(out_port_name).token_list[0].value == hello
     await verify_dependency_tokens(
-        step.get_output_port("out-1").token_list[0],
-        step.get_output_port("out-1"),
+        step.get_output_port(out_port_name).token_list[0],
+        step.get_output_port(out_port_name),
         [],
         list(job_token.value.inputs.values()) + [job_token],
         context,
@@ -526,6 +548,22 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
     nested_crossproduct_1 = [(t1, t2) for t2 in list_token_2 for t1 in list_token_1]
     nested_crossproduct_2 = [(t1, t2) for t1 in list_token_1 for t2 in list_token_2]
 
+    for t in list_token_1:
+        print(f"{t.persistent_id}, {t.tag}, {[tt.value for tt in t.value]}")
+
+    for t in list_token_2:
+        print(f"{t.persistent_id}, {t.tag}, {[tt.value for tt in t.value]}")
+    print()
+
+    for out_token in out_port_1.token_list[:-1]:
+        print(
+            f"{out_token.persistent_id}, {out_token.tag}, {[tt.value for tt in out_token.value]}"
+        )
+    for out_token in out_port_2.token_list[:-1]:
+        print(
+            f"{out_token.persistent_id}, {out_token.tag}, {[tt.value for tt in out_token.value]}"
+        )
+    print()
     # The tokens id produced by combinators depend on the order of input tokens.
     # The use of the alternative_expected_dependee parameter is necessary
     # For example:
@@ -536,10 +574,15 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
     #   (  9, 0.0, ['1', '2'] )
     #   ( 12, 0.1, ['3', '4'] )
 
+    # case #1: port_1 input tokens arrive first
+    #   - port_1: { output token id : input token id list }
+    #       { 13 : [3, 9], 15 : [3, 12], 17 : [6, 9], 19 : [6, 12] }
+    #   - port_2: { output token id : input token id list }
+    #       { 14 : [3, 9], 16 : [3, 12], 18 : [6, 9], 20 : [6, 12] }
     # output port_1 token: (id, tag, value)
     #   ( 13, 0.0.0, ['a', 'b'] )
-    #   ( 15, 0.1.0, ['c', 'd'] )
-    #   ( 17, 0.0.1, ['a', 'b'] )
+    #   ( 15, 0.0.1, ['a', 'b'] )
+    #   ( 17, 0.1.0, ['c', 'd'] )
     #   ( 19, 0.1.1, ['c', 'd'] )
     # output port_2 token: (id, tag, value)
     #   ( 14, 0.0.0, ['1', '2'] )
@@ -547,17 +590,21 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
     #   ( 18, 0.1.0, ['1', '2'] )
     #   ( 20, 0.1.1, ['3', '4'] )
 
-    # case #1: port_1 input tokens arrive first
-    #   - port_1: { output token id : input token id list }
-    #       { 13 : [3, 9], 15 : [3, 12], 17 : [6, 9], 19 : [6, 12] }
-    #   - port_2: { output token id : input token id list }
-    #       { 14 : [3, 9], 16 : [3, 12], 18 : [6, 9], 20 : [6, 12] }
-
     # case #2: port_2 input tokens arrive first
     #   - port_1: { output token id : input token id list }
     #       { 13 : [3, 9], 15 : [6, 9], 17 : [3, 12], 19 : [6, 12] }
     #   - port_2: { output token id : input token id list }
     #       { 14 : [3, 9], 16 : [6, 9], 18 : [3, 12], 20 : [6, 12] }
+    # output port_1 token: (id, tag, value)
+    #   ( 13, 0.0.0, ['a', 'b'] )
+    #   ( 15, 0.1.0, ['c', 'd'] )
+    #   ( 17, 0.0.1, ['a', 'b'] )
+    #   ( 19, 0.1.1, ['c', 'd'] )
+    # output port_2 token: (id, tag, value)
+    #   ( 14, 0.0.0, ['1', '2'] )
+    #   ( 16, 0.1.0, ['1', '2'] )
+    #   ( 18, 0.0.1, ['3', '4'] )
+    #   ( 20, 0.1.1, ['3', '4'] )
 
     # check port_1 outputs
     for i, out_token in enumerate(out_port_1.token_list[:-1]):
