@@ -82,8 +82,8 @@ async def _general_test(
     return step
 
 
-async def _load_dependee(token_id, loading_context, context):
-    rows = await context.database.get_dependee(token_id)
+async def _load_dependees(token_id, loading_context, context):
+    rows = await context.database.get_dependees(token_id)
     return await asyncio.gather(
         *(
             asyncio.create_task(loading_context.load_token(context, row["dependee"]))
@@ -92,8 +92,8 @@ async def _load_dependee(token_id, loading_context, context):
     )
 
 
-async def _load_depender(token_id, loading_context, context):
-    rows = await context.database.get_depender(token_id)
+async def _load_dependers(token_id, loading_context, context):
+    rows = await context.database.get_dependers(token_id)
     return await asyncio.gather(
         *(
             asyncio.create_task(loading_context.load_token(context, row["depender"]))
@@ -122,7 +122,7 @@ async def verify_dependency_tokens(
     token_reloaded = await context.database.get_token(token_id=token.persistent_id)
     assert token_reloaded["port"] == port.persistent_id
 
-    depender_list = await _load_depender(token.persistent_id, loading_context, context)
+    depender_list = await _load_dependers(token.persistent_id, loading_context, context)
     print(
         "depender:",
         {token.persistent_id: [t.persistent_id for t in depender_list]},
@@ -131,7 +131,7 @@ async def verify_dependency_tokens(
     for t1 in depender_list:
         assert contains_id(t1.persistent_id, expected_depender)
 
-    dependee_list = await _load_dependee(token.persistent_id, loading_context, context)
+    dependee_list = await _load_dependees(token.persistent_id, loading_context, context)
     print(
         "dependee:",
         {token.persistent_id: [t.persistent_id for t in dependee_list]},

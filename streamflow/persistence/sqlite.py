@@ -223,7 +223,7 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return cursor.lastrowid
 
-    async def get_dependee(
+    async def get_dependees(
         self, token_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
@@ -234,7 +234,7 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    async def get_depender(
+    async def get_dependers(
         self, token_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
