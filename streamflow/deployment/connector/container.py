@@ -18,7 +18,7 @@ from streamflow.core.asyncache import cachedmethod
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
-from streamflow.core.utils import get_local_to_remote_destination
+from streamflow.core.utils import get_local_to_remote_destination, get_option
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -563,109 +563,98 @@ class DockerConnector(DockerBaseConnector):
                 await _pull_docker_image(self.image)
             # Deploy the Docker container
             for _ in range(0, self.replicas):
-                deploy_command = "".join(
-                    [
-                        "docker ",
-                        "run ",
-                        "--detach ",
-                        "--interactive ",
-                        self.get_option("add-host", self.addHost),
-                        self.get_option("blkio-weight", self.addHost),
-                        self.get_option("blkio-weight-device", self.blkioWeightDevice),
-                        self.get_option("cap-add", self.capAdd),
-                        self.get_option("cap-drop", self.capDrop),
-                        self.get_option("cgroup-parent", self.cgroupParent),
-                        self.get_option("cgroupns", self.cgroupns),
-                        self.get_option("cidfile", self.cidfile),
-                        self.get_option("cpu-period", self.cpuPeriod),
-                        self.get_option("cpu-quota", self.cpuQuota),
-                        self.get_option("cpu-rt-period", self.cpuRTPeriod),
-                        self.get_option("cpu-rt-runtime", self.cpuRTRuntime),
-                        self.get_option("cpu-shares", self.cpuShares),
-                        self.get_option("cpus", self.cpus),
-                        self.get_option("cpuset-cpus", self.cpusetCpus),
-                        self.get_option("cpuset-mems", self.cpusetMems),
-                        self.get_option("detach-keys", self.detachKeys),
-                        self.get_option("device", self.device),
-                        self.get_option("device-cgroup-rule", self.deviceCgroupRule),
-                        self.get_option("device-read-bps", self.deviceReadBps),
-                        self.get_option("device-read-iops", self.deviceReadIops),
-                        self.get_option("device-write-bps", self.deviceWriteBps),
-                        self.get_option("device-write-iops", self.deviceWriteIops),
-                        "--disable-content-trust={disableContentTrust} ".format(
-                            disableContentTrust="true"
-                            if self.disableContentTrust
-                            else "false"
-                        ),
-                        self.get_option("dns", self.dns),
-                        self.get_option("dns-option", self.dnsOptions),
-                        self.get_option("dns-search", self.dnsSearch),
-                        self.get_option("domainname", self.domainname),
-                        self.get_option("entrypoint", self.entrypoint),
-                        self.get_option("env", self.env),
-                        self.get_option("env-file", self.envFile),
-                        self.get_option("expose", self.expose),
-                        self.get_option("gpus", self.gpus),
-                        self.get_option("group-add", self.groupAdd),
-                        self.get_option("health-cmd", self.healthCmd),
-                        self.get_option("health-interval", self.healthInterval),
-                        self.get_option("health-retries", self.healthRetries),
-                        self.get_option("health-start-period", self.healthStartPeriod),
-                        self.get_option("health-timeout", self.healthTimeout),
-                        self.get_option("hostname", self.hostname),
-                        self.get_option("init", self.init),
-                        self.get_option("ip", self.ip),
-                        self.get_option("ip6", self.ip6),
-                        self.get_option("ipc", self.ipc),
-                        self.get_option("isolation", self.isolation),
-                        self.get_option("kernel-memory", self.kernelMemory),
-                        self.get_option("label", self.label),
-                        self.get_option("label-file", self.labelFile),
-                        self.get_option("link", self.link),
-                        self.get_option("link-local-ip", self.linkLocalIP),
-                        self.get_option("log-driver", self.logDriver),
-                        self.get_option("log-opt", self.logOpts),
-                        self.get_option("mac-address", self.macAddress),
-                        self.get_option("memory", self.memory),
-                        self.get_option("memory-reservation", self.memoryReservation),
-                        self.get_option("memory-swap", self.memorySwap),
-                        self.get_option("memory-swappiness", self.memorySwappiness),
-                        self.get_option("mount", self.mount),
-                        self.get_option("network", self.network),
-                        self.get_option("network-alias", self.networkAlias),
-                        self.get_option("no-healthcheck", self.noHealthcheck),
-                        self.get_option("oom-kill-disable", self.oomKillDisable),
-                        self.get_option("oom-score-adj", self.oomScoreAdj),
-                        self.get_option("pid", self.pid),
-                        self.get_option("pids-limit", self.pidsLimit),
-                        self.get_option("privileged", self.privileged),
-                        self.get_option("publish", self.publish),
-                        self.get_option("publish-all", self.publishAll),
-                        self.get_option("read-only", self.readOnly),
-                        self.get_option("restart", self.restart),
-                        self.get_option("rm", self.rm),
-                        self.get_option("runtime", self.runtime),
-                        self.get_option("security-opt", self.securityOpts),
-                        self.get_option("shm-size", self.shmSize),
-                        "--sig-proxy={sigProxy} ".format(
-                            sigProxy="true" if self.sigProxy else "false"
-                        ),
-                        self.get_option("stop-signal", self.stopSignal),
-                        self.get_option("stop-timeout", self.stopTimeout),
-                        self.get_option("storage-opt", self.storageOpts),
-                        self.get_option("sysctl", self.sysctl),
-                        self.get_option("tmpfs", self.tmpfs),
-                        self.get_option("ulimit", self.ulimit),
-                        self.get_option("user", self.user),
-                        self.get_option("userns", self.userns),
-                        self.get_option("uts", self.uts),
-                        self.get_option("volume", self.volume),
-                        self.get_option("volume-driver", self.volumeDriver),
-                        self.get_option("volumes-from", self.volumesFrom),
-                        self.get_option("workdir", self.workdir),
-                        f"{self.image} ",
-                        " ".join(self.command) if self.command else "",
-                    ]
+                deploy_command = (
+                    f"docker run --detach --interactive "
+                    f"{get_option('add-host', self.addHost)}"
+                    f"{get_option('blkio-weight', self.addHost)}"
+                    f"{get_option('blkio-weight-device', self.blkioWeightDevice)}"
+                    f"{get_option('cap-add', self.capAdd)}"
+                    f"{get_option('cap-drop', self.capDrop)}"
+                    f"{get_option('cgroup-parent', self.cgroupParent)}"
+                    f"{get_option('cgroupns', self.cgroupns)}"
+                    f"{get_option('cidfile', self.cidfile)}"
+                    f"{get_option('cpu-period', self.cpuPeriod)}"
+                    f"{get_option('cpu-quota', self.cpuQuota)}"
+                    f"{get_option('cpu-rt-period', self.cpuRTPeriod)}"
+                    f"{get_option('cpu-rt-runtime', self.cpuRTRuntime)}"
+                    f"{get_option('cpu-shares', self.cpuShares)}"
+                    f"{get_option('cpus', self.cpus)}"
+                    f"{get_option('cpuset-cpus', self.cpusetCpus)}"
+                    f"{get_option('cpuset-mems', self.cpusetMems)}"
+                    f"{get_option('detach-keys', self.detachKeys)}"
+                    f"{get_option('device', self.device)}"
+                    f"{get_option('device-cgroup-rule', self.deviceCgroupRule)}"
+                    f"{get_option('device-read-bps', self.deviceReadBps)}"
+                    f"{get_option('device-read-iops', self.deviceReadIops)}"
+                    f"{get_option('device-write-bps', self.deviceWriteBps)}"
+                    f"{get_option('device-write-iops', self.deviceWriteIops)}"
+                    f"--disable-content-trust={'true' if self.disableContentTrust else 'false'} "
+                    f"{get_option('dns', self.dns)}"
+                    f"{get_option('dns-option', self.dnsOptions)}"
+                    f"{get_option('dns-search', self.dnsSearch)}"
+                    f"{get_option('domainname', self.domainname)}"
+                    f"{get_option('entrypoint', self.entrypoint)}"
+                    f"{get_option('env', self.env)}"
+                    f"{get_option('env-file', self.envFile)}"
+                    f"{get_option('expose', self.expose)}"
+                    f"{get_option('gpus', self.gpus)}"
+                    f"{get_option('group-add', self.groupAdd)}"
+                    f"{get_option('health-cmd', self.healthCmd)}"
+                    f"{get_option('health-interval', self.healthInterval)}"
+                    f"{get_option('health-retries', self.healthRetries)}"
+                    f"{get_option('health-start-period', self.healthStartPeriod)}"
+                    f"{get_option('health-timeout', self.healthTimeout)}"
+                    f"{get_option('hostname', self.hostname)}"
+                    f"{get_option('init', self.init)}"
+                    f"{get_option('ip', self.ip)}"
+                    f"{get_option('ip6', self.ip6)}"
+                    f"{get_option('ipc', self.ipc)}"
+                    f"{get_option('isolation', self.isolation)}"
+                    f"{get_option('kernel-memory', self.kernelMemory)}"
+                    f"{get_option('label', self.label)}"
+                    f"{get_option('label-file', self.labelFile)}"
+                    f"{get_option('link', self.link)}"
+                    f"{get_option('link-local-ip', self.linkLocalIP)}"
+                    f"{get_option('log-driver', self.logDriver)}"
+                    f"{get_option('log-opt', self.logOpts)}"
+                    f"{get_option('mac-address', self.macAddress)}"
+                    f"{get_option('memory', self.memory)}"
+                    f"{get_option('memory-reservation', self.memoryReservation)}"
+                    f"{get_option('memory-swap', self.memorySwap)}"
+                    f"{get_option('memory-swappiness', self.memorySwappiness)}"
+                    f"{get_option('mount', self.mount)}"
+                    f"{get_option('network', self.network)}"
+                    f"{get_option('network-alias', self.networkAlias)}"
+                    f"{get_option('no-healthcheck', self.noHealthcheck)}"
+                    f"{get_option('oom-kill-disable', self.oomKillDisable)}"
+                    f"{get_option('oom-score-adj', self.oomScoreAdj)}"
+                    f"{get_option('pid', self.pid)}"
+                    f"{get_option('pids-limit', self.pidsLimit)}"
+                    f"{get_option('privileged', self.privileged)}"
+                    f"{get_option('publish', self.publish)}"
+                    f"{get_option('publish-all', self.publishAll)}"
+                    f"{get_option('read-only', self.readOnly)}"
+                    f"{get_option('restart', self.restart)}"
+                    f"{get_option('rm', self.rm)}"
+                    f"{get_option('runtime', self.runtime)}"
+                    f"{get_option('security-opt', self.securityOpts)}"
+                    f"{get_option('shm-size', self.shmSize)}"
+                    f"--sig-proxy={'true' if self.sigProxy else 'false'} "
+                    f"{get_option('stop-signal', self.stopSignal)}"
+                    f"{get_option('stop-timeout', self.stopTimeout)}"
+                    f"{get_option('storage-opt', self.storageOpts)}"
+                    f"{get_option('sysctl', self.sysctl)}"
+                    f"{get_option('tmpfs', self.tmpfs)}"
+                    f"{get_option('ulimit', self.ulimit)}"
+                    f"{get_option('user', self.user)}"
+                    f"{get_option('userns', self.userns)}"
+                    f"{get_option('uts', self.uts)}"
+                    f"{get_option('volume', self.volume)}"
+                    f"{get_option('volume-driver', self.volumeDriver)}"
+                    f"{get_option('volumes-from', self.volumesFrom)}"
+                    f"{get_option('workdir', self.workdir)}"
+                    f"{self.image} "
+                    f"{' '.join(self.command) if self.command else ''}"
                 )
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(f"EXECUTING command {deploy_command}")
@@ -786,24 +775,22 @@ class DockerComposeConnector(DockerBaseConnector):
         self.tlsverify = tlsverify
 
     def _get_base_command(self) -> str:
-        return "".join(
-            [
-                "docker-compose ",
-                self.get_option("file", self.files),
-                self.get_option("project-name", self.projectName),
-                self.get_option("verbose", self.verbose),
-                self.get_option("log-level", self.logLevel),
-                self.get_option("no-ansi", self.noAnsi),
-                self.get_option("host", self.host),
-                self.get_option("tls", self.tls),
-                self.get_option("tlscacert", self.tlscacert),
-                self.get_option("tlscert", self.tlscert),
-                self.get_option("tlskey", self.tlskey),
-                self.get_option("tlsverify", self.tlsverify),
-                self.get_option("skip-hostname-check", self.skipHostnameCheck),
-                self.get_option("project-directory", self.projectDirectory),
-                self.get_option("compatibility", self.compatibility),
-            ]
+        return (
+            f"docker-compose "
+            f"{get_option('file', self.files)}"
+            f"{get_option('project-name', self.projectName)}"
+            f"{get_option('verbose', self.verbose)}"
+            f"{get_option('log-level', self.logLevel)}"
+            f"{get_option('no-ansi', self.noAnsi)}"
+            f"{get_option('host', self.host)}"
+            f"{get_option('tls', self.tls)}"
+            f"{get_option('tlscacert', self.tlscacert)}"
+            f"{get_option('tlscert', self.tlscert)}"
+            f"{get_option('tlskey', self.tlskey)}"
+            f"{get_option('tlsverify', self.tlsverify)}"
+            f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
+            f"{get_option('project-directory', self.projectDirectory)}"
+            f"{get_option('compatibility', self.compatibility)}"
         )
 
     async def deploy(self, external: bool) -> None:
@@ -823,17 +810,14 @@ class DockerComposeConnector(DockerBaseConnector):
                     f"Using Docker {await _get_docker_version()} "
                     f"and Docker Compose {version}."
                 )
-            deploy_command = self._get_base_command() + "".join(
-                [
-                    "up ",
-                    "--detach ",
-                    self.get_option("no-deps ", self.noDeps),
-                    self.get_option("force-recreate", self.forceRecreate),
-                    self.get_option("always-recreate-deps", self.alwaysRecreateDeps),
-                    self.get_option("no-recreate", self.noRecreate),
-                    self.get_option("no-build", self.noBuild),
-                    self.get_option("no-start", self.noStart),
-                ]
+            deploy_command = (
+                f"{self._get_base_command()} up --detach "
+                f"{get_option('no-deps ', self.noDeps)}"
+                f"{get_option('force-recreate', self.forceRecreate)}"
+                f"{get_option('always-recreate-deps', self.alwaysRecreateDeps)}"
+                f"{get_option('no-recreate', self.noRecreate)}"
+                f"{get_option('no-build', self.noBuild)}"
+                f"{get_option('no-start', self.noStart)}"
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING command {deploy_command}")
@@ -891,7 +875,7 @@ class DockerComposeConnector(DockerBaseConnector):
         if not external:
             undeploy_command = (
                 self._get_base_command()
-                + f"down {self.get_option('volumes', self.removeVolumes)}"
+                + f"down {get_option('volumes', self.removeVolumes)}"
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING command {undeploy_command}")
@@ -1107,61 +1091,61 @@ class SingularityConnector(ContainerConnector):
                 instance_name = utils.random_name()
                 deploy_command = (
                     f"singularity instance start "
-                    f"{self.get_option('add-caps', self.addCaps)}"
-                    f"{self.get_option('allow-setuid', self.allowSetuid)}"
-                    f"{self.get_option('apply-cgroups', self.applyCgroups)}"
-                    f"{self.get_option('bind', self.bind)}"
-                    f"{self.get_option('blkio-weight', self.blkioWeight)}"
-                    f"{self.get_option('blkio-weight-device', self.blkioWeightDevice)}"
-                    f"{self.get_option('boot', self.boot)}"
-                    f"{self.get_option('cleanenv', self.cleanenv)}"
-                    f"{self.get_option('compat', self.compat)}"
-                    f"{self.get_option('contain', self.contain)}"
-                    f"{self.get_option('containall', self.containall)}"
-                    f"{self.get_option('cpu-shares', self.cpuShares)}"
-                    f"{self.get_option('cpus', self.cpus)}"
-                    f"{self.get_option('cpuset-cpus', self.cpusetCpus)}"
-                    f"{self.get_option('cpuset-mems', self.cpusetMems)}"
-                    f"{self.get_option('disable-cache', self.disableCache)}"
-                    f"{self.get_option('docker-host', self.dockerHost)}"
-                    f"{self.get_option('dns', self.dns)}"
-                    f"{self.get_option('drop-caps', self.dropCaps)}"
-                    f"{self.get_option('env-file', self.envFile)}"
-                    f"{self.get_option('fakeroot', self.fakeroot)}"
-                    f"{self.get_option('fusemount', self.fusemount)}"
-                    f"{self.get_option('home', self.home)}"
-                    f"{self.get_option('hostname', self.hostname)}"
-                    f"{self.get_option('ipc', self.ipc)}"
-                    f"{self.get_option('keep-privs', self.keepPrivs)}"
-                    f"{self.get_option('memory', self.memory)}"
-                    f"{self.get_option('memory-reservation', self.memoryReservation)}"
-                    f"{self.get_option('memory-swap', self.memorySwap)}"
-                    f"{self.get_option('mount', self.mount)}"
-                    f"{self.get_option('net', self.net)}"
-                    f"{self.get_option('network', self.network)}"
-                    f"{self.get_option('network-args', self.networkArgs)}"
-                    f"{self.get_option('no-eval', self.noEval)}"
-                    f"{self.get_option('no-home', self.noHome)}"
-                    f"{self.get_option('no-https', self.noHttps)}"
-                    f"{self.get_option('no-init', self.noInit)}"
-                    f"{self.get_option('no-mount', self.noMount)}"
-                    f"{self.get_option('no-privs', self.noPrivs)}"
-                    f"{self.get_option('no-umask', self.noUmask)}"
-                    f"{self.get_option('nv', self.nv)}"
-                    f"{self.get_option('nvccli', self.nvccli)}"
-                    f"{self.get_option('oom-kill-disable', self.oomKillDisable)}"
-                    f"{self.get_option('overlay', self.overlay)}"
-                    f"{self.get_option('pem-path', self.pemPath)}"
-                    f"{self.get_option('pid-file', self.pidFile)}"
-                    f"{self.get_option('pids-limit', self.pidsLimit)}"
-                    f"{self.get_option('rocm', self.rocm)}"
-                    f"{self.get_option('scratch', self.scratch)}"
-                    f"{self.get_option('security', self.security)}"
-                    f"{self.get_option('userns', self.userns)}"
-                    f"{self.get_option('uts', self.uts)}"
-                    f"{self.get_option('workdir', self.workdir)}"
-                    f"{self.get_option('writable', self.writable)}"
-                    f"{self.get_option('writable-tmpfs', self.writableTmpfs)}"
+                    f"{get_option('add-caps', self.addCaps)}"
+                    f"{get_option('allow-setuid', self.allowSetuid)}"
+                    f"{get_option('apply-cgroups', self.applyCgroups)}"
+                    f"{get_option('bind', self.bind)}"
+                    f"{get_option('blkio-weight', self.blkioWeight)}"
+                    f"{get_option('blkio-weight-device', self.blkioWeightDevice)}"
+                    f"{get_option('boot', self.boot)}"
+                    f"{get_option('cleanenv', self.cleanenv)}"
+                    f"{get_option('compat', self.compat)}"
+                    f"{get_option('contain', self.contain)}"
+                    f"{get_option('containall', self.containall)}"
+                    f"{get_option('cpu-shares', self.cpuShares)}"
+                    f"{get_option('cpus', self.cpus)}"
+                    f"{get_option('cpuset-cpus', self.cpusetCpus)}"
+                    f"{get_option('cpuset-mems', self.cpusetMems)}"
+                    f"{get_option('disable-cache', self.disableCache)}"
+                    f"{get_option('docker-host', self.dockerHost)}"
+                    f"{get_option('dns', self.dns)}"
+                    f"{get_option('drop-caps', self.dropCaps)}"
+                    f"{get_option('env-file', self.envFile)}"
+                    f"{get_option('fakeroot', self.fakeroot)}"
+                    f"{get_option('fusemount', self.fusemount)}"
+                    f"{get_option('home', self.home)}"
+                    f"{get_option('hostname', self.hostname)}"
+                    f"{get_option('ipc', self.ipc)}"
+                    f"{get_option('keep-privs', self.keepPrivs)}"
+                    f"{get_option('memory', self.memory)}"
+                    f"{get_option('memory-reservation', self.memoryReservation)}"
+                    f"{get_option('memory-swap', self.memorySwap)}"
+                    f"{get_option('mount', self.mount)}"
+                    f"{get_option('net', self.net)}"
+                    f"{get_option('network', self.network)}"
+                    f"{get_option('network-args', self.networkArgs)}"
+                    f"{get_option('no-eval', self.noEval)}"
+                    f"{get_option('no-home', self.noHome)}"
+                    f"{get_option('no-https', self.noHttps)}"
+                    f"{get_option('no-init', self.noInit)}"
+                    f"{get_option('no-mount', self.noMount)}"
+                    f"{get_option('no-privs', self.noPrivs)}"
+                    f"{get_option('no-umask', self.noUmask)}"
+                    f"{get_option('nv', self.nv)}"
+                    f"{get_option('nvccli', self.nvccli)}"
+                    f"{get_option('oom-kill-disable', self.oomKillDisable)}"
+                    f"{get_option('overlay', self.overlay)}"
+                    f"{get_option('pem-path', self.pemPath)}"
+                    f"{get_option('pid-file', self.pidFile)}"
+                    f"{get_option('pids-limit', self.pidsLimit)}"
+                    f"{get_option('rocm', self.rocm)}"
+                    f"{get_option('scratch', self.scratch)}"
+                    f"{get_option('security', self.security)}"
+                    f"{get_option('userns', self.userns)}"
+                    f"{get_option('uts', self.uts)}"
+                    f"{get_option('workdir', self.workdir)}"
+                    f"{get_option('writable', self.writable)}"
+                    f"{get_option('writable-tmpfs', self.writableTmpfs)}"
                     f"{self.image} "
                     f"{instance_name} "
                     f"{' '.join(self.command) if self.command else ''}"

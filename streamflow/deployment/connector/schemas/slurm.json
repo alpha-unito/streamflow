@@ -1,0 +1,414 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "slurm.json",
+  "type": "object",
+  "definitions": {
+    "service": {
+      "$id": "#/definitions/service",
+      "type": "object",
+      "title": "SlurmService",
+      "description": "This complex type represents a submission to the Slurm queue manager.",
+      "properties": {
+        "account": {
+          "type": "string",
+          "description": "Charge resources used by this job to specified account"
+        },
+        "acctgFreq": {
+          "type": "string",
+          "description": "Define the job accounting and profiling sampling intervals in seconds"
+        },
+        "array": {
+          "type": "string",
+          "description": "Submit a job array, multiple jobs to be executed with identical parameters"
+        },
+        "batch": {
+          "type": "string",
+          "description": "Nodes can have features assigned to them by the Slurm administrator. Users can specify which of these features are required by their batch script using this options. The ``batch`` argument must be a subset of the job's ``constraint`` argument"
+        },
+        "bb": {
+          "type": "string",
+          "description": "Burst buffer specification. The form of the specification is system dependent"
+        },
+        "bbf": {
+          "type": "string",
+          "description": "Path of file containing burst buffer specification. The form of the specification is system dependent"
+        },
+        "begin": {
+          "type": "string",
+          "description": "Submit the batch script to the Slurm controller immediately, like normal, but tell the controller to defer the allocation of the job until the specified time"
+        },
+        "clusterConstraint": {
+          "type": "string",
+          "description": "Specifies features that a federated cluster must have to have a sibling job submitted to it. Slurm will attempt to submit a sibling job to a cluster if it has at least one of the specified features. If the ``!`` option is included, Slurm will attempt to submit a sibling job to a cluster that has none of the specified features"
+        },
+        "clusters": {
+          "type": "string",
+          "description": "Clusters to issue commands to. Multiple cluster names may be comma separated. The job will be submitted to the one cluster providing the earliest expected job initiation time. The default value is the current cluster"
+        },
+        "constraint": {
+          "type": "string",
+          "description": "Nodes can have features assigned to them by the Slurm administrator. Users can specify which of these features are required by their job using the constraint option"
+        },
+        "container": {
+          "type": "string",
+          "description": "Absolute path to OCI container bundle"
+        },
+        "containerId": {
+          "type": "string",
+          "description": "Unique name for OCI container"
+        },
+        "contiguous": {
+          "type": "boolean",
+          "description": "If set, then the allocated nodes must form a contiguous set"
+        },
+        "coreSpec": {
+          "type": "integer",
+          "description": "Count of specialized cores per node reserved by the job for system operations and not used by the application. The application will not use these cores, but will be charged for their allocation"
+        },
+        "coresPerSocket": {
+          "type": "integer",
+          "description": "Restrict node selection to nodes with at least the specified number of cores per socket"
+        },
+        "cpuFreq": {
+          "type": "string",
+          "description": "Request that job steps initiated by srun commands inside this sbatch script be run at some requested frequency if possible, on the CPUs selected for the step on the compute node(s)"
+        },
+        "cpusPerGpu": {
+          "type": "integer",
+          "description": "Advise Slurm that ensuing job steps will require ncpus processors per allocated GPU. Not compatible with the ``cpusPerTask`` option"
+        },
+        "cpusPerTask": {
+          "type": "integer",
+          "description": "Advise the Slurm controller that ensuing job steps will require ncpus number of processors per task. Without this option, the controller will just try to allocate one processor per task"
+        },
+        "deadline": {
+          "type": "string",
+          "description": "Remove the job if no ending is possible before this deadline. Default is no deadline"
+        },
+        "delayBoot": {
+          "type": "integer",
+          "description": "Do not reboot nodes in order to satisfied this job's feature specification if the job has been eligible to run for less than this time period. If the job has waited for less than the specified period, it will use only nodes which already have the specified features. The argument is in units of minutes"
+        },
+        "distribution": {
+          "type": "string",
+          "description": "Specify alternate distribution methods for remote processes. For job allocation, this sets environment variables that will be used by subsequent srun requests and also affects which cores will be selected for job allocation"
+        },
+        "exclude": {
+          "type": "string",
+          "description": "Explicitly exclude certain nodes from the resources granted to the jo"
+        },
+        "exclusive": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "The job allocation can not share nodes with other running jobs (or just other users with the ``user`` option or with the ``mcs`` option). If ``user``/``mcs`` are not specified (i.e. the job allocation can not share nodes with other running jobs), the job is allocated all CPUs and GRES on all nodes in the allocation, but is only allocated as much memory as it requested"
+        },
+        "export": {
+          "type": "string",
+          "description": "Identify which environment variables from the submission environment are propagated to the launched application"
+        },
+        "exportFile": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "If a number between 3 and ``OPEN_MAX`` is specified as the argument to this option, a readable file descriptor will be assumed (``STDIN`` and ``STDOUT`` are not supported as valid arguments). Otherwise a filename is assumed. Export environment variables defined in ``filename`` or read from ``fd`` to the job's execution environment"
+        },
+        "extraNodeInfo": {
+          "type": "string",
+          "description": "Restrict node selection to nodes with at least the specified number of sockets, cores per socket and/or threads per core"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+        },
+        "getUserEnv": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "This option will tell sbatch to retrieve the login environment variables for the user specified in the ``uid`` option. Be aware that any environment variables already set in sbatch's environment will take precedence over any environment variables in the user's login environment. The optional timeout value is in seconds (default: 8)"
+        },
+        "gid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Submit the job with group's group access permissions. The ``gid`` option may be the group name or the numerical group ID"
+        },
+        "gpuBind": {
+          "type": "string",
+          "description": "Bind tasks to specific GPUs. By default every spawned task can access every GPU allocated to the step"
+        },
+        "gpuFreq": {
+          "type": "string",
+          "description": "Request that GPUs allocated to the job are configured with specific frequency values. This option can be used to independently configure the GPU and its memory frequencies"
+        },
+        "gpus": {
+          "type": "string",
+          "description": "Specify the total number of GPUs required for the job. An optional GPU type specification can be supplied (e.g., ``volta:3``)"
+        },
+        "gpusPerNode": {
+          "type": "string",
+          "description": "Specify the number of GPUs required for the job on each node included in the job's resource allocation. An optional GPU type specification can be supplied (e.g., ``volta:3``)"
+        },
+        "gpusPerSocket": {
+          "type": "string",
+          "description": "Specify the number of GPUs required for the job on each socket included in the job's resource allocation. An optional GPU type specification can be supplied (e.g., ``volta:3``)"
+        },
+        "gpusPerTask": {
+          "type": "string",
+          "description": "Specify the number of GPUs required for the job on each task to be spawned in the job's resource allocation. An optional GPU type specification can be supplied (e.g., ``volta:3``)"
+        },
+        "gres": {
+          "type": "string",
+          "description": "Specifies a comma-delimited list of generic consumable resources"
+        },
+        "gresFlags": {
+          "type": "string",
+          "description": "Specify generic resource task binding options"
+        },
+        "hint": {
+          "type": "string",
+          "description": "Bind tasks according to application hints. This option cannot be used in conjunction with ``ntasksPerCore``, ``threadsPerCore``, or ``extraNodeInfo``"
+        },
+        "ignorePBS": {
+          "type": "boolean",
+          "description": "Ignore all ``#PBS`` and ``#BSUB`` options specified in the batch script"
+        },
+        "jobName": {
+          "type": "string",
+          "description": "Specify a name for the job allocation. The specified name will appear along with the job id number when querying running jobs on the system"
+        },
+        "licenses": {
+          "type": "string",
+          "description": "Specification of licenses (or other resources available on all nodes of the cluster) which must be allocated to this job"
+        },
+        "mailType": {
+          "type": "string",
+          "description": "Notify user by email when certain event types occur"
+        },
+        "mailUser": {
+          "type": "string",
+          "description": "User to receive email notification of state changes as defined by ``mailType``. The default value is the submitting user"
+        },
+        "mcsLabel": {
+          "type": "string",
+          "description": "Used only when the mcs/group plugin is enabled. This parameter is a group among the groups of the user"
+        },
+        "mem": {
+          "type": "string",
+          "description": "Specify the real memory required per node. Default units are megabytes"
+        },
+        "memBind": {
+          "type": "string",
+          "description": "Bind tasks to memory. Used only when the task/affinity plugin is enabled and the NUMA memory functions are available"
+        },
+        "memPerCpu": {
+          "type": "string",
+          "description": "Minimum memory required per usable allocated CPU. Default units are megabytes"
+        },
+        "memPerGpu": {
+          "type": "string",
+          "description": "Minimum memory required per allocated GPU. Default units are megabytes"
+        },
+        "mincpus": {
+          "type": "integer",
+          "description": "Specify a minimum number of logical cpus/processors per node"
+        },
+        "network": {
+          "type": "string",
+          "description": "Specify information pertaining to the switch or network"
+        },
+        "nice": {
+          "type": "integer",
+          "description": "Run the job with an adjusted scheduling priority within Slurm. With no adjustment value the scheduling priority is decreased by 100. A negative nice value increases the priority, otherwise decreases it"
+        },
+        "noKill": {
+          "type": "boolean",
+          "description": "Do not automatically terminate a job if one of the nodes it has been allocated fails. The user will assume the responsibilities for fault-tolerance should a node fail. The job allocation will not be revoked so the user may launch new job steps on the remaining nodes in their allocation"
+        },
+        "noRequeue": {
+          "type": "boolean",
+          "description": "Specifies that the batch job should never be requeued under any circumstances"
+        },
+        "nodefile": {
+          "type": "string",
+          "description": "Much like ``nodelist``, but the list is contained in a file of name node file"
+        },
+        "nodelist": {
+          "type": "string",
+          "description": "Request a specific list of hosts. The job will contain all of these hosts and possibly additional hosts as needed to satisfy resource requirements"
+        },
+        "nodes": {
+          "type": "string",
+          "description": "Request that a minimum of minnodes nodes be allocated to this job. A maximum node count may also be specified with maxnodes. If only one number is specified, this is used as both the minimum and maximum node count. Node count can be also specified as ``size_string``. The ``size_string`` specification identifies what nodes values should be used"
+        },
+        "ntasks": {
+          "type": "integer",
+          "description": "This option advises the Slurm controller that job steps run within the allocation will launch a maximum of number tasks and to provide for sufficient resources"
+        },
+        "ntasksPerCore": {
+          "type": "integer",
+          "description": "Request the maximum ntasks be invoked on each core"
+        },
+        "ntasksPerGpu": {
+          "type": "integer",
+          "description": "Request that there are ntasks tasks invoked for every GPU"
+        },
+        "ntasksPerNode": {
+          "type": "integer",
+          "description": "Request that ntasks be invoked on each node"
+        },
+        "ntasksPerSocket": {
+          "type": "integer",
+          "description": "Request the maximum ntasks be invoked on each socket"
+        },
+        "openMode": {
+          "type": "string",
+          "description": "Open the output and error files using append or truncate mode as specified"
+        },
+        "overcommit": {
+          "type": "boolean",
+          "description": "Overcommit resources. When applied to a job allocation (not including jobs requesting exclusive access to the nodes) the resources are allocated as if only one task per node is requested. "
+        },
+        "oversubscribe": {
+          "type": "boolean",
+          "description": "The job allocation can over-subscribe resources with other running jobs. The resources to be over-subscribed can be nodes, sockets, cores, and/or hyperthreads depending upon configuration"
+        },
+        "partition": {
+          "type": "string",
+          "description": "Request a specific partition for the resource allocation. If not specified, the default behavior is to allow the slurm controller to select the default partition as designated by the system administrator"
+        },
+        "power": {
+          "type": "string",
+          "description": "Comma separated list of power management plugin options"
+        },
+        "prefer": {
+          "type": "string",
+          "description": "Nodes can have features assigned to them by the Slurm administrator. Users can specify which of these features are desired but not required by their job using the prefer option. This option operates independently from ``constraint`` and will override whatever is set there if possible"
+        },
+        "priority": {
+          "type": "string",
+          "description": "Request a specific job priority. May be subject to configuration specific constraints"
+        },
+        "profile": {
+          "type": "string",
+          "description": "Enables detailed data collection by the ``acct_gather_profile`` plugin"
+        },
+        "propagate": {
+          "type": "string",
+          "description": "Allows users to specify which of the modifiable (soft) resource limits to propagate to the compute nodes and apply to their jobs"
+        },
+        "qos": {
+          "type": "string",
+          "description": "Request a quality of service for the job"
+        },
+        "reboot": {
+          "type": "boolean",
+          "description": "Force the allocated nodes to reboot before starting the job. This is only supported with some system configurations and will otherwise be silently ignored"
+        },
+        "requeue": {
+          "type": "boolean",
+          "description": "Specifies that the batch job should be eligible for requeuing. The job may be requeued explicitly by a system administrator, after node failure, or upon preemption by a higher priority job"
+        },
+        "reservation": {
+          "type": "string",
+          "description": "Allocate resources for the job from the named reservation. If the job can use more than one reservation, specify their names in a comma separate list and the one offering earliest initiation"
+        },
+        "signal": {
+          "type": "string",
+          "description": "When a job is within ``sig_time`` seconds of its end time, send it the signal ``sig_num``. Due to the resolution of event handling by Slurm, the signal may be sent up to 60 seconds earlier than specified"
+        },
+        "socketsPerNode": {
+          "type": "integer",
+          "description": "Restrict node selection to nodes with at least the specified number of sockets"
+        },
+        "spreadJob": {
+          "type": "boolean",
+          "description": "Spread the job allocation over as many nodes as possible and attempt to evenly distribute tasks across the allocated nodes"
+        },
+        "switches": {
+          "type": "string",
+          "description": "When a tree topology is used, this defines the maximum count of leaf switches desired for the job allocation and optionally the maximum time to wait for that number of switches. If Slurm finds an allocation containing more switches than the count specified, the job remains pending until it either finds an allocation with desired switch count or the time limit expires"
+        },
+        "threadSpec": {
+          "type": "integer",
+          "description": "Count of specialized threads per node reserved by the job for system operations and not used by the application. The application will not use these threads, but will be charged for their allocation"
+        },
+        "threadsPerCore": {
+          "type": "integer",
+          "description": "Restrict node selection to nodes with at least the specified number of threads per core. In task layout, use the specified maximum number of threads per core"
+        },
+        "timeMin": {
+          "type": "string",
+          "description": "Set a minimum time limit on the job allocation. If specified, the job may have its ``time`` limit lowered to a value no lower than ``timeMin`` if doing so permits the job to begin execution earlier than otherwise possible"
+        },
+        "tmp": {
+          "type": "integer",
+          "description": "Specify a minimum amount of temporary disk space per node. Default units are megabytes"
+        },
+        "tresPerTask": {
+          "type": "string",
+          "description": "Specifies a comma-delimited list of trackable resources required for the job on each task to be spawned in the job's resource allocation"
+        },
+        "uid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Attempt to submit and/or run a job as ``user`` instead of the invoking user id. ``user`` may be the user name or numerical user ID"
+        },
+        "useMinNodes": {
+          "type": "boolean",
+          "description": "If a range of node counts is given, prefer the smaller count"
+        },
+        "waitAllNodes": {
+          "type": "boolean",
+          "description": "Controls when the execution of the command begins. By default the job will begin execution as soon as the allocation is made"
+        },
+        "wckey": {
+          "type": "string",
+          "description": "Specify wckey to be used with job"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "queue_manager.json"
+    }
+  ],
+  "properties": {
+    "services": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-zA-Z0-9._-]*$": {
+          "$ref": "#/definitions/service"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

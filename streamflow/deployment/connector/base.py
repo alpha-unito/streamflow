@@ -69,24 +69,6 @@ class FutureAware(metaclass=FutureMeta):
 
 
 class BaseConnector(Connector, FutureAware):
-    @staticmethod
-    def get_option(
-        name: str,
-        value: Any,
-    ) -> str:
-        if len(name) > 1:
-            name = f"-{name} "
-        if isinstance(value, bool):
-            return f"-{name} " if value else ""
-        elif isinstance(value, str):
-            return f'-{name} "{value}" '
-        elif isinstance(value, MutableSequence):
-            return "".join([f'-{name} "{item}" ' for item in value])
-        elif value is None:
-            return ""
-        else:
-            raise TypeError("Unsupported value type")
-
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
         super().__init__(deployment_name, config_dir)
         self.transferBufferSize: int = transferBufferSize

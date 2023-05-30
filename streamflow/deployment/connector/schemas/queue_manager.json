@@ -52,15 +52,6 @@
       "description": "Time interval (in seconds) between consecutive termination checks",
       "default": 5
     },
-    "services": {
-      "type": "object",
-      "patternProperties": {
-        "^[a-z][a-zA-Z0-9._-]*$": {
-          "type": "string",
-          "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
-        }
-      }
-    },
     "sshKey": {
       "type": "string",
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Path to the SSH key needed to connect with Slurm environment"
@@ -83,6 +74,5 @@
       "type": "string",
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Username needed to connect with the SSH environment"
     }
-  },
-  "additionalProperties": false
+  }
 }
