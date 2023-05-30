@@ -256,17 +256,19 @@ async def test_execute_step(context: StreamFlowContext):
 
     in_port_name = "in-1"
     out_port_name = "out-1"
-    step = workflow.create_step(
+    token_value = "Hello"
+
+    execute_step = workflow.create_step(
         cls=ExecuteStep,
         name=utils.random_name(),
         job_port=schedule_step.get_output_port(),
     )
-    step.command = CWLCommand(
-        step=step,
+    execute_step.command = CWLCommand(
+        step=execute_step,
         base_command=["echo"],
         command_tokens=[CWLCommandToken(name=in_port_name, value=None)],
     )
-    step.add_output_port(
+    execute_step.add_output_port(
         out_port_name,
         out_port,
         _create_command_output_processor_base(
@@ -278,38 +280,29 @@ async def test_execute_step(context: StreamFlowContext):
             {"hints": {}, "requirements": {}},
         ),
     )
-    step.add_input_port(in_port_name, in_port)
-    hello = "Hello"
-    token_list = [Token(hello)]
+    token_list = [Token(token_value)]
+
+    execute_step.add_input_port(in_port_name, in_port)
     await _put_tokens(token_list, in_port, context)
+
+    schedule_step.add_input_port(in_port_name, in_port_schedule)
+    await _put_tokens(token_list, in_port_schedule, context)
 
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
-    schedule_step.get_output_port().token_list[0].value.inputs[
-        in_port_name
-    ] = token_list[0]
 
-    print("token", token_list[0].persistent_id, token_list[0].tag, token_list[0].value)
+    job_token = execute_step.get_input_port("__job__").token_list[0]
     await verify_dependency_tokens(
-        step.get_input_port("__job__").token_list[0],
-        step.get_input_port("__job__"),
-        [step.get_output_port(out_port_name).token_list[0]],
-        [schedule_step.get_input_port().token_list[0]],
+        job_token,
+        execute_step.get_input_port("__job__"),
+        [execute_step.get_output_port(out_port_name).token_list[0]],
+        [deploy_step.get_output_port().token_list[0], token_list[0]],
         context,
     )
-    job_token = step.get_input_port("__job__").token_list[0]
-    print("job_token", job_token.value.inputs.keys())
-    print(
-        "out_token id",
-        step.get_output_port(out_port_name).token_list[0].persistent_id,
-        "value",
-        step.get_output_port(out_port_name).token_list[0].value,
-    )
-    assert step.get_output_port(out_port_name).token_list[0].value == hello
     await verify_dependency_tokens(
-        step.get_output_port(out_port_name).token_list[0],
-        step.get_output_port(out_port_name),
+        execute_step.get_output_port(out_port_name).token_list[0],
+        execute_step.get_output_port(out_port_name),
         [],
         list(job_token.value.inputs.values()) + [job_token],
         context,
