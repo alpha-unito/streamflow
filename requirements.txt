@@ -4,7 +4,7 @@ antlr4-python3-runtime==4.13.0
 asyncssh==2.13.1
 bcrypt==4.0.1
 cachetools==5.3.1
-cwltool==3.1.20230527103121
+cwltool==3.1.20230601100705
 cwl-utils==0.28
 importlib_metadata==6.6.0
 Jinja2==3.1.2
