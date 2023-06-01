@@ -108,7 +108,7 @@ class BaseStep(Step, ABC):
     ) -> Token:
         if token.persistent_id:
             raise WorkflowDefinitionException(
-                f"Token already has an id {token.persistent_id}"
+                f"Token already has an id: {token.persistent_id}"
             )
         await token.save(self.workflow.context, port_id=port.persistent_id)
         if inputs and (
