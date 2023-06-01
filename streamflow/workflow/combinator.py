@@ -12,51 +12,6 @@ from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import IterationTerminationToken
 
 
-def _add_to_list(
-    token: Token | MutableMapping[str, Token],
-    token_values: MutableMapping[str, MutableMapping[str, MutableSequence[Any]]],
-    port_name: str,
-    depth: int = 0,
-    is_cartesian: bool = False,
-):
-    tag = (
-        utils.get_tag(token.values())
-        if isinstance(token, MutableMapping)
-        else token.tag
-    )
-    if depth:
-        tag = ".".join(tag.split(".")[:-depth])
-    for key in list(token_values.keys()):
-        if tag == key:
-            continue
-        elif key.startswith(tag):
-            _add_to_port(token, token_values[key], port_name, is_cartesian)
-        elif tag.startswith(key):
-            if tag not in token_values:
-                token_values[tag] = {}
-            for p in token_values[key]:
-                for t in token_values[key][p]:
-                    _add_to_port(t, token_values[tag], p, is_cartesian)
-    if tag not in token_values:
-        token_values[tag] = {}
-    _add_to_port(token, token_values[tag], port_name, is_cartesian)
-
-
-def _add_to_port(
-    token: Token | MutableMapping[str, Token],
-    tag_values: MutableMapping[str, MutableSequence[Any]],
-    port_name: str,
-    is_cartesian: bool,
-):
-    if port_name not in tag_values:
-        tag_values[port_name] = deque()
-    if is_cartesian:
-        for t in tag_values[port_name]:
-            if t.tag == token.tag:
-                return
-    tag_values[port_name].append(token)
-
-
 class CartesianProductCombinator(Combinator):
     def __init__(self, name: str, workflow: Workflow, depth: int = 1):
         super().__init__(name, workflow)
@@ -126,8 +81,11 @@ class CartesianProductCombinator(Combinator):
                 AsyncIterable,
                 c.combine(port_name, token, trace_token_id=trace_token_id),
             ):
-                _add_to_list(
-                    schema, self.token_values, c.name, self.depth, is_cartesian=True
+                self._add_to_list(
+                    schema,
+                    self.token_values,
+                    c.name,
+                    self.depth,
                 )
                 async for product in self._product(
                     port_name, token, trace_token_id=trace_token_id
@@ -135,9 +93,7 @@ class CartesianProductCombinator(Combinator):
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
-            _add_to_list(
-                token, self.token_values, port_name, self.depth, is_cartesian=True
-            )
+            self._add_to_list(token, self.token_values, port_name, self.depth)
             async for product in self._product(
                 port_name, token, trace_token_id=trace_token_id
             ):
@@ -147,6 +103,19 @@ class CartesianProductCombinator(Combinator):
             raise WorkflowExecutionException(
                 f"No item to combine for token '{port_name}'."
             )
+
+    def _add_to_port(
+        self,
+        token: Token | MutableMapping[str, Token],
+        tag_values: MutableMapping[str, MutableSequence[Any]],
+        port_name: str,
+    ):
+        if port_name not in tag_values:
+            tag_values[port_name] = deque()
+        for t in tag_values[port_name]:
+            if t.tag == token.tag:
+                return
+        tag_values[port_name].append(token)
 
 
 class DotProductCombinator(Combinator):
@@ -191,12 +160,12 @@ class DotProductCombinator(Combinator):
                 AsyncIterable,
                 c.combine(port_name, token, trace_token_id=trace_token_id),
             ):
-                _add_to_list(schema, self.token_values, c.name)
+                self._add_to_list(schema, self.token_values, c.name)
                 async for product in self._product(trace_token_id):
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
-            _add_to_list(token, self.token_values, port_name)
+            self._add_to_list(token, self.token_values, port_name)
             async for product in self._product(trace_token_id):
                 yield product
         # Otherwise throw Exception

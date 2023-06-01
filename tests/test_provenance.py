@@ -568,36 +568,36 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
     #   ( 12, 0.1, ['3', '4'] )
 
     # case #1: port_1 input tokens arrive first
-    #   - port_1: { output token id : input token id list }
-    #       { 13 : [3, 9], 15 : [3, 12], 17 : [6, 9], 19 : [6, 12] }
-    #   - port_2: { output token id : input token id list }
-    #       { 14 : [3, 9], 16 : [3, 12], 18 : [6, 9], 20 : [6, 12] }
-    # output port_1 token: (id, tag, value)
+    # - output port_1 token: (id, tag, value)
     #   ( 13, 0.0.0, ['a', 'b'] )
     #   ( 15, 0.0.1, ['a', 'b'] )
     #   ( 17, 0.1.0, ['c', 'd'] )
     #   ( 19, 0.1.1, ['c', 'd'] )
-    # output port_2 token: (id, tag, value)
+    # - output port_2 token: (id, tag, value)
     #   ( 14, 0.0.0, ['1', '2'] )
     #   ( 16, 0.0.1, ['3', '4'] )
     #   ( 18, 0.1.0, ['1', '2'] )
     #   ( 20, 0.1.1, ['3', '4'] )
+    # - provenance token in port_1: { output token id : input token id list }
+    #   { 13 : [3, 9], 15 : [3, 12], 17 : [6, 9], 19 : [6, 12] }
+    # - provenance token in port_2: { output token id : input token id list }
+    #   { 14 : [3, 9], 16 : [3, 12], 18 : [6, 9], 20 : [6, 12] }
 
     # case #2: port_2 input tokens arrive first
-    #   - port_1: { output token id : input token id list }
-    #       { 13 : [3, 9], 15 : [6, 9], 17 : [3, 12], 19 : [6, 12] }
-    #   - port_2: { output token id : input token id list }
-    #       { 14 : [3, 9], 16 : [6, 9], 18 : [3, 12], 20 : [6, 12] }
-    # output port_1 token: (id, tag, value)
+    # - output port_1 token: (id, tag, value)
     #   ( 13, 0.0.0, ['a', 'b'] )
     #   ( 15, 0.1.0, ['c', 'd'] )
     #   ( 17, 0.0.1, ['a', 'b'] )
     #   ( 19, 0.1.1, ['c', 'd'] )
-    # output port_2 token: (id, tag, value)
+    # - output port_2 token: (id, tag, value)
     #   ( 14, 0.0.0, ['1', '2'] )
     #   ( 16, 0.1.0, ['1', '2'] )
     #   ( 18, 0.0.1, ['3', '4'] )
     #   ( 20, 0.1.1, ['3', '4'] )
+    # - provenance token in port_1: { output token id : input token id list }
+    #   { 13 : [3, 9], 15 : [6, 9], 17 : [3, 12], 19 : [6, 12] }
+    # - provenance token in port_2: { output token id : input token id list }
+    #   { 14 : [3, 9], 16 : [6, 9], 18 : [3, 12], 20 : [6, 12] }
 
     # check port_1 outputs
     for i, out_token in enumerate(out_port_1.token_list[:-1]):

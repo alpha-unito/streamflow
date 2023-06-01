@@ -5,6 +5,7 @@ import json
 import logging
 import posixpath
 from abc import ABC, abstractmethod
+from collections import deque
 from types import ModuleType
 from typing import (
     Any,
@@ -232,6 +233,45 @@ class Combinator(ABC):
             "params": await self._save_additional_params(context),
         }
 
+    def _add_to_list(
+        self,
+        token: Token | MutableMapping[str, Token],
+        token_values: MutableMapping[str, MutableMapping[str, MutableSequence[Any]]],
+        port_name: str,
+        depth: int = 0,
+    ):
+        tag = (
+            utils.get_tag(token.values())
+            if isinstance(token, MutableMapping)
+            else token.tag
+        )
+        if depth:
+            tag = ".".join(tag.split(".")[:-depth])
+        for key in list(token_values.keys()):
+            if tag == key:
+                continue
+            elif key.startswith(tag):
+                self._add_to_port(token, token_values[key], port_name)
+            elif tag.startswith(key):
+                if tag not in token_values:
+                    token_values[tag] = {}
+                for p in token_values[key]:
+                    for t in token_values[key][p]:
+                        self._add_to_port(t, token_values[tag], p)
+        if tag not in token_values:
+            token_values[tag] = {}
+        self._add_to_port(token, token_values[tag], port_name)
+
+    def _add_to_port(
+        self,
+        token: Token | MutableMapping[str, Token],
+        tag_values: MutableMapping[str, MutableSequence[Any]],
+        port_name: str,
+    ):
+        if port_name not in tag_values:
+            tag_values[port_name] = deque()
+        tag_values[port_name].append(token)
+
 
 class CombinatorStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow, combinator: Combinator):
@@ -270,7 +310,9 @@ class CombinatorStep(BaseStep):
         ):
             schema_input_tokens.append(schema_in.values())
         i = 0
-        async for schema in self.combinator.combine(task_name, token):
+        async for schema in cast(
+            AsyncIterable, self.combinator.combine(task_name, token)
+        ):
             for port_name, token in schema.items():
                 self.get_output_port(port_name).put(
                     await self._persist_token(
