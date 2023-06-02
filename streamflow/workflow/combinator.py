@@ -81,19 +81,14 @@ class CartesianProductCombinator(Combinator):
                 AsyncIterable,
                 c.combine(port_name, token, trace_token_id=trace_token_id),
             ):
-                self._add_to_list(
-                    schema,
-                    self.token_values,
-                    c.name,
-                    self.depth,
-                )
+                self._add_to_list(schema, c.name, self.depth)
                 async for product in self._product(
                     port_name, token, trace_token_id=trace_token_id
                 ):
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
-            self._add_to_list(token, self.token_values, port_name, self.depth)
+            self._add_to_list(token, port_name, self.depth)
             async for product in self._product(
                 port_name, token, trace_token_id=trace_token_id
             ):
@@ -160,12 +155,12 @@ class DotProductCombinator(Combinator):
                 AsyncIterable,
                 c.combine(port_name, token, trace_token_id=trace_token_id),
             ):
-                self._add_to_list(schema, self.token_values, c.name)
+                self._add_to_list(schema, c.name)
                 async for product in self._product(trace_token_id):
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
-            self._add_to_list(token, self.token_values, port_name)
+            self._add_to_list(token, port_name)
             async for product in self._product(trace_token_id):
                 yield product
         # Otherwise throw Exception

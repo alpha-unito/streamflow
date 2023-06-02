@@ -236,7 +236,6 @@ class Combinator(ABC):
     def _add_to_list(
         self,
         token: Token | MutableMapping[str, Token],
-        token_values: MutableMapping[str, MutableMapping[str, MutableSequence[Any]]],
         port_name: str,
         depth: int = 0,
     ):
@@ -247,20 +246,20 @@ class Combinator(ABC):
         )
         if depth:
             tag = ".".join(tag.split(".")[:-depth])
-        for key in list(token_values.keys()):
+        for key in list(self.token_values.keys()):
             if tag == key:
                 continue
             elif key.startswith(tag):
-                self._add_to_port(token, token_values[key], port_name)
+                self._add_to_port(token, self.token_values[key], port_name)
             elif tag.startswith(key):
-                if tag not in token_values:
-                    token_values[tag] = {}
-                for p in token_values[key]:
-                    for t in token_values[key][p]:
-                        self._add_to_port(t, token_values[tag], p)
-        if tag not in token_values:
-            token_values[tag] = {}
-        self._add_to_port(token, token_values[tag], port_name)
+                if tag not in self.token_values:
+                    self.token_values[tag] = {}
+                for p in self.token_values[key]:
+                    for t in self.token_values[key][p]:
+                        self._add_to_port(t, self.token_values[tag], p)
+        if tag not in self.token_values:
+            self.token_values[tag] = {}
+        self._add_to_port(token, self.token_values[tag], port_name)
 
     def _add_to_port(
         self,
