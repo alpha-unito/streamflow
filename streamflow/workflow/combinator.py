@@ -59,7 +59,7 @@ class CartesianProductCombinator(Combinator):
                 yield {
                     k: {
                         "token": t.retag(".".join(t.tag.split(".")[:-1] + suffix)),
-                        "inputs_id": [t.persistent_id],
+                        "input_ids": [t.persistent_id],
                     }
                     for k, t in schema.items()
                 }
@@ -131,13 +131,13 @@ class DotProductCombinator(Combinator):
                         else:
                             schema[key] = {
                                 "token": element,
-                                "inputs_id": [element.persistent_id],
+                                "input_ids": [element.persistent_id],
                             }
                     tag = utils.get_tag([t["token"] for t in schema.values()])
                     yield {
                         k: {
                             "token": t["token"].retag(tag),
-                            "inputs_id": t["inputs_id"],
+                            "input_ids": t["input_ids"],
                         }
                         for k, t in schema.items()
                     }
@@ -184,7 +184,7 @@ class LoopCombinator(DotProductCombinator):
                 self.iteration_map[prefix] += 1
                 tag = ".".join(tag.split(".")[:-1] + [str(self.iteration_map[prefix])])
             yield {
-                k: {"token": t["token"].retag(tag), "inputs_id": t["inputs_id"]}
+                k: {"token": t["token"].retag(tag), "input_ids": t["input_ids"]}
                 for k, t in schema.items()
             }
 
@@ -206,7 +206,7 @@ class LoopTerminationCombinator(DotProductCombinator):
             yield {
                 k: {
                     "token": IterationTerminationToken(tag=tag),
-                    "inputs_id": [id for t in schema.values() for id in t["inputs_id"]],
+                    "input_ids": [id for t in schema.values() for id in t["input_ids"]],
                 }
                 for k in self.output_items
             }
