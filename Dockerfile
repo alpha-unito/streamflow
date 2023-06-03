@@ -27,7 +27,7 @@ RUN apk --no-cache add \
         openssl \
         openssl-dev \
     && curl -fsSL \
-          --retry 5
+          --retry 5 \
           --retry-max-time 60 \
           --connect-timeout 5 \
           --max-time 10 \
