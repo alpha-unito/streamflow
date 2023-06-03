@@ -127,6 +127,7 @@ async def verify_dependency_tokens(
         "depender:",
         {token.persistent_id: [t.persistent_id for t in depender_list]},
     )
+    print("expected_depender", [t.persistent_id for t in expected_depender])
     assert len(depender_list) == len(expected_depender)
     for t1 in depender_list:
         assert contains_id(t1.persistent_id, expected_depender)
@@ -136,6 +137,7 @@ async def verify_dependency_tokens(
         "dependee:",
         {token.persistent_id: [t.persistent_id for t in dependee_list]},
     )
+    print("expected_dependee", [t.persistent_id for t in expected_dependee])
     try:
         assert len(dependee_list) == len(expected_dependee)
         for t1 in dependee_list:
@@ -196,9 +198,10 @@ async def test_scatter_step(context: StreamFlowContext):
         {"name": utils.random_name() + "-scatter"},
         token_list,
     )
-    for i in range(len(out_port.token_list) - 1):
+    assert len(out_port.token_list) == 4
+    for curr_token in out_port.token_list[:-1]:
         await verify_dependency_tokens(
-            out_port.token_list[i], out_port, (), [in_port.token_list[0]], context
+            curr_token, out_port, (), [in_port.token_list[0]], context
         )
 
 
@@ -211,6 +214,9 @@ async def test_deploy_step(context: StreamFlowContext):
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
+
+    # len(token_list) = N output tokens + 1 termination token
+    assert len(step.get_output_port().token_list) == 2
     await verify_dependency_tokens(
         step.get_output_port().token_list[0], step.get_output_port(), (), (), context
     )
@@ -323,6 +329,7 @@ async def test_gather_step(context: StreamFlowContext):
         {"name": utils.random_name() + "-gather"},
         token_list,
     )
+    assert len(out_port.token_list) == 2
     await verify_dependency_tokens(
         out_port.token_list[0], out_port, (), token_list, context
     )
@@ -360,9 +367,11 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
+    assert len(out_port.token_list) == 2
     await verify_dependency_tokens(
         out_port.token_list[0], out_port, [], [list_token, tt], context
     )
+    assert len(out_port_2.token_list) == 2
     await verify_dependency_tokens(
         out_port_2.token_list[0], out_port_2, [], [list_token, tt], context
     )
@@ -402,9 +411,12 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
+    assert len(out_port.token_list) == 2
     await verify_dependency_tokens(
         out_port.token_list[0], out_port, [], [token_list[0], token_list_2[0]], context
     )
+
+    assert len(out_port_2.token_list) == 2
     await verify_dependency_tokens(
         out_port_2.token_list[0],
         out_port_2,
@@ -451,6 +463,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
+    assert len(out_port.token_list) == 2
     await verify_dependency_tokens(
         out_port.token_list[0], out_port, [], [token_list[0], token_list_2[0]], context
     )
@@ -485,6 +498,7 @@ async def test_loop_termination_combinator(context: StreamFlowContext):
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
+    assert len(out_port.token_list) == 3
     for out_token, in_token in zip(out_port.token_list[:-1], list_token):
         await verify_dependency_tokens(out_token, out_port, [], [in_token], context)
 
@@ -600,6 +614,7 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
     #   { 14 : [3, 9], 16 : [6, 9], 18 : [3, 12], 20 : [6, 12] }
 
     # check port_1 outputs
+    assert len(out_port_1.token_list) == 5
     for i, out_token in enumerate(out_port_1.token_list[:-1]):
         await verify_dependency_tokens(
             out_token,
@@ -611,6 +626,7 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
         )
 
     # check port_2 outputs
+    assert len(out_port_2.token_list) == 5
     for i, out_token in enumerate(out_port_2.token_list[:-1]):
         await verify_dependency_tokens(
             out_token,
