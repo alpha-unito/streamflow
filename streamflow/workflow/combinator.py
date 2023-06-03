@@ -59,10 +59,12 @@ class CartesianProductCombinator(Combinator):
                 suffix = [t.tag.split(".")[-1] for t in schema.values()]
                 yield await self._save_token(
                     {
-                        k: t.retag(".".join(t.tag.split(".")[:-1] + suffix))
+                        k: {
+                            "token": t.retag(".".join(t.tag.split(".")[:-1] + suffix)),
+                            "inputs_id": [t.persistent_id],
+                        }
                         for k, t in schema.items()
                     },
-                    schema,
                     combinator_step,
                 )
 
@@ -131,11 +133,19 @@ class DotProductCombinator(Combinator):
                         if key in self.combinators:
                             schema = {**schema, **element}
                         else:
-                            schema[key] = element
-                    tag = utils.get_tag(schema.values())
+                            schema[key] = {
+                                "token": element,
+                                "inputs_id": [element.persistent_id],
+                            }
+                    tag = utils.get_tag([t["token"] for t in schema.values()])
                     yield await self._save_token(
-                        {k: t.retag(tag) for k, t in schema.items()},
-                        schema,
+                        {
+                            k: {
+                                "token": t["token"].retag(tag),
+                                "inputs_id": t["inputs_id"],
+                            }
+                            for k, t in schema.items()
+                        },
                         combinator_step,
                     )
 
@@ -172,7 +182,7 @@ class LoopCombinator(DotProductCombinator):
         self, combinator_step
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         async for schema in super()._product(None):
-            tag = utils.get_tag(schema.values())
+            tag = utils.get_tag([t["token"] for t in schema.values()])
             prefix = ".".join(tag.split(".")[:-1])
             if prefix not in self.iteration_map:
                 self.iteration_map[tag] = 0
@@ -181,7 +191,11 @@ class LoopCombinator(DotProductCombinator):
                 self.iteration_map[prefix] += 1
                 tag = ".".join(tag.split(".")[:-1] + [str(self.iteration_map[prefix])])
             yield await self._save_token(
-                {k: t.retag(tag) for k, t in schema.items()}, schema, combinator_step
+                {
+                    k: {"token": t["token"].retag(tag), "inputs_id": t["inputs_id"]}
+                    for k, t in schema.items()
+                },
+                combinator_step,
             )
 
 
@@ -200,9 +214,14 @@ class LoopTerminationCombinator(DotProductCombinator):
         self, combinator_step
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         async for schema in super()._product(None):
-            tag = utils.get_tag(schema.values())
+            tag = utils.get_tag([t["token"] for t in schema.values()])
             yield await self._save_token(
-                {k: IterationTerminationToken(tag=tag) for k in self.output_items},
-                schema,
+                {
+                    k: {
+                        "token": IterationTerminationToken(tag=tag),
+                        "inputs_id": schema[k]["inputs_id"],
+                    }
+                    for k in self.output_items
+                },
                 combinator_step,
             )

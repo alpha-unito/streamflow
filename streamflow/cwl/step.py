@@ -28,7 +28,7 @@ from streamflow.workflow.step import (
     InputInjectorStep,
     LoopOutputStep,
     TransferStep,
-    _persist_token,
+    _persist_token, _get_tokens_id,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
@@ -104,7 +104,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                 await _persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
-                    inputs=inputs.values(),
+                    inputs=_get_tokens_id(inputs.values()),
                     context=self.workflow.context,
                 )
             )
@@ -116,7 +116,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                 await _persist_token(
                     token=Token(value=None, tag=get_tag(inputs.values())),
                     port=port,
-                    inputs=inputs.values(),
+                    inputs=_get_tokens_id(inputs.values()),
                     context=self.workflow.context,
                 )
             )
@@ -218,7 +218,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
                 await _persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
-                    inputs=inputs.values(),
+                    inputs=_get_tokens_id(inputs.values()),
                     context=self.workflow.context,
                 )
             )
@@ -237,7 +237,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
                 await _persist_token(
                     token=ListToken(value=token_value, tag=get_tag(inputs.values())),
                     port=port,
-                    inputs=inputs.values(),
+                    inputs=_get_tokens_id(inputs.values()),
                     context=self.workflow.context,
                 )
             )

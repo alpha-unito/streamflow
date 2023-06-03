@@ -67,21 +67,30 @@ class ListMergeCombinator(DotProductCombinator):
         if not isinstance(token, IterationTerminationToken):
             async for schema in super().combine(port_name, token):
                 # If there is only one input, merge its value
+                inputs_token_id = []
                 if len(self.input_names) == 1:
-                    if isinstance(outputs := schema[self.input_names[0]], ListToken):
+                    if isinstance(
+                        outputs := schema[self.input_names[0]]["token"], ListToken
+                    ):
                         outputs = outputs.value
                     else:
                         outputs = [outputs]
-                    tag = schema[self.input_names[0]].tag
+                    tag = schema[self.input_names[0]]["token"].tag
+                    inputs_token_id.extend(schema[self.input_names[0]]["inputs_id"])
                 # Otherwise, merge multiple inputs in a single list
                 else:
-                    outputs = [schema[name] for name in self.input_names]
+                    outputs = [schema[name]["token"] for name in self.input_names]
+                    inputs_token_id.extend([id for name in self.input_names for id in schema[name]["inputs_id"]])
                     tag = get_tag(outputs)
                 # Flatten if needed
                 if self.flatten:
                     outputs = _flatten_token_list(outputs)
                 yield await self._save_token(
-                    {self.output_name: ListToken(value=outputs, tag=tag)},
-                    schema,
+                    {
+                        self.output_name: {
+                            "token": ListToken(value=outputs, tag=tag),
+                            "inputs_id": inputs_token_id,
+                        }
+                    },
                     combinator_step,
                 )
