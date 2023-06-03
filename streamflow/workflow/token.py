@@ -20,7 +20,7 @@ class IterationTerminationToken(Token):
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag)
 
-    def retag(self, tag: str, keep_persistent_id: bool = False) -> Token:
+    def retag(self, tag: str) -> Token:
         raise NotImplementedError
 
     @classmethod
@@ -159,7 +159,7 @@ class TerminationToken(Token):
     def update(self, value: Any) -> Token:
         raise NotImplementedError
 
-    def retag(self, tag: str, keep_persistent_id: bool = False) -> Token:
+    def retag(self, tag: str) -> Token:
         raise NotImplementedError
 
     @classmethod

@@ -559,11 +559,8 @@ class Token(PersistableEntity):
         else:
             return True
 
-    def retag(self, tag: str, keep_persistent_id: bool = False) -> Token:
-        token = self.__class__(tag=tag, value=self.value)
-        if keep_persistent_id:
-            token.persistent_id = self.persistent_id
-        return token
+    def retag(self, tag: str) -> Token:
+        return self.__class__(tag=tag, value=self.value)
 
     async def save(self, context: StreamFlowContext, port_id: int | None = None):
         async with self.persistence_lock:
