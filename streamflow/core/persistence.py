@@ -156,6 +156,18 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
+    async def get_dependees(
+        self, token_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        ...
+
+    @abstractmethod
+    async def get_dependers(
+        self, token_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        ...
+
+    @abstractmethod
     async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
         ...
 

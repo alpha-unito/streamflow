@@ -18,7 +18,7 @@ class IterationTerminationToken(Token):
         return 0
 
     def update(self, value: Any) -> Token:
-        raise NotImplementedError
+        return self.__class__(tag=self.tag)
 
     def retag(self, tag: str) -> Token:
         raise NotImplementedError

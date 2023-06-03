@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import MutableSequence, TYPE_CHECKING
 
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Token
 from streamflow.workflow.token import (
     IterationTerminationToken,
     ListToken,
     ObjectToken,
     TerminationToken,
+    JobToken,
 )
 
 if TYPE_CHECKING:
@@ -44,3 +46,12 @@ def get_token_value(token: Token) -> Any:
         return get_token_value(token.value)
     else:
         return token.value
+
+
+def get_job_token(job_name: str, token_list: MutableSequence[Token]):
+    for token in token_list:
+        if isinstance(token, JobToken) and token.value.name == job_name:
+            return token
+    raise WorkflowExecutionException(
+        f"Impossible to find job {job_name} in token_list {token_list}"
+    )

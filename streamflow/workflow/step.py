@@ -5,6 +5,7 @@ import json
 import logging
 import posixpath
 from abc import ABC, abstractmethod
+from collections import deque
 from types import ModuleType
 from typing import (
     Any,
@@ -41,7 +42,11 @@ from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
-from streamflow.workflow.utils import check_iteration_termination, check_termination
+from streamflow.workflow.utils import (
+    check_iteration_termination,
+    check_termination,
+    get_job_token,
+)
 
 
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
@@ -73,6 +78,10 @@ def _group_by_tag(
         inputs_map[token.tag][name] = token
 
 
+def _get_token_ids(token_list):
+    return [t.persistent_id for t in (token_list or []) if t.persistent_id]
+
+
 class BaseStep(Step, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
@@ -100,12 +109,16 @@ class BaseStep(Step, ABC):
         return inputs
 
     async def _persist_token(
-        self, token: Token, port: Port, inputs: Iterable[Token]
+        self, token: Token, port: Port, input_token_ids: Iterable[int]
     ) -> Token:
+        if token.persistent_id:
+            raise WorkflowDefinitionException(
+                f"Token already has an id: {token.persistent_id}"
+            )
         await token.save(self.workflow.context, port_id=port.persistent_id)
-        if inputs:
+        if input_token_ids:
             await self.workflow.context.database.add_provenance(
-                inputs=[i.persistent_id for i in inputs], token=token.persistent_id
+                inputs=input_token_ids, token=token.persistent_id
             )
         return token
 
@@ -218,6 +231,44 @@ class Combinator(ABC):
             "params": await self._save_additional_params(context),
         }
 
+    def _add_to_list(
+        self,
+        token: Token | MutableMapping[str, Token],
+        port_name: str,
+        depth: int = 0,
+    ):
+        tag = (
+            utils.get_tag([t["token"] for t in token.values()])
+            if isinstance(token, MutableMapping)
+            else token.tag
+        )
+        if depth:
+            tag = ".".join(tag.split(".")[:-depth])
+        for key in list(self.token_values.keys()):
+            if tag == key:
+                continue
+            elif key.startswith(tag):
+                self._add_to_port(token, self.token_values[key], port_name)
+            elif tag.startswith(key):
+                if tag not in self.token_values:
+                    self.token_values[tag] = {}
+                for p in self.token_values[key]:
+                    for t in self.token_values[key][p]:
+                        self._add_to_port(t, self.token_values[tag], p)
+        if tag not in self.token_values:
+            self.token_values[tag] = {}
+        self._add_to_port(token, self.token_values[tag], port_name)
+
+    def _add_to_port(
+        self,
+        token: Token | MutableMapping[str, Token],
+        tag_values: MutableMapping[str, MutableSequence[Any]],
+        port_name: str,
+    ):
+        if port_name not in tag_values:
+            tag_values[port_name] = deque()
+        tag_values[port_name].append(token)
+
 
 class CombinatorStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow, combinator: Combinator):
@@ -283,16 +334,19 @@ class CombinatorStep(BaseStep):
                             )
                         status = Status.COMPLETED
                         async for schema in cast(
-                            AsyncIterable, self.combinator.combine(task_name, token)
+                            AsyncIterable,
+                            self.combinator.combine(task_name, token),
                         ):
+                            ins = [id for t in schema.values() for id in t["input_ids"]]
                             for port_name, token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=token,
+                                        token=token["token"],
                                         port=self.get_output_port(port_name),
-                                        inputs=schema.values(),
+                                        input_token_ids=ins,
                                     )
                                 )
+
                     # Create a new task in place of the completed one if the port is not terminated
                     if task_name not in terminated:
                         input_tasks.append(
@@ -460,10 +514,10 @@ class DeployStep(BaseStep):
                             )
                             # Propagate the connector in the output port
                             self.get_output_port().put(
-                                await self._persist_token(
+                                await self.persist_token(
                                     token=Token(value=self.deployment_config.name),
                                     port=self.get_output_port(),
-                                    inputs=inputs.values(),
+                                    inputs=_get_token_ids(inputs.values()),
                                 )
                             )
             else:
@@ -476,7 +530,7 @@ class DeployStep(BaseStep):
                     await self._persist_token(
                         token=Token(value=self.deployment_config.name),
                         port=self.get_output_port(),
-                        inputs=[],
+                        input_token_ids=[],
                     )
                 )
             await self.terminate(Status.COMPLETED)
@@ -551,7 +605,16 @@ class ExecuteStep(BaseStep):
         ) is not None:
             output_port.put(
                 await self._persist_token(
-                    token=token, port=output_port, inputs=job.inputs.values()
+                    token=token,
+                    port=output_port,
+                    input_token_ids=_get_token_ids(
+                        list(job.inputs.values())
+                        + [
+                            get_job_token(
+                                job.name, self.get_input_port("__job__").token_list
+                            )
+                        ]
+                    ),
                 )
             )
 
@@ -830,7 +893,7 @@ class GatherStep(BaseStep):
                                 tag=tag, value=sorted(tokens, key=lambda cur: cur.tag)
                             ),
                             port=output_port,
-                            inputs=tokens,
+                            input_token_ids=_get_token_ids(tokens),
                         )
                     )
                 break
@@ -915,12 +978,20 @@ class InputInjectorStep(BaseStep, ABC):
                     await self.workflow.context.scheduler.notify_status(
                         job.name, Status.RUNNING
                     )
+                    in_list = [
+                        get_job_token(
+                            job.name, self.get_input_port("__job__").token_list
+                        )
+                    ]
+                    # if token.persistent is none it means it comes from the dataset
+                    if token.persistent_id:
+                        in_list.append(token)
                     # Process value and inject token in the output port
                     self.get_output_port().put(
                         await self._persist_token(
                             token=await self.process_input(job, token.value),
                             port=self.get_output_port(),
-                            inputs=[token],
+                            input_token_ids=_get_token_ids(in_list),
                         )
                     )
                 finally:
@@ -993,15 +1064,18 @@ class LoopCombinatorStep(CombinatorStep):
                             self.iteration_terminaton_checklist[task_name].add(
                                 token.tag
                             )
+
                         async for schema in cast(
-                            AsyncIterable, self.combinator.combine(task_name, token)
+                            AsyncIterable,
+                            self.combinator.combine(task_name, token),
                         ):
+                            ins = [id for t in schema.values() for id in t["input_ids"]]
                             for port_name, token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=token,
+                                        token=token["token"],
                                         port=self.get_output_port(port_name),
-                                        inputs=schema.values(),
+                                        input_token_ids=ins,
                                     )
                                 )
                     # Create a new task in place of the completed one if the port is not terminated
@@ -1070,7 +1144,7 @@ class LoopOutputStep(BaseStep, ABC):
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
                     break
-                # Otherwise, build termination map to wait for all iteration temrinations
+                # Otherwise, build termination map to wait for all iteration terminations
                 else:
                     self.termination_map = {
                         k: len(self.token_map[k]) == self.size_map.get(k, -1)
@@ -1095,7 +1169,7 @@ class LoopOutputStep(BaseStep, ABC):
                     await self._persist_token(
                         token=await self._process_output(prefix),
                         port=self.get_output_port(),
-                        inputs=self.token_map.get(prefix),
+                        input_token_ids=_get_token_ids(self.token_map.get(prefix)),
                     )
                 )
             # If all iterations are terminated, terminate the step
@@ -1198,11 +1272,19 @@ class ScheduleStep(BaseStep):
                     relpath=directory,
                 )
         # Propagate job
+        token_inputs = []
+        for step_port_name in self.input_ports.keys():
+            if step_port_name in job.inputs.keys():
+                token_inputs.append(job.inputs[step_port_name])
+            else:  # other tokens from connector ports
+                for t in self.get_input_port(step_port_name).token_list:
+                    if t.persistent_id:
+                        token_inputs.append(t)
         self.get_output_port().put(
             await self._persist_token(
                 token=JobToken(value=job),
                 port=self.get_output_port(),
-                inputs=job.inputs.values(),
+                input_token_ids=_get_token_ids(token_inputs),
             )
         )
 
@@ -1346,7 +1428,7 @@ class ScatterStep(BaseStep):
                     await self._persist_token(
                         token=t.retag(token.tag + "." + str(i)),
                         port=output_port,
-                        inputs=[token],
+                        input_token_ids=_get_token_ids([token]),
                     )
                 )
         else:
@@ -1456,7 +1538,17 @@ class TransferStep(BaseStep, ABC):
                                     await self._persist_token(
                                         token=await self.transfer(job, token),
                                         port=self.get_output_port(port_name),
-                                        inputs=inputs.values(),
+                                        input_token_ids=_get_token_ids(
+                                            list(inputs.values())
+                                            + [
+                                                get_job_token(
+                                                    job.name,
+                                                    self.get_input_port(
+                                                        "__job__"
+                                                    ).token_list,
+                                                )
+                                            ]
+                                        ),
                                     )
                                 )
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
@@ -1501,9 +1593,11 @@ class Transformer(BaseStep, ABC):
                                 for port_name, token in inputs.items():
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
-                                            token=token,
+                                            token=token.update(token.value),
                                             port=self.get_output_port(port_name),
-                                            inputs=inputs.values(),
+                                            input_token_ids=_get_token_ids(
+                                                inputs.values()
+                                            ),
                                         )
                                     )
                             # Otherwise, apply transformation and propagate outputs
@@ -1515,14 +1609,18 @@ class Transformer(BaseStep, ABC):
                                         await self._persist_token(
                                             token=token,
                                             port=self.get_output_port(port_name),
-                                            inputs=inputs.values(),
+                                            input_token_ids=_get_token_ids(
+                                                inputs.values()
+                                            ),
                                         )
                                     )
             else:
                 for port_name, token in (await self.transform({})).items():
                     self.get_output_port(port_name).put(
                         await self._persist_token(
-                            token=token, port=self.get_output_port(port_name), inputs=[]
+                            token=token,
+                            port=self.get_output_port(port_name),
+                            input_token_ids=[],
                         )
                     )
             # Terminate step

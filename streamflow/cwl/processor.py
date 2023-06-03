@@ -346,7 +346,7 @@ class CWLTokenProcessor(TokenProcessor):
                     check_file=True,
                 )
         # Return the token
-        return token
+        return token.update(token.value)
 
 
 class CWLCommandOutputProcessor(CommandOutputProcessor):

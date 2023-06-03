@@ -28,6 +28,7 @@ from streamflow.workflow.step import (
     InputInjectorStep,
     LoopOutputStep,
     TransferStep,
+    _get_token_ids,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
@@ -99,12 +100,24 @@ class CWLConditionalStep(CWLBaseConditionalStep):
     async def _on_true(self, inputs: MutableMapping[str, Token]):
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
-            port.put(inputs[port_name])
+            port.put(
+                await self._persist_token(
+                    token=inputs[port_name].update(inputs[port_name].value),
+                    port=port,
+                    input_token_ids=_get_token_ids(inputs.values()),
+                )
+            )
 
     async def _on_false(self, inputs: MutableMapping[str, Token]):
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
-            port.put(Token(value=None, tag=get_tag(inputs.values())))
+            port.put(
+                await self._persist_token(
+                    token=Token(value=None, tag=get_tag(inputs.values())),
+                    port=port,
+                    input_token_ids=_get_token_ids(inputs.values()),
+                )
+            )
 
     async def _save_additional_params(
         self, context: StreamFlowContext
@@ -199,7 +212,13 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
     async def _on_true(self, inputs: MutableMapping[str, Token]):
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
-            port.put(inputs[port_name])
+            port.put(
+                await self._persist_token(
+                    token=inputs[port_name].update(inputs[port_name].value),
+                    port=port,
+                    input_token_ids=_get_token_ids(inputs.values()),
+                )
+            )
 
     async def _on_false(self, inputs: MutableMapping[str, Token]):
         # Get empty scatter return value
@@ -211,7 +230,13 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
             token_value = []
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
-            port.put(ListToken(value=token_value, tag=get_tag(inputs.values())))
+            port.put(
+                await self._persist_token(
+                    token=ListToken(value=token_value, tag=get_tag(inputs.values())),
+                    port=port,
+                    input_token_ids=_get_token_ids(inputs.values()),
+                )
+            )
 
     async def _save_additional_params(
         self, context: StreamFlowContext
