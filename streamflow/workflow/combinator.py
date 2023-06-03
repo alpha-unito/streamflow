@@ -8,7 +8,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Token, Workflow
-from streamflow.workflow.step import Combinator, CombinatorStep
+from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import IterationTerminationToken
 
 
@@ -37,7 +37,6 @@ class CartesianProductCombinator(Combinator):
         self,
         port_name: str,
         token: Token | MutableSequence[Token],
-        combinator_step: CombinatorStep,
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # Get all combinations of the new element with the others
         tag = ".".join(token.tag.split(".")[: -self.depth])
@@ -57,16 +56,13 @@ class CartesianProductCombinator(Combinator):
                     else:
                         schema[key] = config[key]
                 suffix = [t.tag.split(".")[-1] for t in schema.values()]
-                yield await self._save_token(
-                    {
-                        k: {
-                            "token": t.retag(".".join(t.tag.split(".")[:-1] + suffix)),
-                            "inputs_id": [t.persistent_id],
-                        }
-                        for k, t in schema.items()
-                    },
-                    combinator_step,
-                )
+                yield {
+                    k: {
+                        "token": t.retag(".".join(t.tag.split(".")[:-1] + suffix)),
+                        "inputs_id": [t.persistent_id],
+                    }
+                    for k, t in schema.items()
+                }
 
     async def _save_additional_params(self, context: StreamFlowContext):
         return {
@@ -75,7 +71,9 @@ class CartesianProductCombinator(Combinator):
         }
 
     async def combine(
-        self, port_name: str, token: Token, combinator_step: CombinatorStep = None
+        self,
+        port_name: str,
+        token: Token,
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # If port is associated to an inner combinator, call it and put schemas in their related list
         if c := self.get_combinator(port_name):
@@ -84,12 +82,12 @@ class CartesianProductCombinator(Combinator):
                 c.combine(port_name, token),
             ):
                 self._add_to_list(schema, c.name, self.depth)
-                async for product in self._product(port_name, token, combinator_step):
+                async for product in self._product(port_name, token):
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
             self._add_to_list(token, port_name, self.depth)
-            async for product in self._product(port_name, token, combinator_step):
+            async for product in self._product(port_name, token):
                 yield product
         # Otherwise throw Exception
         else:
@@ -118,9 +116,7 @@ class DotProductCombinator(Combinator):
             str, MutableMapping[str, MutableSequence[Any]]
         ] = {}
 
-    async def _product(
-        self, combinator_step
-    ) -> AsyncIterable[MutableMapping[str, Token]]:
+    async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
         # Check if some complete input sets are available
         for tag in list(self.token_values):
             if len(self.token_values[tag]) == len(self.items):
@@ -138,19 +134,18 @@ class DotProductCombinator(Combinator):
                                 "inputs_id": [element.persistent_id],
                             }
                     tag = utils.get_tag([t["token"] for t in schema.values()])
-                    yield await self._save_token(
-                        {
-                            k: {
-                                "token": t["token"].retag(tag),
-                                "inputs_id": t["inputs_id"],
-                            }
-                            for k, t in schema.items()
-                        },
-                        combinator_step,
-                    )
+                    yield {
+                        k: {
+                            "token": t["token"].retag(tag),
+                            "inputs_id": t["inputs_id"],
+                        }
+                        for k, t in schema.items()
+                    }
 
     async def combine(
-        self, port_name: str, token: Token, combinator_step: CombinatorStep = None
+        self,
+        port_name: str,
+        token: Token,
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # If port is associated to an inner combinator, call it and put schemas in their related list
         if c := self.get_combinator(port_name):
@@ -159,12 +154,12 @@ class DotProductCombinator(Combinator):
                 c.combine(port_name, token),
             ):
                 self._add_to_list(schema, c.name)
-                async for product in self._product(combinator_step):
+                async for product in self._product():
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
             self._add_to_list(token, port_name)
-            async for product in self._product(combinator_step):
+            async for product in self._product():
                 yield product
         # Otherwise throw Exception
         else:
@@ -178,10 +173,8 @@ class LoopCombinator(DotProductCombinator):
         super().__init__(name, workflow)
         self.iteration_map: MutableMapping[str, int] = {}
 
-    async def _product(
-        self, combinator_step
-    ) -> AsyncIterable[MutableMapping[str, Token]]:
-        async for schema in super()._product(None):
+    async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
+        async for schema in super()._product():
             tag = utils.get_tag([t["token"] for t in schema.values()])
             prefix = ".".join(tag.split(".")[:-1])
             if prefix not in self.iteration_map:
@@ -190,13 +183,10 @@ class LoopCombinator(DotProductCombinator):
             else:
                 self.iteration_map[prefix] += 1
                 tag = ".".join(tag.split(".")[:-1] + [str(self.iteration_map[prefix])])
-            yield await self._save_token(
-                {
-                    k: {"token": t["token"].retag(tag), "inputs_id": t["inputs_id"]}
-                    for k, t in schema.items()
-                },
-                combinator_step,
-            )
+            yield {
+                k: {"token": t["token"].retag(tag), "inputs_id": t["inputs_id"]}
+                for k, t in schema.items()
+            }
 
 
 class LoopTerminationCombinator(DotProductCombinator):
@@ -211,17 +201,14 @@ class LoopTerminationCombinator(DotProductCombinator):
         self.output_items.append(item)
 
     async def _product(
-        self, combinator_step
+        self,
     ) -> AsyncIterable[MutableMapping[str, Token]]:
-        async for schema in super()._product(None):
+        async for schema in super()._product():
             tag = utils.get_tag([t["token"] for t in schema.values()])
-            yield await self._save_token(
-                {
-                    k: {
-                        "token": IterationTerminationToken(tag=tag),
-                        "inputs_id": schema[k]["inputs_id"],
-                    }
-                    for k in self.output_items
-                },
-                combinator_step,
-            )
+            yield {
+                k: {
+                    "token": IterationTerminationToken(tag=tag),
+                    "inputs_id": schema[k]["inputs_id"],
+                }
+                for k in self.output_items
+            }

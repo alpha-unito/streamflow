@@ -7,7 +7,6 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Token, Workflow
 from streamflow.workflow.combinator import DotProductCombinator
-from streamflow.workflow.step import CombinatorStep
 from streamflow.workflow.token import IterationTerminationToken, ListToken
 
 
@@ -62,7 +61,7 @@ class ListMergeCombinator(DotProductCombinator):
         }
 
     async def combine(
-        self, port_name: str, token: Token, combinator_step: CombinatorStep = None
+        self, port_name: str, token: Token
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         if not isinstance(token, IterationTerminationToken):
             async for schema in super().combine(port_name, token):
@@ -80,17 +79,20 @@ class ListMergeCombinator(DotProductCombinator):
                 # Otherwise, merge multiple inputs in a single list
                 else:
                     outputs = [schema[name]["token"] for name in self.input_names]
-                    inputs_token_id.extend([id for name in self.input_names for id in schema[name]["inputs_id"]])
+                    inputs_token_id.extend(
+                        [
+                            id
+                            for name in self.input_names
+                            for id in schema[name]["inputs_id"]
+                        ]
+                    )
                     tag = get_tag(outputs)
                 # Flatten if needed
                 if self.flatten:
                     outputs = _flatten_token_list(outputs)
-                yield await self._save_token(
-                    {
-                        self.output_name: {
-                            "token": ListToken(value=outputs, tag=tag),
-                            "inputs_id": inputs_token_id,
-                        }
-                    },
-                    combinator_step,
-                )
+                yield {
+                    self.output_name: {
+                        "token": ListToken(value=outputs, tag=tag),
+                        "inputs_id": inputs_token_id,
+                    }
+                }

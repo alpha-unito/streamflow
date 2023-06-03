@@ -28,7 +28,7 @@ from streamflow.workflow.step import (
     InputInjectorStep,
     LoopOutputStep,
     TransferStep,
-    _persist_token, _get_tokens_id,
+    _get_tokens_id,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
@@ -101,11 +101,10 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
             port.put(
-                await _persist_token(
+                await self._persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
                     inputs=_get_tokens_id(inputs.values()),
-                    context=self.workflow.context,
                 )
             )
 
@@ -113,11 +112,10 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
             port.put(
-                await _persist_token(
+                await self._persist_token(
                     token=Token(value=None, tag=get_tag(inputs.values())),
                     port=port,
                     inputs=_get_tokens_id(inputs.values()),
-                    context=self.workflow.context,
                 )
             )
 
@@ -215,11 +213,10 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
             port.put(
-                await _persist_token(
+                await self._persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
                     inputs=_get_tokens_id(inputs.values()),
-                    context=self.workflow.context,
                 )
             )
 
@@ -234,11 +231,10 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
             port.put(
-                await _persist_token(
+                await self._persist_token(
                     token=ListToken(value=token_value, tag=get_tag(inputs.values())),
                     port=port,
                     inputs=_get_tokens_id(inputs.values()),
-                    context=self.workflow.context,
                 )
             )
 
