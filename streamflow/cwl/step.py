@@ -104,7 +104,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                 await self._persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
-                    inputs=_get_tokens_id(inputs.values()),
+                    inputs_token_id=_get_tokens_id(inputs.values()),
                 )
             )
 
@@ -115,7 +115,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                 await self._persist_token(
                     token=Token(value=None, tag=get_tag(inputs.values())),
                     port=port,
-                    inputs=_get_tokens_id(inputs.values()),
+                    inputs_token_id=_get_tokens_id(inputs.values()),
                 )
             )
 
@@ -216,7 +216,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
                 await self._persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
-                    inputs=_get_tokens_id(inputs.values()),
+                    inputs_token_id=_get_tokens_id(inputs.values()),
                 )
             )
 
@@ -234,7 +234,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
                 await self._persist_token(
                     token=ListToken(value=token_value, tag=get_tag(inputs.values())),
                     port=port,
-                    inputs=_get_tokens_id(inputs.values()),
+                    inputs_token_id=_get_tokens_id(inputs.values()),
                 )
             )
 

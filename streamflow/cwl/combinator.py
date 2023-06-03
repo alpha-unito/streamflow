@@ -75,17 +75,15 @@ class ListMergeCombinator(DotProductCombinator):
                     else:
                         outputs = [outputs]
                     tag = schema[self.input_names[0]]["token"].tag
-                    inputs_token_id.extend(schema[self.input_names[0]]["inputs_id"])
+                    inputs_token_id = schema[self.input_names[0]]["inputs_id"]
                 # Otherwise, merge multiple inputs in a single list
                 else:
                     outputs = [schema[name]["token"] for name in self.input_names]
-                    inputs_token_id.extend(
-                        [
-                            id
-                            for name in self.input_names
-                            for id in schema[name]["inputs_id"]
-                        ]
-                    )
+                    inputs_token_id = [
+                        id
+                        for name in self.input_names
+                        for id in schema[name]["inputs_id"]
+                    ]
                     tag = get_tag(outputs)
                 # Flatten if needed
                 if self.flatten:

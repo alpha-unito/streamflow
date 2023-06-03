@@ -79,7 +79,9 @@ def _group_by_tag(
 
 
 def _get_tokens_id(token_list):
-    return [t.persistent_id for t in token_list if t.persistent_id]
+    if token_list:
+        return [t.persistent_id for t in token_list if t.persistent_id]
+    return []
 
 
 class BaseStep(Step, ABC):
@@ -109,16 +111,16 @@ class BaseStep(Step, ABC):
         return inputs
 
     async def _persist_token(
-        self, token: Token, port: Port, inputs: Iterable[Token]
+        self, token: Token, port: Port, inputs_token_id: Iterable[int]
     ) -> Token:
         if token.persistent_id:
             raise WorkflowDefinitionException(
                 f"Token already has an id: {token.persistent_id}"
             )
         await token.save(self.workflow.context, port_id=port.persistent_id)
-        if inputs:
+        if inputs_token_id:
             await self.workflow.context.database.add_provenance(
-                inputs=inputs, token=token.persistent_id
+                inputs=inputs_token_id, token=token.persistent_id
             )
         return token
 
@@ -343,7 +345,7 @@ class CombinatorStep(BaseStep):
                                     await self._persist_token(
                                         token=token["token"],
                                         port=self.get_output_port(port_name),
-                                        inputs=ins,
+                                        inputs_token_id=ins,
                                     )
                                 )
 
@@ -530,7 +532,7 @@ class DeployStep(BaseStep):
                     await self._persist_token(
                         token=Token(value=self.deployment_config.name),
                         port=self.get_output_port(),
-                        inputs=[],
+                        inputs_token_id=[],
                     )
                 )
             await self.terminate(Status.COMPLETED)
@@ -607,7 +609,7 @@ class ExecuteStep(BaseStep):
                 await self._persist_token(
                     token=token,
                     port=output_port,
-                    inputs=_get_tokens_id(
+                    inputs_token_id=_get_tokens_id(
                         list(job.inputs.values())
                         + [
                             get_job_token(
@@ -893,7 +895,7 @@ class GatherStep(BaseStep):
                                 tag=tag, value=sorted(tokens, key=lambda cur: cur.tag)
                             ),
                             port=output_port,
-                            inputs=_get_tokens_id(tokens),
+                            inputs_token_id=_get_tokens_id(tokens),
                         )
                     )
                 break
@@ -991,7 +993,7 @@ class InputInjectorStep(BaseStep, ABC):
                         await self._persist_token(
                             token=await self.process_input(job, token.value),
                             port=self.get_output_port(),
-                            inputs=_get_tokens_id(in_list),
+                            inputs_token_id=_get_tokens_id(in_list),
                         )
                     )
                 finally:
@@ -1075,7 +1077,7 @@ class LoopCombinatorStep(CombinatorStep):
                                     await self._persist_token(
                                         token=token["token"],
                                         port=self.get_output_port(port_name),
-                                        inputs=ins,
+                                        inputs_token_id=ins,
                                     )
                                 )
                     # Create a new task in place of the completed one if the port is not terminated
@@ -1169,7 +1171,7 @@ class LoopOutputStep(BaseStep, ABC):
                     await self._persist_token(
                         token=await self._process_output(prefix),
                         port=self.get_output_port(),
-                        inputs=_get_tokens_id(self.token_map.get(prefix)),
+                        inputs_token_id=_get_tokens_id(self.token_map.get(prefix)),
                     )
                 )
             # If all iterations are terminated, terminate the step
@@ -1284,7 +1286,7 @@ class ScheduleStep(BaseStep):
             await self._persist_token(
                 token=JobToken(value=job),
                 port=self.get_output_port(),
-                inputs=_get_tokens_id(token_inputs),
+                inputs_token_id=_get_tokens_id(token_inputs),
             )
         )
 
@@ -1428,7 +1430,7 @@ class ScatterStep(BaseStep):
                     await self._persist_token(
                         token=t.retag(token.tag + "." + str(i)),
                         port=output_port,
-                        inputs=_get_tokens_id([token]),
+                        inputs_token_id=_get_tokens_id([token]),
                     )
                 )
         else:
@@ -1538,7 +1540,7 @@ class TransferStep(BaseStep, ABC):
                                     await self._persist_token(
                                         token=await self.transfer(job, token),
                                         port=self.get_output_port(port_name),
-                                        inputs=_get_tokens_id(
+                                        inputs_token_id=_get_tokens_id(
                                             list(inputs.values())
                                             + [
                                                 get_job_token(
@@ -1595,7 +1597,9 @@ class Transformer(BaseStep, ABC):
                                         await self._persist_token(
                                             token=token.update(token.value),
                                             port=self.get_output_port(port_name),
-                                            inputs=_get_tokens_id(inputs.values()),
+                                            inputs_token_id=_get_tokens_id(
+                                                inputs.values()
+                                            ),
                                         )
                                     )
                             # Otherwise, apply transformation and propagate outputs
@@ -1607,7 +1611,9 @@ class Transformer(BaseStep, ABC):
                                         await self._persist_token(
                                             token=token,
                                             port=self.get_output_port(port_name),
-                                            inputs=_get_tokens_id(inputs.values()),
+                                            inputs_token_id=_get_tokens_id(
+                                                inputs.values()
+                                            ),
                                         )
                                     )
             else:
@@ -1616,7 +1622,7 @@ class Transformer(BaseStep, ABC):
                         await self._persist_token(
                             token=token,
                             port=self.get_output_port(port_name),
-                            inputs=[],
+                            inputs_token_id=[],
                         )
                     )
             # Terminate step

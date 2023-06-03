@@ -200,15 +200,13 @@ class LoopTerminationCombinator(DotProductCombinator):
     def add_output_item(self, item: str) -> None:
         self.output_items.append(item)
 
-    async def _product(
-        self,
-    ) -> AsyncIterable[MutableMapping[str, Token]]:
+    async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
         async for schema in super()._product():
             tag = utils.get_tag([t["token"] for t in schema.values()])
             yield {
                 k: {
                     "token": IterationTerminationToken(tag=tag),
-                    "inputs_id": schema[k]["inputs_id"],
+                    "inputs_id": [id for t in schema.values() for id in t["inputs_id"]],
                 }
                 for k in self.output_items
             }
