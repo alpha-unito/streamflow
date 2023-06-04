@@ -159,6 +159,9 @@ class ListToken(Token):
             )
         )
 
+    def __str__(self):
+        return str([str(t) for t in self.value])
+
 
 class ObjectToken(Token):
     __slots__ = ()

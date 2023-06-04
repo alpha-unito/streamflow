@@ -1,12 +1,11 @@
 import asyncio
-from collections.abc import MutableSequence
-from typing import Any
+from typing import Any, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.workflow import Token
 from streamflow.cwl import utils
-from streamflow.data.remotepath import StreamFlowPath
+from streamflow.data import remotepath
 from streamflow.workflow.token import FileToken
 
 
@@ -17,14 +16,17 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
     else:
         if path := utils.get_path_from_token(value):
             data_locations = context.data_manager.get_data_locations(
-                path=path, data_type=DataType.PRIMARY
+                path=path, location_type=DataType.PRIMARY
             )
             if data_locations:
-                data_location = next(iter(data_locations))
-                path = StreamFlowPath(
-                    data_location.path, context=context, location=data_location.location
+                location = list(data_locations)[0]
+                connector = context.deployment_manager.get_connector(
+                    location.deployment
                 )
-                weight = await (await path.resolve()).size()
+                real_path = await remotepath.follow_symlink(
+                    context, connector, location, location.path
+                )
+                weight = await remotepath.size(connector, location, real_path)
     if "secondaryFiles" in value:
         weight += sum(
             await asyncio.gather(
@@ -39,9 +41,17 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
     return weight
 
 
-class CWLFileToken(FileToken):
-    __slots__ = ()
+async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
+    if path := utils.get_path_from_token(value):
+        data_locations = context.data_manager.get_data_locations(
+            path=path, location_type=DataType.PRIMARY
+        )
+        return len(data_locations) != 0
+    else:
+        return True
 
+
+class CWLFileToken(FileToken):
     async def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]:
         paths = []
         if isinstance(self.value, MutableSequence):
@@ -63,3 +73,12 @@ class CWLFileToken(FileToken):
             return await self.value.get_weight(context)
         else:
             return await _get_file_token_weight(context, self.value)
+
+    async def is_available(self, context: StreamFlowContext):
+        if isinstance(self.value, Token):
+            return await self.value.is_available(context)
+        else:
+            return await _is_file_token_available(context, self.value)
+
+    def __str__(self):
+        return self.value["path"]

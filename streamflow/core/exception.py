@@ -22,6 +22,10 @@ class WorkflowProvenanceException(WorkflowException):
     pass
 
 
+class WorkflowTransferException(WorkflowException):
+    ...
+
+
 class FailureHandlingException(WorkflowException):
     pass
 

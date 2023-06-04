@@ -9,16 +9,23 @@ import os
 import posixpath
 import shlex
 import uuid
-from collections.abc import Iterable, MutableMapping, MutableSequence
-from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import (
+    Any,
+    MutableMapping,
+    MutableSequence,
+    TYPE_CHECKING,
+)
+
+import jsonref
 
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.persistence import PersistableEntity
+from streamflow import myconfig
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import Connector, ExecutionLocation
+    from streamflow.core.context import SchemaEntity
+    from streamflow.core.deployment import Connector, Location
     from streamflow.core.workflow import Token
+    from typing import Iterable
 
 
 class NamesStack:
@@ -51,23 +58,7 @@ class NamesStack:
         return False
 
 
-def compare_tags(tag1: str, tag2: str) -> int:
-    list1 = tag1.split(".")
-    list2 = tag2.split(".")
-    if (res := (len(list1) - len(list2))) != 0:
-        return res
-    for elem1, elem2 in zip(list1, list2):
-        if (res := (int(elem1) - int(elem2))) != 0:
-            return res
-    return 0
-
-
-def contains_persistent_id(id_: int, entities: Iterable[PersistableEntity]) -> bool:
-    return any(id_ == entity.persistent_id for entity in entities)
-
-
 def create_command(
-    class_name: str,
     command: MutableSequence[str],
     environment: MutableMapping[str, str] = None,
     workdir: str | None = None,
@@ -75,62 +66,29 @@ def create_command(
     stdout: int | str = asyncio.subprocess.STDOUT,
     stderr: int | str = asyncio.subprocess.STDOUT,
 ) -> str:
-    # Format stdin
-    stdin = (
-        f" < {shlex.quote(stdin)}"
-        if stdin is not None and stdin != asyncio.subprocess.DEVNULL
-        else ""
-    )
-    # Format stderr
-    if stderr == asyncio.subprocess.DEVNULL:
-        stderr = "/dev/null"
-    if stderr == stdout:
-        stderr = " 2>&1"
-    elif stderr != asyncio.subprocess.STDOUT:
-        stderr = f" 2>{shlex.quote(stderr)}"
-    else:
-        stderr = ""
-    # Format stdout
-    if stdout == asyncio.subprocess.PIPE:
-        raise WorkflowExecutionException(
-            f"The `{class_name}` does not support `stdout` pipe redirection."
-        )
-    elif stdout == asyncio.subprocess.DEVNULL:
-        stdout = "/dev/null"
-    elif stdout != asyncio.subprocess.STDOUT:
-        stdout = f" > {shlex.quote(stdout)}"
-    else:
-        stdout = ""
-    if stderr == asyncio.subprocess.PIPE:
-        raise WorkflowExecutionException(
-            f"The `{class_name}` does not support `stderr` pipe redirection."
-        )
-    # Build command
     command = "".join(
         "{workdir}" "{environment}" "{command}" "{stdin}" "{stdout}" "{stderr}"
     ).format(
         workdir=f"cd {workdir} && " if workdir is not None else "",
-        environment=(
-            "".join(
-                [f'export {key}="{value}" && ' for (key, value) in environment.items()]
-            )
-            if environment is not None
+        environment="".join(
+            [f'export {key}="{value}" && ' for (key, value) in environment.items()]
+        )
+        if environment is not None
+        else "",
+        command=" ".join(command),
+        stdin=f" < {shlex.quote(stdin)}" if stdin is not None else "",
+        stdout=f" > {shlex.quote(stdout)}"
+        if stdout != asyncio.subprocess.STDOUT
+        else "",
+        stderr=(
+            " 2>&1"
+            if stderr == stdout
+            else f" 2>{shlex.quote(stderr)}"
+            if stderr != asyncio.subprocess.STDOUT
             else ""
         ),
-        command=" ".join(command),
-        stdin=stdin,
-        stdout=stdout,
-        stderr=stderr,
     )
     return command
-
-
-def get_job_step_name(job_name: str) -> str:
-    return PurePosixPath(job_name).parent.name
-
-
-def get_job_tag(job_name: str) -> str:
-    return PurePosixPath(job_name).name
 
 
 def dict_product(**kwargs) -> MutableMapping[Any, Any]:
@@ -140,8 +98,11 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
         yield dict(zip(keys, list(instance)))
 
 
-def encode_command(command: str, shell: str = "sh") -> str:
-    return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | {shell}"
+def encode_command(command: str, shell: str = "sh"):
+    return "echo {command} | base64 -d | {shell}".format(
+        command=base64.b64encode(command.encode("utf-8")).decode("utf-8"),
+        shell=shell,  # nosec
+    )
 
 
 def flatten_list(hierarchical_list):
@@ -179,14 +140,8 @@ def get_date_from_ns(timestamp: int) -> str:
     return (base + delta).replace(tzinfo=datetime.timezone.utc).isoformat()
 
 
-def get_entity_ids(
-    persistable_entities: Iterable[PersistableEntity] | None,
-) -> MutableSequence[int]:
-    return [pe.persistent_id for pe in (persistable_entities or []) if pe.persistent_id]
-
-
 async def get_local_to_remote_destination(
-    dst_connector: Connector, dst_location: ExecutionLocation, src: str, dst: str
+    dst_connector: Connector, dst_location: Location, src: str, dst: str
 ):
     is_dst_dir, status = await dst_connector.run(
         location=dst_location,
@@ -225,10 +180,10 @@ def get_option(
 
 async def get_remote_to_remote_write_command(
     src_connector: Connector,
-    src_location: ExecutionLocation,
+    src_location: Location,
     src: str,
     dst_connector: Connector,
-    dst_locations: MutableSequence[ExecutionLocation],
+    dst_locations: MutableSequence[Location],
     dst: str,
 ) -> MutableSequence[str]:
     is_dst_dir, status = await dst_connector.run(
@@ -243,7 +198,7 @@ async def get_remote_to_remote_write_command(
         return ["tar", "xf", "-", "-C", dst]
     # Otherwise, if destination path does not exist
     else:
-        # If basename must be renamed during transfer
+        # If basename must be renamed during trnasfer
         if posixpath.basename(src) != posixpath.basename(dst):
             is_src_dir, status = await src_connector.run(
                 location=src_location,
@@ -273,6 +228,18 @@ async def get_remote_to_remote_write_command(
             return ["tar", "xf", "-", "-C", posixpath.dirname(dst)]
 
 
+def get_size(path):
+    if os.path.isfile(path):
+        return os.path.getsize(path)
+    else:
+        total_size = 0
+        for dirpath, _, filenames in os.walk(path, followlinks=True):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                total_size += os.path.getsize(fp)
+        return total_size
+
+
 def get_tag(tokens: Iterable[Token]) -> str:
     output_tag = "0"
     for tag in [t.tag for t in tokens]:
@@ -281,33 +248,37 @@ def get_tag(tokens: Iterable[Token]) -> str:
     return output_tag
 
 
+def inject_schema(
+    schema: MutableMapping[str, Any],
+    classes: MutableMapping[str, type[SchemaEntity]],
+    definition_name: str,
+):
+    for name, entity in classes.items():
+        if entity_schema := entity.get_schema():
+            with open(entity_schema) as f:
+                entity_schema = jsonref.loads(
+                    f.read(),
+                    base_uri=f"file://{os.path.dirname(entity_schema)}/",
+                    jsonschema=True,
+                )
+            definition = schema["definitions"]
+            for el in definition_name.split(posixpath.sep):
+                definition = definition[el]
+            definition["properties"]["type"].setdefault("enum", []).append(name)
+            definition["definitions"][name] = entity_schema
+            definition.setdefault("allOf", []).append(
+                {
+                    "if": {"properties": {"type": {"const": name}}},
+                    "then": {"properties": {"config": entity_schema}},
+                }
+            )
+
+
 def random_name() -> str:
-    return str(uuid.uuid4())
-
-
-async def run_in_subprocess(
-    location: ExecutionLocation,
-    command: MutableSequence[str],
-    capture_output: bool,
-    timeout: int | None,
-) -> tuple[Any | None, int] | None:
-    proc = await asyncio.create_subprocess_exec(
-        *shlex.split(" ".join(command)),
-        env=os.environ | location.environment,
-        stdin=None,
-        stdout=(
-            asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL
-        ),
-        stderr=(
-            asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL
-        ),
-    )
-    if capture_output:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        return stdout.decode().strip(), proc.returncode
-    else:
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
-        return None
+    a = str(myconfig.COUNTER) + "-" + str(uuid.uuid4())
+    myconfig.COUNTER += 1
+    return a
+    # return str(uuid.uuid4())
 
 
 def wrap_command(command: str):

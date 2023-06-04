@@ -12,6 +12,7 @@ from streamflow.core.data import DataType
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
+    WorkflowTransferException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag, random_name
@@ -475,7 +476,7 @@ class CWLTransferStep(TransferStep):
                             )
                         )
                         if checksum != original_checksum:
-                            raise WorkflowExecutionException(
+                            raise WorkflowExecutionException(  # todo: workflowTransferException?
                                 "Error transferring file {} in location {} to {} in location {}".format(
                                     selected_location.path,
                                     selected_location.name,
@@ -552,6 +553,22 @@ class CWLTransferStep(TransferStep):
                 load_contents="contents" in token_value,
                 load_listing=LoadListing.no_listing,
             )
+
+            if (
+                "checksum" in token_value
+                and new_token_value["checksum"] != token_value["checksum"]
+            ):
+                raise WorkflowTransferException(
+                    "Error transferring file {} in location {} to {} in location {}.".format(
+                        token_value["path"],
+                        "Unreachable-location",
+                        new_token_value["path"],
+                        self.workflow.context.data_manager.get_data_locations(
+                            path=new_token_value["path"], location_type=DataType.PRIMARY
+                        )[0],
+                    )
+                )
+
             # If listing is specified, recursively process its contents
             if "listing" in token_value:
                 new_token_value["listing"] = await asyncio.gather(

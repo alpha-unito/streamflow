@@ -7,15 +7,17 @@ import logging
 import os
 import itertools
 import tempfile
+import time
 import token
 from asyncio import Lock
+import datetime
 from typing import MutableMapping, MutableSequence, cast, MutableSet, Tuple
 
 import pkg_resources
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
-from streamflow.core.utils import random_name, get_class_fullname
+from streamflow.core.utils import random_name, get_class_fullname, get_class_from_name
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
@@ -39,7 +41,7 @@ from streamflow.data import remotepath
 from streamflow.data.data_manager import RemotePathMapper
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
-from streamflow.workflow.step import ExecuteStep, ScatterStep
+from streamflow.workflow.step import ExecuteStep, ScatterStep, TransferStep
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
@@ -61,6 +63,8 @@ from streamflow.core.workflow import Workflow
 # import matplotlib.pyplot as plt
 # from dyngraphplot import DynGraphPlot
 import graphviz
+
+from streamflow.workflow.utils import get_job_token
 
 
 def add_step(step, steps):
@@ -335,7 +339,7 @@ def _get_data_location(path, context):
     return None
 
 
-async def is_token_available(token, context):
+async def is_token_available(token, context, loading_context):
     if isinstance(token, CWLFileToken):
         # TODO: è giusto cercare una loc dal suo path? se va bene aggiustare data_location_exists method
         data_loc = _get_data_location(token.value["path"], context)
@@ -350,12 +354,15 @@ async def is_token_available(token, context):
             )
             # context.data_manager.invalidate_location(data_loc, "/", token.value["path"])
             return False
+        # todo: controllare checksum con token.value['checksum'] ?
         return True
     if isinstance(token, ListToken):
         # if at least one file does not exist, returns false
         a = await asyncio.gather(
             *(
-                asyncio.create_task(is_token_available(inner_token, context))
+                asyncio.create_task(
+                    is_token_available(inner_token, context, loading_context)
+                )
                 for inner_token in token.value
             )
         )
@@ -476,15 +483,6 @@ def get_token_by_tag(token_tag, token_list):
     return None
 
 
-# todo: duplicato in executeStep e transferStep
-def get_job_token_from_token_list(job_name, token_list):
-    for token in token_list:
-        if isinstance(token, JobToken):  # discard TerminationToken
-            if token.value.name == job_name:
-                return token
-    raise Exception(f"Job {job_name} not found in {token_list}")
-
-
 def get_job_token_from_visited(job_name, token_visited):
     for token, _ in token_visited.values():
         if isinstance(token, JobToken):
@@ -559,12 +557,37 @@ class DefaultFailureManager(FailureManager):
                 and token.value.name in self.jobs_request.keys()
                 and self.jobs_request[token.value.name].token_output
             ):
+                print(
+                    token.value.name,
+                    "Condizioni vere",
+                    self.jobs_request[token.value.name].token_output,
+                    await is_token_available(
+                        self.jobs_request[token.value.name].token_output,
+                        workflow.context,
+                        loading_context,
+                    ),
+                )
+            if (
+                False
+                and isinstance(token, JobToken)
+                and token.value.name in self.jobs_request.keys()
+                and self.jobs_request[token.value.name].token_output
+                and await is_token_available(
+                    self.jobs_request[token.value.name].token_output,
+                    workflow.context,
+                    loading_context,
+                )
+            ):
                 token_1 = self.jobs_request[token.value.name].job_token
-                token_visited[token.persistent_id] = (token, True)
+                print("token_1", token_1)
+                token_visited[token.persistent_id] = (token, False)
                 token_visited[token_1.persistent_id] = (token_1, True)
                 available_new_job_tokens[token.persistent_id] = token_1.persistent_id
+                print("HEllO THERE " * 10)
             else:
-                is_available = await is_token_available(token, workflow.context)
+                is_available = await is_token_available(
+                    token, workflow.context, loading_context
+                )
 
                 # impossible case because when added in tokens, the elem is checked
                 if token.persistent_id in token_visited.keys():
@@ -601,12 +624,18 @@ class DefaultFailureManager(FailureManager):
 
         token_visited = dict(sorted(token_visited.items()))
         await printa_token(
-            token_visited, workflow, dag_tokens, loading_context, "graph_steps_recovery"
+            token_visited,
+            workflow,
+            dag_tokens,
+            loading_context,
+            "prima-e-dopo/"
+            + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
+            + "_graph_steps_recovery",
         )
         # print_graph_figure(dag_tokens, "graph_token_recovery")
         pass
 
-        # replace in the graph the old token output with the old
+        # replace in the graph the old token output with the new
         # { token output id of new job : { tokens output is of old job } }
         replace_token_outputs = {}
 
@@ -632,7 +661,7 @@ class DefaultFailureManager(FailureManager):
         # remove token in the graph
         d = self._remove_token({k: v for k, v in dag_tokens.items()}, remove_tokens)
 
-        # add old token dependecies but with the new token
+        # add old token dependencies but with the new token
         for k, vals in replace_token_outputs.items():
             d[k] = {v for v in vals if v not in remove_tokens}
 
@@ -645,11 +674,17 @@ class DefaultFailureManager(FailureManager):
             )
         pass
         await printa_token(
-            token_visited, workflow, d, loading_context, "graph_steps_recovery_d"
+            token_visited,
+            workflow,
+            d,
+            loading_context,
+            "prima-e-dopo/"
+            + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
+            + "_graph_steps_recovery_d",
         )
-        print_graph_figure(d, "graph_token_d")
+        # print_graph_figure(d, "graph_token_d")
         pass
-        return d, token_visited
+        return dag_tokens, token_visited
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -693,7 +728,7 @@ class DefaultFailureManager(FailureManager):
                 f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
             )
 
-        job_token = get_job_token_from_token_list(
+        job_token = get_job_token(
             failed_job.name,
             failed_step.get_input_port("__job__").token_list,
         )
@@ -750,6 +785,12 @@ class DefaultFailureManager(FailureManager):
                         version=1,
                     )
                 async with self.wait_queues[token.value.name]:
+                    if self.jobs_request[token.value.name].job_token:
+                        print(
+                            f"job {token.value.name}. Il mio job_token ha un valore",
+                            self.jobs_request[token.value.name].job_token,
+                            "adesso però lo pongo a none",
+                        )
                     self.jobs_request[token.value.name].job_token = None
                     if (
                         self.max_retries is None
@@ -797,6 +838,7 @@ class DefaultFailureManager(FailureManager):
         return False
 
     def _save_for_retag(self, new_workflow, dag_token, token_port, token_visited):
+        # todo: aggiungere la possibilità di eserguire comunque tutti i job delle scatter aggiungendo un parametro nel StreamFlow file
         if new_workflow.name not in self.retags.keys():
             self.retags[new_workflow.name] = {}
 
@@ -819,7 +861,7 @@ class DefaultFailureManager(FailureManager):
     async def _execute_failed_job(
         self, failed_job, failed_step, new_workflow, loading_context
     ):
-        new_job_token = get_job_token_from_token_list(
+        new_job_token = get_job_token(
             failed_job.name,
             new_workflow.ports[failed_step.get_input_port("__job__").name].token_list,
         )
@@ -904,6 +946,198 @@ class DefaultFailureManager(FailureManager):
             logger.info(f"Handling command failure for job {job.name}")
         return await self._do_handle_failure(job, step)
 
+    async def handle_failure_transfer(self, job: Job, step: Step):
+        print("CIAO, io devo gestire gli errori nei trasferimenti")
+        failed_job = job
+        failed_step = step
+
+        loading_context = DefaultDatabaseLoadingContext()
+
+        workflow = failed_step.workflow
+        new_workflow = Workflow(
+            context=workflow.context,
+            type=workflow.type,
+            name=random_name(),
+            config=workflow.config,
+        )
+
+        # should be an impossible case
+        if failed_step.persistent_id is None:
+            raise FailureHandlingException(
+                f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
+            )
+
+        job_token = get_job_token(
+            failed_job.name,
+            failed_step.get_input_port("__job__").token_list,
+        )
+
+        tokens = list(failed_job.inputs.values())  # tokens to check
+        tokens.append(job_token)
+
+        print("tokens", tokens)
+        dag_tokens, token_visited = await self._build_dag(
+            tokens, failed_job, failed_step, workflow, loading_context
+        )
+        print("ci sono?0", failed_step.name in new_workflow.steps.keys())
+
+        # create RequestJob
+        for token, _ in token_visited.values():
+            if isinstance(token, JobToken):
+                if token.value.name not in self.wait_queues.keys():
+                    self.wait_queues[token.value.name] = asyncio.Condition()
+                async with self.wait_queues[token.value.name]:
+                    if token.value.name not in self.jobs_request.keys():
+                        self.jobs_request[token.value.name] = RequestJob()
+        pass
+
+        token_port, port_tokens_counter = await _populate_workflow(
+            failed_step,
+            token_visited,
+            new_workflow,
+            loading_context,
+        )
+
+        new_workflow.add_step(
+            await Step.load(
+                new_workflow.context,
+                failed_step.persistent_id,
+                loading_context,
+                new_workflow,
+            )
+        )
+        for port in failed_step.get_input_ports().values():
+            new_workflow.add_port(
+                await Port.load(
+                    new_workflow.context,
+                    port.persistent_id,
+                    loading_context,
+                    new_workflow,
+                )
+            )
+
+        print("ci sono?1", failed_step.name in new_workflow.steps.keys())
+
+        await _put_tokens(
+            new_workflow,
+            token_port,
+            port_tokens_counter,
+            dag_tokens,
+            token_visited,
+        )
+
+        print("ci sono?3", failed_step.name in new_workflow.steps.keys())
+
+        pass
+        self._save_for_retag(new_workflow, dag_tokens, token_port, token_visited)
+        pass
+
+        print("ci sono?4", failed_step.name in new_workflow.steps.keys())
+
+        for token, _ in token_visited.values():
+            if isinstance(token, JobToken):
+                # free resources scheduler
+                await workflow.context.scheduler.notify_status(
+                    token.value.name, Status.WAITING
+                )
+
+                # save jobs recovered
+                if token.value.name not in self.jobs.keys():
+                    self.jobs[token.value.name] = JobVersion(
+                        job=None,
+                        step=None,
+                        outputs=None,
+                        version=1,
+                    )
+                async with self.wait_queues[token.value.name]:
+                    if self.jobs_request[token.value.name].job_token:
+                        print(
+                            f"job {token.value.name}. Il mio job_token ha un valore",
+                            self.jobs_request[token.value.name].job_token,
+                            "adesso però lo pongo a none",
+                        )
+                    self.jobs_request[token.value.name].job_token = None
+                    if (
+                        self.max_retries is None
+                        or self.jobs[token.value.name].version < self.max_retries
+                    ):
+                        if not self.jobs_request[token.value.name].is_running:
+                            self.jobs[token.value.name].version += 1
+                            self.jobs_request[token.value.name].is_running = True
+                            logger.debug(
+                                f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times"
+                            )
+                    else:
+                        logger.error(
+                            f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
+                        )
+                        raise FailureHandlingException()
+
+        print("VIAAAAAAAAAAAAAA " + new_workflow.name)
+        print("ci sono?5", failed_step.name in new_workflow.steps.keys())
+
+        await new_workflow.save(workflow.context)
+        executor = StreamFlowExecutor(new_workflow)
+        try:
+            await executor.run()
+        except Exception as err:
+            logger.exception(
+                f"Sub workflow {new_workflow.name} to handle the failed job {failed_job.name} throws a exception."
+            )
+            raise err
+
+        print("ci sono?6", failed_step.name in new_workflow.steps.keys())
+        print("fsold", [t.token_list for t in failed_step.get_output_ports().values()])
+        print(
+            "fsnew",
+            [
+                t.token_list
+                for t in new_workflow.steps[failed_step.name]
+                .get_output_ports()
+                .values()
+            ],
+        )
+
+        a = [
+            t.token_list
+            for t in new_workflow.steps[failed_step.name].get_output_ports().values()
+        ]
+        print("aaaaa2", a)
+        b = a[0]
+        print("bbbbb2", b)
+        out_token = b[0]
+        print("ccccc2", out_token)
+        data_loc = _get_data_location(out_token.value["path"], new_workflow.context)
+        print(
+            "output esiste? ",
+            await remotepath.exists(
+                connector=new_workflow.context.deployment_manager.get_connector(
+                    data_loc.deployment
+                ),
+                location=data_loc,
+                path=out_token.value["path"],
+            ),
+        )
+
+        for _, port in new_workflow.steps[failed_step.name].get_output_ports().items():
+            for t in port.token_list:
+                if isinstance(t, TerminationToken):
+                    print("Ha già un termination token........Questo approccio non va bene")
+
+        for k, port in new_workflow.steps[failed_step.name].get_output_ports().items():
+            for t in port.token_list:
+                if len(port.token_list) < 3:
+                    print(
+                        "ALLARMEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                    )
+                print(f"inserisco token {t} in port {k}({port.name})")
+                failed_step.get_output_port(k).put(t)
+        print(
+            "fsold pt2", [t.token_list for t in failed_step.get_output_ports().values()]
+        )
+
+        return Status.COMPLETED
+
 
 class DummyFailureManager(FailureManager):
     async def close(self):
@@ -931,5 +1165,8 @@ class DummyFailureManager(FailureManager):
     def is_valid_tag(self, workflow_name, tag, output_port):
         return True
 
-    async def notify_jobs(self, job_name):
+    async def notify_jobs(self, job_name, token):
         pass
+
+    async def handle_failure_transfer(self, job: Job, step: Step):
+        return Status.FAILED
