@@ -26,7 +26,12 @@ RUN apk --no-cache add \
         musl-dev \
         openssl \
         openssl-dev \
-    && curl -fsSL https://git.io/get_helm.sh -o /tmp/get_helm.sh \
+    && curl -fsSL \
+          --retry 5 \
+          --retry-max-time 60 \
+          --connect-timeout 5 \
+          --max-time 10 \
+          https://git.io/get_helm.sh -o /tmp/get_helm.sh \
     && chmod +x /tmp/get_helm.sh \
     && /tmp/get_helm.sh --version ${HELM_VERSION} \
     && cd /build \
