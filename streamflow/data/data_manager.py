@@ -19,6 +19,14 @@ if TYPE_CHECKING:
     from typing import MutableMapping, MutableSequence
 
 
+def get_valid_data_location(data_locations: MutableSequence[DataLocation]):
+    locations = []
+    for loc in data_locations:
+        if loc.data_type != DataType.INVALID:
+            locations.append(loc)
+    return locations
+
+
 async def _copy(
     src_connector: Connector | None,
     src_location: Location | None,
@@ -247,8 +255,8 @@ class DefaultDataManager(DataManager):
         else:
             return None
 
-    def invalidate_location(self, location: Location, path: str, test_path) -> None:
-        self.path_mapper.invalidate_location(location, path, test_path)
+    def invalidate_location(self, location: Location, path: str) -> None:
+        self.path_mapper.invalidate_location(location, path)
 
     def register_path(
         self,
@@ -266,6 +274,7 @@ class DefaultDataManager(DataManager):
             data_type=data_type,
             available=True,
         )
+        print("put", PurePosixPath(path))
         self.path_mapper.put(path=path, data_location=data_location, recursive=True)
         self.context.checkpoint_manager.register(data_location)
         return data_location
@@ -343,7 +352,7 @@ class RemotePathMapper:
         for data_location in list(data_locations):
             self.put(data_location.path, dst_data_location)
             self.put(dst_path, data_location)
-        self.put(dst_path, dst_data_location)
+        self.put(dst_path, dst_data_location, recursive=True)
         return dst_data_location
 
     def get(
@@ -374,25 +383,24 @@ class RemotePathMapper:
         return result
 
     def invalidate_location(
-        self, location: Location, path: str, test_path: str
+        self,
+        location: Location,
+        path: str,
     ) -> None:
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
         for token in path.parts:
             node = node.children[token]
-        for loc in node.locations.setdefault(location.deployment, {}).get(
-            location.name, []
-        ):
-            loc.data_type = DataType.INVALID
-        pass
-        # for node_child in node.children.values():
-        #     for data_loc in node_child.locations.setdefault(location.deployment, {}).get(
-        #         location.name, []
-        #     ):
-        #         pass
-        #         self.invalidate_location(data_loc, data_loc.path, test_path)
-        #         data_loc.data_type = DataType.INVALID
-        #         pass
+
+        # print("in path", str(path))
+        for node_child in node.children.values():
+            for data_loc in node_child.locations.setdefault(
+                location.deployment, {}
+            ).get(location.name, []):
+                self.invalidate_location(data_loc, data_loc.path)
+                # print("in path", str(path), " - Invalido chd.loc.path", data_loc.path)
+                data_loc.data_type = DataType.INVALID
+                pass
         pass
 
     def put(
@@ -432,7 +440,9 @@ class RemotePathMapper:
             node_location = node.locations.setdefault(
                 location.deployment, {}
             ).setdefault(location.name, [])
-            paths = [loc.path for loc in node_location]
+            paths = [
+                loc.path for loc in node_location if loc.data_type != DataType.INVALID
+            ]
             if location.path in paths:
                 break
             else:

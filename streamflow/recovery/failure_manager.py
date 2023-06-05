@@ -349,10 +349,10 @@ async def is_token_available(token, context, loading_context):
         if not await data_location_exists([data_loc], context, token):
             # todo: invalidare tutti i path del data_loc
             logger.debug(f"Invalidated path {token.value['path']}")
-            context.data_manager.invalidate_location(
-                data_loc, token.value["path"], "test"
-            )
-            # context.data_manager.invalidate_location(data_loc, "/", token.value["path"])
+            # context.data_manager.invalidate_location(
+            #     data_loc, token.value["path"]
+            # )
+            context.data_manager.invalidate_location(data_loc, "/")
             return False
         # todo: controllare checksum con token.value['checksum'] ?
         return True
@@ -1122,7 +1122,9 @@ class DefaultFailureManager(FailureManager):
         for _, port in new_workflow.steps[failed_step.name].get_output_ports().items():
             for t in port.token_list:
                 if isinstance(t, TerminationToken):
-                    print("Ha già un termination token........Questo approccio non va bene")
+                    print(
+                        "Ha già un termination token........Questo approccio non va bene"
+                    )
 
         for k, port in new_workflow.steps[failed_step.name].get_output_ports().items():
             for t in port.token_list:
