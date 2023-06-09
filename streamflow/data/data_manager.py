@@ -20,11 +20,7 @@ if TYPE_CHECKING:
 
 
 def get_valid_data_location(data_locations: MutableSequence[DataLocation]):
-    locations = []
-    for loc in data_locations:
-        if loc.data_type != DataType.INVALID:
-            locations.append(loc)
-    return locations
+    return [loc for loc in data_locations if loc.data_type != DataType.INVALID]
 
 
 async def _copy(

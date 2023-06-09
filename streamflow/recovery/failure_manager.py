@@ -22,6 +22,7 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
     UnrecoverableTokenException,
+    WorkflowTransferException,
 )
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
 from streamflow.core.workflow import (
@@ -947,6 +948,26 @@ class DefaultFailureManager(FailureManager):
         return await self._do_handle_failure(job, step)
 
     async def handle_failure_transfer(self, job: Job, step: Step):
+        if self.retry_delay is not None:
+            await asyncio.sleep(self.retry_delay)
+        try:
+            status = await self._handle_failure_transfer(job, step)
+            # When receiving a FailureHandlingException, simply fail
+        except FailureHandlingException as e:
+            logger.exception(e)
+            raise
+        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+        except KeyboardInterrupt:
+            raise
+        except WorkflowTransferException as e:
+            logger.exception(e)
+            return await self._handle_failure_transfer(job, step)
+        except Exception as e:
+            logger.exception(e)
+            return await self.handle_exception(job, step, e)
+        return status
+
+    async def _handle_failure_transfer(self, job: Job, step: Step):
         print("CIAO, io devo gestire gli errori nei trasferimenti")
         failed_job = job
         failed_step = step
@@ -1098,26 +1119,31 @@ class DefaultFailureManager(FailureManager):
             ],
         )
 
-        a = [
+        for out_port_tokens in [
             t.token_list
             for t in new_workflow.steps[failed_step.name].get_output_ports().values()
-        ]
-        print("aaaaa2", a)
-        b = a[0]
-        print("bbbbb2", b)
-        out_token = b[0]
-        print("ccccc2", out_token)
-        data_loc = _get_data_location(out_token.value["path"], new_workflow.context)
-        print(
-            "output esiste? ",
-            await remotepath.exists(
-                connector=new_workflow.context.deployment_manager.get_connector(
-                    data_loc.deployment
-                ),
-                location=data_loc,
-                path=out_token.value["path"],
-            ),
-        )
+        ]:
+            print("number of token generated", len(out_port_tokens))
+            for out_token in out_port_tokens:
+                if isinstance(out_token, TerminationToken):
+                    print("out_token transfer Termination token")
+                elif isinstance(out_token, CWLFileToken):
+                    print("out_token transfer file", out_token.value)
+                    data_loc = _get_data_location(
+                        out_token.value["path"], new_workflow.context
+                    )
+                    print(
+                        "out_token transfer esiste? ",
+                        await remotepath.exists(
+                            connector=new_workflow.context.deployment_manager.get_connector(
+                                data_loc.deployment
+                            ),
+                            location=data_loc,
+                            path=out_token.value["path"],
+                        ),
+                    )
+                else:
+                    print("out_token transfer type", type(out_token))
 
         for _, port in new_workflow.steps[failed_step.name].get_output_ports().items():
             for t in port.token_list:
