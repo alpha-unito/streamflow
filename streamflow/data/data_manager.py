@@ -270,7 +270,7 @@ class DefaultDataManager(DataManager):
             data_type=data_type,
             available=True,
         )
-        print("put", PurePosixPath(path))
+        print("register_path -> put", PurePosixPath(path))
         self.path_mapper.put(path=path, data_location=data_location, recursive=True)
         self.context.checkpoint_manager.register(data_location)
         return data_location
