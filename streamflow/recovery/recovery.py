@@ -10,9 +10,9 @@ class JobVersion:
 
     def __init__(
         self,
-        job: Job,
-        outputs: MutableMapping[str, Token] | None,
-        step: Step,
+        job: Job = None,
+        outputs: MutableMapping[str, Token] | None = None,
+        step: Step = None,
         version: int = 1,
     ):
         self.job: Job = job

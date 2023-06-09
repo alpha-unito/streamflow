@@ -444,32 +444,28 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchone()
 
-    async def get_dependee(
-        self, token_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM provenance WHERE depender = :depender",
-                {"depender": token_id},
-            ) as cursor:
-                return await cursor.fetchall()
-
-    async def get_depender(
-        self, token_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM provenance WHERE dependee = :dependee",
-                {"dependee": token_id},
-            ) as cursor:
-                return await cursor.fetchall()
-
     async def get_all_provenance(self) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM provenance") as cursor:
+                return await cursor.fetchall()
+
+    async def get_step_type_from_token(self, token_id):
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT type FROM step WHERE id IN (SELECT dependency.step FROM token JOIN dependency ON token.port = dependency.port WHERE token.id = :token AND dependency.type = :dtype)",
+                {"token": token_id, "dtype": DependencyType.OUTPUT.value},
+            ) as cursor:
+                return await cursor.fetchone()
+
+    async def get_step_type_from_token_tmp(self, token_id):
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT dependency.step FROM token JOIN dependency ON token.port = dependency.port WHERE token.id = :token AND dependency.type = :dtype",
+                {"token": token_id, "dtype": DependencyType.OUTPUT.value},
+            ) as cursor:
                 return await cursor.fetchall()
 
     async def get_step_from_output_port(

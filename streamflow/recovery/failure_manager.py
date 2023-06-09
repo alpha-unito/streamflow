@@ -1,297 +1,36 @@
 from __future__ import annotations
 
-import posixpath
-import re
 import asyncio
 import logging
 import os
-import itertools
-import tempfile
-import time
-import token
-from asyncio import Lock
 import datetime
 from typing import MutableMapping, MutableSequence, cast, MutableSet, Tuple
 
 import pkg_resources
 
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataLocation, DataType
-from streamflow.core.utils import random_name, get_class_fullname, get_class_from_name
+from streamflow.core.utils import random_name
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
-    UnrecoverableTokenException,
     WorkflowTransferException,
 )
-from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
-from streamflow.core.workflow import (
-    CommandOutput,
-    Job,
-    Status,
-    Step,
-    Port,
-    Token,
-    TokenProcessor,
-)
-from streamflow.cwl.processor import CWLCommandOutput
-from streamflow.cwl.step import CWLTransferStep
+from streamflow.core.recovery import FailureManager
+from streamflow.core.workflow import CommandOutput, Job, Status, Step, Port, Token
 from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.transformer import CWLTokenTransformer
 from streamflow.data import remotepath
-from streamflow.data.data_manager import RemotePathMapper
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
-from streamflow.workflow.step import ExecuteStep, ScatterStep, TransferStep
+from streamflow.token_printer import printa_token
+from streamflow.workflow.step import ScatterStep
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.step import (
-    ExecuteStep,
-    DeployStep,
-    ScheduleStep,
-    CombinatorStep,
-)
+from streamflow.workflow.step import ExecuteStep
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.workflow.token import TerminationToken, JobToken, ListToken, ObjectToken
 
-# from streamflow.workflow.utils import get_token_value, get_files_from_token
-
-# from streamflow.main import build_context
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Workflow
 
-# import networkx as nx
-# import matplotlib.pyplot as plt
-# from dyngraphplot import DynGraphPlot
-import graphviz
-
 from streamflow.workflow.utils import get_job_token
-
-
-def add_step(step, steps):
-    found = False
-    for s in steps:
-        found = found or s.name == step.name
-    if not found:
-        steps.append(step)
-
-
-def add_pair(step_name, label, step_labels, tokens):
-    for curr_step_name, curr_label in step_labels:
-        if curr_step_name == step_name and curr_label == label:
-            return
-    step_labels.append((step_name, label))
-
-
-async def _load_steps_from_token(token, context, loading_context, new_workflow):
-    # TODO: quando interrogo sulla tabella dependency (tra step e port) meglio recuperare anche il nome della dipendenza
-    # così posso associare subito token -> step e a quale porta appartiene
-    # edit. Impossibile. Recuperiamo lo step dalla porta di output. A noi serve la port di input
-    row_token = await context.database.get_token(token.persistent_id)
-    steps = []
-    if row_token:
-        row_steps = await context.database.get_step_from_output_port(row_token["port"])
-        for r in row_steps:
-            st = await Step.load(
-                context,
-                r["step"],
-                loading_context,
-                new_workflow,
-            )
-            steps.append(
-                st,
-            )
-            # due modi alternativi per ottenre il nome della output_port che genera il token in questione
-            #    [ op.name for op in workflow.steps[st.name].output_ports if op.persistent_id == int(row_token['port'])][0]
-            # (await context.database.get_port(row_token['port']))['name']
-
-    return steps
-
-
-def print_graph_figure(graph, title):
-    dot = graphviz.Digraph(title)
-    for vertex, neighbors in graph.items():
-        dot.node(str(vertex))
-        for n in neighbors:
-            dot.edge(str(vertex), str(n))
-    # print(dot.source)
-    #    dot.view("dev/" + title + ".gv")  # tempfile.mktemp('.gv')
-    dot.render("dev/" + title + ".gv")
-
-
-def print_graph_figure_label(graph, title):
-    dot = graphviz.Digraph(title)
-    for vertex, neighbors in graph.items():
-        dot.node(str(vertex))
-        for n, l in neighbors:
-            dot.edge(str(vertex), str(n), label=str(l))
-    # print(dot.source)
-    # dot.view("dev/" + title + ".gv")  # tempfile.mktemp('.gv')
-    dot.render("dev/" + title + ".gv")
-
-
-async def print_graph(job_version, loading_context):
-    """
-    FUNCTION FOR DEBUGGING
-    """
-    rows = await job_version.step.workflow.context.database.get_all_provenance()
-    tokens = {}
-    graph = {}
-    for row in rows:
-        dependee = (
-            await loading_context.load_token(
-                job_version.step.workflow.context, row["dependee"]
-            )
-            if row["dependee"]
-            else -1
-        )
-        depender = (
-            await loading_context.load_token(
-                job_version.step.workflow.context, row["depender"]
-            )
-            if row["depender"]
-            else -1
-        )
-        curr_key = dependee.persistent_id if dependee != -1 else -1
-        if curr_key not in graph.keys():
-            graph[curr_key] = set()
-        graph[curr_key].add(depender.persistent_id)
-        tokens[depender.persistent_id] = depender
-        tokens[curr_key] = dependee
-
-    steps_token = {}
-    graph_steps = {}
-    for k, values in graph.items():
-        if k != -1:
-            k_step = (
-                await _load_steps_from_token(
-                    tokens[k],
-                    job_version.step.workflow.context,
-                    loading_context,
-                    job_version.step.workflow,
-                )
-            ).pop()
-        step_name = k_step.name if k != -1 else INIT_DAG_FLAG
-        if step_name not in graph_steps.keys():
-            graph_steps[step_name] = set()
-        if step_name not in steps_token.keys():
-            steps_token[step_name] = set()
-        steps_token[step_name].add(k)
-
-        for v in values:
-            s = (
-                await _load_steps_from_token(
-                    tokens[v],
-                    job_version.step.workflow.context,
-                    loading_context,
-                    job_version.step.workflow,
-                )
-            ).pop()
-            graph_steps[step_name].add(s.name)
-            if s.name not in steps_token.keys():
-                steps_token[s.name] = set()
-            steps_token[s.name].add(v)
-
-    valid_steps_graph = {}
-    for step_name_1, steps_name in graph_steps.items():
-        valid_steps_graph[step_name_1] = []
-        for step_name_2 in steps_name:
-            for label in steps_token[step_name_1]:
-                add_pair(
-                    step_name_2,
-                    str_token_value(tokens[label]) + f"({label})",
-                    valid_steps_graph[step_name_1],
-                    tokens,
-                )
-
-    print_graph_figure_label(valid_steps_graph, "get_all_provenance_steps")
-    wf_steps = sorted(job_version.step.workflow.steps.keys())
-    pass
-
-
-def str_token_value(token):
-    if isinstance(token, CWLFileToken):
-        return token.value["class"]  # token.value['path']
-    if isinstance(token, ListToken):
-        return str([str_token_value(t) for t in token.value])
-    if isinstance(token, JobToken):
-        return token.value.name
-    if isinstance(token, TerminationToken):
-        return "T"
-    if isinstance(token, Token):
-        return str(token.value)
-    return "None"
-
-
-def search_step_name_into_graph(graph_tokens):
-    for tokens in graph_tokens.values():
-        for s in tokens:
-            if isinstance(s, str) and s != INIT_DAG_FLAG:
-                return s
-    raise Exception("Step name non trovato")
-
-
-def add_graph_tuple(graph_steps, step_1, tuple):
-    for s, l in graph_steps[step_1]:
-        if s == tuple[0] and l == tuple[1]:
-            return
-    graph_steps[step_1].append(tuple)
-
-
-async def printa_token(
-    token_visited,
-    workflow,
-    graph_tokens,
-    loading_context,
-    pdf_name="graph_steps recovery",
-):
-    token_values = {}
-    steps = {}
-    for token_id, (token, _) in token_visited.items():
-        token_values[token_id] = str_token_value(token)
-        steps[token_id] = (
-            (
-                await _load_steps_from_token(
-                    token_visited[token_id][0],
-                    workflow.context,
-                    loading_context,
-                    workflow,
-                )
-            )
-            .pop()
-            .name
-            if isinstance(token_id, int)
-            else token_values[token_id]
-        )
-    token_values[INIT_DAG_FLAG] = INIT_DAG_FLAG
-    step_name = search_step_name_into_graph(graph_tokens)
-    token_values[step_name] = step_name
-
-    graph_steps = {}
-    for token_id, tokens_id in graph_tokens.items():
-        step_1 = steps[token_id] if isinstance(token_id, int) else token_id
-        if step_1 == INIT_DAG_FLAG:
-            continue
-        if step_1 not in graph_steps.keys():
-            graph_steps[step_1] = []
-        label = (
-            str_token_value(token_visited[token_id][0]) + f"({token_id})"
-            if isinstance(token_id, int)
-            else token_values[token_id]
-        )
-        for token_id_2 in tokens_id:
-            step_2 = steps[token_id_2] if isinstance(token_id_2, int) else token_id_2
-
-            add_graph_tuple(graph_steps, step_1, (step_2, label))
-    print_graph_figure_label(graph_steps, pdf_name)
-
-
-#################################################
-#################################################
-#################################################
-#################################################
-#################################################
-#################################################
 
 
 async def _cleanup_dir(
@@ -303,7 +42,7 @@ async def _cleanup_dir(
 
 
 async def _load_prev_tokens(token_id, loading_context, context):
-    rows = await context.database.get_dependee(token_id)
+    rows = await context.database.get_dependees(token_id)
 
     return await asyncio.gather(
         *(
@@ -319,16 +58,8 @@ async def data_location_exists(data_locations, context, token):
             connector = context.deployment_manager.get_connector(data_loc.deployment)
             # location_allocation = job_version.step.workflow.context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
             # available_locations = job_version.step.workflow.context.scheduler.get_locations(location_allocation.jobs[0])
-            if exists := await remotepath.exists(
-                connector, data_loc, token.value["path"]
-            ):
-                # print(
-                #     f"token.id: {token.persistent_id} in loc {data_loc} -> exists {exists} "
-                # )
+            if await remotepath.exists(connector, data_loc, token.value["path"]):
                 return True
-            # print(
-            #     f"token.id: {token.persistent_id} in loc {data_loc} -> exists {exists} "
-            # )
     return False
 
 
@@ -348,8 +79,8 @@ async def is_token_available(token, context, loading_context):
         if not data_loc:  # if the data are in invalid locations, data_loc is None
             return False
         if not await data_location_exists([data_loc], context, token):
-            # todo: invalidare tutti i path del data_loc
             logger.debug(f"Invalidated path {token.value['path']}")
+            # todo: invalidare tutti i path del data_loc
             # context.data_manager.invalidate_location(
             #     data_loc, token.value["path"]
             # )
@@ -359,19 +90,25 @@ async def is_token_available(token, context, loading_context):
         return True
     if isinstance(token, ListToken):
         # if at least one file does not exist, returns false
-        a = await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    is_token_available(inner_token, context, loading_context)
+        return all(
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        is_token_available(inner_token, context, loading_context)
+                    )
+                    for inner_token in token.value
                 )
-                for inner_token in token.value
             )
         )
-        b = all(a)
-        return b
     if isinstance(token, ObjectToken):
-        # TODO: sistemare
-        return True
+        return all(
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(is_token_available(t, context, loading_context))
+                    for t in token.value.values()
+                )
+            )
+        )
     if isinstance(token, JobToken):
         return False
     return True
@@ -499,11 +236,12 @@ def contains_token_id(token_id, token_list):
     return False
 
 
-class RequestJob:
+class JobRequest:
     def __init__(self):
         self.job_token: JobToken = None
         self.token_output: Token = None
-        self.is_running: bool = True
+        self.lock = asyncio.Condition()
+        self.is_running = True
 
 
 class DefaultFailureManager(FailureManager):
@@ -518,13 +256,11 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
 
-        self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
-
-        # {workflow.name : { port.id: [ token.id ] } }
+        # { workflow.name : { port.id: [ token.id ] } }
         self.retags: MutableMapping[str, MutableMapping[int, MutableSequence[int]]] = {}
 
-        # job.name : RequestJob
-        self.jobs_request: MutableMapping[str, RequestJob] = {}
+        # { job.name : RequestJob }
+        self.job_requests: MutableMapping[str, JobRequest] = {}
 
     def _remove_token(self, dag_tokens, remove_tokens):
         d = {}
@@ -554,32 +290,17 @@ class DefaultFailureManager(FailureManager):
         while tokens:
             token = tokens.pop()
             if (
-                isinstance(token, JobToken)
-                and token.value.name in self.jobs_request.keys()
-                and self.jobs_request[token.value.name].token_output
-            ):
-                print(
-                    token.value.name,
-                    "Condizioni vere",
-                    self.jobs_request[token.value.name].token_output,
-                    await is_token_available(
-                        self.jobs_request[token.value.name].token_output,
-                        workflow.context,
-                        loading_context,
-                    ),
-                )
-            if (
                 False
                 and isinstance(token, JobToken)
-                and token.value.name in self.jobs_request.keys()
-                and self.jobs_request[token.value.name].token_output
+                and token.value.name in self.job_requests.keys()
+                and self.job_requests[token.value.name].token_output
                 and await is_token_available(
-                    self.jobs_request[token.value.name].token_output,
+                    self.job_requests[token.value.name].token_output,
                     workflow.context,
                     loading_context,
                 )
             ):
-                token_1 = self.jobs_request[token.value.name].job_token
+                token_1 = self.job_requests[token.value.name].job_token
                 print("token_1", token_1)
                 token_visited[token.persistent_id] = (token, False)
                 token_visited[token_1.persistent_id] = (token_1, True)
@@ -619,7 +340,7 @@ class DefaultFailureManager(FailureManager):
                         )
                 else:
                     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
-                # alternativa ai due else ... però è più difficile la lettura del codice
+                # alternativa ai due else ... però è più difficile la lettura del codice (ancora da provare)
                 # if is_available or not prev_tokens:
                 #     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
 
@@ -643,7 +364,7 @@ class DefaultFailureManager(FailureManager):
         remove_tokens = set()
         for k, v in available_new_job_tokens.items():
             # recovery token generated by the new job
-            t = self.jobs_request[token_visited[v][0].value.name].token_output
+            t = self.job_requests[token_visited[v][0].value.name].token_output
             token_visited[t.persistent_id] = (t, True)
             pass
             # save subsequent tokens, before deleting the token
@@ -669,7 +390,7 @@ class DefaultFailureManager(FailureManager):
         # add new tokens in init
         for v in available_new_job_tokens.values():
             d[INIT_DAG_FLAG].add(
-                self.jobs_request[
+                self.job_requests[
                     token_visited[v][0].value.name
                 ].token_output.persistent_id
             )
@@ -718,12 +439,12 @@ class DefaultFailureManager(FailureManager):
     #  A -> B
     #  A -> C
     #  B -> C
-    # A ha successo, B fallisce (cade ambiete) e viene rieseguito A, in C che input di A arriva? quello vecchio? quello vecchio e quello nuovo? In teoria solo quello vecchio, da gestire comunque? oppure lasciamo che fallisce e poi il failure manager prendere l'output nuovo di A?
-
+    # A ha successo, B fallisce (cade ambiente), viene rieseguito A, in C che input di A arriva?
+    # quello vecchio? quello vecchio e quello nuovo? In teoria solo quello vecchio, da gestire comunque?
+    # oppure lasciamo che fallisce e poi il failure manager prendere l'output nuovo di A?
     async def _recover_jobs(
         self, failed_job: Job, failed_step: Step, add_failed_step: bool = False
     ) -> CommandOutput:
-        # await print_graph(job_version, loading_context)
         loading_context = DefaultDatabaseLoadingContext()
 
         workflow = failed_step.workflow
@@ -752,15 +473,42 @@ class DefaultFailureManager(FailureManager):
             tokens, failed_job, failed_step, workflow, loading_context
         )
 
-        # create RequestJob
         for token, _ in token_visited.values():
             if isinstance(token, JobToken):
-                if token.value.name not in self.wait_queues.keys():
-                    self.wait_queues[token.value.name] = asyncio.Condition()
-                async with self.wait_queues[token.value.name]:
-                    if token.value.name not in self.jobs_request.keys():
-                        self.jobs_request[token.value.name] = RequestJob()
-        pass
+                # update job request
+                if token.value.name not in self.job_requests.keys():
+                    self.job_requests[token.value.name] = JobRequest()
+                else:
+                    async with self.job_requests[token.value.name].lock:
+                        self.job_requests[token.value.name].is_running = True
+
+                # save jobs recovered
+                if token.value.name not in self.jobs.keys():
+                    self.jobs[token.value.name] = JobVersion(
+                        version=1,
+                    )
+                if (
+                    self.max_retries is None
+                    or self.jobs[token.value.name].version < self.max_retries
+                ):
+                    self.jobs[token.value.name].version += 1
+                    logger.debug(
+                        f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times"
+                    )
+                else:
+                    logger.error(
+                        f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
+                    )
+                    raise FailureHandlingException()
+
+                # discard old job tokens
+                if self.job_requests[token.value.name].job_token:
+                    print(
+                        f"job {token.value.name}. Il mio job_token ha un valore",
+                        self.job_requests[token.value.name].job_token,
+                        "adesso però lo pongo a none",
+                    )
+                self.job_requests[token.value.name].job_token = None
 
         token_port, port_tokens_counter = await _populate_workflow(
             failed_step,
@@ -806,39 +554,6 @@ class DefaultFailureManager(FailureManager):
                 await workflow.context.scheduler.notify_status(
                     token.value.name, Status.WAITING
                 )
-
-                # save jobs recovered
-                if token.value.name not in self.jobs.keys():
-                    self.jobs[token.value.name] = JobVersion(
-                        job=None,
-                        step=None,
-                        outputs=None,
-                        version=1,
-                    )
-                async with self.wait_queues[token.value.name]:
-                    if self.jobs_request[token.value.name].job_token:
-                        print(
-                            f"job {token.value.name}. Il mio job_token ha un valore",
-                            self.jobs_request[token.value.name].job_token,
-                            "adesso però lo pongo a none",
-                        )
-                    self.jobs_request[token.value.name].job_token = None
-                    if (
-                        self.max_retries is None
-                        or self.jobs[token.value.name].version < self.max_retries
-                    ):
-                        if not self.jobs_request[token.value.name].is_running:
-                            self.jobs[token.value.name].version += 1
-                            self.jobs_request[token.value.name].is_running = True
-                            logger.debug(
-                                f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times"
-                            )
-                    else:
-                        logger.error(
-                            f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
-                        )
-                        raise FailureHandlingException()
-
         print("VIAAAAAAAAAAAAAA " + new_workflow.name)
 
         await new_workflow.save(workflow.context)
@@ -907,8 +622,7 @@ class DefaultFailureManager(FailureManager):
                 )
         new_job_token.value.inputs = new_inputs
 
-        async with self.wait_queues[failed_job.name]:
-            self.jobs_request[failed_job.name].job_token = new_job_token
+        self.job_requests[failed_job.name].job_token = new_job_token
         new_job = new_job_token.value
         new_step = await Step.load(
             new_workflow.context,
@@ -927,29 +641,27 @@ class DefaultFailureManager(FailureManager):
         return cmd_out
 
     async def get_valid_job_token(self, job_token):
-        if job_token.value.name in self.wait_queues.keys():
-            async with self.wait_queues[job_token.value.name]:
-                request = (
-                    self.jobs_request[job_token.value.name]
-                    if job_token.value.name in self.jobs_request.keys()
-                    else None
-                )
-                if request:
-                    if request.job_token:
-                        return request.job_token
-                    else:
-                        request.job_token = job_token
+        request = (
+            self.job_requests[job_token.value.name]
+            if job_token.value.name in self.job_requests.keys()
+            else None
+        )
+        if request:
+            if request.job_token:
+                return request.job_token
+            else:
+                request.job_token = job_token
         return job_token
 
     async def close(self):
         pass
 
     async def notify_jobs(self, job_name, token):
-        if job_name in self.wait_queues.keys():
-            async with self.wait_queues[job_name]:
-                self.jobs_request[job_name].is_running = False
-                self.jobs_request[job_name].token_output = token
-                self.wait_queues[job_name].notify_all()
+        if job_name in self.job_requests.keys():
+            async with self.job_requests[job_name].lock:
+                self.job_requests[job_name].token_output = token
+                self.job_requests[job_name].is_running = False
+                self.job_requests[job_name].lock.notify_all()
 
     @classmethod
     def get_schema(cls) -> str:

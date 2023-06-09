@@ -19,10 +19,6 @@ if TYPE_CHECKING:
     from typing import MutableMapping, MutableSequence
 
 
-def get_valid_data_location(data_locations: MutableSequence[DataLocation]):
-    return [loc for loc in data_locations if loc.data_type != DataType.INVALID]
-
-
 async def _copy(
     src_connector: Connector | None,
     src_location: Location | None,
@@ -378,11 +374,7 @@ class RemotePathMapper:
                 )
         return result
 
-    def invalidate_location(
-        self,
-        location: Location,
-        path: str,
-    ) -> None:
+    def invalidate_location(self, location: Location, path: str) -> None:
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
         for token in path.parts:
