@@ -84,6 +84,7 @@
   "properties": {
     "services": {
       "type": "object",
+      "description": "Map containing named configurations of PBS submissions. Parameters can be either specified as #BSUB directives in a file or directly in YAML format.",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
           "$ref": "#/definitions/service"
