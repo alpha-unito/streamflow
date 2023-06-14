@@ -25,6 +25,18 @@ def _filter_by_name(classes: MutableMapping[str, Any], name: str):
     return filtered_classes
 
 
+def _flatten_all_of(entity_schema):
+    for obj in entity_schema["allOf"]:
+        if "allOf" in obj:
+            obj["properties"] = {**_flatten_all_of(obj), **obj.get("properties", {})}
+        entity_schema["properties"] = {
+            **obj.get("properties", {}),
+            **entity_schema.get("properties", {}),
+        }
+    del entity_schema["allOf"]
+    return dict(sorted(entity_schema["properties"].items()))
+
+
 def _get_property_desc(k: str, obj: MutableMapping[str, Any]) -> str:
     property_desc = [k]
     if "type" in obj:
@@ -42,7 +54,17 @@ def _get_property_desc(k: str, obj: MutableMapping[str, Any]) -> str:
 def _get_type_repr(obj: MutableMapping[str, Any]) -> str | None:
     if "type" in obj:
         if obj["type"] == "object":
-            return obj.get("title", "object")
+            if "patternProperties" in obj:
+                if len(obj["patternProperties"]) > 1:
+                    types = [
+                        _get_type_repr(t) for t in obj["patternProperties"].values()
+                    ]
+                    type_ = f"Union[{', '.join(types)}]"
+                else:
+                    type_ = _get_type_repr(list(obj["patternProperties"].values())[0])
+                return f"Map[str, {type_}]"
+            else:
+                return obj.get("title", "object")
         else:
             return obj["type"]
     else:
@@ -222,6 +244,8 @@ def show_extension(name: str, type_: str):
                 base_uri=f"file://{os.path.dirname(entity_schema)}/",
                 jsonschema=True,
             )
+        if "allOf" in entity_schema:
+            entity_schema["properties"] = _flatten_all_of(entity_schema)
         format_string = (
             "{:<"
             + str(max(len(name) + 2, 6))

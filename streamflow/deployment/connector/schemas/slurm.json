@@ -403,6 +403,7 @@
   "properties": {
     "services": {
       "type": "object",
+      "description": "Map containing named configurations of Slurm submissions. Parameters can be either specified as #SBATCH directives in a file or directly in YAML format.",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
           "$ref": "#/definitions/service"
