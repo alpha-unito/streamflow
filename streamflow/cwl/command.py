@@ -10,8 +10,12 @@ import shlex
 import time
 from abc import ABC
 from asyncio.subprocess import STDOUT
+from decimal import Decimal
 from types import ModuleType
 from typing import Any, IO, Iterable, MutableMapping, MutableSequence, Type, cast
+
+from ruamel.yaml import RoundTripRepresenter
+from ruamel.yaml.scalarfloat import ScalarFloat
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation
@@ -245,7 +249,7 @@ def _get_value_for_command(token: Any, item_separator: str | None) -> Any:
         for element in token:
             value.append(_get_value_for_command(element, item_separator))
         if item_separator is not None:
-            value = item_separator.join([str(v) for v in value])
+            value = item_separator.join([_get_value_repr(v) for v in value])
         return value or None
     elif isinstance(token, MutableMapping):
         if (path := utils.get_path_from_token(token)) is not None:
@@ -258,11 +262,22 @@ def _get_value_for_command(token: Any, item_separator: str | None) -> Any:
         return token
 
 
+def _get_value_repr(value: Any) -> str | None:
+    if isinstance(value, ScalarFloat):
+        rep = RoundTripRepresenter()
+        dec_value = Decimal(rep.represent_scalar_float(value).value)
+        if "E" in str(dec_value):
+            return str(dec_value.quantize(1))
+        return str(dec_value)
+    else:
+        return str(value)
+
+
 def _escape_value(value: Any) -> Any:
     if isinstance(value, MutableSequence):
         return [_escape_value(v) for v in value]
     else:
-        return shlex.quote(str(value))
+        return shlex.quote(_get_value_repr(value))
 
 
 def _merge_tokens(
@@ -272,7 +287,7 @@ def _merge_tokens(
     for binding_position in alphanumeric_sorting(bindings_map.keys()):
         for binding in bindings_map[binding_position]:
             command.extend(flatten_list(binding))
-    return [str(token) for token in command]
+    return [_get_value_repr(token) for token in command]
 
 
 def alphanumeric_sorting(list_to_sort: Iterable) -> Iterable:
@@ -900,7 +915,7 @@ class CWLCommandToken:
                 elif isinstance(value, MutableSequence):
                     value = [self.prefix].extend(value)
                 else:
-                    value = [self.prefix + str(value)]
+                    value = [self.prefix + _get_value_repr(value)]
             # If value is a boolean with no prefix, skip it
             if isinstance(value, bool):
                 return bindings_map
