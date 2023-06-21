@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
+from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
-    from typing import Any
-
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step
+    from streamflow.core.workflow import Job, CommandOutput, Step, Token, Port
+    from typing import MutableMapping, Any
 
 
 class CheckpointManager(SchemaEntity):
@@ -19,10 +18,12 @@ class CheckpointManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self): ...
+    async def close(self):
+        ...
 
     @abstractmethod
-    def register(self, data_location: DataLocation) -> None: ...
+    def register(self, data_location: DataLocation) -> None:
+        ...
 
 
 class FailureManager(SchemaEntity):
@@ -30,17 +31,36 @@ class FailureManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self): ...
+    async def close(self):
+        ...
 
     @abstractmethod
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
-    ) -> CommandOutput: ...
+    ) -> CommandOutput:
+        ...
 
     @abstractmethod
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
-    ) -> CommandOutput: ...
+    ) -> CommandOutput:
+        ...
+
+    @abstractmethod
+    async def get_valid_job_token(self, job_token: JobToken):
+        ...
+
+    @abstractmethod
+    def is_valid_tag(self, workflow_name: str, tag: str, output_port: Port):
+        ...
+
+    @abstractmethod
+    async def notify_jobs(self, job_name: str, out_port_name: str, token: Token):
+        ...
+
+    @abstractmethod
+    async def handle_failure_transfer(self, job: Job, step: Step):
+        ...
 
 
 class ReplayRequest:
