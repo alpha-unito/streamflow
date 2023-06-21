@@ -619,19 +619,21 @@ class ExecuteStep(BaseStep):
                 job, command_output, connector
             )
         ) is not None:
-            output_port.put(
-                await self._persist_token(
-                    token=token,
-                    port=output_port,
-                    input_token_ids=_get_token_ids(
-                        list(job.inputs.values())
-                        + [
-                            get_job_token(
-                                job.name, self.get_input_port("__job__").token_list
-                            )
-                        ]
-                    ),
-                )
+            token = await self._persist_token(
+                token=token,
+                port=output_port,
+                input_token_ids=_get_token_ids(
+                    list(job.inputs.values())
+                    + [
+                        get_job_token(
+                            job.name, self.get_input_port("__job__").token_list
+                        )
+                    ]
+                ),
+            )
+            output_port.put(token)
+            await self.workflow.context.failure_manager.notify_jobs(
+                job.name, output_port.name, token
             )
 
     async def _run_job(
@@ -663,8 +665,9 @@ class ExecuteStep(BaseStep):
             )
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
+                jt = self.get_input_port('__job__').token_list
                 logger.error(
-                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
+                    f"FAILED Job {job.name} {get_job_token(job.name, jt if isinstance(jt, Iterable) else [jt]).persistent_id} with error:\n\t{command_output.value}"
                 )
                 command_output = (
                     await self.workflow.context.failure_manager.handle_failure(

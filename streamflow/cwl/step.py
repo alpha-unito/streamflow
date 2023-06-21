@@ -476,7 +476,7 @@ class CWLTransferStep(TransferStep):
                             )
                         )
                         if checksum != original_checksum:
-                            raise WorkflowExecutionException(  # todo: workflowTransferException?
+                            raise WorkflowTransferException(
                                 "Error transferring file {} in location {} to {} in location {}".format(
                                     selected_location.path,
                                     selected_location.name,
