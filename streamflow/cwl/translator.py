@@ -1295,6 +1295,8 @@ class CWLTranslator:
         return input_port
 
     def _get_source_port(self, workflow: Workflow, source_name: str) -> Port:
+        if source_name in self.output_ports:
+            return self.output_ports[source_name]
         if source_name not in self.input_ports:
             if source_name not in self.output_ports:
                 self.output_ports[source_name] = workflow.create_port()
