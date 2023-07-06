@@ -277,7 +277,7 @@ class SqliteDatabase(CachedDatabase):
                     "step_type": get_class_fullname(ExecuteStep),
                 },
             ) as cursor:
-                return await cursor.fetchone()
+                return await cursor.fetchall()
 
     async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:

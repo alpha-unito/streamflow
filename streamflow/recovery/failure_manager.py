@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import datetime
@@ -263,23 +264,41 @@ class DefaultFailureManager(FailureManager):
         self.job_requests: MutableMapping[str, JobRequest] = {}
 
     async def _is_available(
-        self, token, token_visited, available_new_job_tokens, context, loading_context
+        self,
+        token,
+        token_visited,
+        available_new_job_tokens,
+        running_new_job_tokens,
+        context,
+        loading_context,
     ):
         if isinstance(token, JobToken) and token.value.name in self.job_requests.keys():
             async with self.job_requests[token.value.name].lock:
-                if self.job_requests[token.value.name].is_running:
+                job_request = self.job_requests[token.value.name]
+
+                # todo: togliere parametro is_running, usare lo status dello step
+                if job_request.is_running:
                     print(
                         f"Il job {token.value.name} {token.persistent_id} - è running, dovrei aspettare il suo output"
                     )
+
+                    running_new_job_tokens[token.persistent_id] = {
+                        "jobtoken": job_request
+                    }
                 elif (
-                    self.job_requests[token.value.name].job_token
-                    and token.persistent_id
-                    != self.job_requests[token.value.name].job_token.persistent_id
-                    and self.job_requests[token.value.name].token_output
+                    job_request.job_token
+                    and token.persistent_id != job_request.job_token.persistent_id
+                    and job_request.token_output
                 ):
+                    # todo: Fare lo load del token direttamente quando recupero
+                    #   così se più avanti serve, non si deve riaccedere al db ....
+                    #   update: FORSE NON SERVE FARLO
                     job_out_token_json = await context.database.get_job_out_token(
                         token.persistent_id
                     )
+                    if job_out_token_json:
+                        print("len job_out_token_json_fetchall: ", len(job_out_token_json))
+                        job_out_token_json = job_out_token_json[0]
                     print(
                         "Il job",
                         token.value.name,
@@ -291,56 +310,49 @@ class DefaultFailureManager(FailureManager):
                         port_json = await context.database.get_port_by_token(
                             job_out_token_json["id"]
                         )
-                        print("Il job", token.value.name, token.persistent_id, " - port_json", dict(port_json))
+                        print(
+                            "Il job",
+                            token.value.name,
+                            token.persistent_id,
+                            " - port_json",
+                            dict(port_json),
+                        )
                         disp = await is_token_available(
-                            # list(self.job_requests[token.value.name].token_output.values())[
-                            #     0
-                            # ],
-                            self.job_requests[token.value.name].token_output[port_json["name"]],
+                            job_request.token_output[port_json["name"]],
                             context,
                             loading_context,
                         )
                         print(
-                            f"Il job {token.value.name} {token.persistent_id} - il token di output {self.job_requests[token.value.name].token_output[port_json['name']]} è già disponibile? {disp}"
+                            f"Il job {token.value.name} {token.persistent_id} - il token di output {job_request.token_output[port_json['name']]} è già disponibile? {disp}"
                         )
+                        if disp:
+                            # old_token = loading_context.load_token(context, job_out_token_json["id"])
+                            available_new_job_tokens[token.persistent_id] = {
+                                "old-out-token": job_out_token_json["id"],
+                                "new-job-token": job_request.job_token.persistent_id,
+                                "new-out-token": job_request.token_output[
+                                    port_json["name"]
+                                ].persistent_id,
+                            }
+                            token_visited[token.persistent_id] = (
+                                token,
+                                True,
+                            )
+                            token_visited[job_request.job_token.persistent_id] = (
+                                job_request.job_token,
+                                True,
+                            )
+                            token_visited[
+                                job_request.token_output[
+                                    port_json["name"]
+                                ].persistent_id
+                            ] = (job_request.token_output[port_json["name"]], True)
+                            return True
                     else:
                         print(
-                            f"Il job {token.value.name} {token.persistent_id} - impossibile recuperare il token perché non so quale porta è: {self.job_requests[token.value.name].token_output} "
+                            f"Il job {token.value.name} {token.persistent_id} - impossibile recuperare il token perché non so quale porta è: {job_request.token_output} "
                         )
                     pass
-        return False
-        if isinstance(token, JobToken) and token.value.name in self.job_requests.keys():
-            async with self.job_requests[token.value.name].lock:
-                if self.job_requests[token.value.name].is_running:
-                    # se il job è ancora running, faccio finta di avere il token
-                    # ma appena finisco di costruire il dag, mi metto in attesa
-                    # e dopo che viene prodotto vado a recuperare il nuovo token
-                    print(
-                        f"Il job {token.value.name} è running .... TODO: ancora da gestire"
-                    )
-                    pass
-                    return True
-                elif (
-                    self.job_requests[token.value.name].job_token
-                    and token.persistent_id
-                    != self.job_requests[token.value.name].job_token.persistent_id
-                    and self.job_requests[token.value.name].token_output
-                    and await is_token_available(
-                        self.job_requests[token.value.name].token_output,
-                        context,
-                        loading_context,
-                    )
-                ):
-                    # il token è stato prodotto da qualche job recovered
-                    # ed è disponibile
-                    token_1 = self.job_requests[token.value.name].job_token
-                    print("il token è disponibile - token_1", token_1)
-                    token_visited[token.persistent_id] = (token, False)
-                    token_visited[token_1.persistent_id] = (token_1, True)
-                    available_new_job_tokens[
-                        token.persistent_id
-                    ] = token_1.persistent_id
-                    return True
         return False
 
     def _remove_token(self, dag_tokens, remove_tokens):
@@ -358,23 +370,48 @@ class DefaultFailureManager(FailureManager):
             d = self._remove_token(d, other_remove)
         return d
 
+    def clean_dag(self, dag_tokens, token_id_list):
+        next_round = set()
+        for key, values in dag_tokens.items():
+            dag_tokens[key].difference_update(token_id_list)
+            if not dag_tokens[key]:
+                next_round.add(key)
+        return next_round
+
+    def _update_dag(self, dag_tokens, old_out_token, new_out_token):
+        try:
+            values = dag_tokens.pop(old_out_token)
+        except Exception as e:
+            print("error dumps", json.dumps({ k: list(v) for k, v in dag_tokens.items()}, indent=2))
+            raise e
+        dag_tokens[new_out_token] = values
+        dag_tokens[INIT_DAG_FLAG].add(new_out_token)
+
     async def _build_dag(
         self, tokens, failed_job, failed_step, workflow, loading_context
     ):
-        dag_tokens = {}  # { token.id : set of next tokens' id | string }
+        # { token.id : set of next tokens' id | string }
+        dag_tokens = {}
         for t in failed_job.inputs.values():
             dag_tokens[t.persistent_id] = set((failed_step.name,))
 
-        token_visited = {}  # { token_id: (token, is_available)}
-        available_new_job_tokens = {}  # {old token id : new token id}
+        # { token_id: (token, is_available)}
+        all_token_visited = {}
+
+        # {old job token id : (new job token id, new output token id)}
+        available_new_job_tokens = {}
+
+        # {old token id : job token running}
+        running_new_job_tokens = {}
 
         while tokens:
             token = tokens.pop()
 
             if not await self._is_available(
                 token,
-                token_visited,
+                all_token_visited,
                 available_new_job_tokens,
+                running_new_job_tokens,
                 workflow.context,
                 loading_context,
             ):
@@ -383,11 +420,11 @@ class DefaultFailureManager(FailureManager):
                 )
 
                 # impossible case because when added in tokens, the elem is checked
-                if token.persistent_id in token_visited.keys():
+                if token.persistent_id in all_token_visited.keys():
                     raise FailureHandlingException(
                         f"Token {token.persistent_id} already visited"
                     )
-                token_visited[token.persistent_id] = (token, is_available)
+                all_token_visited[token.persistent_id] = (token, is_available)
 
                 if not is_available:
                     prev_tokens = await _load_prev_tokens(
@@ -401,7 +438,7 @@ class DefaultFailureManager(FailureManager):
                                 pt.persistent_id, token.persistent_id, dag_tokens
                             )
                             if (
-                                pt.persistent_id not in token_visited.keys()
+                                pt.persistent_id not in all_token_visited.keys()
                                 and not contains_token_id(pt.persistent_id, tokens)
                             ):
                                 tokens.append(pt)
@@ -415,72 +452,83 @@ class DefaultFailureManager(FailureManager):
                 # if is_available or not prev_tokens:
                 #     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
 
-        token_visited = dict(sorted(token_visited.items()))
+        print(
+            "available_new_job_tokens:",
+            len(available_new_job_tokens) > 0,
+            json.dumps(available_new_job_tokens, indent=2),
+        )
+        for k, v in available_new_job_tokens.items():
+            if k not in all_token_visited.keys():
+                print(k, "missing")
+            for vv in v.values():
+                if vv not in all_token_visited.keys():
+                    print(vv, "missing")
+        # print("running_new_job_tokens:", json.dumps(running_new_job_tokens, indent=2))
+        pass
+
+        all_token_visited = dict(sorted(all_token_visited.items()))
+        tmp_random_name = random_name()
         await printa_token(
-            token_visited,
+            all_token_visited,
             workflow,
             dag_tokens,
             loading_context,
             "prima-e-dopo/"
             + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
-            + "_graph_steps_recovery",
+            + "_graph_steps_"
+            + tmp_random_name
+            + "_prima",
+        )
+        to_remove = [v["old-out-token"] for k, v in available_new_job_tokens.items()]
+        while to_remove:
+            to_remove = self.clean_dag(
+                dag_tokens,
+                to_remove,
+            )
+            for k in to_remove:
+                dag_tokens.pop(k)
+        for values in available_new_job_tokens.values():
+            self._update_dag(
+                dag_tokens, values["old-out-token"], values["new-out-token"]
+            )
+        await printa_token(
+            all_token_visited,
+            workflow,
+            dag_tokens,
+            loading_context,
+            "prima-e-dopo/"
+            + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
+            + "_graph_steps_"
+            + tmp_random_name
+            + "_dopo",
         )
         # print_graph_figure(dag_tokens, "graph_token_recovery")
         pass
 
-        # replace in the graph the old token output with the new
-        # { token output id of new job : { tokens output is of old job } }
-        # replace_token_outputs = {}
-        #
-        # remove_tokens = set()
-        # for k, v in available_new_job_tokens.items():
-        #     # recovery token generated by the new job
-        #     port_token = self.job_requests[token_visited[v][0].value.name].token_output
-        #     try:
-        #         _ = port_token.persistent_id
-        #     except:
-        #         pass
-        #     token_visited[t.persistent_id] = (t, True)
-        #     pass
-        #     # save subsequent tokens, before deleting the token
-        #     replace_token_outputs[t.persistent_id] = {
-        #         t2 for t1 in dag_tokens[k] for t2 in dag_tokens[t1]
-        #     }
-        #     # replace_token_outputs[t.persistent_id] = set()
-        #     # for t1 in dag_tokens[k]:
-        #     #     for t2 in dag_tokens[t1]:
-        #     #         replace_token_outputs[t.persistent_id].add(t2)
-        #     pass
-        #     # add to the list the tokens to be removed in the graph
-        #     for t in dag_tokens[k]:
-        #         remove_tokens.add(t)
-        #
-        # # remove token in the graph
-        # d = self._remove_token({k: v for k, v in dag_tokens.items()}, remove_tokens)
-        #
-        # # add old token dependencies but with the new token
-        # for k, vals in replace_token_outputs.items():
-        #     d[k] = {v for v in vals if v not in remove_tokens}
-        #
-        # # add new tokens in init
-        # for v in available_new_job_tokens.values():
-        #     d[INIT_DAG_FLAG].add(
-        #         self.job_requests[
-        #             token_visited[v][0].value.name
-        #         ].token_output.persistent_id
-        #     )
-        # pass
-        # await printa_token(
-        #     token_visited,
-        #     workflow,
-        #     d,
-        #     loading_context,
-        #     "prima-e-dopo/"
-        #     + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
-        #     + "_graph_steps_recovery_d",
-        # )
-        # # print_graph_figure(d, "graph_token_d")
-        pass
+        # mentre costrisco dag_tokens tengo traccia dei possibili token che posso recuperare:
+        # - sono già stati prodotti da altri job di un rollback passato (e sono ancora disponibili)
+        # - saranno prodotti da qualche job da un rollback in esecuzione
+        # In questo caso, segno i token come disponibili (anche se sono persi)
+        # e non continuo a ricostruire quel ramo del grafo
+
+        # oggetti sub-prodotti dalla costruizione del dag_tokens:
+        # - lista dei job in esecuzione che mi servono (e token che producono).
+        # - lista dei token disponibili che mi servono
+
+        # Attendo la terminazione dei job running che mi servono.
+        # Aggiungo questi nuovi token nella lista dei token disponibili.
+        # Scansiono il grafo dag_tokens.
+        # Rimuovo i jobToken che non mi servono più delle keys. (lo trovo nei value di altri token? controllare)
+        # (questo passo non dovrebbe servire dato che è il token è nei value del jobtoken rimosso) - Rimuovo i token persi (prodotti dai jobToken) dalle keys di dag_tokens.
+        # Sostituisco nei value i token persi con i token nuovi
+
+        token_visited = {}
+        for k, values in dag_tokens.items():
+            if isinstance(k, int):
+                token_visited[k] = all_token_visited[k]
+            for v in values:
+                if isinstance(v, int):
+                    token_visited[v] = all_token_visited[v]
         return dag_tokens, token_visited
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
@@ -548,6 +596,7 @@ class DefaultFailureManager(FailureManager):
             tokens, failed_job, failed_step, workflow, loading_context
         )
 
+        # update class state (attributes)
         for token, _ in token_visited.values():
             if isinstance(token, JobToken):
                 # update job request
@@ -711,8 +760,10 @@ class DefaultFailureManager(FailureManager):
 
         cmd_out = await cast(ExecuteStep, new_step).command.execute(new_job)
         if cmd_out.status == Status.FAILED:
-            jt = new_step.get_input_port('__job__').token_list
-            logger.error(f"FAILED Job {new_job.name} {get_job_token(new_job.name, jt if isinstance(jt, Iterable) else [jt]).persistent_id} with error:\n\t{cmd_out.value}")
+            jt = new_step.get_input_port("__job__").token_list
+            logger.error(
+                f"FAILED Job {new_job.name} with jobtoken.id {get_job_token(new_job.name, jt if isinstance(jt, Iterable) else [jt]).persistent_id} with error:\n\t{cmd_out.value}"
+            )
             cmd_out = await self.handle_failure(new_job, new_step, cmd_out)
         print("Finito " + new_workflow.name)
         return cmd_out
@@ -785,7 +836,18 @@ class DefaultFailureManager(FailureManager):
                 job, step, add_failed_step=True
             )
             status = await self._execute_transfer_step(step, new_workflow)
-            # When receiving a FailureHandlingException, simply fail
+
+            # new_job_token = get_job_token(
+            #     job.name, new_workflow.steps[step.name].get_input_port("__job__").token_list
+            # )
+            # new_tmp_comparison_list = step.get_input_port("__job__").token_list
+            # pass
+            # for i, t in enumerate(step.get_input_port("__job__").token_list):
+            #     if isinstance(t, JobToken) and t.value.name == job.name:
+            #         step.get_input_port("__job__").token_list.remove(t)
+            #         step.get_input_port("__job__").token_list.insert(i, new_job_token)
+            #         break
+        # When receiving a FailureHandlingException, simply fail
         except FailureHandlingException as e:
             logger.exception(e)
             raise
@@ -861,7 +923,10 @@ class DefaultFailureManager(FailureManager):
                     "ALLARMEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
                 )
             for t in port.token_list:
-                print(failed_step.name, f"Inserisco token {t} in port {k}({port.name})")
+                print(
+                    failed_step.name,
+                    f"Inserisco token {t} in port {k}({port.name}), failed step -> len(port.token_list) {len(failed_step.get_output_port(k).token_list)}",
+                )
                 failed_step.get_output_port(k).put(t)
         print(
             failed_step.name,
