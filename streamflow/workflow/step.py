@@ -718,7 +718,12 @@ class ExecuteStep(BaseStep):
                         job_token_updated
                     )
                 )
-                print("old job token:", job_token_original.persistent_id, "\nnew job token:", job_token.persistent_id)
+                print(
+                    "old job token:",
+                    job_token_original.persistent_id,
+                    "\nnew job token:",
+                    job_token.persistent_id,
+                )
                 await asyncio.gather(
                     *(
                         asyncio.create_task(

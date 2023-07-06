@@ -169,7 +169,7 @@ async def print_all_provenance(workflow, loading_context):
             for label in steps_token[step_name_1]:
                 add_pair(
                     step_name_2,
-                    str_token_value(tokens[label]), # + f"({label})",
+                    str_token_value(tokens[label]),  # + f"({label})",
                     valid_steps_graph[step_name_1_new],
                     tokens,
                 )
@@ -181,9 +181,11 @@ async def print_all_provenance(workflow, loading_context):
 
 def str_token_value(token):
     if isinstance(token, CWLFileToken):
-        return token.value["class"] + f"({token.persistent_id})" # token.value['path']
+        return token.value["class"] + f"({token.persistent_id})"  # token.value['path']
     if isinstance(token, ListToken):
-        return str([str_token_value(t) for t in token.value]) + f"({token.persistent_id})"
+        return (
+            str([str_token_value(t) for t in token.value]) + f"({token.persistent_id})"
+        )
     if isinstance(token, JobToken):
         return token.value.name + f"({token.persistent_id})"
     if isinstance(token, TerminationToken):
@@ -194,7 +196,7 @@ def str_token_value(token):
         if isinstance(token.value, Token):
             return "t(" + str_token_value(token.value) + f")({token.persistent_id})"
         else:
-            return f"{token.value}({token.persistent_id})" # str(token.value)
+            return f"{token.value}({token.persistent_id})"  # str(token.value)
     return "None"
 
 
@@ -268,7 +270,7 @@ async def printa_token(
         if step_1 not in graph_steps.keys():
             graph_steps[step_1] = []
         label = (
-            str_token_value(token_visited[token_id][0]) # + f"({token_id})"
+            str_token_value(token_visited[token_id][0])  # + f"({token_id})"
             if isinstance(token_id, int)
             else token_values[token_id]
         )

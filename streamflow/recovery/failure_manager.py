@@ -209,12 +209,7 @@ async def _populate_workflow(
 INIT_DAG_FLAG = "init"
 
 
-def add_elem_dictionary(key, elem, dictionary):
-    if key not in dictionary.keys():
-        dictionary[key] = set()
-    dictionary[key].add(elem)
-
-
+# todo: move it in utils
 def get_token_by_tag(token_tag, token_list):
     for token in token_list:
         if token_tag == token.tag:
@@ -222,19 +217,18 @@ def get_token_by_tag(token_tag, token_list):
     return None
 
 
-def get_job_token_from_visited(job_name, token_visited):
-    for token, _ in token_visited.values():
-        if isinstance(token, JobToken):
-            if token.value.name == job_name:
-                return token
-    raise Exception(f"Job {job_name} not found in token_visited")
+# def get_job_token_from_visited(job_name, token_visited):
+#     for token, _ in token_visited.values():
+#         if isinstance(token, JobToken):
+#             if token.value.name == job_name:
+#                 return token
+#     raise Exception(f"Job {job_name} not found in token_visited")
 
 
+# todo: move it in utils
 def contains_token_id(token_id, token_list):
-    for token in token_list:
-        if token_id == token.persistent_id:
-            return True
-    return False
+    return token_id in (t.persistent_id for t in token_list)
+
 
 
 class JobRequest:
@@ -297,7 +291,9 @@ class DefaultFailureManager(FailureManager):
                         token.persistent_id
                     )
                     if job_out_token_json:
-                        print("len job_out_token_json_fetchall: ", len(job_out_token_json))
+                        print(
+                            "len job_out_token_json_fetchall: ", len(job_out_token_json)
+                        )
                         job_out_token_json = job_out_token_json[0]
                     print(
                         "Il job",
@@ -382,7 +378,10 @@ class DefaultFailureManager(FailureManager):
         try:
             values = dag_tokens.pop(old_out_token)
         except Exception as e:
-            print("error dumps", json.dumps({ k: list(v) for k, v in dag_tokens.items()}, indent=2))
+            print(
+                "error dumps",
+                json.dumps({k: list(v) for k, v in dag_tokens.items()}, indent=2),
+            )
             raise e
         dag_tokens[new_out_token] = values
         dag_tokens[INIT_DAG_FLAG].add(new_out_token)
@@ -434,8 +433,8 @@ class DefaultFailureManager(FailureManager):
                     )
                     if prev_tokens:
                         for pt in prev_tokens:
-                            add_elem_dictionary(
-                                pt.persistent_id, token.persistent_id, dag_tokens
+                            dag_tokens.setdefault(pt.persistent_id, set()).add(
+                                token.persistent_id
                             )
                             if (
                                 pt.persistent_id not in all_token_visited.keys()
@@ -443,11 +442,11 @@ class DefaultFailureManager(FailureManager):
                             ):
                                 tokens.append(pt)
                     else:
-                        add_elem_dictionary(
-                            INIT_DAG_FLAG, token.persistent_id, dag_tokens
+                        dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(
+                            token.persistent_id
                         )
                 else:
-                    add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
+                    dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(token.persistent_id)
                 # alternativa ai due else ... però è più difficile la lettura del codice (ancora da provare)
                 # if is_available or not prev_tokens:
                 #     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
@@ -719,10 +718,8 @@ class DefaultFailureManager(FailureManager):
             if isinstance(step, ScatterStep):
                 port = step.get_output_port()
                 for t_id in port_token[port.name]:
-                    add_elem_dictionary(
-                        port.name,
-                        token_visited[t_id][0],
-                        self.retags[new_workflow.name],
+                    self.retags[new_workflow.name].setdefault(port.name, set()).add(
+                        token_visited[t_id][0]
                     )
 
     async def _execute_failed_job(
