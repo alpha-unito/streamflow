@@ -665,7 +665,7 @@ class ExecuteStep(BaseStep):
             )
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
-                jt = self.get_input_port('__job__').token_list
+                jt = self.get_input_port("__job__").token_list
                 logger.error(
                     f"FAILED Job {job.name} {get_job_token(job.name, jt if isinstance(jt, Iterable) else [jt]).persistent_id} with error:\n\t{command_output.value}"
                 )
@@ -718,6 +718,7 @@ class ExecuteStep(BaseStep):
                         job_token_updated
                     )
                 )
+                print("old job token:", job_token_original.persistent_id, "\nnew job token:", job_token.persistent_id)
                 await asyncio.gather(
                     *(
                         asyncio.create_task(

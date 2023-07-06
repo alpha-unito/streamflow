@@ -752,10 +752,12 @@ class CWLCommand(CWLBaseCommand):
                 LocalConnector,
             )
             logger.info(
-                "EXECUTING step {step} (job {job} {jt}) {location} into directory {outdir}:\n{command}".format(
+                "EXECUTING step {step} (job {job} with jobtoken.id {jt}) {location} into directory {outdir}:\n{command}".format(
                     step=self.step.name,
                     job=job.name,
-                    jt=get_job_token(job.name, self.step.get_input_port('__job__').token_list).persistent_id,
+                    jt=get_job_token(
+                        job.name, self.step.get_input_port("__job__").token_list
+                    ).persistent_id,
                     location="locally" if is_local else f"on location {locations[0]}",
                     outdir=job.output_directory,
                     command=cmd_string,
