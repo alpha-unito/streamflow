@@ -19,9 +19,6 @@ from streamflow.log_handler import logger
 from streamflow.workflow.executor import StreamFlowExecutor
 
 
-from streamflow.token_printer import _build_dag
-
-
 def _parse_arg(path: str, context: StreamFlowContext):
     if "://" in path:
         return path
@@ -99,5 +96,4 @@ async def main(
     output_tokens = await executor.run()
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED Workflow execution")
-    # await _build_dag(list(workflow.get_output_ports().values())[0].token_list, workflow, loading_context)
     print(json.dumps(output_tokens, sort_keys=True, indent=4))

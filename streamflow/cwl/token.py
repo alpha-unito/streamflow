@@ -6,6 +6,7 @@ from streamflow.core.data import DataType
 from streamflow.core.workflow import Token
 from streamflow.cwl import utils
 from streamflow.data import remotepath
+from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken
 
 
@@ -41,14 +42,35 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
     return weight
 
 
+async def data_location_exists(data_location, context, path):
+    if data_location.path == path:
+        connector = context.deployment_manager.get_connector(data_location.deployment)
+        # location_allocation = job_version.step.workflow.context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
+        # available_locations = job_version.step.workflow.context.scheduler.get_locations(location_allocation.jobs[0])
+        if await remotepath.exists(connector, data_location, path):
+            return True
+    return False
+
+
+def _get_data_location(path, context):
+    data_locs = context.data_manager.get_data_locations(path)
+    for data_loc in data_locs:
+        if data_loc.path == path:
+            return data_loc
+    return None
+
+
 async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
     if path := utils.get_path_from_token(value):
-        data_locations = context.data_manager.get_data_locations(
-            path=path, location_type=DataType.PRIMARY
-        )
-        return len(data_locations) != 0
-    else:
-        return True
+        if not (data_loc := _get_data_location(path, context)):
+            return False
+        if not await data_location_exists(data_loc, context, path):
+            logger.debug(
+                f"Invalidated location {data_loc.deployment} (Losted path {path})"
+            )
+            context.data_manager.invalidate_location(data_loc, "/")
+            return False
+    return True
 
 
 class CWLFileToken(FileToken):
