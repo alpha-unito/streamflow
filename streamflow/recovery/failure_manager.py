@@ -762,7 +762,27 @@ class DefaultFailureManager(FailureManager):
             new_workflow, loading_context = await self._recover_jobs(
                 job, step, add_failed_step=True
             )
+            print(
+                "transf-pre. new_workflow.new_step.token_list",
+                len(
+                    new_workflow.ports[
+                        list(step.get_input_ports().values())[0].name
+                    ].token_list
+                ),
+                "failed_Step.token_list",
+                len(list(step.get_output_ports().values())[0].token_list),
+            )
             status = await self._execute_transfer_step(step, new_workflow)
+            print(
+                "transf-post. new_workflow.new_step.token_list",
+                len(
+                    new_workflow.ports[
+                        list(step.get_input_ports().values())[0].name
+                    ].token_list
+                ),
+                "failed_Step.token_list",
+                len(list(step.get_output_ports().values())[0].token_list),
+            )
         # When receiving a FailureHandlingException, simply fail
         except FailureHandlingException as e:
             logger.exception(e)
@@ -779,25 +799,6 @@ class DefaultFailureManager(FailureManager):
         return status
 
     async def _execute_transfer_step(self, failed_step, new_workflow):
-        print(
-            failed_step.name, "ci sono?", failed_step.name in new_workflow.steps.keys()
-        )
-        print(
-            failed_step.name,
-            "fs.old",
-            {k: t.token_list for k, t in failed_step.get_output_ports().items()},
-        )
-        print(
-            failed_step.name,
-            "fs.new",
-            {
-                k: t.token_list
-                for k, t in new_workflow.steps[failed_step.name]
-                .get_output_ports()
-                .items()
-            },
-        )
-
         for out_port_tokens in [
             t.token_list
             for t in new_workflow.steps[failed_step.name].get_output_ports().values()
@@ -833,17 +834,17 @@ class DefaultFailureManager(FailureManager):
                     )
 
         for k, port in new_workflow.steps[failed_step.name].get_output_ports().items():
-            if len(port.token_list) < 3:
-                print(
-                    failed_step.name,
-                    "ALLARMEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
-                )
+            print(
+                f"Port {port.name} svuoto token_list {len(failed_step.get_output_port(k).token_list)}"
+            )
+            # failed_step.get_output_port(k).token_list = [] # todo: fix temporaneo
             for t in port.token_list:
                 print(
                     failed_step.name,
                     f"Inserisco token {t} in port {k}({port.name}), failed step -> len(port.token_list) {len(failed_step.get_output_port(k).token_list)}",
                 )
-                failed_step.get_output_port(k).put(t)
+                if not isinstance(t, TerminationToken):
+                    failed_step.get_output_port(k).put(t)
         print(
             failed_step.name,
             "fs.old pt2",
