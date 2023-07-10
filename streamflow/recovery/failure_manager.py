@@ -320,26 +320,11 @@ class DefaultFailureManager(FailureManager):
                     pass
         return False
 
-    def _remove_token(self, dag_tokens, remove_tokens):
-        d = {}
-        other_remove = set()
-        for k, vals in dag_tokens.items():
-            if k not in remove_tokens:
-                d[k] = set()
-                for v in vals:
-                    if v not in remove_tokens:
-                        d[k].add(v)
-                if not d[k]:
-                    other_remove.add(k)
-        if other_remove:
-            d = self._remove_token(d, other_remove)
-        return d
-
     def clean_dag(self, dag_tokens, token_id_list):
         next_round = set()
         for key in dag_tokens.keys():
             dag_tokens[key].difference_update(token_id_list)
-            if not dag_tokens[key]:
+            if not dag_tokens[key]:  # key has empty set in value
                 next_round.add(key)
         return next_round
 
@@ -383,6 +368,8 @@ class DefaultFailureManager(FailureManager):
         # { token.id : set of next tokens' id | string }
         dag_tokens = {}
         for t in failed_job.inputs.values():
+            if t.persistent_id is None:
+                raise FailureHandlingException("Token has not a persistent_id")
             dag_tokens[t.persistent_id] = set((failed_step.name,))
 
         # { token_id: (token, is_available)}
@@ -718,9 +705,15 @@ class DefaultFailureManager(FailureManager):
             if isinstance(step, ScatterStep):
                 port = step.get_output_port()
                 for t_id in port_token[port.name]:
-                    self.retags[new_workflow.name].setdefault(port.name, set()).add(
-                        token_visited[t_id][0]
-                    )
+                    # todo: valutare se salvare in retags solo i tag (e non tutto l'oggetto token)
+                    if t_id not in dag_token[INIT_DAG_FLAG]:
+                        self.retags[new_workflow.name].setdefault(port.name, set()).add(
+                            token_visited[t_id][0]
+                        )
+                    else:
+                        print(
+                            f"Non aggiungo il token {t_id} dentro retags perché è un token init del dag"
+                        )
 
     async def _execute_failed_job(
         self, failed_job, failed_step, new_workflow, loading_context
