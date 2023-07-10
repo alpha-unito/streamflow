@@ -225,6 +225,7 @@ class DefaultFailureManager(FailureManager):
                     }
                 elif (
                     job_request.job_token
+                    and job_request.job_token.persistent_id
                     and token.persistent_id != job_request.job_token.persistent_id
                     and job_request.token_output
                 ):
@@ -234,11 +235,6 @@ class DefaultFailureManager(FailureManager):
                     job_out_token_json = await context.database.get_job_out_token(
                         token.persistent_id
                     )
-                    if job_out_token_json:
-                        print(
-                            "len job_out_token_json_fetchall: ", len(job_out_token_json)
-                        )
-                        job_out_token_json = job_out_token_json[0]
                     print(
                         "Il job",
                         token.value.name,

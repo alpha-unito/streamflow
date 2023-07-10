@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Any, MutableMapping, MutableSequence
 
 import aiosqlite
@@ -257,12 +258,11 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchone()
 
-    async def get_job_out_token(
-        self, job_token_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
+    async def get_job_out_token(self, job_token_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             # todo: ottimizzare le query (left, right, inner, outer join)
+            start = time.time()
             async with db.execute(
                 "SELECT token.* "
                 "FROM provenance JOIN token ON provenance.depender=token.id "
@@ -277,7 +277,9 @@ class SqliteDatabase(CachedDatabase):
                     "step_type": get_class_fullname(ExecuteStep),
                 },
             ) as cursor:
-                return await cursor.fetchall()
+                end = time.time()
+                print("QUERY Time exec ", (end - start))
+                return await cursor.fetchone()
 
     async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
