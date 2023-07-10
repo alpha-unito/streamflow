@@ -9,7 +9,7 @@ from typing import MutableMapping, MutableSequence, cast, MutableSet, Tuple, Ite
 
 import pkg_resources
 
-from streamflow.core.utils import random_name
+from streamflow.core.utils import random_name, get_class_fullname
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
@@ -183,6 +183,38 @@ class JobRequest:
         self.is_running = True
 
 
+def str_value(value):
+    if isinstance(value, dict):
+        return value["basename"]
+    return value
+
+
+def temp_print_retag(workflow_name, output_port, tag, retags, final_msg):
+    print(
+        f"wf {workflow_name} - port {output_port.name} - tag {tag}",
+        "\nretags",
+        json.dumps(
+            {
+                k: {
+                    p: [
+                        {
+                            "id": t.persistent_id,
+                            "tag": t.tag,
+                            "value": str_value(t.value),
+                            "class": get_class_fullname(type(t)),
+                        }
+                        for t in t_list
+                    ]
+                    for p, t_list in v.items()
+                }
+                for k, v in retags.items()
+            },
+            indent=2,
+        ),
+        final_msg,
+    )
+
+
 class DefaultFailureManager(FailureManager):
     def __init__(
         self,
@@ -311,10 +343,26 @@ class DefaultFailureManager(FailureManager):
                 next_round.add(key)
         return next_round
 
-    def _update_dag(self, dag_tokens, old_out_token, new_out_token):
+    # todo: togliere async . serve solo per stampare il dag dei token
+    async def _update_dag(
+        self,
+        dag_tokens,
+        old_out_token,
+        new_out_token,
+        token_visited,
+        new_workflow,
+        loading_context,
+    ):
         try:
             values = dag_tokens.pop(old_out_token)
         except Exception as e:
+            await printa_token(
+                token_visited,
+                new_workflow,
+                dag_tokens,
+                loading_context,
+                "caduto",
+            )
             print(
                 "error dumps",
                 json.dumps({k: list(v) for k, v in dag_tokens.items()}, indent=2),
@@ -324,7 +372,13 @@ class DefaultFailureManager(FailureManager):
         dag_tokens[INIT_DAG_FLAG].add(new_out_token)
 
     async def _build_dag(
-        self, tokens, failed_job, failed_step, workflow, loading_context
+        self,
+        tokens,
+        failed_job,
+        failed_step,
+        workflow,
+        loading_context,
+        new_workflow_name,
     ):
         # { token.id : set of next tokens' id | string }
         dag_tokens = {}
@@ -403,7 +457,6 @@ class DefaultFailureManager(FailureManager):
         pass
 
         all_token_visited = dict(sorted(all_token_visited.items()))
-        tmp_random_name = random_name()
         await printa_token(
             all_token_visited,
             workflow,
@@ -412,10 +465,10 @@ class DefaultFailureManager(FailureManager):
             "prima-e-dopo/"
             + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
             + "_graph_steps_"
-            + tmp_random_name
+            + new_workflow_name
             + "_prima",
         )
-        to_remove = [v["old-out-token"] for k, v in available_new_job_tokens.items()]
+        to_remove = [v["old-out-token"] for v in available_new_job_tokens.values()]
         while to_remove:
             to_remove = self.clean_dag(
                 dag_tokens,
@@ -424,18 +477,26 @@ class DefaultFailureManager(FailureManager):
             for k in to_remove:
                 dag_tokens.pop(k)
         for values in available_new_job_tokens.values():
-            self._update_dag(
-                dag_tokens, values["old-out-token"], values["new-out-token"]
-            )
+            if values["old-out-token"] in dag_tokens:
+                await self._update_dag(
+                    dag_tokens,
+                    values["old-out-token"],
+                    values["new-out-token"],
+                    all_token_visited,
+                    workflow,
+                    loading_context,
+                )
+            else:
+                print("ECCO CHI FACEVA CADERE TUTTO", values["old-out-token"])
         await printa_token(
             all_token_visited,
             workflow,
             dag_tokens,
             loading_context,
-            "prima-e-dopo/"
+            "prima-e-dopo/graph_steps_"
             + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
-            + "_graph_steps_"
-            + tmp_random_name
+            + "_workflow-"
+            + new_workflow_name
             + "_dopo",
         )
         # print_graph_figure(dag_tokens, "graph_token_recovery")
@@ -529,7 +590,12 @@ class DefaultFailureManager(FailureManager):
         tokens.append(job_token)
 
         dag_tokens, token_visited = await self._build_dag(
-            tokens, failed_job, failed_step, workflow, loading_context
+            tokens,
+            failed_job,
+            failed_step,
+            workflow,
+            loading_context,
+            new_workflow.name,
         )
 
         # update class state (attributes)
@@ -630,7 +696,11 @@ class DefaultFailureManager(FailureManager):
         token_list = self.retags[workflow_name][output_port.name]
         for t in token_list:
             if t.tag == tag:
+                temp_print_retag(
+                    workflow_name, output_port, tag, self.retags, "return true"
+                )
                 return True
+        temp_print_retag(workflow_name, output_port, tag, self.retags, "return false")
         return False
 
     def _save_for_retag(self, new_workflow, dag_token, token_port, token_visited):
