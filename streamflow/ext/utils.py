@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import Any, MutableMapping
+from typing import Any, MutableMapping, MutableSequence
 
 import jsonref
 from importlib_metadata import entry_points
@@ -37,12 +37,14 @@ def _flatten_all_of(entity_schema):
     return dict(sorted(entity_schema["properties"].items()))
 
 
-def _get_property_desc(k: str, obj: MutableMapping[str, Any]) -> str:
+def _get_property_desc(
+    k: str, obj: MutableMapping[str, Any], refs: MutableMapping[str, Any]
+) -> str:
     property_desc = [k]
     if "type" in obj:
-        property_desc[0] = f"{property_desc[0]}: {_get_type_repr(obj)}"
+        property_desc[0] = f"{property_desc[0]}: {_get_type_repr(obj, refs)}"
     elif "oneOf" in obj:
-        types = [_get_type_repr(oo) for oo in obj["oneOf"] if "type" in oo]
+        types = [_get_type_repr(oo, refs) for oo in obj["oneOf"] if "type" in oo]
         property_desc[0] = f"{property_desc[0]}: Union[{', '.join(types)}]"
     if "default" in obj:
         property_desc[0] = f"{property_desc[0]} (default: {obj['default']})"
@@ -51,24 +53,56 @@ def _get_property_desc(k: str, obj: MutableMapping[str, Any]) -> str:
     return "\n".join(property_desc)
 
 
-def _get_type_repr(obj: MutableMapping[str, Any]) -> str | None:
+def _get_type_repr(
+    obj: MutableMapping[str, Any], refs: MutableMapping[str, Any]
+) -> str | None:
     if "type" in obj:
         if obj["type"] == "object":
             if "patternProperties" in obj:
                 if len(obj["patternProperties"]) > 1:
                     types = [
-                        _get_type_repr(t) for t in obj["patternProperties"].values()
+                        _get_type_repr(t, refs)
+                        for t in obj["patternProperties"].values()
                     ]
                     type_ = f"Union[{', '.join(types)}]"
                 else:
-                    type_ = _get_type_repr(list(obj["patternProperties"].values())[0])
+                    type_ = _get_type_repr(
+                        list(obj["patternProperties"].values())[0], refs
+                    )
                 return f"Map[str, {type_}]"
+            elif "title" in obj:
+                refs[obj["title"]] = obj.get("properties", {})
+                return obj["title"]
             else:
-                return obj.get("title", "object")
+                return "object"
         else:
             return obj["type"]
     else:
         return None
+
+
+def _split_refs(refs: MutableMapping[str, Any], processed: MutableSequence[str]):
+    refs_descs = {}
+    subrefs = {}
+    for k, v in refs.items():
+        refs_descs[k] = [
+            _get_property_desc(name, prop, subrefs) for name, prop in v.items()
+        ]
+        processed.append(k)
+    if subrefs := {k: v for k, v in subrefs.items() if k not in processed}:
+        refs_descs = {**refs_descs, **_split_refs(subrefs, processed)}
+    return refs_descs
+
+
+def _split_schema(schema: MutableMapping[str, Any]):
+    required, optional = [], []
+    refs = {}
+    for k, v in schema.get("properties", {}).items():
+        if k in schema.get("required", []):
+            required.append(_get_property_desc(k, v, refs))
+        else:
+            optional.append(_get_property_desc(k, v, refs))
+    return required, optional, refs
 
 
 def list_extensions(name: str | None, type_: str | None):
@@ -259,20 +293,21 @@ def show_extension(name: str, type_: str):
         )
         print(format_string.format("NAME", "CLASS_NAME", "PLUGIN"))
         print(format_string.format(name, class_name, plugin))
-        property_descs = []
-        for k, v in entity_schema.get("properties", {}).items():
-            if k in entity_schema.get("required", []):
-                property_descs.append(_get_property_desc(k, v))
-        if property_descs:
-            print("\nREQUIRED\n")
-            print("\n---\n".join(property_descs))
-            property_descs = []
-        for k, v in entity_schema.get("properties", {}).items():
-            if k not in entity_schema.get("required", []):
-                property_descs.append(_get_property_desc(k, v))
-        if property_descs:
-            print("\nOPTIONAL\n")
-            print("\n---\n".join(property_descs))
+        required, optional, refs = _split_schema(entity_schema)
+        if required:
+            print("\n===================\nREQUIRED PROPERTIES\n===================\n")
+            print("\n---\n".join(required))
+        if optional:
+            print("\n===================\nOPTIONAL PROPERTIES\n===================\n")
+            print("\n---\n".join(optional))
+        if refs:
+            print("\n================\nTYPE DEFINITIONS\n================")
+            refs = _split_refs(refs, [])
+            for key, ref in refs.items():
+                print("\n" + "-" * len(key))
+                print(key)
+                print("-" * len(key) + "\n")
+                print("\n---\n".join(ref))
     else:
         print(
             f"No StreamFlow extension `{name}` of type `{type_}` detected.",
