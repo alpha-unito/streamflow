@@ -52,6 +52,17 @@ async def _load_prev_tokens(token_id, loading_context, context):
         )
     )
 
+async def _load_prev_tokens_newest(token_id, loading_context, context):
+    rows2 = await context.database.get_dependees_newest_workflow(token_id)
+
+    return await asyncio.gather(
+        *(
+            asyncio.create_task(loading_context.load_token(context, row["dependee"]))
+            for row in rows2
+        )
+    )
+
+
 
 def _get_data_location(path, context):
     data_locs = context.data_manager.get_data_locations(path)
@@ -70,6 +81,10 @@ async def _put_tokens(
 ):
     # add tokens into the ports
     for token_id in dag_tokens[INIT_DAG_FLAG]:
+        if token_id not in dag_tokens.keys():
+            print(
+                f"problema scatter:out1 OOOOOOOOOOOOOOOOOOOOOOOOOOOH token {token_id} è in init ma è un vicolo cieco"
+            )
         port = new_workflow.ports[token_port[token_id]]
         port.put(token_visited[token_id][0])
         if len(port.token_list) == port_tokens_counter[port.name]:
@@ -191,7 +206,7 @@ def str_value(value):
 
 def temp_print_retag(workflow_name, output_port, tag, retags, final_msg):
     print(
-        f"wf {workflow_name} - port {output_port.name} - tag {tag}",
+        f"problema scatter:out3 wf {workflow_name} - port {output_port.name} - tag {tag}",
         "\nretags",
         json.dumps(
             {
@@ -356,6 +371,137 @@ class DefaultFailureManager(FailureManager):
         dag_tokens[new_out_token] = values
         dag_tokens[INIT_DAG_FLAG].add(new_out_token)
 
+    async def _build_dag_newest_workflow(
+            self,
+            tokens,
+            failed_job,
+            failed_step,
+            workflow,
+            loading_context,
+            new_workflow_name,
+    ):
+        # { token.id : set of next tokens' id | string }
+        dag_tokens = {}
+        for t in failed_job.inputs.values():
+            if t.persistent_id is None:
+                raise FailureHandlingException("Token has not a persistent_id")
+            dag_tokens[t.persistent_id] = set((failed_step.name,))
+
+        # { token_id: (token, is_available)}
+        all_token_visited = {}
+
+        # {old job token id : (new job token id, new output token id)}
+        available_new_job_tokens = {}
+
+        # {old token id : job token running}
+        running_new_job_tokens = {}
+
+        while tokens:
+            token = tokens.pop()
+
+            if not await self._is_available(
+                    token,
+                    all_token_visited,
+                    available_new_job_tokens,
+                    running_new_job_tokens,
+                    workflow.context,
+                    loading_context,
+            ):
+                is_available = await _is_token_available(token, workflow.context)
+                if isinstance(token, CWLFileToken):
+                    print("token isav", token, is_available)
+
+                # impossible case because when added in tokens, the elem is checked
+                if token.persistent_id in all_token_visited.keys():
+                    raise FailureHandlingException(
+                        f"Token {token.persistent_id} already visited"
+                    )
+                all_token_visited[token.persistent_id] = (token, is_available)
+
+                if not is_available:
+                    prev_tokens = await _load_prev_tokens_newest(
+                        token.persistent_id,
+                        loading_context,
+                        workflow.context,
+                    )
+                    if prev_tokens:
+                        for pt in prev_tokens:
+                            dag_tokens.setdefault(pt.persistent_id, set()).add(
+                                token.persistent_id
+                            )
+                            if (
+                                    pt.persistent_id not in all_token_visited.keys()
+                                    and not contains_token_id(pt.persistent_id, tokens)
+                            ):
+                                tokens.append(pt)
+                    else:
+                        dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(
+                            token.persistent_id
+                        )
+                else:
+                    dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(token.persistent_id)
+                # alternativa ai due else ... però è più difficile la lettura del codice (ancora da provare)
+                # if is_available or not prev_tokens:
+                #     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
+
+        print(
+            "available_new_job_tokens:",
+            len(available_new_job_tokens) > 0,
+            json.dumps(available_new_job_tokens, indent=2),
+        )
+        for k, v in available_new_job_tokens.items():
+            if k not in all_token_visited.keys():
+                print(k, "missing")
+            for vv in v.values():
+                if vv not in all_token_visited.keys():
+                    print(vv, "missing")
+        # print("running_new_job_tokens:", json.dumps(running_new_job_tokens, indent=2))
+        pass
+
+        all_token_visited = dict(sorted(all_token_visited.items()))
+        await printa_token(
+            all_token_visited,
+            workflow,
+            dag_tokens,
+            loading_context,
+            "prima-e-dopo_newest-workflow/graph_steps_"
+            + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
+            + "_workflow-"
+            + new_workflow_name
+            + "_prima",
+        )
+        to_remove = [v["old-out-token"] for v in available_new_job_tokens.values()]
+        while to_remove:
+            to_remove = self.clean_dag(
+                dag_tokens,
+                to_remove,
+            )
+            for k in to_remove:
+                dag_tokens.pop(k)
+        for values in available_new_job_tokens.values():
+            if values["old-out-token"] in dag_tokens:
+                await self._update_dag(
+                    dag_tokens,
+                    values["old-out-token"],
+                    values["new-out-token"],
+                    all_token_visited,
+                    workflow,
+                    loading_context,
+                )
+            else:
+                print("ECCO CHI FACEVA CADERE TUTTO", values["old-out-token"])
+        await printa_token(
+            all_token_visited,
+            workflow,
+            dag_tokens,
+            loading_context,
+            "prima-e-dopo_newest-workflow/graph_steps_"
+            + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
+            + "_workflow-"
+            + new_workflow_name
+            + "_dopo",
+        )
+
     async def _build_dag(
         self,
         tokens,
@@ -449,9 +595,9 @@ class DefaultFailureManager(FailureManager):
             workflow,
             dag_tokens,
             loading_context,
-            "prima-e-dopo/"
+            "prima-e-dopo/graph_steps_"
             + str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
-            + "_graph_steps_"
+            + "_workflow-"
             + new_workflow_name
             + "_prima",
         )
@@ -578,6 +724,17 @@ class DefaultFailureManager(FailureManager):
 
         dag_tokens, token_visited = await self._build_dag(
             tokens,
+            failed_job,
+            failed_step,
+            workflow,
+            loading_context,
+            new_workflow.name,
+        )
+
+        tokens1 = list(failed_job.inputs.values())  # tokens to check
+        tokens1.append(job_token)
+        await self._build_dag_newest_workflow(
+            tokens1,
             failed_job,
             failed_step,
             workflow,
@@ -712,7 +869,7 @@ class DefaultFailureManager(FailureManager):
                         )
                     else:
                         print(
-                            f"Non aggiungo il token {t_id} dentro retags perché è un token init del dag"
+                            f"problema scatter:out2 Non aggiungo il token {t_id} dentro retags perché è un token init del dag"
                         )
 
     async def _execute_failed_job(

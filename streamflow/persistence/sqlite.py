@@ -236,6 +236,28 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
+    async def get_dependees_newest_workflow(
+        self, token_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT provenance.* "
+                "FROM provenance JOIN token ON provenance.dependee = token.id "
+                "   JOIN port ON token.port = port.id "
+                "   JOIN workflow ON port.workflow = workflow.id "
+                "WHERE provenance.depender = :depender "
+                "   AND workflow.start_time = ( "
+                "       SELECT MAX(workflow.start_time) "
+                "       FROM workflow JOIN port ON workflow.id = port.workflow "
+                "           JOIN token ON port.id = token.port "
+                "           JOIN provenance ON token.id = provenance.dependee "
+                "       WHERE provenance.depender = :depender "
+                "   )",
+                {"depender": token_id},
+            ) as cursor:
+                return await cursor.fetchall()
+
     async def get_dependers(
         self, token_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
@@ -266,11 +288,11 @@ class SqliteDatabase(CachedDatabase):
             async with db.execute(
                 "SELECT token.* "
                 "FROM provenance JOIN token ON provenance.depender=token.id "
-                "JOIN port ON token.port=port.id "
-                "JOIN dependency ON dependency.port=port.id "
-                "JOIN step ON step.id=dependency.step "
+                "   JOIN port ON token.port=port.id "
+                "   JOIN dependency ON dependency.port=port.id "
+                "   JOIN step ON step.id=dependency.step "
                 "WHERE step.type=:step_type AND dependency.type=:dep_type "
-                "AND provenance.dependee=:job_token_id",
+                "   AND provenance.dependee=:job_token_id",
                 {
                     "job_token_id": job_token_id,
                     "dep_type": DependencyType.OUTPUT.value,
