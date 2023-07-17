@@ -260,11 +260,11 @@ def inject_schema(
                     base_uri=f"file://{os.path.dirname(entity_schema)}/",
                     jsonschema=True,
                 )
-            definition = schema["definitions"]
+            definition = schema["$defs"]
             for el in definition_name.split(posixpath.sep):
                 definition = definition[el]
             definition["properties"]["type"].setdefault("enum", []).append(name)
-            definition["definitions"][name] = entity_schema
+            definition["$defs"][name] = entity_schema
             definition.setdefault("allOf", []).append(
                 {
                     "if": {"properties": {"type": {"const": name}}},

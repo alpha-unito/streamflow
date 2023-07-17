@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import jsonref
 import pkg_resources
-from jsonschema import Draft7Validator
+from jsonschema.validators import validator_for
 from ruamel.yaml import YAML
 
 from streamflow.core import utils
@@ -36,16 +36,24 @@ def handle_errors(errors):
 
 
 def load_jsonschema(config_file: MutableMapping[str, Any]):
+    if "version" not in config_file:
+        raise WorkflowDefinitionException(
+            "The `version` clause is mandatory and should be equal to `v1.0`."
+        )
     try:
         base_path = pkg_resources.resource_filename(
             __name__, os.path.join("schemas", config_file["version"])
         )
     except pkg_resources.ResolutionError:
-        raise Exception(f"Version {config_file['version']} is unsupported")
+        raise WorkflowDefinitionException(
+            f"Version {config_file['version']} is unsupported. The `version` clause should be equal to `v1.0`."
+        )
     filename = os.path.join(base_path, "config_schema.json")
     if not os.path.exists(filename):
-        raise Exception(f'Version in "{filename}" is unsupported')
-    with open(filename) as f:
+        raise WorkflowDefinitionException(
+            f"Version {config_file['version']} is unsupported. The `version` clause should be equal to `v1.0`."
+        )
+    with open(os.path.join(base_path, "config_schema.json")) as f:
         return jsonref.loads(f.read(), base_uri=f"file://{base_path}/", jsonschema=True)
 
 
@@ -71,6 +79,7 @@ class SfValidator:
         utils.inject_schema(schema, failure_manager_classes, "failureManager")
         utils.inject_schema(schema, policy_classes, "policy")
         utils.inject_schema(schema, scheduler_classes, "scheduler")
-        validator = Draft7Validator(schema)
+        cls = validator_for(schema)
+        validator = cls(schema)
         handle_errors(validator.iter_errors(streamflow_config))
         return streamflow_config

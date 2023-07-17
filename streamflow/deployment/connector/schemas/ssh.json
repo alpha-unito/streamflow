@@ -1,10 +1,9 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
   "$id": "ssh.json",
   "type": "object",
-  "definitions": {
+  "$defs": {
     "connection": {
-      "$id": "#/definitions/connection",
       "type": "object",
       "title": "SSHConnection",
       "description": "This complex type represents an SSH connection to a remote node, identified by its hostname.",
@@ -43,7 +42,7 @@
           "oneOf": [
             {
               "type": "object",
-              "$ref": "#/definitions/connection"
+              "$ref": "#/$defs/connection"
             },
             {
               "type": "null"
@@ -78,7 +77,7 @@
         },
         {
           "type": "object",
-          "$ref": "#/definitions/connection"
+          "$ref": "#/$defs/connection"
         }
       ],
       "description": "Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"
@@ -96,7 +95,7 @@
           },
           {
             "type": "object",
-            "$ref": "#/definitions/connection"
+            "$ref": "#/$defs/connection"
           }
         ]
       },
@@ -148,7 +147,7 @@
     "tunnel": {
       "type": "object",
       "description": "External SSH connection parameters for tunneling",
-      "$ref": "#/definitions/connection"
+      "$ref": "#/$defs/connection"
     },
     "username": {
       "type": "string",

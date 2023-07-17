@@ -1,10 +1,9 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
   "$id": "config_schema.json",
   "type": "object",
-  "definitions": {
+  "$defs": {
     "binding": {
-      "$id": "#/definitions/binding",
       "oneOf": [
         {
           "type": "object",
@@ -16,13 +15,13 @@
               "oneOf": [
                 {
                   "type": "object",
-                  "$ref": "#/definitions/target"
+                  "$ref": "#/$defs/target"
                 },
                 {
                   "type": "array",
                   "items": {
                     "type": "object",
-                    "$ref": "#/definitions/target"
+                    "$ref": "#/$defs/target"
                   }
                 }
               ]
@@ -49,7 +48,7 @@
             },
             "target": {
               "type": "object",
-              "$ref": "#/definitions/target"
+              "$ref": "#/$defs/target"
             }
           },
           "required": [
@@ -61,9 +60,8 @@
       ]
     },
     "bindingFilter": {
-      "$id": "#/definitions/bindingFilter",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "type": {
           "type": "string"
@@ -76,9 +74,8 @@
       ]
     },
     "checkpointManager": {
-      "$id": "#/definitions/checkpointManager",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -105,12 +102,10 @@
       }
     },
     "cwl": {
-      "$id": "#/definitions/cwl",
       "type": "object",
       "docker": {
-        "$id": "#/definitions/cwl/docker",
         "type": "object",
-        "definitions": {},
+        "$defs": {},
         "properties": {
           "type": {
             "type": "string"
@@ -129,9 +124,8 @@
       }
     },
     "database": {
-      "$id": "#/definitions/database",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "type": {
           "type": "string"
@@ -144,9 +138,8 @@
       ]
     },
     "dataManager": {
-      "$id": "#/definitions/dataManager",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "type": {
           "type": "string"
@@ -159,9 +152,8 @@
       ]
     },
     "deployment": {
-      "$id": "#/definitions/deployment",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "external": {
           "type": "boolean",
@@ -198,9 +190,8 @@
       ]
     },
     "deploymentManager": {
-      "$id": "#/definitions/deploymentManager",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "type": {
           "type": "string"
@@ -213,9 +204,8 @@
       ]
     },
     "failureManager": {
-      "$id": "#/definitions/failureManager",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -242,9 +232,8 @@
       }
     },
     "policy": {
-      "$id": "#/definitions/policy",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "type": {
           "type": "string"
@@ -257,9 +246,8 @@
       ]
     },
     "scheduler": {
-      "$id": "#/definitions/scheduler",
       "type": "object",
-      "definitions": {},
+      "$defs": {},
       "properties": {
         "type": {
           "type": "string"
@@ -272,7 +260,6 @@
       ]
     },
     "target": {
-      "$id": "#/definitions/target",
       "type": "object",
       "properties": {
         "deployment": {
@@ -320,11 +307,9 @@
       "additionalProperties": false
     },
     "workflow": {
-      "$id": "#/definitions/workflow",
       "type": "object",
-      "definitions": {
+      "$defs": {
         "cwl": {
-          "$id": "#/definitions/workflow/definitions/cwl",
           "type": "object",
           "properties": {
             "file": {
@@ -343,7 +328,7 @@
                   },
                   "deployment": {
                     "type": "object",
-                    "$ref": "#/definitions/cwl/docker"
+                    "$ref": "#/$defs/cwl/docker"
                   }
                 },
                 "additionalProperties": false,
@@ -362,26 +347,24 @@
       },
       "properties": {
         "type": {
-          "$id": "#/definitions/workflow/properties/type",
           "type": "string",
           "enum": [
             "cwl"
           ]
         },
         "bindings": {
-          "$id": "#/definitions/workflow/properties/bindings",
           "type": "array",
           "items": {
             "oneOf": [
               {
                 "type": "object",
-                "$ref": "#/definitions/binding"
+                "$ref": "#/$defs/binding"
               },
               {
                 "type": "array",
                 "items": {
                   "type": "object",
-                  "$ref": "#/definitions/binding"
+                  "$ref": "#/$defs/binding"
                 }
               }
             ]
@@ -401,9 +384,8 @@
           "then": {
             "properties": {
               "config": {
-                "$id": "#/definitions/workflow/properties/config",
                 "type": "object",
-                "$ref": "#/definitions/workflow/definitions/cwl"
+                "$ref": "#/$defs/workflow/$defs/cwl"
               }
             }
           }
@@ -417,75 +399,64 @@
   },
   "properties": {
     "bindingFilters": {
-      "$id": "#/properties/bindingFilters",
       "type": "object",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
-          "$ref": "#/definitions/bindingFilter"
+          "$ref": "#/$defs/bindingFilter"
         }
       }
     },
     "checkpointManager": {
-      "$id": "#/properties/checkpointManager",
       "type": "object",
-      "$ref": "#/definitions/checkpointManager"
+      "$ref": "#/$defs/checkpointManager"
     },
     "database": {
-      "$id": "#/properties/database",
       "type": "object",
-      "$ref": "#/definitions/database"
+      "$ref": "#/$defs/database"
     },
     "dataManager": {
-      "$id": "#/properties/dataManager",
       "type": "object",
-      "$ref": "#/definitions/dataManager"
+      "$ref": "#/$defs/dataManager"
     },
     "deployments": {
-      "$id": "#/properties/deployments",
       "type": "object",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
-          "$ref": "#/definitions/deployment"
+          "$ref": "#/$defs/deployment"
         }
       },
       "additionalProperties": false
     },
     "deploymentManager": {
-      "$id": "#/properties/deploymentManager",
       "type": "object",
-      "$ref": "#/definitions/deploymentManager"
+      "$ref": "#/$defs/deploymentManager"
     },
     "failureManager": {
-      "$id": "#/properties/failureManager",
       "type": "object",
-      "$ref": "#/definitions/failureManager"
+      "$ref": "#/$defs/failureManager"
     },
     "scheduling": {
-      "$id": "#/properties/scheduling",
       "type": "object",
       "properties": {
         "scheduler": {
-          "$id": "#/properties/scheduling/scheduler",
           "type": "object",
-          "$ref": "#/definitions/scheduler"
+          "$ref": "#/$defs/scheduler"
         },
         "policies": {
-          "$id": "#/properties/scheduling/policies",
           "type": "object",
           "patternProperties": {
             "^[a-z][a-zA-Z0-9._-]*$": {
-              "$ref": "#/definitions/policy"
+              "$ref": "#/$defs/policy"
             }
           }
         }
       }
     },
     "models": {
-      "$id": "#/properties/deployments",
       "type": "object",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
-          "$ref": "#/definitions/deployment"
+          "$ref": "#/$defs/deployment"
         }
       },
       "additionalProperties": false
@@ -494,11 +465,10 @@
       "type": "string"
     },
     "workflows": {
-      "$id": "#/properties/workflows",
       "type": "object",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
-          "$ref": "#/definitions/workflow"
+          "$ref": "#/$defs/workflow"
         }
       },
       "additionalProperties": false
@@ -506,5 +476,6 @@
   },
   "required": [
     "version"
-  ]
+  ],
+  "additionalProperties": false
 }
