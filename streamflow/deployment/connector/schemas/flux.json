@@ -1,10 +1,9 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
   "$id": "flux.json",
   "type": "object",
-  "definitions": {
+  "$defs": {
     "service": {
-      "$id": "#/definitions/service",
       "type": "object",
       "title": "FluxService",
       "description": "This complex type represents a submission to the Flux queue manager.",
@@ -154,10 +153,10 @@
       "description": "Map containing named configurations of Flux submissions. Parameters can be either specified as #flux directives in a file or directly in YAML format.",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
-          "$ref": "#/definitions/service"
+          "$ref": "#/$defs/service"
         }
       }
     }
   },
-  "additionalProperties": false
+  "unevaluatedProperties": false
 }

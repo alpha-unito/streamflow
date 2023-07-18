@@ -358,9 +358,13 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             )
         super().__init__(deployment_name, config_dir, connector)
         files_map: MutableMapping[str, Any] = {}
-        self.services: MutableMapping[str, QueueManagerService] = services or {}
-        if services:
-            for name, service in services.items():
+        self.services = (
+            {k: self._service_class(**v) for k, v in services.items()}
+            if services
+            else {}
+        )
+        if self.services:
+            for name, service in self.services.items():
                 if service.file is not None:
                     with open(os.path.join(self.config_dir, service.file)) as f:
                         files_map[name] = f.read()
@@ -424,6 +428,11 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         stderr: int | str = asyncio.subprocess.STDOUT,
         timeout: int | None = None,
     ) -> str:
+        ...
+
+    @property
+    @abstractmethod
+    def _service_class(self) -> type[QueueManagerService]:
         ...
 
     async def get_available_locations(
@@ -626,6 +635,10 @@ class SlurmConnector(QueueManagerConnector):
             capture_output=True,
         )
         return [j.strip() for j in stdout.strip().splitlines()]
+
+    @property
+    def _service_class(self) -> type[QueueManagerService]:
+        return SlurmService
 
     async def _remove_jobs(self, location: Location) -> None:
         await self.connector.run(
@@ -918,6 +931,10 @@ class PBSConnector(QueueManagerConnector):
         )
         return stdout.strip()
 
+    @property
+    def _service_class(self) -> type[QueueManagerService]:
+        return PBSService
+
 
 class FluxConnector(QueueManagerConnector):
     @classmethod
@@ -1081,3 +1098,7 @@ class FluxConnector(QueueManagerConnector):
             raise WorkflowExecutionException(
                 f"Error submitting job {job_name} to Flux: {stdout.strip()}"
             )
+
+    @property
+    def _service_class(self) -> type[QueueManagerService]:
+        return FluxService
