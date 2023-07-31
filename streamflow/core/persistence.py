@@ -267,6 +267,9 @@ class Database(SchemaEntity):
         self, workflow_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]: ...
 
+    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
+        ...
+
     @abstractmethod
     async def get_workflows_by_name(
         self, workflow_name: str, last_only: bool = False

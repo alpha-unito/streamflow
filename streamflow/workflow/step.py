@@ -105,7 +105,7 @@ class BaseStep(Step, ABC):
             if check_termination(inputs):
                 logger.debug(f"Step {self.name} received termination token")
             logger.debug(
-                f"Step {self.name} received inputs {[t.tag for t in inputs.values()]}"
+                f"Step {self.name} (wf {self.workflow.name}) received inputs {[t.tag for t in inputs.values()]}"
             )
         return inputs
 

@@ -280,7 +280,9 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchone()
 
-    async def get_job_out_token(self, job_token_id: int) -> MutableMapping[str, Any]:
+    async def get_out_tokens_from_job_token(
+        self, job_token_id: int
+    ) -> MutableMapping[str, Any]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             # todo: ottimizzare le query (left, right, inner, outer join)
@@ -301,6 +303,21 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 end = time.time()
                 print("QUERY Time exec ", (end - start))
+                return await cursor.fetchone()
+
+    async def get_step_from_outport(self, port_id: int) -> MutableMapping[str, Any]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT step.* "
+                "FROM dependency "
+                "     JOIN step ON step.id=dependency.step "
+                "WHERE dependency.port=:port_id AND dependency.type=:dep_type",
+                {
+                    "port_id": port_id,
+                    "dep_type": DependencyType.OUTPUT.value,
+                },
+            ) as cursor:
                 return await cursor.fetchone()
 
     async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
@@ -408,6 +425,15 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return [row[0] for row in await cursor.fetchall()]
 
+    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT port.* FROM token JOIN port ON token.port = port.id WHERE token.id = :token_id",
+                {"token_id": token_id},
+            ) as cursor:
+                return await cursor.fetchone()
+
     async def get_reports(
         self, workflow: str, last_only: bool = False
     ) -> MutableSequence[MutableSequence[MutableMapping[str, Any]]]:
@@ -508,13 +534,13 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
-        async with self.connection as db:
-            async with db.execute(
-                "SELECT port.* FROM token JOIN port ON token.port = port.id WHERE token.id = :token_id",
-                {"token_id": token_id},
-            ) as cursor:
-                return await cursor.fetchone()
+    # async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
+    #     async with self.connection as db:
+    #         async with db.execute(
+    #             "SELECT port.* FROM token JOIN port ON token.port = port.id WHERE token.id = :token_id",
+    #             {"token_id": token_id},
+    #         ) as cursor:
+    #             return await cursor.fetchone()
 
     async def get_all_provenance(self) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:

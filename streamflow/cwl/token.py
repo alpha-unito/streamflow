@@ -45,8 +45,8 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
 async def data_location_exists(data_location, context, path):
     if data_location.path == path:
         connector = context.deployment_manager.get_connector(data_location.deployment)
-        # location_allocation = job_version.step.workflow.context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
-        # available_locations = job_version.step.workflow.context.scheduler.get_locations(location_allocation.jobs[0])
+        # location_allocation = context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
+        # available_locations = context.scheduler.get_locations(location_allocation.jobs[0])
         if await remotepath.exists(connector, data_location, path):
             return True
     return False
@@ -54,8 +54,12 @@ async def data_location_exists(data_location, context, path):
 
 def _get_data_location(path, context):
     data_locs = context.data_manager.get_data_locations(path)
+    # print(
+    #     f"Path {path} in data_locs {[ str(dl.name) + ' ' + str(dl.deployment) + ' ' + str(dl.service) + ' ' + str(dl.path) for dl in data_locs]}"
+    # )
     for data_loc in data_locs:
         if data_loc.path == path:
+            # print(f"Path {path} return data_loc {data_loc.deployment}")
             return data_loc
     return None
 

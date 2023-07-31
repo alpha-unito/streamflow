@@ -16,6 +16,7 @@ from streamflow.config.validator import SfValidator
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowProvenanceException
 from streamflow.core.provenance import ProvenanceManager
+from streamflow.core.utils import random_name
 from streamflow.core.workflow import Workflow
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
@@ -160,7 +161,8 @@ async def _async_report(args: argparse.Namespace):
 
 
 async def _async_run(args: argparse.Namespace):
-    args.name = args.name or str(uuid.uuid4())
+    args.name = args.name or random_name()  # str(uuid.uuid4())
+    print("workflow name", args.name)
     load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
     streamflow_config["path"] = args.streamflow_file
