@@ -33,7 +33,12 @@ from streamflow.workflow.step import ScatterStep, CombinatorStep
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import ExecuteStep
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.workflow.token import TerminationToken, JobToken
+from streamflow.workflow.token import (
+    TerminationToken,
+    JobToken,
+    ListToken,
+    IterationTerminationToken,
+)
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Workflow
@@ -47,6 +52,25 @@ async def _cleanup_dir(
     await remotepath.rm(
         connector, location, await remotepath.listdir(connector, location, directory)
     )
+
+
+def local_str_token_value(token):
+    if isinstance(token, CWLFileToken):
+        return f"{token.value['class']} {token.value['basename']}"
+    if isinstance(token, ListToken):
+        return str([local_str_token_value(t) for t in token.value])
+    if isinstance(token, JobToken):
+        return token.value.name
+    if isinstance(token, TerminationToken):
+        return "T"
+    if isinstance(token, IterationTerminationToken):
+        return "IT"
+    if isinstance(token, Token):
+        if isinstance(token.value, Token):
+            return "t(" + local_str_token_value(token.value)
+        else:
+            return f"{token.value}"
+    return "None"
 
 
 async def _load_prev_tokens(token_id, loading_context, context):
@@ -79,18 +103,27 @@ def _get_data_location(path, context):
     return None
 
 
-
-def get_port_tags(new_workflow, dag_ports, port_tokens, token_visited, failed_step_name):
+def get_port_tags(
+    new_workflow, dag_ports, port_tokens, token_visited, failed_step_name
+):
     port_tags = {}
     for port_name, next_port_names in dag_ports.items():
         if port_name == INIT_DAG_FLAG or port_name == failed_step_name:
             continue
         for t_id in port_tokens[port_name]:
-            port_tags.setdefault(port_name, set()).add(token_visited[t_id][0].tag)
+            if isinstance(new_workflow.ports[port_name], JobPort):
+                job = token_visited[t_id][0].value
+                rand_input_token = {t.tag for t in job.inputs.values()}
+                if len(rand_input_token) != 1:
+                    raise FailureHandlingException(
+                        f"Job {job.name} has not inputs or inputs with different tags {rand_input_token}"
+                    )
+                port_tags.setdefault(port_name, set()).add(rand_input_token.pop())
+            else:
+                port_tags.setdefault(port_name, set()).add(token_visited[t_id][0].tag)
     for port_name, next_port_names in dag_ports.items():
-        if (
-                port_name != INIT_DAG_FLAG
-                and not isinstance(new_workflow.ports[port_name], (ConnectorPort, JobPort))
+        if port_name != INIT_DAG_FLAG and not isinstance(
+            new_workflow.ports[port_name], (ConnectorPort, JobPort)
         ):
             # search next ports
             for next_port_name in next_port_names:
@@ -98,16 +131,29 @@ def get_port_tags(new_workflow, dag_ports, port_tokens, token_visited, failed_st
                     # search brother of port_name
                     for curr_port_name, curr_next_port_names in dag_ports.items():
                         if (
-                                curr_port_name != port_name
-                                and curr_port_name != INIT_DAG_FLAG
-                                and next_port_name in curr_next_port_names
-                                and not isinstance(
-                            new_workflow.ports[curr_port_name], (ConnectorPort, JobPort)
-                        )
+                            curr_port_name != port_name
+                            and curr_port_name != INIT_DAG_FLAG
+                            and next_port_name in curr_next_port_names
+                            and not isinstance(
+                                new_workflow.ports[curr_port_name],
+                                ConnectorPort,
+                            )
                         ):
                             tmp = port_tags[port_name].intersection(
                                 port_tags[curr_port_name]
                             )
+
+                            if (
+                                port_tags[port_name] - tmp
+                                or port_tags[curr_port_name] - tmp
+                            ):
+                                print(
+                                    f"wf {new_workflow.name} - Difference ports result: {tmp}"
+                                    f"\n\tFrom port {port_name} ({port_tags[port_name]}) discards tags {port_tags[port_name] - tmp}"
+                                    f"\n\t\tport_tokens[{port_name}]: {[ (t_id, token_visited[t_id][0].tag, local_str_token_value(token_visited[t_id][0])) for t_id in port_tokens[port_name]]}"
+                                    f"\n\tFrom port {curr_port_name} ({port_tags[curr_port_name]}) discards tags {port_tags[curr_port_name] - tmp}"
+                                    f"\n\t\tport_tokens[{curr_port_name}]: {[(t_id, token_visited[t_id][0].tag, local_str_token_value(token_visited[t_id][0])) for t_id in port_tokens[curr_port_name]]}"
+                                )
                             # combinator input ports (it can be possible find inputs with different tags)
                             # todo: mettere un controllo attivo che siano effettivamente le input port di un combinator? Altrimenti se tmp è vuoto lanciare errore
                             if len(tmp) == 0:
@@ -118,6 +164,7 @@ def get_port_tags(new_workflow, dag_ports, port_tokens, token_visited, failed_st
                             port_tags[port_name] = tmp
                             port_tags[curr_port_name] = tmp
     return port_tags
+
 
 async def _put_tokens(
     workflow: Workflow,
@@ -130,7 +177,9 @@ async def _put_tokens(
     dag_ports: MutableMapping[str, MutableSequence[str]],
     failed_step_name: str,
 ):
-    port_tags = get_port_tags(new_workflow, dag_ports, port_tokens, token_visited, failed_step_name)
+    port_tags = get_port_tags(
+        new_workflow, dag_ports, port_tokens, token_visited, failed_step_name
+    )
     for port_name in init_ports:
         port = new_workflow.ports[port_name]
         # token_list = [
@@ -360,6 +409,7 @@ def _update_dag_ports(
     dag_ports: MutableMapping[str, MutableSequence[str]],
     port_tokens: MutableMapping[str, MutableSequence[int]],
     empty_ports: MutableSequence[str],
+    new_workflow_name: str,
 ):
     new_empty_ports = set()
     for port_name, next_port_names in dag_ports.items():
@@ -372,7 +422,7 @@ def _update_dag_ports(
     for port_name in new_empty_ports:
         dag_ports.pop(port_name)
         port_tokens.pop(port_name)
-        print(f"Pop {port_name} for dag_ports and port_tokens")
+        print(f"wf {new_workflow_name} - Pop {port_name} for dag_ports and port_tokens")
     return new_empty_ports
 
 
@@ -585,6 +635,8 @@ class DefaultFailureManager(FailureManager):
         # { port_name : set(port_names) }
         dag_ports = {}
 
+        dag_tokens = {}
+
         # { port_name : set(token_ids) }
         port_tokens = {}
 
@@ -603,9 +655,15 @@ class DefaultFailureManager(FailureManager):
             # se lo step è Transfer, allora non tutti gli input del job saranno nello step
             if k in failed_step.input_ports.keys():
                 dag_ports[failed_step.get_input_port(k).name] = set((failed_step.name,))
+                dag_tokens[t.persistent_id] = set((failed_step.name,))
             else:
                 print(f"Step {failed_step.name} has not the input port {k}")
         dag_ports[failed_step.get_input_port("__job__").name] = set((failed_step.name,))
+        dag_tokens[
+            get_job_token(
+                failed_job.name, failed_step.get_input_port("__job__").token_list
+            ).persistent_id
+        ] = set((failed_step.name,))
 
         lost_ports = set()
 
@@ -665,19 +723,15 @@ class DefaultFailureManager(FailureManager):
                             for t_id in port_tokens[port_row["name"]]
                         ),
                     ):
-                        a = token_present.tag == token.tag
-                        aa = {"present": token_present, "found": token}
+                        aa = {
+                            "uguaglianza": token_present.tag == token.tag,
+                            "present": token_present,
+                            "found": token,
+                        }
                         pass
                         # if the token in port_tokens[port.name] is already available, skip current token
                         if all_token_visited[token_present.persistent_id][1]:
                             continue
-
-                        # if the token is available, while token_present is not available
-                        if is_available:
-                            port_tokens[port_row["name"]].remove(
-                                token_present.persistent_id
-                            )
-                            pass
 
                         # if both are not available ... cosa fare? in teoria sarebbe meglio seguire entrambi i path e tenere quello che arriva prima ad un token disponibile. Ma quanto è dispendioso? E sopratutto quanto difficile da scrivere?
                         # per il momento seguo il percorso solo del primo trovato (quindi token_present)
@@ -686,6 +740,14 @@ class DefaultFailureManager(FailureManager):
                             and not all_token_visited[token_present.persistent_id][1]
                         ):
                             continue
+
+                        # if the token is available and token_present is not available
+                        # than remove token_present. In following, token will be added
+                        if is_available:
+                            port_tokens[port_row["name"]].remove(
+                                token_present.persistent_id
+                            )
+                            pass
 
                 port_tokens.setdefault(port_row["name"], set()).add(token.persistent_id)
                 if not is_available:
@@ -706,6 +768,9 @@ class DefaultFailureManager(FailureManager):
                             dag_ports.setdefault(prev_port_row["name"], set()).add(
                                 port_row["name"]
                             )
+                            dag_tokens.setdefault(pt.persistent_id, set()).add(
+                                token.persistent_id
+                            )
                             if (
                                 pt.persistent_id not in all_token_visited.keys()
                                 and not contains_token_id(pt.persistent_id, tokens)
@@ -713,8 +778,12 @@ class DefaultFailureManager(FailureManager):
                                 tokens.append(pt)
                     else:
                         dag_ports.setdefault(INIT_DAG_FLAG, set()).add(port_row["name"])
+                        dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(
+                            token.persistent_id
+                        )
                 else:
                     dag_ports.setdefault(INIT_DAG_FLAG, set()).add(port_row["name"])
+                    dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(token.persistent_id)
                 # alternativa ai due else ... però è più difficile la lettura del codice (ancora da provare)
                 # if is_available or not prev_tokens:
                 #     add_elem_dictionary(INIT_DAG_FLAG, token.persistent_id, dag_tokens)
@@ -723,6 +792,18 @@ class DefaultFailureManager(FailureManager):
                     token.persistent_id
                 )
                 port_tokens.setdefault(port_row["name"], set()).add(token.persistent_id)
+
+        jobs_execs = set()
+        for token_id_list in port_tokens.values():
+            for t_id in token_id_list:
+                if isinstance(all_token_visited[t_id][0], JobToken):
+                    jobs_execs.add(all_token_visited[t_id][0].value)
+        print(
+            "wf",
+            new_workflow_name,
+            " - Subito dopo la build, ho trovato jobs da rieseguire",
+            [j.name for j in jobs_execs],
+        )
 
         all_token_visited = dict(sorted(all_token_visited.items()))
         print(
@@ -735,10 +816,29 @@ class DefaultFailureManager(FailureManager):
         dir_path = f"graphs/{dt}"
         os.makedirs(dir_path)
 
+        label_t_av = lambda x: "A" if x else "NA"
         # DEBUG: create ports graph
+
+        print_graph_figure(
+            {
+                (k, all_token_visited[k][0].tag, label_t_av(all_token_visited[k][1])): [
+                    (
+                        vv,
+                        all_token_visited[vv][0].tag,
+                        label_t_av(all_token_visited[vv][1]),
+                    )
+                    if isinstance(vv, int)
+                    else (vv, "None", "None")
+                    for vv in v
+                ]
+                for k, v in dag_tokens.items()
+                if k != INIT_DAG_FLAG
+            },
+            dir_path + "/tokens-" + new_workflow_name,
+        )
         print_graph_figure(
             {k: v for k, v in dag_ports.items() if k != INIT_DAG_FLAG},
-            dir_path + "/ports",
+            dir_path + "/ports-" + new_workflow_name,
         )
         await print_step_from_ports(
             dag_ports,
@@ -746,7 +846,7 @@ class DefaultFailureManager(FailureManager):
             list(port_tokens.keys()),
             workflow.context,
             failed_step.name,
-            dir_path + "/step",
+            dir_path + "/steps-" + new_workflow_name,
         )
 
         test = {
@@ -781,23 +881,33 @@ class DefaultFailureManager(FailureManager):
                         and all_token_visited[token_id][0].tag
                         == all_token_visited[token_id_2][0].tag
                     ):
-                        aa = all_token_visited[token_id][0]
-                        ab = all_token_visited[token_id_2][0]
-                        print(
-                            "DIVERGENZAAA port",
-                            port_name,
-                            "type:",
-                            type(all_token_visited[token_id][0]),
-                            ", id:",
-                            token_id,
-                            ", tag:",
-                            all_token_visited[token_id][0].tag,
-                            ", value:",
-                            all_token_visited[token_id][0].value.name
-                            if isinstance(all_token_visited[token_id][0], JobToken)
-                            else all_token_visited[token_id][0].value,
-                        )
-                        pass
+                        if isinstance(
+                            all_token_visited[token_id][0], JobToken
+                        ) and isinstance(all_token_visited[token_id_2][0], JobToken):
+                            print(
+                                "DIVERGENZAAA ma sono due job token, quindi tutto regolare.",
+                                all_token_visited[token_id][0].value.name,
+                                "and",
+                                all_token_visited[token_id_2][0].value.name,
+                            )
+                        else:
+                            aa = all_token_visited[token_id][0]
+                            ab = all_token_visited[token_id_2][0]
+                            print(
+                                "DIVERGENZAAA port",
+                                port_name,
+                                "type:",
+                                type(all_token_visited[token_id][0]),
+                                ", id:",
+                                token_id,
+                                ", tag:",
+                                all_token_visited[token_id][0].tag,
+                                ", value:",
+                                all_token_visited[token_id][0].value.name
+                                if isinstance(all_token_visited[token_id][0], JobToken)
+                                else all_token_visited[token_id][0].value,
+                            )
+                            pass
         print("DEBUG: divergenza controllata")
 
         for v in available_new_job_tokens.values():
@@ -812,7 +922,9 @@ class DefaultFailureManager(FailureManager):
             [v["out-token-port-name"] for v in available_new_job_tokens.values()],
         )
         while empty_ports:
-            empty_ports = _update_dag_ports(dag_ports, port_tokens, empty_ports)
+            empty_ports = _update_dag_ports(
+                dag_ports, port_tokens, empty_ports, new_workflow_name
+            )
         for v in available_new_job_tokens.values():
             a = v["out-token-port-name"]
             b = v["new-out-token"]
@@ -846,7 +958,7 @@ class DefaultFailureManager(FailureManager):
 
         print_graph_figure(
             {k: v for k, v in dag_ports.items() if k != INIT_DAG_FLAG},
-            dir_path + "/ports-post-remove",
+            dir_path + "/ports-post-remove-" + new_workflow_name,
         )
         await print_step_from_ports(
             dag_ports,
@@ -854,7 +966,7 @@ class DefaultFailureManager(FailureManager):
             list(port_tokens.keys()),
             workflow.context,
             failed_step.name,
-            dir_path + "/step-post-remove",
+            dir_path + "/step-post-remove-" + new_workflow_name,
         )
 
         # rimozione di token che sono disponibili in modi alternativi (generati da altri rollback)
@@ -1047,7 +1159,9 @@ class DefaultFailureManager(FailureManager):
                     )
 
         pass
-        self._save_for_retag(new_workflow, dag_ports, port_tokens, token_visited, failed_step.name)
+        self._save_for_retag(
+            new_workflow, dag_ports, port_tokens, token_visited, failed_step.name
+        )
         pass
 
         await _put_tokens(
@@ -1068,6 +1182,9 @@ class DefaultFailureManager(FailureManager):
 
         print("New workflow", new_workflow.name, "popolato così:")
         print("\tJobs da rieseguire:", job_che_eseguo)
+        if "/tosort/0" in job_che_eseguo and "/tosort/1" in job_che_eseguo:
+            print("\tRieseguo la scatter per intero")
+            pass
         for step in new_workflow.steps.values():
             print(
                 f"Step {step.name}\n\tinput ports",
@@ -1127,40 +1244,51 @@ class DefaultFailureManager(FailureManager):
         temp_print_retag(workflow_name, output_port, tag, self.retags, "return false")
         return False
 
-
-    def _save_for_retag(self, new_workflow, dag_ports, port_tokens, token_visited, failed_step_name):
+    def _save_for_retag(
+        self, new_workflow, dag_ports, port_tokens, token_visited, failed_step_name
+    ):
         # todo: aggiungere la possibilità di eserguire comunque tutti i job delle scatter aggiungendo un parametro nel StreamFlow file
         if new_workflow.name not in self.retags.keys():
             self.retags[new_workflow.name] = {}
 
-        port_tags = get_port_tags(new_workflow, dag_ports, port_tokens, token_visited, failed_step_name)
+        port_tags = get_port_tags(
+            new_workflow, dag_ports, port_tokens, token_visited, failed_step_name
+        )
 
         for step in new_workflow.steps.values():
             if isinstance(step, ScatterStep):
                 port = step.get_output_port()
 
+                print(
+                    f"wf {new_workflow.name} -> port_tokens[{port.name}]:",
+                    [
+                        (t_id, token_visited[t_id][0].tag, token_visited[t_id][1])
+                        for t_id in port_tokens[port.name]
+                    ],
+                )
                 for t_id in port_tokens[port.name]:
-                    if t_id not in dag_ports[INIT_DAG_FLAG] and token_visited[t_id][0].tag in port_tags[port.name]:
+                    if (
+                        t_id not in dag_ports[INIT_DAG_FLAG]
+                        and not token_visited[t_id][1]
+                        and token_visited[t_id][0].tag in port_tags[port.name]
+                    ):
                         self.retags[new_workflow.name].setdefault(port.name, set()).add(
-                                    token_visited[t_id][0]
-                                )
+                            token_visited[t_id][0]
+                        )
 
                 # for t_id in port_tokens[port.name]:
-                    # todo: valutare se salvare in retags solo i tag (e non tutto l'oggetto token)
+                # todo: valutare se salvare in retags solo i tag (e non tutto l'oggetto token)
 
-                    # # todo: si potrebbe cambiare: scorrere port_tokens e vedere le port che hanno più di un token (se hanno più token significa che hanno tag diversi)
-                    # if t_id not in dag_ports[INIT_DAG_FLAG]:
-                    #     if not token_visited[t_id][1]:
-                    #         self.retags[new_workflow.name].setdefault(port.name, set()).add(
-                    #             token_visited[t_id][0]
-                    #         )
-                    # else:
-                    #     print(
-                    #         f"problema scatter:out2 Non aggiungo il token {t_id} dentro retags perché è un token init del dag"
-                    #     )
-
-
-
+                # # todo: si potrebbe cambiare: scorrere port_tokens e vedere le port che hanno più di un token (se hanno più token significa che hanno tag diversi)
+                # if t_id not in dag_ports[INIT_DAG_FLAG]:
+                #     if not token_visited[t_id][1]:
+                #         self.retags[new_workflow.name].setdefault(port.name, set()).add(
+                #             token_visited[t_id][0]
+                #         )
+                # else:
+                #     print(
+                #         f"problema scatter:out2 Non aggiungo il token {t_id} dentro retags perché è un token init del dag"
+                #     )
 
             if isinstance(step, CombinatorStep):
                 tags = set()
