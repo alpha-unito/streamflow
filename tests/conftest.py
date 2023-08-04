@@ -146,10 +146,10 @@ def are_equals(elem1, elem2, obj_compared=None):
     obj_compared = obj_compared if obj_compared else []
 
     # if the objects are of different types, they are definitely not the same
-    if type(elem1) != type(elem2):
+    if type(elem1) is not type(elem2):
         return False
 
-    if type(elem1) == Lock:
+    if isinstance(elem1, Lock):
         return True
 
     if is_primitive_type(elem1):
