@@ -737,6 +737,8 @@ class DefaultFailureManager(FailureManager):
                         "is available",
                         is_available,
                     )
+                if isinstance(token, JobToken):
+                    print(f"JobToken ({token.persistent_id})", token.value.name)
 
                 # token added by _has_token_already_been_recovered method
                 if (
@@ -1168,9 +1170,10 @@ class DefaultFailureManager(FailureManager):
                     # discard old job tokens
                     if self.job_requests[token.value.name].job_token:
                         print(
-                            f"job {token.value.name}. Il mio job_token ha un valore",
-                            self.job_requests[token.value.name].job_token,
-                            "adesso però lo pongo a none",
+                            f"job {token.value.name}. Il mio job_token",
+                            "esiste adesso però lo pongo a None"
+                            if self.job_requests[token.value.name].job_token
+                            else "NON esite. Lo lascio a None",
                         )
                     self.job_requests[token.value.name].job_token = None
 
@@ -1228,6 +1231,25 @@ class DefaultFailureManager(FailureManager):
 
         print("New workflow", new_workflow.name, "popolato così:")
         print("\tJobs da rieseguire:", job_che_eseguo)
+        print(
+            "\tJobs1",
+            [
+                token_visited[t_id][0].value.name
+                for token_list in port_tokens.values()
+                for t_id in token_list
+                if isinstance(token_visited[t_id][0], JobToken)
+            ],
+        )
+        print(
+            "\tJobs2",
+            {
+                all_token_visited[t_id][0].value.name
+                for token_list in dag_tokens.values()
+                for t_id in token_list
+                if isinstance(t_id, int)
+                and isinstance(all_token_visited[t_id][0], JobToken)
+            },
+        )
         if "/tosort/0" in job_che_eseguo and "/tosort/1" in job_che_eseguo:
             print("\tRieseguo la scatter per intero")
             pass
