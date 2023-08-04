@@ -103,66 +103,102 @@ def _get_data_location(path, context):
     return None
 
 
+def get_prev_ports(searched_port_name, dag_ports):
+    start_port_names = set()
+    for port_name, next_port_names in dag_ports.items():
+        if searched_port_name in next_port_names and port_name != INIT_DAG_FLAG:
+            start_port_names.add(port_name)
+    return start_port_names
+
+
 def get_port_tags(
     new_workflow, dag_ports, port_tokens, token_visited, failed_step_name
 ):
-    port_tags = {}
-    for port_name, next_port_names in dag_ports.items():
-        if port_name == INIT_DAG_FLAG or port_name == failed_step_name:
-            continue
-        for t_id in port_tokens[port_name]:
-            if isinstance(new_workflow.ports[port_name], JobPort):
-                job = token_visited[t_id][0].value
-                rand_input_token = {t.tag for t in job.inputs.values()}
-                if len(rand_input_token) != 1:
-                    raise FailureHandlingException(
-                        f"Job {job.name} has not inputs or inputs with different tags {rand_input_token}"
-                    )
-                port_tags.setdefault(port_name, set()).add(rand_input_token.pop())
-            else:
-                port_tags.setdefault(port_name, set()).add(token_visited[t_id][0].tag)
-    for port_name, next_port_names in dag_ports.items():
-        if port_name != INIT_DAG_FLAG and not isinstance(
-            new_workflow.ports[port_name], (ConnectorPort, JobPort)
-        ):
-            # search next ports
-            for next_port_name in next_port_names:
-                if next_port_name != failed_step_name:
-                    # search brother of port_name
-                    for curr_port_name, curr_next_port_names in dag_ports.items():
-                        if (
-                            curr_port_name != port_name
-                            and curr_port_name != INIT_DAG_FLAG
-                            and next_port_name in curr_next_port_names
-                            and not isinstance(
-                                new_workflow.ports[curr_port_name],
-                                ConnectorPort,
-                            )
-                        ):
-                            tmp = port_tags[port_name].intersection(
-                                port_tags[curr_port_name]
-                            )
+    # port_tags = {}
+    # for port_name, next_port_names in dag_ports.items():
+    #     if port_name == INIT_DAG_FLAG or port_name == failed_step_name:
+    #         continue
+    #     for t_id in port_tokens[port_name]:
+    #         if isinstance(new_workflow.ports[port_name], JobPort):
+    #             job = token_visited[t_id][0].value
+    #             rand_input_token = {t.tag for t in job.inputs.values()}
+    #             if len(rand_input_token) != 1:
+    #                 raise FailureHandlingException(
+    #                     f"Job {job.name} has not inputs or inputs with different tags {rand_input_token}"
+    #                 )
+    #             port_tags.setdefault(port_name, set()).add(rand_input_token.pop())
+    #         else:
+    #             port_tags.setdefault(port_name, set()).add(token_visited[t_id][0].tag)
+    # for port_name, next_port_names in dag_ports.items():
+    #     if port_name != INIT_DAG_FLAG and not isinstance(
+    #         new_workflow.ports[port_name], (ConnectorPort, JobPort)
+    #     ):
+    #         # search next ports
+    #         for next_port_name in next_port_names:
+    #             if next_port_name != failed_step_name:
+    #                 # search brother of port_name
+    #                 for curr_port_name, curr_next_port_names in dag_ports.items():
+    #                     if (
+    #                         curr_port_name != port_name
+    #                         and curr_port_name != INIT_DAG_FLAG
+    #                         and next_port_name in curr_next_port_names
+    #                         and not isinstance(
+    #                             new_workflow.ports[curr_port_name],
+    #                             ConnectorPort,
+    #                         )
+    #                     ):
+    #                         tmp = port_tags[port_name].intersection(
+    #                             port_tags[curr_port_name]
+    #                         )
+    #
+    #                         if (
+    #                             port_tags[port_name] - tmp
+    #                             or port_tags[curr_port_name] - tmp
+    #                         ):
+    #                             print(
+    #                                 f"wf {new_workflow.name} - Difference ports result: {tmp}"
+    #                                 f"\n\tFrom port {port_name} ({port_tags[port_name]}) discards tags {port_tags[port_name] - tmp}"
+    #                                 f"\n\t\tport_tokens[{port_name}]: {[ (t_id, token_visited[t_id][0].tag, local_str_token_value(token_visited[t_id][0])) for t_id in port_tokens[port_name]]}"
+    #                                 f"\n\tFrom port {curr_port_name} ({port_tags[curr_port_name]}) discards tags {port_tags[curr_port_name] - tmp}"
+    #                                 f"\n\t\tport_tokens[{curr_port_name}]: {[(t_id, token_visited[t_id][0].tag, local_str_token_value(token_visited[t_id][0])) for t_id in port_tokens[curr_port_name]]}"
+    #                             )
+    #                         # combinator input ports (it can be possible find inputs with different tags)
+    #                         # todo: mettere un controllo attivo che siano effettivamente le input port di un combinator? Altrimenti se tmp è vuoto lanciare errore
+    #                         if len(tmp) == 0:
+    #                             # raise FailureHandlingException(
+    #                             #     f"No token nell'intersezione di {port_name} e {curr_port_name}\n\t-> {port_tags[port_name]} e {port_tags[curr_port_name]}\n\t -> { [str_token_value(token_visited[t_id][0]) for t_id in port_tokens[port_name]] } e {[str_token_value(token_visited[t_id][0]) for t_id in port_tokens[curr_port_name]]}"
+    #                             # )
+    #                             continue
+    #                         port_tags[port_name] = tmp
+    #                         port_tags[curr_port_name] = tmp
 
-                            if (
-                                port_tags[port_name] - tmp
-                                or port_tags[curr_port_name] - tmp
-                            ):
-                                print(
-                                    f"wf {new_workflow.name} - Difference ports result: {tmp}"
-                                    f"\n\tFrom port {port_name} ({port_tags[port_name]}) discards tags {port_tags[port_name] - tmp}"
-                                    f"\n\t\tport_tokens[{port_name}]: {[ (t_id, token_visited[t_id][0].tag, local_str_token_value(token_visited[t_id][0])) for t_id in port_tokens[port_name]]}"
-                                    f"\n\tFrom port {curr_port_name} ({port_tags[curr_port_name]}) discards tags {port_tags[curr_port_name] - tmp}"
-                                    f"\n\t\tport_tokens[{curr_port_name}]: {[(t_id, token_visited[t_id][0].tag, local_str_token_value(token_visited[t_id][0])) for t_id in port_tokens[curr_port_name]]}"
-                                )
-                            # combinator input ports (it can be possible find inputs with different tags)
-                            # todo: mettere un controllo attivo che siano effettivamente le input port di un combinator? Altrimenti se tmp è vuoto lanciare errore
-                            if len(tmp) == 0:
-                                # raise FailureHandlingException(
-                                #     f"No token nell'intersezione di {port_name} e {curr_port_name}\n\t-> {port_tags[port_name]} e {port_tags[curr_port_name]}\n\t -> { [str_token_value(token_visited[t_id][0]) for t_id in port_tokens[port_name]] } e {[str_token_value(token_visited[t_id][0]) for t_id in port_tokens[curr_port_name]]}"
-                                # )
-                                continue
-                            port_tags[port_name] = tmp
-                            port_tags[curr_port_name] = tmp
+    port_tags = {}
+    for port_name in dag_ports[INIT_DAG_FLAG]:
+        intersection_tags = {
+            token_visited[t_id][0].tag for t_id in port_tokens[port_name]
+        }
+        if not isinstance(new_workflow.ports[port_name], (ConnectorPort, JobPort)):
+            for next_port_name in dag_ports[port_name]:
+                for same_level_port_name in get_prev_ports(next_port_name, dag_ports):
+                    if same_level_port_name != port_name and not isinstance(
+                        new_workflow.ports[port_name], (ConnectorPort, JobPort)
+                    ):
+                        intersection_tags.intersection(
+                            {
+                                token_visited[t_id][0].tag
+                                for t_id in port_tokens[same_level_port_name]
+                            }
+                        )
+        # print(f"Port {port_name} valid tags ", intersection_tags)
+        if port_name in port_tags.keys():
+            raise FailureHandlingException(
+                f"Port {port_name} già presente nei tags",
+                port_tags[port_name],
+                "Altri tags trovati",
+                intersection_tags,
+            )
+        port_tags[port_name] = intersection_tags
+
     return port_tags
 
 
