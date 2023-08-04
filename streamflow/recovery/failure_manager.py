@@ -209,7 +209,6 @@ async def _put_tokens(
     port_tokens: MutableMapping[str, MutableSequence[int]],
     token_visited: MutableMapping[int, Tuple[Token, bool]],
     port_tokens_counter: MutableMapping[str, int],
-    tags,
     dag_ports: MutableMapping[str, MutableSequence[str]],
     failed_step_name: str,
 ):
@@ -235,6 +234,12 @@ async def _put_tokens(
             and token_visited[t_id][0].tag in port_tags[port_name]
         ]
         token_list.sort(key=lambda x: x.tag, reverse=False)
+        tmpa = [
+            s.name
+            for s in port.get_input_steps()
+            if s.name == "/tosort/out_file-gather"
+        ]
+        pass
         for i, t in enumerate(token_list):
             for t1 in token_list[i:]:
                 if t.persistent_id != t1.persistent_id and t.tag == t1.tag:
@@ -267,6 +272,7 @@ async def _put_tokens(
             print(
                 f"Port {port.name} with {len(port.token_list)} tokens. NO TerminationToken\n"
             )
+        pass
 
 
 async def _populate_workflow(
@@ -509,12 +515,17 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
 
+        print(
+            "DefaultFailureManager.max_retries:",
+            max_retries,
+            ".retry_delay:",
+            retry_delay,
+        )
+
         # { workflow.name : { port.id: [ token ] } }
         self.retags: MutableMapping[
             str, MutableMapping[str, MutableSequence[Token]]
         ] = {}
-        # { workflow.name : { port.name: [ token.tag ] } }
-        self.tags: MutableMapping[str, MutableMapping[str, MutableSequence[str]]] = {}
 
         # { job.name : RequestJob }
         self.job_requests: MutableMapping[str, JobRequest] = {}
@@ -1207,7 +1218,6 @@ class DefaultFailureManager(FailureManager):
             port_tokens,
             token_visited,
             port_tokens_counter,
-            self.tags,
             dag_ports,
             failed_step.name,
         )
@@ -1325,26 +1335,6 @@ class DefaultFailureManager(FailureManager):
                 #     print(
                 #         f"problema scatter:out2 Non aggiungo il token {t_id} dentro retags perché è un token init del dag"
                 #     )
-
-            if isinstance(step, CombinatorStep):
-                tags = set()
-                for port_name in step.output_ports.values():
-                    token_tags = {
-                        token_visited[t_id][0].tag for t_id in port_tokens[port_name]
-                    }
-                    if len(tags) == 0:
-                        tags = token_tags
-                    else:
-                        tags = tags.intersection(token_tags)
-                    if len(tags) == 0:
-                        raise FailureHandlingException(
-                            "Non ci sono tags comuni a tutti i token nelle port"
-                        )
-                for port_name in step.output_ports.values():
-                    for tag in tags:
-                        self.tags.setdefault(new_workflow.name, dict()).setdefault(
-                            port_name, set()
-                        ).add(tag)
 
     async def _execute_failed_job(
         self, failed_job, failed_step, new_workflow, loading_context
