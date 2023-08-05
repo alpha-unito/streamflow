@@ -6,10 +6,10 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Token
 from streamflow.workflow.token import (
     IterationTerminationToken,
+    JobToken,
     ListToken,
     ObjectToken,
     TerminationToken,
-    JobToken,
 )
 
 if TYPE_CHECKING:

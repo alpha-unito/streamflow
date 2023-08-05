@@ -21,7 +21,6 @@ from streamflow.recovery import checkpoint_manager_classes, failure_manager_clas
 from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes
 
-
 extension_points = {
     "binding_filter": binding_filter_classes,
     "checkpoint_manager": checkpoint_manager_classes,

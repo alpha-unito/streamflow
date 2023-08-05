@@ -10,9 +10,9 @@ from streamflow.deployment.connector.kubernetes import (
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.connector.occam import OccamConnector
 from streamflow.deployment.connector.queue_manager import (
+    FluxConnector,
     PBSConnector,
     SlurmConnector,
-    FluxConnector,
 )
 from streamflow.deployment.connector.ssh import SSHConnector
 

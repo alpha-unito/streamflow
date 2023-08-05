@@ -3,7 +3,7 @@
   "$id": "kubernetes.json",
   "type": "object",
   "properties": {
-    "file":{
+    "file": {
       "type": "string",
       "description": "Path to a file containing a Jinja2 template, describing how the Docker container should be deployed on Kubernetes",
       "default": "./kubernetes.jinja2"

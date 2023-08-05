@@ -1,71 +1,59 @@
+from __future__ import annotations
+
 import posixpath
-from rdflib import Graph
-from ruamel.yaml.scalarstring import LiteralScalarString, DoubleQuotedScalarString
+from typing import Any, MutableSequence
 
 import pytest
-
-from tests.conftest import save_load_and_test
+from rdflib import Graph
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString, LiteralScalarString
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.workflow import Workflow
-
-from streamflow.workflow.step import CombinatorStep, ExecuteStep
-
-# abstract classes the extend the Step class: ConditionalStep, InputInjectorStep, LoopOutputStep, TransferStep, Transformer
-from streamflow.cwl.utils import LoadListing, SecondaryFile
-from streamflow.cwl.step import (
-    CWLTransferStep,  # TransferStep
-    CWLConditionalStep,  # ConditionalStep
-    CWLInputInjectorStep,  # InputInjectorStep
-    CWLLoopOutputAllStep,  # LoopOutputStep
-    CWLLoopOutputLastStep,  # LoopOutputStep
-)
-from streamflow.cwl.combinator import ListMergeCombinator  # CombinatorStep
-from streamflow.cwl.processor import (
-    CWLTokenProcessor,
-    CWLMapTokenProcessor,
-    CWLObjectTokenProcessor,
-    CWLUnionTokenProcessor,
-    CWLFileToken,
-)
-from streamflow.cwl.transformer import (
-    DefaultTransformer,
-    DefaultRetagTransformer,
-    CWLTokenTransformer,
-    ValueFromTransformer,
-    LoopValueFromTransformer,
-    AllNonNullTransformer,
-    FirstNonNullTransformer,
-    ForwardTransformer,
-    ListToElementTransformer,
-    OnlyNonNullTransformer,
-)
+from streamflow.core.workflow import Step, Workflow
+from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
     CWLCommand,
     CWLCommandToken,
-    CWLObjectCommandToken,
     CWLExpressionCommand,
+    CWLMapCommandToken,
+    CWLObjectCommandToken,
     CWLStepCommand,
     CWLUnionCommandToken,
-    CWLMapCommandToken,
 )
+from streamflow.cwl.processor import (
+    CWLFileToken,
+    CWLMapTokenProcessor,
+    CWLObjectTokenProcessor,
+    CWLTokenProcessor,
+    CWLUnionTokenProcessor,
+)
+from streamflow.cwl.step import (
+    CWLConditionalStep,
+    CWLInputInjectorStep,
+    CWLLoopOutputAllStep,
+    CWLLoopOutputLastStep,
+    CWLTransferStep,
+)
+from streamflow.cwl.transformer import (
+    AllNonNullTransformer,
+    CWLTokenTransformer,
+    DefaultRetagTransformer,
+    DefaultTransformer,
+    FirstNonNullTransformer,
+    ForwardTransformer,
+    ListToElementTransformer,
+    LoopValueFromTransformer,
+    OnlyNonNullTransformer,
+    ValueFromTransformer,
+)
+from streamflow.cwl.utils import LoadListing, SecondaryFile
+from streamflow.workflow.step import CombinatorStep, ExecuteStep
+from tests.conftest import save_load_and_test
 
 
-def create_cwl_token_processor(name, workflow):
-    return CWLTokenProcessor(
-        name=name,
-        workflow=workflow,
-        token_type="enum",
-        enum_symbols=["path1", "path2"],
-        expression_lib=["expr_lib1", "expr_lib2"],
-        secondary_files=[SecondaryFile("file1", True)],
-        format_graph=Graph(),
-        load_listing=LoadListing.no_listing,
-    )
-
-
-def create_cwl_command(step, command_tokens):
+def _create_cwl_command(
+    step: Step, command_tokens: MutableSequence[CWLCommandToken]
+) -> CWLCommand:
     return CWLCommand(
         step=step,
         absolute_initial_workdir_allowed=False,
@@ -85,7 +73,9 @@ def create_cwl_command(step, command_tokens):
     )
 
 
-def create_cwl_command_token(cls=CWLCommandToken, value=None):
+def _create_cwl_command_token(
+    cls: type[CWLCommandToken] = CWLCommandToken, value: Any | None = None
+):
     return cls(
         is_shell_command=False,
         item_separator="&",
@@ -96,6 +86,19 @@ def create_cwl_command_token(cls=CWLCommandToken, value=None):
         shell_quote=True,
         token_type="string",
         value=value,
+    )
+
+
+def _create_cwl_token_processor(name: str, workflow: Workflow) -> CWLTokenProcessor:
+    return CWLTokenProcessor(
+        name=name,
+        workflow=workflow,
+        token_type="enum",
+        enum_symbols=["path1", "path2"],
+        expression_lib=["expr_lib1", "expr_lib2"],
+        secondary_files=[SecondaryFile("file1", True)],
+        format_graph=Graph(),
+        load_listing=LoadListing.no_listing,
     )
 
 
@@ -126,7 +129,7 @@ async def test_cwl_command(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
-    step.command = create_cwl_command(step, [])
+    step.command = _create_cwl_command(step, [])
     await save_load_and_test(step, context)
 
 
@@ -189,11 +192,11 @@ async def test_cwl_command_token(context: StreamFlowContext):
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
 
-    step.command = create_cwl_command(
+    step.command = _create_cwl_command(
         step,
         [
-            create_cwl_command_token(value=DoubleQuotedScalarString("60")),
-            create_cwl_command_token(
+            _create_cwl_command_token(value=DoubleQuotedScalarString("60")),
+            _create_cwl_command_token(
                 value=LiteralScalarString("${ return 10 + 20 - (5 * 4) }")
             ),
         ],
@@ -213,11 +216,11 @@ async def test_cwl_command_token_nested(context: StreamFlowContext):
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
 
-    step.command = create_cwl_command(
+    step.command = _create_cwl_command(
         step,
         [
-            create_cwl_command_token(value=create_cwl_command_token(value=1123)),
-            create_cwl_command_token(value=create_cwl_command_token(value="hello")),
+            _create_cwl_command_token(value=_create_cwl_command_token(value=1123)),
+            _create_cwl_command_token(value=_create_cwl_command_token(value="hello")),
         ],
     )
     await save_load_and_test(step, context)
@@ -234,14 +237,14 @@ async def test_cwl_object_command_token(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
-    step.command = create_cwl_command(
+    step.command = _create_cwl_command(
         step,
         [
-            create_cwl_command_token(
+            _create_cwl_command_token(
                 cls=CWLObjectCommandToken,
                 value={
-                    "a": create_cwl_command_token(value=10),
-                    "b": create_cwl_command_token(value=234),
+                    "a": _create_cwl_command_token(value=10),
+                    "b": _create_cwl_command_token(value=234),
                 },
             )
         ],
@@ -262,38 +265,34 @@ async def test_cwl_object_command_token_nested(context: StreamFlowContext):
     )
 
     command_tokens = [
-        create_cwl_command_token(
+        _create_cwl_command_token(
             cls=CWLObjectCommandToken,
-            # in CWL this structure is named record
-            # zero:
-            #   type: File
-            #   params: null
             value={
-                "zero": create_cwl_command_token(
+                "zero": _create_cwl_command_token(
                     cls=CWLObjectCommandToken,
                     value={
-                        "type": create_cwl_command_token(value="File"),
-                        "params": create_cwl_command_token(value=None),
+                        "type": _create_cwl_command_token(value="File"),
+                        "params": _create_cwl_command_token(value=None),
                     },
                 )
             },
         ),
-        create_cwl_command_token(
+        _create_cwl_command_token(
             cls=CWLObjectCommandToken,
             value={
-                "zero": create_cwl_command_token(
+                "zero": _create_cwl_command_token(
                     cls=CWLObjectCommandToken,
                     value={
-                        "one": create_cwl_command_token(value="89"),
-                        "two": create_cwl_command_token(value=29),
-                        "three": create_cwl_command_token(value=None),
+                        "one": _create_cwl_command_token(value="89"),
+                        "two": _create_cwl_command_token(value=29),
+                        "three": _create_cwl_command_token(value=None),
                     },
                 )
             },
         ),
-        create_cwl_command_token(value=11),
+        _create_cwl_command_token(value=11),
     ]
-    step.command = create_cwl_command(step, command_tokens)
+    step.command = _create_cwl_command(step, command_tokens)
     await save_load_and_test(step, context)
 
 
@@ -308,15 +307,15 @@ async def test_cwl_union_command_token(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
-    step.command = create_cwl_command(
+    step.command = _create_cwl_command(
         step,
         [
-            create_cwl_command_token(
+            _create_cwl_command_token(
                 cls=CWLUnionCommandToken,
                 value=[
-                    create_cwl_command_token(value="qwerty"),
-                    create_cwl_command_token(value=987),
-                    create_cwl_command_token(value="qaz"),
+                    _create_cwl_command_token(value="qwerty"),
+                    _create_cwl_command_token(value=987),
+                    _create_cwl_command_token(value="qaz"),
                 ],
             )
         ],
@@ -335,24 +334,24 @@ async def test_cwl_union_command_token_nested(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
-    step.command = create_cwl_command(
+    step.command = _create_cwl_command(
         step,
         [
-            create_cwl_command_token(
+            _create_cwl_command_token(
                 cls=CWLUnionCommandToken,
                 value=[
-                    create_cwl_command_token(
+                    _create_cwl_command_token(
                         cls=CWLUnionCommandToken,
                         value=[
-                            create_cwl_command_token(value="aaa"),
-                            create_cwl_command_token(value="bbb"),
+                            _create_cwl_command_token(value="aaa"),
+                            _create_cwl_command_token(value="bbb"),
                         ],
                     ),
-                    create_cwl_command_token(
+                    _create_cwl_command_token(
                         cls=CWLUnionCommandToken,
                         value=[
-                            create_cwl_command_token(value="ccc"),
-                            create_cwl_command_token(value="ddd"),
+                            _create_cwl_command_token(value="ccc"),
+                            _create_cwl_command_token(value="ddd"),
                         ],
                     ),
                 ],
@@ -373,14 +372,14 @@ async def test_cwl_map_command_token(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
-    step.command = create_cwl_command(
+    step.command = _create_cwl_command(
         step,
         [
-            create_cwl_command_token(
-                cls=CWLMapCommandToken, value=create_cwl_command_token(value="z")
+            _create_cwl_command_token(
+                cls=CWLMapCommandToken, value=_create_cwl_command_token(value="z")
             ),
-            create_cwl_command_token(
-                cls=CWLMapCommandToken, value=create_cwl_command_token(value="xy")
+            _create_cwl_command_token(
+                cls=CWLMapCommandToken, value=_create_cwl_command_token(value="xy")
             ),
         ],
     )
@@ -457,7 +456,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
         cls=CWLTokenTransformer,
         name=name + "-transformer",
         port_name=port.name,
-        processor=create_cwl_token_processor(port.name, workflow),
+        processor=_create_cwl_token_processor(port.name, workflow),
     )
     await save_load_and_test(transformer, context)
 
@@ -475,7 +474,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
     transformer = workflow.create_step(
         cls=ValueFromTransformer,
         name=name + "-value-from-transformer",
-        processor=create_cwl_token_processor(port.name, workflow),
+        processor=_create_cwl_token_processor(port.name, workflow),
         port_name=port.name,
         expression_lib=True,
         full_js=False,
@@ -497,7 +496,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     transformer = workflow.create_step(
         cls=LoopValueFromTransformer,
         name=name + "-loop-value-from-transformer",
-        processor=create_cwl_token_processor(port.name, workflow),
+        processor=_create_cwl_token_processor(port.name, workflow),
         port_name=port.name,
         expression_lib=True,
         full_js=False,
@@ -523,7 +522,7 @@ async def test_cwl_map_token_transformer(context: StreamFlowContext):
         processor=CWLMapTokenProcessor(
             name=port.name,
             workflow=workflow,
-            processor=create_cwl_token_processor(port.name, workflow),
+            processor=_create_cwl_token_processor(port.name, workflow),
         ),
     )
     await save_load_and_test(transformer, context)
@@ -547,7 +546,7 @@ async def test_cwl_object_token_transformer(context: StreamFlowContext):
             name=port.name,
             workflow=workflow,
             processors={
-                utils.random_name(): create_cwl_token_processor(port.name, workflow)
+                utils.random_name(): _create_cwl_token_processor(port.name, workflow)
             },
         ),
     )
@@ -571,7 +570,7 @@ async def test_cwl_union_token_transformer(context: StreamFlowContext):
         processor=CWLUnionTokenProcessor(
             name=port.name,
             workflow=workflow,
-            processors=[create_cwl_token_processor(port.name, workflow)],
+            processors=[_create_cwl_token_processor(port.name, workflow)],
         ),
     )
     await save_load_and_test(transformer, context)
@@ -684,7 +683,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
         cls=CWLConditionalStep,
         name=utils.random_name() + "-when",
         expression="$(inputs.name.length == 10)",
-        expression_lib=[],  # MutableSequence[Any]
+        expression_lib=[],
         full_js=True,
     )
     await save_load_and_test(step, context)
