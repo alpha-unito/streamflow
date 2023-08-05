@@ -1,10 +1,10 @@
 CREATE TABLE IF NOT EXISTS workflow
 (
-    id     INTEGER PRIMARY KEY,
-    name   TEXT,
-    params TEXT,
-    status INTEGER,
-    type   TEXT,
+    id         INTEGER PRIMARY KEY,
+    name       TEXT,
+    params     TEXT,
+    status     INTEGER,
+    type       TEXT,
     start_time INTEGER,
     end_time   INTEGER
 );

@@ -29,7 +29,7 @@
             "filters": {
               "type": "array",
               "items": {
-                 "type": "string"
+                "type": "string"
               },
               "description": "The filters used to manipulate the targets associated with this binding."
             }

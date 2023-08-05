@@ -14,10 +14,10 @@ flake8:
 	flake8 --exclude streamflow/cwl/antlr streamflow tests
 
 format:
-	black --exclude streamflow/cwl/antlr streamflow tests
+	black streamflow tests
 
 format-check:
-	black --diff --check --exclude streamflow/cwl/antlr streamflow tests
+	black --diff --check streamflow tests
 
 pyupgrade:
 	pyupgrade --py3-only --py38-plus $(shell git ls-files | grep .py | grep -v streamflow/cwl/antlr)

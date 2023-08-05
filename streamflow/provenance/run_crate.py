@@ -36,7 +36,6 @@ from streamflow.version import VERSION
 from streamflow.workflow.token import FileToken, ListToken, ObjectToken
 from streamflow.workflow.utils import get_token_value
 
-
 ESCAPED_COMMA = re.compile(r"\\,")
 ESCAPED_DOT = re.compile(r"\\.")
 ESCAPED_EQUAL = re.compile(r"\\=")

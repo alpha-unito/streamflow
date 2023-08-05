@@ -2,40 +2,37 @@ import posixpath
 
 import pytest
 
-from tests.conftest import get_docker_deployment_config, save_load_and_test
-
 from streamflow.core import utils
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.config import BindingConfig
-from streamflow.core.deployment import Target, LocalTarget
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.deployment import LocalTarget, Target
 from streamflow.core.workflow import Job, Token, Workflow
-
-from streamflow.workflow.port import JobPort, ConnectorPort
-from streamflow.workflow.step import (
-    CombinatorStep,
-    DeployStep,
-    ExecuteStep,
-    GatherStep,
-    ScheduleStep,
-    ScatterStep,
-    LoopCombinatorStep,
-)
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
     LoopCombinator,
     LoopTerminationCombinator,
 )
+from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.workflow.step import (
+    CombinatorStep,
+    DeployStep,
+    ExecuteStep,
+    GatherStep,
+    LoopCombinatorStep,
+    ScatterStep,
+    ScheduleStep,
+)
 from streamflow.workflow.token import (
+    IterationTerminationToken,
     JobToken,
     ListToken,
     ObjectToken,
     TerminationToken,
-    IterationTerminationToken,
 )
+from tests.conftest import get_docker_deployment_config, save_load_and_test
 
 
-# Testing Workflow
 @pytest.mark.asyncio
 async def test_workflow(context: StreamFlowContext):
     """Test saving and loading Workflow from database"""
@@ -45,7 +42,6 @@ async def test_workflow(context: StreamFlowContext):
     await save_load_and_test(workflow, context)
 
 
-# Testing Port and its extension classes
 @pytest.mark.asyncio
 async def test_port(context: StreamFlowContext):
     """Test saving and loading Port from database"""
@@ -79,7 +75,6 @@ async def test_connector_port(context: StreamFlowContext):
     await save_load_and_test(port, context)
 
 
-# Testing Step and its extension classes
 @pytest.mark.asyncio
 async def test_combinator_step(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with CartesianProductCombinator from database"""
@@ -200,7 +195,6 @@ async def test_scatter_step(context: StreamFlowContext):
     await save_load_and_test(step, context)
 
 
-# Subtest - Step param combinator
 @pytest.mark.asyncio
 async def test_dot_product_combinator(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with DotProductCombinator from database"""
@@ -254,7 +248,6 @@ async def test_loop_termination_combinator(context: StreamFlowContext):
     await save_load_and_test(step, context)
 
 
-# Testing the Target and its extension classes
 @pytest.mark.asyncio
 async def test_target(context: StreamFlowContext):
     """Test saving and loading Target from database"""
@@ -273,7 +266,6 @@ async def test_local_target(context: StreamFlowContext):
     await save_load_and_test(target, context)
 
 
-# Testing the Token and its extension classes
 @pytest.mark.asyncio
 async def test_token(context: StreamFlowContext):
     """Test saving and loading Token from database"""
@@ -325,7 +317,6 @@ async def test_iteration_termination_token(context: StreamFlowContext):
     await save_load_and_test(token, context)
 
 
-# Deployment test
 @pytest.mark.asyncio
 async def test_deployment(context: StreamFlowContext):
     """Test saving and loading deployment configuration from database"""

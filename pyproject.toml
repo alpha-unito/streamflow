@@ -111,3 +111,6 @@ omit = [
     "streamflow/__main__.py",
     "tests/*"
 ]
+
+[tool.black]
+exclude = "streamflow/cwl/antlr"
