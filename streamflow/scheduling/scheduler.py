@@ -1,47 +1,32 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import os
 import posixpath
-from collections.abc import MutableMapping, MutableSequence
-from importlib.resources import files
-from typing import TYPE_CHECKING, cast
+from typing import MutableSequence, TYPE_CHECKING
+
+import pkg_resources
 
 from streamflow.core.config import BindingConfig, Config
-from streamflow.core.deployment import BindingFilter, Connector, FilterConfig, Target
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.deployment import BindingFilter, Location, Target
 from streamflow.core.scheduling import (
     Hardware,
-    HardwareRequirement,
     JobAllocation,
     LocationAllocation,
     Policy,
     Scheduler,
-    Storage,
 )
-from streamflow.core.utils import compare_tags, get_job_step_name, get_job_tag
 from streamflow.core.workflow import Job, Status
-from streamflow.data import remotepath, utils
+from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
-from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
 from streamflow.scheduling.policy import policy_classes
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
-
-
-def _get_connector_stack(connector: Connector) -> MutableSequence[Connector]:
-    connectors = []
-    while connector is not None:
-        connectors.append(connector)
-        connector = (
-            connector.connector if isinstance(connector, ConnectorWrapper) else None
-        )
-    return connectors
+    from typing import MutableMapping
 
 
 class JobContext:
@@ -58,29 +43,34 @@ class DefaultScheduler(Scheduler):
         self, context: StreamFlowContext, retry_delay: int | None = None
     ) -> None:
         super().__init__(context)
+        self.allocation_groups: MutableMapping[str, MutableSequence[Job]] = {}
         self.binding_filter_map: MutableMapping[str, BindingFilter] = {}
-        self.hardware_locations: MutableMapping[str, Hardware] = {}
-        self.locks: MutableMapping[str, asyncio.Lock] = {}
         self.policy_map: MutableMapping[str, Policy] = {}
-        self.retry_interval: int | None = retry_delay if retry_delay != 0 else None
+        self.retry_interval: int | None = retry_delay
+        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
     def _allocate_job(
         self,
         job: Job,
-        hardware: MutableMapping[str, Hardware],
-        connector: Connector,
-        selected_locations: MutableSequence[AvailableLocation],
+        hardware: Hardware,
+        selected_locations: MutableSequence[Location],
         target: Target,
     ):
         if logger.isEnabledFor(logging.DEBUG):
             if len(selected_locations) == 1:
+                is_local = isinstance(
+                    self.context.deployment_manager.get_connector(
+                        selected_locations[0].deployment
+                    ),
+                    LocalConnector,
+                )
                 logger.debug(
                     "Job {name} allocated {location}".format(
                         name=job.name,
                         location=(
                             "locally"
-                            if selected_locations[0].local
+                            if is_local
                             else f"on location {selected_locations[0]}"
                         ),
                     )
@@ -93,107 +83,46 @@ class DefaultScheduler(Scheduler):
         self.job_allocations[job.name] = JobAllocation(
             job=job.name,
             target=target,
-            locations=[loc.location for loc in selected_locations],
+            locations=selected_locations,
             status=Status.FIREABLE,
-            hardware=hardware[
-                posixpath.join(
-                    connector.deployment_name,
-                    next(loc.name for loc in selected_locations),
-                )
-            ],
+            hardware=hardware or Hardware(),
         )
         for loc in selected_locations:
-            conn = connector
-            while loc is not None:
-                self.location_allocations.setdefault(
-                    loc.location.deployment, {}
-                ).setdefault(
-                    loc.location.name,
-                    LocationAllocation(
-                        name=loc.location.name,
-                        deployment=loc.location.deployment,
-                    ),
-                ).jobs.append(
-                    job.name
-                )
-                key = posixpath.join(
-                    conn.deployment_name,
+            if loc not in self.location_allocations:
+                self.location_allocations.setdefault(loc.deployment, {}).setdefault(
                     loc.name,
+                    LocationAllocation(name=loc.name, deployment=loc.deployment),
+                ).jobs.append(job.name)
+
+    def _deallocate_job(self, job: str):
+        job_allocation = self.job_allocations.pop(job)
+        for loc in job_allocation.locations:
+            self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
+        if logger.isEnabledFor(logging.INFO):
+            if len(job_allocation.locations) == 1:
+                is_local = isinstance(
+                    self.context.deployment_manager.get_connector(
+                        job_allocation.locations[0].deployment
+                    ),
+                    LocalConnector,
                 )
-                if key in hardware.keys() and hardware[key]:
-                    if loc.name in self.hardware_locations.keys():
-                        self.hardware_locations[loc.name] += hardware[key]
-                    else:
-                        # Get normalized hardware for the hardware location
-                        self.hardware_locations[loc.name] = Hardware() + hardware[key]
-                if loc := loc.wraps if loc.stacked else None:
-                    conn = cast(ConnectorWrapper, conn).connector
+                logger.info(
+                    "Job {name} deallocated {location}".format(
+                        name=job,
+                        location=(
+                            "from local location"
+                            if is_local
+                            else f"from location {job_allocation.locations[0]}"
+                        ),
+                    )
+                )
+            else:
+                logger.info(
+                    "Job {job} deallocated from locations "
+                    ", ".join([str(loc) for loc in job_allocation.locations])
+                )
 
-    async def _free_resources(
-        self, connector: Connector, job_allocation: JobAllocation, status: Status
-    ) -> None:
-        async with contextlib.AsyncExitStack() as exit_stack:
-            for conn in _get_connector_stack(connector):
-                await exit_stack.enter_async_context(self.locks[conn.deployment_name])
-            conn = connector
-            locations = job_allocation.locations
-            job_hardware = job_allocation.hardware
-            while locations:
-                for loc in locations:
-                    if loc.name in self.hardware_locations.keys():
-                        try:
-                            storage_usage = Hardware(
-                                storage=(
-                                    {
-                                        k: Storage(
-                                            mount_point=job_hardware.storage[
-                                                k
-                                            ].mount_point,
-                                            size=size / 2**20,
-                                        )
-                                        for k, size in (
-                                            await remotepath.get_storage_usages(
-                                                self.context,
-                                                loc,
-                                                job_hardware,
-                                            )
-                                        ).items()
-                                    }
-                                    if status != Status.RUNNING
-                                    else {}
-                                )
-                            )
-                        except WorkflowExecutionException as err:
-                            if status == Status.ROLLBACK:
-                                logger.warning(
-                                    f"Impossible to retrieve the actual storage usage in "
-                                    f"the {job_allocation.job} job working directories: {err}"
-                                )
-                                storage_usage = Hardware()
-                            else:
-                                raise err
-                        self.hardware_locations[loc.name] = (
-                            self.hardware_locations[loc.name] - job_hardware
-                        ) + storage_usage
-                if locations := [loc.wraps for loc in locations if loc.stacked]:
-                    conn = cast(ConnectorWrapper, conn).connector
-                    for execution_loc in locations:
-                        job_hardware = await utils.bind_mount_point(
-                            self.context,
-                            conn,
-                            next(
-                                available_loc
-                                for available_loc in (
-                                    await conn.get_available_locations(
-                                        execution_loc.service
-                                    )
-                                ).values()
-                                if available_loc.name == execution_loc.name
-                            ),
-                            job_hardware,
-                        )
-
-    def _get_binding_filter(self, config: FilterConfig):
+    def _get_binding_filter(self, config: Config):
         if config.name not in self.binding_filter_map:
             self.binding_filter_map[config.name] = binding_filter_classes[config.type](
                 **config.config
@@ -203,99 +132,73 @@ class DefaultScheduler(Scheduler):
     async def _get_locations(
         self,
         job: Job,
+        deployment: str,
         hardware_requirement: Hardware,
         locations: int,
         scheduling_policy: Policy,
         available_locations: MutableMapping[str, AvailableLocation],
-    ) -> MutableSequence[AvailableLocation]:
-        # If available locations are exactly the amount of required locations, simply use them
-        if len(available_locations) == locations:
-            return list(available_locations.values())
-        # Otherwise, use the `Policy` to select the best set of locations to allocate
-        else:
-            selected_locations = []
-            for _ in range(locations):
-                if selected_location := await scheduling_policy.get_location(
-                    context=self.context,
-                    job=job,
-                    hardware_requirement=hardware_requirement,
-                    available_locations=available_locations,
-                    jobs=self.job_allocations,
-                    locations=self.location_allocations,
-                ):
-                    selected_locations.append(selected_location)
-                    available_locations = {
-                        k: v
-                        for k, v in available_locations.items()
-                        if v != selected_location
-                    }
-                else:
-                    return []
-            return selected_locations
+    ) -> MutableSequence[Location] | None:
+        selected_locations = []
+        for _ in range(locations):
+            selected_location = await scheduling_policy.get_location(
+                context=self.context,
+                job=job,
+                deployment=deployment,
+                hardware_requirement=hardware_requirement,
+                available_locations=available_locations,
+                jobs=self.job_allocations,
+                locations=self.location_allocations,
+            )
+            if selected_location is not None:
+                selected_locations.append(selected_location)
+                available_locations = {
+                    k: v
+                    for k, v in available_locations.items()
+                    if v != selected_location
+                }
+            else:
+                return None
+        return selected_locations
 
     def _get_policy(self, config: Config):
         if config.name not in self.policy_map:
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
 
-    def _get_running_jobs(
-        self, job_name: str, location: AvailableLocation
-    ) -> MutableSequence[str]:
+    def _is_valid(
+        self, location: AvailableLocation, hardware_requirement: Hardware
+    ) -> bool:
         if location.name in self.location_allocations.get(location.deployment, {}):
-            return list(
+            running_jobs = list(
                 filter(
                     lambda x: (
                         self.job_allocations[x].status == Status.RUNNING
                         or self.job_allocations[x].status == Status.FIREABLE
-                        or (
-                            self.job_allocations[x].status == Status.ROLLBACK
-                            and get_job_step_name(x) == get_job_step_name(job_name)
-                            and compare_tags(get_job_tag(x), get_job_tag(job_name)) < 0
-                        )
                     ),
                     self.location_allocations[location.deployment][location.name].jobs,
                 )
             )
         else:
-            return []
-
-    def _is_valid(
-        self,
-        connector: Connector,
-        location: AvailableLocation,
-        hardware_requirements: MutableMapping[str, Hardware],
-        job_name: str,
-    ) -> bool:
-        hardware_requirement = hardware_requirements[
-            posixpath.join(connector.deployment_name, location.name)
-        ]
-        while location is not None:
-            # If at least one location provides hardware capabilities
-            if location.hardware is not None:
-                # Compute the used amount of locations
-                if (
-                    location.hardware
-                    - self.hardware_locations.get(location.name, Hardware())
-                ) < hardware_requirement:
-                    return False
-            # Otherwise, simply compute the number of allocated slots
+            running_jobs = []
+        # If location is segmentable and job provides requirements, compute the used amount of locations
+        if location.hardware is not None and hardware_requirement is not None:
+            used_hardware = sum(
+                (self.job_allocations[j].hardware for j in running_jobs),
+                start=hardware_requirement.__class__(),
+            )
+            if (location.hardware - used_hardware) >= hardware_requirement:
+                return True
             else:
-                slots = location.slots if location.slots is not None else 1
-                if not len(self._get_running_jobs(job_name, location)) < slots:
-                    return False
-            # If AvailableLocation is stacked, evaluate also the inner location
-            if location := location.wraps if location.stacked else None:
-                connector = cast(ConnectorWrapper, connector).connector
-                hardware_requirement = hardware_requirements[
-                    posixpath.join(connector.deployment_name, location.name)
-                ]
-        return True
+                return False
+        # If location is segmentable but job does not provide requirements, treat it as null-weighted
+        elif location.hardware is not None:
+            return True
+        # Otherwise, simply compute the number of allocated slots
+        else:
+            return len(running_jobs) < location.slots
 
     async def _process_target(
-        self,
-        target: Target,
-        job_context: JobContext,
-        hardware_requirement: HardwareRequirement | None,
+        self, target: Target, job_context: JobContext, hardware_requirement: Hardware
     ):
         deployment = target.deployment.name
         if deployment not in self.wait_queues:
@@ -312,220 +215,158 @@ class DefaultScheduler(Scheduler):
                         logger.debug(
                             "Retrieving available locations for job {} on {}.".format(
                                 job_context.job.name,
-                                (
+                                posixpath.join(deployment, target.service)
+                                if target.service
+                                else deployment,
+                            )
+                        )
+                    available_locations = dict(
+                        await connector.get_available_locations(
+                            service=target.service,
+                            input_directory=job_context.job.input_directory
+                            or target.workdir,
+                            output_directory=job_context.job.output_directory
+                            or target.workdir,
+                            tmp_directory=job_context.job.tmp_directory
+                            or target.workdir,
+                        )
+                    )
+                    valid_locations = {
+                        k: loc
+                        for k, loc in available_locations.items()
+                        if self._is_valid(
+                            location=loc, hardware_requirement=hardware_requirement
+                        )
+                    }
+                    if valid_locations:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "Available locations for job {} on {} are {}.".format(
+                                    job_context.job.name,
                                     posixpath.join(deployment, target.service)
                                     if target.service
-                                    else deployment
-                                ),
-                            )
-                        )
-
-                    job = Job(
-                        name=job_context.job.name,
-                        workflow_id=job_context.job.workflow_id,
-                        inputs=job_context.job.inputs,
-                        input_directory=job_context.job.input_directory
-                        or target.workdir,
-                        output_directory=job_context.job.output_directory
-                        or target.workdir,
-                        tmp_directory=job_context.job.tmp_directory or target.workdir,
-                    )
-                    available_locations = dict(
-                        await connector.get_available_locations(service=target.service)
-                    )
-                    job_hardware = (
-                        hardware_requirement.eval(job)
-                        if hardware_requirement
-                        else Hardware()
-                    )
-                    hardware_requirements = {}
-                    for requirements in await asyncio.gather(
-                        *(
-                            asyncio.create_task(
-                                self._resolve_hardware_requirement(
-                                    connector, location, job_hardware
+                                    else deployment,
+                                    list(valid_locations.keys()),
                                 )
                             )
-                            for location in available_locations.values()
-                        )
-                    ):
-                        for key, hardware in requirements.items():
-                            if key not in hardware_requirements:
-                                hardware_requirements[key] = hardware
-                            else:
-                                hardware_requirements[key] |= hardware
-                    async with contextlib.AsyncExitStack() as exit_stack:
-                        for conn in _get_connector_stack(connector):
-                            if conn.deployment_name not in self.locks:
-                                self.locks[conn.deployment_name] = asyncio.Lock()
-                            await exit_stack.enter_async_context(
-                                self.locks[conn.deployment_name]
+                        if target.scheduling_group is not None:
+                            if target.scheduling_group not in self.allocation_groups:
+                                self.allocation_groups[target.scheduling_group] = []
+                            self.allocation_groups[target.scheduling_group].append(
+                                job_context.job
                             )
-                        valid_locations = {
-                            k: loc
-                            for k, loc in available_locations.items()
-                            if self._is_valid(
-                                connector=connector,
-                                location=loc,
-                                hardware_requirements=hardware_requirements,
-                                job_name=job.name,
+                            group_size = len(
+                                self.scheduling_groups[target.scheduling_group]
                             )
-                        }
-                        if len(valid_locations) >= target.locations:
-                            if logger.isEnabledFor(logging.DEBUG):
-                                logger.debug(
-                                    "Available locations for job {} on {} are {}.".format(
-                                        job_context.job.name,
-                                        (
-                                            posixpath.join(deployment, target.service)
-                                            if target.service
-                                            else deployment
-                                        ),
-                                        list(valid_locations.keys()),
+                            if (
+                                len(
+                                    self.allocation_groups.get(
+                                        target.scheduling_group, []
                                     )
                                 )
-                            if selected_locations := await self._get_locations(
+                                == group_size
+                            ):
+                                allocated_jobs = []
+                                for j in self.allocation_groups[
+                                    target.scheduling_group
+                                ]:
+                                    selected_locations = await self._get_locations(
+                                        job=job_context.job,
+                                        deployment=target.deployment.name,
+                                        hardware_requirement=hardware_requirement,
+                                        locations=target.locations,
+                                        scheduling_policy=self._get_policy(
+                                            target.scheduling_policy
+                                        ),
+                                        available_locations=valid_locations,
+                                    )
+                                    if selected_locations is None:
+                                        break
+                                    self._allocate_job(
+                                        job=j,
+                                        hardware=hardware_requirement,
+                                        selected_locations=selected_locations,
+                                        target=target,
+                                    )
+                                    allocated_jobs.append(j)
+                                if len(allocated_jobs) < group_size:
+                                    for j in allocated_jobs:
+                                        self._deallocate_job(j.name)
+                                else:
+                                    job_context.scheduled = True
+                                    return
+                        else:
+                            selected_locations = await self._get_locations(
                                 job=job_context.job,
-                                hardware_requirement=job_hardware,
+                                deployment=target.deployment.name,
+                                hardware_requirement=hardware_requirement,
                                 locations=target.locations,
                                 scheduling_policy=self._get_policy(
-                                    target.deployment.scheduling_policy
+                                    target.scheduling_policy
                                 ),
                                 available_locations=valid_locations,
-                            ):
+                            )
+                            if selected_locations is not None:
                                 self._allocate_job(
                                     job=job_context.job,
-                                    hardware=hardware_requirements,
-                                    connector=connector,
+                                    hardware=hardware_requirement,
                                     selected_locations=selected_locations,
                                     target=target,
                                 )
                                 job_context.scheduled = True
                                 return
-                        else:
-                            if logger.isEnabledFor(logging.DEBUG):
-                                deployment_name = (
+                    else:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "No location available for job {} on deployment {}.{}".format(
+                                    job_context.job.name,
                                     posixpath.join(deployment, target.service)
                                     if target.service
-                                    else deployment
+                                    else deployment,
+                                    f" Retry in {self.retry_interval} seconds" if self.retry_interval else "",
                                 )
-                                logger.debug(
-                                    f"Not enough available locations: job {job_context.job.name} "
-                                    f"requires {target.locations} locations "
-                                    f"on deployment {deployment_name}, "
-                                    f"but only {len(valid_locations)} are available."
-                                )
+                            )
                 try:
                     await asyncio.wait_for(
                         self.wait_queues[deployment].wait(), timeout=self.retry_interval
                     )
-                except (TimeoutError, asyncio.exceptions.TimeoutError):
+                except TimeoutError:
                     if logger.isEnabledFor(logging.DEBUG):
-                        target_name = (
-                            "/".join([target.deployment.name, target.service])
-                            if target.service is not None
-                            else target.deployment.name
-                        )
                         logger.debug(
-                            f"No locations available for job {job_context.job.name} "
-                            f"in target {target_name}. Waiting {self.retry_interval} seconds."
+                            "Job {} woke up for scheduling on deployment {}".format(
+                                job_context.job.name,
+                                posixpath.join(deployment, target.service)
+                                if target.service
+                                else deployment,
+                            )
                         )
-
-    async def _resolve_hardware_requirement(
-        self,
-        connector: Connector,
-        location: AvailableLocation,
-        hardware_requirement: Hardware,
-    ) -> MutableMapping[str, Hardware]:
-        hardware = {}
-        while location is not None:
-            # If AvailableLocation defines the Hardware capabilities, process the requirement
-            if location.hardware is not None:
-                storage = {}
-                for key, disk in hardware_requirement.storage.items():
-                    for path in disk.paths:
-                        mount_point = await utils.get_mount_point(
-                            self.context, location, path
-                        )
-                        storage[key] = Storage(
-                            mount_point=mount_point,
-                            size=disk.size,
-                            paths={path},
-                            bind=location.hardware.get_storage(mount_point).bind,
-                        )
-                current_hw = Hardware(
-                    cores=hardware_requirement.cores,
-                    memory=hardware_requirement.memory,
-                    storage=storage,
-                )
-            # Otherwise, simply add the requirement as is
-            else:
-                current_hw = Hardware(
-                    cores=hardware_requirement.cores,
-                    memory=hardware_requirement.memory,
-                    storage={
-                        key: Storage(mount_point=os.sep, size=disk.size)
-                        for key, disk in hardware_requirement.storage.items()
-                    },
-                )
-            hardware[posixpath.join(connector.deployment_name, location.name)] = (
-                current_hw
-            )
-            # If AvailableLocation is stacked and wraps another location, compute the inner requirement
-            if location := location.wraps if location.stacked else None:
-                connector = cast(ConnectorWrapper, connector).connector
-                hardware_requirement = await utils.bind_mount_point(
-                    self.context, connector, location, current_hw
-                )
-        return hardware
 
     async def close(self):
         pass
 
     @classmethod
     def get_schema(cls) -> str:
-        return (
-            files(__package__)
-            .joinpath("schemas")
-            .joinpath("scheduler.json")
-            .read_text("utf-8")
+        return pkg_resources.resource_filename(
+            __name__, os.path.join("schemas", "scheduler.json")
         )
 
     async def notify_status(self, job_name: str, status: Status) -> None:
-        if (
-            connector := self.get_connector(job_name)
-        ) and connector.deployment_name in self.wait_queues:
-            async with self.wait_queues[connector.deployment_name]:
-                if job_allocation := self.job_allocations.get(job_name):
-                    if status != (previous_status := job_allocation.status):
-                        job_allocation.status = status
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Job {job_name} changed status to {status.name}"
-                            )
-                    if status in [Status.COMPLETED, Status.FAILED] or (
-                        status == Status.ROLLBACK and previous_status == Status.RUNNING
-                    ):
-                        await self._free_resources(connector, job_allocation, status)
-                        if status == Status.ROLLBACK:
-                            for loc in job_allocation.locations:
-                                if (
-                                    job_name
-                                    in self.location_allocations[loc.deployment][
-                                        loc.name
-                                    ].jobs
-                                ):
-                                    self.location_allocations[loc.deployment][
-                                        loc.name
-                                    ].jobs.remove(job_name)
-                            job_allocation.locations.clear()
-                        self.wait_queues[connector.deployment_name].notify_all()
+        connector = self.get_connector(job_name)
+        if connector:
+            if connector.deployment_name in self.wait_queues:
+                async with self.wait_queues[connector.deployment_name]:
+                    if job_name in self.job_allocations:
+                        if status != self.job_allocations[job_name].status:
+                            self.job_allocations[job_name].status = status
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.debug(
+                                    f"Job {job_name} changed status to {status.name}"
+                                )
+                        if status in [Status.COMPLETED, Status.FAILED]:
+                            self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
-        self,
-        job: Job,
-        binding_config: BindingConfig,
-        hardware_requirement: HardwareRequirement | None,
+        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
     ) -> None:
         job_context = JobContext(job)
         targets = list(binding_config.targets)
