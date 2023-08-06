@@ -1514,7 +1514,7 @@ class DefaultFailureManager(FailureManager):
             self.job_requests[job.name].is_running = False
         return await self._do_handle_failure(job, step)
 
-    async def handle_failure_transfer(self, job: Job, step: Step):
+    async def handle_failure_transfer(self, job: Job, step: Step, port_name: str):
         if logger.isEnabledFor(logging.INFO):
             logger.info(
                 f"Handling {WorkflowTransferException.__name__} failure for job {job.name}"
@@ -1539,15 +1539,7 @@ class DefaultFailureManager(FailureManager):
                 "failed_Step.token_list",
                 len(list(step.get_output_ports().values())[0].token_list),
             )
-            # new_workflow.add_step(
-            #         await Step.load(
-            #             new_workflow.context,
-            #             step.persistent_id,
-            #             loading_context,
-            #             new_workflow,
-            #         )
-            #     )
-            status = await self._execute_transfer_step(step, new_workflow)
+            status = await self._execute_transfer_step(step, new_workflow, port_name)
             print(
                 "transf-post. new_workflow.new_step.token_list",
                 len(
@@ -1567,65 +1559,91 @@ class DefaultFailureManager(FailureManager):
             raise
         except WorkflowTransferException as e:
             logger.exception(e)
-            return await self._handle_failure_transfer(job, step)
+            return await self._handle_failure_transfer(job, step, port_name)
         except Exception as e:
             logger.exception(e)
             return await self.handle_exception(job, step, e)
         return status
 
-    async def _execute_transfer_step(self, failed_step, new_workflow):
-        for out_port_tokens in [
-            t.token_list
-            for t in new_workflow.steps[failed_step.name].get_output_ports().values()
-        ]:
-            print(failed_step.name, "number of token generated", len(out_port_tokens))
-            for out_token in out_port_tokens:
-                if isinstance(out_token, TerminationToken):
-                    print(failed_step.name, "out_token transfer Termination token")
-                elif isinstance(out_token, CWLFileToken):
-                    print(failed_step.name, "out_token transfer file", out_token.value)
-                    data_loc = _get_data_location(
-                        out_token.value["path"], new_workflow.context
-                    )
-                    print(
-                        failed_step.name,
-                        "out_token transfer esiste? ",
-                        await remotepath.exists(
-                            connector=new_workflow.context.deployment_manager.get_connector(
-                                data_loc.deployment
-                            ),
-                            location=data_loc,
-                            path=out_token.value["path"],
-                        ),
-                    )
-                else:
-                    print("out_token transfer type", type(out_token))
-        for port in new_workflow.steps[failed_step.name].get_output_ports().values():
-            for t in port.token_list:
-                if isinstance(t, TerminationToken):
-                    print(
-                        failed_step.name,
-                        "Ha già un termination token........Questo approccio non va bene",
-                    )
-
-        for k, port in new_workflow.steps[failed_step.name].get_output_ports().items():
-            print(
-                f"Port {port.name} svuoto token_list {len(failed_step.get_output_port(k).token_list)}"
-            )
-            # failed_step.get_output_port(k).token_list = [] # todo: fix temporaneo
-            for t in port.token_list:
-                print(
-                    failed_step.name,
-                    f"Inserisco token {t if not isinstance(t, TerminationToken) else 'TerminationToken'} in port {k}({port.name}), failed step -> len(port.token_list) {len(failed_step.get_output_port(k).token_list)}",
-                )
-                if not isinstance(t, TerminationToken):
-                    failed_step.get_output_port(k).put(t)
-        print(
-            failed_step.name,
-            "fs.old pt2",
-            {k: t.token_list for k, t in failed_step.get_output_ports().items()},
+    async def _execute_transfer_step(self, failed_step, new_workflow, port_name):
+        token_list = (
+            new_workflow.steps[failed_step.name].get_output_port(port_name).token_list
         )
-        return Status.COMPLETED
+        print("len token_list transfer", len(token_list))
+        if len(token_list) != 2:
+            raise FailureHandlingException(
+                f"Step recovery {failed_step.name} did not generate the right number of tokens: {len(token_list)}"
+            )
+        if not isinstance(token_list[1], TerminationToken):
+            raise FailureHandlingException(
+                f"Step recovery {failed_step.name} did not work well. It moved two tokens instead of one: {[t.persistent_id for t in token_list]}"
+            )
+        return token_list[0]
+
+        # for kport, out_port_tokens in [
+        #         (kport, port.token_list)
+        #         for kport, port in new_workflow.steps[failed_step.name].get_output_ports().items()
+        #     ]:
+        #     print(
+        #         "Execute_transfer_step",
+        #         failed_step.name,
+        #         f"(wf {new_workflow.name}) -> port {kport} number of token generated",
+        #         len(out_port_tokens),
+        #     )
+        #     for out_token in out_port_tokens:
+        #         if isinstance(out_token, TerminationToken):
+        #             print(
+        #                 "Execute_transfer_step",
+        #                 failed_step.name,
+        #                 f"(wf {new_workflow.name}) port {kport} out_token transfer Termination token",
+        #             )
+        #         elif isinstance(out_token, CWLFileToken):
+        #             data_loc = _get_data_location(
+        #                 out_token.value["path"], new_workflow.context
+        #             )
+        #             print(
+        #                 "Eexecute_transfer_step",
+        #                 failed_step.name,
+        #                 f"(wf {new_workflow.name} ) port {kport}",
+        #                 "out_token transfer file",
+        #                 out_token,
+        #                 "esiste?",
+        #                 await remotepath.exists(
+        #                     connector=new_workflow.context.deployment_manager.get_connector(
+        #                         data_loc.deployment
+        #                     ),
+        #                     location=data_loc,
+        #                     path=out_token.value["path"],
+        #                 ),
+        #             )
+        #         else:
+        #             print(
+        #                 "Execute_transfer_step",
+        #                 failed_step.name,
+        #                 f"(wf {new_workflow.name}) port {kport}",
+        #                 "out_token transfer type",
+        #                 type(out_token),
+        #             )
+        # # print(
+        # #     "Execute_transfer_step",
+        # #     failed_step.name,
+        # #     f"(wf {failed_step.workflow.name})",
+        # #     "token dentro il failed_step pre recovery",
+        # #     {
+        # #         k: [(t.persistent_id, t.tag, t) for t in p.token_list]
+        # #         for k, p in failed_step.get_output_ports().items()
+        # #     },
+        # # )
+        # for k, port in new_workflow.steps[failed_step.name].get_output_ports().items():
+        #     for t in port.token_list:
+        #         if not isinstance(t, TerminationToken):
+        #             print(
+        #                 "Execute_transfer_step",
+        #                 failed_step.name,
+        #                 f"Inserisco token {t} in port {k}({port.name}), failed step ({failed_step.name}) -> len(port.token_list) {len(failed_step.get_output_port(k).token_list)}",
+        #             )
+        #             return t
+        # raise FailureHandlingException("No token transferred")
 
 
 class DummyFailureManager(FailureManager):
@@ -1657,5 +1675,5 @@ class DummyFailureManager(FailureManager):
     async def notify_jobs(self, job_name, out_port_name, token):
         pass
 
-    async def handle_failure_transfer(self, job: Job, step: Step):
+    async def handle_failure_transfer(self, job: Job, step: Step, port_name: str):
         return Status.FAILED

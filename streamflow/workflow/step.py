@@ -38,6 +38,7 @@ from streamflow.core.workflow import (
     Token,
     Workflow,
 )
+from streamflow.cwl.token import CWLFileToken
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
@@ -89,6 +90,21 @@ class BaseStep(Step, ABC):
         self._log_level: int = logging.DEBUG
 
     async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
+        for kport, port in input_ports.items():
+            print(
+                "Step",
+                self.name,
+                f"(wf {self.workflow.name})",
+                "- KPort",
+                kport,
+                "- port_name",
+                port.name,
+                "- port.token_list",
+                [
+                    t.value["path"] if isinstance(t, CWLFileToken) else t.value
+                    for t in port.token_list
+                ],
+            )
         inputs = {
             k: v
             for k, v in zip(
@@ -340,7 +356,7 @@ class CombinatorStep(BaseStep):
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received token {token.tag} on port {task_name}"
+                                f"Step {self.name} (wf {self.workflow.name}) received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
                         async for schema in cast(
@@ -1094,7 +1110,7 @@ class LoopCombinatorStep(CombinatorStep):
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received token {token.tag} "
+                                f"Step {self.name} (wf {self.workflow.name}) received token {token.tag} "
                                 f"on port {task_name}"
                             )
                         status = Status.COMPLETED
@@ -1201,7 +1217,9 @@ class LoopOutputStep(BaseStep, ABC):
             # Otherwise, store the new token in the map
             else:
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received token {token.tag}.")
+                    logger.debug(
+                        f"Step {self.name} (wf {self.workflow.name}) received token {token.tag}."
+                    )
                 if prefix not in self.token_map:
                     self.token_map[prefix] = []
                 self.token_map[prefix].append(token)
@@ -1481,7 +1499,7 @@ class ScatterStep(BaseStep):
                     )
                 else:
                     logger.debug(
-                        f"Step {self.name} skipped token retag {token.tag + '.' + str(i)}"
+                        f"Step {self.name} (wf {self.workflow.name}) skipped token retag {token.tag + '.' + str(i)}"
                     )
         else:
             raise WorkflowDefinitionException("Scatter ports require iterable inputs")
@@ -1559,6 +1577,30 @@ class TransferStep(BaseStep, ABC):
             **{"job_port": self.get_input_port("__job__").persistent_id},
         }
 
+    async def transfer_data(self, port_name, job, token, inputs):
+        try:
+            transfered_token = await self._persist_token(
+                token=await self.transfer(job, token),
+                port=self.get_output_port(port_name),
+                input_token_ids=_get_token_ids(
+                    list(inputs.values())
+                    + [
+                        get_job_token(
+                            job.name,
+                            self.get_input_port("__job__").token_list,
+                        )
+                    ]
+                ),
+            )
+        except WorkflowTransferException as e:
+            logger.exception(e)
+            transfered_token = (
+                await self.workflow.context.failure_manager.handle_failure_transfer(
+                    job, self, port_name
+                )
+            )
+        return port_name, transfered_token
+
     async def run(self):
         # Set default status as SKIPPED
         status = Status.SKIPPED
@@ -1588,41 +1630,43 @@ class TransferStep(BaseStep, ABC):
                             # Change default status to COMPLETED
                             status = Status.COMPLETED
                             # Transfer token
-                            for port_name, token in inputs.items():
-                                self.get_output_port(port_name).put(
-                                    await self._persist_token(
-                                        token=await self.transfer(job, token),
-                                        port=self.get_output_port(port_name),
-                                        input_token_ids=_get_token_ids(
-                                            list(inputs.values())
-                                            + [
-                                                get_job_token(
-                                                    job.name,
-                                                    self.get_input_port(
-                                                        "__job__"
-                                                    ).token_list,
-                                                )
-                                            ]
-                                        ),
+                            # for port_name, token in inputs.items():
+                            #     self.get_output_port(port_name).put(
+                            #         await self._persist_token(
+                            #             token=await self.transfer(job, token),
+                            #             port=self.get_output_port(port_name),
+                            #             input_token_ids=_get_token_ids(
+                            #                 list(inputs.values())
+                            #                 + [
+                            #                     get_job_token(
+                            #                         job.name,
+                            #                         self.get_input_port(
+                            #                             "__job__"
+                            #                         ).token_list,
+                            #                     )
+                            #                 ]
+                            #             ),
+                            #         )
+                            #     )
+
+                            for port_name, token in await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        self.transfer_data(
+                                            port_name, job, token, inputs
+                                        )
                                     )
+                                    for port_name, token in inputs.items()
                                 )
+                            ):
+                                print("Transfer into port", port_name, "token", token)
+                                self.get_output_port(port_name).put(token)
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
             # When receiving a CancelledError, mark the step as Cancelled
             except asyncio.CancelledError:
                 await self.terminate(Status.CANCELLED)
-            except WorkflowTransferException as e:
-                logger.exception(e)
-                try:
-                    status = await self.workflow.context.failure_manager.handle_failure_transfer(
-                        job, self
-                    )
-                # If failure cannot be recovered, simply fail
-                except Exception as ie:
-                    if ie != e:
-                        logger.exception(ie)
-                    await self.terminate(Status.FAILED)
             except Exception as e:
                 logger.exception(e)
                 await self.terminate(Status.FAILED)
