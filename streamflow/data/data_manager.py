@@ -380,14 +380,18 @@ class RemotePathMapper:
         for token in path.parts:
             node = node.children[token]
 
-        # print("in path", str(path))
+        # todo: da migliorare.
+        #  - Per adesso vengono invalidate tutte le locations dalla radice fino a tutte le foglie interessate
+        #  - Alternativa: invalidare solo la radice, però poi è necessario
+        #       aggiustare il metodo di esplorazione dato che vengono creati dei link simbolici con
+        #       file che appartengono alla radice invalida
         for node_child in node.children.values():
             for data_loc in node_child.locations.setdefault(
                 location.deployment, {}
             ).get(location.name, []):
-                self.invalidate_location(data_loc, data_loc.path)
-                # print("in path", str(path), " - Invalido chd.loc.path", data_loc.path)
-                data_loc.data_type = DataType.INVALID
+                if data_loc.data_type != DataType.INVALID:
+                    self.invalidate_location(data_loc, data_loc.path)
+                    data_loc.data_type = DataType.INVALID
                 pass
         pass
 
