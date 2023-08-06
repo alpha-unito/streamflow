@@ -1594,11 +1594,14 @@ class TransferStep(BaseStep, ABC):
             )
         except WorkflowTransferException as e:
             logger.exception(e)
-            transfered_token = (
-                await self.workflow.context.failure_manager.handle_failure_transfer(
-                    job, self, port_name
+            if not (
+                transfered_token := (
+                    await self.workflow.context.failure_manager.handle_failure_transfer(
+                        job, self, port_name
+                    )
                 )
-            )
+            ):
+                raise e
         return port_name, transfered_token
 
     async def run(self):
