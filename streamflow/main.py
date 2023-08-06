@@ -5,13 +5,10 @@ import asyncio
 import logging
 import os
 import sys
-import uuid
-from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, MutableMapping
 
-from streamflow import VERSION, report
+from streamflow import report
 from streamflow.config.config import WorkflowConfig
-from streamflow.config.schema import SfSchema
 from streamflow.config.validator import SfValidator
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowProvenanceException
@@ -47,7 +44,7 @@ async def _async_ext(args: argparse.Namespace):
 async def _async_list(args: argparse.Namespace):
     context = _get_context_from_config(args.file)
     try:
-        if workflows := await context.database.get_workflows_list(args.name):
+        if workflows := await context.database.list_workflows(args.name):
             max_sizes = {
                 k: len(max(str(w[k]) for w in workflows)) + 1
                 for k in workflows[0].keys()
@@ -201,7 +198,7 @@ def _get_instance_from_config(
     if config is not None:
         enabled = config.get("enabled", enabled_by_default)
         class_name = config.get("type", "default" if enabled else "dummy")
-        kwargs |= config.get("config", {})
+        kwargs = {**kwargs, **config.get("config", {})}
     else:
         class_name = "default" if enabled_by_default else "dummy"
     class_ = classes[class_name]
@@ -248,7 +245,11 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
 def main(args):
     try:
         args = parser.parse_args(args)
-        if args.context == "ext":
+        if args.context == "version":
+            from streamflow.version import VERSION
+
+            print(f"StreamFlow version {VERSION}")
+        elif args.context == "ext":
             asyncio.run(_async_ext(args))
         elif args.context == "list":
             asyncio.run(_async_list(args))
@@ -260,21 +261,16 @@ def main(args):
             asyncio.run(_async_report(args))
         elif args.context == "run":
             if args.quiet:
-                logger.setLevel(logging.WARNING)
+                logger.setLevel(logging.WARN)
             elif args.debug:
                 logger.setLevel(logging.DEBUG)
             if args.color and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
-                colored_stream_handler = logging.StreamHandler()
-                colored_stream_handler.setFormatter(CustomFormatter())
+                coloredStreamHandler = logging.StreamHandler()
+                coloredStreamHandler.setFormatter(CustomFormatter())
                 logger.handlers = []
-                logger.addHandler(colored_stream_handler)
+                logger.addHandler(coloredStreamHandler)
                 logger.addFilter(HighlitingFilter())
             asyncio.run(_async_run(args))
-        elif args.context == "schema":
-            load_extensions()
-            print(SfSchema().dump(args.version, args.pretty))
-        elif args.context == "version":
-            print(f"StreamFlow version {VERSION}")
         else:
             parser.print_help(file=sys.stderr)
             return 1
