@@ -33,10 +33,11 @@ failureManager:
     max_retries: 50
     retry_delay: 5
 
-scheduler:
-  type: default
-  config:
-    retry_delay: 10
+scheduling:
+  scheduler:
+    type: default
+    config:
+      retry_delay: 10
 
 checkpointManager:
   enabled: False
