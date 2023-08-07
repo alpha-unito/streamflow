@@ -150,6 +150,50 @@ async def _put_tokens(
         pass
 
 
+def cut_off_graph(token, is_available, port_row, port_tokens, all_token_visited):
+    if port_row["name"] in port_tokens.keys():
+        if isinstance(token, JobToken):
+            for t_id in port_tokens[port_row["name"]]:
+                if all_token_visited[t_id][0].value.name == token.value.name:
+                    # tengo il jobtoken con id più grande. è nuovo quindi forse dati più nuovi e sperabilmente disponibili
+                    if all_token_visited[t_id][0].persistent_id < token.persistent_id:
+                        port_tokens[port_row["name"]].remove(t_id)
+                        print(
+                            f"Trovati due JobToken {token.value.name}. Vecchio jobtoken: {t_id}, nuovo: {token.persistent_id}. Taglio branch di {t_id} e continuo su {token.persistent_id}"
+                        )
+                        return False
+                    else:
+                        print(
+                            f"Trovati due JobToken {token.value.name}. Vecchio jobtoken: {t_id}, nuovo: {token.persistent_id}. Butto {token.persistent_id} lascio branch di {t_id}"
+                        )
+                        return True
+        else:
+            # if the token is not present then normal execution, otherwise check if there is available tokens
+            if token_present := get_token_by_tag(
+                token.tag,
+                (all_token_visited[t_id][0] for t_id in port_tokens[port_row["name"]]),
+            ):
+                # todo: possibile ottimizzazione. vedere l'id e prendere sempre quello più grande.
+
+                # if the token in port_tokens[port.name] is already available, skip current token
+                if all_token_visited[token_present.persistent_id][1]:
+                    return True
+
+                # if both are not available ... cosa fare? in teoria sarebbe meglio seguire entrambi i path e tenere quello che arriva prima ad un token disponibile. Ma quanto è dispendioso? E sopratutto quanto difficile da scrivere?
+                # per il momento seguo il percorso solo del primo trovato (quindi token_present)
+                if (
+                    not is_available
+                    and not all_token_visited[token_present.persistent_id][1]
+                ):
+                    return True
+
+                # if the token is available and token_present is not available
+                # than remove token_present. In following, token will be added
+                if is_available:
+                    port_tokens[port_row["name"]].remove(token_present.persistent_id)
+    return False
+
+
 async def _populate_workflow(
     failed_step,
     token_visited,
@@ -485,10 +529,12 @@ class DefaultFailureManager(FailureManager):
                     token.persistent_id in all_token_visited.keys()
                     and token.persistent_id in available_new_job_tokens.keys()
                 ):
+                    # todo: controllare se ancora necessario
                     print(
                         f"Token {token} già aggiunto dalla funzione _has_token_already_been_recovered"
                     )
-                    continue
+                    raise FailureHandlingException("OOOOOOOOOOOOOOOOOOOOO")
+                    # continue # commentato il continue e sostituito con l'errore per capire se questa situazione accede ancora o meno
                 # impossible case because when added in tokens, the elem is checked
                 if token.persistent_id in all_token_visited.keys():
                     raise FailureHandlingException(
@@ -503,80 +549,13 @@ class DefaultFailureManager(FailureManager):
                 port_name_id[port_row["name"]] = port_row["id"]
 
                 # se ci sono più token con stesso tag, taglia un branch di ricerca
-                if port_row["name"] in port_tokens.keys():
-                    if isinstance(token, JobToken):
-                        for t_id in port_tokens[port_row["name"]]:
-                            if (
-                                all_token_visited[t_id][0].value.name
-                                == token.value.name
-                            ):
-                                # tengo il jobtoken con id più grande. è nuovo quindi forse dati più nuovi e sperabilmente disponibili
-                                if (
-                                    all_token_visited[t_id][0].persistent_id
-                                    < token.persistent_id
-                                ):
-                                    port_tokens[port_row["name"]].remove(t_id)
-                                    print(
-                                        f"Trovato JobToken {token.value.name} più recente. Taglio branch di {t_id} e continuo su {token.persistent_id}"
-                                    )
-                                    break
-                    else:
-                        # if the token is not present then normal execution, otherwise check if there is available tokens
-                        if token_present := get_token_by_tag(
-                            token.tag,
-                            (  # todo: aggiustare. inserire caso che i token siano dei jobtoken. Quindi il tag non li differenzia
-                                all_token_visited[t_id][0]
-                                for t_id in port_tokens[port_row["name"]]
-                            ),
-                        ):
-                            # aa = {
-                            #     "uguaglianza": token_present.tag == token.tag,
-                            #     "present": token_present,
-                            #     "found": token,
-                            # }
-                            # todo: possibile ottimizzazione. vedere l'id e prendere sempre quello più grande.
-
-                            pass
-                            # if the token in port_tokens[port.name] is already available, skip current token
-                            if all_token_visited[token_present.persistent_id][1]:
-                                if isinstance(token, JobToken):
-                                    print(
-                                        f"JobToken1 ({token.persistent_id})",
-                                        token.value.name,
-                                    )
-                                continue
-
-                            # if both are not available ... cosa fare? in teoria sarebbe meglio seguire entrambi i path e tenere quello che arriva prima ad un token disponibile. Ma quanto è dispendioso? E sopratutto quanto difficile da scrivere?
-                            # per il momento seguo il percorso solo del primo trovato (quindi token_present)
-                            if (
-                                not is_available
-                                and not all_token_visited[token_present.persistent_id][
-                                    1
-                                ]
-                                and not isinstance(
-                                    all_token_visited[token_present.persistent_id][0],
-                                    JobToken,
-                                )
-                            ):
-                                if isinstance(token, JobToken):
-                                    print(
-                                        f"JobToken2 ({token.persistent_id})",
-                                        token.value.name,
-                                    )
-                                continue
-
-                            # if the token is available and token_present is not available
-                            # than remove token_present. In following, token will be added
-                            if is_available:
-                                port_tokens[port_row["name"]].remove(
-                                    token_present.persistent_id
-                                )
-                                if isinstance(token, JobToken):
-                                    print(
-                                        f"JobToken3 ({token.persistent_id})",
-                                        token.value.name,
-                                    )
-                                pass
+                if cut_off_graph(
+                    token, is_available, port_row, port_tokens, all_token_visited
+                ):
+                    print(
+                        f"CUTOFF token {token.persistent_id} della port {port_row['name']}"
+                    )
+                    continue
 
                 port_tokens.setdefault(port_row["name"], set()).add(token.persistent_id)
                 if not is_available:
@@ -586,7 +565,6 @@ class DefaultFailureManager(FailureManager):
                         workflow.context,
                     )
                     if prev_tokens:
-                        # todo: fare controllo port:tag già quì? Per vedere se ci sono token duplicati di rollback precedenti
                         for pt in prev_tokens:
                             prev_port_row = (
                                 await workflow.context.database.get_port_from_token(
@@ -621,12 +599,6 @@ class DefaultFailureManager(FailureManager):
                     token.persistent_id
                 )
                 port_tokens.setdefault(port_row["name"], set()).add(token.persistent_id)
-
-        jobs_execs = set()
-        for token_id_list in port_tokens.values():
-            for t_id in token_id_list:
-                if isinstance(all_token_visited[t_id][0], JobToken):
-                    jobs_execs.add(all_token_visited[t_id][0].value)
 
         all_token_visited = dict(sorted(all_token_visited.items()))
         print(
@@ -669,6 +641,8 @@ class DefaultFailureManager(FailureManager):
             empty_ports = _update_dag_ports(
                 dag_ports, port_tokens, empty_ports, new_workflow_name
             )
+
+        # update available token in the port_tokens and adding port as init port in dag_ports
         for v in available_new_job_tokens.values():
             if v["out-token-port-name"] in port_tokens.keys():
                 port_tokens[v["out-token-port-name"]].add(v["new-out-token"])
@@ -677,7 +651,9 @@ class DefaultFailureManager(FailureManager):
                     f"Port_tokens {v['out-token-port-name']} aggiunto un nuovo elemento quindi ha {port_tokens[v['out-token-port-name']]} tokens"
                 )
             else:
-                print(f"Port_tokens non ha più la port {v['out-token-port-name']}")
+                print(
+                    f"Port_tokens non ha più la port {v['out-token-port-name']} ... significa che il new token non serve più per questo rollback"
+                )
 
         # DEBUG: create port-step-token graphs post remove
         print_grafici_post_remove(
@@ -848,11 +824,9 @@ class DefaultFailureManager(FailureManager):
                         )
                     )
 
-        pass
         self._save_for_retag(
             new_workflow, dag_ports, port_tokens, token_visited, failed_step.name
         )
-        pass
 
         await _put_tokens(
             new_workflow,
@@ -881,7 +855,8 @@ class DefaultFailureManager(FailureManager):
                     {k: v.name for k, v in step.get_input_ports().items()},
                 )
             except Exception as e:
-                # debug: a volte non trova la porta. Credo capiti perché ancora manca la sincronizzazione dei rollback e quando nella scatter ci siano più location
+                # debug: a volte non trova la porta. Credo capiti perché ancora manca la sincronizzazione dei rollback
+                # e quando nella scatter ci siano più location, succedono casini nel metodo _has_token_already_been_recovered
                 print(
                     f"Step {step.name} error. new workflow steps",
                     new_workflow.steps.keys(),
