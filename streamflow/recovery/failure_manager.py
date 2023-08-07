@@ -69,9 +69,7 @@ def get_prev_ports(searched_port_name, dag_ports):
     return start_port_names
 
 
-def get_port_tags(
-    new_workflow, dag_ports, port_tokens, token_visited, failed_step_name
-):
+def get_port_tags(new_workflow, dag_ports, port_tokens, token_visited):
     port_tags = {}
     for port_name in dag_ports[INIT_DAG_FLAG]:
         intersection_tags = {
@@ -103,18 +101,13 @@ def get_port_tags(
 
 
 async def _put_tokens(
-    workflow: Workflow,
     new_workflow: Workflow,
     init_ports: MutableSequence[str],
     port_tokens: MutableMapping[str, MutableSequence[int]],
     token_visited: MutableMapping[int, Tuple[Token, bool]],
-    port_tokens_counter: MutableMapping[str, int],
     dag_ports: MutableMapping[str, MutableSequence[str]],
-    failed_step_name: str,
 ):
-    port_tags = get_port_tags(
-        new_workflow, dag_ports, port_tokens, token_visited, failed_step_name
-    )
+    port_tags = get_port_tags(new_workflow, dag_ports, port_tokens, token_visited)
     for port_name in init_ports:
         port = new_workflow.ports[port_name]
         token_list = [
@@ -138,14 +131,6 @@ async def _put_tokens(
                     f"Aggiungo un termination token nell port {port.name} ma non dovrei"
                 )
             port.put(t)
-        # print(
-        #     f"port {port.name}\n"
-        #     f"\tport_tokens_counter[port_name]\t\t= {port_tokens_counter[port.name]}\n"
-        #     # f"\ttoken_list_in_workflow_port - 1\t\t= {len(workflow.ports[port.name].token_list) - 1}\n"
-        #     f"\t=> len(port.token_list)\t\t\t= {len(port.token_list)}\n"
-        #     f"\t=> len(port_tokens[port_name])\t\t= {len(port_tokens[port.name])}\n"
-        #     f"\tlen(port_tokens[port_name] avai)\t= {len([ t_id for t_id in port_tokens[port.name] if token_visited[t_id][1]])}"
-        # )
         if len(port.token_list) > 0 and len(port.token_list) == len(
             port_tokens[port_name]
         ):
@@ -165,7 +150,6 @@ async def _populate_workflow(
     token_visited,
     new_workflow,
     loading_context,
-    port_tokens,
 ):
     steps = set()
 
@@ -348,9 +332,6 @@ class DefaultFailureManager(FailureManager):
         available_new_job_tokens,
         running_new_job_tokens,
         context,
-        loading_context,
-        port_tokens,
-        token_frontier,
     ):
         if isinstance(token, JobToken) and token.value.name in self.job_requests.keys():
             async with self.job_requests[token.value.name].lock:
@@ -536,9 +517,6 @@ class DefaultFailureManager(FailureManager):
                 available_new_job_tokens,
                 running_new_job_tokens,
                 workflow.context,
-                loading_context,
-                port_tokens,
-                tokens,
             ):
                 is_available = await _is_token_available(token, workflow.context)
                 if isinstance(token, CWLFileToken):
@@ -987,7 +965,7 @@ class DefaultFailureManager(FailureManager):
                     self.job_requests[token.value.name].job_token = None
 
         port_tokens_counter = await _populate_workflow(
-            failed_step, token_visited, new_workflow, loading_context, port_tokens
+            failed_step, token_visited, new_workflow, loading_context
         )
 
         if add_failed_step:
@@ -1024,14 +1002,11 @@ class DefaultFailureManager(FailureManager):
         pass
 
         await _put_tokens(
-            workflow,
             new_workflow,
             dag_ports[INIT_DAG_FLAG],
             port_tokens,
             token_visited,
-            port_tokens_counter,
             dag_ports,
-            failed_step.name,
         )
 
         # pass
