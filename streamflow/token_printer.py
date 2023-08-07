@@ -285,6 +285,129 @@ def temp_print_retag(workflow_name, output_port, tag, retags, final_msg):
     pass
 
 
+def print_debug_divergenza(all_token_visited, port_tokens):
+    token_mapping = {
+        t_id: all_token_visited[t_id][0]
+        for token_list in port_tokens.values()
+        for t_id in token_list
+    }
+    for port_name, token_id_list in port_tokens.items():
+        for token_id in token_id_list:
+            for token_id_2 in token_id_list:
+                if (
+                    token_id in token_mapping.keys()
+                    and token_id_2 in token_mapping.keys()
+                    and token_id != token_id_2
+                    and all_token_visited[token_id][0].tag
+                    == all_token_visited[token_id_2][0].tag
+                ):
+                    if isinstance(
+                        all_token_visited[token_id][0], JobToken
+                    ) and isinstance(all_token_visited[token_id_2][0], JobToken):
+                        print(
+                            f"DIVERGENZAAA port {port_name} ma sono due job token, quindi tutto regolare.",
+                            all_token_visited[token_id][0].value.name,
+                            "(id:",
+                            all_token_visited[token_id][0].persistent_id,
+                            ")",
+                            "and",
+                            all_token_visited[token_id_2][0].value.name,
+                            "(id:",
+                            all_token_visited[token_id_2][0].persistent_id,
+                            ")",
+                        )
+                    else:
+                        t_a = all_token_visited[token_id][0]
+                        # t_b = all_token_visited[token_id_2][0]
+                        print(
+                            "DIVERGENZAAA port",
+                            port_name,
+                            "type:",
+                            type(t_a),
+                            ", id:",
+                            token_id,
+                            ", tag:",
+                            t_a.tag,
+                            ", value:",
+                            t_a.value.name
+                            if isinstance(t_a[0], JobToken)
+                            else t_a[0].value,
+                        )
+                        pass
+    print("DEBUG: divergenza controllata")
+
+
+async def print_grafici_post_remove(
+    dag_ports,
+    dir_path,
+    new_workflow_name,
+    port_tokens,
+    port_name_id,
+    workflow,
+    failed_step,
+):
+    print_graph_figure(
+        {k: v for k, v in dag_ports.items() if k != INIT_DAG_FLAG},
+        dir_path + "/ports-post-remove-" + new_workflow_name,
+    )
+    await print_step_from_ports(
+        dag_ports,
+        port_name_id,
+        list(port_tokens.keys()),
+        workflow.context,
+        failed_step.name,
+        dir_path + "/step-post-remove-" + new_workflow_name,
+    )
+
+
+async def print_grafici_parte_uno(
+    all_token_visited,
+    dag_tokens,
+    dag_ports,
+    dir_path,
+    new_workflow_name,
+    port_tokens,
+    port_name_id,
+    workflow,
+    failed_step,
+):
+    print_graph_figure(
+        {
+            (
+                k,
+                all_token_visited[k][0].tag,
+                label_token_availability(all_token_visited[k][1]),
+            ): [
+                (
+                    vv,
+                    all_token_visited[vv][0].tag,
+                    label_token_availability(all_token_visited[vv][1]),
+                )
+                if isinstance(vv, int)
+                else (vv, "None", "None")
+                for vv in v
+            ]
+            for k, v in dag_tokens.items()
+            if k != INIT_DAG_FLAG
+        },
+        dir_path + "/tokens-" + new_workflow_name,
+    )
+    print_graph_figure(
+        {k: v for k, v in dag_ports.items() if k != INIT_DAG_FLAG},
+        dir_path + "/ports-" + new_workflow_name,
+    )
+    await print_step_from_ports(
+        dag_ports,
+        port_name_id,
+        list(port_tokens.keys()),
+        workflow.context,
+        failed_step.name,
+        dir_path + "/steps-" + new_workflow_name,
+    )
+
+    print("DEBUG: grafici creati")
+
+
 async def print_step_from_ports(
     dag_ports,
     ports,
