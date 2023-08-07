@@ -20,6 +20,7 @@ import jsonref
 
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow import myconfig
+from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.context import SchemaEntity
@@ -283,3 +284,10 @@ def random_name() -> str:
 
 def wrap_command(command: str):
     return ["/bin/sh", "-c", f"{command}"]
+
+
+# todo: use this method in test_provenance
+def contains_id(
+    searched_id: int, persistable_entity_list: MutableSequence[PersistableEntity]
+):
+    return searched_id in (entity.persistent_id for entity in persistable_entity_list)

@@ -9,7 +9,7 @@ from typing import MutableMapping, MutableSequence, cast, Tuple, Iterable
 
 import pkg_resources
 
-from streamflow.core.utils import random_name
+from streamflow.core.utils import random_name, contains_id
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
@@ -23,11 +23,7 @@ from streamflow.data import remotepath
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
 from streamflow.token_printer import (
-    printa_token,
-    print_graph_figure,
-    print_step_from_ports,
     temp_print_retag,
-    label_token_availability,
     print_debug_divergenza,
     print_grafici_parte_uno,
     print_grafici_post_remove,
@@ -53,6 +49,7 @@ async def _cleanup_dir(
     )
 
 
+# todo: spostarlo in utils o loading_context. Utilizzare questo metodo in test_provenance invece di ri-definirlo uguale
 async def _load_prev_tokens(token_id, loading_context, context):
     rows = await context.database.get_dependees(token_id)
 
@@ -83,7 +80,6 @@ def get_port_tags(new_workflow, dag_ports, port_tokens, token_visited):
                 #  port_name    same_level_port_name(1)  same_level_port_name(2) ...
                 #       \                   |               /
                 #                   next_port_name
-                # same_level_port_name is port_name sibling
                 for same_level_port_name in get_prev_ports(next_port_name, dag_ports):
                     if same_level_port_name != port_name and not isinstance(
                         new_workflow.ports[port_name], (ConnectorPort, JobPort)
@@ -206,6 +202,7 @@ async def _populate_workflow(
     ports = {}
 
     # {port.name : n.of tokens}
+    # todo: questa variabile non serve più
     port_tokens_counter = {}
 
     for token_id, (_, is_available) in token_visited.items():
@@ -282,9 +279,9 @@ async def _is_token_available(token, context):
     return not isinstance(token, JobToken) and await token.is_available(context)
 
 
-# todo: move it in utils
-def contains_token_id(token_id, token_list):
-    return token_id in (t.persistent_id for t in token_list)
+# todo: move it in utils. Generalizzarlo in persistable_entity_list e usarlo in test_provenance
+# def contains_token_id(token_id, token_list):
+#     return token_id in (t.persistent_id for t in token_list)
 
 
 def _clean_port_tokens(
@@ -580,7 +577,8 @@ class DefaultFailureManager(FailureManager):
                             )
                             if (
                                 pt.persistent_id not in all_token_visited.keys()
-                                and not contains_token_id(pt.persistent_id, tokens)
+                                # and not contains_token_id(pt.persistent_id, tokens)
+                                and not contains_id(pt.persistent_id, tokens)
                             ):
                                 tokens.append(pt)
                     else:
@@ -612,7 +610,7 @@ class DefaultFailureManager(FailureManager):
         os.makedirs(dir_path)
 
         # DEBUG: create port-step-token graphs
-        print_grafici_parte_uno(
+        await print_grafici_parte_uno(
             all_token_visited,
             dag_tokens,
             dag_ports,
@@ -656,7 +654,7 @@ class DefaultFailureManager(FailureManager):
                 )
 
         # DEBUG: create port-step-token graphs post remove
-        print_grafici_post_remove(
+        await print_grafici_post_remove(
             dag_ports,
             dir_path,
             new_workflow_name,
@@ -709,7 +707,7 @@ class DefaultFailureManager(FailureManager):
     #  B -> C
     # A ha successo, B fallisce (cade ambiente), viene rieseguito A, in C che input di A arriva?
     # quello vecchio? quello vecchio e quello nuovo? In teoria solo quello vecchio, da gestire comunque?
-    # oppure lasciamo che fallisce e poi il failure manager prendere l'output nuovo di A?
+    # oppure lasciamo che fallisce e poi il failure manager prende l'output nuovo di A?
     async def _recover_jobs(
         self, failed_job: Job, failed_step: Step, add_failed_step: bool = False
     ) -> CommandOutput:
@@ -858,8 +856,10 @@ class DefaultFailureManager(FailureManager):
                 # debug: a volte non trova la porta. Credo capiti perché ancora manca la sincronizzazione dei rollback
                 # e quando nella scatter ci siano più location, succedono casini nel metodo _has_token_already_been_recovered
                 print(
-                    f"Step {step.name} error. new workflow steps",
+                    f"Step {step.name} error. new workflow {new_workflow.name}\n\tsteps",
                     new_workflow.steps.keys(),
+                    "\n\tports",
+                    new_workflow.ports.keys(),
                 )
                 raise e
 
@@ -915,6 +915,7 @@ class DefaultFailureManager(FailureManager):
                         t_id not in dag_ports[INIT_DAG_FLAG]
                         and not token_visited[t_id][1]
                     ):
+                        # todo: salvare solo il tag. Cambiamento che dovrà essere applicanto anche in is_valid_tag
                         self.retags[new_workflow.name].setdefault(port.name, set()).add(
                             token_visited[t_id][0]
                         )
