@@ -257,29 +257,32 @@ def str_value(value):
 
 
 def temp_print_retag(workflow_name, output_port, tag, retags, final_msg):
-    print(
-        f"problema scatter:out3 wf {workflow_name} - port {output_port.name} - tag {tag}",
-        "\nretags",
-        json.dumps(
-            {
-                k: {
-                    p: [
-                        {
-                            "id": t.persistent_id,
-                            "tag": t.tag,
-                            "value": str_value(t.value),
-                            "class": get_class_fullname(type(t)),
-                        }
-                        for t in t_list
-                    ]
-                    for p, t_list in v.items()
-                }
-                for k, v in retags.items()
-            },
-            indent=2,
-        ),
-        final_msg,
-    )
+    if False:
+        print(
+            f"problema scatter:out3 wf {workflow_name} - port {output_port.name} - tag {tag}",
+            "\nretags",
+            json.dumps(
+                {
+                    k: {
+                        p: [
+                            {
+                                "id": t.persistent_id,
+                                "tag": t.tag,
+                                "value": str_value(t.value),
+                                "class": get_class_fullname(type(t)),
+                            }
+                            for t in t_list
+                        ]
+                        for p, t_list in v.items()
+                    }
+                    for k, v in retags.items()
+                    if v
+                },
+                indent=2,
+            ),
+            final_msg,
+        )
+    pass
 
 
 async def print_step_from_ports(

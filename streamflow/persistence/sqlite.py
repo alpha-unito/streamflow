@@ -236,28 +236,6 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    async def get_dependees_newest_workflow(
-        self, token_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT provenance.* "
-                "FROM provenance JOIN token ON provenance.dependee = token.id "
-                "   JOIN port ON token.port = port.id "
-                "   JOIN workflow ON port.workflow = workflow.id "
-                "WHERE provenance.depender = :depender "
-                "   AND workflow.start_time = ( "
-                "       SELECT MAX(workflow.start_time) "
-                "       FROM workflow JOIN port ON workflow.id = port.workflow "
-                "           JOIN token ON port.id = token.port "
-                "           JOIN provenance ON token.id = provenance.dependee "
-                "       WHERE provenance.depender = :depender "
-                "   )",
-                {"depender": token_id},
-            ) as cursor:
-                return await cursor.fetchall()
-
     async def get_dependers(
         self, token_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:

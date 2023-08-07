@@ -740,6 +740,7 @@ class ExecuteStep(BaseStep):
                     "\nnew job token:",
                     job_token.persistent_id,
                 )
+                # todo: e se la risorsa fallisce al momento del recupero?
                 await asyncio.gather(
                     *(
                         asyncio.create_task(

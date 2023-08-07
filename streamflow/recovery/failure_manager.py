@@ -61,25 +61,6 @@ async def _load_prev_tokens(token_id, loading_context, context):
     )
 
 
-async def _load_prev_tokens_newest(token_id, loading_context, context):
-    rows2 = await context.database.get_dependees_newest_workflow(token_id)
-
-    return await asyncio.gather(
-        *(
-            asyncio.create_task(loading_context.load_token(context, row["dependee"]))
-            for row in rows2
-        )
-    )
-
-
-def _get_data_location(path, context):
-    data_locs = context.data_manager.get_data_locations(path)
-    for data_loc in data_locs:
-        if data_loc.path == path:
-            return data_loc
-    return None
-
-
 def get_prev_ports(searched_port_name, dag_ports):
     start_port_names = set()
     for port_name, next_port_names in dag_ports.items():
@@ -136,16 +117,6 @@ async def _put_tokens(
     )
     for port_name in init_ports:
         port = new_workflow.ports[port_name]
-        # token_list = [
-        #     token_visited[t_id][0]
-        #     for t_id in port_tokens[port_name]
-        #     if token_visited[t_id][1]
-        #     and (
-        #         new_workflow.name not in tags.keys()
-        #         or port_name not in tags[new_workflow.name].keys()
-        #         or token_visited[t_id][0].tag in tags[new_workflow.name][port_name]
-        #     )
-        # ]
         token_list = [
             token_visited[t_id][0]
             for t_id in port_tokens[port_name]
@@ -167,14 +138,14 @@ async def _put_tokens(
                     f"Aggiungo un termination token nell port {port.name} ma non dovrei"
                 )
             port.put(t)
-        print(
-            f"port {port.name}\n"
-            f"\tport_tokens_counter[port_name]\t\t= {port_tokens_counter[port.name]}\n"
-            # f"\ttoken_list_in_workflow_port - 1\t\t= {len(workflow.ports[port.name].token_list) - 1}\n"
-            f"\t=> len(port.token_list)\t\t\t= {len(port.token_list)}\n"
-            f"\t=> len(port_tokens[port_name])\t\t= {len(port_tokens[port.name])}\n"
-            f"\tlen(port_tokens[port_name] avai)\t= {len([ t_id for t_id in port_tokens[port.name] if token_visited[t_id][1]])}"
-        )
+        # print(
+        #     f"port {port.name}\n"
+        #     f"\tport_tokens_counter[port_name]\t\t= {port_tokens_counter[port.name]}\n"
+        #     # f"\ttoken_list_in_workflow_port - 1\t\t= {len(workflow.ports[port.name].token_list) - 1}\n"
+        #     f"\t=> len(port.token_list)\t\t\t= {len(port.token_list)}\n"
+        #     f"\t=> len(port_tokens[port_name])\t\t= {len(port_tokens[port.name])}\n"
+        #     f"\tlen(port_tokens[port_name] avai)\t= {len([ t_id for t_id in port_tokens[port.name] if token_visited[t_id][1]])}"
+        # )
         if len(port.token_list) > 0 and len(port.token_list) == len(
             port_tokens[port_name]
         ):
@@ -207,10 +178,6 @@ async def _populate_workflow(
 
     for token_id, (_, is_available) in token_visited.items():
         row = await failed_step.workflow.context.database.get_port_from_token(token_id)
-
-        # in teoria questa porta non verrà mai utilizzata
-        # if row['name'] in failed_step.output_ports.values():
-        #     continue
         if row["id"] in ports.keys():
             ports[row["id"]] = ports[row["id"]] and is_available
         else:
@@ -292,25 +259,6 @@ def contains_token_id(token_id, token_list):
     return token_id in (t.persistent_id for t in token_list)
 
 
-# todo: cambiare nome funzione
-# controlla se la port ha generato due token con lo stesso tag
-# se è vero significa che c'è stato un rollback...quali dei due token devo prendere?
-def is_token_aging(port_tokens, port_row, all_token_visited):
-    for token_id in port_tokens[port_row["name"]]:
-        for token_id_2 in port_tokens[port_row["name"]]:
-            if (
-                token_id != token_id_2
-                and all_token_visited[token_id][0].tag
-                == all_token_visited[token_id_2][0].tag
-            ):
-                # todo: caso in cui i jobtoken sono diversi avviene quando c'è un transferException. i jobtoken generati sono diversi, ma è giusto così. in quel caso come procedo? continuo la ricerca su quel branch o no?
-                # aa = all_token_visited[token_id][0]
-                ab = all_token_visited[token_id_2][0]
-                print(f"Interrotto branch di ricerca token {token_id_2} ({type(ab)})")
-                return True
-    return False
-
-
 class JobRequest:
     def __init__(self):
         self.job_token: JobToken = None
@@ -345,13 +293,6 @@ def _clean_port_tokens(
     return empty_ports
 
 
-def _check_port_is_attached(dag_ports, searching_port_name):
-    for port_name in dag_ports.keys():
-        if port_name == searching_port_name:
-            return True
-    return False
-
-
 def _update_dag_ports(
     dag_ports: MutableMapping[str, MutableSequence[str]],
     port_tokens: MutableMapping[str, MutableSequence[int]],
@@ -371,15 +312,6 @@ def _update_dag_ports(
         port_tokens.pop(port_name)
         print(f"wf {new_workflow_name} - Pop {port_name} for dag_ports and port_tokens")
     return new_empty_ports
-
-
-def is_tag_present(token, port_name, port_tokens, token_visited):
-    return (
-        get_token_by_tag(
-            token.tag, (token_visited[t_id] for t_id in port_tokens[port_name])
-        )
-        is not None
-    )
 
 
 class DefaultFailureManager(FailureManager):
@@ -1213,7 +1145,6 @@ class DefaultFailureManager(FailureManager):
         )
         new_workflow.add_step(new_step)
         await new_step.save(new_workflow.context)
-        # new_step = new_workflow.steps[failed_step.name]
 
         await new_workflow.context.scheduler.notify_status(new_job.name, Status.RUNNING)
         cmd_out = await cast(ExecuteStep, new_step).command.execute(new_job)

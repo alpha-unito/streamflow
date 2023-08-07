@@ -323,7 +323,9 @@ class DefaultScheduler(Scheduler):
                                     posixpath.join(deployment, target.service)
                                     if target.service
                                     else deployment,
-                                    f" Retry in {self.retry_interval} seconds" if self.retry_interval else "",
+                                    f" Retry in {self.retry_interval} seconds"
+                                    if self.retry_interval
+                                    else "",
                                 )
                             )
                 try:
