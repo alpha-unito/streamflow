@@ -310,6 +310,47 @@ def _clean_port_tokens(
     return empty_ports
 
 
+def get_necessary_tokens(
+    port_tokens, all_token_visited
+) -> MutableMapping[int, Tuple[Token, bool]]:
+    return {
+        t_id: all_token_visited[t_id]
+        for token_list in port_tokens.values()
+        for t_id in token_list
+    }
+
+
+def reduce_graph(dag_ports, port_tokens, available_new_job_tokens, new_workflow_name):
+    for v in available_new_job_tokens.values():
+        if v["out-token-port-name"] not in port_tokens.keys():
+            raise FailureHandlingException("Non c'è la porta. NON VA BENE")
+
+    # todo: aggiustare nel caso in cui una port abbia più token di output
+    empty_ports = _clean_port_tokens(
+        port_tokens,
+        [v["old-out-token"] for v in available_new_job_tokens.values()],
+        dag_ports,
+        [v["out-token-port-name"] for v in available_new_job_tokens.values()],
+    )
+    while empty_ports:
+        empty_ports = _update_dag_ports(
+            dag_ports, port_tokens, empty_ports, new_workflow_name
+        )
+
+    # update available token in the port_tokens and adding port as init port in dag_ports
+    for v in available_new_job_tokens.values():
+        if v["out-token-port-name"] in port_tokens.keys():
+            port_tokens[v["out-token-port-name"]].add(v["new-out-token"])
+            dag_ports[INIT_DAG_FLAG].add(v["out-token-port-name"])
+            print(
+                f"Port_tokens {v['out-token-port-name']} aggiunto un nuovo elemento quindi ha {port_tokens[v['out-token-port-name']]} tokens"
+            )
+        else:
+            print(
+                f"Port_tokens non ha più la port {v['out-token-port-name']} ... significa che il new token non serve più per questo rollback"
+            )
+
+
 def _update_dag_ports(
     dag_ports: MutableMapping[str, MutableSequence[str]],
     port_tokens: MutableMapping[str, MutableSequence[int]],
@@ -382,7 +423,7 @@ class DefaultFailureManager(FailureManager):
                     )
 
                     running_new_job_tokens[token.persistent_id] = {
-                        "jobtoken": job_request
+                        "job_request": job_request
                     }
                     # raise FailureHandlingException(f"Job {token.value.name} is already running. This case is still a working progress")
                 elif (
@@ -405,6 +446,12 @@ class DefaultFailureManager(FailureManager):
                         dict(out_tokens_json) if out_tokens_json else "null",
                     )
                     if out_tokens_json:
+                        print(
+                            "out_tokens_json['id']:",
+                            out_tokens_json["id"],
+                            "- job_request.token_output:",
+                            job_request.token_output,
+                        )
                         port_json = await context.database.get_port_by_token(
                             out_tokens_json["id"]
                         )
@@ -478,7 +525,7 @@ class DefaultFailureManager(FailureManager):
         # { token_id: (token, is_available)}
         all_token_visited = {}
 
-        # {old_token_id : job_token_running}
+        # {old_job_token_id : job_request_running}
         running_new_job_tokens = {}
 
         # {old_job_token_id : (new_job_token_id, new_output_token_id)}
@@ -577,7 +624,6 @@ class DefaultFailureManager(FailureManager):
                             )
                             if (
                                 pt.persistent_id not in all_token_visited.keys()
-                                # and not contains_token_id(pt.persistent_id, tokens)
                                 and not contains_id(pt.persistent_id, tokens)
                             ):
                                 tokens.append(pt)
@@ -624,34 +670,9 @@ class DefaultFailureManager(FailureManager):
         # DEBUG: controllo se ci sono branch che divergono (token di diverse esecuzioni che per via dei tag vengono ripetuti)
         print_debug_divergenza(all_token_visited, port_tokens)
 
-        for v in available_new_job_tokens.values():
-            if v["out-token-port-name"] not in port_tokens.keys():
-                raise FailureHandlingException("Non c'è la porta. NON VA BENE")
-
-        # todo: aggiustare nel caso in cui una port abbia più token di output
-        empty_ports = _clean_port_tokens(
-            port_tokens,
-            [v["old-out-token"] for v in available_new_job_tokens.values()],
-            dag_ports,
-            [v["out-token-port-name"] for v in available_new_job_tokens.values()],
+        reduce_graph(
+            dag_ports, port_tokens, available_new_job_tokens, new_workflow_name
         )
-        while empty_ports:
-            empty_ports = _update_dag_ports(
-                dag_ports, port_tokens, empty_ports, new_workflow_name
-            )
-
-        # update available token in the port_tokens and adding port as init port in dag_ports
-        for v in available_new_job_tokens.values():
-            if v["out-token-port-name"] in port_tokens.keys():
-                port_tokens[v["out-token-port-name"]].add(v["new-out-token"])
-                dag_ports[INIT_DAG_FLAG].add(v["out-token-port-name"])
-                print(
-                    f"Port_tokens {v['out-token-port-name']} aggiunto un nuovo elemento quindi ha {port_tokens[v['out-token-port-name']]} tokens"
-                )
-            else:
-                print(
-                    f"Port_tokens non ha più la port {v['out-token-port-name']} ... significa che il new token non serve più per questo rollback"
-                )
 
         # DEBUG: create port-step-token graphs post remove
         await print_grafici_post_remove(
@@ -667,11 +688,7 @@ class DefaultFailureManager(FailureManager):
         return (
             dag_ports,
             port_tokens,
-            {
-                t_id: all_token_visited[t_id]
-                for token_list in port_tokens.values()
-                for t_id in token_list
-            },
+            get_necessary_tokens(port_tokens, all_token_visited),
         )
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
