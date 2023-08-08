@@ -718,6 +718,94 @@ class DefaultFailureManager(FailureManager):
             return await self.handle_exception(job, step, e)
         return command_output
 
+    async def sync_rollbacks(self, token_visited):
+        # per sincronizzare usare la var is_running
+        # dal grafo ricavo quali job devono essere eseguiti:
+        # - Se non esiste la request o non sono running, pongo la var a true
+        #   - se request esiste, pone job_token e out_token a None
+        # - altrimenti (è running quindi) applico politica descritta sotto
+        # Quando il job termina la sua esecuzione:
+        # - salva nel modulo fault il suo job_token (che ha terminato con successo)
+        #   - chiamando il modulo fault controlliamo se il job usato sia quello originale oppure uno eseguito da rollback.
+        #     Se ci troviamo nel seconod caso, per il recupero dei dati viene usato il job del rollback
+        # - Recupera i dati da remoto (usando il job dentro job_token)
+        # Dopo aver recuperato i dati e generato l'out_token, chiama il metodo notify jobs che:
+        # - salva out_token nel modulo fault
+        # - pone is_running del job a False
+
+        # Se job è già running
+        # aggiustare il grafo togliendo gli step non più necessari
+        # COME ATTACCARE I DUE WORKFLOW?
+        # invece della queue: Aspettare che i token siano pronti, aggiustare il grafo e infine eseguire il workflow
+        # fare un publisher-subscribers:
+        #   - job in esecuzione dentro wf1
+        #   - a wf2 serve l'output (t1) di job
+        #   - wf2 costruisce il suo grafo, della parte interessata di job mette solo la port dove viene prodotto t1
+        #   - la port è vuota, ma viene iscritta ad una coda presente nella request del job
+        #   - quando job in wf1 avrà terminato, salva t1 in request.out_token
+        #   - il modulo di fault si occuperà di prendere t1 e metterlo dentro le porte iscritte alla coda
+        #   - in questo modo wf2 potrà eseguire nel frattempo gli altri step e si fermarà solo quando sarà davvero necessario t1 prodotto da job
+        #   - dopo che il modulo di fault manda t1, disiscrive le port dalla coda
+
+        job_executed_in_new_workflow = set()  # debug variable
+        for token, _ in token_visited.values():
+            if isinstance(token, JobToken):
+                # update job request
+                if token.value.name not in self.job_requests.keys():
+                    self.job_requests[token.value.name] = JobRequest()
+                else:
+                    async with self.job_requests[token.value.name].lock:
+                        if self.job_requests[token.value.name].is_running:
+                            print(
+                                f"Job {token.value.name} già in esecuzione -> Ricostrire dag"
+                            )
+                            # reduce_graph(
+                            #     dag_ports,
+                            #     port_tokens,
+                            #     available_new_job_tokens,
+                            #     new_workflow_name,
+                            # )
+                        else:
+                            print(
+                                f"Job {token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[token.value.name].job_token} - t: {self.job_requests[token.value.name].token_output})"
+                            )
+                            self.job_requests[token.value.name].is_running = True
+                            self.job_requests[token.value.name].job_token = None
+                            self.job_requests[token.value.name].token_output = None
+                async with self.job_requests[token.value.name].lock:
+                    # save jobs recovered
+                    if token.value.name not in self.jobs.keys():
+                        self.jobs[token.value.name] = JobVersion(
+                            version=1,
+                        )
+
+                    if (
+                        self.max_retries is None
+                        or self.jobs[token.value.name].version < self.max_retries
+                    ):
+                        job_executed_in_new_workflow.add(token.value.name)
+                        self.jobs[token.value.name].version += 1
+                        logger.debug(
+                            f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times"
+                        )
+                    else:
+                        logger.error(
+                            f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
+                        )
+                        raise FailureHandlingException()
+
+                    # discard old job tokens
+                    # if self.job_requests[token.value.name].job_token:
+                    #     print(
+                    #         f"job {token.value.name}. Il mio job_token",
+                    #         "esiste adesso però lo pongo a None"
+                    #         if self.job_requests[token.value.name].job_token
+                    #         else "NON esiste. Lo lascio a None",
+                    #     )
+                    # self.job_requests[token.value.name].job_token = None
+                    # self.job_requests[token.value.name].token_output = None
+        return job_executed_in_new_workflow
+
     # todo: situazione problematica
     #  A -> B
     #  A -> C
@@ -760,53 +848,8 @@ class DefaultFailureManager(FailureManager):
             new_workflow.name,
         )
 
-        job_che_eseguo = set()  # debug variable
-        # update class state (attributes)
-        for token, _ in token_visited.values():
-            if isinstance(token, JobToken):
-                # update job request
-                if token.value.name not in self.job_requests.keys():
-                    self.job_requests[token.value.name] = JobRequest()
-                else:
-                    async with self.job_requests[token.value.name].lock:
-                        # if self.job_requests[token.value.name].is_running:
-                        #     raise Exception(
-                        #         f"Job {token.value.name} già in esecuzione -> Ricostrire dag"
-                        #     )
-                        # else:
-                        #     self.job_requests[token.value.name].is_running = True
-                        pass
-                async with self.job_requests[token.value.name].lock:
-                    # save jobs recovered
-                    if token.value.name not in self.jobs.keys():
-                        self.jobs[token.value.name] = JobVersion(
-                            version=1,
-                        )
-
-                    if (
-                        self.max_retries is None
-                        or self.jobs[token.value.name].version < self.max_retries
-                    ):
-                        job_che_eseguo.add(token.value.name)
-                        self.jobs[token.value.name].version += 1
-                        logger.debug(
-                            f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times"
-                        )
-                    else:
-                        logger.error(
-                            f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
-                        )
-                        raise FailureHandlingException()
-
-                    # discard old job tokens
-                    if self.job_requests[token.value.name].job_token:
-                        print(
-                            f"job {token.value.name}. Il mio job_token",
-                            "esiste adesso però lo pongo a None"
-                            if self.job_requests[token.value.name].job_token
-                            else "NON esite. Lo lascio a None",
-                        )
-                    self.job_requests[token.value.name].job_token = None
+        # update class state (attributes) and jobs syncronization
+        job_executed_in_new_workflow = await self.sync_rollbacks(token_visited)
 
         port_tokens_counter = await _populate_workflow(
             failed_step, token_visited, new_workflow, loading_context
@@ -856,7 +899,7 @@ class DefaultFailureManager(FailureManager):
         # pass
 
         print("New workflow", new_workflow.name, "popolato così:")
-        print("\tJobs da rieseguire:", job_che_eseguo)
+        print("\tJobs da rieseguire:", job_executed_in_new_workflow)
 
         for step in new_workflow.steps.values():
             try:
