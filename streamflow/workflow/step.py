@@ -727,8 +727,19 @@ class ExecuteStep(BaseStep):
                 job_token_original = get_job_token(
                     job.name, self.get_input_port("__job__").token_list
                 )
+                # update with the job executed
                 job_token_updated = job_token_original.update(job)
                 job_token_updated.persistent_id = job_token_original.persistent_id
+                print(
+                    "Job original",
+                    job_token_original.value,
+                    job_token_original.tag,
+                    job_token_original.persistent_id,
+                    "\nJob updated",
+                    job_token_updated.value,
+                    job_token_updated.tag,
+                    job_token_updated.persistent_id,
+                )
                 job_token = (
                     await self.workflow.context.failure_manager.get_valid_job_token(
                         job_token_updated
@@ -740,7 +751,8 @@ class ExecuteStep(BaseStep):
                     "\nnew job token:",
                     job_token.persistent_id,
                 )
-                # todo: e se la risorsa fallisce al momento del recupero?
+                # todo: e se la risorsa fallisce al momento del recupero nel workflow principale?
+                #  spoiler -> si scassa
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
@@ -1653,18 +1665,26 @@ class TransferStep(BaseStep, ABC):
                             #         )
                             #     )
 
-                            for port_name, token in await asyncio.gather(
-                                *(
-                                    asyncio.create_task(
-                                        self.transfer_data(
-                                            port_name, job, token, inputs
-                                        )
-                                    )
-                                    for port_name, token in inputs.items()
+                            # for port_name, token in await asyncio.gather(
+                            #     *(
+                            #         asyncio.create_task(
+                            #             self.transfer_data(
+                            #                 port_name, job, token, inputs
+                            #             )
+                            #         )
+                            #         for port_name, token in inputs.items()
+                            #     )
+                            # ):
+                            #     print("Transfer into port", port_name, "token", token)
+                            #     self.get_output_port(port_name).put(token)
+
+                            for port_name, token in inputs.items():
+                                _, transferred_token = await self.transfer_data(
+                                    port_name, job, token, inputs
                                 )
-                            ):
-                                print("Transfer into port", port_name, "token", token)
-                                self.get_output_port(port_name).put(token)
+                                print("Transfer into port", port_name, "token", transferred_token)
+                                self.get_output_port(port_name).put(transferred_token)
+
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
