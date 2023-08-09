@@ -116,8 +116,17 @@ async def _put_tokens(
             token_visited[t_id][0]
             for t_id in port_tokens[port_name]
             if token_visited[t_id][1]
-            and token_visited[t_id][0].tag in port_tags[port_name]
+            # and token_visited[t_id][0].tag in port_tags[port_name]
         ]
+        s = [
+            (t_id, type(token_visited[t_id][0]))
+            for t_id in port_tokens[port_name]
+            if token_visited[t_id][1]
+            and token_visited[t_id][0].tag not in port_tags[port_name]
+        ]
+        if s:
+            print(f"Port {port_name} (wf {new_workflow.name}) : Token non inseriti", s)
+        pass
         token_list.sort(key=lambda x: x.tag, reverse=False)
         for i, t in enumerate(token_list):
             for t1 in token_list[i:]:
