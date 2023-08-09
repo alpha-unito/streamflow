@@ -181,21 +181,35 @@ def cut_off_graph(token, is_available, port_row, port_tokens, all_token_visited)
                 # todo: possibile ottimizzazione. vedere l'id e prendere sempre quello più grande.
 
                 # if the token in port_tokens[port.name] is already available, skip current token
+                # if all_token_visited[token_present.persistent_id][1]:
+                #     return True
+                #
+                # # if both are not available ... cosa fare? in teoria sarebbe meglio seguire entrambi i path e tenere quello che arriva prima ad un token disponibile. Ma quanto è dispendioso? E sopratutto quanto difficile da scrivere?
+                # # per il momento seguo il percorso solo del primo trovato (quindi token_present)
+                # if (
+                #     not is_available
+                #     and not all_token_visited[token_present.persistent_id][1]
+                # ):
+                #     return True
+                #
+                # # if the token is available and token_present is not available
+                # # than remove token_present. In following, token will be added
+                # if is_available:
+                #     port_tokens[port_row["name"]].remove(token_present.persistent_id)
+
+                # token incontrato è disponibile, scarto quello attuale
                 if all_token_visited[token_present.persistent_id][1]:
                     return True
 
-                # if both are not available ... cosa fare? in teoria sarebbe meglio seguire entrambi i path e tenere quello che arriva prima ad un token disponibile. Ma quanto è dispendioso? E sopratutto quanto difficile da scrivere?
-                # per il momento seguo il percorso solo del primo trovato (quindi token_present)
-                if (
-                    not is_available
-                    and not all_token_visited[token_present.persistent_id][1]
-                ):
-                    return True
+                # entrambi non disponibili, tengo quello più nuovo
+                if not is_available:
+                    if token_present.persistent_id > token.persistent_id:
+                        return True
 
-                # if the token is available and token_present is not available
-                # than remove token_present. In following, token will be added
-                if is_available:
-                    port_tokens[port_row["name"]].remove(token_present.persistent_id)
+                # eseguo questo se:
+                #   - o il token_present non è disponibile e token è disponibile
+                #   - oppure nessuno dei due è disponibile ma token è più nuovo, quindi forse ha token precedenti disponibili
+                port_tokens[port_row["name"]].remove(token_present.persistent_id)
     return False
 
 
