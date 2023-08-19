@@ -47,10 +47,11 @@ async def _load_step_from_token(token, context, loading_context, new_workflow):
 
     s = await context.database.get_step_from_output_port(row_token["port"])
     return await Step.load(
-                context,
-                s["step"],
-                loading_context,
-            )
+        context,
+        s["step"],
+        loading_context,
+    )
+
 
 def print_graph_figure(graph, title):
     dot = graphviz.Digraph(title)
@@ -125,7 +126,9 @@ async def print_all_provenance(workflow, loading_context):
     graph_steps = {}
     for k, values in graph.items():
         if k != -1:
-            k_step = await _load_step_from_token(tokens[k], workflow.context, loading_context, None)
+            k_step = await _load_step_from_token(
+                tokens[k], workflow.context, loading_context, None
+            )
 
         step_name = (
             k_step.name + "\n" + k_step.workflow.name if k != -1 else INIT_DAG_FLAG
@@ -138,8 +141,8 @@ async def print_all_provenance(workflow, loading_context):
         steps_token[step_name].add(k)
 
         for v in values:
-            s = (
-                await _load_step_from_token(tokens[v], workflow.context, loading_context, workflow)
+            s = await _load_step_from_token(
+                tokens[v], workflow.context, loading_context, workflow
             )
             inner_s_name = s.name + "\n" + s.workflow.name
             graph_steps[step_name].add(inner_s_name)
@@ -449,8 +452,9 @@ async def _get_step_from_token(
     for token in token_list:
         token_id = token.persistent_id
         token_values[token_id] = str_token_value(token)
-        s = (
-            await _load_step_from_token(token_visited[token_id][0], workflow.context, loading_context, workflow))
+        s = await _load_step_from_token(
+            token_visited[token_id][0], workflow.context, loading_context, workflow
+        )
         steps[token_id] = (
             s.name + "\n" + s.workflow.name
             if isinstance(token_id, int)

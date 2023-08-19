@@ -412,6 +412,31 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchone()
 
+    async def get_executestep_outports_from_jobtoken(
+        self, token_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT dep_out.name AS dep_out_name, port.* "
+                "FROM token "
+                "   JOIN dependency AS dep_in ON token.port = dep_in.port "
+                "   JOIN step ON dep_in.step = step.id "
+                "   JOIN dependency AS dep_out ON step.id = dep_out.step "
+                "   JOIN port ON dep_out.port = port.id "
+                "WHERE token.id = :token_id and "
+                "       dep_in.type = :dep_in_type and "
+                "       step.type = :step_type and "
+                "       dep_out.type = :dep_out_type",
+                {
+                    "token_id": token_id,
+                    "dep_in_type": DependencyType.INPUT.value,
+                    "dep_out_type": DependencyType.OUTPUT.value,
+                    "step_type": get_class_fullname(ExecuteStep),
+                },
+            ) as cursor:
+                return await cursor.fetchall()
+
     async def get_reports(
         self, workflow: str, last_only: bool = False
     ) -> MutableSequence[MutableSequence[MutableMapping[str, Any]]]:
@@ -512,41 +537,13 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    # async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
-    #     async with self.connection as db:
-    #         async with db.execute(
-    #             "SELECT port.* FROM token JOIN port ON token.port = port.id WHERE token.id = :token_id",
-    #             {"token_id": token_id},
-    #         ) as cursor:
-    #             return await cursor.fetchone()
-
     async def get_all_provenance(self) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM provenance") as cursor:
                 return await cursor.fetchall()
 
-    async def get_step_type_from_token(self, token_id):
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT type FROM step WHERE id IN (SELECT dependency.step FROM token JOIN dependency ON token.port = dependency.port WHERE token.id = :token AND dependency.type = :dtype)",
-                {"token": token_id, "dtype": DependencyType.OUTPUT.value},
-            ) as cursor:
-                return await cursor.fetchone()
-
-    async def get_step_type_from_token_tmp(self, token_id):
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT dependency.step FROM token JOIN dependency ON token.port = dependency.port WHERE token.id = :token AND dependency.type = :dtype",
-                {"token": token_id, "dtype": DependencyType.OUTPUT.value},
-            ) as cursor:
-                return await cursor.fetchall()
-
-    async def get_step_from_output_port(
-        self, port_id: int
-    ) -> MutableMapping[str, Any]:
+    async def get_step_from_output_port(self, port_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
