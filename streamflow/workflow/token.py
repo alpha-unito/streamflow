@@ -117,6 +117,9 @@ class JobToken(Token):
             value=await Job.load(context, params["job"], loading_context),
         )
 
+    def __str__(self):
+        return self.value.name
+
 
 class ListToken(Token):
     __slots__ = ()

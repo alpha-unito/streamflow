@@ -206,6 +206,10 @@ class DefaultScheduler(Scheduler):
         async with self.wait_queues[deployment]:
             while True:
                 async with job_context.lock:
+                    # todo. Se ci sono dei job che devono essere schedulati ma nel frattempo il workflow fallisce. Questi job non ha senso schedularli. Anzi potrebbero rubare risorse ad altri e bloccando tutto in deadlock
+                    # es. wf1 sta schedulando j1 ma j0 fallisce. j1 rimane dentro il while. Avviene il rollback. j1 viene schedulato e j0 non ha più risorse per continuare.
+                    # if self.context.failure_manager.job_status(job_context.job.name) == Rollback:
+                    #     return
                     if job_context.scheduled:
                         return
                     connector = self.context.deployment_manager.get_connector(

@@ -92,14 +92,8 @@ class BaseStep(Step, ABC):
     async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
         for kport, port in input_ports.items():
             print(
-                "Step",
-                self.name,
-                f"(wf {self.workflow.name})",
-                "- KPort",
-                kport,
-                "- port_name",
-                port.name,
-                "- port.token_list",
+                f"Step {self.name} (wf {self.workflow.name})",
+                f"- KPort {kport} - port_name {port.name} - port_id {port.persistent_id} - port.token_list",
                 [
                     t.value["path"] if isinstance(t, CWLFileToken) else t.value
                     for t in port.token_list
@@ -726,14 +720,8 @@ class ExecuteStep(BaseStep):
                 job_token_updated = job_token_original.update(job)
                 job_token_updated.persistent_id = job_token_original.persistent_id
                 print(
-                    "Job original",
-                    job_token_original.value,
-                    job_token_original.tag,
-                    job_token_original.persistent_id,
-                    "\nJob updated",
-                    job_token_updated.value,
-                    job_token_updated.tag,
-                    job_token_updated.persistent_id,
+                    f"Job original {job_token_original.value.name} tag: {job_token_original.tag} id: {job_token_original.persistent_id}"
+                    f"\nJob updated {job_token_updated.value.name} tag: {job_token_updated.tag} id: {job_token_updated.persistent_id}"
                 )
                 job_token = (
                     await self.workflow.context.failure_manager.get_valid_job_token(
@@ -741,10 +729,8 @@ class ExecuteStep(BaseStep):
                     )
                 )
                 print(
-                    "old job token:",
-                    job_token_original.persistent_id,
-                    "\nnew job token:",
-                    job_token.persistent_id,
+                    f"old job token: {job_token_original.persistent_id}",
+                    f"\nnew job token: {job_token.persistent_id}",
                 )
                 # todo: e se la risorsa fallisce al momento del recupero nel workflow principale?
                 #  spoiler -> si scassa
@@ -763,6 +749,7 @@ class ExecuteStep(BaseStep):
                     )
                 )
             except Exception as e:
+                print("Scassato step", self.name, "nel workflow", self.workflow.name)
                 logger.exception(e)
                 command_output.status = Status.FAILED
         # Return job status
@@ -1677,7 +1664,9 @@ class TransferStep(BaseStep, ABC):
                                 _, transferred_token = await self.transfer_data(
                                     port_name, job, token, inputs
                                 )
-                                print("Transfer into port", port_name, "token", transferred_token)
+                                print(
+                                    f"Transfer into port {port_name} token {transferred_token}"
+                                )
                                 self.get_output_port(port_name).put(transferred_token)
 
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
