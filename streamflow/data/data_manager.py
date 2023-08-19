@@ -9,6 +9,7 @@ import pkg_resources
 
 from streamflow.core.data import DataLocation, DataManager, DataType
 from streamflow.core.deployment import Connector, Location
+from streamflow.core.exception import WorkflowTransferException
 from streamflow.data import remotepath
 from streamflow.deployment.connector.base import ConnectorCopyKind
 from streamflow.deployment.connector.local import LocalConnector
@@ -332,6 +333,10 @@ class RemotePathMapper:
         available: bool = False,
     ) -> DataLocation:
         data_locations = self.get(src_path)
+        if not data_locations:
+            raise WorkflowTransferException(
+                "No data locations available for ", src_path
+            )
         dst_data_location = DataLocation(
             path=dst_path,
             relpath=list(data_locations)[0].relpath,
