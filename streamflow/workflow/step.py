@@ -624,7 +624,7 @@ class ExecuteStep(BaseStep):
 
     async def _retrieve_output(
         self,
-        job: Job,
+        job_token: JobToken,
         output_name: str,
         output_port: Port,
         command_output: CommandOutput,
@@ -632,24 +632,19 @@ class ExecuteStep(BaseStep):
     ) -> None:
         if (
             token := await self.output_processors[output_name].process(
-                job, command_output, connector
+                job_token.value, command_output, connector
             )
         ) is not None:
             token = await self._persist_token(
                 token=token,
                 port=output_port,
                 input_token_ids=_get_token_ids(
-                    list(job.inputs.values())
-                    + [
-                        get_job_token(
-                            job.name, self.get_input_port("__job__").token_list
-                        )
-                    ]
+                    list(job_token.value.inputs.values()) + [job_token]
                 ),
             )
             output_port.put(token)
             await self.workflow.context.failure_manager.notify_jobs(
-                job.name, output_port.name, token
+                job_token.value.name, output_port.name, token
             )
 
     async def _run_job(
@@ -757,7 +752,7 @@ class ExecuteStep(BaseStep):
                     *(
                         asyncio.create_task(
                             self._retrieve_output(
-                                job=job_token.value,
+                                job_token=job_token,
                                 output_name=output_name,
                                 output_port=self.workflow.ports[output_port],
                                 command_output=command_output,
