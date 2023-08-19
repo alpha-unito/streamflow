@@ -255,15 +255,15 @@ async def _populate_workflow(
         new_workflow.add_port(port)
 
     # add step into new_workflow
-    for rows_dependency in await asyncio.gather(
+    steps = set()
+    for row_dependency in await asyncio.gather(
         *(
             new_workflow.context.database.get_step_from_output_port(port_id)
             for port_id, is_available in ports.items()
             if not is_available
         )
     ):
-        for row_dependency in rows_dependency:
-            steps.add(row_dependency["step"])
+        steps.add(row_dependency["step"])
     for step in await asyncio.gather(
         *(
             Step.load(

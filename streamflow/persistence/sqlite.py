@@ -546,14 +546,14 @@ class SqliteDatabase(CachedDatabase):
 
     async def get_step_from_output_port(
         self, port_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
+    ) -> MutableMapping[str, Any]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM dependency WHERE port = :port AND type = :type",
                 {"port": port_id, "type": DependencyType.OUTPUT.value},
             ) as cursor:
-                return await cursor.fetchall()
+                return await cursor.fetchone()
 
     async def get_step_from_input_port(
         self, port_id: int

@@ -37,29 +37,20 @@ def add_pair(step_name, label, step_labels, tokens):
     step_labels.append((step_name, label))
 
 
-async def _load_steps_from_token(token, context, loading_context, new_workflow):
+async def _load_step_from_token(token, context, loading_context, new_workflow):
     # TODO: quando interrogo sulla tabella dependency (tra step e port) meglio recuperare anche il nome della dipendenza
     # così posso associare subito token -> step e a quale porta appartiene
     # edit. Impossibile. Recuperiamo lo step dalla porta di output. A noi serve la port di input
     row_token = await context.database.get_token(token.persistent_id)
-    steps = []
-    if row_token:
-        row_steps = await context.database.get_step_from_output_port(row_token["port"])
-        for r in row_steps:
-            st = await Step.load(
+    if not row_token:
+        raise Exception(f"token {token.persistent_id} - No row recuperato nel db")
+
+    s = await context.database.get_step_from_output_port(row_token["port"])
+    return await Step.load(
                 context,
-                r["step"],
+                s["step"],
                 loading_context,
             )
-            steps.append(
-                st,
-            )
-            # due modi alternativi per ottenre il nome della output_port che genera il token in questione
-            #    [ op.name for op in workflow.steps[st.name].output_ports if op.persistent_id == int(row_token['port'])][0]
-            # (await context.database.get_port(row_token['port']))['name']
-
-    return steps
-
 
 def print_graph_figure(graph, title):
     dot = graphviz.Digraph(title)
@@ -134,11 +125,8 @@ async def print_all_provenance(workflow, loading_context):
     graph_steps = {}
     for k, values in graph.items():
         if k != -1:
-            k_step = (
-                await _load_steps_from_token(
-                    tokens[k], workflow.context, loading_context, None
-                )
-            ).pop()
+            k_step = await _load_step_from_token(tokens[k], workflow.context, loading_context, None)
+
         step_name = (
             k_step.name + "\n" + k_step.workflow.name if k != -1 else INIT_DAG_FLAG
         )
@@ -151,13 +139,8 @@ async def print_all_provenance(workflow, loading_context):
 
         for v in values:
             s = (
-                await _load_steps_from_token(
-                    tokens[v],
-                    workflow.context,
-                    loading_context,
-                    workflow,
-                )
-            ).pop()
+                await _load_step_from_token(tokens[v], workflow.context, loading_context, workflow)
+            )
             inner_s_name = s.name + "\n" + s.workflow.name
             graph_steps[step_name].add(inner_s_name)
             steps[inner_s_name] = s
@@ -467,13 +450,7 @@ async def _get_step_from_token(
         token_id = token.persistent_id
         token_values[token_id] = str_token_value(token)
         s = (
-            await _load_steps_from_token(
-                token_visited[token_id][0],
-                workflow.context,
-                loading_context,
-                workflow,
-            )
-        ).pop()
+            await _load_step_from_token(token_visited[token_id][0], workflow.context, loading_context, workflow))
         steps[token_id] = (
             s.name + "\n" + s.workflow.name
             if isinstance(token_id, int)
