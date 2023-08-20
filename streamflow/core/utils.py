@@ -5,9 +5,11 @@ import base64
 import datetime
 import importlib
 import itertools
+import json
 import os
 import posixpath
 import shlex
+import urllib.parse
 import uuid
 from typing import (
     Any,
@@ -17,6 +19,11 @@ from typing import (
 )
 
 import jsonref
+
+try:
+    from importlib.resources import files
+except ImportError:
+    from importlib_resources import files
 
 from streamflow.core.exception import WorkflowExecutionException
 
@@ -55,6 +62,15 @@ class NamesStack:
             if name in scope:
                 return True
         return False
+
+
+def config_loader(uri, **kwargs):
+    parts = urllib.parse.urlsplit(uri)
+    if parts.scheme == "ext":
+        with files(parts.netloc).joinpath(parts.path.lstrip('/')).open(mode="r") as f:
+            return json.loads(f.read(), **kwargs)
+    else:
+        return jsonref.jsonloader(uri, **kwargs)
 
 
 def create_command(
@@ -258,6 +274,7 @@ def inject_schema(
                 entity_schema = jsonref.loads(
                     f.read(),
                     base_uri=f"file://{os.path.dirname(entity_schema)}/",
+                    loader=config_loader,
                     jsonschema=True,
                 )
             definition = schema["$defs"]

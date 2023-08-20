@@ -10,6 +10,7 @@ from ruamel.yaml import YAML
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.utils import config_loader
 from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
@@ -54,7 +55,12 @@ def load_jsonschema(config_file: MutableMapping[str, Any]):
             f"Version {config_file['version']} is unsupported. The `version` clause should be equal to `v1.0`."
         )
     with open(os.path.join(base_path, "config_schema.json")) as f:
-        return jsonref.loads(f.read(), base_uri=f"file://{base_path}/", jsonschema=True)
+        return jsonref.loads(
+            f.read(),
+            base_uri=f"file://{base_path}/",
+            loader=config_loader,
+            jsonschema=True,
+        )
 
 
 class SfValidator:
