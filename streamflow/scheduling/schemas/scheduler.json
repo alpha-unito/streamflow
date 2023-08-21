@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "scheduler.json",
+  "$id": "/streamflow/scheduling/schemas/scheduler.json",
   "type": "object",
   "properties": {
     "retry_delay": {

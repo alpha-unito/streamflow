@@ -8,7 +8,10 @@ import itertools
 import os
 import posixpath
 import shlex
+import sys
+import urllib.parse
 import uuid
+from pathlib import PurePosixPath
 from typing import (
     Any,
     MutableMapping,
@@ -55,6 +58,24 @@ class NamesStack:
             if name in scope:
                 return True
         return False
+
+
+def config_loader(uri, **kwargs):
+    parts = urllib.parse.urlsplit(uri)
+    # If URI points to a local file
+    if parts.scheme in ["", "file"]:
+        path = PurePosixPath(uri) if parts.scheme == "" else PurePosixPath(uri[7:])
+        # If the path does not exist, search it in the current PYTHONPATH
+        if not os.path.exists(path):
+            if path.is_absolute():
+                path = path.relative_to(posixpath.sep)
+            for loc in sys.path:
+                full_path = os.path.join(loc, path)
+                if os.path.exists(full_path):
+                    uri = f"file://{full_path}"
+                    break
+    # Fall back to the original loader
+    return jsonref.jsonloader(uri, **kwargs)
 
 
 def create_command(
@@ -258,6 +279,7 @@ def inject_schema(
                 entity_schema = jsonref.loads(
                     f.read(),
                     base_uri=f"file://{os.path.dirname(entity_schema)}/",
+                    loader=config_loader,
                     jsonschema=True,
                 )
             definition = schema["$defs"]

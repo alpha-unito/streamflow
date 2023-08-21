@@ -9,7 +9,7 @@ import jsonref
 from importlib_metadata import entry_points
 
 from streamflow.core.exception import InvalidPluginException
-from streamflow.core.utils import get_class_fullname
+from streamflow.core.utils import config_loader, get_class_fullname
 from streamflow.ext.plugin import StreamFlowPlugin, extension_points
 from streamflow.log_handler import logger
 
@@ -276,6 +276,7 @@ def show_extension(name: str, type_: str):
             entity_schema = jsonref.loads(
                 f.read(),
                 base_uri=f"file://{os.path.dirname(entity_schema)}/",
+                loader=config_loader,
                 jsonschema=True,
             )
         if "allOf" in entity_schema:
