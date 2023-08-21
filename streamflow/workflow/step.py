@@ -720,8 +720,8 @@ class ExecuteStep(BaseStep):
                 job_token_updated = job_token_original.update(job)
                 job_token_updated.persistent_id = job_token_original.persistent_id
                 print(
-                    f"Job original {job_token_original.value.name} tag: {job_token_original.tag} id: {job_token_original.persistent_id}"
-                    f"\nJob updated {job_token_updated.value.name} tag: {job_token_updated.tag} id: {job_token_updated.persistent_id}"
+                    f"Job original {job_token_original.value.name} obj {job_token_original.value} tag: {job_token_original.tag} id: {job_token_original.persistent_id}"
+                    f"\nJob updated {job_token_updated.value.name} obj {job_token_updated.value} tag: {job_token_updated.tag} id: {job_token_updated.persistent_id}"
                 )
                 job_token = (
                     await self.workflow.context.failure_manager.get_valid_job_token(
@@ -1574,7 +1574,7 @@ class TransferStep(BaseStep, ABC):
 
     async def transfer_data(self, port_name, job, token, inputs):
         try:
-            transfered_token = await self._persist_token(
+            transferred_token = await self._persist_token(
                 token=await self.transfer(job, token),
                 port=self.get_output_port(port_name),
                 input_token_ids=_get_token_ids(
@@ -1590,14 +1590,14 @@ class TransferStep(BaseStep, ABC):
         except WorkflowTransferException as e:
             logger.exception(e)
             if not (
-                transfered_token := (
+                transferred_token := (
                     await self.workflow.context.failure_manager.handle_failure_transfer(
                         job, self, port_name
                     )
                 )
             ):
                 raise e
-        return port_name, transfered_token
+        return transferred_token
 
     async def run(self):
         # Set default status as SKIPPED
@@ -1627,41 +1627,10 @@ class TransferStep(BaseStep, ABC):
                             inputs = inputs_map.pop(tag)
                             # Change default status to COMPLETED
                             status = Status.COMPLETED
+
                             # Transfer token
-                            # for port_name, token in inputs.items():
-                            #     self.get_output_port(port_name).put(
-                            #         await self._persist_token(
-                            #             token=await self.transfer(job, token),
-                            #             port=self.get_output_port(port_name),
-                            #             input_token_ids=_get_token_ids(
-                            #                 list(inputs.values())
-                            #                 + [
-                            #                     get_job_token(
-                            #                         job.name,
-                            #                         self.get_input_port(
-                            #                             "__job__"
-                            #                         ).token_list,
-                            #                     )
-                            #                 ]
-                            #             ),
-                            #         )
-                            #     )
-
-                            # for port_name, token in await asyncio.gather(
-                            #     *(
-                            #         asyncio.create_task(
-                            #             self.transfer_data(
-                            #                 port_name, job, token, inputs
-                            #             )
-                            #         )
-                            #         for port_name, token in inputs.items()
-                            #     )
-                            # ):
-                            #     print("Transfer into port", port_name, "token", token)
-                            #     self.get_output_port(port_name).put(token)
-
                             for port_name, token in inputs.items():
-                                _, transferred_token = await self.transfer_data(
+                                transferred_token = await self.transfer_data(
                                     port_name, job, token, inputs
                                 )
                                 print(
