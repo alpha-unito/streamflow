@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "flux.json",
+  "$id": "/streamflow/deployment/connector/schemas/flux.json",
   "type": "object",
   "$defs": {
     "service": {
@@ -144,7 +144,7 @@
   },
   "allOf": [
     {
-      "$ref": "queue_manager.json"
+      "$ref": "/streamflow/deployment/connector/schemas/queue_manager.json"
     }
   ],
   "properties": {

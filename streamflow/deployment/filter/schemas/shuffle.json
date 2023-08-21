@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "shuffle.json",
+  "$id": "/streamflow/deployment/filter/schemas/shuffle.json",
   "type": "object",
   "properties": {},
   "additionalProperties": false

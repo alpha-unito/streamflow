@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "config_schema.json",
+  "$id": "/streamflow/config/schemas/v1.0/config_schema.json",
   "type": "object",
   "$defs": {
     "binding": {

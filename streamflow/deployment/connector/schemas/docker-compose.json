@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "docker-compose.json",
+  "$id": "/streamflow/deployment/connector/schemas/docker-compose.json",
   "type": "object",
   "properties": {
     "files": {

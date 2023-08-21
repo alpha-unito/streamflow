@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "singularity.json",
+  "$id": "/streamflow/cwl/requirement/docker/schemas/singularity.json",
   "type": "object",
   "properties": {
     "addCaps": {

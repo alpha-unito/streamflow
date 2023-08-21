@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "kubernetes.json",
+  "$id": "/streamflow/deployment/connector/schemas/kubernetes.json",
   "type": "object",
   "properties": {
     "files": {

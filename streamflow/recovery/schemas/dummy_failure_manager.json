@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "dummy_failure_manager.json",
+  "$id": "/streamflow/recovery/schemas/dummy_failure_manager.json",
   "type": "object",
   "properties": {},
   "additionalProperties": false

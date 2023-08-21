@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "depoloyment_manager.json",
+  "$id": "/streamflow/deployment/schemas/depoloyment_manager.json",
   "type": "object",
   "properties": {},
   "additionalProperties": false

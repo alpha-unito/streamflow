@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "data_locality.json",
+  "$id": "/streamflow/scheduling/schemas/data_locality.json",
   "type": "object",
   "properties": {},
   "additionalProperties": false

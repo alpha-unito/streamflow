@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "default_checkpoint_manager.json",
+  "$id": "/streamflow/recovery/schemas/default_checkpoint_manager.json",
   "type": "object",
   "properties": {
     "checkpoint_dir": {

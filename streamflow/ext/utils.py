@@ -9,7 +9,7 @@ import jsonref
 from importlib_metadata import entry_points
 
 from streamflow.core.exception import InvalidPluginException
-from streamflow.core.utils import get_class_fullname, config_loader
+from streamflow.core.utils import config_loader, get_class_fullname
 from streamflow.ext.plugin import StreamFlowPlugin, extension_points
 from streamflow.log_handler import logger
 

@@ -5,12 +5,13 @@ import base64
 import datetime
 import importlib
 import itertools
-import json
 import os
 import posixpath
 import shlex
+import sys
 import urllib.parse
 import uuid
+from pathlib import PurePosixPath
 from typing import (
     Any,
     MutableMapping,
@@ -19,11 +20,6 @@ from typing import (
 )
 
 import jsonref
-
-try:
-    from importlib.resources import files
-except ImportError:
-    from importlib_resources import files
 
 from streamflow.core.exception import WorkflowExecutionException
 
@@ -66,11 +62,20 @@ class NamesStack:
 
 def config_loader(uri, **kwargs):
     parts = urllib.parse.urlsplit(uri)
-    if parts.scheme == "ext":
-        with files(parts.netloc).joinpath(parts.path.lstrip('/')).open(mode="r") as f:
-            return json.loads(f.read(), **kwargs)
-    else:
-        return jsonref.jsonloader(uri, **kwargs)
+    # If URI points to a local file
+    if parts.scheme in ["", "file"]:
+        path = PurePosixPath(uri) if parts.scheme == "" else PurePosixPath(uri[7:])
+        # If the path does not exist, search it in the current PYTHONPATH
+        if not os.path.exists(path):
+            if path.is_absolute():
+                path = path.relative_to(posixpath.sep)
+            for loc in sys.path:
+                full_path = os.path.join(loc, path)
+                if os.path.exists(full_path):
+                    uri = f"file://{full_path}"
+                    break
+    # Fall back to the original loader
+    return jsonref.jsonloader(uri, **kwargs)
 
 
 def create_command(
