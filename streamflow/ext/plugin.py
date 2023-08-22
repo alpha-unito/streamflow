@@ -4,6 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, MutableMapping, MutableSequence
 
+from streamflow.config.schema import ext_schemas
 from streamflow.core.data import DataManager
 from streamflow.core.deployment import BindingFilter, Connector, DeploymentManager
 from streamflow.core.persistence import Database
@@ -88,3 +89,6 @@ class StreamFlowPlugin(ABC):
 
     def register_scheduler(self, name: str, cls: type[Scheduler]):
         self._register(name, cls, "scheduler")
+
+    def register_schema(self, schema: str) -> None:
+        ext_schemas.append(schema)

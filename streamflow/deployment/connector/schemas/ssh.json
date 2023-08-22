@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "/streamflow/deployment/connector/schemas/ssh.json",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/ssh.json",
   "type": "object",
   "$defs": {
     "connection": {

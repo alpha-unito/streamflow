@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "/streamflow/deployment/connector/schemas/local.json",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/local.json",
   "type": "object",
   "properties": {
     "transferBufferSize": {

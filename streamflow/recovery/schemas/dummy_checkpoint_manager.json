@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "/streamflow/recovery/schemas/dummy_checkpoint_manager.json",
+  "$id": "https://streamflow.di.unito.it/schemas/recovery/dummy_checkpoint_manager.json",
   "type": "object",
   "properties": {},
   "additionalProperties": false

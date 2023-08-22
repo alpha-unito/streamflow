@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import json
 import logging
-import os
 import sys
+from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence
 
-import jsonref
 from importlib_metadata import entry_points
+from referencing._core import Resolver, Resource
 
+from streamflow.config.schema import SfSchema
 from streamflow.core.exception import InvalidPluginException
-from streamflow.core.utils import config_loader, get_class_fullname
+from streamflow.core.utils import get_class_fullname
 from streamflow.ext.plugin import StreamFlowPlugin, extension_points
 from streamflow.log_handler import logger
 
@@ -51,6 +53,39 @@ def _get_property_desc(
     if "description" in obj:
         property_desc.append(obj["description"])
     return "\n".join(property_desc)
+
+
+def _replace_refs(contents: Any, resolver: Resolver):
+    refs = {}
+    _resolve_refs(contents, resolver, PurePosixPath("/"), refs)
+    refs = {k: v for k, v in sorted(refs.items())}
+    for k, v in refs.items():
+        path = PurePosixPath(k)
+        element = contents
+        for part in path.parts[1:]:
+            if isinstance(element, MutableMapping):
+                element = element[part]
+            elif isinstance(element, MutableSequence):
+                element = element[int(part)]
+        element.update(v)
+
+
+def _resolve_refs(
+    contents: Any,
+    resolver: Resolver,
+    path: PurePosixPath,
+    refs: MutableMapping[str, Any],
+):
+    if isinstance(contents, MutableMapping):
+        for k, v in contents.items():
+            _resolve_refs(v, resolver, path / k, refs)
+    elif isinstance(contents, MutableSequence) and not isinstance(contents, str):
+        for i, v in enumerate(contents):
+            _resolve_refs(v, resolver, path / str(i), refs)
+    if isinstance(contents, MutableMapping) and isinstance(contents.get("$ref"), str):
+        resolved = resolver.lookup(contents.pop("$ref"))
+        _resolve_refs(resolved.contents, resolved.resolver, path, refs)
+        refs[path.as_posix()] = resolved.contents
 
 
 def _get_type_repr(
@@ -272,13 +307,11 @@ def show_extension(name: str, type_: str):
     if class_ is not None:
         class_name = get_class_fullname(class_)
         entity_schema = class_.get_schema()
+        schema = SfSchema()
         with open(entity_schema) as f:
-            entity_schema = jsonref.loads(
-                f.read(),
-                base_uri=f"file://{os.path.dirname(entity_schema)}/",
-                loader=config_loader,
-                jsonschema=True,
-            )
+            resource = Resource.from_contents(json.load(f))
+            entity_schema = resource.contents
+        _replace_refs(entity_schema, schema.registry.resolver(base_uri=resource.id()))
         if "allOf" in entity_schema:
             entity_schema["properties"] = _flatten_all_of(entity_schema)
         format_string = (
