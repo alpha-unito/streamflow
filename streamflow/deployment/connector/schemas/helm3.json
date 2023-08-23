@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "/streamflow/deployment/connector/schemas/helm3.json",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/helm3.json",
   "type": "object",
   "properties": {
     "atomic": {

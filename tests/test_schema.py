@@ -101,8 +101,8 @@ def test_ext_support():
         "dataManager": {"type": "default", "config": {}},
         "deployments": {
             "example": {
-                "type": "docker",
-                "config": {"image": "alpine:latest"},
+                "type": "slurm",
+                "config": {"maxConcurrentJobs": 10},
             }
         },
         "deploymentManager": {"type": "default", "config": {}},

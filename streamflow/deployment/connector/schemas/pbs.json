@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "/streamflow/deployment/connector/schemas/pbs.json",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/pbs.json",
   "type": "object",
   "$defs": {
     "service": {
@@ -77,7 +77,7 @@
   },
   "allOf": [
     {
-      "$ref": "/streamflow/deployment/connector/schemas/queue_manager.json"
+      "$ref": "https://streamflow.di.unito.it/schemas/deployment/connector/queue_manager.json"
     }
   ],
   "properties": {
