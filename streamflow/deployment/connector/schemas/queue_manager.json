@@ -15,7 +15,7 @@
         },
         {
           "type": "object",
-          "$ref": "https://streamflow.di.unito.it/schemas/deployment/connector/ssh.json#/$defs/connection"
+          "$ref": "ssh.json#/$defs/connection"
         }
       ],
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"
@@ -68,7 +68,7 @@
     "tunnel": {
       "type": "object",
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) External SSH connection parameters for tunneling",
-      "$ref": "https://streamflow.di.unito.it/schemas/deployment/connector/ssh.json#/$defs/connection"
+      "$ref": "ssh.json#/$defs/connection"
     },
     "username": {
       "type": "string",

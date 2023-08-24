@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "/https://streamflow.di.unito.it/schemas/deployment/connector/slurm.json",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/slurm.json",
   "type": "object",
   "$defs": {
     "service": {
@@ -396,7 +396,7 @@
   },
   "allOf": [
     {
-      "$ref": "https://streamflow.di.unito.it/schemas/deployment/connector/queue_manager.json"
+      "$ref": "queue_manager.json"
     }
   ],
   "properties": {

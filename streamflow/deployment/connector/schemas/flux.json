@@ -144,7 +144,7 @@
   },
   "allOf": [
     {
-      "$ref": "https://streamflow.di.unito.it/schemas/deployment/connector/queue_manager.json"
+      "$ref": "queue_manager.json"
     }
   ],
   "properties": {
