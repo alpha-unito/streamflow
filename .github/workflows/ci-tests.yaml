@@ -71,7 +71,7 @@ jobs:
         with:
           node-version: "15"
       - name: "Install Docker (MacOS X)"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.6
+        uses: douglascamata/setup-docker-macos-action@v1-alpha.9
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v2
       - name: "Install Apptainer"
@@ -153,7 +153,7 @@ jobs:
       - name: Install Streamflow
         run: |
          pip install . 
-         pip install lockfile
+         pip install --upgrade --force-reinstall attrs lockfile
          chown -R fluxuser .
       - name: Start Flux and Test Workflow
         run: |
@@ -210,7 +210,7 @@ jobs:
         with:
           node-version: "15"
       - name: "Install Docker (MacOs X)"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.6
+        uses: douglascamata/setup-docker-macos-action@v1-alpha.9
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v2
       - name: "Install Apptainer"

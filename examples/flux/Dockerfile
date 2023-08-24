@@ -14,7 +14,7 @@ WORKDIR /code
 
 # Install in development mode in case container used for development
 RUN pip install develop . \
- && pip install \
+ && pip install --upgrade --force-reinstall \
         attrs \
         lockfile \
  && chown -R fluxuser /code
