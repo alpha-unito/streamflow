@@ -291,3 +291,11 @@ def contains_id(
     searched_id: int, persistable_entity_list: MutableSequence[PersistableEntity]
 ):
     return searched_id in (entity.persistent_id for entity in persistable_entity_list)
+
+
+def get_job_number(job_name):
+    return int(job_name.rsplit("/", maxsplit=1)[1])
+
+
+def get_execute_step_name_from_job_name(job_name):
+    return job_name.rsplit("/", maxsplit=1)[0]

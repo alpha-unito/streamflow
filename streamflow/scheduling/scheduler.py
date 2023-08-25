@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import posixpath
@@ -17,6 +18,7 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
 )
+from streamflow.core.utils import get_execute_step_name_from_job_name, get_job_number
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
@@ -36,6 +38,14 @@ class JobContext:
         self.job: Job = job
         self.lock: asyncio.Lock = asyncio.Lock()
         self.scheduled: bool = False
+
+
+def is_start_with_magic_trio(job_name):
+    return (
+        job_name.startswith("/togro")
+        or job_name.startswith("/tosor")
+        or job_name.startswith("/tocom")
+    )
 
 
 class DefaultScheduler(Scheduler):
@@ -94,10 +104,17 @@ class DefaultScheduler(Scheduler):
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
 
-    def _deallocate_job(self, job: str):
-        job_allocation = self.job_allocations.pop(job)
+    def deallocate_from_job_name(self, job: str, keep_job_allocation: bool = False):
+        self._deallocate_job(job, keep_job_allocation=keep_job_allocation)
+
+    def _deallocate_job(self, job: str, keep_job_allocation: bool = False):
+        if not keep_job_allocation:
+            job_allocation = self.job_allocations.pop(job)
+        else:
+            job_allocation = self.job_allocations[job]
         for loc in job_allocation.locations:
-            self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
+            if job in self.location_allocations[loc.deployment][loc.name].jobs:
+                self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
         if logger.isEnabledFor(logging.INFO):
             if len(job_allocation.locations) == 1:
                 is_local = isinstance(
@@ -166,7 +183,7 @@ class DefaultScheduler(Scheduler):
         return self.policy_map[config.name]
 
     def _is_valid(
-        self, location: AvailableLocation, hardware_requirement: Hardware
+        self, location: AvailableLocation, hardware_requirement: Hardware, j_name: str
     ) -> bool:
         if location.name in self.location_allocations.get(location.deployment, {}):
             running_jobs = list(
@@ -178,6 +195,21 @@ class DefaultScheduler(Scheduler):
                     self.location_allocations[location.deployment][location.name].jobs,
                 )
             )
+            rollback_jobs = list(
+                filter(
+                    lambda x: (
+                        x != j_name
+                        and get_execute_step_name_from_job_name(x)
+                        == get_execute_step_name_from_job_name(j_name)
+                        and get_job_number(x) < get_job_number(j_name)
+                        and self.job_allocations[x].status == Status.WAITING
+                    ),
+                    self.job_allocations.keys(),
+                )
+            )
+            if rollback_jobs:
+                print(f"Schedulo {j_name} e ci sono in rollback_jobs", rollback_jobs)
+            running_jobs.extend(rollback_jobs)
         else:
             running_jobs = []
         # If location is segmentable and job provides requirements, compute the used amount of locations
@@ -206,10 +238,6 @@ class DefaultScheduler(Scheduler):
         async with self.wait_queues[deployment]:
             while True:
                 async with job_context.lock:
-                    # todo. Se ci sono dei job che devono essere schedulati ma nel frattempo il workflow fallisce. Questi job non ha senso schedularli. Anzi potrebbero rubare risorse ad altri e bloccando tutto in deadlock
-                    # es. wf1 sta schedulando j1 ma j0 fallisce. j1 rimane dentro il while. Avviene il rollback. j1 viene schedulato e j0 non ha più risorse per continuare.
-                    # if self.context.failure_manager.job_status(job_context.job.name) == Rollback:
-                    #     return
                     if job_context.scheduled:
                         return
                     connector = self.context.deployment_manager.get_connector(
@@ -235,13 +263,41 @@ class DefaultScheduler(Scheduler):
                             or target.workdir,
                         )
                     )
+
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
                         if self._is_valid(
-                            location=loc, hardware_requirement=hardware_requirement
+                            location=loc,
+                            hardware_requirement=hardware_requirement,
+                            j_name=job_context.job.name,
                         )
+                        # aggiungere controllo se le risorse disponibili potrebbero servire a job precedenti
+                        # tipo sto schedulando sort2
+                        # in rollback ho group0 e sort0, allore loro hanno la precedenza,
+                        # se jo2 prendesse la risorsa potrebbre mandare tutto in deadlock
                     }
+
+                    if is_start_with_magic_trio(job_context.job.name):
+                        # print(
+                        #     "available_locations",
+                        #     {k: str(v) for k, v in available_locations.items()},
+                        # )
+                        # print(
+                        #     "valid_locations",
+                        #     {k: str(v) for k, v in valid_locations.items()},
+                        # )
+                        print(
+                            "job_allocations",
+                            json.dumps(
+                                {
+                                    k: v.mydict()
+                                    for k, v in self.job_allocations.items()
+                                    if is_start_with_magic_trio(k)
+                                },
+                                indent=2,
+                            ),
+                        )
                     if valid_locations:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
@@ -332,6 +388,10 @@ class DefaultScheduler(Scheduler):
                                     else "",
                                 )
                             )
+
+                # todo: lasciare la cattura del timeout oppure no?
+                # idea 1: se nessuno mi sveglia con il notify e passa troppo tempo fallisco lo step (cambiare nome var nel caso)
+                # idea 2: riprovo anche se non mi ha svegliato nessuno (il nome della var è retry quindi direi questa)
                 try:
                     await asyncio.wait_for(
                         self.wait_queues[deployment].wait(), timeout=self.retry_interval
