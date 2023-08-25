@@ -10,7 +10,12 @@ from typing import MutableMapping, MutableSequence, cast, Tuple, Iterable
 
 import pkg_resources
 
-from streamflow.core.utils import random_name, contains_id, get_class_fullname
+from streamflow.core.utils import (
+    random_name,
+    contains_id,
+    get_class_fullname,
+    get_class_from_name,
+)
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
@@ -32,7 +37,7 @@ from streamflow.token_printer import (
     print_step_from_ports,
 )
 from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.step import ScatterStep
+from streamflow.workflow.step import ScatterStep, Combinator, CombinatorStep
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import ExecuteStep
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -363,6 +368,45 @@ def get_necessary_tokens(
     }
 
 
+def validate_port_tokens(port_tokens, token_visited):
+    for port_name, token_id_list in port_tokens.items():
+        remove = set()
+        for i, token_id in enumerate(token_id_list):
+            token = token_visited[token_id][0]
+            if isinstance(token, JobToken):
+                for sibling_t_id in token_id_list:
+                    sibling_t = token_visited[sibling_t_id][0]
+                    if (
+                        isinstance(sibling_t, JobToken)
+                        and token_id != sibling_t_id
+                        and sibling_t.value.name == token.value.name
+                    ):
+                        if token_id < sibling_t_id:
+                            remove.add(token_id)
+                        else:
+                            remove.add(sibling_t_id)
+            else:
+                for sibling_t_id in token_id_list:
+                    sibling_t = token_visited[sibling_t_id][0]
+                    if token_id != sibling_t_id and sibling_t.tag == token.tag:
+                        if token_id < sibling_t_id:
+                            remove.add(token_id)
+                        else:
+                            remove.add(sibling_t_id)
+        for t in remove:
+            print(
+                f"Validate port_tokens remove id: {t} ",
+                token_visited[t][0].value.name
+                if isinstance(token_visited[t][0], JobToken)
+                else token_visited[t][0].tag,
+            )
+            # token da togliere
+            istanza = token_visited[t][0]
+            # lista in cui toglierò il token (e di cui c'è un gemello ma id diverso)
+            lista_istanze = [token_visited[t1][0] for t1 in port_tokens[port_name]]
+            port_tokens[port_name].remove(t)
+
+
 def reduce_graph(dag_ports, port_tokens, available_new_job_tokens, new_workflow_name):
     for v in available_new_job_tokens.values():
         if v["out-token-port-name"] not in port_tokens.keys():
@@ -596,6 +640,8 @@ class DefaultFailureManager(FailureManager):
         # {old_job_token_id : (new_job_token_id, new_output_token_id)}
         available_new_job_tokens = {}
 
+        combinator_port = set()
+
         for k, t in failed_job.inputs.items():
             if t.persistent_id is None:
                 raise FailureHandlingException("Token has not a persistent_id")
@@ -666,6 +712,14 @@ class DefaultFailureManager(FailureManager):
                     )
                     continue
 
+                step_row = await workflow.context.database.get_step_from_outport(
+                    port_row["id"]
+                )
+                class_step = get_class_from_name(step_row["type"])
+                # print(f"port {port_row['name']} - class_step {class_step}")
+                if issubclass(class_step, CombinatorStep):
+                    combinator_port.add(port_row["name"])
+
                 port_tokens.setdefault(port_row["name"], set()).add(token.persistent_id)
                 if not is_available:
                     prev_tokens = await _load_prev_tokens(
@@ -708,6 +762,14 @@ class DefaultFailureManager(FailureManager):
                     token.persistent_id
                 )
                 port_tokens.setdefault(port_row["name"], set()).add(token.persistent_id)
+
+        validate_port_tokens(port_tokens, all_token_visited)
+
+        for cp in combinator_port:
+            print(f"port {cp} è output di un combinatorstep")
+            for t_id in port_tokens[cp]:
+                if all_token_visited[t_id][1]:
+                    all_token_visited[t_id] = (all_token_visited[t_id][0], False)
 
         all_token_visited = dict(sorted(all_token_visited.items()))
         print(
@@ -886,7 +948,7 @@ class DefaultFailureManager(FailureManager):
                                     f"wf {new_workflow.name} Porta {p.name} trovata tra le next con il secondo metodo {next_port_names}"
                                 )
 
-                            # if the port can have more tokens
+                            # if the port can have more tokens (todo: caso non testato)
                             for row in rows:
                                 if row["name"] in new_workflow.ports.keys():
                                     for pr in self.job_requests[token.value.name].queue:
@@ -895,6 +957,7 @@ class DefaultFailureManager(FailureManager):
                                             print(
                                                 f"new_workflow {new_workflow.name} already has port {port.name}. Increased waiting_tokens: {pr.waiting_token}"
                                             )
+                                            break
 
                             # add port in the workflow and create port recovery (request)
                             for port in execute_step_outports:
