@@ -94,10 +94,11 @@ class BaseStep(Step, ABC):
             print(
                 f"Step {self.name} (wf {self.workflow.name})",
                 f"- KPort {kport} - port_name {port.name} - port_id {port.persistent_id} - port.token_list",
-                [
-                    t.value["path"] if isinstance(t, CWLFileToken) else t.value
-                    for t in port.token_list
-                ],
+                len(port.token_list)
+                # [
+                #     t.value["path"] if isinstance(t, CWLFileToken) else t.value
+                #     for t in port.token_list
+                # ],
             )
         inputs = {
             k: v
@@ -147,7 +148,7 @@ class BaseStep(Step, ABC):
             await self._set_status(status)
             logger.log(
                 self._log_level,
-                f"{status.name} Step {self.name}",
+                f"{status.name} Step {self.name} (wf {self.workflow.name})",
             )
 
 
@@ -1572,8 +1573,9 @@ class TransferStep(BaseStep, ABC):
             **{"job_port": self.get_input_port("__job__").persistent_id},
         }
 
-    async def transfer_data(self, port_name, job, token, inputs):
+    async def _transfer_data_and_put_port(self, port_name, job, token, inputs):
         try:
+            print(f"Ttranfer start trasferisco {job.name} {port_name} {token.tag}")
             transferred_token = await self._persist_token(
                 token=await self.transfer(job, token),
                 port=self.get_output_port(port_name),
@@ -1589,15 +1591,55 @@ class TransferStep(BaseStep, ABC):
             )
         except WorkflowTransferException as e:
             logger.exception(e)
-            if not (
-                transferred_token := (
-                    await self.workflow.context.failure_manager.handle_failure_transfer(
-                        job, self, port_name
-                    )
+            transferred_token = (
+                await self.workflow.context.failure_manager.handle_failure_transfer(
+                    job, self, port_name
                 )
-            ):
+            )
+            print(
+                f"Gestito WorkflowTransferException ottenuto {job.name} {port_name} tag:{transferred_token.tag}"
+            )
+            if transferred_token is None:
+                print(
+                    f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"
+                )
                 raise e
-        return transferred_token
+        print(f"Ttranfer end trasferito {job.name} {port_name} {token.tag}")
+        self.get_output_port(port_name).put(transferred_token)
+
+    async def _transfer_data(self, port_name, job, token, inputs):
+        try:
+            print(f"Ttranfer start trasferisco {job.name} {port_name} {token.tag}")
+            transferred_token = await self._persist_token(
+                token=await self.transfer(job, token),
+                port=self.get_output_port(port_name),
+                input_token_ids=_get_token_ids(
+                    list(inputs.values())
+                    + [
+                        get_job_token(
+                            job.name,
+                            self.get_input_port("__job__").token_list,
+                        )
+                    ]
+                ),
+            )
+        except WorkflowTransferException as e:
+            logger.exception(e)
+            transferred_token = (
+                await self.workflow.context.failure_manager.handle_failure_transfer(
+                    job, self, port_name
+                )
+            )
+            print(
+                f"Gestito WorkflowTransferException ottenuto {job.name} {port_name} tag:{transferred_token.tag}"
+            )
+            if transferred_token is None:
+                print(
+                    f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"
+                )
+                raise e
+        print(f"Ttranfer end trasferito {job.name} {port_name} {token.tag}")
+        return port_name, transferred_token
 
     async def run(self):
         # Set default status as SKIPPED
@@ -1609,6 +1651,7 @@ class TransferStep(BaseStep, ABC):
         if input_ports:
             inputs_map = {}
             try:
+                tasks = []
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
@@ -1618,6 +1661,7 @@ class TransferStep(BaseStep, ABC):
                     )
                     # Check for termination
                     if check_termination(inputs.values()) or job is None:
+                        print("Exit", self.name)
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1630,13 +1674,47 @@ class TransferStep(BaseStep, ABC):
 
                             # Transfer token
                             for port_name, token in inputs.items():
-                                transferred_token = await self.transfer_data(
+                                # Con questo approccio al momento del fault, si potrebbe andare in deadlock.
+                                # Job1 e Job2 assegnati alla stesso deployment e la risorsa supporta un job alla volta.
+                                # Job1 fallisce mentre fa il transfer, nel recovery passa da FIREABLE a WAITING.
+                                # Job2 diventa FIREABLE, pero' non può eseguire il transfer perché aspetta job1
+                                # Finché job1 non ha fatto il transfer non può inserire il token nella port,
+                                # in modo tale da poter procedere con ExecuteStep passando a RUNNING e
+                                # infine terminare diventando COMPLETED. Dall'altra parte invece,
+                                # job1 non può essere ri-schedulato finché Job2 non esce dallo stato FIREABLE-RUNNING
+                                await self._transfer_data_and_put_port(
                                     port_name, job, token, inputs
                                 )
-                                print(
-                                    f"Transfer into port {port_name} token {transferred_token}"
-                                )
-                                self.get_output_port(port_name).put(transferred_token)
+
+                #             for port_name, token in inputs.items():
+                #                 # Con questo approccio manda il deadlock anche la normale esecuzione.
+                #                 # Job1 e Job2 assegnati alla stesso deployment e la risorsa supporta un job alla volta.
+                #                 # Job1 fa il transfer e rimane fireable. Il token non viene messo nella port
+                #                 # perché prima deve finire i transfer di tutti gli altri job.
+                #                 # Job2 pero' non può essere ottenuto (get_job) finché non è fireable.
+                #                 # job1 aspetta job2 per inserire il token nella port
+                #                 # job2 aspetta job1 che rilasci le risorse del deploy per diventare fireable
+                #                 tasks.append(
+                #                     asyncio.create_task(
+                #                         self._transfer_data(
+                #                             port_name, job, token, inputs
+                #                         )
+                #                     )
+                #                 )
+                # for i, task in enumerate(tasks):
+                #     port_name, transferred_token = await task
+                #     self.get_output_port(port_name).put(transferred_token)
+
+                #                for port_name, token in inputs.items():
+                #                 # Con questo approccio i token non vengono inseriti in ordine nella port
+                #                 tasks.append(
+                #                     asyncio.create_task(
+                #                         self._transfer_data_and_put_port(
+                #                             port_name, job, token, inputs
+                #                         )
+                #                     )
+                #                 )
+                # await asyncio.gather(*tasks)
 
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:

@@ -290,18 +290,19 @@ def print_debug_divergenza(all_token_visited, port_tokens):
                     if isinstance(
                         all_token_visited[token_id][0], JobToken
                     ) and isinstance(all_token_visited[token_id_2][0], JobToken):
-                        print(
-                            f"DIVERGENZAAA port {port_name} ma sono due job token, quindi tutto regolare.",
-                            all_token_visited[token_id][0].value.name,
-                            "(id:",
-                            all_token_visited[token_id][0].persistent_id,
-                            ")",
-                            "and",
-                            all_token_visited[token_id_2][0].value.name,
-                            "(id:",
-                            all_token_visited[token_id_2][0].persistent_id,
-                            ")",
-                        )
+                        if (
+                            all_token_visited[token_id][0].value.name
+                            == all_token_visited[token_id_2][0].value.name
+                        ):
+                            print(
+                                f"DIVERGENZAAA port {port_name} sono due job token, con stesso nome.",
+                                all_token_visited[token_id][0].value.name,
+                                f"(id: {all_token_visited[token_id][0].persistent_id})",
+                                "and",
+                                all_token_visited[token_id_2][0].value.name,
+                                f"(id: {all_token_visited[token_id_2][0].persistent_id})",
+                            )
+                            raise Exception("DIVERGENZA")
                     else:
                         t_a = all_token_visited[token_id][0]
                         # t_b = all_token_visited[token_id_2][0]

@@ -170,9 +170,9 @@ async def _put_tokens(
         if len(port.token_list) > 0 and len(port.token_list) == len(
             port_tokens[port_name]
         ):
-            print(
-                f"Port {port.name} with {len(port.token_list)} tokens. It will be added TerminationToken"
-            )
+            # print(
+            #     f"Port {port.name} with {len(port.token_list)} tokens. It will be added TerminationToken"
+            # )
             port.put(TerminationToken())
         else:
             print(
@@ -239,7 +239,7 @@ def cut_off_graph(token, is_available, port_row, port_tokens, all_token_visited)
 
 
 async def _populate_workflow(
-    failed_step, token_visited, new_workflow, loading_context, port_tokens
+    failed_step, token_visited, new_workflow, loading_context, port_tokens, dag_ports
 ):
     # { id : all_tokens_are_available }
     ports = {}
@@ -248,13 +248,16 @@ async def _populate_workflow(
     # todo: questa variabile non serve più
     port_tokens_counter = {}
 
+    id_name = {}
     for token_id, (_, is_available) in token_visited.items():
         row = await failed_step.workflow.context.database.get_port_from_token(token_id)
+        id_name[row["id"]] = row["name"]
         if TOKEN_WAITER not in port_tokens[row["name"]]:
             if row["id"] in ports.keys():
                 ports[row["id"]] = ports[row["id"]] and is_available
             else:
                 ports[row["id"]] = is_available
+        # else nothing because the ports are already loading in the new_workflow
 
         # save the port name and tokens number in the DAG it produces
         if row["name"] not in port_tokens_counter.keys():
@@ -288,6 +291,16 @@ async def _populate_workflow(
         )
     ):
         steps.add(row_dependency["step"])
+
+    # steps = set()
+    # for row_dependency in await asyncio.gather(
+    #     *(
+    #         new_workflow.context.database.get_step_from_output_port(port_id)
+    #         for port_id in ports.keys()
+    #         if id_name[port_id] not in dag_ports[INIT_DAG_FLAG]
+    #     )
+    # ):
+    #     steps.add(row_dependency["step"])
     for step in await asyncio.gather(
         *(
             Step.load(
@@ -969,62 +982,17 @@ class DefaultFailureManager(FailureManager):
                                     PortRecovery(port)
                                 )
 
-                            # # rimuovo i token generati da questo job token
-                            # # (non posso levare tutti i token della port perché non so quali
-                            # # job li genera. Solo con dag_tokens posso saperlo)
-                            # # todo: invece di dag_tokens interrogare il db
-                            # new_init_ports = set()
-                            # # prendo token successivi al job_token
-                            # for t_id in dag_tokens[token.persistent_id]:
-                            #     found = False
-                            #     # prendo le porte successive al job_token e rimuovo i token
-                            #     for p in execute_step_outports:
-                            #         if p.name not in port_tokens.keys():
-                            #             print(f"port {p.name} non presente tra le port_tokens")
-                            #         elif (
-                            #             p.name in port_tokens.keys()
-                            #             and t_id in port_tokens[p.name]
-                            #         ):
-                            #             port_tokens[p.name].remove(t_id)
-                            #             # port_tokens[p.name].add(TOKEN_WAITER)
-                            #             print("Added token waiter in the port", p.name)
-                            #             new_init_ports.add(p.name)
-                            #             found = True
-                            #     if not found:
-                            #         print(
-                            #             f"Token {token.persistent_id} trovato next token {t_id} ma non corrisponde a nessuna port.",
-                            #             "Token presente in token_visited?",
-                            #             t_id in token_visited.keys(),
-                            #             ""
-                            #             if t_id not in token_visited.keys()
-                            #             else f"Il token {token_visited[t_id][0]} è available? {token_visited[t_id][1]}",
-                            #         )
-                            # empty_ports = set()
-                            # for nip in new_init_ports:
-                            #     for prev in get_prev_ports(nip, dag_ports):
-                            #         for p in dag_ports.pop(prev):
-                            #             empty_ports.add(p)
-
-                            # new_init_ports = set()
-                            # empty_ports = set()
-                            # for p in execute_step_outports:
-                            #     # todo: ancora da considerare i token, ovvero, non devo togliere la port se questa serve ad altri token.
-                            #     #  rimuovo i token generati da questo job token
-                            #     #  (non posso levare tutti i token della port perché non so quali
-                            #     #  job li genera. Solo con dag_tokens posso saperlo). Invece di dag_tokens usare db
-                            #     for prev_p in get_prev_ports(p.name, dag_ports):
-                            #         empty_ports.add(prev_p)
-                            #         dag_ports.pop(prev_p)
-                            #     new_init_ports.add(p.name)
-
                             token_to_remove = set()
+                            # rimuovo i token generati da questo job token
+                            # (non posso levare tutti i token della port perché non so quali
+                            # job li genera. Solo con dag_tokens posso saperlo)
+                            # todo: invece di dag_tokens interrogare il db
                             execute_step_out_token_ids = (
                                 await get_execute_step_out_token_ids(
                                     dag_tokens[token.persistent_id],
                                     new_workflow.context,
                                 )
                             )
-                            pass
                             for t_id in execute_step_out_token_ids:
                                 prev_token_ids = get_prev_tokens(t_id, dag_tokens)
                                 pass
@@ -1054,9 +1022,6 @@ class DefaultFailureManager(FailureManager):
                                 dag_ports[INIT_DAG_FLAG].add(p.name)
                                 port_tokens.setdefault(p.name, set()).add(TOKEN_WAITER)
 
-                            # for nip in new_init_ports:
-                            #     dag_ports[INIT_DAG_FLAG].add(nip)
-                            #     port_tokens.setdefault(nip, set()).add(TOKEN_WAITER)
                             print(
                                 f"SYNCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC job {token.value.name}",
                                 f"in esecuzione in wf {self.job_requests[token.value.name].workflow}",
@@ -1078,7 +1043,6 @@ class DefaultFailureManager(FailureManager):
                                 failed_step.name,
                                 dir_path + "/steps-sync-" + new_workflow.name,
                             )
-                            pass
                         else:
                             print(
                                 f"Job {token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[token.value.name].job_token} - t: {self.job_requests[token.value.name].token_output})"
@@ -1196,7 +1160,12 @@ class DefaultFailureManager(FailureManager):
 
         # port_tokens_counter non serve più. solo per debug
         port_tokens_counter = await _populate_workflow(
-            failed_step, token_visited, new_workflow, loading_context, port_tokens
+            failed_step,
+            token_visited,
+            new_workflow,
+            loading_context,
+            port_tokens,
+            dag_ports,
         )
 
         if add_failed_step:
@@ -1257,8 +1226,7 @@ class DefaultFailureManager(FailureManager):
                     {k: v.name for k, v in step.get_input_ports().items()},
                 )
             except Exception as e:
-                # debug: a volte non trova la porta. Credo capiti perché ancora manca la sincronizzazione dei rollback
-                # e quando nella scatter ci siano più location, succedono casini nel metodo _has_token_already_been_recovered
+                # todo: a volte non trova la porta.
                 print(
                     f"Step {step.name} error. new workflow {new_workflow.name}\n\tsteps",
                     new_workflow.steps.keys(),
@@ -1440,8 +1408,18 @@ class DefaultFailureManager(FailureManager):
                             elems.append(elem)
                             elem.port.put(TerminationToken())
                         print(
-                            f"Port {elem.port.name} id {elem.port.persistent_id} wf {elem.port.workflow.name} ha ricevuto token {token.persistent_id}",
-                            f"token_list: {elem.port.token_list} queues: {elem.port.queues}",
+                            "Token added into Port of another wf",
+                            json.dumps(
+                                {
+                                    "p.name": elem.port.name,
+                                    "p.id": elem.port.persistent_id,
+                                    "wf": elem.port.workflow.name,
+                                    "p.token_list_len": len(elem.port.token_list),
+                                    "p.queue": list(elem.port.queues.keys()),
+                                    "Ha ricevuto token": token.persistent_id,
+                                },
+                                indent=2,
+                            ),
                             f"Aspetta {elem.waiting_token} tokens prima di mettere il terminationtoken"
                             if elem.waiting_token
                             else "Mandato anche termination token",
