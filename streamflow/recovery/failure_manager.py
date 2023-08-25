@@ -281,26 +281,32 @@ async def _populate_workflow(
     ):
         new_workflow.add_port(port)
 
-    # add step into new_workflow
-    steps = set()
-    for row_dependency in await asyncio.gather(
-        *(
-            new_workflow.context.database.get_step_from_output_port(port_id)
-            for port_id, is_available in ports.items()
-            if not is_available
-        )
-    ):
-        steps.add(row_dependency["step"])
+    for tmpp in dag_ports[INIT_DAG_FLAG]:
+        if tmpp not in dag_ports.keys():
+            msg = f"Port {tmpp} non porta da nessuna parte"
+            print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
+            raise FailureHandlingException(msg)
 
+    # add step into new_workflow
     # steps = set()
     # for row_dependency in await asyncio.gather(
     #     *(
     #         new_workflow.context.database.get_step_from_output_port(port_id)
-    #         for port_id in ports.keys()
-    #         if id_name[port_id] not in dag_ports[INIT_DAG_FLAG]
+    #         for port_id, is_available in ports.items()
+    #         if not is_available
     #     )
     # ):
     #     steps.add(row_dependency["step"])
+
+    steps = set()
+    for row_dependency in await asyncio.gather(
+        *(
+            new_workflow.context.database.get_step_from_output_port(port_id)
+            for port_id in ports.keys()
+            if id_name[port_id] not in dag_ports[INIT_DAG_FLAG]
+        )
+    ):
+        steps.add(row_dependency["step"])
     for step in await asyncio.gather(
         *(
             Step.load(
