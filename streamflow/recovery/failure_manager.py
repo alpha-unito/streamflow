@@ -49,6 +49,15 @@ from streamflow.core.workflow import Workflow
 from streamflow.workflow.utils import get_job_token
 
 
+def check_double_reference(dag_ports):
+    for tmpp in dag_ports[INIT_DAG_FLAG]:
+        for tmpport_name, tmpnext_port_names in dag_ports.items():
+            if tmpport_name != INIT_DAG_FLAG and tmpp in tmpnext_port_names:
+                msg = f"Port {tmpp} appartiene sia a INIT che a {tmpport_name}"
+                print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
+                raise FailureHandlingException(msg)
+
+
 async def get_execute_step_out_token_ids(next_token_ids, context):
     execute_step_out_token_ids = set()
     for t_id in next_token_ids:
@@ -176,7 +185,7 @@ async def _put_tokens(
             port.put(TerminationToken())
         else:
             print(
-                f"Port {port.name} with {len(port.token_list)} tokens. NOOOOOOOOOOOOOOOOOO TerminationToken"
+                f"Port {port.name} with {len(port.token_list)} tokens. NO TerminationToken"
             )
         pass
 
@@ -287,6 +296,11 @@ async def _populate_workflow(
             print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
             raise FailureHandlingException(msg)
 
+    # Capire dove avviene l'inserimento sbagliato dentro INIT.from
+    # immagino sia in sync_rollback. aggiungerlo in init solo se nessuno punta più a lui
+    # fix temporaneo potrebbe essere togliere da init tutte le port puntate da altre port
+    check_double_reference(dag_ports)
+
     # add step into new_workflow
     # steps = set()
     # for row_dependency in await asyncio.gather(
@@ -387,6 +401,7 @@ def get_necessary_tokens(
     }
 
 
+# tolgo token con stesso tag nella stessa porta
 def validate_port_tokens(port_tokens, token_visited):
     for port_name, token_id_list in port_tokens.items():
         remove = set()
@@ -447,7 +462,8 @@ def reduce_graph(dag_ports, port_tokens, available_new_job_tokens, new_workflow_
     for v in available_new_job_tokens.values():
         if v["out-token-port-name"] in port_tokens.keys():
             port_tokens[v["out-token-port-name"]].add(v["new-out-token"])
-            dag_ports[INIT_DAG_FLAG].add(v["out-token-port-name"])
+            if not is_next_of_someone(v["out-token-port-name"], dag_ports):
+                dag_ports[INIT_DAG_FLAG].add(v["out-token-port-name"])
             print(
                 f"Port_tokens {v['out-token-port-name']} aggiunto un nuovo elemento quindi ha {port_tokens[v['out-token-port-name']]} tokens"
             )
@@ -455,6 +471,13 @@ def reduce_graph(dag_ports, port_tokens, available_new_job_tokens, new_workflow_
             print(
                 f"Port_tokens non ha più la port {v['out-token-port-name']} ... significa che il new token non serve più per questo rollback"
             )
+
+
+def is_next_of_someone(p_name, dag_ports):
+    for port_name, next_port_names in dag_ports.items():
+        if port_name != INIT_DAG_FLAG and p_name in next_port_names:
+            return True
+    return False
 
 
 def _update_dag_ports(
@@ -766,12 +789,16 @@ class DefaultFailureManager(FailureManager):
                             ):
                                 tokens.append(pt)
                     else:
-                        dag_ports.setdefault(INIT_DAG_FLAG, set()).add(port_row["name"])
+                        if not is_next_of_someone(port_row["name"], dag_ports):
+                            dag_ports.setdefault(INIT_DAG_FLAG, set()).add(
+                                port_row["name"]
+                            )
                         dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(
                             token.persistent_id
                         )
                 else:
-                    dag_ports.setdefault(INIT_DAG_FLAG, set()).add(port_row["name"])
+                    if not is_next_of_someone(port_row["name"], dag_ports):
+                        dag_ports.setdefault(INIT_DAG_FLAG, set()).add(port_row["name"])
                     dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(token.persistent_id)
                 # alternativa ai due else ... però è più difficile la lettura del codice (ancora da provare)
                 # if is_available or not prev_tokens:
@@ -783,6 +810,15 @@ class DefaultFailureManager(FailureManager):
                 port_tokens.setdefault(port_row["name"], set()).add(token.persistent_id)
 
         validate_port_tokens(port_tokens, all_token_visited)
+        remove_from_init = set()
+        for pp in dag_ports[INIT_DAG_FLAG]:
+            if is_next_of_someone(pp, dag_ports):
+                print(f"port {pp} next someone and also in INIT")
+                remove_from_init.add(pp)
+        for pp in remove_from_init:
+            dag_ports[INIT_DAG_FLAG].remove(pp)
+
+        check_double_reference(dag_ports)
 
         for cp in combinator_port:
             print(f"port {cp} è output di un combinatorstep")
@@ -1024,9 +1060,12 @@ class DefaultFailureManager(FailureManager):
                                     new_workflow.name,
                                 )
 
+                            check_double_reference(dag_ports)
                             for p in execute_step_outports:
-                                dag_ports[INIT_DAG_FLAG].add(p.name)
+                                if not is_next_of_someone(p.name, dag_ports):
+                                    dag_ports[INIT_DAG_FLAG].add(p.name)
                                 port_tokens.setdefault(p.name, set()).add(TOKEN_WAITER)
+                            check_double_reference(dag_ports)
 
                             print(
                                 f"SYNCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC job {token.value.name}",
