@@ -115,17 +115,26 @@ class Database(SchemaEntity):
 
     @abstractmethod
     async def add_port(
-        self, name: str, workflow_id: int, type: type[Port], params: str
+        self,
+        name: str,
+        workflow_id: int,
+        type: type[Port],
+        params: MutableMapping[str, Any],
     ) -> int:
         ...
 
     @abstractmethod
-    async def add_provenance(self, inputs: MutableSequence[int], token: int):
+    async def add_provenance(self, inputs: MutableSequence[int], token: int) -> None:
         ...
 
     @abstractmethod
     async def add_step(
-        self, name: str, workflow_id: int, status: int, type: type[Step], params: str
+        self,
+        name: str,
+        workflow_id: int,
+        status: int,
+        type: type[Step],
+        params: MutableMapping[str, Any],
     ) -> int:
         ...
 
@@ -134,7 +143,7 @@ class Database(SchemaEntity):
         self,
         deployment: int,
         type: type[Target],
-        params: str,
+        params: MutableMapping[str, Any],
         locations: int = 1,
         service: str | None = None,
         workdir: str | None = None,
@@ -148,11 +157,13 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def add_workflow(self, name: str, params: str, status: int, type: str) -> int:
+    async def add_workflow(
+        self, name: str, params: MutableMapping[str, Any], status: int, type: str
+    ) -> int:
         ...
 
     @abstractmethod
-    async def close(self):
+    async def close(self) -> None:
         ...
 
     @abstractmethod
@@ -224,12 +235,6 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_workflows_by_name(
-        self, workflow_name: str, last_only: bool = False
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        ...
-
-    @abstractmethod
     async def get_workflow_ports(
         self, workflow_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
@@ -242,7 +247,13 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def list_workflows(
+    async def get_workflows_by_name(
+        self, workflow_name: str, last_only: bool = False
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        ...
+
+    @abstractmethod
+    async def get_workflows_list(
         self, name: str | None
     ) -> MutableSequence[MutableMapping[str, Any]]:
         ...

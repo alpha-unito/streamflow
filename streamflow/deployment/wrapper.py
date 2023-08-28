@@ -2,32 +2,59 @@ import asyncio
 from abc import ABC
 from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
-from streamflow.core.deployment import Connector, ConnectorCopyKind, Location
+from streamflow.core.deployment import Connector, Location
 from streamflow.core.scheduling import AvailableLocation
+from streamflow.deployment.future import FutureAware
 
 
-class ConnectorWrapper(Connector, ABC):
+class ConnectorWrapper(Connector, FutureAware, ABC):
     def __init__(self, deployment_name: str, config_dir: str, connector: Connector):
         super().__init__(deployment_name, config_dir)
         self.connector: Connector = connector
 
-    async def copy(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
         locations: MutableSequence[Location],
-        kind: ConnectorCopyKind,
-        source_connector: Optional[Connector] = None,
-        source_location: Optional[Location] = None,
         read_only: bool = False,
     ) -> None:
-        await self.connector.copy(
+        await self.connector.copy_local_to_remote(
             src=src,
             dst=dst,
             locations=locations,
-            kind=kind,
-            source_connector=source_connector,
+            read_only=read_only,
+        )
+
+    async def copy_remote_to_local(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[Location],
+        read_only: bool = False,
+    ) -> None:
+        await self.connector.copy_remote_to_local(
+            src=src,
+            dst=dst,
+            locations=locations,
+            read_only=read_only,
+        )
+
+    async def copy_remote_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[Location],
+        source_location: Location,
+        source_connector: Optional[Connector] = None,
+        read_only: bool = False,
+    ) -> None:
+        await self.connector.copy_remote_to_remote(
+            src=src,
+            dst=dst,
+            locations=locations,
             source_location=source_location,
+            source_connector=source_connector,
             read_only=read_only,
         )
 

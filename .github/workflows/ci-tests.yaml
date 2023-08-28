@@ -72,6 +72,8 @@ jobs:
           node-version: "15"
       - name: "Install Docker (MacOS X)"
         uses: douglascamata/setup-docker-macos-action@v1-alpha.9
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v2
       - name: "Install Apptainer"
@@ -211,6 +213,8 @@ jobs:
           node-version: "15"
       - name: "Install Docker (MacOs X)"
         uses: douglascamata/setup-docker-macos-action@v1-alpha.9
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v2
       - name: "Install Apptainer"

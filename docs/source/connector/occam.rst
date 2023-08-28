@@ -8,5 +8,5 @@ It is different from standard HPC facilities for two main reasons. First, users 
 
 This connector allows StreamFlow to offload computation to multi-container environments deployed on the Occam facility. The deployment unit is a multi-container environment deployed on one or more computing nodes. Multi-container environments are described in a YAML file with a syntax similar to the ``service`` section of `Docker Compose <https://docs.docker.com/compose/>`_. Users can pass this file to the connector through the ``file`` parameter. The unit of binding is the single top-level entry in the file, while the scheduling unit is the single container instance.
 
-.. jsonschema:: ../../../streamflow/config/schemas/v1.0/occam.json
+.. jsonschema:: ../../../streamflow/deployment/connector/schemas/occam.json
     :lift_description: true

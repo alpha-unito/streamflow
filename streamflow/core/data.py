@@ -60,7 +60,7 @@ class DataManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self):
+    async def close(self) -> None:
         ...
 
     @abstractmethod
@@ -68,8 +68,8 @@ class DataManager(SchemaEntity):
         self,
         path: str,
         deployment: str | None = None,
-        location: str | None = None,
-        location_type: DataType | None = None,
+        location_name: str | None = None,
+        data_type: DataType | None = None,
     ) -> MutableSequence[DataLocation]:
         ...
 
@@ -102,12 +102,12 @@ class DataManager(SchemaEntity):
     @abstractmethod
     async def transfer_data(
         self,
-        src_locations: MutableSequence[Location],
+        src_location: Location,
         src_path: str,
         dst_locations: MutableSequence[Location],
         dst_path: str,
         writable: bool = False,
-    ):
+    ) -> None:
         ...
 
 

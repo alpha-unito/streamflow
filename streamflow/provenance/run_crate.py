@@ -11,7 +11,6 @@ import re
 import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
-from json import JSONDecodeError
 from typing import Any, MutableMapping, MutableSequence, cast
 from zipfile import ZipFile
 
@@ -661,7 +660,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                 v = ESCAPED_COMMA.sub(",", v)
                 try:
                     self.graph[dst][k] = json.loads(v)
-                except JSONDecodeError:
+                except json.JSONDecodeError:
                     self.graph[dst][k] = v
 
     @abstractmethod
@@ -689,7 +688,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         value = ESCAPED_COMMA.sub(",", value)
         try:
             current_obj[keys[-1]] = json.loads(value)
-        except JSONDecodeError:
+        except json.JSONDecodeError:
             current_obj[keys[-1]] = value
 
     async def create_archive(

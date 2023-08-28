@@ -6,7 +6,6 @@ import os
 import posixpath
 import tempfile
 from abc import abstractmethod
-from enum import Enum
 from typing import TYPE_CHECKING, Type, cast
 
 from streamflow.core import utils
@@ -72,14 +71,33 @@ class Connector(SchemaEntity):
         self.config_dir: str = config_dir
 
     @abstractmethod
-    async def copy(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
         locations: MutableSequence[Location],
-        kind: ConnectorCopyKind,
+        read_only: bool = False,
+    ) -> None:
+        ...
+
+    @abstractmethod
+    async def copy_remote_to_local(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[Location],
+        read_only: bool = False,
+    ) -> None:
+        ...
+
+    @abstractmethod
+    async def copy_remote_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[Location],
+        source_location: Location,
         source_connector: Connector | None = None,
-        source_location: Location | None = None,
         read_only: bool = False,
     ) -> None:
         ...
@@ -119,22 +137,16 @@ class Connector(SchemaEntity):
         ...
 
 
-class ConnectorCopyKind(Enum):
-    LOCAL_TO_REMOTE = 1
-    REMOTE_TO_LOCAL = 2
-    REMOTE_TO_REMOTE = 3
-
-
 class DeploymentManager(SchemaEntity):
     def __init__(self, context: StreamFlowContext) -> None:
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self):
+    async def close(self) -> None:
         ...
 
     @abstractmethod
-    async def deploy(self, deployment_config: DeploymentConfig):
+    async def deploy(self, deployment_config: DeploymentConfig) -> None:
         ...
 
     @abstractmethod
@@ -142,11 +154,7 @@ class DeploymentManager(SchemaEntity):
         ...
 
     @abstractmethod
-    def is_deployed(self, deployment_name: str):
-        ...
-
-    @abstractmethod
-    async def undeploy(self, deployment_name: str):
+    async def undeploy(self, deployment_name: str) -> None:
         ...
 
     @abstractmethod
@@ -270,7 +278,7 @@ class Target(PersistableEntity):
                 self.persistent_id = await context.database.add_target(
                     deployment=self.deployment.persistent_id,
                     type=type(self),
-                    params=json.dumps(await self._save_additional_params(context)),
+                    params=await self._save_additional_params(context),
                     locations=self.locations,
                     service=self.service,
                     workdir=self.workdir,

@@ -17,12 +17,13 @@
 
 # -- Project information -----------------------------------------------------
 import importlib
+import os.path
 
 project = 'StreamFlow'
-copyright = '2021, Alpha Research Group, Computer Science Dept., University of Torino'
+copyright = '2023, Alpha Research Group, Computer Science Dept., University of Torino'
 author = 'Iacopo Colonnelli'
-version = '0.1'
-release = '0.1.0'
+version = '0.2'
+release = '0.2.0'
 
 # -- General configuration ---------------------------------------------------
 
@@ -80,6 +81,7 @@ extlinks = {
 }
 
 # JSONSchema extensions
+sjs = importlib.import_module("sphinx-jsonschema")
 sjs_wide_format = importlib.import_module("sphinx-jsonschema.wide_format")
 
 
@@ -208,3 +210,27 @@ def patched_run(self, schema, pointer=''):
 
 original_run = sjs_wide_format.WideFormat.run
 sjs_wide_format.WideFormat.run = patched_run
+
+
+def patched_get_json_data(self):
+    schema, source, pointer = original_get_json_data(self)
+
+    if self.arguments:
+        filename, pointer = self._splitpointer(self.arguments[0])
+    else:
+        filename, pointer = None, ''
+
+    if 'allOf' in schema:
+        for obj in schema['allOf']:
+            if '$ref' in obj:
+                target_file = os.path.join(os.path.dirname(filename), obj['$ref'])
+                target_schema, _ = self.from_file(target_file)
+                target_schema = self.ordered_load(target_schema)
+                schema['properties'] = {**target_schema.get('properties', {}), **schema['properties']}
+        del schema['allOf']
+        schema['properties'] = dict(sorted(schema['properties'].items()))
+    return schema, source, pointer
+
+
+original_get_json_data = sjs.JsonSchema.get_json_data
+sjs.JsonSchema.get_json_data = patched_get_json_data

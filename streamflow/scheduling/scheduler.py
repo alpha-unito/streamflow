@@ -132,7 +132,6 @@ class DefaultScheduler(Scheduler):
     async def _get_locations(
         self,
         job: Job,
-        deployment: str,
         hardware_requirement: Hardware,
         locations: int,
         scheduling_policy: Policy,
@@ -143,7 +142,6 @@ class DefaultScheduler(Scheduler):
             selected_location = await scheduling_policy.get_location(
                 context=self.context,
                 job=job,
-                deployment=deployment,
                 hardware_requirement=hardware_requirement,
                 available_locations=available_locations,
                 jobs=self.job_allocations,
@@ -272,7 +270,6 @@ class DefaultScheduler(Scheduler):
                                 ]:
                                     selected_locations = await self._get_locations(
                                         job=job_context.job,
-                                        deployment=target.deployment.name,
                                         hardware_requirement=hardware_requirement,
                                         locations=target.locations,
                                         scheduling_policy=self._get_policy(
@@ -298,7 +295,6 @@ class DefaultScheduler(Scheduler):
                         else:
                             selected_locations = await self._get_locations(
                                 job=job_context.job,
-                                deployment=target.deployment.name,
                                 hardware_requirement=hardware_requirement,
                                 locations=target.locations,
                                 scheduling_policy=self._get_policy(

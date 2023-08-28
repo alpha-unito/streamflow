@@ -75,7 +75,7 @@ async def test_directory_to_directory(
             data_type=DataType.PRIMARY,
         )
         await context.data_manager.transfer_data(
-            src_locations=[src_location],
+            src_location=src_location,
             src_path=src_path,
             dst_locations=[dst_location],
             dst_path=dst_path,
@@ -130,7 +130,7 @@ async def test_file_to_directory(
             data_type=DataType.PRIMARY,
         )
         await context.data_manager.transfer_data(
-            src_locations=[src_location],
+            src_location=src_location,
             src_path=src_path,
             dst_locations=[dst_location],
             dst_path=dst_path,
@@ -182,7 +182,7 @@ async def test_file_to_file(
             data_type=DataType.PRIMARY,
         )
         await context.data_manager.transfer_data(
-            src_locations=[src_location],
+            src_location=src_location,
             src_path=src_path,
             dst_locations=[dst_location],
             dst_path=dst_path,

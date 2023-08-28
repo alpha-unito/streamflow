@@ -46,7 +46,8 @@ docker run -d \
     --mount type=bind,source="$(pwd)"/my-project,target=/streamflow/project \
     --mount type=bind,source="$(pwd)"/results,target=/streamflow/results \
     --mount type=bind,source="$(pwd)"/tmp,target=/tmp/streamflow \
-    alphaunito/streamflow run /streamflow/project/streamflow.yml
+    alphaunito/streamflow \
+    streamflow run /streamflow/project/streamflow.yml
 ```
 
 #### Kubernetes

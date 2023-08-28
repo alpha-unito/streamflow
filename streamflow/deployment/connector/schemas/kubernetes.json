@@ -16,7 +16,7 @@
     },
     "inCluster": {
       "type": "boolean",
-      "description": "If true, the Helm connector will use a ServiceAccount to connect to the Kubernetes cluster. This is useful when StreamFlow runs directly inside a Kubernetes Pod",
+      "description": "If true, the Kubernetes connector will use a ServiceAccount to connect to the cluster. This is useful when StreamFlow runs directly inside a Kubernetes Pod",
       "default": false
     },
     "kubeContext": {
@@ -34,7 +34,7 @@
     },
     "namespace": {
       "type": "string",
-      "description": "Namespace to install the release into",
+      "description": "Namespace to deploy into",
       "default": "Current kube config namespace"
     },
     "locationsCacheSize": {
@@ -70,7 +70,7 @@
     },
     "wait": {
       "type": "boolean",
-      "description": "If set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment are in a ready state before marking the release as successful. It will wait for as long as timeout",
+      "description": "If set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment are in a ready state before marking the deployment as successful. It will wait for as long as timeout",
       "default": true
     }
   },
