@@ -202,7 +202,7 @@ class DefaultScheduler(Scheduler):
                         and get_execute_step_name_from_job_name(x)
                         == get_execute_step_name_from_job_name(j_name)
                         and get_job_number(x) < get_job_number(j_name)
-                        and self.job_allocations[x].status == Status.WAITING
+                        and self.job_allocations[x].status == Status.ROLLBACK
                     ),
                     self.job_allocations.keys(),
                 )

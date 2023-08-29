@@ -343,6 +343,7 @@ class Status(Enum):
     COMPLETED = 4
     FAILED = 5
     CANCELLED = 6
+    ROLLBACK = 7
 
 
 class Step(PersistableEntity, ABC):

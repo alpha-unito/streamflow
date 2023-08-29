@@ -1284,7 +1284,7 @@ class DefaultFailureManager(FailureManager):
             if isinstance(token, JobToken):
                 # free resources scheduler
                 await workflow.context.scheduler.notify_status(
-                    token.value.name, Status.WAITING
+                    token.value.name, Status.ROLLBACK
                 )
                 # todo: o togliere job_name da location_allocation oppure renderlo un set. Dato che in futuro vogliamo avere la possibilità di ri-allocare il job in un'altra location, meglio toglierlo
                 #  usando _deallocate_job però si rimuove anche da job_allocation. Questo ci fa perdere le info sui job che hanno la precedenza ad esser schedulati altrimenti si va in deadlock
