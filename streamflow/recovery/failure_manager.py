@@ -991,11 +991,16 @@ class DefaultFailureManager(FailureManager):
                                     )
                                     for row in rows
                                     if row["name"] not in new_workflow.ports.keys()
+                                    and row["name"]
+                                    not in failed_step.output_ports.values()
                                 )
                             )
                             # controllo per debug
                             for p in execute_step_outports:
-                                if p.name not in next_port_names:
+                                if (
+                                    p.name not in next_port_names
+                                    and p.name not in failed_step.output_ports.values()
+                                ):
                                     raise FailureHandlingException(
                                         f"wf {new_workflow.name} Port {p.name} non presente tra quelle presente nel dag_ports {next_port_names}"
                                     )
