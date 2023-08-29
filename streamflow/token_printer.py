@@ -5,6 +5,7 @@ import asyncio
 import graphviz
 
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import get_class_fullname
 from streamflow.core.workflow import Step, Token
 from streamflow.cwl.token import CWLFileToken
@@ -302,7 +303,7 @@ def print_debug_divergenza(all_token_visited, port_tokens):
                                 all_token_visited[token_id_2][0].value.name,
                                 f"(id: {all_token_visited[token_id_2][0].persistent_id})",
                             )
-                            raise Exception("DIVERGENZA")
+                            raise FailureHandlingException("DIVERGENZA")
                     else:
                         t_a = all_token_visited[token_id][0]
                         # t_b = all_token_visited[token_id_2][0]
@@ -320,6 +321,7 @@ def print_debug_divergenza(all_token_visited, port_tokens):
                             if isinstance(t_a[0], JobToken)
                             else t_a[0].value,
                         )
+                        raise FailureHandlingException("DIVERGENZA")
                         pass
     print("DEBUG: divergenza controllata")
 
