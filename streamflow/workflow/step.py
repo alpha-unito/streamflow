@@ -38,7 +38,6 @@ from streamflow.core.workflow import (
     Token,
     Workflow,
 )
-from streamflow.cwl.token import CWLFileToken
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger

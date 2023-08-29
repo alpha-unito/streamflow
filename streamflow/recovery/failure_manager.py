@@ -35,8 +35,7 @@ from streamflow.token_printer import (
     print_graph_figure,
     print_step_from_ports,
 )
-from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.step import ScatterStep, Combinator, CombinatorStep
+from streamflow.workflow.step import ScatterStep, CombinatorStep
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import ExecuteStep
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -88,15 +87,6 @@ async def _load_prev_tokens(token_id, loading_context, context):
     )
 
 
-# todo: se lascio sia get_prev_tokens che get_prev_ports ... fare un metodo con un nome generico e usarlo per entrambi
-def get_prev_tokens(searched_t_id, dag_tokens):
-    token_ids = set()
-    for t_id, next_t_ids in dag_tokens.items():
-        if searched_t_id in next_t_ids and t_id != INIT_DAG_FLAG:
-            token_ids.add(t_id)
-    return token_ids
-
-
 def get_prev_ports(searched_port_name, dag_ports):
     start_port_names = set()
     for port_name, next_port_names in dag_ports.items():
@@ -105,61 +95,17 @@ def get_prev_ports(searched_port_name, dag_ports):
     return start_port_names
 
 
-def get_port_tags(new_workflow, dag_ports, port_tokens, token_visited):
-    port_tags = {}
-    for port_name in dag_ports[INIT_DAG_FLAG]:
-        intersection_tags = {
-            token_visited[t_id][0].tag for t_id in port_tokens[port_name]
-        }
-        if not isinstance(new_workflow.ports[port_name], (ConnectorPort, JobPort)):
-            for next_port_name in dag_ports[port_name]:
-                #  port_name    same_level_port_name(1)  same_level_port_name(2) ...
-                #       \                   |               /
-                #                   next_port_name
-                for same_level_port_name in get_prev_ports(next_port_name, dag_ports):
-                    if same_level_port_name != port_name and not isinstance(
-                        new_workflow.ports[port_name], (ConnectorPort, JobPort)
-                    ):
-                        intersection_tags.intersection(
-                            {
-                                token_visited[t_id][0].tag
-                                for t_id in port_tokens[same_level_port_name]
-                            }
-                        )
-        # print(f"Port {port_name} valid tags ", intersection_tags)
-        if port_name in port_tags.keys():
-            raise FailureHandlingException(
-                f"Port {port_name} già presente nei tags",
-                port_tags[port_name],
-                "Altri tags trovati",
-                intersection_tags,
-            )
-        port_tags[port_name] = intersection_tags
-    return port_tags
-
-
 async def _put_tokens(
     new_workflow: Workflow,
     init_ports: MutableSequence[str],
     port_tokens: MutableMapping[str, MutableSequence[int]],
     token_visited: MutableMapping[int, Tuple[Token, bool]],
-    dag_ports: MutableMapping[str, MutableSequence[str]],
 ):
-    # port_tags = get_port_tags(new_workflow, dag_ports, port_tokens, token_visited)
     for port_name in init_ports:
-        try:
-            port = new_workflow.ports[port_name]
-        except:
-            print(
-                f"Stavo costruendo new_workflow {new_workflow.name}. Ho nelle init_port {port_name} ma non è caricato nel workflow.",
-                f"\n\tSteps: {new_workflow.steps.keys()} \n\tPorts: {new_workflow.ports.keys()}",
-            )
-            raise
         token_list = [
             token_visited[t_id][0]
             for t_id in port_tokens[port_name]
             if isinstance(t_id, int) and token_visited[t_id][1]
-            # and token_visited[t_id][0].tag in port_tags[port_name]
         ]
         token_list.sort(key=lambda x: x.tag, reverse=False)
         for i, t in enumerate(token_list):
@@ -169,6 +115,7 @@ async def _put_tokens(
                         f"Tag ripetuto id1: {t.persistent_id} id2: {t1.persistent_id}"
                     )
 
+        port = new_workflow.ports[port_name]
         for t in token_list:
             if isinstance(t, TerminationToken):
                 raise FailureHandlingException(
@@ -178,72 +125,11 @@ async def _put_tokens(
         if len(port.token_list) > 0 and len(port.token_list) == len(
             port_tokens[port_name]
         ):
-            # print(
-            #     f"Port {port.name} with {len(port.token_list)} tokens. It will be added TerminationToken"
-            # )
             port.put(TerminationToken())
         else:
             print(
                 f"Port {port.name} with {len(port.token_list)} tokens. NO TerminationToken"
             )
-        pass
-
-
-def cut_off_graph(token, is_available, port_row, port_tokens, all_token_visited):
-    if port_row["name"] in port_tokens.keys():
-        if isinstance(token, JobToken):
-            for t_id in port_tokens[port_row["name"]]:
-                if all_token_visited[t_id][0].value.name == token.value.name:
-                    # tengo il jobtoken con id più grande. è nuovo quindi forse dati più nuovi e sperabilmente disponibili
-                    if all_token_visited[t_id][0].persistent_id < token.persistent_id:
-                        port_tokens[port_row["name"]].remove(t_id)
-                        print(
-                            f"Trovati due JobToken {token.value.name}. Vecchio jobtoken: {t_id}, nuovo: {token.persistent_id}. Taglio branch di {t_id} e continuo su {token.persistent_id}"
-                        )
-                        return False
-                    else:
-                        print(
-                            f"Trovati due JobToken {token.value.name}. Vecchio jobtoken: {t_id}, nuovo: {token.persistent_id}. Butto {token.persistent_id} lascio branch di {t_id}"
-                        )
-                        return True
-        else:
-            # if the token is not present then normal execution, otherwise check if there is available tokens
-            if token_present := get_token_by_tag(
-                token.tag,
-                (all_token_visited[t_id][0] for t_id in port_tokens[port_row["name"]]),
-            ):
-                # todo: possibile ottimizzazione. vedere l'id e prendere sempre quello più grande.
-                # if the token in port_tokens[port.name] is already available, skip current token
-                # if all_token_visited[token_present.persistent_id][1]:
-                #     return True
-                #
-                # # if both are not available ... cosa fare? in teoria sarebbe meglio seguire entrambi i path e tenere quello che arriva prima ad un token disponibile. Ma quanto è dispendioso? E sopratutto quanto difficile da scrivere?
-                # # per il momento seguo il percorso solo del primo trovato (quindi token_present)
-                # if (
-                #     not is_available
-                #     and not all_token_visited[token_present.persistent_id][1]
-                # ):
-                #     return True
-                #
-                # # if the token is available and token_present is not available
-                # # than remove token_present. In following, token will be added
-                # if is_available:
-                #     port_tokens[port_row["name"]].remove(token_present.persistent_id)
-
-                # token incontrato è disponibile, scarto quello attuale
-                if all_token_visited[token_present.persistent_id][1]:
-                    return True
-
-                # entrambi non disponibili, tengo quello più nuovo
-                if not is_available:
-                    if token_present.persistent_id > token.persistent_id:
-                        return True
-
-                # eseguo questo se:
-                #   - o il token_present non è disponibile e token è disponibile
-                #   - oppure nessuno dei due è disponibile ma token è più nuovo, quindi forse ha token precedenti disponibili
-                port_tokens[port_row["name"]].remove(token_present.persistent_id)
-    return False
 
 
 async def _populate_workflow(
@@ -251,10 +137,6 @@ async def _populate_workflow(
 ):
     # { id : all_tokens_are_available }
     ports = {}
-
-    # {port.name : n.of tokens}
-    # todo: questa variabile non serve più
-    port_tokens_counter = {}
 
     id_name = {}
     for token_id, (_, is_available) in token_visited.items():
@@ -266,11 +148,6 @@ async def _populate_workflow(
             else:
                 ports[row["id"]] = is_available
         # else nothing because the ports are already loading in the new_workflow
-
-        # save the port name and tokens number in the DAG it produces
-        if row["name"] not in port_tokens_counter.keys():
-            port_tokens_counter[row["name"]] = 0
-        port_tokens_counter[row["name"]] += 1
 
     # add port into new_workflow
     print(
@@ -294,22 +171,7 @@ async def _populate_workflow(
             msg = f"Port {tmpp} non porta da nessuna parte"
             print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
             raise FailureHandlingException(msg)
-
-    # Capire dove avviene l'inserimento sbagliato dentro INIT.from
-    # immagino sia in sync_rollback. aggiungerlo in init solo se nessuno punta più a lui
-    # fix temporaneo potrebbe essere togliere da init tutte le port puntate da altre port
     check_double_reference(dag_ports)
-
-    # add step into new_workflow
-    # steps = set()
-    # for row_dependency in await asyncio.gather(
-    #     *(
-    #         new_workflow.context.database.get_step_from_output_port(port_id)
-    #         for port_id, is_available in ports.items()
-    #         if not is_available
-    #     )
-    # ):
-    #     steps.add(row_dependency["step"])
 
     steps = set()
     for row_dependency in await asyncio.gather(
@@ -343,7 +205,6 @@ async def _populate_workflow(
         )
     ):
         new_workflow.add_port(port)
-    return port_tokens_counter
 
 
 # todo: move it in utils
@@ -358,37 +219,6 @@ async def _is_token_available(token, context):
     return not isinstance(token, JobToken) and await token.is_available(context)
 
 
-# todo: move it in utils. Generalizzarlo in persistable_entity_list e usarlo in test_provenance
-# def contains_token_id(token_id, token_list):
-#     return token_id in (t.persistent_id for t in token_list)
-
-
-def _clean_port_tokens(
-    port_tokens: MutableMapping[str, MutableSequence[int]],
-    token_to_remove: MutableSequence[int],
-    dag_ports: MutableMapping[str, MutableSequence[str]],
-    available_ports: MutableSequence[str],
-):
-    for port_name, token_id_list in port_tokens.items():
-        for t_id in token_to_remove:
-            if t_id in token_id_list:
-                token_id_list.remove(t_id)
-                print(f"Port_tokens - Port {port_name} removes token {t_id}")
-
-    empty_ports = set()
-    for port_name, next_port_names in dag_ports.items():
-        for p_name in available_ports:
-            if p_name in next_port_names:
-                next_port_names.remove(p_name)
-        if len(next_port_names) == 0:
-            empty_ports.add(port_name)
-    for port_name in empty_ports:
-        dag_ports.pop(port_name)
-        port_tokens.pop(port_name)
-        print(f"Pop {port_name} for dag_ports and port_tokens")
-    return empty_ports
-
-
 def get_necessary_tokens(
     port_tokens, all_token_visited
 ) -> MutableMapping[int, Tuple[Token, bool]]:
@@ -400,59 +230,21 @@ def get_necessary_tokens(
     }
 
 
-# tolgo token con stesso tag nella stessa porta
-def validate_port_tokens(port_tokens, token_visited):
-    for port_name, token_id_list in port_tokens.items():
-        remove = set()
-        for i, token_id in enumerate(token_id_list):
-            token = token_visited[token_id][0]
-            if isinstance(token, JobToken):
-                for sibling_t_id in token_id_list:
-                    sibling_t = token_visited[sibling_t_id][0]
-                    if (
-                        isinstance(sibling_t, JobToken)
-                        and token_id != sibling_t_id
-                        and sibling_t.value.name == token.value.name
-                    ):
-                        if token_id < sibling_t_id:
-                            remove.add(token_id)
-                        else:
-                            remove.add(sibling_t_id)
-            else:
-                for sibling_t_id in token_id_list:
-                    sibling_t = token_visited[sibling_t_id][0]
-                    if token_id != sibling_t_id and sibling_t.tag == token.tag:
-                        if token_id < sibling_t_id:
-                            remove.add(token_id)
-                        else:
-                            remove.add(sibling_t_id)
-        for t in remove:
-            print(
-                f"Validate port_tokens remove id: {t} ",
-                token_visited[t][0].value.name
-                if isinstance(token_visited[t][0], JobToken)
-                else token_visited[t][0].tag,
-            )
-            # token da togliere
-            istanza = token_visited[t][0]
-            # lista in cui toglierò il token (e di cui c'è un gemello ma id diverso)
-            lista_istanze = [token_visited[t1][0] for t1 in port_tokens[port_name]]
-            port_tokens[port_name].remove(t)
-
-
 def reduce_graph(
     dag_ports,
     port_tokens,
     available_new_job_tokens,
-    new_workflow_name,
     token_visited,
-    dag_tokens,
 ):
     for v in available_new_job_tokens.values():
         if v["out-token-port-name"] not in port_tokens.keys():
             raise FailureHandlingException("Non c'è la porta. NON VA BENE")
 
-    # # todo: aggiustare nel caso in cui una port abbia più token di output
+    # todo: aggiustare nel caso in cui uno step abbia più port di output.
+    #   Nella replace_token, se i token della port sono tutti disponibili
+    #   allora rimuove tutte le port precedenti.
+    #   ma se i token della seconda port di output dello step non sono disponibili
+    #   è necessario eseguire tutte le port precedenti.
     for v in available_new_job_tokens.values():
         replace_token(
             v["out-token-port-name"],
@@ -463,47 +255,8 @@ def reduce_graph(
             token_visited,
         )
         print(
-            f"Port_tokens {v['out-token-port-name']} - token {v['old-out-token']} sostituto con token {v['new-out-token']}. Quindi la port ha {port_tokens[v['out-token-port-name']]} tokens"
+            f"Port_tokens {v['out-token-port-name']} - token {v['old-out-token']} sostituito con token {v['new-out-token']}. Quindi la port ha {port_tokens[v['out-token-port-name']]} tokens"
         )
-
-
-def reduce_graph_old(
-    dag_ports,
-    port_tokens,
-    available_new_job_tokens,
-    new_workflow_name,
-    token_visited,
-    dag_tokens,
-):
-    for v in available_new_job_tokens.values():
-        if v["out-token-port-name"] not in port_tokens.keys():
-            raise FailureHandlingException("Non c'è la porta. NON VA BENE")
-
-    # # todo: aggiustare nel caso in cui una port abbia più token di output
-    empty_ports = _clean_port_tokens(
-        port_tokens,
-        [v["old-out-token"] for v in available_new_job_tokens.values()],
-        dag_ports,
-        [v["out-token-port-name"] for v in available_new_job_tokens.values()],
-    )
-    while empty_ports:
-        empty_ports = _update_dag_ports(
-            dag_ports, port_tokens, empty_ports, new_workflow_name
-        )
-
-    # update available token in the port_tokens and adding port as init port in dag_ports
-    for v in available_new_job_tokens.values():
-        if v["out-token-port-name"] in port_tokens.keys():
-            port_tokens[v["out-token-port-name"]].add(v["new-out-token"])
-            if not is_next_of_someone(v["out-token-port-name"], dag_ports):
-                dag_ports[INIT_DAG_FLAG].add(v["out-token-port-name"])
-            print(
-                f"Port_tokens {v['out-token-port-name']} aggiunto un nuovo elemento quindi ha {port_tokens[v['out-token-port-name']]} tokens"
-            )
-        else:
-            print(
-                f"Port_tokens non ha più la port {v['out-token-port-name']} ... significa che il new token non serve più per questo rollback"
-            )
 
 
 def is_next_of_someone(p_name, dag_ports):
@@ -511,27 +264,6 @@ def is_next_of_someone(p_name, dag_ports):
         if port_name != INIT_DAG_FLAG and p_name in next_port_names:
             return True
     return False
-
-
-def _update_dag_ports(
-    dag_ports: MutableMapping[str, MutableSequence[str]],
-    port_tokens: MutableMapping[str, MutableSequence[int]],
-    empty_ports: MutableSequence[str],
-    new_workflow_name: str,
-):
-    new_empty_ports = set()
-    for port_name, next_port_names in dag_ports.items():
-        for empty_port in empty_ports:
-            if empty_port in next_port_names:
-                next_port_names.remove(empty_port)
-        # There is no next ports, so port_name is not even more connected to the main graph
-        if len(next_port_names) == 0:
-            new_empty_ports.add(port_name)
-    for port_name in new_empty_ports:
-        dag_ports.pop(port_name)
-        port_tokens.pop(port_name)
-        print(f"wf {new_workflow_name} - Pop {port_name} for dag_ports and port_tokens")
-    return new_empty_ports
 
 
 def add_into_vertex(
@@ -594,11 +326,15 @@ def add_into_graph(
         and port_name_to_add in dag_ports[INIT_DAG_FLAG]
         and port_name_key != INIT_DAG_FLAG
     ):
-        pass
+        print(
+            f"Inserisco la port {port_name_to_add} dopo la port {port_name_key}. però è già in INIT. Aggiorno grafo"
+        )
     if port_name_key == INIT_DAG_FLAG and port_name_to_add in [
         pp for p, plist in dag_ports.items() for pp in plist if p != INIT_DAG_FLAG
     ]:
-        pass
+        print(
+            f"Inserisco la port {port_name_to_add} in INIT. però è già in {port_name_key}. Aggiorno grafo"
+        )
     dag_ports.setdefault(port_name_key, set()).add(port_name_to_add)
 
     # It is possible find some token available and other unavailable in a scatter
@@ -647,7 +383,6 @@ def remove_from_graph(
         )
 
 
-# todo: tmp metodo, appena capisco bene i parametri da usare aggiustare cosa fa
 def remove_token(
     token_id_to_remove: int,
     dag_ports: MutableMapping[str, MutableSequence[str]],
@@ -750,10 +485,12 @@ class DefaultFailureManager(FailureManager):
         async with self.job_requests[token.value.name].lock:
             job_request = self.job_requests[token.value.name]
 
-            # todo: togliere parametro is_running, usare lo status dello step
-            # todo: questo controllo forse meglio toglierlo da qui. Dal momento tra cui li individeo is_running e il momento in cui li attacco al wofklow (sync_rollbacks) i job potrebbero terminare e non avrei i token in input. Quindi due soluzioni
-            #   quella facile costruire tutto il grafo ignorando quelli running in questo momento. Poi sync_rollbacks aggiusta tutto
-            #   fare un meccanismo (probabilmente in sync_rollback) che si ricorda di controllare se i job nel frattempo hanno finito
+            # todo: togliere parametro is_running, usare lo status dello step OPPURE status dentro lo scheduler
+            # todo: questo controllo forse meglio toglierlo da qui. Dal momento tra cui li individuo is_running al
+            #  momento in cui li attacco al wofklow (sync_rollbacks) i job potrebbero terminare e non avrei i token
+            #  in input. Una soluzione facile è costruire tutto il grafo ignorando quelli running in questo
+            #  momento. Poi sync_rollbacks aggiusta tutto. La pecca è di costruire tutto il grafo quando in realtà
+            #  non serve perché poi verrà prunato fino al job running.
             if job_request.is_running:
                 print(
                     f"Il job {token.value.name} {token.persistent_id} - è running, dovrei aspettare il suo output"
@@ -820,8 +557,8 @@ class DefaultFailureManager(FailureManager):
                     return True
                 else:
                     self.job_requests[token.value.name].job_token = None
-                    # todo: come gestire i vari kport? Se un token non è valido mettere a None solo la kport di quel token o tutta?
-                    #  la cosa migliore sarebbe solo di quella persa
+                    # todo: come gestire i vari kport? Se un token non è valido mettere a None solo la kport
+                    #  di quel token o tutta? la cosa migliore sarebbe solo di quella persa
                     self.job_requests[token.value.name].token_output = None
                     self.job_requests[token.value.name].workflow = None
         return False
@@ -854,8 +591,6 @@ class DefaultFailureManager(FailureManager):
 
         # {old_job_token_id : (new_job_token_id, new_output_token_id)}
         available_new_job_tokens = {}
-
-        combinator_port = set()
 
         for k, t in failed_job.inputs.items():
             if t.persistent_id is None:
@@ -891,11 +626,8 @@ class DefaultFailureManager(FailureManager):
                         "is available",
                         is_available,
                     )
-                # if isinstance(token, JobToken):
-                #     print(f"JobToken ({token.persistent_id})", token.value.name)
 
-                # impossible case because when
-                # added in tokens, the elem is checked
+                # impossible case because when added in tokens, the elem is checked
                 if token.persistent_id in all_token_visited.keys():
                     raise FailureHandlingException(
                         f"Token {token.persistent_id} already visited"
@@ -964,29 +696,19 @@ class DefaultFailureManager(FailureManager):
                         all_token_visited,
                     )
                     dag_tokens.setdefault(INIT_DAG_FLAG, set()).add(token.persistent_id)
-                # if available or not prev_tokens: add_into_graph # però ricordarsi di definire "prev_tokens=None" prima del if not available. ALtrimenti protrebbe prendere il prev_tokens dell'iterazione precedente e non essere corretto
+                # alternativa al doppio else -> if available or not prev_tokens: add_into_graph # però ricordarsi di definire "prev_tokens=None" prima del if not available. ALtrimenti protrebbe prendere il prev_tokens dell'iterazione precedente e non essere corretto
             else:
                 port_row = await workflow.context.database.get_port_from_token(
                     token.persistent_id
                 )
                 add_into_vertex(port_row["name"], token, port_tokens, all_token_visited)
 
-                # port_tokens.setdefault(port_row["name"], set()).add(token.persistent_id)
-
-        # validate_port_tokens(port_tokens, all_token_visited)
-        # remove_from_init = set()
-        # for pp in dag_ports[INIT_DAG_FLAG]:
-        #     if is_next_of_someone(pp, dag_ports):
-        #         print(f"port {pp} next someone and also in INIT")
-        #         remove_from_init.add(pp)
-        # for pp in remove_from_init:
-        #     dag_ports[INIT_DAG_FLAG].remove(pp)
         print("While tokens terminato")
         check_double_reference(dag_ports)
 
-        for t, _ in all_token_visited.values():
-            if isinstance(t, JobToken):
-                print(f"after.build - JobToken {t.value.name}")
+        print(
+            f"after.build - JobTokens: {set([ t.value.name for t, _ in all_token_visited.values() if isinstance(t, JobToken)])}"
+        )
 
         all_token_visited = dict(sorted(all_token_visited.items()))
         print(
@@ -1018,14 +740,13 @@ class DefaultFailureManager(FailureManager):
             dag_ports,
             port_tokens,
             available_new_job_tokens,
-            new_workflow_name,
-            all_token_visited,
+sited,
             dag_tokens,
         )
         print("grafo ridotto")
-        for t, _ in all_token_visited.values():
-            if isinstance(t, JobToken):
-                print(f"after.riduzione - JobToken {t.value.name} ")
+        print(
+            f"after.riduzione - JobTokens: {set([ t.value.name for t, _ in all_token_visited.values() if isinstance(t, JobToken)])}"
+        )
 
         # DEBUG: create port-step-token graphs post remove
         await print_grafici_post_remove(
@@ -1087,34 +808,6 @@ class DefaultFailureManager(FailureManager):
         workflow,
         failed_step,
     ):
-        # per sincronizzare usare la var is_running
-        # dal grafo ricavo quali job devono essere eseguiti:
-        # - Se non esiste la request o non sono running, pongo la var a true
-        #   - se request esiste, pone job_token e out_token a None
-        # - altrimenti (è running quindi) applico politica descritta sotto
-        # Quando il job termina la sua esecuzione:
-        # - salva nel modulo fault il suo job_token (che ha terminato con successo)
-        #   - chiamando il modulo fault controlliamo se il job usato sia quello originale oppure uno eseguito da rollback.
-        #     Se ci troviamo nel seconod caso, per il recupero dei dati viene usato il job del rollback
-        # - Recupera i dati da remoto (usando il job dentro job_token)
-        # Dopo aver recuperato i dati e generato l'out_token, chiama il metodo notify jobs che:
-        # - salva out_token nel modulo fault
-        # - pone is_running del job a False
-
-        # Se job è già running
-        # aggiustare il grafo togliendo gli step non più necessari
-        # COME ATTACCARE I DUE WORKFLOW?
-        # invece della queue: Aspettare che i token siano pronti, aggiustare il grafo e infine eseguire il workflow
-        # fare un publisher-subscribers:
-        #   - job in esecuzione dentro wf1
-        #   - a wf2 serve l'output (t1) di job
-        #   - wf2 costruisce il suo grafo, della parte interessata di job mette solo la port dove viene prodotto t1
-        #   - la port è vuota, ma viene iscritta ad una coda presente nella request del job
-        #   - quando job in wf1 avrà terminato, salva t1 in request.out_token
-        #   - il modulo di fault si occuperà di prendere t1 e metterlo dentro le porte iscritte alla coda
-        #   - in questo modo wf2 potrà eseguire nel frattempo gli altri step e si fermarà solo quando sarà davvero necessario t1 prodotto da job
-        #   - dopo che il modulo di fault manda t1, disiscrive le port dalla coda
-
         job_executed_in_new_workflow = set()  # debug variable
         job_token_list = []
         for token, _ in token_visited.values():
@@ -1134,13 +827,6 @@ class DefaultFailureManager(FailureManager):
                         print(
                             f"Job {token.value.name} già in esecuzione nel workflow {self.job_requests[token.value.name].workflow} -> Ricostruire dag"
                         )
-
-                        # Idea: Voglio lasciare in dag_ports solo la port che dà in output il token generato dal job
-                        # e rimuovere tutte le port precedenti che non sono connesse ad altre port del grafo
-                        # In realtà non è detto che io voglio davvero rimuovere la port, ma solo i token che passano da questa port
-                        # coinvolti a generare il token mancante del job (e.g. se sono port di una scatter di alcuni job).
-                        # Se rimossi questi token, le port sono vuote (port_tokens) oppure hanno solo token available, allora è
-                        # possibile rimuovere le porte da dag_ports
 
                         # alternativa: dal dag_ports prendo tutte le port successive al job_token,
                         # con il database ricavo quali di queste porte sono output di uno ExecuteStep
@@ -1278,15 +964,6 @@ class DefaultFailureManager(FailureManager):
                         f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
                     )
                     raise FailureHandlingException()
-        aa = get_necessary_tokens(port_tokens, token_visited)
-        # for t in set(token_visited.keys()) - set(aa.keys()):
-        #     print(
-        #         "poooop token",
-        #         t,
-        #         f"del jobtoken {token.persistent_id} {token.value.name} wf {new_workflow.name}",
-        #     )
-        #     token_visited.pop(t)
-        # pass
         nie = get_necessary_tokens(port_tokens, token_visited)
         kies = list(token_visited.keys())
         for k in kies:
@@ -1346,7 +1023,7 @@ class DefaultFailureManager(FailureManager):
         )
         print("end build dag")
 
-        # update class state (attributes) and jobs syncronization
+        # update class state (attributes) and jobs synchronization
         job_executed_in_new_workflow = await self.sync_rollbacks(
             dag_ports,
             dag_tokens,
@@ -1361,8 +1038,7 @@ class DefaultFailureManager(FailureManager):
         )
         print("End sync-rollbacks")
 
-        # port_tokens_counter non serve più. solo per debug
-        port_tokens_counter = await _populate_workflow(
+        await _populate_workflow(
             failed_step,
             token_visited,
             new_workflow,
@@ -1398,45 +1074,28 @@ class DefaultFailureManager(FailureManager):
                         )
                     )
 
-        self._save_for_retag(
-            new_workflow, dag_ports, port_tokens, token_visited, failed_step.name
-        )
+        self._save_for_retag(new_workflow, dag_ports, port_tokens, token_visited)
 
         await _put_tokens(
             new_workflow,
             dag_ports[INIT_DAG_FLAG],
             port_tokens,
             token_visited,
-            dag_ports,
         )
-
-        # pass
-        # self._save_for_retag(new_workflow, dag_ports, port_tokens, token_visited)
-        # pass
 
         print("New workflow", new_workflow.name, "popolato così:")
         print("\tJobs da rieseguire:", job_executed_in_new_workflow)
 
         for step in new_workflow.steps.values():
-            try:
-                print(
-                    f"Step {step.name}\n\tinput ports",
-                    {
-                        k_p: [(t.persistent_id, t.tag) for t in port.token_list]
-                        for k_p, port in step.get_input_ports().items()
-                    },
-                    "\n\tkey-port_name",
-                    {k: v.name for k, v in step.get_input_ports().items()},
-                )
-            except Exception as e:
-                # todo: a volte non trova la porta.
-                print(
-                    f"Step {step.name} error. new workflow {new_workflow.name}\n\tsteps",
-                    new_workflow.steps.keys(),
-                    "\n\tports",
-                    new_workflow.ports.keys(),
-                )
-                raise e
+            print(
+                f"Step {step.name}\n\tinput ports",
+                {
+                    k_p: [(t.persistent_id, t.tag) for t in port.token_list]
+                    for k_p, port in step.get_input_ports().items()
+                },
+                "\n\tkey-port_name",
+                {k: v.name for k, v in step.get_input_ports().items()},
+            )
 
         for token, _ in token_visited.values():
             if isinstance(token, JobToken):
@@ -1444,8 +1103,6 @@ class DefaultFailureManager(FailureManager):
                 await workflow.context.scheduler.notify_status(
                     token.value.name, Status.ROLLBACK
                 )
-                # todo: o togliere job_name da location_allocation oppure renderlo un set. Dato che in futuro vogliamo avere la possibilità di ri-allocare il job in un'altra location, meglio toglierlo
-                #  usando _deallocate_job però si rimuove anche da job_allocation. Questo ci fa perdere le info sui job che hanno la precedenza ad esser schedulati altrimenti si va in deadlock
                 workflow.context.scheduler.deallocate_from_job_name(
                     token.value.name, keep_job_allocation=True
                 )
@@ -1472,9 +1129,7 @@ class DefaultFailureManager(FailureManager):
         temp_print_retag(workflow_name, output_port, tag, self.retags, "return false")
         return False
 
-    def _save_for_retag(
-        self, new_workflow, dag_ports, port_tokens, token_visited, failed_step_name
-    ):
+    def _save_for_retag(self, new_workflow, dag_ports, port_tokens, token_visited):
         # todo: aggiungere la possibilità di eserguire comunque tutti i job delle scatter aggiungendo un parametro nel StreamFlow file
         if new_workflow.name not in self.retags.keys():
             self.retags[new_workflow.name] = {}
@@ -1533,7 +1188,6 @@ class DefaultFailureManager(FailureManager):
 
         async with self.job_requests[failed_job.name].lock:
             if self.job_requests[failed_job.name].job_token is not None:
-                # succede ma non dovrebbe, sarà perché manca ancora la sincronizzazione
                 print(
                     f"WARN WARN WARN job {failed_job.name} ha già un job_token {self.job_requests[failed_job.name].job_token.persistent_id}. Però qui non dovrebbe averne. Io volevo aggiungere job_token {new_job_token.persistent_id}."
                 )
@@ -1586,27 +1240,20 @@ class DefaultFailureManager(FailureManager):
                 self.job_requests[job_name].is_running = False
                 # todo: fare a tutte le port nella queue la put del token
                 elems = []
-                try:
-                    print(
-                        f"job {job_name} sta notificando sulla port_name {out_port_name}. Ci sono in coda",
-                        len(self.job_requests[job_name].queue),
-                        "ports:",
-                        "".join(
-                            [
-                                f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} workflow {elem.port.workflow.name} token_list {elem.port.token_list} queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del terminationtoken"
-                                if elem
-                                else "\n\t\tElem-None"
-                                for elem in self.job_requests[job_name].queue
-                            ]
-                        ),
-                    )
-                except:
-                    print(
-                        f"job {job_name} sta notificando sulla port_name {out_port_name}. Ci sono in coda",
-                        len(self.job_requests[job_name].queue),
-                        "ports. Qualcosa si è rotto nella print. Questa è una print raffazzonata",
-                    )
-                    raise
+                print(
+                    f"job {job_name} sta notificando sulla port_name {out_port_name}. Ci sono in coda",
+                    len(self.job_requests[job_name].queue),
+                    "ports:",
+                    "".join(
+                        [
+                            f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} workflow {elem.port.workflow.name} token_list {elem.port.token_list} queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del terminationtoken"
+                            if elem
+                            else "\n\t\tElem-None"
+                            for elem in self.job_requests[job_name].queue
+                        ]
+                    ),
+                )
+
                 for elem in self.job_requests[job_name].queue:
                     if elem.port.name == out_port_name:
                         elem.port.put(token)
