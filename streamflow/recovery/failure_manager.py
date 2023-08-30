@@ -87,12 +87,12 @@ async def _load_prev_tokens(token_id, loading_context, context):
     )
 
 
-def get_prev_ports(searched_port_name, dag_ports):
-    start_port_names = set()
-    for port_name, next_port_names in dag_ports.items():
-        if searched_port_name in next_port_names and port_name != INIT_DAG_FLAG:
-            start_port_names.add(port_name)
-    return start_port_names
+def get_prev_vertices(searched_vertex, dag):
+    prev_vertices = set()
+    for vertex, next_vertices in dag.items():
+        if searched_vertex in next_vertices and vertex != INIT_DAG_FLAG:
+            prev_vertices.add(vertex)
+    return prev_vertices
 
 
 async def _put_tokens(
@@ -417,7 +417,7 @@ def replace_token(
         f"new-method - replace token {token_id_to_replace} con {token_to_add.persistent_id} - I token della port {port_name} sono tutti disp? {all((token_visited[t_id][1] for t_id in port_tokens[port_name]))}"
     )
     if all((token_visited[t_id][1] for t_id in port_tokens[port_name])):
-        for prev_port_name in get_prev_ports(port_name, dag_ports):
+        for prev_port_name in get_prev_vertices(port_name, dag_ports):
             remove_from_graph(prev_port_name, dag_ports, port_tokens, token_visited)
         add_into_graph(
             port_name, None, INIT_DAG_FLAG, dag_ports, port_tokens, token_visited
@@ -903,7 +903,7 @@ sited,
                             )
                         )
                         for t_id in execute_step_out_token_ids:
-                            for prev_t_id in get_prev_tokens(t_id, dag_tokens):
+                            for prev_t_id in get_prev_vertices(t_id, dag_tokens):
                                 remove_token(
                                     prev_t_id, dag_ports, port_tokens, token_visited
                                 )
