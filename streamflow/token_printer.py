@@ -360,27 +360,27 @@ async def print_grafici_parte_uno(
     workflow,
     failed_step,
 ):
-    print_graph_figure(
-        {
-            (
-                k,
-                all_token_visited[k][0].tag,
-                label_token_availability(all_token_visited[k][1]),
-            ): [
-                (
-                    vv,
-                    all_token_visited[vv][0].tag,
-                    label_token_availability(all_token_visited[vv][1]),
-                )
-                if isinstance(vv, int)
-                else (vv, "None", "None")
-                for vv in v
-            ]
-            for k, v in dag_tokens.items()
-            if k != INIT_DAG_FLAG
-        },
-        dir_path + "/tokens-" + new_workflow_name,
-    )
+    # print_graph_figure(
+    #     {
+    #         (
+    #             k,
+    #             all_token_visited[k][0].tag,
+    #             label_token_availability(all_token_visited[k][1]),
+    #         ): [
+    #             (
+    #                 vv,
+    #                 all_token_visited[vv][0].tag,
+    #                 label_token_availability(all_token_visited[vv][1]),
+    #             )
+    #             if isinstance(vv, int)
+    #             else (vv, "None", "None")
+    #             for vv in v
+    #         ]
+    #         for k, v in dag_tokens.items()
+    #         if k != INIT_DAG_FLAG
+    #     },
+    #     dir_path + "/tokens-" + new_workflow_name,
+    # )
     print_graph_figure(
         {k: v for k, v in dag_ports.items() if k != INIT_DAG_FLAG},
         dir_path + "/ports-" + new_workflow_name,
