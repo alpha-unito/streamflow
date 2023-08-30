@@ -55,6 +55,7 @@ class NamesStack:
 
 
 def create_command(
+    class_name: str,
     command: MutableSequence[str],
     environment: MutableMapping[str, str] = None,
     workdir: str | None = None,
@@ -62,27 +63,52 @@ def create_command(
     stdout: int | str = asyncio.subprocess.STDOUT,
     stderr: int | str = asyncio.subprocess.STDOUT,
 ) -> str:
+    # Format stdin
+    stdin = (
+        f" < {shlex.quote(stdin)}"
+        if stdin is not None and stdin != asyncio.subprocess.DEVNULL
+        else ""
+    )
+    # Format stderr
+    if stderr == asyncio.subprocess.DEVNULL:
+        stderr = "/dev/null"
+    if stderr == stdout:
+        stderr = " 2>&1"
+    elif stderr != asyncio.subprocess.STDOUT:
+        stderr = f" 2>{shlex.quote(stderr)}"
+    else:
+        stderr = ""
+    # Format stdout
+    if stdout == asyncio.subprocess.PIPE:
+        raise WorkflowExecutionException(
+            f"The `{class_name}` does not support `stdout` pipe redirection."
+        )
+    elif stdout == asyncio.subprocess.DEVNULL:
+        stdout = "/dev/null"
+    elif stdout != asyncio.subprocess.STDOUT:
+        stdout = f" > {shlex.quote(stdout)}"
+    else:
+        stdout = ""
+    if stderr == asyncio.subprocess.PIPE:
+        raise WorkflowExecutionException(
+            f"The `{class_name}` does not support `stderr` pipe redirection."
+        )
+    # Build command
     command = "".join(
         "{workdir}" "{environment}" "{command}" "{stdin}" "{stdout}" "{stderr}"
     ).format(
         workdir=f"cd {workdir} && " if workdir is not None else "",
-        environment="".join(
-            [f'export {key}="{value}" && ' for (key, value) in environment.items()]
-        )
-        if environment is not None
-        else "",
-        command=" ".join(command),
-        stdin=f" < {shlex.quote(stdin)}" if stdin is not None else "",
-        stdout=f" > {shlex.quote(stdout)}"
-        if stdout != asyncio.subprocess.STDOUT
-        else "",
-        stderr=(
-            " 2>&1"
-            if stderr == stdout
-            else f" 2>{shlex.quote(stderr)}"
-            if stderr != asyncio.subprocess.STDOUT
+        environment=(
+            "".join(
+                [f'export {key}="{value}" && ' for (key, value) in environment.items()]
+            )
+            if environment is not None
             else ""
         ),
+        command=" ".join(command),
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
     )
     return command
 

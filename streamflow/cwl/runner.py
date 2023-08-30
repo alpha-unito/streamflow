@@ -55,10 +55,10 @@ parser.add_argument(
 
 
 async def _async_main(args: argparse.Namespace):
+    load_extensions()
     validator = SfValidator()
     args.name = args.name or str(uuid.uuid4())
     if args.streamflow_file:
-        load_extensions()
         with open(args.streamflow_file) as f:
             streamflow_config = validator.yaml.load(f)
         workflows = streamflow_config.get("workflows", {})

@@ -221,33 +221,6 @@ class SSHConfig:
 
 
 class SSHConnector(BaseConnector):
-    @staticmethod
-    def _get_command(
-        location: Location,
-        command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
-        workdir: str | None = None,
-        stdin: int | str | None = None,
-        stdout: int | str = asyncio.subprocess.STDOUT,
-        stderr: int | str = asyncio.subprocess.STDOUT,
-        job_name: str | None = None,
-    ):
-        command = utils.create_command(
-            command=command,
-            environment=environment,
-            workdir=workdir,
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
-        )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"EXECUTING command {command} on {location}" f" for job {job_name}"
-                if job_name
-                else ""
-            )
-        return utils.encode_command(command)
-
     def __init__(
         self,
         deployment_name: str,
@@ -430,6 +403,34 @@ class SSHConnector(BaseConnector):
                                     for writer in writers
                                 )
                             )
+
+    def _get_command(
+        self,
+        location: Location,
+        command: MutableSequence[str],
+        environment: MutableMapping[str, str] = None,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        job_name: str | None = None,
+    ):
+        command = utils.create_command(
+            class_name=self.__class__.__name__,
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"EXECUTING command {command} on {location}" f" for job {job_name}"
+                if job_name
+                else ""
+            )
+        return utils.encode_command(command)
 
     def _get_config(self, node: str | MutableMapping[str, Any]):
         if node is None:
