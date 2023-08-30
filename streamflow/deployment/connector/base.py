@@ -335,7 +335,13 @@ class BaseConnector(Connector, FutureAware):
         job_name: str | None = None,
     ) -> tuple[Any | None, int] | None:
         command = utils.create_command(
-            command, environment, workdir, stdin, stdout, stderr
+            self.__class__.__name__,
+            command,
+            environment,
+            workdir,
+            stdin,
+            stdout,
+            stderr,
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(

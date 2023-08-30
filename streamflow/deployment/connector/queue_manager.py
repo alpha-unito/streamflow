@@ -339,7 +339,8 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             if logger.isEnabledFor(logging.WARN):
                 logger.warn(
                     "Inline SSH options are deprecated and will be removed in StreamFlow 0.3.0. "
-                    "Define a standalone SSH connector and link to it using the `connector` property."
+                    f"Define a standalone `SSHConnector` and link the `{self.__class__.__name__}` "
+                    "to it using the `wraps` property."
                 )
             self._inner_ssh_connector = True
             connector: Connector = SSHConnector(
@@ -390,6 +391,15 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             maxsize=1, ttl=self.pollingInterval
         )
         self.jobsCacheLock: asyncio.Lock = asyncio.Lock()
+
+    def _format_stream(self, stream: int | str) -> str:
+        if stream == asyncio.subprocess.DEVNULL:
+            stream = "/dev/null"
+        elif stream == asyncio.subprocess.PIPE:
+            raise WorkflowExecutionException(
+                f"The `{self.__class__.__name__}` does not support stream pipe redirection."
+            )
+        return shlex.quote(stream)
 
     async def _get_location(self):
         locations = await self.connector.get_available_locations()
@@ -472,7 +482,10 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
     ) -> tuple[Any | None, int] | None:
         if job_name:
             command = utils.create_command(
-                command=command, environment=environment, workdir=workdir
+                class_name=self.__class__.__name__,
+                command=command,
+                environment=environment,
+                workdir=workdir,
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
@@ -666,12 +679,12 @@ class SlurmConnector(QueueManagerConnector):
             "sbatch",
             "--parsable",
         ]
-        if stdin is not None:
+        if stdin is not None and stdin != asyncio.subprocess.DEVNULL:
             batch_command.append(get_option("input", shlex.quote(stdin)))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
-            batch_command.append(get_option("error", shlex.quote(stderr)))
+            batch_command.append(get_option("error", self._format_stream(stderr)))
         if stdout != asyncio.subprocess.STDOUT:
-            batch_command.append(get_option("output", shlex.quote(stdout)))
+            batch_command.append(get_option("output", self._format_stream(stdout)))
         if timeout:
             batch_command.append(
                 get_option("time", utils.format_seconds_to_hhmmss(timeout))
@@ -871,10 +884,10 @@ class PBSConnector(QueueManagerConnector):
                 ),
             ]
         )
-        if stdin is not None:
+        if stdin is not None and stdin != asyncio.subprocess.DEVNULL:
             batch_command.append(get_option("i", stdin))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
-            batch_command.append(get_option("e", stderr))
+            batch_command.append(get_option("e", self._format_stream(stderr)))
         if stderr == stdout:
             batch_command.append(get_option("j", "oe"))
         if service := cast(PBSService, self.services.get(location.service)):
@@ -1040,12 +1053,12 @@ class FluxConnector(QueueManagerConnector):
         ]
         if workdir is not None:
             batch_command.append(get_option("cwd", workdir))
-        if stdin is not None:
+        if stdin is not None and stdin != asyncio.subprocess.DEVNULL:
             batch_command.append(get_option("input", shlex.quote(stdin)))
         if stdout != asyncio.subprocess.STDOUT:
-            batch_command.append(get_option("output", shlex.quote(stdout)))
+            batch_command.append(get_option("output", self._format_stream(stdout)))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
-            batch_command.append(get_option("error", shlex.quote(stderr)))
+            batch_command.append(get_option("error", self._format_stream(stderr)))
         if timeout:
             batch_command.extend(["-t", utils.format_seconds_to_hhmmss(timeout)])
         nodes = 1
