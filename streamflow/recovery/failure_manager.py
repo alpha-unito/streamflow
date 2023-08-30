@@ -529,23 +529,23 @@ class DefaultFailureManager(FailureManager):
                 port_json = await context.database.get_port_by_token(
                     out_tokens_json["id"]
                 )
-                disponibile = await _is_token_available(
+                is_available = await _is_token_available(
                     job_request.token_output[port_json["name"]], context
                 )
                 print(
                     f"il job {token.value.name} ({token.persistent_id}) - out_token_json['id'] {out_tokens_json['id']} ha il port_json {dict(port_json)}",
-                    f"\n\til token di output {job_request.token_output[port_json['name']]} è già disponibile? {disponibile}",
+                    f"\n\til token di output {job_request.token_output[port_json['name']]} è già disponibile? {is_available}",
                 )
-                if disponibile:
+                if is_available:
                     available_new_job_tokens[token.persistent_id] = {
                         "out-token-port-name": port_json["name"],
-                        "new-job-token": job_request.job_token.persistent_id,
+                        # "new-job-token": job_request.job_token.persistent_id,
                         "new-out-token": job_request.token_output[
                             port_json["name"]
                         ].persistent_id,
-                        "old-job-token": token.persistent_id,
+                        # "old-job-token": token.persistent_id,
                         "old-out-token": out_tokens_json["id"],
-                        "value": out_tokens_json["value"],
+                        # "value": out_tokens_json["value"],
                     }
                     token_visited[token.persistent_id] = (
                         token,
@@ -744,8 +744,7 @@ class DefaultFailureManager(FailureManager):
             dag_ports,
             port_tokens,
             available_new_job_tokens,
-sited,
-            dag_tokens,
+            all_token_visited,
         )
         print("grafo ridotto")
         print(
@@ -763,11 +762,17 @@ sited,
             failed_step,
         )
 
+        tmp_tok_vis = get_necessary_tokens(port_tokens, all_token_visited)
+        diff = set(all_token_visited.keys()) - set(tmp_tok_vis.keys())
+        # la diff sta che aggiungo tutti i token che incontro. Ma non è detto che mi servano tutti
+        # li aggiungo tutti per non finire in qualche loop dentro while tokens
+        # if diff:
+        #     raise FailureHandlingException("Sono diversi")
         return (
             dag_ports,
             dag_tokens,
             port_tokens,
-            get_necessary_tokens(port_tokens, all_token_visited),
+            tmp_tok_vis,
             dir_path,
             port_name_id,
         )
@@ -876,14 +881,15 @@ sited,
 
                         # if the port can have more tokens (todo: caso non testato)
                         for row in rows:
-                            if row["name"] in new_workflow.ports.keys():
-                                for pr in self.job_requests[token.value.name].queue:
-                                    if pr.port.name == row["name"]:
-                                        pr.waiting_token += 1
-                                        print(
-                                            f"new_workflow {new_workflow.name} already has port {port.name}. Increased waiting_tokens: {pr.waiting_token}"
-                                        )
-                                        break
+                            if row["name"] not in new_workflow.ports.keys():
+                                continue
+                            for pr in self.job_requests[token.value.name].queue:
+                                if pr.port.name == row["name"]:
+                                    pr.waiting_token += 1
+                                    print(
+                                        f"new_workflow {new_workflow.name} already has port {pr.port.name}. Increased waiting_tokens: {pr.waiting_token}"
+                                    )
+                                    break
 
                         # add port in the workflow and create port recovery (request)
                         for port in execute_step_outports:
@@ -895,7 +901,6 @@ sited,
                                 PortRecovery(port)
                             )
 
-                        token_to_remove = set()
                         # rimuovo i token generati da questo job token
                         # (non posso levare tutti i token della port perché non so quali
                         # job li genera. Solo con dag_tokens posso saperlo)
