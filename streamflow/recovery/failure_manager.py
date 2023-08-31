@@ -75,18 +75,6 @@ async def _cleanup_dir(
     )
 
 
-# todo: spostarlo in utils o loading_context. Utilizzare questo metodo in test_provenance invece di ri-definirlo uguale
-async def _load_prev_tokens(token_id, loading_context, context):
-    rows = await context.database.get_dependees(token_id)
-
-    return await asyncio.gather(
-        *(
-            asyncio.create_task(loading_context.load_token(context, row["dependee"]))
-            for row in rows
-        )
-    )
-
-
 def get_prev_vertices(searched_vertex, dag):
     prev_vertices = set()
     for vertex, next_vertices in dag.items():
@@ -588,6 +576,7 @@ class DefaultFailureManager(FailureManager):
         # { port_name : set(token_ids) }
         port_tokens = {}
 
+        # todo: cambiarlo in {token_id: is_available} e quando è necessaria l'istanza del token recuperarla dal loading_context.load_token(id)
         # { token_id: (token, is_available)}
         all_token_visited = {}
 
@@ -641,12 +630,9 @@ class DefaultFailureManager(FailureManager):
                 all_token_visited[token.persistent_id] = (token, is_available)
 
                 if not is_available:
-                    prev_tokens = await _load_prev_tokens(
-                        token.persistent_id,
-                        loading_context,
-                        workflow.context,
-                    )
-                    if prev_tokens:
+                    if prev_tokens := await loading_context.load_prev_tokens(
+                        workflow.context, token.persistent_id
+                    ):
                         for pt in prev_tokens:
                             prev_port_row = (
                                 await workflow.context.database.get_port_from_token(
@@ -873,9 +859,8 @@ class DefaultFailureManager(FailureManager):
                                 PortRecovery(port)
                             )
 
-                        # rimuovo i token generati da questo job token
-                        # non posso togliere tutti i token della port perché non so quali
-                        # job li genera
+                        # rimuovo i token generati da questo job token, pero'
+                        # non posso togliere tutti i token della port perché non so quali job li genera
                         execute_step_out_token_ids = await get_execute_step_out_token_ids(
                             [
                                 row["depender"]
