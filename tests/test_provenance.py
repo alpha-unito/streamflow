@@ -4,6 +4,7 @@ from typing import MutableMapping, Any, MutableSequence
 
 import pytest
 
+from streamflow.core.utils import contains_id
 from streamflow.cwl.command import CWLCommand, CWLCommandToken
 from streamflow.cwl.translator import _create_command_output_processor_base
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -79,13 +80,6 @@ async def _general_test(
     executor = StreamFlowExecutor(workflow)
     await executor.run()
     return step
-
-
-def contains_id(id, token_list):
-    for t in token_list:
-        if id == t.persistent_id:
-            return True
-    return False
 
 
 async def verify_dependency_tokens(
