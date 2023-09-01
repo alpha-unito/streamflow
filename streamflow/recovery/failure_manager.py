@@ -143,56 +143,70 @@ async def _populate_workflow(
     )
     for port in await asyncio.gather(
         *(
-            Port.load(
-                new_workflow.context,
-                port_id,
-                loading_context,
-                new_workflow,
+            asyncio.create_task(
+                Port.load(
+                    new_workflow.context,
+                    port_id,
+                    loading_context,
+                    new_workflow,
+                )
             )
             for port_id in ports.keys()
         )
     ):
         new_workflow.add_port(port)
+    print("Port caricate")
 
     for tmpp in dag_ports[INIT_DAG_FLAG]:
         if tmpp not in dag_ports.keys():
             msg = f"Port {tmpp} non porta da nessuna parte"
             print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
             raise FailureHandlingException(msg)
+    print("check iniziato")
     check_double_reference(dag_ports)
+    print("Check finito")
 
     steps = set()
     for row_dependency in await asyncio.gather(
         *(
-            new_workflow.context.database.get_step_from_output_port(port_id)
+            asyncio.create_task(
+                new_workflow.context.database.get_step_from_output_port(port_id)
+            )
             for port_id in ports.keys()
             if id_name[port_id] not in dag_ports[INIT_DAG_FLAG]
         )
     ):
         steps.add(row_dependency["step"])
+    print("Step id recuperati", len(steps))
     for step in await asyncio.gather(
         *(
-            Step.load(
-                new_workflow.context,
-                step_id,
-                loading_context,
-                new_workflow,
+            asyncio.create_task(
+                Step.load(
+                    new_workflow.context,
+                    step_id,
+                    loading_context,
+                    new_workflow,
+                )
             )
             for step_id in steps
         )
     ):
         new_workflow.add_step(step)
+    print("Step caricati")
 
     # add output port of failed step into new_workflow
     for port in await asyncio.gather(
         *(
-            Port.load(
-                new_workflow.context, p.persistent_id, loading_context, new_workflow
+            asyncio.create_task(
+                Port.load(
+                    new_workflow.context, p.persistent_id, loading_context, new_workflow
+                )
             )
             for p in failed_step.get_output_ports().values()
         )
     ):
         new_workflow.add_port(port)
+    print("Ultime Port caricate")
 
 
 # todo: move it in utils
@@ -813,11 +827,13 @@ class DefaultFailureManager(FailureManager):
                         )
                         execute_step_outports = await asyncio.gather(
                             *(
-                                Port.load(
-                                    new_workflow.context,
-                                    row["id"],
-                                    loading_context,
-                                    new_workflow,
+                                asyncio.create_task(
+                                    Port.load(
+                                        new_workflow.context,
+                                        row["id"],
+                                        loading_context,
+                                        new_workflow,
+                                    )
                                 )
                                 for row in rows
                                 if row["name"] not in new_workflow.ports.keys()
@@ -1015,6 +1031,7 @@ class DefaultFailureManager(FailureManager):
             port_tokens,
             dag_ports,
         )
+        print("end populate")
 
         if add_failed_step:
             if failed_step.name not in new_workflow.steps.keys():
@@ -1044,6 +1061,7 @@ class DefaultFailureManager(FailureManager):
                     )
 
         self._save_for_retag(new_workflow, dag_ports, port_tokens, token_visited)
+        print("end save_for_retag")
 
         await _put_tokens(
             new_workflow,
@@ -1051,20 +1069,25 @@ class DefaultFailureManager(FailureManager):
             port_tokens,
             token_visited,
         )
+        print("end _put_tokens")
 
         print("New workflow", new_workflow.name, "popolato così:")
         print("\tJobs da rieseguire:", job_executed_in_new_workflow)
 
         for step in new_workflow.steps.values():
-            print(
-                f"Step {step.name}\n\tinput ports",
-                {
-                    k_p: [(t.persistent_id, t.tag) for t in port.token_list]
-                    for k_p, port in step.get_input_ports().items()
-                },
-                "\n\tkey-port_name",
-                {k: v.name for k, v in step.get_input_ports().items()},
-            )
+            try:
+                print(
+                    f"Step {step.name}\n\tinput ports",
+                    {
+                        k_p: [(t.persistent_id, t.tag) for t in port.token_list]
+                        for k_p, port in step.get_input_ports().items()
+                    },
+                    "\n\tkey-port_name",
+                    {k: v.name for k, v in step.get_input_ports().items()},
+                )
+            except Exception as e:
+                print(f"exception {e}")
+                raise
 
         for token, _ in token_visited.values():
             if isinstance(token, JobToken):

@@ -501,7 +501,7 @@ class CWLTransferStep(TransferStep):
                 # Check secondary files
                 if "secondaryFiles" in token_value:
                     new_token_value["secondaryFiles"] = await asyncio.gather(
-                        *(
+                        *(  # todo: add asyncio.create_task ?
                             self._update_file_token(
                                 job=job,
                                 token_value=element,
