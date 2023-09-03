@@ -20,12 +20,12 @@ import jsonref
 
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow import myconfig
-from streamflow.core.persistence import PersistableEntity
+from streamflow.core.persistence import PersistableEntity, DatabaseLoadingContext
 
 if TYPE_CHECKING:
-    from streamflow.core.context import SchemaEntity
+    from streamflow.core.context import SchemaEntity, StreamFlowContext
     from streamflow.core.deployment import Connector, Location
-    from streamflow.core.workflow import Token
+    from streamflow.core.workflow import Token, Port, Workflow
     from typing import Iterable
 
 
@@ -286,7 +286,6 @@ def wrap_command(command: str):
     return ["/bin/sh", "-c", f"{command}"]
 
 
-# todo: use this method in test_provenance
 def contains_id(
     searched_id: int, persistable_entity_list: MutableSequence[PersistableEntity]
 ):
@@ -299,3 +298,44 @@ def get_job_number(job_name):
 
 def get_execute_step_name_from_job_name(job_name):
     return job_name.rsplit("/", maxsplit=1)[0]
+
+
+async def get_port(
+    context: StreamFlowContext,
+    port_id: int,
+    loading_context: DatabaseLoadingContext,
+    change_wf: Workflow,
+):
+    if change_wf:
+        port_row = await context.database.get_port(port_id)
+        if port_row["name"] in change_wf.ports.keys():
+            return change_wf.ports[port_row["name"]]
+
+        # If the port is not available in the new workflow, a new one must be created
+        return await Port.load(context, port_id, loading_context, change_wf)
+    return await loading_context.load_port(context, port_id)
+
+
+async def get_dependencies(
+    dependency_rows: MutableSequence[MutableMapping[str, Any]],
+    load_ports: bool,
+    context: StreamFlowContext,
+    loading_context: DatabaseLoadingContext,
+):
+    if load_ports:
+        ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in dependency_rows
+            )
+        )
+        return {d["name"]: p.name for d, p in zip(dependency_rows, ports)}
+    else:
+        # it is not helpful to have an instance in loading_context when it is building a new workflow
+        port_rows = await asyncio.gather(
+            *(
+                asyncio.create_task(context.database.get_port(d["port"]))
+                for d in dependency_rows
+            )
+        )
+        return {d["name"]: p["name"] for d, p in zip(dependency_rows, port_rows)}

@@ -46,7 +46,7 @@ class DefaultTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow = None,
+        change_wf: Workflow,
     ):
         params = json.loads(row["params"])
         return cls(
@@ -119,7 +119,7 @@ class CWLTokenTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow = None,
+        change_wf: Workflow,
     ):
         params = json.loads(row["params"])
         return cls(
@@ -129,7 +129,7 @@ class CWLTokenTransformer(ManyToOneTransformer):
             else await loading_context.load_workflow(context, row["workflow"]),
             port_name=params["port_name"],
             processor=await TokenProcessor.load(
-                context, params["processor"], loading_context
+                context, params["processor"], loading_context, change_wf
             ),
         )
 
@@ -248,7 +248,7 @@ class ValueFromTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow = None,
+        change_wf: Workflow,
     ):
         params = json.loads(row["params"])
         return cls(
@@ -258,7 +258,7 @@ class ValueFromTransformer(ManyToOneTransformer):
             else await loading_context.load_workflow(context, row["workflow"]),
             port_name=params["port_name"],
             processor=await TokenProcessor.load(
-                context, params["processor"], loading_context
+                context, params["processor"], loading_context, change_wf
             ),
             value_from=params["value_from"],
             expression_lib=params["expression_lib"],

@@ -5,6 +5,7 @@ import json
 import sys
 import uuid
 from abc import ABC, abstractmethod
+import time
 from enum import Enum
 from typing import MutableMapping, MutableSequence, TYPE_CHECKING, Type, TypeVar, cast
 
@@ -15,6 +16,7 @@ from streamflow.core.persistence import (
     DependencyType,
     PersistableEntity,
 )
+from streamflow.core.utils import get_dependencies
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location, Target
@@ -102,10 +104,13 @@ class CommandOutputProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow,
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
             target=(await loading_context.load_target(context, row["workflow"]))
             if row["target"]
             else None,
@@ -126,11 +131,12 @@ class CommandOutputProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ) -> CommandOutputProcessor:
         type = cast(
             Type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
         )
-        return await type._load(context, row["params"], loading_context)
+        return await type._load(context, row["params"], loading_context, change_wf)
 
     @abstractmethod
     async def process(
@@ -259,7 +265,7 @@ class Port(PersistableEntity):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow = None,
+        change_wf: Workflow,
     ) -> Port:
         return cls(
             name=row["name"],
@@ -370,7 +376,7 @@ class Step(PersistableEntity, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow = None,
+        change_wf: Workflow,
     ):
         return cls(
             name=row["name"],
@@ -439,9 +445,16 @@ class Step(PersistableEntity, ABC):
         loading_context: DatabaseLoadingContext,
         change_wf: Workflow = None,
     ) -> Step:
+        st = time.time()
         row = await context.database.get_step(persistent_id)
         type = cast(Type[Step], utils.get_class_from_name(row["type"]))
+        stt = time.time()
         step = await type._load(context, row, loading_context, change_wf)
+        ett = time.time()
+        if ett - stt > 5:
+            print(
+                f"{step.name} (wf {step.workflow.name}) tempo per fare step TYPE load {round(ett - stt, 2)}"
+            )
         if change_wf is None:
             step.persistent_id = persistent_id
             step.status = Status(row["status"])
@@ -451,25 +464,63 @@ class Step(PersistableEntity, ABC):
                 Status.SKIPPED,
             ]
         input_deps = await context.database.get_input_ports(persistent_id)
-        input_ports = await asyncio.gather(
-            *(
-                asyncio.create_task(loading_context.load_port(context, d["port"]))
-                for d in input_deps
-            )
-        )
-        step.input_ports = {d["name"]: p.name for d, p in zip(input_deps, input_ports)}
         output_deps = await context.database.get_output_ports(persistent_id)
-        output_ports = await asyncio.gather(
-            *(
-                asyncio.create_task(loading_context.load_port(context, d["port"]))
-                for d in output_deps
-            )
+
+        step.input_ports = await get_dependencies(
+            input_deps, change_wf is None, context, loading_context
         )
-        step.output_ports = {
-            d["name"]: p.name for d, p in zip(output_deps, output_ports)
-        }
+        step.output_ports = await get_dependencies(
+            output_deps, change_wf is None, context, loading_context
+        )
         if change_wf is None:
             loading_context.add_step(persistent_id, step)
+        # if change_wf is None:
+        #     print(f"{step.name} (wf {step.workflow.name}) Load dep metodo 1")
+        #     input_ports = await asyncio.gather(
+        #         *(
+        #             asyncio.create_task(loading_context.load_port(context, d["port"]))
+        #             for d in input_deps
+        #         )
+        #     )
+        #     step.input_ports = {
+        #         d["name"]: p.name for d, p in zip(input_deps, input_ports)
+        #     }
+        #     output_ports = await asyncio.gather(
+        #         *(
+        #             asyncio.create_task(loading_context.load_port(context, d["port"]))
+        #             for d in output_deps
+        #         )
+        #     )
+        #     step.output_ports = {
+        #         d["name"]: p.name for d, p in zip(output_deps, output_ports)
+        #     }
+        #     loading_context.add_step(persistent_id, step)
+        # else:
+        #     print(f"{step.name} (wf {step.workflow.name}) Load dep metodo 2")
+        #     input_port_rows = await asyncio.gather(
+        #         *(
+        #             asyncio.create_task(context.database.get_port(d["port"]))
+        #             for d in input_deps
+        #         )
+        #     )
+        #     step.input_ports = {
+        #         d["name"]: p["name"] for d, p in zip(input_deps, input_port_rows)
+        #     }
+        #
+        #     output_port_rows = await asyncio.gather(
+        #         *(
+        #             asyncio.create_task(context.database.get_port(d["port"]))
+        #             for d in output_deps
+        #         )
+        #     )
+        #     step.output_ports = {
+        #         d["name"]: p["name"] for d, p in zip(output_deps, output_port_rows)
+        #     }
+        et = time.time()
+        if et - st > 5:
+            print(
+                f"{step.name} (wf {step.workflow.name}) tempo per fare step load {round(et - st, 2)}"
+            )
         return step
 
     @abstractmethod
@@ -600,10 +651,13 @@ class TokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow,
     ) -> TokenProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=change_wf
+            if change_wf
+            else await loading_context.load_workflow(context, row["workflow"]),
         )
 
     async def _save_additional_params(self, context: StreamFlowContext):
@@ -615,9 +669,10 @@ class TokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
+        change_wf: Workflow = None,
     ):
         type = cast(Type[TokenProcessor], utils.get_class_from_name(row["type"]))
-        return await type._load(context, row["params"], loading_context)
+        return await type._load(context, row["params"], loading_context, change_wf)
 
     @abstractmethod
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:

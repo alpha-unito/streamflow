@@ -41,7 +41,7 @@ class ListMergeCombinator(DotProductCombinator):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow = None,
+        change_wf: Workflow,
     ) -> ListMergeCombinator:
         return cls(
             name=row["name"],
