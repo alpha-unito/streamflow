@@ -477,6 +477,7 @@ async def printa_token(
     steps = await _get_step_from_token(
         graph_tokens, token_visited, token_values, workflow, loading_context
     )
+    print(f"print_token n.of steps {len(steps)}")
     token_values[INIT_DAG_FLAG] = INIT_DAG_FLAG
     step_name = search_step_name_into_graph(graph_tokens)
     token_values[step_name] = step_name
@@ -517,6 +518,12 @@ async def printa_token(
     for i, k in enumerate(colors.keys()):
         colors[k] = all_color[i]
     # print("colors", colors)
+    ssssss = set()
+    for k, values in graph_steps.items():
+        ssssss.add(k)
+        for v in values:
+            ssssss.add(v[0])
+    print(f"print_token n.of steps count2 {len(ssssss)}")
     print_graph_figure_label(graph_steps, pdf_name, colors)
 
 
@@ -587,3 +594,45 @@ async def _build_dag(token_list, workflow, loading_context=None):
     # workflow.steps.inputs.keys()
 
     return dag_tokens
+
+
+def print_graph_figure_petri(graph, steps, ports, title):
+    dot = graphviz.Digraph(title)
+    for vertex, neighbors in graph.items():
+        shape = "ellipse" if vertex in steps else "box"
+        dot.node(str(vertex), shape=shape, color="black" if neighbors else "red")
+        for n in neighbors:
+            dot.edge(str(vertex), str(n))
+    filepath = GRAPH_PATH + title + ".gv"
+    dot.render(filepath)
+    os.system("rm " + filepath)
+
+
+def dag_workflow(workflow, title="wf"):
+    dag = {}
+    ports = set()
+    steps = set()
+    for step in workflow.steps.values():
+        steps.add(step.name)
+        for port_name in step.output_ports.values():
+            dag.setdefault(step.name, set()).add(port_name)
+            ports.add(port_name)
+        for port_name in step.input_ports.values():
+            dag.setdefault(port_name, set()).add(step.name)
+            ports.add(port_name)
+    print_graph_figure_petri(dag, steps, ports, title + "-petri")
+    dag_steps = {}
+    for k, values in dag.items():
+        for v in values:
+            if v in steps:
+                if k in steps:
+                    dag_steps.setdefault(k, set()).add(v)
+            else:
+                if v in dag.keys():
+                    for s in dag[v]:
+                        if k in steps:
+                            if s in steps:
+                                dag_steps.setdefault(k, set()).add(s)
+                            else:
+                                print("boh")
+    print_graph_figure(dag_steps, title)

@@ -34,6 +34,7 @@ from streamflow.token_printer import (
     print_grafici_post_remove,
     print_graph_figure,
     print_step_from_ports,
+    dag_workflow,
 )
 from streamflow.workflow.step import ScatterStep, CombinatorStep
 from streamflow.workflow.executor import StreamFlowExecutor
@@ -60,10 +61,12 @@ async def get_execute_step_out_token_ids(next_token_ids, context):
     execute_step_out_token_ids = set()
     for t_id in next_token_ids:
         port_row = await context.database.get_port_from_token(t_id)
-        step_id_row = await context.database.get_step_from_output_port(port_row["id"])
-        step_row = await context.database.get_step(step_id_row["step"])
-        if step_row["type"] == get_class_fullname(ExecuteStep):
-            execute_step_out_token_ids.add(t_id)
+        for step_id_row in await context.database.get_steps_from_output_port(
+            port_row["id"]
+        ):
+            step_row = await context.database.get_step(step_id_row["step"])
+            if step_row["type"] == get_class_fullname(ExecuteStep):
+                execute_step_out_token_ids.add(t_id)
     return execute_step_out_token_ids
 
 
@@ -167,16 +170,27 @@ async def _populate_workflow(
     print("Check finito")
 
     steps = set()
-    for row_dependency in await asyncio.gather(
+    # for row_dependency in await asyncio.gather(
+    #     *(
+    #         asyncio.create_task(
+    #             new_workflow.context.database.get_step_from_output_port(port_id)
+    #         )
+    #         for port_id in ports.keys()
+    #         if id_name[port_id] not in dag_ports[INIT_DAG_FLAG]
+    #     )
+    # ):
+    #     steps.add(row_dependency["step"])
+    for row_dependencies in await asyncio.gather(
         *(
             asyncio.create_task(
-                new_workflow.context.database.get_step_from_output_port(port_id)
+                new_workflow.context.database.get_steps_from_output_port(port_id)
             )
             for port_id in ports.keys()
             if id_name[port_id] not in dag_ports[INIT_DAG_FLAG]
         )
     ):
-        steps.add(row_dependency["step"])
+        for row_dependency in row_dependencies:
+            steps.add(row_dependency["step"])
     print("Step id recuperati", len(steps))
     for step in await asyncio.gather(
         *(
@@ -1074,7 +1088,10 @@ class DefaultFailureManager(FailureManager):
         print("New workflow", new_workflow.name, "popolato così:")
         print("\tJobs da rieseguire:", job_executed_in_new_workflow)
 
+        dag_workflow(new_workflow, dir_path + "/new-wf")
+
         for step in new_workflow.steps.values():
+            print(f"step {step.name} wf {step.workflow.name}")
             try:
                 print(
                     f"Step {step.name}\n\tinput ports",
@@ -1086,7 +1103,7 @@ class DefaultFailureManager(FailureManager):
                     {k: v.name for k, v in step.get_input_ports().items()},
                 )
             except Exception as e:
-                print(f"exception {e}")
+                print(f"exception {step.name} -> {e}")
                 raise
 
         for token, _ in token_visited.values():
@@ -1098,6 +1115,7 @@ class DefaultFailureManager(FailureManager):
                 workflow.context.scheduler.deallocate_from_job_name(
                     token.value.name, keep_job_allocation=True
                 )
+
         print("VIAAAAAAAAAAAAAA " + new_workflow.name)
 
         await new_workflow.save(workflow.context)
