@@ -162,8 +162,15 @@ class CWLLoopConditionalStep(CWLConditionalStep):
                 f"on inputs {[t.tag for t in inputs.values()]}"
             )
         # Next iteration: propagate outputs to the loop
+        # todo: add this class in provenance tests
         for port_name, port in self.get_output_ports().items():
-            port.put(inputs[port_name])
+            port.put(
+                await self._persist_token(
+                    token=inputs[port_name].update(inputs[port_name].value),
+                    port=port,
+                    input_token_ids=_get_token_ids(inputs.values()),
+                )
+            )
 
     async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
         if logger.isEnabledFor(logging.DEBUG):
