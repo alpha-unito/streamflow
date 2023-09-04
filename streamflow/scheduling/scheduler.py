@@ -40,7 +40,7 @@ class JobContext:
         self.scheduled: bool = False
 
 
-def is_start_with_magic_trio(job_name):
+def starts_with_magic_trio(job_name):
     return (
         job_name.startswith("/togro")
         or job_name.startswith("/tosor")
@@ -278,24 +278,15 @@ class DefaultScheduler(Scheduler):
                         # se jo2 prendesse la risorsa potrebbre mandare tutto in deadlock
                     }
 
-                    if is_start_with_magic_trio(job_context.job.name):
-                        # print(
-                        #     "available_locations",
-                        #     {k: str(v) for k, v in available_locations.items()},
-                        # )
-                        # print(
-                        #     "valid_locations",
-                        #     {k: str(v) for k, v in valid_locations.items()},
-                        # )
+                    if starts_with_magic_trio(job_context.job.name):
                         print(
-                            "job_allocations",
-                            json.dumps(
-                                {
-                                    k: v.mydict()
+                            "job_allocations:\n\t",
+                            "\n\t".join(
+                                [
+                                    f"{k}: {v.status} - {[str(loc) for loc in v.locations]}"
                                     for k, v in self.job_allocations.items()
-                                    if is_start_with_magic_trio(k)
-                                },
-                                indent=2,
+                                    if starts_with_magic_trio(k)
+                                ]
                             ),
                         )
                     if valid_locations:

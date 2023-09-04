@@ -303,26 +303,15 @@ def print_debug_divergenza(all_token_visited, port_tokens):
                                 all_token_visited[token_id_2][0].value.name,
                                 f"(id: {all_token_visited[token_id_2][0].persistent_id})",
                             )
-                            raise FailureHandlingException("DIVERGENZA")
+                            raise FailureHandlingException("DIVERGENZA j")
                     else:
                         t_a = all_token_visited[token_id][0]
                         # t_b = all_token_visited[token_id_2][0]
                         print(
-                            "DIVERGENZAAA port",
-                            port_name,
-                            "type:",
-                            type(t_a),
-                            ", id:",
-                            token_id,
-                            ", tag:",
-                            t_a.tag,
-                            ", value:",
-                            t_a.value.name
-                            if isinstance(t_a[0], JobToken)
-                            else t_a[0].value,
+                            f"DIVERGENZAAA port {port_name}, type: {type(t_a)}, id: {token_id} , tag: {t_a.tag},",
+                            f"value: {t_a.value.name if isinstance(t_a[0], JobToken) else t_a[0].value}",
                         )
                         raise FailureHandlingException("DIVERGENZA")
-                        pass
     print("DEBUG: divergenza controllata")
 
 
