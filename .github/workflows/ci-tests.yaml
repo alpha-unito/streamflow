@@ -16,7 +16,7 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v2
         with:
           config-file: .github/codeql/config.yml
@@ -59,7 +59,7 @@ jobs:
             version: "v1.2"
     runs-on: ${{ matrix.on }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
@@ -112,7 +112,7 @@ jobs:
     name: "StreamFlow Docker image tests"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v2
       - uses: docker/setup-buildx-action@v2
       - name: "Build Docker image"
@@ -149,7 +149,7 @@ jobs:
           rm -rf /usr/share/dotnet
           rm -rf /opt/ghc
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Install Streamflow
         run: |
          pip install . 
@@ -170,7 +170,7 @@ jobs:
     env:
       TOXENV: ${{ matrix.step }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: "3.11"
@@ -198,7 +198,7 @@ jobs:
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
@@ -248,7 +248,7 @@ jobs:
     needs: ["cwl-conformance", "unit-tests"]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: "Download artifacts"
         uses: actions/download-artifact@v3
       - name: "Upload coverage to Codecov"
