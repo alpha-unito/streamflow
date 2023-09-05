@@ -46,7 +46,7 @@ class DefaultScheduler(Scheduler):
         self.allocation_groups: MutableMapping[str, MutableSequence[Job]] = {}
         self.binding_filter_map: MutableMapping[str, BindingFilter] = {}
         self.policy_map: MutableMapping[str, Policy] = {}
-        self.retry_interval: int | None = retry_delay
+        self.retry_interval: int | None = retry_delay if retry_delay != 0 else None
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
@@ -321,9 +321,21 @@ class DefaultScheduler(Scheduler):
                                     else deployment,
                                 )
                             )
-                await asyncio.wait_for(
-                    self.wait_queues[deployment].wait(), timeout=self.retry_interval
-                )
+                try:
+                    await asyncio.wait_for(
+                        self.wait_queues[deployment].wait(), timeout=self.retry_interval
+                    )
+                except TimeoutError:
+                    if logger.isEnabledFor(logging.DEBUG):
+                        target_name = (
+                            "/".join([target.deployment.name, target.service])
+                            if target.service is not None
+                            else target.deployment.name
+                        )
+                        logger.debug(
+                            f"No locations available for job {job_context.job.name} "
+                            f"in target {target_name}. Waiting {self.retry_interval} seconds."
+                        )
 
     async def close(self):
         pass
