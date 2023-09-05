@@ -26,7 +26,7 @@ class CommandTemplateMap:
         workdir: str = None,
         **kwargs,
     ) -> str:
-        return self.templates[template or "__DEFAULT__"].render(
+        return self.templates.get(template, self.templates["__DEFAULT__"]).render(
             streamflow_command=command,
             streamflow_environment=environment,
             streamflow_workdir=workdir,
