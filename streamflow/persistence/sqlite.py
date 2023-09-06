@@ -29,7 +29,6 @@ class SqliteConnection:
         self.timeout: int = timeout
         self.init_db: bool = init_db
         self._connection: aiosqlite.Connection | None = None
-        self.__row_factory = None
 
     async def __aenter__(self):
         if not self._connection:
@@ -45,11 +44,11 @@ class SqliteConnection:
                         await cursor.execute("PRAGMA journal_mode = WAL")
                         await cursor.execute("PRAGMA wal_autocheckpoint = 10")
                         await cursor.executescript(f.read())
-        self.__row_factory = self._connection.row_factory
+            self._connection.row_factory = aiosqlite.Row
         return self._connection
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self._connection.row_factory = self.__row_factory
+        pass
 
     async def close(self):
         if self._connection:
@@ -244,7 +243,6 @@ class SqliteDatabase(CachedDatabase):
         self, token_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM provenance WHERE depender = :depender",
                 {"depender": token_id},
@@ -255,7 +253,6 @@ class SqliteDatabase(CachedDatabase):
         self, token_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM provenance WHERE dependee = :dependee",
                 {"dependee": token_id},
@@ -264,7 +261,6 @@ class SqliteDatabase(CachedDatabase):
 
     async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM command WHERE id = :id", {"id": command_id}
             ) as cursor:
@@ -274,7 +270,6 @@ class SqliteDatabase(CachedDatabase):
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM command WHERE step = :id", {"id": step_id}
             ) as cursor:
@@ -283,7 +278,6 @@ class SqliteDatabase(CachedDatabase):
     @cachedmethod(lambda self: self.deployment_cache)
     async def get_deployment(self, deplyoment_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM deployment WHERE id = :id", {"id": deplyoment_id}
             ) as cursor:
@@ -293,7 +287,6 @@ class SqliteDatabase(CachedDatabase):
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM dependency WHERE step = :step AND type = :type",
                 {"step": step_id, "type": DependencyType.INPUT.value},
@@ -304,7 +297,6 @@ class SqliteDatabase(CachedDatabase):
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM dependency WHERE step = :step AND type = :type",
                 {"step": step_id, "type": DependencyType.OUTPUT.value},
@@ -314,7 +306,6 @@ class SqliteDatabase(CachedDatabase):
     @cachedmethod(lambda self: self.port_cache)
     async def get_port(self, port_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM port WHERE id = :id", {"id": port_id}
             ) as cursor:
@@ -325,13 +316,12 @@ class SqliteDatabase(CachedDatabase):
             async with db.execute(
                 "SELECT id FROM token WHERE port = :port", {"port": port_id}
             ) as cursor:
-                return [row[0] for row in await cursor.fetchall()]
+                return [row["id"] for row in await cursor.fetchall()]
 
     async def get_reports(
         self, workflow: str, last_only: bool = False
     ) -> MutableSequence[MutableSequence[MutableMapping[str, Any]]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             if last_only:
                 async with db.execute(
                     "SELECT c.id, s.name, c.start_time, c.end_time "
@@ -360,7 +350,6 @@ class SqliteDatabase(CachedDatabase):
     @cachedmethod(lambda self: self.step_cache)
     async def get_step(self, step_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM step WHERE id = :id", {"id": step_id}
             ) as cursor:
@@ -369,7 +358,6 @@ class SqliteDatabase(CachedDatabase):
     @cachedmethod(lambda self: self.target_cache)
     async def get_target(self, target_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM target WHERE id = :id", {"id": target_id}
             ) as cursor:
@@ -378,7 +366,6 @@ class SqliteDatabase(CachedDatabase):
     @cachedmethod(lambda self: self.token_cache)
     async def get_token(self, token_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM token WHERE id = :id", {"id": token_id}
             ) as cursor:
@@ -386,7 +373,6 @@ class SqliteDatabase(CachedDatabase):
 
     async def get_workflow(self, workflow_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM workflow WHERE id = :id", {"id": workflow_id}
             ) as cursor:
@@ -396,7 +382,6 @@ class SqliteDatabase(CachedDatabase):
         self, workflow_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM port WHERE workflow = :workflow",
                 {"workflow": workflow_id},
@@ -407,7 +392,6 @@ class SqliteDatabase(CachedDatabase):
         self, workflow_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM step WHERE workflow = :workflow",
                 {"workflow": workflow_id},
@@ -418,7 +402,6 @@ class SqliteDatabase(CachedDatabase):
         self, workflow_name: str, last_only: bool = False
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM workflow WHERE name = :name ORDER BY id desc",
                 {"name": workflow_name},
@@ -442,7 +425,6 @@ class SqliteDatabase(CachedDatabase):
                     for row in await self.get_workflows_by_name(name, last_only=False)
                 ]
             else:
-                db.row_factory = aiosqlite.Row
                 async with db.execute(
                     "SELECT name, type, COUNT(*) AS num FROM workflow GROUP BY name, type ORDER BY name DESC"
                 ) as cursor:
