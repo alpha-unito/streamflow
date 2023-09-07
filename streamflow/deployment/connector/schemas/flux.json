@@ -131,6 +131,10 @@
           "type": "integer",
           "description": "Set the number of tasks per node to run"
         },
+        "timeLimit": {
+          "type": "string",
+          "description": "Time limit in minutes when no units provided, otherwise in Flux standard duration (e.g., 30s, 2d, 1.5h). If a `timeout` value is defined directly in the workflow specification, it will override this value"
+        },
         "unbuffered": {
           "type": "boolean",
           "description": "Disable buffering of standard input and output as much as practical"
