@@ -48,6 +48,15 @@ from streamflow.core.workflow import Workflow
 from streamflow.workflow.utils import get_job_token
 
 
+def str_tok(token):
+    if isinstance(token, JobToken):
+        return token.value.name
+    elif isinstance(token, CWLFileToken):
+        return token.value["path"]
+    else:
+        return token.value
+
+
 def check_double_reference(dag_ports):
     for tmpp in dag_ports[INIT_DAG_FLAG]:
         for tmpport_name, tmpnext_port_names in dag_ports.items():
@@ -640,10 +649,10 @@ class DefaultFailureManager(FailureManager):
                 workflow.context,
             ):
                 is_available = await _is_token_available(token, workflow.context)
-                if isinstance(token, CWLFileToken):
-                    print(
-                        f"CWLFileToken ({token.persistent_id}) {token} is available {is_available}"
-                    )
+                # if isinstance(token, CWLFileToken):
+                #     print(
+                #         f"CWLFileToken ({token.persistent_id}) {token} is available {is_available}"
+                #     )
 
                 # impossible case because when added in tokens, the elem is checked
                 if token.persistent_id in all_token_visited.keys():
@@ -655,6 +664,7 @@ class DefaultFailureManager(FailureManager):
                     token.persistent_id
                 )
                 port_name_id[port_row["name"]] = port_row["id"]
+                port_name = port_row["name"]
                 step_row = await workflow.context.database.get_step_from_outport(
                     port_row["id"]
                 )
@@ -666,6 +676,14 @@ class DefaultFailureManager(FailureManager):
                     if prev_tokens := await loading_context.load_prev_tokens(
                         workflow.context, token.persistent_id
                     ):
+                        p = [
+                            (
+                                await workflow.context.database.get_port_from_token(
+                                    pt.persistent_id
+                                )
+                            )["name"]
+                            for pt in prev_tokens
+                        ]
                         for pt in prev_tokens:
                             prev_port_row = (
                                 await workflow.context.database.get_port_from_token(
@@ -714,8 +732,22 @@ class DefaultFailureManager(FailureManager):
         print("While tokens terminato")
         check_double_reference(dag_ports)
 
+        for t, a in all_token_visited.values():
+            print(
+                f"Token id: {t.persistent_id} tag: {t.tag} val: {str_tok(t)} is available? {a}"
+            )
+
+        t1t2t3 = set(
+            [
+                t.value.name
+                for t, _ in all_token_visited.values()
+                if isinstance(t, JobToken)
+            ]
+        )
+        # print(f"all job_token visited: {t1t2t3}")
+
         print(
-            f"after.build - JobTokens: {set([ t.value.name for t, _ in all_token_visited.values() if isinstance(t, JobToken)])}"
+            f"after.build - JobTokens: {set([ t.value.name for t, _ in get_necessary_tokens(port_tokens, all_token_visited).values() if isinstance(t, JobToken)])}"
         )
 
         all_token_visited = dict(sorted(all_token_visited.items()))
@@ -748,7 +780,8 @@ class DefaultFailureManager(FailureManager):
         )
         print("grafo ridotto")
         print(
-            f"after.riduzione - JobTokens: {set([ t.value.name for t, _ in all_token_visited.values() if isinstance(t, JobToken)])}"
+            # f"after.riduzione - JobTokens: {set([ t.value.name for t, _ in all_token_visited.values() if isinstance(t, JobToken)])}"
+            f"after.riduzione - JobTokens: {set([t.value.name for t, _ in get_necessary_tokens(port_tokens, all_token_visited).values() if isinstance(t, JobToken)])}"
         )
 
         # DEBUG: create port-step-token graphs post remove
@@ -767,6 +800,7 @@ class DefaultFailureManager(FailureManager):
             port_tokens,
             get_necessary_tokens(port_tokens, all_token_visited),
             port_name_id,
+            t1t2t3,
         )
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
@@ -1016,6 +1050,7 @@ class DefaultFailureManager(FailureManager):
             port_tokens,
             token_visited,
             port_name_id,
+            t1t2t3,
         ) = await self._build_dag(
             tokens,
             failed_job,
@@ -1120,6 +1155,11 @@ class DefaultFailureManager(FailureManager):
                 workflow.context.scheduler.deallocate_from_job_name(
                     token.value.name, keep_job_allocation=True
                 )
+        print(f"all job_token visited: {t1t2t3}")
+        a = [p for p, l in port_tokens.items() if len(l) > 1]
+        pass
+
+        ######
 
         print("VIAAAAAAAAAAAAAA " + new_workflow.name)
 
