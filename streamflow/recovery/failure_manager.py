@@ -1344,9 +1344,9 @@ class DefaultFailureManager(FailureManager):
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
-        except WorkflowTransferException as e:
+        except (WorkflowTransferException, WorkflowExecutionException) as e:
             logger.exception(e)
-            return await self._handle_failure_transfer(job, step, port_name)
+            return await self.handle_failure_transfer(job, step, port_name)
         except Exception as e:
             logger.exception(e)
             return await self.handle_exception(job, step, e)
