@@ -356,6 +356,10 @@
           "type": "integer",
           "description": "Restrict node selection to nodes with at least the specified number of threads per core. In task layout, use the specified maximum number of threads per core"
         },
+        "time": {
+          "type": "string",
+          "description": "Set a limit on the total run time of the job allocation. If a `timeout` value is defined directly in the workflow specification, it will override this value"
+        },
         "timeMin": {
           "type": "string",
           "description": "Set a minimum time limit on the job allocation. If specified, the job may have its time limit lowered to a value no lower than timeMin if doing so permits the job to begin execution earlier than otherwise possible"

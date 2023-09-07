@@ -115,7 +115,8 @@ class SlurmService(QueueManagerService):
         switches: str | None = None,
         threadSpec: int | None = None,
         threadsPerCore: int | None = None,
-        timeMin: int | None = None,
+        time: str | None = None,
+        timeMin: str | None = None,
         tmp: int | None = None,
         tresPerTask: str | None = None,
         uid: int | str | None = None,
@@ -202,6 +203,7 @@ class SlurmService(QueueManagerService):
         self.switches: str | None = switches
         self.threadSpec: int | None = threadSpec
         self.threadsPerCore: int | None = threadsPerCore
+        self.time: str | None = time
         self.timeMin: str | None = timeMin
         self.tmp: int | None = tmp
         self.tresPerTask: str | None = tresPerTask
@@ -279,6 +281,7 @@ class FluxService(QueueManagerService):
         taskmap: str | None = None,
         tasksPerCore: int | None = None,
         tasksPerNode: int | None = None,
+        timeLimit: str | None = None,
         unbuffered: bool = False,
         urgency: int | None = None,
     ):
@@ -309,6 +312,7 @@ class FluxService(QueueManagerService):
         self.taskmap: str | None = taskmap
         self.tasksPerCore: int | None = tasksPerCore
         self.tasksPerNode: int | None = tasksPerNode
+        self.timeLimit: str | None = timeLimit
         self.unbuffered: bool = unbuffered
         self.urgency: int | None = urgency
 
@@ -780,6 +784,8 @@ class SlurmConnector(QueueManagerConnector):
                     get_option("wckey", service.wckey),
                 ]
             )
+            if not timeout:
+                batch_command.append(get_option("time", service.time))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(batch_command)}")
         stdout, returncode = await self.connector.run(
@@ -1060,7 +1066,9 @@ class FluxConnector(QueueManagerConnector):
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
             batch_command.append(get_option("error", self._format_stream(stderr)))
         if timeout:
-            batch_command.extend(["-t", utils.format_seconds_to_hhmmss(timeout)])
+            batch_command.append(
+                get_option("time-limit", utils.format_seconds_to_hhmmss(timeout))
+            )
         nodes = 1
         if service := cast(FluxService, self.services.get(location.service)):
             nodes = service.nodes
@@ -1099,6 +1107,8 @@ class FluxConnector(QueueManagerConnector):
                     get_option("urgency", service.urgency),
                 ]
             )
+            if not timeout:
+                batch_command.append(get_option("time-limit", service.timeLimit))
         batch_command.append(get_option("nodes", nodes))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(batch_command)}")
