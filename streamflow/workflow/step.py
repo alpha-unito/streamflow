@@ -27,7 +27,6 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import get_port
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -49,6 +48,22 @@ from streamflow.workflow.utils import (
     check_termination,
     get_job_token,
 )
+
+
+async def _get_port(
+    context: StreamFlowContext,
+    port_id: int,
+    loading_context: DatabaseLoadingContext,
+    change_wf: Workflow,
+):
+    if change_wf:
+        port_row = await context.database.get_port(port_id)
+        if port_row["name"] in change_wf.ports.keys():
+            return change_wf.ports[port_row["name"]]
+
+        # If the port is not available in the new workflow, a new one must be created
+        return await Port.load(context, port_id, loading_context, change_wf)
+    return await loading_context.load_port(context, port_id)
 
 
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
@@ -112,6 +127,11 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
+        tags = set()
+        for t in inputs.values():
+            tags.add(t.tag)
+        if len(tags) != 1:
+            raise Exception("Input hanno tag diversi")
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs):
                 logger.debug(f"Step {self.name} received termination token")
@@ -483,7 +503,7 @@ class DeployStep(BaseStep):
             ),
             connector_port=cast(
                 ConnectorPort,
-                await get_port(
+                await _get_port(
                     context, params["connector_port"], loading_context, change_wf
                 ),
             ),
@@ -596,7 +616,9 @@ class ExecuteStep(BaseStep):
             else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort,
-                await get_port(context, params["job_port"], loading_context, change_wf),
+                await _get_port(
+                    context, params["job_port"], loading_context, change_wf
+                ),
             ),
         )
         step.output_connectors = params["output_connectors"]
@@ -986,7 +1008,9 @@ class InputInjectorStep(BaseStep, ABC):
             else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort,
-                await get_port(context, params["job_port"], loading_context, change_wf),
+                await _get_port(
+                    context, params["job_port"], loading_context, change_wf
+                ),
             ),
         )
 
@@ -1291,13 +1315,15 @@ class ScheduleStep(BaseStep):
             connector_ports={
                 k: cast(
                     ConnectorPort,
-                    await get_port(context, v, loading_context, change_wf),
+                    await _get_port(context, v, loading_context, change_wf),
                 )
                 for k, v in params["connector_ports"].items()
             },
             job_port=cast(
                 JobPort,
-                await get_port(context, params["job_port"], loading_context, change_wf),
+                await _get_port(
+                    context, params["job_port"], loading_context, change_wf
+                ),
             ),
             job_prefix=params["job_prefix"],
             hardware_requirement=hardware_requirement,
@@ -1572,7 +1598,9 @@ class TransferStep(BaseStep, ABC):
             else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort,
-                await get_port(context, params["job_port"], loading_context, change_wf),
+                await _get_port(
+                    context, params["job_port"], loading_context, change_wf
+                ),
             ),
         )
 

@@ -300,22 +300,6 @@ def get_execute_step_name_from_job_name(job_name):
     return job_name.rsplit("/", maxsplit=1)[0]
 
 
-async def get_port(
-    context: StreamFlowContext,
-    port_id: int,
-    loading_context: DatabaseLoadingContext,
-    change_wf: Workflow,
-):
-    if change_wf:
-        port_row = await context.database.get_port(port_id)
-        if port_row["name"] in change_wf.ports.keys():
-            return change_wf.ports[port_row["name"]]
-
-        # If the port is not available in the new workflow, a new one must be created
-        return await Port.load(context, port_id, loading_context, change_wf)
-    return await loading_context.load_port(context, port_id)
-
-
 async def get_dependencies(
     dependency_rows: MutableSequence[MutableMapping[str, Any]],
     load_ports: bool,
