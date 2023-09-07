@@ -5,6 +5,7 @@ import tempfile
 from asyncio.locks import Lock
 from typing import Collection
 
+import asyncssh.public_key
 import pkg_resources
 import pytest
 import pytest_asyncio
@@ -26,10 +27,10 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 
 def deployment_types():
-    deplyoments_ = ["local", "docker"]
+    deployments_ = ["local", "docker", "ssh"]
     if platform.system() == "Linux":
-        deplyoments_.extend(["kubernetes", "singularity"])
-    return deplyoments_
+        deployments_.extend(["kubernetes", "singularity"])
+    return deployments_
 
 
 async def get_location(
@@ -55,6 +56,10 @@ async def get_location(
         return Location(
             deployment="alpine-singularity", name=next(iter(locations.keys()))
         )
+    elif request.param == "ssh":
+        connector = _context.deployment_manager.get_connector("linuxserver-ssh")
+        locations = await connector.get_available_locations()
+        return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
     else:
         raise Exception(f"{request.param} location type not supported")
 
@@ -93,6 +98,48 @@ def get_singularity_deployment_config():
     )
 
 
+async def get_ssh_deployment_config(_context: StreamFlowContext):
+    skey = asyncssh.public_key.generate_private_key(
+        alg_name="ssh-rsa",
+        comment="streamflow-test",
+        key_size=4096,
+    )
+    public_key = skey.export_public_key().decode("utf-8")
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        skey.write_private_key(f.name)
+    docker_config = DeploymentConfig(
+        name="linuxserver-ssh-docker",
+        type="docker",
+        config={
+            "image": "lscr.io/linuxserver/openssh-server",
+            "env": [f"PUBLIC_KEY={public_key}"],
+            "init": False,
+            "publish": ["2222:2222"],
+        },
+        external=False,
+        lazy=False,
+    )
+    await _context.deployment_manager.deploy(docker_config)
+    await asyncio.sleep(5)
+    return DeploymentConfig(
+        name="linuxserver-ssh",
+        type="ssh",
+        config={
+            "nodes": [
+                {
+                    "checkHostKey": False,
+                    "hostname": "127.0.0.1:2222",
+                    "sshKey": f.name,
+                    "username": "linuxserver.io",
+                }
+            ],
+            "maxConcurrentSessions": 10,
+        },
+        external=False,
+        lazy=False,
+    )
+
+
 @pytest_asyncio.fixture(scope="session")
 async def context() -> StreamFlowContext:
     _context = build_context(
@@ -109,6 +156,7 @@ async def context() -> StreamFlowContext:
         )
     )
     await _context.deployment_manager.deploy(get_docker_deployment_config())
+    await _context.deployment_manager.deploy(await get_ssh_deployment_config(_context))
     if platform.system() == "Linux":
         await _context.deployment_manager.deploy(get_kubernetes_deployment_config())
         await _context.deployment_manager.deploy(get_singularity_deployment_config())

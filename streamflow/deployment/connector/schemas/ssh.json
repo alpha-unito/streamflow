@@ -155,8 +155,7 @@
     }
   },
   "required": [
-    "nodes",
-    "username"
+    "nodes"
   ],
   "additionalProperties": false
 }
