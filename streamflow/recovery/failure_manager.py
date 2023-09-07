@@ -157,7 +157,12 @@ async def _populate_workflow(
             for port_id in ports.keys()
         )
     ):
-        new_workflow.add_port(port)
+        if port.name not in new_workflow.ports.keys():
+            new_workflow.add_port(port)
+        else:
+            print(
+                f"La port {port.name} è già presente nel workflow {new_workflow.name}"
+            )
     print("Port caricate")
 
     for tmpp in dag_ports[INIT_DAG_FLAG]:
