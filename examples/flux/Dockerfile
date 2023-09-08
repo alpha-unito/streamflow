@@ -1,4 +1,4 @@
-FROM fluxrm/flux-sched:focal
+FROM fluxrm/flux-sched:focal-v0.28.0
 
 # ubuntu base with Flux
 # this allows for easy development of Flux connector
