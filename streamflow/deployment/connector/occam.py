@@ -13,6 +13,7 @@ from ruamel.yaml import YAML
 
 from streamflow.core import utils
 from streamflow.core.deployment import Location
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
 from streamflow.deployment.connector.ssh import SSHConnector
@@ -98,8 +99,19 @@ class OccamConnector(SSHConnector):
         temp_dir = posixpath.join(
             scratch_home, "streamflow", "".join(utils.random_name())
         )
-        async with self._get_ssh_client(location) as ssh_client:
-            await ssh_client.run(f"mkdir -p {temp_dir}")
+        async with self._get_ssh_client_process(
+            location=location,
+            command=f"mkdir -p {temp_dir}",
+            stdout=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT,
+        ) as proc:
+            result = await proc.wait()
+            if result.returncode == 0:
+                return temp_dir
+            else:
+                raise WorkflowExecutionException(
+                    f"Error while creating directory {temp_dir}: {result.stdout.strip()}"
+                )
         return temp_dir
 
     def _get_volumes(self, location: str) -> MutableSequence[str]:
@@ -148,8 +160,17 @@ class OccamConnector(SSHConnector):
         # If a temporary location was created, delete it
         if temp_dir is not None:
             for location in effective_locations:
-                async with self._get_ssh_client(location.name) as ssh_client:
-                    await ssh_client.run(f"rm -rf {temp_dir}")
+                async with self._get_ssh_client_process(
+                    location=location.name,
+                    command=f"rm -rf {temp_dir}",
+                    stdout=asyncio.subprocess.STDOUT,
+                    stderr=asyncio.subprocess.STDOUT,
+                ) as proc:
+                    result = await proc.wait()
+                    if result.returncode != 0:
+                        raise WorkflowExecutionException(
+                            f"Error while removing directory {temp_dir}: {result.stdout.strip()}"
+                        )
 
     async def _copy_remote_to_remote_single(
         self,
@@ -181,7 +202,7 @@ class OccamConnector(SSHConnector):
             shared_path = self._get_shared_path(location.name, dst)
             if shared_path is None:
                 temp_dir = await self._get_tmpdir(location.name)
-                async with self._get_ssh_client(location.name) as ssh_client:
+                async with self._get_ssh_client_process(location.name) as ssh_client:
                     await asyncssh.scp(
                         src, (ssh_client, temp_dir), preserve=True, recurse=True
                     )
@@ -203,9 +224,13 @@ class OccamConnector(SSHConnector):
         await asyncio.gather(*copy_tasks)
         # If a temporary location was created, delete it
         if temp_dir is not None:
-            for location in effective_locations:
-                async with self._get_ssh_client(location.name) as ssh_client:
-                    await ssh_client.run(f"rm -rf {temp_dir}")
+            delete_command = ["rm", "-rf", temp_dir]
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(self.run(location, delete_command))
+                    for location in effective_locations
+                )
+            )
 
     async def _copy_local_to_remote_single(
         self,
@@ -217,7 +242,7 @@ class OccamConnector(SSHConnector):
     ) -> None:
         shared_path = self._get_shared_path(location.name, dst)
         if shared_path is not None:
-            async with self._get_ssh_client(location.name) as ssh_client:
+            async with self._get_ssh_client_process(location.name) as ssh_client:
                 await asyncssh.scp(
                     src, (ssh_client, shared_path), preserve=True, recurse=True
                 )
@@ -230,7 +255,7 @@ class OccamConnector(SSHConnector):
     ) -> None:
         shared_path = self._get_shared_path(location.name, src)
         if shared_path is not None:
-            async with self._get_ssh_client(location.name) as ssh_client:
+            async with self._get_ssh_client_process(location.name) as ssh_client:
                 await asyncssh.scp(
                     (ssh_client, shared_path), dst, preserve=True, recurse=True
                 )
@@ -256,7 +281,7 @@ class OccamConnector(SSHConnector):
             contents, _ = await self.run(location, copy_command, capture_output=True)
             contents = contents.split()
             scp_tasks = []
-            async with self._get_ssh_client(location.name) as ssh_client:
+            async with self._get_ssh_client_process(location.name) as ssh_client:
                 for content in contents:
                     scp_tasks.append(
                         asyncio.create_task(
@@ -291,27 +316,47 @@ class OccamConnector(SSHConnector):
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"EXECUTING {deploy_command}")
-        async with self._get_ssh_client(name) as ssh_client:
-            result = await ssh_client.run(deploy_command)
-        output = result.stdout
-        search_result = re.findall(f"({node}-[0-9]+).*", output, re.MULTILINE)
-        if search_result:
-            if name not in self.jobs_table:
-                self.jobs_table[name] = []
-            self.jobs_table[name].append(search_result[0])
-            if logger.isEnabledFor(logging.INFO):
-                logger.info(f"Deployed {name} on {search_result[0]}")
-        else:
-            raise Exception
+        async with self._get_ssh_client_process(
+            location=name,
+            command=deploy_command,
+            stdout=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT,
+        ) as proc:
+            result = await proc.wait()
+            output = result.stdout.strip()
+            if result.returncode == 0:
+                search_result = re.findall(f"({node}-[0-9]+).*", output, re.MULTILINE)
+                if search_result:
+                    if name not in self.jobs_table:
+                        self.jobs_table[name] = []
+                    self.jobs_table[name].append(search_result[0])
+                    if logger.isEnabledFor(logging.INFO):
+                        logger.info(f"Deployed {name} on {search_result[0]}")
+                else:
+                    raise WorkflowExecutionException(
+                        f"Failed to deploy {name}: {output}"
+                    )
+            else:
+                raise WorkflowExecutionException(f"Failed to deploy {name}: {output}")
 
     async def _undeploy_node(self, name: str, job_id: str):
         undeploy_command = f"occam-kill {job_id}"
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"EXECUTING {undeploy_command}")
-        async with self._get_ssh_client(name) as ssh_client:
-            await ssh_client.run(undeploy_command)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f"Killed {job_id}")
+        async with self._get_ssh_client_process(
+            location=name,
+            command=undeploy_command,
+            stdout=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT,
+        ) as proc:
+            result = await proc.wait()
+            if result.returncode == 0:
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info(f"Killed {job_id}")
+            else:
+                raise WorkflowExecutionException(
+                    f"Failed to undeploy {name}: {result.stdout.strip()}"
+                )
 
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
@@ -391,23 +436,26 @@ class OccamConnector(SSHConnector):
             job_name=job_name,
         )
         occam_command = f"occam-exec {location} sh -c '{command}'"
-        async with self._get_ssh_client(location.name) as ssh_client:
-            result = await asyncio.wait_for(
-                ssh_client.run(occam_command), timeout=timeout
-            )
-        if capture_output:
-            lines = (line for line in result.stdout.split("\n"))
-            out = ""
-            for line in lines:
-                if line.startswith("Trying to exec commands into container"):
-                    break
-            try:
-                line = next(lines)
-                out = line.strip(" \r\t")
-            except StopIteration:
-                return out
-            for line in lines:
-                out = "\n".join([out, line.strip(" \r\t")])
-            return out, result.returncode
-        else:
-            return None
+        async with self._get_ssh_client_process(
+            location=location.name,
+            command=occam_command,
+            stdout=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT,
+        ) as proc:
+            result = await proc.wait(timeout=timeout)
+            if capture_output:
+                lines = (line for line in result.stdout.split("\n"))
+                out = ""
+                for line in lines:
+                    if line.startswith("Trying to exec commands into container"):
+                        break
+                try:
+                    line = next(lines)
+                    out = line.strip(" \r\t")
+                except StopIteration:
+                    return out, result.returncode
+                for line in lines:
+                    out = "\n".join([out, line.strip(" \r\t")])
+                return out, result.returncode
+            else:
+                return None
