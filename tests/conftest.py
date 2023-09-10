@@ -47,14 +47,14 @@ def csvtype(choices):
 def pytest_addoption(parser):
     parser.addoption(
         "--deploys",
-        type=csvtype(deployment_types()),
-        default=deployment_types(),
-        help=f"List of deployments to deploy. Use the comma as delimiter e.g. --deploys local,docker. (default: {deployment_types()})",
+        type=csvtype(all_deployment_types()),
+        default=all_deployment_types(),
+        help=f"List of deployments to deploy. Use the comma as delimiter e.g. --deploys local,docker. (default: {all_deployment_types()})",
     )
 
 
 @pytest.fixture(scope="module")
-def deploy_list(request):
+def chosen_deployment_types(request):
     return request.config.getoption("--deploys")
 
 
@@ -73,21 +73,21 @@ def pytest_generate_tests(metafunc):
         )
 
 
-def deployment_types():
+def all_deployment_types():
     deployments_ = ["local", "docker", "ssh"]
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity"])
     return deployments_
 
 
-async def get_location(_context: StreamFlowContext, deploy_type: str) -> Location:
-    if deploy_type == "local":
+async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
+    if deployment_t == "local":
         return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
-    elif deploy_type == "docker":
+    elif deployment_t == "docker":
         connector = _context.deployment_manager.get_connector("alpine-docker")
         locations = await connector.get_available_locations()
         return Location(deployment="alpine-docker", name=next(iter(locations.keys())))
-    elif deploy_type == "kubernetes":
+    elif deployment_t == "kubernetes":
         connector = _context.deployment_manager.get_connector("alpine-kubernetes")
         locations = await connector.get_available_locations(service="sf-test")
         return Location(
@@ -95,18 +95,18 @@ async def get_location(_context: StreamFlowContext, deploy_type: str) -> Locatio
             service="sf-test",
             name=next(iter(locations.keys())),
         )
-    elif deploy_type == "singularity":
+    elif deployment_t == "singularity":
         connector = _context.deployment_manager.get_connector("alpine-singularity")
         locations = await connector.get_available_locations()
         return Location(
             deployment="alpine-singularity", name=next(iter(locations.keys()))
         )
-    elif deploy_type == "ssh":
+    elif deployment_t == "ssh":
         connector = _context.deployment_manager.get_connector("linuxserver-ssh")
         locations = await connector.get_available_locations()
         return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
     else:
-        raise Exception(f"{deploy_type} location type not supported")
+        raise Exception(f"{deployment_t} location type not supported")
 
 
 def get_docker_deployment_config():
@@ -197,24 +197,23 @@ def get_local_deployment_config():
 
 
 @pytest_asyncio.fixture(scope="module")
-async def context(deploy_list) -> StreamFlowContext:
+async def context(chosen_deployment_types) -> StreamFlowContext:
     _context = build_context(
         {"database": {"type": "default", "config": {"connection": ":memory:"}}},
     )
-    for deployment in deploy_list:
-        print("De", deployment)
-        if deployment == "local":
+    for deployment_t in chosen_deployment_types:
+        if deployment_t == "local":
             config = get_local_deployment_config()
-        elif deployment == "docker":
+        elif deployment_t == "docker":
             config = get_docker_deployment_config()
-        elif deployment == "kubernetes":
+        elif deployment_t == "kubernetes":
             config = get_kubernetes_deployment_config()
-        elif deployment == "singularity":
+        elif deployment_t == "singularity":
             config = get_singularity_deployment_config()
-        elif deployment == "ssh":
+        elif deployment_t == "ssh":
             config = await get_ssh_deployment_config(_context)
         else:
-            raise Exception(f"{deployment} deployment type not supported")
+            raise Exception(f"{deployment_t} deployment type not supported")
         await _context.deployment_manager.deploy(config)
     yield _context
     await _context.deployment_manager.undeploy_all()
