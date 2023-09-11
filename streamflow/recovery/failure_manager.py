@@ -63,8 +63,9 @@ def check_double_reference(dag_ports):
         for tmpport_name, tmpnext_port_names in dag_ports.items():
             if tmpport_name != INIT_DAG_FLAG and tmpp in tmpnext_port_names:
                 msg = f"Port {tmpp} appartiene sia a INIT che a {tmpport_name}"
-                print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
-                raise FailureHandlingException(msg)
+                print("WARN", msg)
+                # print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
+                # raise FailureHandlingException(msg)
 
 
 async def get_execute_step_out_token_ids(next_token_ids, context):
@@ -296,14 +297,6 @@ async def reduce_graph(
                 context,
                 loading_context,
             )
-            await remove_prev(
-                v["old-job-token"],
-                dag_ports,
-                port_tokens,
-                token_visited,
-                context,
-                loading_context,
-            )
             print(
                 f"Port_tokens {v['out-token-port-name']} - token {v['old-out-token']} sostituito con token {v['new-out-token']}. Quindi la port ha {port_tokens[v['out-token-port-name']]} tokens"
             )
@@ -514,6 +507,12 @@ def remove_job_token_by_name(
         )
 
 
+def get_tag_level(tag: str):
+    return len(tag.split("."))
+
+
+# todo: richiamare ricorsivamente finche i token.tag hanno sempre lo stesso livello
+#  o se si trova un JobToken
 async def remove_prev(
     token_id_to_remove: int,
     dag_ports: MutableMapping[str, MutableSequence[str]],
@@ -522,9 +521,15 @@ async def remove_prev(
     context: StreamFlowContext,
     loading_context,
 ):
+    curr_tag_level = get_tag_level(token_visited[token_id_to_remove][0].tag)
     for token_row in await context.database.get_dependees(token_id_to_remove):
         port_row = await context.database.get_port_from_token(token_row["dependee"])
-        if port_row["type"] != get_class_fullname(ConnectorPort):
+        if token_row["dependee"] not in token_visited.keys():
+            print(
+                f"rm prev - token id {token_row['dependee']} non presente nei token_visited"
+            )
+            continue
+        elif port_row["type"] != get_class_fullname(ConnectorPort):
             # todo: se si applica questo commentato rimuovere doppia occorrenza del metodo in reduce graph lasciando solo old-out-token
             # if port_row['type'] == get_class_fullname(JobPort): # remove token also in the input ports of transfer steps
             #   await remove_prev(token_row['dependee'], dag_ports, port_tokens, token_visited, context)
@@ -536,38 +541,66 @@ async def remove_prev(
                     False,
                 )
                 print(
-                    f"rm prev - token id {token_row['dependee']} tag {token_visited[token_row['dependee']][0].tag} non è presente tra i token visitati, lo aggiungo"
+                    f"rm prev - prev token id {token_row['dependee']} tag {token_visited[token_row['dependee']][0].tag} non è presente tra i token visitati, lo aggiungo"
                 )
             print(
-                f"token {token_id_to_remove} rm prev token id: {token_row['dependee']} val: {str_tok(token_visited[token_row['dependee']][0])} tag: {token_visited[token_row['dependee']][0].tag}"
+                f"rm prev - token {token_id_to_remove} rm prev token id: {token_row['dependee']} val: {str_tok(token_visited[token_row['dependee']][0])} tag: {token_visited[token_row['dependee']][0].tag}"
             )
 
             port_dependee_row = await context.database.get_port_from_token(
                 token_row["dependee"]
             )
+            dependee_token = token_visited[token_row["dependee"]][0]
             a = port_dependee_row["type"] == get_class_fullname(JobPort)
-            b = isinstance(token_visited[token_row["dependee"]][0], JobToken)
+            b = isinstance(dependee_token, JobToken)
             c = a != b
-            if not isinstance(token_visited[token_row["dependee"]][0], JobToken):
-                remove_token_by_tag(
-                    token_visited[token_row["dependee"]][0].tag,
+            if isinstance(dependee_token, JobToken):
+                remove_job_token_by_name(
+                    dependee_token.value.name,
                     port_dependee_row["name"],
                     dag_ports,
                     port_tokens,
                     token_visited,
+                )
+                print(
+                    f"rm prev - token {token_id_to_remove} tag {token_visited[token_id_to_remove][0].tag} (lvl {curr_tag_level}) ha prev job {dependee_token.value.name} id {token_row['dependee']} tag {dependee_token.tag} (lvl {get_tag_level(dependee_token.tag)}) -> {curr_tag_level == get_tag_level(dependee_token.tag)}"
+                )
+                await remove_prev(
+                    token_row["dependee"],
+                    dag_ports,
+                    port_tokens,
+                    token_visited,
+                    context,
+                    loading_context,
+                )
+            elif not isinstance(
+                token_visited[token_id_to_remove][0], JobToken
+            ) and curr_tag_level == get_tag_level(dependee_token.tag):
+                remove_token_by_tag(
+                    dependee_token.tag,
+                    port_dependee_row["name"],
+                    dag_ports,
+                    port_tokens,
+                    token_visited,
+                )
+                print(
+                    f"rm prev - token {token_id_to_remove} tag {token_visited[token_id_to_remove][0].tag} (lvl {curr_tag_level}) ha prev {token_row['dependee']} tag {dependee_token.tag} (lvl {get_tag_level(dependee_token.tag)}) -> {curr_tag_level == get_tag_level(dependee_token.tag)}"
+                )
+                await remove_prev(
+                    token_row["dependee"],
+                    dag_ports,
+                    port_tokens,
+                    token_visited,
+                    context,
+                    loading_context,
                 )
             else:
-                remove_job_token_by_name(
-                    token_visited[token_row["dependee"]][0].value.name,
-                    port_dependee_row["name"],
-                    dag_ports,
-                    port_tokens,
-                    token_visited,
+                print(
+                    f"rm prev - pulizia fermata al token {token_id_to_remove} con tag {token_visited[token_id_to_remove][0].tag}"
                 )
-            # remove_token_by_tag(token_row["dependee"], dag_ports, port_tokens, token_visited)
         else:
             print(
-                f"token {token_id_to_remove} volevo rm prev token id {token_row['dependee']} tag {token_visited[token_row['dependee']][0].tag} ma è un token del ConnectorPort"
+                f"rm prev - token {token_id_to_remove} volevo rm prev token id {token_row['dependee']} tag {token_visited[token_row['dependee']][0].tag} ma è un token del ConnectorPort"
             )
 
 
@@ -710,8 +743,9 @@ class DefaultFailureManager(FailureManager):
                         "new-out-token": job_request.token_output[
                             port_json["name"]
                         ].persistent_id,
-                        "old-job-token": token.persistent_id,
+                        # "old-job-token": token.persistent_id,
                         "old-out-token": out_tokens_json["id"],
+                        "job-name": token.value.name, # solo per debug
                         # "value": out_tokens_json["value"],
                     }
                     token_visited[token.persistent_id] = (
@@ -868,11 +902,6 @@ class DefaultFailureManager(FailureManager):
         print("While tokens terminato")
         check_double_reference(dag_ports)
 
-        for t, a in all_token_visited.values():
-            print(
-                f"Token id: {t.persistent_id} tag: {t.tag} val: {str_tok(t)} is available? {a}"
-            )
-
         t1t2t3 = set(
             [
                 t.value.name
@@ -887,6 +916,10 @@ class DefaultFailureManager(FailureManager):
         )
 
         all_token_visited = dict(sorted(all_token_visited.items()))
+        for t, a in all_token_visited.values():
+            print(
+                f"Token id: {t.persistent_id} tag: {t.tag} val: {str_tok(t)} is available? {a}"
+            )
         print(
             "available_new_job_tokens:",
             len(available_new_job_tokens) > 0,
@@ -1183,6 +1216,12 @@ class DefaultFailureManager(FailureManager):
 
         tokens = list(failed_job.inputs.values())  # tokens to check
         tokens.append(job_token)
+        # todo: se la ritorna non torna più su, penso si vada in un loop continuo di:
+        #  - costruisco il dag
+        #  - controllo che il file esiste
+        #  - errore, test fallito perché la risorsa è giù
+        #  - costruisci dag ...
+
         (
             dag_ports,
             port_tokens,
@@ -1330,61 +1369,22 @@ class DefaultFailureManager(FailureManager):
 
         for step in new_workflow.steps.values():
             if isinstance(step, ScatterStep):
-                port_key = list(step.input_ports.keys())[0]
-                scatter_port = step.get_output_port()
-                combinator = list(scatter_port.get_output_steps())[0]
-                combinator_port = combinator.get_output_port(port_key)
-                transformer = list(combinator_port.get_output_steps())[0]
-                port_name = transformer.get_output_port(port_key).name
-
+                port = step.get_output_port()
                 print(
                     f"_save_for_retag wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]:",
                     [
                         (t_id, token_visited[t_id][0].tag, token_visited[t_id][1])
-                        for t_id in port_tokens[port_name]
+                        for t_id in port_tokens[port.name]
                     ],
                 )
-                z_scatter_out_tokens = []
-                for t_id in port_tokens[scatter_port.name]:
-                    z_scatter_out_tokens.append(
-                        {
-                            "id": token_visited[t_id][0].persistent_id,
-                            "tag": token_visited[t_id][0].tag,
-                            "avail": token_visited[t_id][1],
-                            "value": str_tok(token_visited[t_id][0]),
-                        }
-                    )
-                z_transformer_out_tokens = []
-                for t_id in port_tokens[port_name]:
-                    z_transformer_out_tokens.append(
-                        {
-                            "id": token_visited[t_id][0].persistent_id,
-                            "tag": token_visited[t_id][0].tag,
-                            "avail": token_visited[t_id][1],
-                            "value": str_tok(token_visited[t_id][0]),
-                        }
-                    )
-                z_scatter_out_tokens.sort(key=lambda x: x["tag"], reverse=False)
-                z_transformer_out_tokens.sort(key=lambda x: x["tag"], reverse=False)
-                if len(z_transformer_out_tokens) != len(z_scatter_out_tokens):
-                    pass
-                else:
-                    for t1, t2 in zip(z_transformer_out_tokens, z_scatter_out_tokens):
-                        if t1["tag"] != t2["tag"]:
-                            pass
-                        if t1["avail"] != t2["avail"]:
-                            pass
-
-                for t_id in port_tokens[port_name]:
+                for t_id in port_tokens[port.name]:
                     if (
-                        t_id
-                        not in dag_ports[INIT_DAG_FLAG]
-                        # and not token_visited[t_id][1]
+                        t_id not in dag_ports[INIT_DAG_FLAG]
+                        and not token_visited[t_id][1]
                     ):
-                        # todo: salvare solo il tag. Cambiamento che dovrà essere applicanto anche in is_valid_tag
-                        self.retags[new_workflow.name].setdefault(
-                            scatter_port.name, set()
-                        ).add(token_visited[t_id][0])
+                        self.retags[new_workflow.name].setdefault(port.name, set()).add(
+                            token_visited[t_id][0]
+                        )
 
     async def _execute_failed_job(
         self, failed_job, failed_step, new_workflow, loading_context
