@@ -438,7 +438,7 @@ def remove_from_graph(
         )
 
 
-def remove_token(
+def remove_token_by_id(
     token_id_to_remove: int,
     dag_ports: MutableMapping[str, MutableSequence[str]],
     port_tokens: MutableMapping[str, MutableSequence[int]],
@@ -464,46 +464,28 @@ def get_port_from_token(token, port_tokens, token_visited):
     raise FailureHandlingException("Token assente")
 
 
-def remove_token_by_tag(token_tag, port_name, dag_ports, port_tokens, token_visited):
+def remove_token(token, port_name, dag_ports, port_tokens, token_visited):
+    msg = (
+        "job {token.value.name}" if isinstance(token, JobToken) else f"tag {token.tag}"
+    )
     if port_name in port_tokens.keys():
         for t_id in port_tokens[port_name]:
-            if token_visited[t_id][0].tag == token_tag:
-                print(
-                    f"Rimuovo token {t_id} con tag {token_tag} dal port_tokens[{port_name}]"
-                )
-                port_tokens[port_name].remove(t_id)
+            if (
+                not isinstance(token, JobToken)
+                and token_visited[t_id][0].tag == token.tag
+            ) or (
+                isinstance(token, JobToken)
+                and token_visited[t_id][0].value.name == token.value.name
+            ):
+                print(f"Rimuovo token {t_id} con {msg} dal port_tokens[{port_name}]")
+                remove_token_by_id(t_id, dag_ports, port_tokens, token_visited)
                 return
         print(
-            f"Volevo rimuovo token con tag {token_tag} dal port_tokens[{port_name}] ma non ce n'è"
+            f"Volevo rimuovere token con {msg} dal port_tokens[{port_name}] ma non ce n'è"
         )
     else:
         print(
-            f"Volevo rimuovo token con tag {token_tag} ma non c'è port {port_name} in port_tokens"
-        )
-
-
-def remove_job_token_by_name(
-    job_name, port_name, dag_ports, port_tokens, token_visited
-):
-    if port_name in port_tokens.keys():
-        for t_id in port_tokens[port_name]:
-            # e/o controllare che port_name sia una jobport
-            if not isinstance(token_visited[t_id][0], JobToken):
-                raise FailureHandlingException(
-                    f"Dovevo rimuovere jobtoken con job {job_name} ma token {t_id} non è un jobtoken ma {type(token_visited[t_id][0])} con value {token_visited[t_id][0].value}"
-                )
-            if token_visited[t_id][0].value.name == job_name:
-                print(
-                    f"Rimuovo jobtoken {t_id} con job {job_name} dal port_tokens[{port_name}]"
-                )
-                port_tokens[port_name].remove(t_id)
-                return
-        print(
-            f"Volevo rimuovo jobtoken con job {job_name}  dal port_tokens[{port_name}] ma non ce n'è"
-        )
-    else:
-        print(
-            f"Volevo rimuovo jobtoken con job {job_name} ma non c'è port {port_name} in port_tokens"
+            f"Volevo rimuovere token con {msg} ma non c'è port {port_name} in port_tokens"
         )
 
 
@@ -554,37 +536,24 @@ async def remove_prev(
             a = port_dependee_row["type"] == get_class_fullname(JobPort)
             b = isinstance(dependee_token, JobToken)
             c = a != b
-            if isinstance(dependee_token, JobToken):
-                remove_job_token_by_name(
-                    dependee_token.value.name,
+            if isinstance(dependee_token, JobToken) or (
+                not isinstance(token_visited[token_id_to_remove][0], JobToken)
+                and curr_tag_level == get_tag_level(dependee_token.tag)
+            ):
+                remove_token(
+                    dependee_token,
                     port_dependee_row["name"],
                     dag_ports,
                     port_tokens,
                     token_visited,
                 )
-                print(
-                    f"rm prev - token {token_id_to_remove} tag {token_visited[token_id_to_remove][0].tag} (lvl {curr_tag_level}) ha prev job {dependee_token.value.name} id {token_row['dependee']} tag {dependee_token.tag} (lvl {get_tag_level(dependee_token.tag)}) -> {curr_tag_level == get_tag_level(dependee_token.tag)}"
-                )
-                await remove_prev(
-                    token_row["dependee"],
-                    dag_ports,
-                    port_tokens,
-                    token_visited,
-                    context,
-                    loading_context,
-                )
-            elif not isinstance(
-                token_visited[token_id_to_remove][0], JobToken
-            ) and curr_tag_level == get_tag_level(dependee_token.tag):
-                remove_token_by_tag(
-                    dependee_token.tag,
-                    port_dependee_row["name"],
-                    dag_ports,
-                    port_tokens,
-                    token_visited,
+                msg = (
+                    f"job {dependee_token.value.name}"
+                    if isinstance(dependee_token, JobToken)
+                    else ""
                 )
                 print(
-                    f"rm prev - token {token_id_to_remove} tag {token_visited[token_id_to_remove][0].tag} (lvl {curr_tag_level}) ha prev {token_row['dependee']} tag {dependee_token.tag} (lvl {get_tag_level(dependee_token.tag)}) -> {curr_tag_level == get_tag_level(dependee_token.tag)}"
+                    f"rm prev - token {token_id_to_remove} tag {token_visited[token_id_to_remove][0].tag} (lvl {curr_tag_level}) ha prev {msg}id {token_row['dependee']} tag {dependee_token.tag} (lvl {get_tag_level(dependee_token.tag)}) -> {curr_tag_level == get_tag_level(dependee_token.tag)}"
                 )
                 await remove_prev(
                     token_row["dependee"],
@@ -745,7 +714,7 @@ class DefaultFailureManager(FailureManager):
                         ].persistent_id,
                         # "old-job-token": token.persistent_id,
                         "old-out-token": out_tokens_json["id"],
-                        "job-name": token.value.name, # solo per debug
+                        "job-name": token.value.name,  # solo per debug
                         # "value": out_tokens_json["value"],
                     }
                     token_visited[token.persistent_id] = (
@@ -1117,7 +1086,7 @@ class DefaultFailureManager(FailureManager):
                                     t_id
                                 )
                             ]:
-                                remove_token(
+                                remove_token_by_id(
                                     prev_t_id, dag_ports, port_tokens, token_visited
                                 )
 
