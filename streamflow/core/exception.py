@@ -7,19 +7,19 @@ if TYPE_CHECKING:
 
 
 class WorkflowException(Exception):
-    pass
+    ...
 
 
 class WorkflowDefinitionException(WorkflowException):
-    pass
+    ...
 
 
 class WorkflowExecutionException(WorkflowException):
-    pass
+    ...
 
 
 class WorkflowProvenanceException(WorkflowException):
-    pass
+    ...
 
 
 class WorkflowTransferException(WorkflowException):
@@ -27,14 +27,8 @@ class WorkflowTransferException(WorkflowException):
 
 
 class FailureHandlingException(WorkflowException):
-    pass
+    ...
 
 
 class InvalidPluginException(Exception):
-    pass
-
-
-class UnrecoverableTokenException(WorkflowException):
-    def __init__(self, message: str, token: Token | None = None):
-        super().__init__(message)
-        self.token: Token = token
+    ...
