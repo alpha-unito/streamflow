@@ -976,7 +976,9 @@ class GatherStep(BaseStep):
                 break
             else:
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received input {token.tag}")
+                    logger.debug(
+                        f"Step {self.name} (wf {self.workflow.name}) received input {token.tag}"
+                    )
                 key = ".".join(token.tag.split(".")[: -self.depth])
                 if key not in self.token_map:
                     self.token_map[key] = []

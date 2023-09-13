@@ -442,6 +442,12 @@ class CWLTransferStep(TransferStep):
                 job.input_directory, utils.random_name(), selected_location.relpath
             )
             # Perform and transfer
+            for d in dst_locations:
+                if a := await remotepath.exists(connector, d, filepath):
+                    WorkflowExecutionException(
+                        f"WARN. Il file {filepath} è disponibile su {d} prima del transfer"
+                    )
+                pass
             await self.workflow.context.data_manager.transfer_data(
                 src_locations=[selected_location],
                 src_path=selected_location.path,

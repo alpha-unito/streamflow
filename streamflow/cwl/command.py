@@ -752,8 +752,9 @@ class CWLCommand(CWLBaseCommand):
                 LocalConnector,
             )
             logger.info(
-                "EXECUTING step {step} (job {job} with jobtoken.id {jt}) {location} into directory {outdir}:\n{command}".format(
+                "EXECUTING step {step} [wf {wf} (job {job} with jobtoken.id {jt}] {location} into directory {outdir}:\n{command}".format(
                     step=self.step.name,
+                    wf=self.step.workflow.name,
                     job=job.name,
                     jt=get_job_token(
                         job.name, self.step.get_input_port("__job__").token_list

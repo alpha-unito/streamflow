@@ -280,7 +280,7 @@ class DefaultScheduler(Scheduler):
 
                     if starts_with_magic_trio(job_context.job.name):
                         print(
-                            "job_allocations:\n\t",
+                            f"job_allocations (mittente {job_context.job.name}):\n\t",
                             "\n\t".join(
                                 [
                                     f"{k}: {v.status} - {[str(loc) for loc in v.locations]}"
@@ -288,6 +288,7 @@ class DefaultScheduler(Scheduler):
                                     if starts_with_magic_trio(k)
                                 ]
                             ),
+                            sep="",
                         )
                     if valid_locations:
                         if logger.isEnabledFor(logging.DEBUG):

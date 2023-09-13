@@ -9,6 +9,8 @@ from streamflow.data import remotepath
 from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken
 
+import time
+
 
 async def _get_file_token_weight(context: StreamFlowContext, value: Any):
     weight = 0
@@ -68,11 +70,19 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
     if path := utils.get_path_from_token(value):
         if not (data_loc := _get_data_location(path, context)):
             return False
+        # not data_loc.available solo per debug e esperimenti
+        # print(path, "data_loc.available", data_loc.data_type)
+        if data_loc.data_type == DataType.INVALID:
+            raise Exception(
+                f"file {path} è già contrassegnato come non disponibile ma è stato recuperato il data location",
+            )
         if not await data_location_exists(data_loc, context, path):
             logger.debug(
                 f"Invalidated location {data_loc.deployment} (Losted path {path})"
             )
+            start = time.time()
             context.data_manager.invalidate_location(data_loc, "/")
+            print(f"Tempo per invalidare location {path}: {time.time() - start}")
             return False
     return True
 
