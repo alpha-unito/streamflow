@@ -45,13 +45,10 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
 
 
 async def data_location_exists(data_location, context, path):
-    if data_location.path == path:
-        connector = context.deployment_manager.get_connector(data_location.deployment)
-        # location_allocation = context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
-        # available_locations = context.scheduler.get_locations(location_allocation.jobs[0])
-        if await remotepath.exists(connector, data_location, path):
-            return True
-    return False
+    connector = context.deployment_manager.get_connector(data_location.deployment)
+    # location_allocation = context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
+    # available_locations = context.scheduler.get_locations(location_allocation.jobs[0])
+    return await remotepath.exists(connector, data_location, path)
 
 
 def _get_data_location(path, context):
@@ -68,23 +65,26 @@ def _get_data_location(path, context):
 
 async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
     if path := utils.get_path_from_token(value):
-        if not (data_loc := _get_data_location(path, context)):
+        if not (data_locs := context.data_manager.get_data_locations(path)):
             return False
-        # not data_loc.available solo per debug e esperimenti
-        # print(path, "data_loc.available", data_loc.data_type)
-        if data_loc.data_type == DataType.INVALID:
+        # exception only for debug
+        if [dl for dl in data_locs if dl.data_type == DataType.INVALID]:
             raise Exception(
                 f"file {path} è già contrassegnato come non disponibile ma è stato recuperato il data location",
             )
-        if not await data_location_exists(data_loc, context, path):
+        for data_loc in data_locs:
+            if await data_location_exists(data_loc, context, path):
+                return True
             logger.debug(
                 f"Invalidated location {data_loc.deployment} (Losted path {path})"
             )
             start = time.time()
             context.data_manager.invalidate_location(data_loc, "/")
             print(f"Tempo per invalidare location {path}: {time.time() - start}")
-            return False
-    return True
+        return False
+    raise Exception(
+        f"Non è stato possibile verificare se il file {value} è disponibile"
+    )
 
 
 class CWLFileToken(FileToken):

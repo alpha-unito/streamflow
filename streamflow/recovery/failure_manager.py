@@ -54,7 +54,7 @@ from streamflow.token_printer import (
     dag_workflow,
 )
 from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.step import ScatterStep, CombinatorStep
+from streamflow.workflow.step import ScatterStep, CombinatorStep, TransferStep
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import ExecuteStep
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -281,17 +281,19 @@ class DefaultFailureManager(FailureManager):
                     pass
                 is_available = None
                 for step_row in step_rows:
-                    if issubclass(
+                    if issubclass(get_class_from_name(step_row["type"]), TransferStep):
+                        is_available = False
+                    elif issubclass(
                         get_class_from_name(step_row["type"]),
                         CombinatorStep,
                     ):
-                        # todo: TransferStep serve perché se il file è disponibile in location_2 e invece lo step viene schedulato su location_1, dentro exec avrò il path del file in location_2 quindi si rompe. Mettere is_available direttamente a False non funziona
+                        # todo: vedere i next_tokens rispetto a token e aggiungere le next_port a port (così attacchiamo combinatorstep a tutti i token-transformer e non solo a param-file)
                         is_available = False
                         if issubclass(
                             get_class_from_name(step_row["type"]), CombinatorStep
                         ):
                             interesting_out_ports["combinator"].add(port_row["name"])
-                    if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
+                    elif issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
                         interesting_out_ports["execute"].add(port_row["name"])
                 if is_available is None:
                     is_available = await _is_token_available(token, workflow.context)
