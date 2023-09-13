@@ -276,9 +276,8 @@ class DefaultFailureManager(FailureManager):
                         for step_id_row in step_id_rows
                     )
                 )
-                if len(step_rows) > 1:
-                    s = [dict(sr)["name"] for sr in step_rows]
-                    pass
+                if len(s := [dict(sr)["name"] for sr in step_rows]) > 1:
+                    pass  # for debug
                 is_available = None
                 for step_row in step_rows:
                     if issubclass(get_class_from_name(step_row["type"]), TransferStep):
@@ -289,10 +288,30 @@ class DefaultFailureManager(FailureManager):
                     ):
                         # todo: vedere i next_tokens rispetto a token e aggiungere le next_port a port (così attacchiamo combinatorstep a tutti i token-transformer e non solo a param-file)
                         is_available = False
-                        if issubclass(
-                            get_class_from_name(step_row["type"]), CombinatorStep
+                        if next_tokens := await loading_context.load_next_tokens(
+                            workflow.context, token.persistent_id
                         ):
-                            interesting_out_ports["combinator"].add(port_row["name"])
+                            next_port_rows = await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        workflow.context.database.get_port_from_token(
+                                            nt.persistent_id
+                                        )
+                                    )
+                                    for nt in next_tokens
+                                )
+                            )
+                            for np in next_port_rows:
+                                add_into_graph(
+                                    np["name"],
+                                    None,
+                                    port_row["name"],
+                                    dag_ports,
+                                    port_tokens,
+                                    all_token_visited,
+                                    port_row["type"],
+                                )
+                        interesting_out_ports["combinator"].add(port_row["name"])
                     elif issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
                         interesting_out_ports["execute"].add(port_row["name"])
                 if is_available is None:
@@ -302,12 +321,17 @@ class DefaultFailureManager(FailureManager):
                     if prev_tokens := await loading_context.load_prev_tokens(
                         workflow.context, token.persistent_id
                     ):
-                        for pt in prev_tokens:
-                            prev_port_row = (
-                                await workflow.context.database.get_port_from_token(
-                                    pt.persistent_id
+                        prev_port_rows = await asyncio.gather(
+                            *(
+                                asyncio.create_task(
+                                    workflow.context.database.get_port_from_token(
+                                        pt.persistent_id
+                                    )
                                 )
+                                for pt in prev_tokens
                             )
+                        )
+                        for pt, prev_port_row in zip(prev_tokens, prev_port_rows):
                             port_name_id[prev_port_row["name"]] = prev_port_row["id"]
                             d = dict(prev_port_row)
                             add_into_graph(
