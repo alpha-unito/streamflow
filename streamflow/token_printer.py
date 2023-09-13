@@ -17,8 +17,9 @@ from streamflow.workflow.token import (
 )
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.recovery.recovery import INIT_DAG_FLAG
 
-INIT_DAG_FLAG = "init"
+# INIT_DAG_FLAG = "init"
 
 GRAPH_PATH = "dev/"
 
