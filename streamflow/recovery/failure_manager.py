@@ -135,7 +135,13 @@ async def _put_tokens(
 
 
 async def _populate_workflow(
-    failed_step, token_visited, new_workflow, loading_context, port_tokens, dag_ports
+    failed_step,
+    token_visited,
+    new_workflow,
+    loading_context,
+    port_tokens,
+    dag_ports,
+    workflow,
 ):
     # { id : all_tokens_are_available }
     ports = {}
@@ -186,16 +192,6 @@ async def _populate_workflow(
     print("Check finito")
 
     steps = set()
-    # for row_dependency in await asyncio.gather(
-    #     *(
-    #         asyncio.create_task(
-    #             new_workflow.context.database.get_step_from_output_port(port_id)
-    #         )
-    #         for port_id in ports.keys()
-    #         if id_name[port_id] not in dag_ports[INIT_DAG_FLAG]
-    #     )
-    # ):
-    #     steps.add(row_dependency["step"])
     for row_dependencies in await asyncio.gather(
         *(
             asyncio.create_task(
@@ -254,12 +250,13 @@ async def _is_token_available(token, context):
 def get_necessary_tokens(
     port_tokens, all_token_visited
 ) -> MutableMapping[int, Tuple[Token, bool]]:
-    return {
+    d = {
         t_id: all_token_visited[t_id]
         for token_list in port_tokens.values()
         for t_id in token_list
         if t_id != TOKEN_WAITER
     }
+    return dict(sorted(d.items()))
 
 
 async def reduce_graph(
@@ -787,12 +784,6 @@ class DefaultFailureManager(FailureManager):
                 running_new_job_tokens,
                 workflow.context,
             ):
-                is_available = await _is_token_available(token, workflow.context)
-                # if isinstance(token, CWLFileToken):
-                #     print(
-                #         f"CWLFileToken ({token.persistent_id}) {token} is available {is_available}"
-                #     )
-
                 # impossible case because when added in tokens, the elem is checked
                 if token.persistent_id in all_token_visited.keys():
                     raise FailureHandlingException(
@@ -803,26 +794,35 @@ class DefaultFailureManager(FailureManager):
                     token.persistent_id
                 )
                 port_name_id[port_row["name"]] = port_row["id"]
-                port_name = port_row["name"]
-                step_row = await workflow.context.database.get_step_from_outport(
-                    port_row["id"]
+                step_id_rows = (
+                    await workflow.context.database.get_steps_from_output_port(
+                        port_row["id"]
+                    )
                 )
-                if issubclass(get_class_from_name(step_row["type"]), CombinatorStep):
-                    is_available = False
+                step_rows = await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            workflow.context.database.get_step(step_id_row["step"])
+                        )
+                        for step_id_row in step_id_rows
+                    )
+                )
+                if len(step_rows) > 1:
+                    pass
+                is_available = None
+                for step_row in step_rows:
+                    if issubclass(
+                        get_class_from_name(step_row["type"]), CombinatorStep
+                    ):
+                        # todo: TransferStep serve perché se il file è disponibile in location_2 e invece lo step viene schedulato su location_1, dentro exec avrò il path del file in location_2 quindi si rompe. Mettere is_available direttamente a False non funziona
+                        is_available = False
+                if is_available is None:
+                    is_available = await _is_token_available(token, workflow.context)
                 all_token_visited[token.persistent_id] = (token, is_available)
-
                 if not is_available:
                     if prev_tokens := await loading_context.load_prev_tokens(
                         workflow.context, token.persistent_id
                     ):
-                        p = [
-                            (
-                                await workflow.context.database.get_port_from_token(
-                                    pt.persistent_id
-                                )
-                            )["name"]
-                            for pt in prev_tokens
-                        ]
                         for pt in prev_tokens:
                             prev_port_row = (
                                 await workflow.context.database.get_port_from_token(
@@ -830,6 +830,7 @@ class DefaultFailureManager(FailureManager):
                                 )
                             )
                             port_name_id[prev_port_row["name"]] = prev_port_row["id"]
+                            d = dict(prev_port_row)
                             add_into_graph(
                                 port_row["name"],
                                 token,

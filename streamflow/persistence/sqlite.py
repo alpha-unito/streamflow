@@ -283,21 +283,6 @@ class SqliteDatabase(CachedDatabase):
                 print("QUERY Time exec ", (end - start))
                 return await cursor.fetchone()
 
-    async def get_step_from_outport(self, port_id: int) -> MutableMapping[str, Any]:
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT step.* "
-                "FROM dependency "
-                "     JOIN step ON step.id=dependency.step "
-                "WHERE dependency.port=:port_id AND dependency.type=:dep_type",
-                {
-                    "port_id": port_id,
-                    "dep_type": DependencyType.OUTPUT.value,
-                },
-            ) as cursor:
-                return await cursor.fetchone()
-
     async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
@@ -375,6 +360,10 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
+                # "SELECT step.* "
+                # "FROM dependency "
+                # "     JOIN step ON step.id=dependency.step "
+                # "WHERE dependency.port=:port AND dependency.type=:type",
                 "SELECT * FROM dependency WHERE port = :port AND type = :type",
                 {"port": port_id, "type": DependencyType.OUTPUT.value},
             ) as cursor:

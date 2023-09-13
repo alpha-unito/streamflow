@@ -377,7 +377,7 @@ async def print_grafici_parte_uno(
     await print_step_from_ports(
         dag_ports,
         port_name_id,
-        list(port_tokens.keys()),
+        list(port_name_id.keys()),  # list(port_tokens.keys()),
         workflow.context,
         failed_step.name,
         dir_path + "/steps-" + new_workflow_name,
@@ -396,7 +396,16 @@ async def print_step_from_ports(
 ):
     port_step = {}
     for port_name in port_names:
-        step_row = await context.database.get_step_from_outport(ports[port_name])
+        step_id_rows = await context.database.get_steps_from_output_port(
+            ports[port_name]
+        )
+        step_rows = await asyncio.gather(
+            *(
+                asyncio.create_task(context.database.get_step(step_id_row["step"]))
+                for step_id_row in step_id_rows
+            )
+        )
+        step_row = step_rows[0]
         port_step[port_name] = step_row["name"]
     port_step[INIT_DAG_FLAG] = INIT_DAG_FLAG
     port_step[failed_step_name] = failed_step_name
@@ -585,7 +594,7 @@ async def _build_dag(token_list, workflow, loading_context=None):
     return dag_tokens
 
 
-def print_graph_figure_petri(graph, steps, ports, title):
+def print_graph_figure_bipartito(graph, steps, ports, title):
     dot = graphviz.Digraph(title)
     for vertex, neighbors in graph.items():
         shape = "ellipse" if vertex in steps else "box"
@@ -609,7 +618,7 @@ def dag_workflow(workflow, title="wf"):
         for port_name in step.input_ports.values():
             dag.setdefault(port_name, set()).add(step.name)
             ports.add(port_name)
-    print_graph_figure_petri(dag, steps, ports, title + "-petri")
+    print_graph_figure_bipartito(dag, steps, ports, title + "-bipartito")
     dag_steps = {}
     for k, values in dag.items():
         for v in values:
