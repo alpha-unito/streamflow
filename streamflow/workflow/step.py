@@ -1051,7 +1051,14 @@ class InputInjectorStep(BaseStep, ABC):
         if input_ports:
             while True:
                 # Retrieve input token
-                token = next(iter((await self._get_inputs(input_ports)).values()))
+                key_port, token = next(
+                    iter((await self._get_inputs(input_ports)).items())
+                )
+                if not token.persistent_id:
+                    await token.save(
+                        self.workflow.context,
+                        port_id=self.get_input_port(key_port).persistent_id,
+                    )
                 # Retrieve job
                 job = await cast(JobPort, self.get_input_port("__job__")).get_job(
                     self.name
