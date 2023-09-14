@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import os
 import platform
@@ -26,23 +27,67 @@ from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 
-def deployment_types():
+def csvtype(choices):
+    """Return a function that splits and checks comma-separated values."""
+
+    def splitarg(arg):
+        values = arg.split(",")
+        for value in values:
+            if value not in choices:
+                raise argparse.ArgumentTypeError(
+                    "invalid choice: {!r} (choose from {})".format(
+                        value, ", ".join(map(repr, choices))
+                    )
+                )
+        return values
+
+    return splitarg
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--deploys",
+        type=csvtype(all_deployment_types()),
+        default=all_deployment_types(),
+        help=f"List of deployments to deploy. Use the comma as delimiter e.g. --deploys local,docker. (default: {all_deployment_types()})",
+    )
+
+
+@pytest.fixture(scope="module")
+def chosen_deployment_types(request):
+    return request.config.getoption("--deploys")
+
+
+def pytest_generate_tests(metafunc):
+    if "deployment_src" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "deployment_src",
+            metafunc.config.getoption("deploys"),
+            scope="module",
+        )
+    if "deployment_dst" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "deployment_dst",
+            metafunc.config.getoption("deploys"),
+            scope="module",
+        )
+
+
+def all_deployment_types():
     deployments_ = ["local", "docker", "ssh"]
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity"])
     return deployments_
 
 
-async def get_location(
-    _context: StreamFlowContext, request: pytest.FixtureRequest
-) -> Location:
-    if request.param == "local":
+async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
+    if deployment_t == "local":
         return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
-    elif request.param == "docker":
+    elif deployment_t == "docker":
         connector = _context.deployment_manager.get_connector("alpine-docker")
         locations = await connector.get_available_locations()
         return Location(deployment="alpine-docker", name=next(iter(locations.keys())))
-    elif request.param == "kubernetes":
+    elif deployment_t == "kubernetes":
         connector = _context.deployment_manager.get_connector("alpine-kubernetes")
         locations = await connector.get_available_locations(service="sf-test")
         return Location(
@@ -50,18 +95,18 @@ async def get_location(
             service="sf-test",
             name=next(iter(locations.keys())),
         )
-    elif request.param == "singularity":
+    elif deployment_t == "singularity":
         connector = _context.deployment_manager.get_connector("alpine-singularity")
         locations = await connector.get_available_locations()
         return Location(
             deployment="alpine-singularity", name=next(iter(locations.keys()))
         )
-    elif request.param == "ssh":
+    elif deployment_t == "ssh":
         connector = _context.deployment_manager.get_connector("linuxserver-ssh")
         locations = await connector.get_available_locations()
         return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
     else:
-        raise Exception(f"{request.param} location type not supported")
+        raise Exception(f"{deployment_t} location type not supported")
 
 
 def get_docker_deployment_config():
@@ -140,26 +185,36 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
     )
 
 
-@pytest_asyncio.fixture(scope="session")
-async def context() -> StreamFlowContext:
+def get_local_deployment_config():
+    return DeploymentConfig(
+        name=LOCAL_LOCATION,
+        type="local",
+        config={},
+        external=True,
+        lazy=False,
+        workdir=os.path.realpath(tempfile.gettempdir()),
+    )
+
+
+@pytest_asyncio.fixture(scope="module")
+async def context(chosen_deployment_types) -> StreamFlowContext:
     _context = build_context(
         {"database": {"type": "default", "config": {"connection": ":memory:"}}},
     )
-    await _context.deployment_manager.deploy(
-        DeploymentConfig(
-            name=LOCAL_LOCATION,
-            type="local",
-            config={},
-            external=True,
-            lazy=False,
-            workdir=os.path.realpath(tempfile.gettempdir()),
-        )
-    )
-    await _context.deployment_manager.deploy(get_docker_deployment_config())
-    await _context.deployment_manager.deploy(await get_ssh_deployment_config(_context))
-    if platform.system() == "Linux":
-        await _context.deployment_manager.deploy(get_kubernetes_deployment_config())
-        await _context.deployment_manager.deploy(get_singularity_deployment_config())
+    for deployment_t in chosen_deployment_types:
+        if deployment_t == "local":
+            config = get_local_deployment_config()
+        elif deployment_t == "docker":
+            config = get_docker_deployment_config()
+        elif deployment_t == "kubernetes":
+            config = get_kubernetes_deployment_config()
+        elif deployment_t == "singularity":
+            config = get_singularity_deployment_config()
+        elif deployment_t == "ssh":
+            config = await get_ssh_deployment_config(_context)
+        else:
+            raise Exception(f"{deployment_t} deployment type not supported")
+        await _context.deployment_manager.deploy(config)
     yield _context
     await _context.deployment_manager.undeploy_all()
     # Close the database connection

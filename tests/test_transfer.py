@@ -12,12 +12,12 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
-from tests.conftest import deployment_types, get_location
+from tests.conftest import get_location
 
 
-@pytest_asyncio.fixture(scope="module", params=deployment_types())
-async def src_location(context, request) -> Location:
-    return await get_location(context, request)
+@pytest_asyncio.fixture(scope="module")
+async def src_location(context, deployment_src) -> Location:
+    return await get_location(context, deployment_src)
 
 
 @pytest.fixture(scope="module")
@@ -25,9 +25,9 @@ def src_connector(context, src_location) -> Connector:
     return context.deployment_manager.get_connector(src_location.deployment)
 
 
-@pytest_asyncio.fixture(scope="module", params=deployment_types())
-async def dst_location(context, request) -> Location:
-    return await get_location(context, request)
+@pytest_asyncio.fixture(scope="module")
+async def dst_location(context, deployment_dst) -> Location:
+    return await get_location(context, deployment_dst)
 
 
 @pytest.fixture(scope="module")
