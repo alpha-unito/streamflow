@@ -104,6 +104,7 @@ class DefaultScheduler(Scheduler):
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
 
+    # todo: togliere questa funzione wrapper e rendere pubblica direttamente l'altra
     def deallocate_from_job_name(self, job: str, keep_job_allocation: bool = False):
         self._deallocate_job(job, keep_job_allocation=keep_job_allocation)
 
@@ -115,6 +116,7 @@ class DefaultScheduler(Scheduler):
         for loc in job_allocation.locations:
             if job in self.location_allocations[loc.deployment][loc.name].jobs:
                 self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
+        job_allocation.locations.clear()
         if logger.isEnabledFor(logging.INFO):
             if len(job_allocation.locations) == 1:
                 is_local = isinstance(
@@ -280,7 +282,7 @@ class DefaultScheduler(Scheduler):
 
                     if starts_with_magic_trio(job_context.job.name):
                         print(
-                            f"job_allocations (mittente {job_context.job.name}):\n\t",
+                            f"job_allocations (mittente {job_context.job.name} target {set(available_locations.keys())}):\n\t",
                             "\n\t".join(
                                 [
                                     f"{k}: {v.status} - {[str(loc) for loc in v.locations]}"

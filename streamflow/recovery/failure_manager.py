@@ -278,7 +278,8 @@ class DefaultFailureManager(FailureManager):
                 )
                 if len(s := [dict(sr)["name"] for sr in step_rows]) > 1:
                     pass  # for debug
-                is_available = None
+                is_available = await _is_token_available(token, workflow.context)
+
                 for step_row in step_rows:
                     if issubclass(get_class_from_name(step_row["type"]), TransferStep):
                         is_available = False
@@ -314,8 +315,6 @@ class DefaultFailureManager(FailureManager):
                         interesting_out_ports["combinator"].add(port_row["name"])
                     elif issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
                         interesting_out_ports["execute"].add(port_row["name"])
-                if is_available is None:
-                    is_available = await _is_token_available(token, workflow.context)
                 all_token_visited[token.persistent_id] = (token, is_available)
                 if not is_available:
                     if prev_tokens := await loading_context.load_prev_tokens(
@@ -649,6 +648,14 @@ class DefaultFailureManager(FailureManager):
                     logger.debug(
                         f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times"
                     )
+
+                    # free resources scheduler
+                    await workflow.context.scheduler.notify_status(
+                        token.value.name, Status.ROLLBACK
+                    )
+                    workflow.context.scheduler.deallocate_from_job_name(
+                        token.value.name, keep_job_allocation=True
+                    )
                 else:
                     logger.error(
                         f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
@@ -783,11 +790,10 @@ class DefaultFailureManager(FailureManager):
         )
         print("end _put_tokens")
 
+        # for debug
         print("New workflow", new_workflow.name, "popolato così:")
         print("\tJobs da rieseguire:", job_executed_in_new_workflow)
-
         dag_workflow(new_workflow, dir_path + "/new-wf")
-
         for step in new_workflow.steps.values():
             print(f"step {step.name} wf {step.workflow.name}")
             try:
@@ -804,15 +810,15 @@ class DefaultFailureManager(FailureManager):
                 print(f"exception {step.name} -> {e}")
                 raise
 
-        for token, _ in token_visited.values():
-            if isinstance(token, JobToken):
-                # free resources scheduler
-                await workflow.context.scheduler.notify_status(
-                    token.value.name, Status.ROLLBACK
-                )
-                workflow.context.scheduler.deallocate_from_job_name(
-                    token.value.name, keep_job_allocation=True
-                )
+        # for token, _ in token_visited.values():
+        #     if isinstance(token, JobToken):
+        #         # free resources scheduler
+        #         await workflow.context.scheduler.notify_status(
+        #             token.value.name, Status.ROLLBACK
+        #         )
+        #         workflow.context.scheduler.deallocate_from_job_name(
+        #             token.value.name, keep_job_allocation=True
+        #         )
         print(f"all job_token visited: {t1t2t3}")
         a = [p for p, l in port_tokens.items() if len(l) > 1]
         pass

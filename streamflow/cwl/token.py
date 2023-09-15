@@ -44,27 +44,9 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
     return weight
 
 
-async def data_location_exists(data_location, context, path):
-    connector = context.deployment_manager.get_connector(data_location.deployment)
-    # location_allocation = context.scheduler.location_allocations[data_loc.deployment][data_loc.name]
-    # available_locations = context.scheduler.get_locations(location_allocation.jobs[0])
-    return await remotepath.exists(connector, data_location, path)
-
-
-def _get_data_location(path, context):
-    data_locs = context.data_manager.get_data_locations(path)
-    # print(
-    #     f"Path {path} in data_locs {[ str(dl.name) + ' ' + str(dl.deployment) + ' ' + str(dl.service) + ' ' + str(dl.path) for dl in data_locs]}"
-    # )
-    for data_loc in data_locs:
-        if data_loc.path == path:
-            # print(f"Path {path} return data_loc {data_loc.deployment}")
-            return data_loc
-    return None
-
-
 async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
     if path := utils.get_path_from_token(value):
+        # todo: controllare anche i secondaryfiles
         if not (data_locs := context.data_manager.get_data_locations(path)):
             return False
         # exception only for debug
@@ -72,16 +54,31 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
             raise Exception(
                 f"file {path} è già contrassegnato come non disponibile ma è stato recuperato il data location",
             )
+        is_available = False
         for data_loc in data_locs:
-            if await data_location_exists(data_loc, context, path):
-                return True
-            logger.debug(
-                f"Invalidated location {data_loc.deployment} (Losted path {path})"
-            )
-            start = time.time()
-            context.data_manager.invalidate_location(data_loc, "/")
-            print(f"Tempo per invalidare location {path}: {time.time() - start}")
-        return False
+            connector = context.deployment_manager.get_connector(data_loc.deployment)
+            if await remotepath.exists(connector, data_loc, data_loc.path):
+                # todo:
+                #  - opz1: controllare le location finché non si trova un file available
+                #    Problema [loop deadlock] -> possibile esecuzione:
+                #      - file era su loc1 e loc2, ma su loc2 si è perso.
+                #      - Il file viene segnato disponibile perché viene trovato su loc1 (ma non viene controllato loc2).
+                #      - Se il job viene assegnato a loc2 viene creato un link-simbolico con il file perso.
+                #  - opz2: controllare tutte le location, per aggiornare il data manager
+                #    Attuale implementazione
+                #  - opz3: controllare la location fallita, se file non available, controllare le altre location finché non c'è un file available
+                print(f"Location {data_loc.deployment} ha valid {data_loc.path}")
+                is_available = True
+            else:
+                logger.debug(
+                    f"Invalidated location {data_loc.deployment} (Losted path {data_loc.path})"
+                )
+                start = time.time()
+                context.data_manager.invalidate_location(data_loc, "/")
+                print(
+                    f"Tempo per invalidare location {data_loc.path}: {time.time() - start}"
+                )
+        return is_available
     raise Exception(
         f"Non è stato possibile verificare se il file {value} è disponibile"
     )
