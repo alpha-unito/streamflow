@@ -191,7 +191,7 @@ async def follow_symlink(
                 )
             )
         if not (output := result.strip()):
-            raise WorkflowExecutionException(f"Symbolic Link {path} does not exists")
+            raise WorkflowExecutionException(f"Symbolic Link {path} does not exist")
         return output
 
 

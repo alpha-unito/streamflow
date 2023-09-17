@@ -332,7 +332,7 @@ async def print_grafici_post_remove(
     await print_step_from_ports(
         dag_ports,
         port_name_id,
-        list(port_tokens.keys()),
+        list(port_name_id.keys()),  # list(port_tokens.keys()),
         workflow.context,
         failed_step.name,
         dir_path + "/step-post-remove-" + new_workflow_name,
@@ -406,14 +406,16 @@ async def print_step_from_ports(
                 for step_id_row in step_id_rows
             )
         )
-        step_row = step_rows[0]
-        port_step[port_name] = step_row["name"]
+        step_name = step_rows[0]["name"] if step_rows else "Dataset"
+        port_step[port_name] = step_name
     port_step[INIT_DAG_FLAG] = INIT_DAG_FLAG
     port_step[failed_step_name] = failed_step_name
 
     dag_steps = {}
     for port_name, next_port_names in dag_ports.items():
         for next_port_name in next_port_names:
+            if next_port_name not in port_step.keys():
+                raise Exception(f"Port {next_port_name} non presente in port_step")
             dag_steps.setdefault(port_step[port_name], set()).add(
                 port_step[next_port_name]
             )

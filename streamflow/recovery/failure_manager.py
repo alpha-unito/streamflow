@@ -395,6 +395,8 @@ class DefaultFailureManager(FailureManager):
             print(
                 f"Token id: {t.persistent_id} tag: {t.tag} val: {str_tok(t)} is available? {a}"
             )
+        for p, t in dict(sorted(port_tokens.items())).items():
+            print(f"Port_tokens[{p}]: {t}")
         print(
             "available_new_job_tokens:",
             len(available_new_job_tokens) > 0,
@@ -616,7 +618,7 @@ class DefaultFailureManager(FailureManager):
                         await print_step_from_ports(
                             dag_ports,
                             port_name_id,
-                            list(port_tokens.keys()),
+                            list(port_name_id.keys()),
                             workflow.context,
                             failed_step.name,
                             dir_path + "/steps-sync-" + new_workflow.name,

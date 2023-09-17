@@ -292,11 +292,12 @@ def contains_id(
     return searched_id in (entity.persistent_id for entity in persistable_entity_list)
 
 
-def get_job_number(job_name):
+def get_job_number(job_name) -> int:
     return int(job_name.rsplit("/", maxsplit=1)[1])
 
 
-def get_execute_step_name_from_job_name(job_name):
+# todo: rename it in get_job_name_radix
+def get_execute_step_name_from_job_name(job_name) -> str:
     return job_name.rsplit("/", maxsplit=1)[0]
 
 
