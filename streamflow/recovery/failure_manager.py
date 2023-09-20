@@ -160,7 +160,7 @@ class DefaultFailureManager(FailureManager):
                     f"il job {token.value.name} ({token.persistent_id}) ha il out_token_json['id']: {out_tokens_json['id']} vs job_request.token_output: {job_request.token_output}",
                     f"\n\t out_tokens_json: {dict(out_tokens_json)}",
                 )
-                port_json = await context.database.get_port_by_token(
+                port_json = await context.database.get_port_from_token(
                     out_tokens_json["id"]
                 )
                 is_available = await _is_token_available(
