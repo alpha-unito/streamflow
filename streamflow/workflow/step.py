@@ -42,7 +42,12 @@ from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.token import JobToken, ListToken, TerminationToken
+from streamflow.workflow.token import (
+    JobToken,
+    ListToken,
+    TerminationToken,
+    IterationTerminationToken,
+)
 from streamflow.workflow.utils import (
     check_iteration_termination,
     check_termination,
