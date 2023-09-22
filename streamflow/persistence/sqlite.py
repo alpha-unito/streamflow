@@ -364,10 +364,6 @@ class SqliteDatabase(CachedDatabase):
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                # "SELECT step.* "
-                # "FROM dependency "
-                # "     JOIN step ON step.id=dependency.step "
-                # "WHERE dependency.port=:port AND dependency.type=:type",
                 "SELECT * FROM dependency WHERE port = :port AND type = :type",
                 {"port": port_id, "type": DependencyType.OUTPUT.value},
             ) as cursor:

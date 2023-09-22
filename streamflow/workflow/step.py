@@ -105,16 +105,6 @@ class BaseStep(Step, ABC):
         self._log_level: int = logging.DEBUG
 
     async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
-        for kport, port in input_ports.items():
-            print(
-                f"Step {self.name} (wf {self.workflow.name})",
-                f"- KPort {kport} - port_name {port.name} - port_id {port.persistent_id} - port.token_list",
-                len(port.token_list)
-                # [
-                #     t.value["path"] if isinstance(t, CWLFileToken) else t.value
-                #     for t in port.token_list
-                # ],
-            )
         inputs = {
             k: v
             for k, v in zip(
