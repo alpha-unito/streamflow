@@ -444,7 +444,7 @@ class CWLTransferStep(TransferStep):
             # Perform and transfer
             for d in dst_locations:
                 if a := await remotepath.exists(connector, d, filepath):
-                    WorkflowExecutionException(
+                    raise WorkflowExecutionException(
                         f"WARN. Il file {filepath} è disponibile su {d} prima del transfer"
                     )
                 pass

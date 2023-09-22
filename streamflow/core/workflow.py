@@ -474,48 +474,6 @@ class Step(PersistableEntity, ABC):
         )
         if change_wf is None:
             loading_context.add_step(persistent_id, step)
-        # if change_wf is None:
-        #     print(f"{step.name} (wf {step.workflow.name}) Load dep metodo 1")
-        #     input_ports = await asyncio.gather(
-        #         *(
-        #             asyncio.create_task(loading_context.load_port(context, d["port"]))
-        #             for d in input_deps
-        #         )
-        #     )
-        #     step.input_ports = {
-        #         d["name"]: p.name for d, p in zip(input_deps, input_ports)
-        #     }
-        #     output_ports = await asyncio.gather(
-        #         *(
-        #             asyncio.create_task(loading_context.load_port(context, d["port"]))
-        #             for d in output_deps
-        #         )
-        #     )
-        #     step.output_ports = {
-        #         d["name"]: p.name for d, p in zip(output_deps, output_ports)
-        #     }
-        #     loading_context.add_step(persistent_id, step)
-        # else:
-        #     print(f"{step.name} (wf {step.workflow.name}) Load dep metodo 2")
-        #     input_port_rows = await asyncio.gather(
-        #         *(
-        #             asyncio.create_task(context.database.get_port(d["port"]))
-        #             for d in input_deps
-        #         )
-        #     )
-        #     step.input_ports = {
-        #         d["name"]: p["name"] for d, p in zip(input_deps, input_port_rows)
-        #     }
-        #
-        #     output_port_rows = await asyncio.gather(
-        #         *(
-        #             asyncio.create_task(context.database.get_port(d["port"]))
-        #             for d in output_deps
-        #         )
-        #     )
-        #     step.output_ports = {
-        #         d["name"]: p["name"] for d, p in zip(output_deps, output_port_rows)
-        #     }
         et = time.time()
         if et - st > 5:
             print(

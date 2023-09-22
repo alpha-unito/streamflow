@@ -110,6 +110,7 @@ class BaseStep(Step, ABC):
         self._log_level: int = logging.DEBUG
 
     async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
+        print(f"Step {self.name} (wf {self.workflow.name}) AAA waiting tokens")
         inputs = {
             k: v
             for k, v in zip(
@@ -122,6 +123,7 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
+        print(f"Step {self.name} (wf {self.workflow.name}) AAA gets tokens")
         tags = set()
         for t in inputs.values():
             tags.add(t.tag)
@@ -1182,6 +1184,114 @@ class LoopCombinatorStep(CombinatorStep):
         await self.terminate(status)
 
 
+class LoopTerminatorStep(BaseStep, ABC):
+    def __init__(self, name: str, workflow: Workflow, counter: int):
+        super().__init__(name, workflow)
+        self.counter = counter
+
+    async def run(self):
+        # Set default status to SKIPPED
+        status = Status.SKIPPED
+        index = 0
+        if self.input_ports:
+            terminated_ports = set()
+            while True:
+                # Retrieve input tokens
+                for k_port, input_port in self.get_input_ports().items():
+                    if k_port not in terminated_ports:
+                        print(
+                            f"Step {self.name} (wf {self.workflow.name}) waiting on port {k_port} (name {input_port.name})"
+                        )
+                        token = await input_port.get(posixpath.join(self.name, k_port))
+                        if check_termination(token):
+                            print(
+                                f"Step {self.name} (wf {self.workflow.name}) gets termination token in port {k_port} (name {input_port.name})"
+                            )
+                            terminated_ports.add(k_port)
+                            continue
+                        if check_iteration_termination(token):
+                            print(
+                                f"Step {self.name} (wf {self.workflow.name}) gets iteration termination token tag {token.tag} in port {k_port} (name {input_port.name})"
+                            )
+                            # terminated_ports.add(k_port)
+                            continue
+                        if isinstance(token, TerminationToken):
+                            msg = "TerminationToken"
+                        elif isinstance(token, IterationTerminationToken):
+                            msg = f"iterationTerminationToken tag {token.tag}"
+                        else:
+                            msg = f"tag {token.tag}"
+                        print(
+                            f"Step {self.name} (wf {self.workflow.name}) gets {msg} in port {k_port} (name {input_port.name})"
+                        )
+                        if index >= self.counter - 1:
+                            for t in input_port.token_list:
+                                if (
+                                    not isinstance(t, IterationTerminationToken)
+                                    or t.tag != token.tag
+                                ):
+                                    print(
+                                        f"Step {self.name} (wf {self.workflow.name}) inserts iterationterminationtoken({token.tag}) in port {k_port} (name {input_port.name})"
+                                    )
+                                    input_port.put(
+                                        IterationTerminationToken(tag=token.tag)
+                                    )
+                                else:
+                                    break
+                            # terminated_ports.add(k_port)
+                if len(terminated_ports) == len(self.input_ports):
+                    status = Status.COMPLETED
+                    break
+                print(
+                    f"Step {self.name} (wf {self.workflow.name}) increases its index {index} to {index + 1} compared (>=) to counter {self.counter - 1}"
+                )
+                index += 1
+        print(
+            f"Step {self.name} (wf {self.workflow.name}) came out with index {index} compared to counter {self.counter - 1}"
+        )
+        # Terminate step
+        await self.terminate(status)
+        print(f"Step {self.name} (wf {self.workflow.name}) terminate")
+
+    # async def run(self):
+    #     # Set default status to SKIPPED
+    #     status = Status.SKIPPED
+    #     if self.input_ports:
+    #         index = 0
+    #         while True:
+    #             # Retrieve input tokens
+    #             inputs = await self._get_inputs(self.get_input_ports())
+    #             # Check for termination
+    #             if check_termination(inputs.values()):
+    #                 print(
+    #                     f"Step {self.name} (wf {self.workflow.name}) termination token"
+    #                 )
+    #                 break
+    #
+    #             input_tags = [t.tag for t in inputs.values()]
+    #             print(
+    #                 f"Step {self.name} (wf {self.workflow.name}) gets inputs {input_tags} and it increases its index {index} to {index + 1} compared (>=) to counter {self.counter - 1}"
+    #             )
+    #             if self.counter == 1 or index >= self.counter - 1:
+    #                 tag = utils.get_tag(inputs.values())
+    #                 pass
+    #                 for kp, port in self.get_output_ports().items():
+    #                     print(
+    #                         f"Step {self.name} (wf {self.workflow.name}) gets inputs and it inserts iterationterminationtoken({tag}) in port {kp} (name {port.name})"
+    #                     )
+    #                     port.put(IterationTerminationToken(tag=tag))
+    #                     port.put(TerminationToken())
+    #                 status = Status.COMPLETED
+    #                 break
+    #             index += 1
+    #     print(
+    #         f"Step {self.name} (wf {self.workflow.name}) gets inputs {input_tags} and it came out with index {index} compared to counter {self.counter - 1}"
+    #     )
+    #     # Terminate step
+    #     await self.terminate(status)
+    #     print(f"LoopTerminationStep ({self.workflow.name}) terminate")
+
+
 class LoopOutputStep(BaseStep, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
@@ -1616,74 +1726,6 @@ class TransferStep(BaseStep, ABC):
             **{"job_port": self.get_input_port("__job__").persistent_id},
         }
 
-    async def _transfer_data_and_put_port(self, port_name, job, token, inputs):
-        try:
-            print(f"Ttranfer start trasferisco {job.name} {port_name} {token.tag}")
-            transferred_token = await self._persist_token(
-                token=await self.transfer(job, token),
-                port=self.get_output_port(port_name),
-                input_token_ids=_get_token_ids(
-                    list(inputs.values())
-                    + [
-                        get_job_token(
-                            job.name,
-                            self.get_input_port("__job__").token_list,
-                        )
-                    ]
-                ),
-            )
-        except WorkflowTransferException as e:
-            logger.exception(e)
-            transferred_token = (
-                await self.workflow.context.failure_manager.handle_failure_transfer(
-                    job, self, port_name
-                )
-            )
-            print(
-                f"Gestito WorkflowTransferException ottenuto {job.name} {port_name} tag:{transferred_token.tag}"
-            )
-            if transferred_token is None:
-                print(
-                    f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"
-                )
-                raise e
-        print(f"Ttranfer end trasferito {job.name} {port_name} {token.tag}")
-        self.get_output_port(port_name).put(transferred_token)
-
-    async def _transfer_data(self, port_name, job, token, inputs):
-        try:
-            print(f"Ttranfer start trasferisco {job.name} {port_name} {token.tag}")
-            transferred_token = await self._persist_token(
-                token=await self.transfer(job, token),
-                port=self.get_output_port(port_name),
-                input_token_ids=_get_token_ids(
-                    list(inputs.values())
-                    + [
-                        get_job_token(
-                            job.name,
-                            self.get_input_port("__job__").token_list,
-                        )
-                    ]
-                ),
-            )
-        except WorkflowTransferException as e:
-            logger.exception(e)
-            transferred_token = (
-                await self.workflow.context.failure_manager.handle_failure_transfer(
-                    job, self, port_name
-                )
-            )
-            print(
-                f"Gestito WorkflowTransferException ottenuto {job.name} {port_name} tag:{transferred_token.tag}"
-            )
-            if transferred_token is None:
-                print(
-                    f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"
-                )
-                raise e
-        print(f"Ttranfer end trasferito {job.name} {port_name} {token.tag}")
-        return port_name, transferred_token
-
     async def run(self):
         # Set default status as SKIPPED
         status = Status.SKIPPED
@@ -1694,7 +1736,6 @@ class TransferStep(BaseStep, ABC):
         if input_ports:
             inputs_map = {}
             try:
-                tasks = []
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
@@ -1717,48 +1758,42 @@ class TransferStep(BaseStep, ABC):
 
                             # Transfer token
                             for port_name, token in inputs.items():
-                                # Con questo approccio al momento del fault, si potrebbe andare in deadlock.
-                                # Job1 e Job2 assegnati alla stesso deployment e la risorsa supporta un job alla volta.
-                                # Job1 fallisce mentre fa il transfer, nel recovery passa da FIREABLE a WAITING.
-                                # Job2 diventa FIREABLE, pero' non può eseguire il transfer perché aspetta job1
-                                # Finché job1 non ha fatto il transfer non può inserire il token nella port,
-                                # in modo tale da poter procedere con ExecuteStep passando a RUNNING e
-                                # infine terminare diventando COMPLETED. Dall'altra parte invece,
-                                # job1 non può essere ri-schedulato finché Job2 non esce dallo stato FIREABLE-RUNNING
-                                await self._transfer_data_and_put_port(
-                                    port_name, job, token, inputs
+                                try:
+                                    print(
+                                        f"Ttranfer start trasferisco {job.name} {port_name} {token.tag}"
+                                    )
+                                    transferred_token = await self._persist_token(
+                                        token=await self.transfer(job, token),
+                                        port=self.get_output_port(port_name),
+                                        input_token_ids=_get_token_ids(
+                                            list(inputs.values())
+                                            + [
+                                                get_job_token(
+                                                    job.name,
+                                                    self.get_input_port(
+                                                        "__job__"
+                                                    ).token_list,
+                                                )
+                                            ]
+                                        ),
+                                    )
+                                except WorkflowTransferException as e:
+                                    logger.exception(e)
+                                    transferred_token = await self.workflow.context.failure_manager.handle_failure_transfer(
+                                        job, self, port_name
+                                    )
+                                    print(
+                                        f"Gestito WorkflowTransferException ottenuto {job.name} {port_name} tag:{transferred_token.tag}"
+                                    )
+                                    if transferred_token is None:
+                                        print(
+                                            f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"
+                                        )
+                                        raise e
+                                print(
+                                    f"Ttranfer end trasferito {job.name} {port_name} {token.tag}"
                                 )
-
-                #             for port_name, token in inputs.items():
-                #                 # Con questo approccio manda il deadlock anche la normale esecuzione.
-                #                 # Job1 e Job2 assegnati alla stesso deployment e la risorsa supporta un job alla volta.
-                #                 # Job1 fa il transfer e rimane fireable. Il token non viene messo nella port
-                #                 # perché prima deve finire i transfer di tutti gli altri job.
-                #                 # Job2 pero' non può essere ottenuto (get_job) finché non è fireable.
-                #                 # job1 aspetta job2 per inserire il token nella port
-                #                 # job2 aspetta job1 che rilasci le risorse del deploy per diventare fireable
-                #                 tasks.append(
-                #                     asyncio.create_task(
-                #                         self._transfer_data(
-                #                             port_name, job, token, inputs
-                #                         )
-                #                     )
-                #                 )
-                # for i, task in enumerate(tasks):
-                #     port_name, transferred_token = await task
-                #     self.get_output_port(port_name).put(transferred_token)
-
-                #                for port_name, token in inputs.items():
-                #                 # Con questo approccio i token non vengono inseriti in ordine nella port
-                #                 tasks.append(
-                #                     asyncio.create_task(
-                #                         self._transfer_data_and_put_port(
-                #                             port_name, job, token, inputs
-                #                         )
-                #                     )
-                #                 )
-                # await asyncio.gather(*tasks)
-
+                                self.get_output_port(port_name).put(transferred_token)
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
