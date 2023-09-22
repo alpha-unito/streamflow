@@ -571,14 +571,18 @@ class CWLTransferStep(TransferStep):
                 "checksum" in token_value
                 and new_token_value["checksum"] != token_value["checksum"]
             ):
+                loc = self.workflow.context.data_manager.get_data_locations(
+                    path=token_value["path"], location_type=DataType.PRIMARY
+                )
+                new_loc = self.workflow.context.data_manager.get_data_locations(
+                    path=new_token_value["path"], location_type=DataType.PRIMARY
+                )
                 raise WorkflowTransferException(
                     "Error transferring file {} in location {} to {} in location {}.".format(
                         token_value["path"],
-                        "Unreachable-location",
+                        loc[0] if loc else "Unreachable-location",
                         new_token_value["path"],
-                        self.workflow.context.data_manager.get_data_locations(
-                            path=new_token_value["path"], location_type=DataType.PRIMARY
-                        )[0],
+                        new_loc[0] if new_loc else "Unreachable-location",
                     )
                 )
 
