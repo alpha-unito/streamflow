@@ -128,7 +128,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         change_wf: Workflow,
     ) -> CWLConditionalStep:
         params = json.loads(row["params"])
-        return cls(
+        step = cls(
             name=row["name"],
             workflow=change_wf
             if change_wf
@@ -137,6 +137,19 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],
         )
+        for k, port in zip(
+            params["skip_ports"].keys(),
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        Port.load(context, value, loading_context, change_wf)
+                    )
+                    for value in params["skip_ports"].values()
+                )
+            ),
+        ):
+            step.add_skip_port(k, port)
+        return step
 
 
 class CWLLoopConditionalStep(CWLConditionalStep):

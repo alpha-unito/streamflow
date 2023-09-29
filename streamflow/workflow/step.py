@@ -123,7 +123,6 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
-        print(f"Step {self.name} (wf {self.workflow.name}) AAA gets tokens")
         tags = set()
         for t in inputs.values():
             tags.add(t.tag)
