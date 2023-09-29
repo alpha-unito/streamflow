@@ -17,7 +17,7 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
 )
-from streamflow.core.utils import get_execute_step_name_from_job_name, get_job_number
+from streamflow.core.utils import get_job_dir, get_job_number
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
@@ -200,8 +200,7 @@ class DefaultScheduler(Scheduler):
                 filter(
                     lambda x: (
                         x != j_name
-                        and get_execute_step_name_from_job_name(x)
-                        == get_execute_step_name_from_job_name(j_name)
+                        and get_job_dir(x) == get_job_dir(j_name)
                         and get_job_number(x) < get_job_number(j_name)
                         and self.job_allocations[x].status == Status.ROLLBACK
                     ),

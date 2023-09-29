@@ -293,12 +293,11 @@ def contains_id(
 
 
 def get_job_number(job_name) -> int:
-    return int(job_name.rsplit("/", maxsplit=1)[1])
+    return int(os.path.basename(job_name))
 
 
-# todo: rename it in get_job_name_radix
-def get_execute_step_name_from_job_name(job_name) -> str:
-    return job_name.rsplit("/", maxsplit=1)[0]
+def get_job_dir(job_name) -> str:
+    return os.path.dirname(job_name)
 
 
 async def get_dependencies(
