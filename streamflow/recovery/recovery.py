@@ -640,34 +640,14 @@ async def _put_tokens(
             )
 
 
-async def _populate_workflow(
+async def _populate_workflow_lean(
+    wr,
+    port_ids: MutableSequence[int],
+    step_ids: MutableSequence[int],
     failed_step,
-    token_visited,
     new_workflow,
     loading_context,
-    port_tokens,
-    dag_ports,
-    workflow,
 ):
-    # { id : all_tokens_are_available }
-    ports = {}
-
-    port_id_name = {}
-    for token_id, (_, is_available) in token_visited.items():
-        row = await new_workflow.context.database.get_port_from_token(token_id)
-        port_id_name[row["id"]] = row["name"]
-        if TOKEN_WAITER not in port_tokens[row["name"]]:
-            print(f"Token {token_id} ha caricato port {row['name']}")
-            if row["id"] in ports.keys():
-                ports[row["id"]] = ports[row["id"]] and is_available
-            else:
-                ports[row["id"]] = is_available
-        # else nothing because the ports are already loading in the new_workflow
-
-    # add port into new_workflow
-    print(
-        f"new workflow {new_workflow.name} ports init situation {new_workflow.ports.keys()}"
-    )
     for port in await asyncio.gather(
         *(
             asyncio.create_task(
@@ -678,7 +658,7 @@ async def _populate_workflow(
                     new_workflow,
                 )
             )
-            for port_id in ports.keys()
+            for port_id in port_ids
         )
     ):
         if port.name not in new_workflow.ports.keys():
@@ -690,36 +670,8 @@ async def _populate_workflow(
             )
     print("Port caricate")
 
-    for tmpp in dag_ports[INIT_DAG_FLAG]:
-        if tmpp not in dag_ports.keys():
-            msg = f"Port {tmpp} non porta da nessuna parte"
-            print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
-            raise FailureHandlingException(msg)
-    print("check iniziato")
-    check_double_reference(dag_ports)
-    print("Check finito")
-
-    steps = set()
-    for row_dependencies in await asyncio.gather(
-        *(
-            asyncio.create_task(
-                new_workflow.context.database.get_steps_from_output_port(port_id)
-            )
-            for port_id in ports.keys()
-            if port_id_name[port_id] not in dag_ports[INIT_DAG_FLAG]
-            # or port_id_name[port_id] in forward_output_ports
-        )
-    ):
-        for row_dependency in row_dependencies:
-            s_row = await new_workflow.context.database.get_step(row_dependency["step"])
-            if s_row["type"] != get_class_fullname(LoopTerminatorStep):
-                steps.add(row_dependency["step"])
-            else:
-                pass
-    print("Step id recuperati", len(steps))
     step_name_id = {}
     for sid, step in zip(
-        steps,
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -730,84 +682,97 @@ async def _populate_workflow(
                         new_workflow,
                     )
                 )
-                for step_id in steps
+                for step_id in step_ids
             )
         ),
     ):
         step_name_id[step.name] = sid
-        new_workflow.add_step(step)
+        if isinstance(step, CWLLoopConditionalStep):
+            pass
+        if not (set(step.input_ports.values()) - set(new_workflow.ports.keys())):
+            if isinstance(step, CWLLoopConditionalStep):
+                pass
+            if isinstance(step, CWLLoopConditionalStep):
+                if step.name + "-recovery" in new_workflow.steps.keys():
+                    continue
+                port_name = list(step.input_ports.values()).pop()
+                loop_terminator_step = CustomLoopConditionalStep(
+                    step.name + "-recovery",
+                    new_workflow,
+                    len(wr.port_tokens[port_name]),
+                )
+                for k_port, port in step.get_input_ports().items():
+                    loop_terminator_step.add_input_port(k_port, port)
+                try:
+                    for k_port, port in step.get_output_ports().items():
+                        loop_terminator_step.add_output_port(k_port, port)
+                except Exception:
+                    pass
+                for k_port, port in step.get_skip_ports().items():
+                    if port.name in wr.port_name_ids.values():
+                        loop_terminator_step.add_skip_port(k_port, port)
+                    else:
+                        print(f"wf {new_workflow.name} pop skip-port {port.name}")
+                        new_workflow.ports.pop(port.name)
+                new_workflow.add_step(loop_terminator_step)
+            elif isinstance(step, CustomLoopConditionalStep):
+                if step.name in new_workflow.steps.keys():
+                    continue
+                port_name = list(step.input_ports.values()).pop()
+                loop_terminator_step = CustomLoopConditionalStep(
+                    step.name, new_workflow, len(wr.port_tokens[port_name])
+                )
+                for k_port, port in step.get_input_ports().items():
+                    loop_terminator_step.add_input_port(k_port, port)
+                for k_port, port in step.get_output_ports().items():
+                    loop_terminator_step.add_output_port(k_port, port)
+                for k_port, port in step.get_skip_ports().items():
+                    if port.name in wr.port_name_ids.values():
+                        loop_terminator_step.add_skip_port(k_port, port)
+                    else:
+                        print(f"wf {new_workflow.name} pop skip-port {port.name}")
+                        new_workflow.ports.pop(port.name)
+                new_workflow.add_step(loop_terminator_step)
+            else:
+                new_workflow.add_step(step)
+        else:
+            print(
+                f"Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}"
+            )
+            pass
     print("Step caricati")
 
-    conditional_output_port_ids = set()
+    rm_steps = set()
+    missing_ports = set()
     for step in new_workflow.steps.values():
-        if isinstance(step, ConditionalStep):
-            for port in step.get_output_ports().values():
-                for pid, name in port_id_name.items():
-                    if port.name == name:
-                        conditional_output_port_ids.add(pid)
-    # dports = {}
-    # dsteps = {}
-    # await deep_search_ports(
-    #     conditional_output_port_ids, new_workflow.context, dports, dsteps
-    # )
-    # missing_ports = set(dports.values()) - set(new_workflow.ports.keys())
-    # missing_steps = set(dsteps.values()) - set(new_workflow.steps.keys())
-    # for mp in missing_ports:
-    #     pid = None
-    #     for pid, name in dports.items():
-    #         if mp == name:
-    #             break
-    #     if pid is None:
-    #         raise FailureHandlingException("Bordello")
-    #     new_workflow.add_port(
-    #         await Port.load(new_workflow.context, pid, loading_context, new_workflow)
-    #     )
-    # new_workflow.add_port(port)
-    # for ms in missing_steps:
-    #     sid = None
-    #     for sid, name in dsteps.items():
-    #         if ms == name:
-    #             break
-    #     if sid is None:
-    #         raise FailureHandlingException("Bordello 2")
-    #     if ms not in step_name_id.keys():
-    #         step_name_id[ms] = search_from_values(ms, dsteps)
-    #     new_workflow.add_step(
-    #         await Step.load(new_workflow.context, sid, loading_context, new_workflow)
-    #     )
-
-    # rm_steps = set()
-    # missing_ports = set()
-    # for step in new_workflow.steps.values():
-    #     if isinstance(step, InputInjectorStep):
-    #         try:
-    #             tmp_ins = step.input_ports.values()
-    #         except Exception as e:
-    #             print(e)
-    #         continue
-    #     for dep_name, p_name in step.output_ports.items():
-    #         if p_name not in new_workflow.ports.keys():
-    #             # problema nato dai loop. when-loop ha output tutti i param. Però il grafo è costruito sulla presenza o
-    #             # meno dei file, invece i param str, int, ..., no. Quindi le port di questi param non vengono esplorate
-    #             # le aggiungo ma vengono usati come "port pozzo" ovvero il loro output non viene utilizzato
-    #             print(
-    #                 f"Aggiungo port {p_name} al wf {new_workflow.name} perché è un output port dello step {step.name}"
-    #             )
-    #             depe_row = await new_workflow.context.database.get_output_port(
-    #                 step_name_id[step.name], dep_name
-    #             )
-    #             missing_ports.add(depe_row["port"])
-    #             # missing_ports.add(workflow.ports[p_name].persistent_id)
-    #             pass
-    # for port in await asyncio.gather(
-    #     *(
-    #         asyncio.create_task(
-    #             Port.load(new_workflow.context, p_id, loading_context, new_workflow)
-    #         )
-    #         for p_id in missing_ports
-    #     )
-    # ):
-    #     new_workflow.add_port(port)
+        if isinstance(step, InputInjectorStep):
+            try:
+                tmp_ins = step.input_ports.values()
+            except Exception as e:
+                print(e)
+            continue
+        for dep_name, p_name in step.output_ports.items():
+            if p_name not in new_workflow.ports.keys():
+                # problema nato dai loop. when-loop ha output tutti i param. Però il grafo è costruito sulla presenza o
+                # meno dei file, invece i param str, int, ..., no. Quindi le port di questi param non vengono esplorate
+                # le aggiungo ma vengono usati come "port pozzo" ovvero il loro output non viene utilizzato
+                print(
+                    f"Aggiungo port {p_name} al wf {new_workflow.name} perché è un output port dello step {step.name}"
+                )
+                depe_row = await new_workflow.context.database.get_output_port(
+                    step_name_id[step.name], dep_name
+                )
+                missing_ports.add(depe_row["port"])
+                pass
+    for port in await asyncio.gather(
+        *(
+            asyncio.create_task(
+                Port.load(new_workflow.context, p_id, loading_context, new_workflow)
+            )
+            for p_id in missing_ports
+        )
+    ):
+        new_workflow.add_port(port)
 
     # add output port of failed step into new_workflow
     for port in await asyncio.gather(
@@ -820,27 +785,28 @@ async def _populate_workflow(
             for p in failed_step.get_output_ports().values()
         )
     ):
-        new_workflow.add_port(port)
+        if port.name not in new_workflow.ports.keys():
+            new_workflow.add_port(port)
 
-    # for step in new_workflow.steps.values():
-    #     if isinstance(step, InputInjectorStep):
-    #         try:
-    #             tmp_ins = step.input_ports.values()
-    #         except Exception as e:
-    #             print(e)
-    #         continue
-    #     for p_name in step.input_ports.values():
-    #         if p_name not in new_workflow.ports.keys():
-    #             # problema nato dai loop. Vengono caricati nel new_workflow tutti gli step che hanno come output le port
-    #             # nel grafo. Però nei loop, più step hanno stessa porta di output (forwad, backprop, loop-term).
-    #             # per capire se lo step sia necessario controlliamo che anche le sue port di input siano state caricate
-    #             print(
-    #                 f"Rimuovo step {step.name} dal wf {new_workflow.name} perché manca la input port {p_name}"
-    #             )
-    #             rm_steps.add(step.name)
-    #             pass
-    # for step_name in rm_steps:
-    #     new_workflow.steps.pop(step_name)
+    for step in new_workflow.steps.values():
+        if isinstance(step, InputInjectorStep):
+            try:
+                tmp_ins = step.input_ports.values()
+            except Exception as e:
+                print(e)
+            continue
+        for p_name in step.input_ports.values():
+            if p_name not in new_workflow.ports.keys():
+                # problema nato dai loop. Vengono caricati nel new_workflow tutti gli step che hanno come output le port
+                # nel grafo. Però nei loop, più step hanno stessa porta di output (forwad, backprop, loop-term).
+                # per capire se lo step sia necessario controlliamo che anche le sue port di input siano state caricate
+                print(
+                    f"Rimuovo step {step.name} dal wf {new_workflow.name} perché manca la input port {p_name}"
+                )
+                rm_steps.add(step.name)
+                pass
+    for step_name in rm_steps:
+        new_workflow.steps.pop(step_name)
     print("Ultime Port caricate")
 
 

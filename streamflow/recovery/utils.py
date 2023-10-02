@@ -188,3 +188,14 @@ def get_port_from_token(token, port_tokens, token_visited):
 
 def get_tag_level(tag: str):
     return len(tag.split("."))
+
+
+def get_key_by_value(
+    searched_value: int, dictionary: MutableMapping[str, MutableSequence[int]]
+):
+    for key, values in dictionary.items():
+        if searched_value in values:
+            return key
+    raise FailureHandlingException(
+        f"Searched value {searched_value} not found in {dictionary}"
+    )

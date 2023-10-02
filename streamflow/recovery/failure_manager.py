@@ -28,9 +28,10 @@ from streamflow.recovery.recovery import (
     get_necessary_tokens,
     is_next_of_someone,
     TOKEN_WAITER,
-    _populate_workflow,
+    # _populate_workflow,
     _put_tokens,
     WorkflowRecovery,
+    _populate_workflow_lean,
 )
 from streamflow.recovery.utils import get_execute_step_out_token_ids, get_token_by_tag
 from streamflow.token_printer import (
@@ -480,15 +481,25 @@ class DefaultFailureManager(FailureManager):
         wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
         print("End sync-rollbacks")
 
-        await _populate_workflow(
+        p, s = await wr.get_port_and_step_ids()
+
+        await _populate_workflow_lean(
+            wr,
+            p,
+            s,
             failed_step,
-            wr.token_visited,
             new_workflow,
             loading_context,
-            wr.port_tokens,
-            wr.dag_ports,
-            workflow,
         )
+        # await _populate_workflow(
+        #     failed_step,
+        #     wr.token_visited,
+        #     new_workflow,
+        #     loading_context,
+        #     wr.port_tokens,
+        #     wr.dag_ports,
+        #     workflow,
+        # )
         print("end populate")
 
         if add_failed_step:
@@ -529,6 +540,7 @@ class DefaultFailureManager(FailureManager):
             wr.port_tokens,
             wr.token_visited,
             wr.dag_ports,
+            wr,
         )
         print("end _put_tokens")
 
@@ -552,21 +564,7 @@ class DefaultFailureManager(FailureManager):
                 print(f"exception {step.name} -> {e}")
                 raise
 
-        # for token, _ in token_visited.values():
-        #     if isinstance(token, JobToken):
-        #         # free resources scheduler
-        #         await workflow.context.scheduler.notify_status(
-        #             token.value.name, Status.ROLLBACK
-        #         )
-        #         workflow.context.scheduler.deallocate_from_job_name(
-        #             token.value.name, keep_job_allocation=True
-        #         )
-        a = [p for p, l in wr.port_tokens.items() if len(l) > 1]
-        pass
-
-        ######
-
-        print("VIAAAAAAAAAAAAAA " + new_workflow.name)
+        print(f"VIAAAAAAAAAAAAAA {new_workflow.name}")
 
         await new_workflow.save(workflow.context)
         executor = StreamFlowExecutor(new_workflow)
