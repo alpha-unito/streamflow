@@ -1,6 +1,6 @@
 import asyncio
 import posixpath
-from typing import MutableMapping, Any, MutableSequence
+from typing import MutableMapping, Any, MutableSequence, Type
 
 import pytest
 
@@ -65,7 +65,7 @@ async def _general_test(
     workflow: Workflow,
     in_port: Port,
     out_port: Port,
-    step_cls: Step,
+    step_cls: Type[Step],
     kargs_step: MutableMapping[str, Any],
     token_list: MutableSequence[Token],
     port_name: str = "test",
