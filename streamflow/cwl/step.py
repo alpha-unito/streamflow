@@ -196,6 +196,38 @@ class CWLLoopConditionalStep(CWLConditionalStep):
             port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
 
 
+class CWLRecoveryLoopConditionalStep(CWLLoopConditionalStep):
+    def __init__(
+        self,
+        name: str,
+        workflow: Workflow,
+        expression: str,
+        expression_lib: MutableSequence[str] | None = None,
+        full_js: bool = False,
+        index: int = 0,
+    ):
+        super().__init__(name, workflow, expression, expression_lib, full_js)
+        self.index = index
+
+    async def _eval(self, inputs: MutableMapping[str, Token]):
+        context = utils.build_context(
+            {"index": Token(value=self.index, tag=get_tag(inputs.values()))}
+        )
+        condition = utils.eval_expression(
+            expression=self.expression,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib,
+        )
+        if condition is True or condition is False:
+            self.index += 1
+            return condition
+        else:
+            raise WorkflowDefinitionException(
+                "Conditional 'when' must evaluate to 'true' or 'false'"
+            )
+
+
 class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
     def __init__(self, name: str, workflow: Workflow, scatter_method: str):
         super().__init__(name, workflow)

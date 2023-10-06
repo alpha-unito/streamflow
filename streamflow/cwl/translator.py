@@ -80,6 +80,8 @@ from streamflow.cwl.transformer import (
     LoopValueFromTransformer,
     OnlyNonNullTransformer,
     ValueFromTransformer,
+    BackPropagationTransformer,
+    OutputForwardTransformer,
 )
 from streamflow.cwl.utils import (
     LoadListing,
@@ -2419,7 +2421,7 @@ class CWLTranslator:
                 port_name = posixpath.relpath(global_name, step_name)
                 # Create loop forwarder
                 loop_forwarder = workflow.create_step(
-                    cls=ForwardTransformer,
+                    cls=OutputForwardTransformer,
                     name=global_name + "-output-forward-transformer",
                 )
                 internal_output_ports[global_name] = workflow.create_port()
@@ -2505,7 +2507,7 @@ class CWLTranslator:
                 # Create loop output step
                 port_name = posixpath.relpath(global_name, step_name)
                 loop_forwarder = workflow.create_step(
-                    cls=ForwardTransformer,
+                    cls=BackPropagationTransformer,
                     name=global_name + "-back-propagation-transformer",
                 )
                 loop_forwarder.add_input_port(

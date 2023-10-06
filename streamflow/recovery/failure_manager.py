@@ -410,7 +410,7 @@ class DefaultFailureManager(FailureManager):
     # oppure lasciamo che fallisce e poi il failure manager prende l'output nuovo di A?
     async def _recover_jobs(
         self, failed_job: Job, failed_step: Step, add_failed_step: bool = False
-    ) -> CommandOutput:
+    ):
         loading_context = DefaultDatabaseLoadingContext()
 
         workflow = failed_step.workflow
@@ -650,7 +650,6 @@ class DefaultFailureManager(FailureManager):
                 print(
                     f"WARN WARN WARN job {failed_job.name} ha già un job_token {self.job_requests[failed_job.name].job_token.persistent_id}. Però qui non dovrebbe averne. Io volevo aggiungere job_token {new_job_token.persistent_id}."
                 )
-                pass
             self.job_requests[failed_job.name].job_token = new_job_token
         new_job = new_job_token.value
         new_step = await Step.load(

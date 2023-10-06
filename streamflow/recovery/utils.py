@@ -2,7 +2,8 @@ from __future__ import annotations
 
 
 import asyncio
-from typing import MutableMapping, Tuple
+import json
+from typing import MutableMapping, Tuple, MutableSequence
 from streamflow.core.utils import get_class_fullname, get_class_from_name
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
@@ -11,29 +12,22 @@ from streamflow.core.exception import (
 from streamflow.core.workflow import Token
 
 from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.transformer import ForwardTransformer
+from streamflow.cwl.transformer import BackPropagationTransformer
 from streamflow.data import remotepath
 from streamflow.workflow.step import ExecuteStep
-from streamflow.workflow.token import JobToken
-
+from streamflow.workflow.token import (
+    JobToken,
+    IterationTerminationToken,
+    TerminationToken,
+)
 
 INIT_DAG_FLAG = "init"
 TOKEN_WAITER = "twaiter"
 
-# todo: spostare alcuni metodi in altri loghi esempio
+# todo: spostare alcuni metodi in altri file esempio
 #  - get_token_by_tag forse meglio in utils core?
 #  - get_input_ports in persistence.utils?
 #    oppure cambiare query ritornando le row delle ports
-
-
-async def get_input_ports(step_id, context):
-    dep_ports_step_rows = await context.database.get_input_ports(step_id)
-    return await asyncio.gather(
-        *(
-            asyncio.create_task(context.database.get_port(dependency_row["port"]))
-            for dependency_row in dep_ports_step_rows
-        )
-    )
 
 
 async def get_steps_from_output_port(port_id, context):
@@ -44,27 +38,6 @@ async def get_steps_from_output_port(port_id, context):
             for step_id_row in step_id_rows
         )
     )
-
-
-# debug
-def str_tok(token):
-    if isinstance(token, JobToken):
-        return token.value.name
-    elif isinstance(token, CWLFileToken):
-        return token.value["path"]
-    else:
-        return token.value
-
-
-# debug
-def check_double_reference(dag_ports):
-    for tmpp in dag_ports[INIT_DAG_FLAG]:
-        for tmpport_name, tmpnext_port_names in dag_ports.items():
-            if tmpport_name != INIT_DAG_FLAG and tmpp in tmpnext_port_names:
-                msg = f"Port {tmpp} appartiene sia a INIT che a {tmpport_name}"
-                print("WARN", msg)
-                # print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
-                # raise FailureHandlingException(msg)
 
 
 async def get_execute_step_out_token_ids(next_token_ids, context):
@@ -174,7 +147,7 @@ async def is_output_port_forward(port_id, context):
     result = False
     for step_row in step_rows:
         result = result or issubclass(
-            get_class_from_name(step_row["type"]), ForwardTransformer
+            get_class_from_name(step_row["type"]), BackPropagationTransformer
         )
     return result
 
@@ -199,3 +172,8 @@ def get_key_by_value(
     raise FailureHandlingException(
         f"Searched value {searched_value} not found in {dictionary}"
     )
+
+
+def get_recovery_loop_expression(upper_limit):
+    return f"$(inputs.index < {upper_limit})"
+
