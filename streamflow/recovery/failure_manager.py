@@ -28,7 +28,6 @@ from streamflow.recovery.recovery import (
     get_necessary_tokens,
     is_next_of_someone,
     TOKEN_WAITER,
-    # _populate_workflow,
     _put_tokens,
     WorkflowRecovery,
     _populate_workflow_lean,

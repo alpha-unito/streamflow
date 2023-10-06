@@ -5,6 +5,7 @@ import asyncio
 import json
 from typing import MutableMapping, MutableSequence, Tuple
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.utils import (
     get_class_fullname,
     get_class_from_name,
@@ -15,6 +16,12 @@ from streamflow.core.exception import (
 )
 
 from streamflow.core.workflow import Job, Step, Port, Token
+from streamflow.cwl.step import CWLLoopConditionalStep, CWLRecoveryLoopConditionalStep
+from streamflow.cwl.transformer import (
+    BackPropagationTransformer,
+    ForwardTransformer,
+    OutputForwardTransformer,
+)
 from streamflow.recovery.utils import (
     str_tok,
     compare_tags_relaxed,
@@ -26,22 +33,26 @@ from streamflow.recovery.utils import (
     get_necessary_tokens,
     get_tag_level,
     get_prev_vertices,
-    get_input_ports,
     INIT_DAG_FLAG,
     TOKEN_WAITER,
+    get_key_by_value,
+    get_recovery_loop_expression,
 )
-from streamflow.workflow.combinator import LoopCombinator, LoopTerminationCombinator
+from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
-    LoopTerminatorStep,
     ConditionalStep,
     TransferStep,
     Transformer,
+    LoopOutputStep,
+    InputInjectorStep,
+    LoopCombinatorStep,
 )
 from streamflow.workflow.token import (
     TerminationToken,
     JobToken,
+    IterationTerminationToken,
 )
 from streamflow.core.workflow import Workflow
 
@@ -55,7 +66,13 @@ class RecoveryContext:
 
 
 class WorkflowRecovery(RecoveryContext):
-    def __init__(self, dag_ports, output_ports, port_name_ids, context):
+    def __init__(
+        self,
+        dag_ports: MutableMapping[str, MutableSequence[str]],
+        output_ports: MutableSequence[str],
+        port_name_ids: MutableMapping[str, int],
+        context: StreamFlowContext,
+    ):
         super().__init__(output_ports, port_name_ids, context)
         self.dag_ports = dag_ports
         self.port_tokens = {}
@@ -104,7 +121,7 @@ class WorkflowRecovery(RecoveryContext):
         print(
             f"Aggiungo token {str_tok(token_to_add)} id {token_to_add.persistent_id} tag {token_to_add.tag} nella port_tokens[{port_name_to_add}]"
         )
-        if output_port_forward:
+        if False and output_port_forward:
             for t_id in self.port_tokens.get(port_name_to_add, []):
                 comparison = compare_tags_relaxed(
                     token_to_add.tag, self.token_visited[t_id][0].tag
@@ -193,6 +210,8 @@ class WorkflowRecovery(RecoveryContext):
         # {old_job_token_id : (new_job_token_id, new_output_token_id)}
         available_new_job_tokens = {}
 
+        loop_combinator_ports = {}
+        loop_output_ports = {}
         while token_frontier:
             token = token_frontier.pop()
 
@@ -220,22 +239,46 @@ class WorkflowRecovery(RecoveryContext):
                     pass  # for debug
                 is_available = await _is_token_available(token, workflow.context)
 
+                invalidate = False
                 for step_row in step_rows:
                     if issubclass(
                         get_class_from_name(step_row["type"]),
+                        BackPropagationTransformer,
+                    ):
+                        invalidate = False
+                        break
+                    elif issubclass(
+                        get_class_from_name(step_row["type"]),
                         (
                             TransferStep,
+                            # Transformer is necessary to have the same tag in all input parameters in the scatter case
                             Transformer,
                             ConditionalStep,
+                            ForwardTransformer,
+                            CombinatorStep,
+                            # CustomLoopConditionalStep,  # deprecated
                             # ScatterStep,
                         ),
                     ):
-                        is_available = False
+                        invalidate = True
+                        if issubclass(
+                            get_class_from_name(step_row["type"]),
+                            LoopCombinatorStep,
+                        ):
+                            loop_combinator_ports.setdefault(
+                                port_row["name"], port_row["id"]
+                            )
                     elif issubclass(
-                        get_class_from_name(step_row["type"]), CombinatorStep
+                        get_class_from_name(step_row["type"]), LoopOutputStep
                     ):
-                        # todo: vedere i next_tokens rispetto a token e aggiungere le next_port a port (così attacchiamo combinatorstep a tutti i token-transformer e non solo a param-file)
-                        is_available = False
+                        # questo step si può usare come punto di checkpoint. Se l'output qui è available
+                        # si può evitare di fare il loop
+                        # edit. affermazione da ripensare dato che questo step è necessario nel recovery di iterazioni passate
+                        # possibile soluzione mettere dopo di questo step un altro step di forward e usare lui come punto di checkpoint
+                        loop_output_ports[port_row["id"]] = port_row["name"]
+                # if invalidate is True, then is_available is set to False, otherwise leave the original value
+                if invalidate:
+                    is_available = False
 
                 all_token_visited[token.persistent_id] = (token, is_available)
                 if not is_available:
@@ -294,11 +337,6 @@ class WorkflowRecovery(RecoveryContext):
                     port_row["name"],
                     token,
                 )
-                # self.add_into_vertex(
-                #     port_row["name"],
-                #     token,
-                #     await is_output_port_forward(port_row["id"], workflow.context),
-                # )
 
         print("While tokens terminato")
         check_double_reference(self.dag_ports)
@@ -517,82 +555,65 @@ class WorkflowRecovery(RecoveryContext):
                     f"rm prev - token {token_id_to_remove} volevo rm prev token id {token_row['dependee']} tag {self.token_visited[token_row['dependee']][0].tag} ma è un token del ConnectorPort"
                 )
 
+    async def get_port_and_step_ids(self):
+        ports = {}
+        steps = set()
+        # todo: cambiare port_name_ids da {str : int} a { str : {int} } e togliere questa var tmp
+        tmp = {k: {v} for k, v in self.port_name_ids.items()}
+        for token_id, (_, is_available) in self.token_visited.items():
+            row = await self.context.database.get_port_from_token(token_id)
+            if TOKEN_WAITER not in self.port_tokens[row["name"]]:
+                print(
+                    f"get_port_and_step_ids: Token {token_id} ha caricato port id {row['id']} name {row['name']}"
+                )
+                if row["id"] in ports.keys():
+                    ports[row["id"]] = ports[row["id"]] and is_available
+                else:
+                    ports[row["id"]] = is_available
+                tmp.setdefault(row["name"], set()).add(row["id"])
+            # else nothing because the ports are already loading in the new_workflow
 
-class LoopRecovery(RecoveryContext):
-    async def explore_loop(self):
-        """
-        Explore the loop with a bottom-up visit
-        """
-        ports_visited = set()
-
-        ports_frontier = set()
-        for port_name in self.output_ports:
-            ports_frontier.add(port_name)
-        while ports_frontier:
-            port_name = ports_frontier.pop()
-            ports_visited.add(port_name)
-            port_id = self.port_name_ids[port_name]
-            dep_steps_port_rows = (
-                await self.context.database.get_steps_from_output_port(port_id)
-            )
-            step_rows = await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        self.context.database.get_step(dependency_row["step"])
-                    )
-                    for dependency_row in dep_steps_port_rows
+        back_prop_ports = {
+            port_id
+            for port_id in ports.keys()
+            if await is_output_port_forward(port_id, self.context)
+        }
+        for row_dependencies in await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    self.context.database.get_steps_from_output_port(port_id)
+                )
+                for port_id in ports.keys()
+                if (
+                    get_key_by_value(port_id, tmp) not in self.dag_ports[INIT_DAG_FLAG]
+                    or port_id in back_prop_ports
                 )
             )
-            for step_row in step_rows:
-                if issubclass(get_class_from_name(step_row["type"]), CombinatorStep):
-                    combinator_row = json.loads(step_row["params"])["combinator"]
-                    if issubclass(
-                        get_class_from_name(combinator_row["type"]), LoopCombinator
-                    ):  # oppure  è meglio get_class_from_name() is LoopCombinator?
-                        for port_row in await get_input_ports(
-                            step_row["id"], self.context
-                        ):
-                            if port_row["name"] not in self.port_name_ids.keys():
-                                self.port_name_ids[port_row["name"]] = port_row["id"]
-                            self.input_ports.add(port_row["name"])
-                        continue
-                    elif issubclass(
-                        get_class_from_name(combinator_row["type"]),
-                        LoopTerminationCombinator,
-                    ):
-                        new_loop = False
-                        port_rows = await get_input_ports(step_row["id"], self.context)
-                        for port_row in port_rows:
-                            if port_row["name"] not in self.port_name_ids.keys():
-                                self.port_name_ids[port_row["name"]] = port_row["id"]
-                            new_loop = port_row["name"] not in self.output_ports
-                        if new_loop:
-                            sub_rl = LoopRecovery(
-                                output_ports=[
-                                    port_row["name"] for port_row in port_rows
-                                ],
-                                port_name_ids={
-                                    port_row["name"]: port_row["id"]
-                                    for port_row in port_rows
-                                },
-                                context=self.context,
-                            )
-                            await sub_rl.explore_loop()
-                            for port_name in sub_rl.input_ports:
-                                if port_name not in self.port_name_ids.keys():
-                                    self.port_name_ids[
-                                        port_name
-                                    ] = sub_rl.port_name_ids[port_name]
-                                if port_name not in ports_visited:
-                                    ports_frontier.add(port_name)
-                        pass
-                    pass
-                for port_row in await get_input_ports(step_row["id"], self.context):
-                    if port_row["name"] not in self.port_name_ids.keys():
-                        self.port_name_ids[port_row["name"]] = port_row["id"]
-                    if port_row["name"] not in ports_visited:
-                        ports_frontier.add(port_row["name"])
-        pass
+        ):
+            for row_dependency in row_dependencies:
+                print(
+                    f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} recuperato dalla port {get_key_by_value(row_dependency['port'], tmp)}"
+                )
+                # todo prendere tutti i suoi input ports da dependency e se i loro nomi non sono presenti nel new_workflow,
+                #  significa che è uno step da non caricare.
+                #  Questo evita il controllo che viene effettuato sotto if not(set() - set())
+                steps.add(row_dependency["step"])
+
+        # Soluzione carina e poco costosa rispetto a quella attuale. Solo che con i sync e replace si scassa.
+        # Ad esempio nella param-scatter con i sync posso trovare tutti i token available... ma nella normale esploratione
+        # i token di questo step vengono tutti segnati non disponibili per risalire all'execute dello step precedente
+        # for row_dependencies in await asyncio.gather(
+        #     *(
+        #         asyncio.create_task(
+        #             self.context.database.get_steps_from_output_port(port_id)
+        #         )
+        #         for port_id, port_availability in ports.items()
+        #         if not port_availability
+        #     )
+        # ):
+        #     for row_dependency in row_dependencies:
+        #         steps.add(row_dependency["step"])
+        return set(ports.keys()), steps
 
 
 async def _put_tokens(
@@ -600,7 +621,6 @@ async def _put_tokens(
     init_ports: MutableSequence[str],
     port_tokens: MutableMapping[str, MutableSequence[int]],
     token_visited: MutableMapping[int, Tuple[Token, bool]],
-    dag_ports,
 ):
     for port_name in init_ports:
         token_list = [
@@ -616,24 +636,73 @@ async def _put_tokens(
                         f"Tag ripetuto id1: {t.persistent_id} id2: {t1.persistent_id}"
                     )
 
-        if port_name not in new_workflow.ports.keys():
-            tlist = None
-            if port_name in port_tokens.keys():
-                tlist = port_tokens[port_name]
-            pass
         port = new_workflow.ports[port_name]
+        loop_combinator_input = False
+        reduced = False
+        # Valori validi 0 oppure 1. Se però contiamo tutti i tipi di forward allora può essere maggiore di 1
+        back_prop_list = [
+            s
+            for s in port.get_input_steps()
+            if isinstance(s, BackPropagationTransformer)
+        ]
+        output_port_forward = len(back_prop_list) == 1
+        # output_port_forward = await is_output_port_forward(
+        #     wr.port_name_ids[port_name], new_workflow.context
+        # )
+        for ss in port.get_output_steps():
+            # se la port è output di un back-prop allora metti meno token
+            if isinstance(ss, LoopCombinatorStep):
+                loop_combinator_input = True
+
+                if len(token_list) == 1:  # tmp soluzione
+                    break
+                found = False
+                for ss1 in port.get_input_steps():
+                    found = found or isinstance(ss1, BackPropagationTransformer)
+                if not found:
+                    break
+                break
         for t in token_list:
             if isinstance(t, TerminationToken):
                 raise FailureHandlingException(
                     f"Aggiungo un termination token nell port {port.name} ma non dovrei"
                 )
             port.put(t)
-        if (
-            # port.name not in forward_output_ports and
-            len(port.token_list) > 0
-            and len(port.token_list) == len(port_tokens[port_name])
-        ):
-            port.put(TerminationToken())
+            if output_port_forward:
+                break
+
+        len_port_token_list = len(port.token_list)
+        len_port_tokens = len(port_tokens[port_name])
+        if loop_combinator_input:
+            print(
+                f"put_tokens: Port {port.name} inserts TerminationToken as second element in token_list (it simulates the TerminationToken of InputForwardStep)"
+            )
+            port.token_list.insert(1, TerminationToken())
+        if reduced:
+            len_port_tokens -= 1
+
+        if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
+            print(f"put_tokens: Port {port.name} with {len(port.token_list)} tokens")
+            if loop_combinator_input and not output_port_forward:
+                if len_port_token_list > 1:
+                    if isinstance(port.token_list[-1], TerminationToken):
+                        token = port.token_list[-1]
+                    else:
+                        tag = port.token_list[-1].tag.split(".")
+                        tag[-1] = str(int(tag[-1]) + 1)
+                        token = Token(tag=".".join(tag), value=None)
+                        print(
+                            f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts EMPTY token with tag {token.tag}"
+                        )
+                        port.put(token)
+                    print(
+                        f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {token.tag}"
+                    )
+                    port.put(IterationTerminationToken(token.tag))
+                print(
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[0].tag}"
+                )
+                port.put(IterationTerminationToken(port.token_list[0].tag))
         else:
             print(
                 f"Port {port.name} with {len(port.token_list)} tokens. NO TerminationToken"
@@ -670,8 +739,12 @@ async def _populate_workflow_lean(
             )
     print("Port caricate")
 
+    add_step_ids = set()
+    replace_step = None
     step_name_id = {}
+    step_instances = {}
     for sid, step in zip(
+        step_ids,
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -687,54 +760,34 @@ async def _populate_workflow_lean(
         ),
     ):
         step_name_id[step.name] = sid
-        if isinstance(step, CWLLoopConditionalStep):
-            pass
+        step_instances[sid] = step
         if not (set(step.input_ports.values()) - set(new_workflow.ports.keys())):
             if isinstance(step, CWLLoopConditionalStep):
-                pass
-            if isinstance(step, CWLLoopConditionalStep):
-                if step.name + "-recovery" in new_workflow.steps.keys():
+                if not replace_step:
+                    replace_step = step
+                else:
                     continue
-                port_name = list(step.input_ports.values()).pop()
-                loop_terminator_step = CustomLoopConditionalStep(
-                    step.name + "-recovery",
-                    new_workflow,
-                    len(wr.port_tokens[port_name]),
-                )
-                for k_port, port in step.get_input_ports().items():
-                    loop_terminator_step.add_input_port(k_port, port)
-                try:
-                    for k_port, port in step.get_output_ports().items():
-                        loop_terminator_step.add_output_port(k_port, port)
-                except Exception:
-                    pass
-                for k_port, port in step.get_skip_ports().items():
-                    if port.name in wr.port_name_ids.values():
-                        loop_terminator_step.add_skip_port(k_port, port)
-                    else:
-                        print(f"wf {new_workflow.name} pop skip-port {port.name}")
-                        new_workflow.ports.pop(port.name)
-                new_workflow.add_step(loop_terminator_step)
-            elif isinstance(step, CustomLoopConditionalStep):
-                if step.name in new_workflow.steps.keys():
-                    continue
-                port_name = list(step.input_ports.values()).pop()
-                loop_terminator_step = CustomLoopConditionalStep(
-                    step.name, new_workflow, len(wr.port_tokens[port_name])
-                )
-                for k_port, port in step.get_input_ports().items():
-                    loop_terminator_step.add_input_port(k_port, port)
-                for k_port, port in step.get_output_ports().items():
-                    loop_terminator_step.add_output_port(k_port, port)
-                for k_port, port in step.get_skip_ports().items():
-                    if port.name in wr.port_name_ids.values():
-                        loop_terminator_step.add_skip_port(k_port, port)
-                    else:
-                        print(f"wf {new_workflow.name} pop skip-port {port.name}")
-                        new_workflow.ports.pop(port.name)
-                new_workflow.add_step(loop_terminator_step)
-            else:
-                new_workflow.add_step(step)
+            elif isinstance(step, OutputForwardTransformer):
+                for (
+                    step_dep_row
+                ) in await new_workflow.context.database.get_steps_from_input_port(
+                    wr.port_name_ids[step.get_output_port().name]
+                ):
+                    step_row = await new_workflow.context.database.get_step(
+                        step_dep_row["step"]
+                    )
+                    if step_row["name"] not in new_workflow.steps.keys():
+                        if issubclass(
+                            get_class_from_name(step_row["type"]), LoopOutputStep
+                        ):
+                            print(
+                                f"Step {step_row['name']} from id {step_row['id']} will be added soon (2)"
+                            )
+                            add_step_ids.add(step_row["id"])
+            print(
+                f"populate_workflow: (1) Step {step.name} caricato nel wf {new_workflow.name}"
+            )
+            new_workflow.add_step(step)
         else:
             print(
                 f"Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}"
@@ -742,7 +795,6 @@ async def _populate_workflow_lean(
             pass
     print("Step caricati")
 
-    rm_steps = set()
     missing_ports = set()
     for step in new_workflow.steps.values():
         if isinstance(step, InputInjectorStep):
@@ -788,6 +840,135 @@ async def _populate_workflow_lean(
         if port.name not in new_workflow.ports.keys():
             new_workflow.add_port(port)
 
+    if replace_step:  # se c'è un LoopOutputStep non serve fare sto casino
+        port_name = list(replace_step.input_ports.values()).pop()
+        ll_cond_step = CWLRecoveryLoopConditionalStep(
+            replace_step.name
+            if isinstance(replace_step, CWLRecoveryLoopConditionalStep)
+            else replace_step.name + "-recovery",
+            new_workflow,
+            get_recovery_loop_expression(
+                len(wr.port_tokens[port_name])
+                # 1
+                # if len(wr.port_tokens[port_name]) == 1
+                # else len(wr.port_tokens[port_name]) - 1
+            ),
+            full_js=True,
+        )
+        print(
+            f"Step {ll_cond_step.name} (wf {new_workflow.name}) setted with expression: {ll_cond_step.expression}"
+        )
+        for k_port, port in replace_step.get_input_ports().items():
+            ll_cond_step.add_input_port(k_port, port)
+        for k_port, port in replace_step.get_output_ports().items():
+            ll_cond_step.add_output_port(k_port, port)
+        for k_port, port in replace_step.get_skip_ports().items():
+            if port.name in wr.port_name_ids.keys():
+                ll_cond_step.add_skip_port(k_port, port)
+            else:
+                print(f"wf {new_workflow.name} pop skip-port {port.name}")
+                new_workflow.ports.pop(port.name)
+        new_workflow.steps.pop(replace_step.name)
+
+        print(
+            f"populate_workflow: (2) Step {ll_cond_step.name} caricato nel wf {new_workflow.name}"
+        )
+        new_workflow.add_step(ll_cond_step)
+        print(
+            f"populate_workflow: Rimuovo lo step {replace_step.name} dal wf {new_workflow.name} perché lo rimpiazzo con il nuovo step {ll_cond_step.name}"
+        )
+
+    is_there_loop_terminator = False
+
+    for step in new_workflow.steps.values():
+        # aggiungere condizione che lo step sia del loop più esterno.
+        # la condizione potrebbe essere l'assenza del relativo LoopOutputStep
+        # edit. Quando itero aggiungo loopoutputstep, quindi non è un discriminante
+        if isinstance(step, BackPropagationTransformer):
+            # for port_name in step.output_ports.values(): # potrebbe sostituire questo for
+            for port_dep_row in await new_workflow.context.database.get_output_ports(
+                step_name_id[step.name]
+            ):
+                a = port_dep_row["name"]
+                b = step.output_ports[port_dep_row["name"]]
+                c = wr.port_tokens[step.output_ports[port_dep_row["name"]]]
+                if len(wr.port_tokens[step.output_ports[port_dep_row["name"]]]) > 1:
+                    for (
+                        step_dep_row
+                    ) in await new_workflow.context.database.get_steps_from_output_port(
+                        port_dep_row["port"]
+                    ):
+                        step_row = await new_workflow.context.database.get_step(
+                            step_dep_row["step"]
+                        )
+                        if issubclass(
+                            get_class_from_name(step_row["type"]), CombinatorStep
+                        ):
+                            combinator_row = json.loads(step_row["params"])[
+                                "combinator"
+                            ]
+                            if issubclass(
+                                get_class_from_name(combinator_row["type"]),
+                                LoopTerminationCombinator,
+                            ):
+                                print(
+                                    f"Step {step_row['name']} from id {step_row['id']} will be added soon (1)"
+                                )
+                                add_step_ids.add(step_row["id"])
+                                is_there_loop_terminator = True
+                else:
+                    pass
+
+    if not is_there_loop_terminator:
+        rm_steps = set()
+        for step in new_workflow.steps.values():
+            if isinstance(step, BackPropagationTransformer):
+                rm_steps.add(step.name)
+        for sname in rm_steps:
+            print(
+                f"populate_workflow: Rimozione (1) definitiva step {sname} dal new_workflow {new_workflow.name}"
+            )
+            new_workflow.steps.pop(sname)
+
+    added_ports = []
+    for sid in add_step_ids:
+        for port_dep_row in await new_workflow.context.database.get_input_ports(sid):
+            port = await Port.load(
+                new_workflow.context,
+                port_dep_row["port"],
+                loading_context,
+                new_workflow,
+            )
+            if port.name not in new_workflow.ports.keys():
+                print(
+                    f"populate_workflow: wf {new_workflow.name} add_4 port {port.name}"
+                )
+                new_workflow.add_port(port)
+                added_ports.append(port)
+        ss = await Step.load(
+            new_workflow.context,
+            sid,
+            loading_context,
+            new_workflow,
+        )
+        print(
+            f"populate_workflow: (3) Step {ss.name} (from step id {sid}) caricato nel wf {new_workflow.name}"
+        )
+        new_workflow.add_step(ss)
+
+    for ss in new_workflow.steps.values():
+        for p in added_ports:
+            if not (a := p.get_input_steps()):
+                for k, val in ss.input_ports.items():
+                    if p.name == val:
+                        ss.input_ports.pop(k)
+                        if isinstance(ss, CombinatorStep):
+                            ss.combinator.items.remove(k)
+                        new_workflow.ports.pop(val)
+                        # ss.input_ports[k] = ss.input_ports["file"]
+                        break
+
+    rm_steps = set()
     for step in new_workflow.steps.values():
         if isinstance(step, InputInjectorStep):
             try:
