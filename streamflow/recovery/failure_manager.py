@@ -466,7 +466,7 @@ class DefaultFailureManager(FailureManager):
         )
         await wr.build_dag(tokens, workflow, loading_context)
         wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-        print("end build dag")
+        print("build_dag: end build dag")
 
         print("Start sync-rollbacks")
         # update class state (attributes) and jobs synchronization

@@ -86,7 +86,7 @@ class WorkflowRecovery(RecoveryContext):
     ):
         if isinstance(token_to_add, JobToken):
             print(
-                f"job token {token_to_add.value.name} (id {token_to_add.persistent_id}) port {port_name_to_add}"
+                f"add_into_vertex: Token to add is JobToken {token_to_add.value.name} (id {token_to_add.persistent_id}) on port {port_name_to_add}"
             )
         if port_name_to_add in self.port_tokens.keys():
             for sibling_token_id in self.port_tokens[port_name_to_add]:
@@ -119,7 +119,7 @@ class WorkflowRecovery(RecoveryContext):
                         else:
                             return
         print(
-            f"Aggiungo token {str_tok(token_to_add)} id {token_to_add.persistent_id} tag {token_to_add.tag} nella port_tokens[{port_name_to_add}]"
+            f"add_into_vertex: Aggiungo token {str_tok(token_to_add)} id {token_to_add.persistent_id} tag {token_to_add.tag} nella port_tokens[{port_name_to_add}]"
         )
         if False and output_port_forward:
             for t_id in self.port_tokens.get(port_name_to_add, []):
@@ -172,7 +172,7 @@ class WorkflowRecovery(RecoveryContext):
             and port_name_key != INIT_DAG_FLAG
         ):
             print(
-                f"Inserisco la port {port_name_to_add} dopo la port {port_name_key}. però è già in INIT"
+                f"add_into_graph: Inserisco la port {port_name_to_add} dopo la port {port_name_key}. però è già in INIT"
             )
         if port_name_key == INIT_DAG_FLAG and port_name_to_add in [
             pp
@@ -181,7 +181,7 @@ class WorkflowRecovery(RecoveryContext):
             if p != INIT_DAG_FLAG
         ]:
             print(
-                f"Inserisco la port {port_name_to_add} in INIT. però è già in {port_name_key}"
+                f"add_into_graph: Inserisco la port {port_name_to_add} in INIT. però è già in {port_name_key}"
             )
         self.dag_ports.setdefault(port_name_key, set()).add(port_name_to_add)
 
@@ -194,10 +194,10 @@ class WorkflowRecovery(RecoveryContext):
             and is_next_of_someone(port_name_to_add, self.dag_ports)
         ):
             if not output_port_forward:
-                print(f"add_into_graph remove from init port {port_name_to_add}")
+                print(f"add_into_graph: port {port_name_to_add} is removed from init ")
                 self.dag_ports[INIT_DAG_FLAG].remove(port_name_to_add)
             else:
-                print(f"add_into_graph in init keeps port {port_name_to_add}")
+                print(f"add_into_graph: port {port_name_to_add} is kept in init")
 
     async def build_dag(self, token_frontier, workflow, loading_context):
         # todo: cambiarlo in {token_id: is_available} e quando è necessaria l'istanza del token recuperarla dal loading_context.load_token(id)
@@ -296,7 +296,7 @@ class WorkflowRecovery(RecoveryContext):
                             )
                         )
                         print(
-                            f"Dal token id {token.persistent_id} ho recuperato prev-tokens {[pt.persistent_id for pt in prev_tokens]}"
+                            f"build_dag: Dal token id {token.persistent_id} ho recuperato prev-tokens {[pt.persistent_id for pt in prev_tokens]}"
                         )
                         for pt, prev_port_row in zip(prev_tokens, prev_port_rows):
                             self.port_name_ids[prev_port_row["name"]] = prev_port_row[
@@ -320,7 +320,7 @@ class WorkflowRecovery(RecoveryContext):
                         )
                 else:
                     print(
-                        f"Il token {token.persistent_id} è disponibile, quindi aggiungo la sua port {port_row['name']} tra gli init"
+                        f"build_dag: Il token {token.persistent_id} è disponibile, quindi aggiungo la sua port {port_row['name']} tra gli init"
                     )
                     await self.add_into_graph(
                         INIT_DAG_FLAG,
@@ -338,38 +338,31 @@ class WorkflowRecovery(RecoveryContext):
                     token,
                 )
 
-        print("While tokens terminato")
+        print("build_dag: While tokens terminato")
         check_double_reference(self.dag_ports)
 
         print(
-            f"after.build - JobTokens: {set([ t.value.name for t, _ in get_necessary_tokens(self.port_tokens, all_token_visited).values() if isinstance(t, JobToken)])}"
+            f"build_dag: JobTokens: {set([ t.value.name for t, _ in get_necessary_tokens(self.port_tokens, all_token_visited).values() if isinstance(t, JobToken)])}"
         )
 
         all_token_visited = dict(sorted(all_token_visited.items()))
+        print()
         for t, a in all_token_visited.values():
             print(
-                f"Token id: {t.persistent_id} tag: {t.tag} val: {str_tok(t)} is available? {a}"
+                f"build_dag: Token id: {t.persistent_id} tag: {t.tag} val: {str_tok(t)} is available? {a}"
             )
-        for p, t in dict(sorted(self.port_tokens.items())).items():
-            print(f"Port_tokens[{p}]: {t}")
-        for p, nps in self.dag_ports.items():
-            print(f"dag_ports[{p}]: {nps}")
         print(
-            "available_new_job_tokens:",
-            len(available_new_job_tokens) > 0,
+            f"build_dag: available_new_job_tokens n.elems: {len(available_new_job_tokens)}",
             json.dumps(available_new_job_tokens, indent=2),
         )
 
-        print("Pre riduzione")
+        print("build_dag: pre riduzione")
         await self.reduce_graph(
             available_new_job_tokens,
             loading_context,
         )
-        print("grafo ridotto")
-
         print(
-            # f"after.riduzione - JobTokens: {set([ t.value.name for t, _ in all_token_visited.values() if isinstance(t, JobToken)])}"
-            f"after.riduzione - JobTokens: {set([t.value.name for t, _ in get_necessary_tokens(self.port_tokens, all_token_visited).values() if isinstance(t, JobToken)])}"
+            f"build_dag: grafo ridotto - JobTokens: {set([t.value.name for t, _ in get_necessary_tokens(self.port_tokens, all_token_visited).values() if isinstance(t, JobToken)])}"
         )
 
     async def reduce_graph(
@@ -398,13 +391,12 @@ class WorkflowRecovery(RecoveryContext):
                     loading_context,
                 )
                 print(
-                    f"Port_tokens {v['out-token-port-name']} - token {v['old-out-token']} sostituito con token {v['new-out-token']}. Quindi la port ha {self.port_tokens[v['out-token-port-name']]} tokens"
+                    f"reduce_graph: Port_tokens {v['out-token-port-name']} - token {v['old-out-token']} sostituito con token {v['new-out-token']}. Quindi la port ha {self.port_tokens[v['out-token-port-name']]} tokens"
                 )
             else:
                 print(
-                    f"Port_tokens {v['out-token-port-name']} - port non più presente. Non serve più eseguire lo step annesso"
+                    f"reduce_graph: Port_tokens {v['out-token-port-name']} - port non più presente. Non serve più eseguire lo step annesso"
                 )
-                pass
 
     async def replace_token(
         self,
@@ -418,7 +410,7 @@ class WorkflowRecovery(RecoveryContext):
         self.port_tokens[port_name].add(token_to_add.persistent_id)
         self.token_visited[token_to_add.persistent_id] = (token_to_add, True)
         print(
-            f"new-method - replace token {token_id_to_replace} con {token_to_add.persistent_id} - I token della port {port_name} sono tutti disp? {all((self.token_visited[t_id][1] for t_id in self.port_tokens[port_name]))}"
+            f"replace_token: replace token {token_id_to_replace} con {token_to_add.persistent_id} - I token della port {port_name} sono tutti disp? {all((self.token_visited[t_id][1] for t_id in self.port_tokens[port_name]))}"
         )
         if all((self.token_visited[t_id][1] for t_id in self.port_tokens[port_name])):
             for prev_port_name in get_prev_vertices(port_name, self.dag_ports):
@@ -438,27 +430,29 @@ class WorkflowRecovery(RecoveryContext):
         for t_id in self.port_tokens.pop(port_name_to_remove, ()):
             # token_visited.pop(t_id)
             print(
-                f"New-method - pop token id {t_id} from port_tokens[{port_name_to_remove}]"
+                f"remove_from_graph: pop token id {t_id} from port_tokens[{port_name_to_remove}]"
             )
 
         # removed in the graph and moved its next port in INIT
         for port_name in self.dag_ports.pop(port_name_to_remove, ()):
             if not is_next_of_someone(port_name, self.dag_ports):
                 await self.add_into_graph(INIT_DAG_FLAG, port_name, None)
-        print(f"New-method - pop {port_name_to_remove} from dag_ports and port_tokens")
+        print(
+            f"remove_from_graph: pop {port_name_to_remove} from dag_ports and port_tokens"
+        )
         # remove vertex detached from the graph
         for port_name in other_ports_to_remove:
             await self.remove_from_graph(port_name)
 
     async def remove_token_by_id(self, token_id_to_remove: int):
         # token_visited.pop(token_id_to_remove, None)
-        print(f"new-method - remove token {token_id_to_remove} from visited")
+        print(f"remove_token_by_id: remove token {token_id_to_remove} from visited")
         ports_to_remove = set()
         for port_name, token_ids in self.port_tokens.items():
             if token_id_to_remove in token_ids:
                 token_ids.remove(token_id_to_remove)
                 print(
-                    f"new-method - remove token {token_id_to_remove} from {port_name}"
+                    f"remove_token_by_id: remove token {token_id_to_remove} from {port_name}"
                 )
             if len(token_ids) == 0:
                 ports_to_remove.add(port_name)
@@ -481,16 +475,16 @@ class WorkflowRecovery(RecoveryContext):
                     and self.token_visited[t_id][0].value.name == token.value.name
                 ):
                     print(
-                        f"Rimuovo token {t_id} con {msg} dal port_tokens[{port_name}]"
+                        f"remove_token: Rimuovo token {t_id} con {msg} dal port_tokens[{port_name}]"
                     )
                     await self.remove_token_by_id(t_id)
                     return
             print(
-                f"Volevo rimuovere token con {msg} dal port_tokens[{port_name}] ma non ce n'è"
+                f"remove_token: Volevo rimuovere token con {msg} dal port_tokens[{port_name}] ma non ce n'è"
             )
         else:
             print(
-                f"Volevo rimuovere token con {msg} ma non c'è port {port_name} in port_tokens"
+                f"remove_token: Volevo rimuovere token con {msg} ma non c'è port {port_name} in port_tokens"
             )
 
     # richiamare ricorsivamente finche i token.tag hanno sempre lo stesso livello o se si trova un JobToken
@@ -506,7 +500,7 @@ class WorkflowRecovery(RecoveryContext):
             )
             if token_row["dependee"] not in self.token_visited.keys():
                 print(
-                    f"rm prev - token id {token_row['dependee']} non presente nei token_visited"
+                    f"remove_prev: token id {token_row['dependee']} non presente nei token_visited"
                 )
                 continue
             elif port_row["type"] != get_class_fullname(ConnectorPort):
@@ -518,10 +512,10 @@ class WorkflowRecovery(RecoveryContext):
                         False,
                     )
                     print(
-                        f"rm prev - prev token id {token_row['dependee']} tag {self.token_visited[token_row['dependee']][0].tag} non è presente tra i token visitati, lo aggiungo"
+                        f"remove_prev: prev token id {token_row['dependee']} tag {self.token_visited[token_row['dependee']][0].tag} non è presente tra i token visitati, lo aggiungo"
                     )
                 print(
-                    f"rm prev - token {token_id_to_remove} rm prev token id: {token_row['dependee']} val: {str_tok(self.token_visited[token_row['dependee']][0])} tag: {self.token_visited[token_row['dependee']][0].tag}"
+                    f"remove_prev: token {token_id_to_remove} rm prev token id: {token_row['dependee']} val: {str_tok(self.token_visited[token_row['dependee']][0])} tag: {self.token_visited[token_row['dependee']][0].tag}"
                 )
 
                 port_dependee_row = await self.context.database.get_port_from_token(
@@ -543,16 +537,16 @@ class WorkflowRecovery(RecoveryContext):
                         else ""
                     )
                     print(
-                        f"rm prev - token {token_id_to_remove} tag {self.token_visited[token_id_to_remove][0].tag} (lvl {curr_tag_level}) ha prev {msg}id {token_row['dependee']} tag {dependee_token.tag} (lvl {get_tag_level(dependee_token.tag)}) -> {curr_tag_level == get_tag_level(dependee_token.tag)}"
+                        f"remove_prev: token {token_id_to_remove} tag {self.token_visited[token_id_to_remove][0].tag} (lvl {curr_tag_level}) ha prev {msg}id {token_row['dependee']} tag {dependee_token.tag} (lvl {get_tag_level(dependee_token.tag)}) -> {curr_tag_level == get_tag_level(dependee_token.tag)}"
                     )
                     await self.remove_prev(token_row["dependee"], loading_context)
                 else:
                     print(
-                        f"rm prev - pulizia fermata al token {token_id_to_remove} con tag {self.token_visited[token_id_to_remove][0].tag}"
+                        f"remove_prev: pulizia fermata al token {token_id_to_remove} con tag {self.token_visited[token_id_to_remove][0].tag}"
                     )
             else:
                 print(
-                    f"rm prev - token {token_id_to_remove} volevo rm prev token id {token_row['dependee']} tag {self.token_visited[token_row['dependee']][0].tag} ma è un token del ConnectorPort"
+                    f"remove_prev: token {token_id_to_remove} volevo rm prev token id {token_row['dependee']} tag {self.token_visited[token_row['dependee']][0].tag} ma è un token del ConnectorPort"
                 )
 
     async def get_port_and_step_ids(self):
@@ -705,7 +699,7 @@ async def _put_tokens(
                 port.put(IterationTerminationToken(port.token_list[0].tag))
         else:
             print(
-                f"Port {port.name} with {len(port.token_list)} tokens. NO TerminationToken"
+                f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
             )
 
 
@@ -717,6 +711,9 @@ async def _populate_workflow_lean(
     new_workflow,
     loading_context,
 ):
+    print(
+        f"populate_workflow: wf {new_workflow.name} INIT port {wr.dag_ports[INIT_DAG_FLAG]}"
+    )
     for port in await asyncio.gather(
         *(
             asyncio.create_task(
@@ -732,12 +729,12 @@ async def _populate_workflow_lean(
     ):
         if port.name not in new_workflow.ports.keys():
             new_workflow.add_port(port)
-            print(f"wf {new_workflow.name} add port {port.name}")
+            print(f"populate_workflow: wf {new_workflow.name} add_1 port {port.name}")
         else:
             print(
-                f"La port {port.name} è già presente nel workflow {new_workflow.name}"
+                f"populate_workflow: La port {port.name} è già presente nel workflow {new_workflow.name}"
             )
-    print("Port caricate")
+    print("populate_workflow: Port caricate")
 
     add_step_ids = set()
     replace_step = None
@@ -790,10 +787,9 @@ async def _populate_workflow_lean(
             new_workflow.add_step(step)
         else:
             print(
-                f"Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}"
+                f"populate_workflow: Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}. It is present in the workflow: {step.name in new_workflow.steps.keys()}"
             )
-            pass
-    print("Step caricati")
+    print("populate_workflow: Step caricati")
 
     missing_ports = set()
     for step in new_workflow.steps.values():
@@ -807,15 +803,14 @@ async def _populate_workflow_lean(
             if p_name not in new_workflow.ports.keys():
                 # problema nato dai loop. when-loop ha output tutti i param. Però il grafo è costruito sulla presenza o
                 # meno dei file, invece i param str, int, ..., no. Quindi le port di questi param non vengono esplorate
-                # le aggiungo ma vengono usati come "port pozzo" ovvero il loro output non viene utilizzato
+                # le aggiungo ma durante l'esecuzione verranno utilizzati come "port pozzo" dei token prodotti
                 print(
-                    f"Aggiungo port {p_name} al wf {new_workflow.name} perché è un output port dello step {step.name}"
+                    f"populate_workflow: Aggiungo port {p_name} al wf {new_workflow.name} perché è un output port dello step {step.name}"
                 )
                 depe_row = await new_workflow.context.database.get_output_port(
                     step_name_id[step.name], dep_name
                 )
                 missing_ports.add(depe_row["port"])
-                pass
     for port in await asyncio.gather(
         *(
             asyncio.create_task(
@@ -824,6 +819,7 @@ async def _populate_workflow_lean(
             for p_id in missing_ports
         )
     ):
+        print(f"populate_workflow: wf {new_workflow.name} add_2 port {port.name}")
         new_workflow.add_port(port)
 
     # add output port of failed step into new_workflow
@@ -838,6 +834,7 @@ async def _populate_workflow_lean(
         )
     ):
         if port.name not in new_workflow.ports.keys():
+            print(f"populate_workflow: wf {new_workflow.name} add_3 port {port.name}")
             new_workflow.add_port(port)
 
     if replace_step:  # se c'è un LoopOutputStep non serve fare sto casino
@@ -982,13 +979,15 @@ async def _populate_workflow_lean(
                 # nel grafo. Però nei loop, più step hanno stessa porta di output (forwad, backprop, loop-term).
                 # per capire se lo step sia necessario controlliamo che anche le sue port di input siano state caricate
                 print(
-                    f"Rimuovo step {step.name} dal wf {new_workflow.name} perché manca la input port {p_name}"
+                    f"populate_workflow: Rimuovo step {step.name} dal wf {new_workflow.name} perché manca la input port {p_name}"
                 )
                 rm_steps.add(step.name)
-                pass
     for step_name in rm_steps:
+        print(
+            f"populate_workflow: Rimozione (2) definitiva step {step_name} dal new_workflow {new_workflow.name}"
+        )
         new_workflow.steps.pop(step_name)
-    print("Ultime Port caricate")
+    print("populate_workflow: Ultime Port caricate")
 
 
 class JobVersion:

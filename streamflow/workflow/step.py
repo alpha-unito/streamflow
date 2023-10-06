@@ -110,7 +110,9 @@ class BaseStep(Step, ABC):
         self._log_level: int = logging.DEBUG
 
     async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
-        print(f"Step {self.name} (wf {self.workflow.name}) AAA waiting tokens")
+        logger.debug(
+            f"Step {self.name} (wf {self.workflow.name}) waiting tokens on ports {set(input_ports.keys())}"
+        )
         inputs = {
             k: v
             for k, v in zip(
@@ -130,7 +132,9 @@ class BaseStep(Step, ABC):
             raise Exception("Input hanno tag diversi")
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs):
-                logger.debug(f"Step {self.name} received termination token")
+                logger.debug(
+                    f"Step {self.name} (wf {self.workflow.name}) received termination token"
+                )
             logger.debug(
                 f"Step {self.name} (wf {self.workflow.name}) received inputs {[t.tag for t in inputs.values()]}"
             )
@@ -159,6 +163,9 @@ class BaseStep(Step, ABC):
                     port.close(posixpath.join(self.name, port_name))
             # Add a TerminationToken to each output port
             for port in self.get_output_ports().values():
+                logger.debug(
+                    f"Step {self.name} inserts termination token into port {[k for k, v in self.output_ports.items() if v == port.name].pop()} {port.name}"
+                )
                 port.put(TerminationToken())
             # Set termination status
             await self._set_status(status)
@@ -374,6 +381,9 @@ class CombinatorStep(BaseStep):
                             AsyncIterable,
                             self.combinator.combine(task_name, token),
                         ):
+                            logger.debug(
+                                f"Step {self.name} (wf {self.workflow.name}) combined {token.tag} on port {task_name}"
+                            )
                             ins = [id for t in schema.values() for id in t["input_ids"]]
                             for port_name, token in schema.items():
                                 self.get_output_port(port_name).put(
@@ -383,9 +393,18 @@ class CombinatorStep(BaseStep):
                                         input_token_ids=ins,
                                     )
                                 )
+                            logger.debug(
+                                f"Step {self.name} (wf {self.workflow.name}) goes to next combine"
+                            )
+                        logger.debug(
+                            f"Step {self.name} (wf {self.workflow.name}) terminates schema on port {task_name}"
+                        )
 
                     # Create a new task in place of the completed one if the port is not terminated
                     if task_name not in terminated:
+                        logger.debug(
+                            f"Step {self.name} (wf {self.workflow.name}) re-appends port {task_name} in input tasks"
+                        )
                         input_tasks.append(
                             asyncio.create_task(
                                 self.get_input_ports()[task_name].get(
@@ -394,6 +413,9 @@ class CombinatorStep(BaseStep):
                                 name=task_name,
                             )
                         )
+                    logger.debug(
+                        f"Step {self.name} (wf {self.workflow.name}) checks next port"
+                    )
         # Terminate step
         await self.terminate(status)
 
@@ -753,8 +775,8 @@ class ExecuteStep(BaseStep):
                     )
                 )
                 print(
-                    f"old job token: {job_token_original.persistent_id}",
-                    f"\nnew job token: {job_token.persistent_id}",
+                    f"Old job token: {job_token_original.persistent_id}",
+                    f"\nNew job token: {job_token.persistent_id}",
                 )
                 # todo: e se la risorsa fallisce al momento del recupero nel workflow principale?
                 #  spoiler -> si scassa
@@ -957,7 +979,9 @@ class GatherStep(BaseStep):
             )
             if check_termination(token):
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received termination token")
+                    logger.debug(
+                        f"Step {self.name} (wf {self.workflow.name}) received termination token"
+                    )
                 output_port = self.get_output_port()
                 for tag, tokens in self.token_map.items():
                     output_port.put(
@@ -1123,7 +1147,7 @@ class LoopCombinatorStep(CombinatorStep):
                     if check_termination(token):
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received termination token for port {task_name}"
+                                f"Step {self.name} (wf {self.workflow.name}) received termination token for port {task_name}"
                             )
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
@@ -1131,7 +1155,7 @@ class LoopCombinatorStep(CombinatorStep):
                         if token.tag in self.iteration_terminaton_checklist[task_name]:
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
-                                    f"Step {self.name} received iteration termination token {token.tag} "
+                                    f"Step {self.name} (wf {self.workflow.name}) received iteration termination token {token.tag} "
                                     f"for port {task_name}"
                                 )
                             self.iteration_terminaton_checklist[task_name].remove(
@@ -1141,14 +1165,16 @@ class LoopCombinatorStep(CombinatorStep):
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) received token {token.tag} "
-                                f"on port {task_name}"
+                                f"Step {self.name} (wf {self.workflow.name}) received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
                         if (
                             ".".join(token.tag.split(".")[:-1])
                             not in self.iteration_terminaton_checklist[task_name]
                         ):
+                            logger.debug(
+                                f"Step {self.name} (wf {self.workflow.name}) add token tag {token.tag} on iteration_terminaton_checklist {task_name}"
+                            )
                             self.iteration_terminaton_checklist[task_name].add(
                                 token.tag
                             )
@@ -1165,6 +1191,9 @@ class LoopCombinatorStep(CombinatorStep):
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )
+                                )
+                                logger.debug(
+                                    f"Step {self.name} (wf {self.workflow.name}) produced token {self.get_output_port(port_name).token_list[-1].tag} in port {port_name} (name {self.get_output_port(port_name).name})"
                                 )
                     # Create a new task in place of the completed one if the port is not terminated
                     if not (
@@ -1228,7 +1257,9 @@ class LoopOutputStep(BaseStep, ABC):
             # If a TerminationToken is received, terminate the step
             if check_termination(token):
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received termination token")
+                    logger.debug(
+                        f"Step {self.name} (wf {self.workflow.name}) received termination token"
+                    )
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
                     break
@@ -1242,7 +1273,7 @@ class LoopOutputStep(BaseStep, ABC):
             elif check_iteration_termination(token):
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Step {self.name} received iteration termination token {token.tag}."
+                        f"Step {self.name} (wf {self.workflow.name}) received iteration termination token {token.tag}."
                     )
                 self.size_map[prefix] = int(token.tag.split(".")[-1])
             # Otherwise, store the new token in the map
@@ -1264,6 +1295,9 @@ class LoopOutputStep(BaseStep, ABC):
                 )
             # If all iterations are terminated, terminate the step
             if self.termination_map and all(self.termination_map):
+                logger.debug(
+                    f"Step {self.name} (wf {self.workflow.name}) terminates iteration."
+                )
                 break
         # Terminate step
         await self.terminate(
@@ -1636,7 +1670,9 @@ class TransferStep(BaseStep, ABC):
                     )
                     # Check for termination
                     if check_termination(inputs.values()) or job is None:
-                        print("Exit", self.name)
+                        logger.debug(
+                            f"Step {self.name} (wf {self.workflow.name}) received termination token"
+                        )
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1651,7 +1687,7 @@ class TransferStep(BaseStep, ABC):
                             for port_name, token in inputs.items():
                                 try:
                                     print(
-                                        f"Ttranfer start trasferisco {job.name} {port_name} {token.tag}"
+                                        f"Tranfer start trasferisco {job.name} {port_name} {token.tag}"
                                     )
                                     transferred_token = await self._persist_token(
                                         token=await self.transfer(job, token),
@@ -1682,7 +1718,7 @@ class TransferStep(BaseStep, ABC):
                                         )
                                         raise e
                                 print(
-                                    f"Ttranfer end trasferito {job.name} {port_name} {token.tag}"
+                                    f"Tranfer end trasferito {job.name} {port_name} {token.tag}"
                                 )
                                 self.get_output_port(port_name).put(transferred_token)
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
