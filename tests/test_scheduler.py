@@ -1,13 +1,17 @@
+from __future__ import annotations
+
 import asyncio
-from typing import MutableMapping, MutableSequence, Optional
+from typing import MutableMapping, MutableSequence
 
 import pytest
+import pytest_asyncio
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     BindingFilter,
+    DeploymentConfig,
     LOCAL_LOCATION,
     LocalTarget,
     Target,
@@ -15,7 +19,21 @@ from streamflow.core.deployment import (
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
-from tests.conftest import get_docker_deployment_config
+from tests.conftest import (
+    get_deployment_config,
+    get_docker_deployment_config,
+    get_service,
+)
+
+
+@pytest_asyncio.fixture(scope="module")
+async def deployment_config(context, deployment) -> DeploymentConfig:
+    return await get_deployment_config(context, deployment)
+
+
+@pytest_asyncio.fixture(scope="module")
+async def service(context, deployment) -> str | None:
+    return get_service(context, deployment)
 
 
 class CustomConnector(LocalConnector):
@@ -31,10 +49,10 @@ class CustomConnector(LocalConnector):
 
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         return {
             LOCAL_LOCATION: AvailableLocation(
@@ -57,6 +75,35 @@ class CustomBindingFilter(BindingFilter):
     @classmethod
     def get_schema(cls) -> str:
         return ""
+
+
+@pytest.mark.asyncio
+async def test_scheduling(
+    context: StreamFlowContext,
+    deployment_config: DeploymentConfig,
+    service: str | None,
+):
+    """Test scheduling a job on a remote environment."""
+
+    job = Job(
+        name=utils.random_name(),
+        workflow_id=0,
+        inputs={},
+        input_directory=utils.random_name(),
+        output_directory=utils.random_name(),
+        tmp_directory=utils.random_name(),
+    )
+    hardware_requirement = Hardware(cores=1)
+    target = Target(
+        deployment=deployment_config,
+        service=service,
+        workdir="/tmp/streamflow",
+    )
+    binding_config = BindingConfig(targets=[target])
+    await context.scheduler.schedule(job, binding_config, hardware_requirement)
+    assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
+    await context.scheduler.notify_status(job.name, Status.COMPLETED)
+    assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
 
 
 @pytest.mark.asyncio
