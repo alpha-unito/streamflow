@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import MutableMapping, MutableSequence
 from pathlib import PurePosixPath
-from typing import Any
+from typing import MutableSequence, TYPE_CHECKING
 
+from streamflow.core import utils
 from streamflow.core.config import Config
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.log_handler import logger
+
+if TYPE_CHECKING:
+    from typing import MutableMapping, Any
 
 
 def set_targets(current_node, target):
@@ -38,21 +41,22 @@ class WorkflowConfig(Config):
         if not self.deployments:
             self.deployments = config.get("models", {})
             if self.deployments:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
+                if logger.isEnabledFor(logging.WARN):
+                    logger.warn(
                         "The `models` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `deployments` instead."
                     )
-        for deployment_config in self.deployments.values():
-            policy = deployment_config.get("scheduling_policy", "__DEFAULT__")
-            if policy not in self.policies:
-                raise WorkflowDefinitionException(f"Policy {policy} is not defined")
-            deployment_config["scheduling_policy"] = self.policies[policy]
+        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         for name, deployment in self.deployments.items():
             deployment["name"] = name
         self.filesystem = {"children": {}}
         for binding in workflow_config.get("bindings", []):
-            self._process_binding(binding)
+            if isinstance(binding, MutableSequence):
+                for b in binding:
+                    self._process_binding(b)
+                self.scheduling_groups[utils.random_name()] = binding
+            else:
+                self._process_binding(binding)
         set_targets(self.filesystem, None)
 
     def _process_binding(self, binding: MutableMapping[str, Any]):
@@ -61,6 +65,16 @@ class WorkflowConfig(Config):
             if isinstance(binding["target"], MutableSequence)
             else [binding["target"]]
         )
+        for target in targets:
+            policy = target.get(
+                "policy",
+                self.deployments[target.get("deployment", target.get("model", {}))].get(
+                    "policy", "__DEFAULT__"
+                ),
+            )
+            if policy not in self.policies:
+                raise WorkflowDefinitionException(f"Policy {policy} is not defined")
+            target["policy"] = self.policies[policy]
         target_type = "step" if "step" in binding else "port"
         if target_type == "port" and "workdir" not in binding["target"]:
             raise WorkflowDefinitionException(

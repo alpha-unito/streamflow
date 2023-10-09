@@ -3,36 +3,18 @@ from __future__ import annotations
 import logging
 import os
 import posixpath
-from collections.abc import MutableMapping
 from pathlib import PurePosixPath
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from streamflow.core.config import BindingConfig
-from streamflow.core.deployment import (
-    DeploymentConfig,
-    FilterConfig,
-    LocalTarget,
-    Target,
-    WrapsConfig,
-)
+from streamflow.core.deployment import DeploymentConfig, LocalTarget, Target
 from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.config.config import WorkflowConfig
     from streamflow.core.deployment import Connector
-
-
-def _get_workdir(deployment, workflow_config) -> None:
-    while (workdir := deployment.get("workdir")) is None and (
-        wraps := deployment.get("wraps")
-    ) is not None:
-        # Get parent deployment
-        deployment = workflow_config.deployments[
-            wraps if isinstance(wraps, str) else wraps["deployment"]
-        ]
-    return workdir
 
 
 def get_binding_config(
@@ -48,8 +30,8 @@ def get_binding_config(
                 target_deployment = workflow_config.deployments[target["deployment"]]
             else:
                 target_deployment = workflow_config.deployments[target["model"]]
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
+                if logger.isEnabledFor(logging.WARN):
+                    logger.warn(
                         "The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `deployment` instead."
                     )
@@ -57,8 +39,8 @@ def get_binding_config(
             if locations is None:
                 locations = target.get("resources")
                 if locations is not None:
-                    if logger.isEnabledFor(logging.WARNING):
-                        logger.warning(
+                    if logger.isEnabledFor(logging.WARN):
+                        logger.warn(
                             "The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                             "Use `locations` instead."
                         )
@@ -70,9 +52,8 @@ def get_binding_config(
                 config=target_deployment["config"],
                 external=target_deployment.get("external", False),
                 lazy=target_deployment.get("lazy", True),
-                scheduling_policy=target_deployment["scheduling_policy"],
-                workdir=_get_workdir(target_deployment, workflow_config),
-                wraps=get_wraps_config(target_deployment.get("wraps")),
+                workdir=target_deployment.get("workdir"),
+                wraps=target_deployment.get("wraps"),
             )
             targets.append(
                 Target(
@@ -82,13 +63,7 @@ def get_binding_config(
                     workdir=workdir,
                 )
             )
-        return BindingConfig(
-            targets=targets,
-            filters=[
-                FilterConfig(name=c.name, type=c.type, config=c.config)
-                for c in config.get("filters")
-            ],
-        )
+        return BindingConfig(targets=targets, filters=config.get("filters"))
     else:
         return BindingConfig(targets=[LocalTarget()])
 
@@ -99,16 +74,3 @@ def get_path_processor(connector: Connector) -> ModuleType:
         if connector is not None and not isinstance(connector, LocalConnector)
         else os.path
     )
-
-
-def get_wraps_config(config: MutableMapping[str, Any] | None) -> WrapsConfig | None:
-    if config is not None:
-        if isinstance(config, str):
-            return WrapsConfig(deployment=config)
-        else:
-            return WrapsConfig(
-                deployment=config["deployment"],
-                service=config.get("service"),
-            )
-    else:
-        return None
