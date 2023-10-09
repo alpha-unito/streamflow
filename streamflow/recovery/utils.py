@@ -19,6 +19,8 @@ from streamflow.workflow.token import (
     JobToken,
     IterationTerminationToken,
     TerminationToken,
+    ListToken,
+    ObjectToken,
 )
 
 INIT_DAG_FLAG = "init"
@@ -28,6 +30,26 @@ TOKEN_WAITER = "twaiter"
 #  - get_token_by_tag forse meglio in utils core?
 #  - get_input_ports in persistence.utils?
 #    oppure cambiare query ritornando le row delle ports
+
+
+def get_files_from_token(token: Token) -> MutableSequence[str]:
+    if isinstance(token, CWLFileToken):
+        return [token.value["path"]]
+    if isinstance(token, ListToken):
+        return [
+            file
+            for inner_token in token.value
+            for file in get_files_from_token(inner_token)
+        ]
+    if isinstance(token, ObjectToken):
+        return [
+            file
+            for inner_token in token.value.values()
+            for file in get_files_from_token(inner_token)
+        ]
+    if isinstance(token.value, Token):
+        return get_files_from_token(token.value)
+    return []
 
 
 async def get_steps_from_output_port(port_id, context):

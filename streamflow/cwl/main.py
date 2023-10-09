@@ -94,6 +94,7 @@ async def main(
     if logger.isEnabledFor(logging.INFO):
         logger.info(f"Running workflow {args.name}")
     output_tokens = await executor.run()
+    await context.checkpoint_manager.wait()
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED Workflow execution")
     print(json.dumps(output_tokens, sort_keys=True, indent=4))

@@ -22,7 +22,11 @@ class CheckpointManager(SchemaEntity):
         ...
 
     @abstractmethod
-    def register(self, data_location: DataLocation) -> None:
+    async def wait(self):
+        ...
+
+    @abstractmethod
+    def save_data(self, token: Token):
         ...
 
 
@@ -59,7 +63,7 @@ class FailureManager(SchemaEntity):
         ...
 
     @abstractmethod
-    async def handle_failure_transfer(self, job: Job, step: Step):
+    async def handle_failure_transfer(self, job: Job, step: Step, port_name: str):
         ...
 
 
