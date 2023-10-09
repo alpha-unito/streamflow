@@ -15,7 +15,7 @@ from streamflow.workflow.combinator import (
     LoopTerminationCombinator,
 )
 from streamflow.workflow.executor import StreamFlowExecutor
-from tests.conftest import get_docker_deployment_config
+from tests.conftest import get_docker_deployment_config, random_dir_path
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -149,7 +149,7 @@ def _create_schedule_step(workflow, deploy_step, binding_config=None):
     return workflow.create_step(
         cls=ScheduleStep,
         name=posixpath.join(utils.random_name(), "__schedule__"),
-        job_prefix="something",
+        job_prefix=random_dir_path(1),
         connector_ports={
             binding_config.targets[0].deployment.name: deploy_step.get_output_port()
         },
