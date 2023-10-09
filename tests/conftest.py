@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import asyncio
 import os
@@ -59,6 +61,10 @@ def chosen_deployment_types(request):
 
 
 def pytest_generate_tests(metafunc):
+    if "deployment" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "deployment", metafunc.config.getoption("deploys"), scope="module"
+        )
     if "deployment_src" in metafunc.fixturenames:
         metafunc.parametrize(
             "deployment_src",
@@ -78,6 +84,23 @@ def all_deployment_types():
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity"])
     return deployments_
+
+
+async def get_deployment_config(
+    _context: StreamFlowContext, deployment_t: str
+) -> DeploymentConfig:
+    if deployment_t == "local":
+        return get_local_deployment_config()
+    elif deployment_t == "docker":
+        return get_docker_deployment_config()
+    elif deployment_t == "kubernetes":
+        return get_kubernetes_deployment_config()
+    elif deployment_t == "singularity":
+        return get_singularity_deployment_config()
+    elif deployment_t == "ssh":
+        return await get_ssh_deployment_config(_context)
+    else:
+        raise Exception(f"{deployment_t} deployment type not supported")
 
 
 async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
@@ -107,6 +130,21 @@ async def get_location(_context: StreamFlowContext, deployment_t: str) -> Locati
         return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
     else:
         raise Exception(f"{deployment_t} location type not supported")
+
+
+def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
+    if deployment_t == "local":
+        return None
+    elif deployment_t == "docker":
+        return None
+    elif deployment_t == "kubernetes":
+        return "sf-test"
+    elif deployment_t == "singularity":
+        return None
+    elif deployment_t == "ssh":
+        return None
+    else:
+        raise Exception(f"{deployment_t} deployment type not supported")
 
 
 def get_docker_deployment_config():
@@ -202,18 +240,7 @@ async def context(chosen_deployment_types) -> StreamFlowContext:
         {"database": {"type": "default", "config": {"connection": ":memory:"}}},
     )
     for deployment_t in chosen_deployment_types:
-        if deployment_t == "local":
-            config = get_local_deployment_config()
-        elif deployment_t == "docker":
-            config = get_docker_deployment_config()
-        elif deployment_t == "kubernetes":
-            config = get_kubernetes_deployment_config()
-        elif deployment_t == "singularity":
-            config = get_singularity_deployment_config()
-        elif deployment_t == "ssh":
-            config = await get_ssh_deployment_config(_context)
-        else:
-            raise Exception(f"{deployment_t} deployment type not supported")
+        config = await get_deployment_config(_context, deployment_t)
         await _context.deployment_manager.deploy(config)
     yield _context
     await _context.deployment_manager.undeploy_all()

@@ -554,12 +554,12 @@ class SSHConnector(BaseConnector):
     async def _get_existing_parent(self, location: str, directory: str):
         if directory is None:
             return None
-        async with self._get_ssh_client_process(
-            location=location,
-            command=f'test -e "{directory}"',
-            stderr=asyncio.subprocess.STDOUT,
-        ) as proc:
-            while True:
+        while True:
+            async with self._get_ssh_client_process(
+                location=location,
+                command=f'test -e "{directory}"',
+                stderr=asyncio.subprocess.STDOUT,
+            ) as proc:
                 result = await proc.wait()
                 if result.returncode == 0:
                     return directory
