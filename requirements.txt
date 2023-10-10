@@ -14,5 +14,3 @@ kubernetes_asyncio==24.2.3
 psutil==5.9.5
 rdflib==6.3.2
 yattag==1.15.1
-
-graphviz

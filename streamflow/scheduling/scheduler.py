@@ -39,14 +39,6 @@ class JobContext:
         self.scheduled: bool = False
 
 
-def starts_with_magic_trio(job_name):
-    return (
-        job_name.startswith("/togro")
-        or job_name.startswith("/tosor")
-        or job_name.startswith("/tocom")
-    )
-
-
 class DefaultScheduler(Scheduler):
     def __init__(
         self, context: StreamFlowContext, retry_delay: int | None = None
@@ -207,8 +199,6 @@ class DefaultScheduler(Scheduler):
                     self.job_allocations.keys(),
                 )
             )
-            if rollback_jobs:
-                print(f"Schedulo {j_name} e ci sono in rollback_jobs", rollback_jobs)
             running_jobs.extend(rollback_jobs)
         else:
             running_jobs = []
@@ -272,24 +262,7 @@ class DefaultScheduler(Scheduler):
                             hardware_requirement=hardware_requirement,
                             j_name=job_context.job.name,
                         )
-                        # aggiungere controllo se le risorse disponibili potrebbero servire a job precedenti
-                        # tipo sto schedulando sort2
-                        # in rollback ho group0 e sort0, allore loro hanno la precedenza,
-                        # se jo2 prendesse la risorsa potrebbre mandare tutto in deadlock
                     }
-
-                    if starts_with_magic_trio(job_context.job.name):
-                        print(
-                            f"job_allocations (mittente {job_context.job.name} target {set(available_locations.keys())}):\n\t",
-                            "\n\t".join(
-                                [
-                                    f"{k}: {v.status} - {[str(loc) for loc in v.locations]}"
-                                    for k, v in self.job_allocations.items()
-                                    if starts_with_magic_trio(k)
-                                ]
-                            ),
-                            sep="",
-                        )
                     if valid_locations:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
@@ -380,10 +353,6 @@ class DefaultScheduler(Scheduler):
                                     else "",
                                 )
                             )
-
-                # todo: lasciare la cattura del timeout oppure no?
-                # idea 1: se nessuno mi sveglia con il notify e passa troppo tempo fallisco lo step (cambiare nome var nel caso)
-                # idea 2: riprovo anche se non mi ha svegliato nessuno (il nome della var è retry quindi direi questa)
                 try:
                     await asyncio.wait_for(
                         self.wait_queues[deployment].wait(), timeout=self.retry_interval

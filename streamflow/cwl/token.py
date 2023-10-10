@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Any, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
@@ -67,21 +68,20 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
                 #  - opz2: controllare tutte le location, per aggiornare il data manager
                 #    Attuale implementazione
                 #  - opz3: controllare la location fallita, se file non available, controllare le altre location finché non c'è un file available
-                print(f"Location {data_loc.deployment} ha valid {data_loc.path}")
+
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Location {data_loc.deployment} has valid file {data_loc.path}"
+                    )
                 is_available = True
             else:
-                logger.debug(
-                    f"Invalidated location {data_loc.deployment} (Losted path {data_loc.path})"
-                )
-                start = time.time()
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Invalidated location {data_loc.deployment} (Losted path {data_loc.path})"
+                    )
                 context.data_manager.invalidate_location(data_loc, "/")
-                print(
-                    f"Tempo per invalidare location {data_loc.path}: {time.time() - start}"
-                )
         return is_available
-    raise Exception(
-        f"Non è stato possibile verificare se il file {value} è disponibile"
-    )
+    raise Exception(f"It is not possible to verify the file {value} availability")
 
 
 class CWLFileToken(FileToken):

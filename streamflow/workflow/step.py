@@ -382,7 +382,7 @@ class CombinatorStep(BaseStep):
                             self.combinator.combine(task_name, token),
                         ):
                             logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) combined {token.tag} on port {task_name}"
+                                f"Step {self.name} (wf {self.workflow.name}) combine on port {task_name}"
                             )
                             ins = [id for t in schema.values() for id in t["input_ids"]]
                             for port_name, token in schema.items():
@@ -766,19 +766,20 @@ class ExecuteStep(BaseStep):
                 # update with the job executed
                 job_token_updated = job_token_original.update(job)
                 job_token_updated.persistent_id = job_token_original.persistent_id
-                print(
-                    f"Job original {job_token_original.value.name} obj {job_token_original.value} tag: {job_token_original.tag} id: {job_token_original.persistent_id}"
-                    f"\nJob updated {job_token_updated.value.name} obj {job_token_updated.value} tag: {job_token_updated.tag} id: {job_token_updated.persistent_id}"
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Job original {job_token_original.value.name} obj {job_token_original.value} tag: {job_token_original.tag} id: {job_token_original.persistent_id}"
+                        + f"\nJob updated {job_token_updated.value.name} obj {job_token_updated.value} tag: {job_token_updated.tag} id: {job_token_updated.persistent_id}"
+                    )
                 job_token = (
                     await self.workflow.context.failure_manager.get_valid_job_token(
                         job_token_updated
                     )
                 )
-                print(
-                    f"Old job token: {job_token_original.persistent_id}",
-                    f"\nNew job token: {job_token.persistent_id}",
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Old job token: {job_token_original.persistent_id}\nNew job token: {job_token.persistent_id}"
+                    )
                 # todo: e se la risorsa fallisce al momento del recupero nel workflow principale?
                 #  spoiler -> si scassa
                 await asyncio.gather(
@@ -796,7 +797,10 @@ class ExecuteStep(BaseStep):
                     )
                 )
             except Exception as e:
-                print("Scassato step", self.name, "nel workflow", self.workflow.name)
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Step {self.name} (wf {self.workflow.name}) fails to analyze output data"
+                    )
                 logger.exception(e)
                 command_output.status = Status.FAILED
         # Return job status
@@ -1689,9 +1693,6 @@ class TransferStep(BaseStep, ABC):
                             # Transfer token
                             for port_name, token in inputs.items():
                                 try:
-                                    print(
-                                        f"Tranfer start trasferisco {job.name} {port_name} {token.tag}"
-                                    )
                                     transferred_token = await self._persist_token(
                                         token=await self.transfer(job, token),
                                         port=self.get_output_port(port_name),
@@ -1720,9 +1721,6 @@ class TransferStep(BaseStep, ABC):
                                             f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"
                                         )
                                         raise e
-                                print(
-                                    f"Tranfer end trasferito {job.name} {port_name} {token.tag}"
-                                )
                                 self.get_output_port(port_name).put(transferred_token)
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:

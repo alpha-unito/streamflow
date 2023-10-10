@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
 from typing import Any, MutableMapping, MutableSequence
 
 import aiosqlite
@@ -252,8 +251,7 @@ class SqliteDatabase(CachedDatabase):
     ) -> MutableMapping[str, Any]:
         async with self.connection as db:
             db.row_factory = aiosqlite.Row
-            # todo: ottimizzare le query (left, right, inner, outer join)
-            start = time.time()
+            # todo: ottimizzare le query
             async with db.execute(
                 "SELECT token.* "
                 "FROM provenance JOIN token ON provenance.depender=token.id "
@@ -268,8 +266,6 @@ class SqliteDatabase(CachedDatabase):
                     "step_type": get_class_fullname(ExecuteStep),
                 },
             ) as cursor:
-                end = time.time()
-                print("QUERY Time exec ", (end - start))
                 return await cursor.fetchone()
 
     async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
@@ -536,22 +532,6 @@ class SqliteDatabase(CachedDatabase):
                 {"workflow": workflow_id},
             ) as cursor:
                 return await cursor.fetchall()
-
-    async def get_all_provenance(self) -> MutableSequence[MutableMapping[str, Any]]:
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM provenance") as cursor:
-                return await cursor.fetchall()
-
-    # todo: sbagliato. Una port può essere output di più step (caso dei loop)
-    async def get_step_from_output_port(self, port_id: int) -> MutableMapping[str, Any]:
-        async with self.connection as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM dependency WHERE port = :port AND type = :type",
-                {"port": port_id, "type": DependencyType.OUTPUT.value},
-            ) as cursor:
-                return await cursor.fetchone()
 
     async def list_workflows(
         self, name: str | None

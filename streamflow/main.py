@@ -158,8 +158,7 @@ async def _async_report(args: argparse.Namespace):
 
 
 async def _async_run(args: argparse.Namespace):
-    args.name = args.name or random_name()  # str(uuid.uuid4())
-    print("workflow name", args.name)
+    args.name = args.name or random_name()
     load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
     streamflow_config["path"] = args.streamflow_file

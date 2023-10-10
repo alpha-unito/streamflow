@@ -19,13 +19,12 @@ from typing import (
 import jsonref
 
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow import myconfig
 from streamflow.core.persistence import PersistableEntity, DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from streamflow.core.context import SchemaEntity, StreamFlowContext
     from streamflow.core.deployment import Connector, Location
-    from streamflow.core.workflow import Token, Port, Workflow
+    from streamflow.core.workflow import Token
     from typing import Iterable
 
 
@@ -276,10 +275,7 @@ def inject_schema(
 
 
 def random_name() -> str:
-    a = str(myconfig.COUNTER) + "-" + str(uuid.uuid4())
-    myconfig.COUNTER += 1
-    return a
-    # return str(uuid.uuid4())
+    return str(uuid.uuid4())
 
 
 def wrap_command(command: str):

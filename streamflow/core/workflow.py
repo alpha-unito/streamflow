@@ -5,7 +5,6 @@ import json
 import sys
 import uuid
 from abc import ABC, abstractmethod
-import time
 from enum import Enum
 from typing import MutableMapping, MutableSequence, TYPE_CHECKING, Type, TypeVar, cast
 
@@ -445,16 +444,9 @@ class Step(PersistableEntity, ABC):
         loading_context: DatabaseLoadingContext,
         change_wf: Workflow = None,
     ) -> Step:
-        st = time.time()
         row = await context.database.get_step(persistent_id)
         type = cast(Type[Step], utils.get_class_from_name(row["type"]))
-        stt = time.time()
         step = await type._load(context, row, loading_context, change_wf)
-        ett = time.time()
-        if ett - stt > 5:
-            print(
-                f"{step.name} (wf {step.workflow.name}) tempo per fare step TYPE load {round(ett - stt, 2)}"
-            )
         if change_wf is None:
             step.persistent_id = persistent_id
             step.status = Status(row["status"])
@@ -474,11 +466,6 @@ class Step(PersistableEntity, ABC):
         )
         if change_wf is None:
             loading_context.add_step(persistent_id, step)
-        et = time.time()
-        if et - st > 5:
-            print(
-                f"{step.name} (wf {step.workflow.name}) tempo per fare step load {round(et - st, 2)}"
-            )
         return step
 
     @abstractmethod

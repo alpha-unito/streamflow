@@ -492,7 +492,6 @@ class CWLTransferStep(TransferStep):
                     raise WorkflowExecutionException(
                         f"WARN. Il file {filepath} è disponibile su {d} prima del transfer"
                     )
-                pass
             await self.workflow.context.data_manager.transfer_data(
                 src_locations=[selected_location],
                 src_path=selected_location.path,

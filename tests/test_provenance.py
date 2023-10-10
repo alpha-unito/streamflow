@@ -1,4 +1,3 @@
-import asyncio
 import posixpath
 from typing import MutableMapping, Any, MutableSequence, Type
 

@@ -8,7 +8,6 @@ from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from streamflow.core.data import DataLocation
     from streamflow.core.workflow import Job, CommandOutput, Step, Token, Port
     from typing import MutableMapping, Any
 

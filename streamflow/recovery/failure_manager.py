@@ -33,11 +33,6 @@ from streamflow.recovery.recovery import (
     _populate_workflow_lean,
 )
 from streamflow.recovery.utils import get_execute_step_out_token_ids, get_token_by_tag
-from streamflow.token_printer import (
-    temp_print_retag,
-    print_graph_figure,
-    print_step_from_ports,
-    dag_workflow,
 )
 from streamflow.workflow.step import ScatterStep, TransferStep
 from streamflow.workflow.executor import StreamFlowExecutor
@@ -342,22 +337,6 @@ class DefaultFailureManager(FailureManager):
                             f"in esecuzione in wf {self.job_requests[token.value.name].workflow}",
                             f"servirà al wf {new_workflow.name}",
                         )
-                        print_graph_figure(
-                            {
-                                k: v
-                                for k, v in wr.dag_ports.items()
-                                if k != INIT_DAG_FLAG
-                            },
-                            dir_path + "/ports-sync-" + new_workflow.name,
-                        )
-                        await print_step_from_ports(
-                            wr.dag_ports,
-                            wr.port_name_ids,
-                            list(wr.port_name_ids.keys()),
-                            wr.context,
-                            failed_step.name,
-                            dir_path + "/steps-sync-" + new_workflow.name,
-                        )
                     else:
                         print(
                             f"Job {token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[token.value.name].job_token} - t: {self.job_requests[token.value.name].token_output})"
@@ -579,11 +558,7 @@ class DefaultFailureManager(FailureManager):
         token_list = self.retags[workflow_name][output_port.name]
         for t in token_list:
             if t.tag == tag:
-                temp_print_retag(
-                    workflow_name, output_port, tag, self.retags, "return true"
-                )
                 return True
-        temp_print_retag(workflow_name, output_port, tag, self.retags, "return false")
         return False
 
     def _save_for_retag(self, new_workflow, dag_ports, port_tokens, token_visited):
@@ -686,7 +661,7 @@ class DefaultFailureManager(FailureManager):
         pass
 
     async def notify_jobs(self, job_name, out_port_name, token):
-        print("Notify end job", job_name)
+        logger.info(f"Notify end job {job_name}")
         if job_name in self.job_requests.keys():
             async with self.job_requests[job_name].lock:
                 if self.job_requests[job_name].token_output is None:
@@ -739,7 +714,7 @@ class DefaultFailureManager(FailureManager):
 
                 for elem in elems:
                     self.job_requests[job_name].queue.remove(elem)
-                print("Notify end job", job_name, "- done")
+                logger.info("Notify end job {job_name} - done")
 
     @classmethod
     def get_schema(cls) -> str:

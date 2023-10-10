@@ -10,7 +10,7 @@ import pkg_resources
 
 from streamflow.core import utils
 from streamflow.core.data import DataLocation
-from streamflow.core.deployment import LOCAL_LOCATION, Location
+from streamflow.core.deployment import LOCAL_LOCATION
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.recovery import CheckpointManager
 from streamflow.core.utils import random_name

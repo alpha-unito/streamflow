@@ -397,8 +397,6 @@ class RemotePathMapper:
                 if data_loc.data_type != DataType.INVALID:
                     self.invalidate_location(data_loc, data_loc.path)
                     data_loc.data_type = DataType.INVALID
-                pass
-        pass
 
     def put(
         self, path: str, data_location: DataLocation, recursive: bool = False

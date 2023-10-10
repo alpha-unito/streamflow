@@ -1,5 +1,4 @@
 import asyncio
-import os
 from typing import MutableMapping, MutableSequence, Optional
 
 import pytest
