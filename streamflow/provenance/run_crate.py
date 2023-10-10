@@ -729,7 +729,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
             self.files_map[config] = config_checksum
             self.graph["./"]["hasPart"].append({"@id": config_file["@id"]})
             self.graph[config_file["@id"]] = config_file
-        # Add executons
+        # Add executions
         for wf_id, workflow in enumerate(self.workflows):
             wf_obj = await self.context.database.get_workflow(workflow.persistent_id)
             execution = {

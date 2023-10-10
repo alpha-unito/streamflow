@@ -220,7 +220,7 @@ async def get_remote_to_remote_write_command(
         return ["tar", "xf", "-", "-C", dst]
     # Otherwise, if destination path does not exist
     else:
-        # If basename must be renamed during trnasfer
+        # If basename must be renamed during transfer
         if posixpath.basename(src) != posixpath.basename(dst):
             is_src_dir, status = await src_connector.run(
                 location=src_location,

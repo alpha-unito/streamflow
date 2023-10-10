@@ -17,7 +17,7 @@ The ``CWLDockerTranslator`` interface is defined in the ``streamflow.cwl.require
     ) -> Target:
         ...
 
-The ``get_target`` method returns a ``Target`` object that contains an auto-generated ``DeploymentConfig`` that reflects the ``CWLDockerTranslator`` configuration. The ``target`` parameter contains the original ``Target`` object of the related step. If the ``Conenctor`` created by the ``CWLDockerTranslator`` extends the :ref:`ConnectorWrapper <ConnectorWrapper>` class and the ``wrapper`` directive is defined as ``True`` in the StreamFlow file, the newly created ``Target`` object wraps the original one.
+The ``get_target`` method returns a ``Target`` object that contains an auto-generated ``DeploymentConfig`` that reflects the ``CWLDockerTranslator`` configuration. The ``target`` parameter contains the original ``Target`` object of the related step. If the ``Connector`` created by the ``CWLDockerTranslator`` extends the :ref:`ConnectorWrapper <ConnectorWrapper>` class and the ``wrapper`` directive is defined as ``True`` in the StreamFlow file, the newly created ``Target`` object wraps the original one.
 
 The other parameters derive from the CWL workflow specification. In particular, the ``image`` parameter points to the Docker image needed by the step. The ``output_directory`` parameter reflects the ``dockerOutputDirectory`` option of a CWL ``DockerRequirement``. The ``network_access`` parameter derives from the CWL `NetworkAccess <https://www.commonwl.org/v1.2/CommandLineTool.html#NetworkAccess>`_ requirement.
 
