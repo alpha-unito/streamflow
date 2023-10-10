@@ -118,7 +118,7 @@ As an example, suppose that a class ``PostgreSQLDatabase`` implements a `Postgre
 
 Each extension point class must implement a ``get_schema`` method, pointing to a `JSON Schema <https://json-schema.org/>`_ file, which contains all the configurable parameters that can be specified by the user in the ``streamflow.yml`` file. Such parameters will be propagated to the class constructor at each invocation. For example, the ``PostgreSQLDatabase`` class specified above points to a ``schemas/postgresql.json`` schema file in the same Python module.
 
-A schema file should follow the `2019-09 <https://json-schema.org/draft/2019-09/release-notes.html>`_ version of JSON Schema. StreamFlow uses schema files to validate the ``streamflow.yml`` file at runtime before executing a workflow instance. Plus, it relised on schema ``properties`` to print documentation when a user invokes the ``streamflow ext show`` CLI subcommand. An example of schema file for the ``PostreSQLDatabase`` class is the following:
+A schema file should follow the `2019-09 <https://json-schema.org/draft/2019-09/release-notes.html>`_ version of JSON Schema. StreamFlow uses schema files to validate the ``streamflow.yml`` file at runtime before executing a workflow instance. Plus, it relies on schema ``properties`` to print documentation when a user invokes the ``streamflow ext show`` CLI subcommand. An example of schema file for the ``PostreSQLDatabase`` class is the following:
 
 .. code-block:: json
 
