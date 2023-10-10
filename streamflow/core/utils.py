@@ -288,8 +288,32 @@ def contains_id(
     return searched_id in (entity.persistent_id for entity in persistable_entity_list)
 
 
-def get_job_number(job_name) -> int:
-    return int(os.path.basename(job_name))
+def cmp(a, b):
+    return (a > b) - (a < b)
+
+
+def get_tag_level(tag: str):
+    return len(tag.split("."))
+
+
+# compare_tags( 0,      0.0) 	=>  -1
+# compare_tags( 0.0,    0.0) 	=> 	 0
+# compare_tags( 0.0,    0.1) 	=> 	-1
+# compare_tags( 0.1.0,  0.0)    =>   1
+# compare_tags( 0.3.4,  0.5.1)  =>  -1
+def compare_tags(tag1, tag2):
+    tag1_list = tag1.split(".")
+    tag2_list = tag2.split(".")
+    if (res := cmp(len(tag1_list), len(tag2_list))) != 0:
+        return res
+    for lvl1, lvl2 in zip(tag1_list, tag2_list):
+        if (res := cmp(int(lvl1), int(lvl2))) != 0:
+            return res
+    return 0
+
+
+def get_job_base(job_name) -> int:
+    return os.path.basename(job_name)
 
 
 def get_job_dir(job_name) -> str:

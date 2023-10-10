@@ -1495,11 +1495,18 @@ class ScheduleStep(BaseStep):
                     for tag in list(inputs_map.keys()):
                         if len(inputs_map[tag]) == len(input_ports):
                             inputs = inputs_map.pop(tag)
+                            job_name = posixpath.join(self.job_prefix, tag)
+                            if (
+                                job_alloc := self.workflow.context.scheduler.job_allocations.get(
+                                    job_name, None
+                                )
+                            ) and job_alloc.status != Status.ROLLBACK:
+                                raise WorkflowExecutionException(
+                                    f"Job {job_name} cannot be scheduled because it has already finished. Status: {job_alloc.status}"
+                                )
                             # Create Job
                             job = Job(
-                                name=posixpath.join(
-                                    self.job_prefix, tag.split(".")[-1]
-                                ),
+                                name=job_name,
                                 workflow_id=self.workflow.persistent_id,
                                 inputs=inputs,
                                 input_directory=self.input_directory,

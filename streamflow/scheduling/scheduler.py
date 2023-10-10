@@ -17,7 +17,7 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
 )
-from streamflow.core.utils import get_job_dir, get_job_number
+from streamflow.core.utils import get_job_dir, compare_tags, get_job_base
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
@@ -176,7 +176,7 @@ class DefaultScheduler(Scheduler):
         return self.policy_map[config.name]
 
     def _is_valid(
-        self, location: AvailableLocation, hardware_requirement: Hardware, j_name: str
+        self, location: AvailableLocation, hardware_requirement: Hardware, job_name: str
     ) -> bool:
         if location.name in self.location_allocations.get(location.deployment, {}):
             running_jobs = list(
@@ -191,9 +191,9 @@ class DefaultScheduler(Scheduler):
             rollback_jobs = list(
                 filter(
                     lambda x: (
-                        x != j_name
-                        and get_job_dir(x) == get_job_dir(j_name)
-                        and get_job_number(x) < get_job_number(j_name)
+                        x != job_name
+                        and get_job_dir(x) == get_job_dir(job_name)
+                        and compare_tags(get_job_base(x), get_job_base(job_name)) == -1
                         and self.job_allocations[x].status == Status.ROLLBACK
                     ),
                     self.job_allocations.keys(),
@@ -260,7 +260,7 @@ class DefaultScheduler(Scheduler):
                         if self._is_valid(
                             location=loc,
                             hardware_requirement=hardware_requirement,
-                            j_name=job_context.job.name,
+                            job_name=job_context.job.name,
                         )
                     }
                     if valid_locations:

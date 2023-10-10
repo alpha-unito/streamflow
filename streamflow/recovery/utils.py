@@ -135,30 +135,6 @@ def is_next_of_someone(p_name, dag_ports):
     return False
 
 
-def cmp(a, b):
-    return (a > b) - (a < b)
-
-
-def compare_tags_relaxed(tag_1, tag_2):
-    if get_tag_level(tag_1) < get_tag_level(tag_2):
-        return 1  # lower level, then higher tag
-    if get_tag_level(tag_1) > get_tag_level(tag_2):
-        return -1
-    return compare_tags(tag_1, tag_2)
-
-
-def compare_tags(tag_1, tag_2):
-    if get_tag_level(tag_1) != get_tag_level(tag_2):
-        raise FailureHandlingException("I tag hanno livelli diversi")
-    if get_tag_level(tag_1) == 1:
-        return -cmp(int(tag_1), int(tag_2))
-    head_1, tail_1 = tag_1.split(".", maxsplit=1)
-    head_2, tail_2 = tag_2.split(".", maxsplit=1)
-    if head_1 == head_2:
-        return compare_tags(tail_1, tail_2)
-    return -cmp(int(head_1), int(head_2))
-
-
 async def is_output_port_forward(port_id, context):
     step_rows = await asyncio.gather(
         *(
@@ -179,10 +155,6 @@ def get_port_from_token(token, port_tokens, token_visited):
         if token.tag in (token_visited[t_id][0].tag for t_id in token_ids):
             return port_name
     raise FailureHandlingException("Token assente")
-
-
-def get_tag_level(tag: str):
-    return len(tag.split("."))
 
 
 def get_key_by_value(
