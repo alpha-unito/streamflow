@@ -95,11 +95,7 @@ class DefaultScheduler(Scheduler):
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
 
-    # todo: togliere questa funzione wrapper e rendere pubblica direttamente l'altra
-    def deallocate_from_job_name(self, job: str, keep_job_allocation: bool = False):
-        self._deallocate_job(job, keep_job_allocation=keep_job_allocation)
-
-    def _deallocate_job(self, job: str, keep_job_allocation: bool = False):
+    def deallocate_job(self, job: str, keep_job_allocation: bool = False):
         if not keep_job_allocation:
             job_allocation = self.job_allocations.pop(job)
         else:
@@ -316,7 +312,7 @@ class DefaultScheduler(Scheduler):
                                     allocated_jobs.append(j)
                                 if len(allocated_jobs) < group_size:
                                     for j in allocated_jobs:
-                                        self._deallocate_job(j.name)
+                                        self.deallocate_job(j.name)
                                 else:
                                     job_context.scheduled = True
                                     return

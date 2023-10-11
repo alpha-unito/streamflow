@@ -24,6 +24,7 @@ from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
     WorkflowTransferException,
+    WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
@@ -684,7 +685,7 @@ class ExecuteStep(BaseStep):
             )
             output_port.put(token)
             await self.workflow.context.failure_manager.notify_jobs(
-                job_token.value.name, output_port.name, token
+                job_token, output_port.name, token
             )
             self.workflow.context.checkpoint_manager.save_data(token)
 
@@ -759,50 +760,59 @@ class ExecuteStep(BaseStep):
             )
         # Retrieve output tokens
         if not self.terminated:
+            token_list = []
             try:
-                job_token_original = get_job_token(
+                job_token = get_job_token(
                     job.name, self.get_input_port("__job__").token_list
                 )
-                # update with the job executed
-                job_token_updated = job_token_original.update(job)
-                job_token_updated.persistent_id = job_token_original.persistent_id
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Job original {job_token_original.value.name} obj {job_token_original.value} tag: {job_token_original.tag} id: {job_token_original.persistent_id}"
-                        + f"\nJob updated {job_token_updated.value.name} obj {job_token_updated.value} tag: {job_token_updated.tag} id: {job_token_updated.persistent_id}"
+                if (
+                    jt := await self.workflow.context.failure_manager.get_valid_job_token(
+                        job_token
                     )
-                job_token = (
-                    await self.workflow.context.failure_manager.get_valid_job_token(
-                        job_token_updated
-                    )
-                )
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Old job token: {job_token_original.persistent_id}\nNew job token: {job_token.persistent_id}"
-                    )
-                # todo: e se la risorsa fallisce al momento del recupero nel workflow principale?
-                #  spoiler -> si scassa
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._retrieve_output(
-                                job_token=job_token,
-                                output_name=output_name,
-                                output_port=self.workflow.ports[output_port],
-                                command_output=command_output,
-                                connector=connectors.get(output_name),
+                ) and jt.persistent_id > job_token.persistent_id:
+                    for output_name, token in (
+                        await self.workflow.context.failure_manager.get_tokens(job.name)
+                    ).items():
+                        pass
+                        self.workflow.ports[output_name].put(token)
+                    pass
+                else:
+                    job_token.value = job
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                self._retrieve_output(
+                                    job_token=job_token,
+                                    output_name=output_name,
+                                    output_port=self.workflow.ports[output_port],
+                                    command_output=command_output,
+                                    connector=connectors.get(output_name),
+                                )
                             )
+                            for output_name, output_port in self.output_ports.items()
                         )
-                        for output_name, output_port in self.output_ports.items()
                     )
-                )
             except Exception as e:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
                         f"Step {self.name} (wf {self.workflow.name}) fails to analyze output data"
                     )
                 logger.exception(e)
-                command_output.status = Status.FAILED
+                try:
+                    await self.workflow.context.failure_manager.handle_exception(
+                        job, self, e
+                    )
+                    for output_name, token in (
+                        await self.workflow.context.failure_manager.get_tokens(job.name)
+                    ).items():
+                        self.get_output_port(output_name).put(token)
+                    pass
+                # If failure cannot be recovered, simply fail
+                except Exception as ie:
+                    if ie != e:
+                        logger.exception(ie)
+                    command_output.status = Status.FAILED
+                    await self.terminate(command_output.status)
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"{command_output.status.name} Job {job.name} terminated")

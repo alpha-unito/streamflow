@@ -271,16 +271,6 @@ class WorkflowRecovery(RecoveryContext):
                             loop_combinator_ports.setdefault(
                                 port_row["name"], port_row["id"]
                             )
-                    # elif issubclass(
-                    #     get_class_from_name(step_row["type"]), CombinatorStep
-                    # ):
-                    #     is_available = False
-                    #     # Se il problema fosse nella stessa iterazione, sarebbe ottimo. Se deve andare indietro
-                    #     # tutti i parametri str,int,... romperebbero tutto
-                    #     # if not issubclass(
-                    #     #     get_class_from_name(step_row["type"]), LoopCombinatorStep
-                    #     # ):
-                    #     #     is_available = False
                     elif issubclass(
                         get_class_from_name(step_row["type"]), LoopOutputStep
                     ):
@@ -916,7 +906,16 @@ async def _populate_workflow_lean(
     await load_missing_ports(new_workflow, step_name_id, loading_context)
 
     check_port_list(new_workflow.ports.keys(), "pre output port failed step")
-    # add output port of failed step into new_workflow
+    # add failed step into new_workflow
+    print(f"populate_workflow: wf {new_workflow.name} add_3.0 step {failed_step.name}")
+    new_workflow.add_step(
+        await Step.load(
+            new_workflow.context,
+            failed_step.persistent_id,
+            loading_context,
+            new_workflow,
+        )
+    )
     for port in await asyncio.gather(
         *(
             asyncio.create_task(
