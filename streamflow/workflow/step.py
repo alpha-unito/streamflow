@@ -689,6 +689,59 @@ class ExecuteStep(BaseStep):
             )
             self.workflow.context.checkpoint_manager.save_data(token)
 
+    async def _retrieve_outputs(self, job, command_output, connectors):
+        try:
+            job_token = get_job_token(
+                job.name, self.get_input_port("__job__").token_list
+            )
+            if (
+                jt := await self.workflow.context.failure_manager.get_job_token(
+                    job_token
+                )
+            ) and jt.persistent_id > job_token.persistent_id:
+                output_tokens = await self.workflow.context.failure_manager.get_tokens(
+                    job.name
+                )
+                for output_name, token in output_tokens.items():
+                    self.workflow.ports[output_name].put(token)
+            else:
+                job_token.value = job
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self._retrieve_output(
+                                job_token=job_token,
+                                output_name=output_name,
+                                output_port=self.workflow.ports[output_port],
+                                command_output=command_output,
+                                connector=connectors.get(output_name),
+                            )
+                        )
+                        for output_name, output_port in self.output_ports.items()
+                    )
+                )
+        except Exception as e:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Step {self.name} (wf {self.workflow.name}) fails to analyze output data"
+                )
+            logger.exception(e)
+            try:
+                await self.workflow.context.failure_manager.handle_exception(
+                    job, self, e
+                )
+                output_tokens = await self.workflow.context.failure_manager.get_tokens(
+                    job.name
+                )
+                for output_name, token in output_tokens.items():
+                    self.get_output_port(output_name).put(token)
+            # If failure cannot be recovered, simply fail
+            except Exception as ie:
+                if ie != e:
+                    logger.exception(ie)
+                command_output.status = Status.FAILED
+                await self.terminate(command_output.status)
+
     async def _run_job(
         self,
         job: Job,
@@ -760,59 +813,7 @@ class ExecuteStep(BaseStep):
             )
         # Retrieve output tokens
         if not self.terminated:
-            token_list = []
-            try:
-                job_token = get_job_token(
-                    job.name, self.get_input_port("__job__").token_list
-                )
-                if (
-                    jt := await self.workflow.context.failure_manager.get_valid_job_token(
-                        job_token
-                    )
-                ) and jt.persistent_id > job_token.persistent_id:
-                    for output_name, token in (
-                        await self.workflow.context.failure_manager.get_tokens(job.name)
-                    ).items():
-                        pass
-                        self.workflow.ports[output_name].put(token)
-                    pass
-                else:
-                    job_token.value = job
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(
-                                self._retrieve_output(
-                                    job_token=job_token,
-                                    output_name=output_name,
-                                    output_port=self.workflow.ports[output_port],
-                                    command_output=command_output,
-                                    connector=connectors.get(output_name),
-                                )
-                            )
-                            for output_name, output_port in self.output_ports.items()
-                        )
-                    )
-            except Exception as e:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Step {self.name} (wf {self.workflow.name}) fails to analyze output data"
-                    )
-                logger.exception(e)
-                try:
-                    await self.workflow.context.failure_manager.handle_exception(
-                        job, self, e
-                    )
-                    for output_name, token in (
-                        await self.workflow.context.failure_manager.get_tokens(job.name)
-                    ).items():
-                        self.get_output_port(output_name).put(token)
-                    pass
-                # If failure cannot be recovered, simply fail
-                except Exception as ie:
-                    if ie != e:
-                        logger.exception(ie)
-                    command_output.status = Status.FAILED
-                    await self.terminate(command_output.status)
+            await self._retrieve_outputs(job, command_output, connectors)
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"{command_output.status.name} Job {job.name} terminated")
@@ -1730,9 +1731,10 @@ class TransferStep(BaseStep, ABC):
                                     transferred_token = await self.workflow.context.failure_manager.handle_failure_transfer(
                                         job, self, port_name
                                     )
-                                    print(
-                                        f"Gestito WorkflowTransferException ottenuto {job.name} {port_name} tag:{transferred_token.tag}"
-                                    )
+                                    if logger.isEnabledFor(logging.DEBUG):
+                                        logger.debug(
+                                            f"Job {job.name} on port {port_name} managed WorkflowTransferException, it received token {transferred_token.tag}"
+                                        )
                                     if transferred_token is None:
                                         print(
                                             f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"

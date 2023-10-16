@@ -50,7 +50,7 @@ class FailureManager(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_valid_job_token(self, job_token: JobToken):
+    async def get_job_token(self, job_token: JobToken):
         ...
 
     @abstractmethod

@@ -5,7 +5,7 @@ import json
 import asyncio
 import logging
 import datetime
-from typing import MutableMapping, MutableSequence, cast, Iterable
+from typing import MutableMapping, MutableSequence
 
 import pkg_resources
 
@@ -24,24 +24,22 @@ from streamflow.log_handler import logger
 from streamflow.recovery.recovery import (
     JobVersion,
     _is_token_available,
-    INIT_DAG_FLAG,
     get_necessary_tokens,
     is_next_of_someone,
-    TOKEN_WAITER,
     _put_tokens,
     WorkflowRecovery,
-    _populate_workflow_lean,
+    _populate_workflow,
 )
 from streamflow.recovery.utils import (
+    INIT_DAG_FLAG,
+    TOKEN_WAITER,
     get_execute_step_out_token_ids,
-    get_token_by_tag,
     str_id,
 )
 
 # from streamflow.token_printer import dag_workflow
 from streamflow.workflow.step import ScatterStep, TransferStep
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.step import ExecuteStep
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.workflow.token import (
     TerminationToken,
@@ -94,7 +92,7 @@ class DefaultFailureManager(FailureManager):
         # { job.name : RequestJob }
         self.job_requests: MutableMapping[str, JobRequest] = {}
 
-    async def _has_token_already_been_recovered(
+    async def has_token_already_been_recovered(
         self,
         token,
         token_visited,
@@ -449,7 +447,7 @@ class DefaultFailureManager(FailureManager):
             context=workflow.context,
             output_ports=list(failed_step.input_ports.values()),
             port_name_ids={
-                port.name: port.persistent_id
+                port.name: {port.persistent_id}
                 for port in failed_step.get_input_ports().values()
             },
             dag_ports=dag,
@@ -478,7 +476,7 @@ class DefaultFailureManager(FailureManager):
         p, s = await wr.get_port_and_step_ids()
         print()
 
-        await _populate_workflow_lean(
+        await _populate_workflow(
             wr,
             p,
             s,
@@ -603,8 +601,7 @@ class DefaultFailureManager(FailureManager):
                             token_visited[t_id][0]
                         )
 
-    # todo rename it get_job_token e passare come parametro solo job_name: str
-    async def get_valid_job_token(self, job_token):
+    async def get_job_token(self, job_token):
         if job_token.value.name in self.job_requests.keys():
             async with self.job_requests[job_token.value.name].lock:
                 return self.job_requests[job_token.value.name].job_token
@@ -638,7 +635,7 @@ class DefaultFailureManager(FailureManager):
             return self.job_requests[job_name].token_output
 
     async def close(self):
-        pass
+        ...
 
     async def notify_jobs(self, job_token, out_port_name, token):
         job_name = job_token.value.name
@@ -655,19 +652,22 @@ class DefaultFailureManager(FailureManager):
                 self.job_requests[job_name].is_running = False
                 # todo: fare a tutte le port nella queue la put del token
                 elems = []
-                print(
-                    f"job {job_name} sta notificando sulla port_name {out_port_name}. Ci sono in coda",
-                    len(self.job_requests[job_name].queue),
-                    "ports:",
-                    "".join(
-                        [
-                            f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} workflow {elem.port.workflow.name} token_list {elem.port.token_list} queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del terminationtoken"
-                            if elem
-                            else "\n\t\tElem-None"
-                            for elem in self.job_requests[job_name].queue
-                        ]
-                    ),
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Job {job_name} is notifing on port {out_port_name}. There are {len(self.job_requests[job_name].queue)} workflows in waiting"
+                    )
+                if len(self.job_requests[job_name].queue):
+                    print(
+                        "port in coda:",
+                        "".join(
+                            [
+                                f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} workflow {elem.port.workflow.name} token_list {elem.port.token_list} queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del terminationtoken"
+                                if elem
+                                else "\n\t\tElem-None"
+                                for elem in self.job_requests[job_name].queue
+                            ]
+                        ),
+                    )
 
                 for elem in self.job_requests[job_name].queue:
                     if elem.port.name == out_port_name:
@@ -793,20 +793,20 @@ class DummyFailureManager(FailureManager):
     ) -> CommandOutput:
         return command_output
 
-    async def get_valid_job_token(self, job_token):
+    async def get_job_token(self, job_token):
         return job_token
 
     def is_valid_tag(self, workflow_name, tag, output_port):
         return True
 
     async def notify_jobs(self, job_name, out_port_name, token):
-        pass
+        ...
 
     async def handle_failure_transfer(self, job: Job, step: Step, port_name: str):
         return None
 
     async def get_token(self, job_name, output_name):
-        pass
+        ...
 
     async def get_tokens(self, job_name):
-        pass
+        ...

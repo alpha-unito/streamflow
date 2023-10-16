@@ -10,8 +10,6 @@ from streamflow.data import remotepath
 from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken
 
-import time
-
 
 async def _get_file_token_weight(context: StreamFlowContext, value: Any):
     weight = 0

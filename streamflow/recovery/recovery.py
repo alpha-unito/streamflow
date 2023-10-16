@@ -3,14 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import MutableMapping, MutableSequence, Tuple
+from typing import MutableMapping, MutableSequence, Tuple, MutableSet
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.utils import (
     get_class_fullname,
     get_class_from_name,
     contains_id,
-    compare_tags,
     get_tag_level,
 )
 from streamflow.core.exception import (
@@ -21,11 +20,9 @@ from streamflow.core.workflow import Job, Step, Port, Token
 from streamflow.cwl.step import CWLLoopConditionalStep, CWLRecoveryLoopConditionalStep
 from streamflow.cwl.transformer import (
     BackPropagationTransformer,
-    ForwardTransformer,
     OutputForwardTransformer,
 )
 from streamflow.recovery.utils import (
-    str_tok,
     is_output_port_forward,
     is_next_of_someone,
     get_steps_from_output_port,
@@ -33,21 +30,19 @@ from streamflow.recovery.utils import (
     get_necessary_tokens,
     get_prev_vertices,
     INIT_DAG_FLAG,
-    TOKEN_WAITER,
     get_key_by_value,
-    jsonizza,
+    convert_to_json,
     get_recovery_loop_expression,
+    get_output_ports,
 )
 from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
-    ConditionalStep,
-    TransferStep,
-    Transformer,
     LoopOutputStep,
     InputInjectorStep,
     LoopCombinatorStep,
+    ExecuteStep,
 )
 from streamflow.workflow.token import (
     TerminationToken,
@@ -58,24 +53,39 @@ from streamflow.core.workflow import Workflow
 
 
 class RecoveryContext:
-    def __init__(self, output_ports, port_name_ids, context):
-        self.input_ports = set()
-        self.output_ports = output_ports
+    def __init__(
+        self,
+        output_ports: MutableSequence[str],
+        port_name_ids: MutableMapping[str, MutableSet[int]],
+        context,
+    ):
         self.context = context
+        self.input_ports = set()
+
+        # { port_names }
+        self.output_ports = output_ports
+
+        # { name : [ ids ] }
         self.port_name_ids = port_name_ids
 
 
 class WorkflowRecovery(RecoveryContext):
     def __init__(
         self,
-        dag_ports: MutableMapping[str, MutableSequence[str]],
+        dag_ports: MutableMapping[str, MutableSet[str]],
         output_ports: MutableSequence[str],
-        port_name_ids: MutableMapping[str, int],
+        port_name_ids: MutableMapping[str, MutableSet[int]],
         context: StreamFlowContext,
     ):
         super().__init__(output_ports, port_name_ids, context)
+
+        # { port_name : [ next_port_names ] }
         self.dag_ports = dag_ports
+
+        # { port_name : [ token_ids ] }
         self.port_tokens = {}
+
+        # { id : (Token, is_available) }
         self.token_visited = {}
 
     def add_into_vertex(
@@ -121,25 +131,6 @@ class WorkflowRecovery(RecoveryContext):
         print(
             f"add_into_vertex: Aggiungo token {token_to_add} id {token_to_add.persistent_id} tag {token_to_add.tag} nella port_tokens[{port_name_to_add}]"
         )
-        if False and output_port_forward:
-            for t_id in self.port_tokens.get(port_name_to_add, []):
-                comparison = -compare_tags(
-                    token_to_add.tag, self.token_visited[t_id][0].tag
-                )
-                if comparison == 0:
-                    raise FailureHandlingException(
-                        f"Nella port {port_name_to_add} ci sono due token con stesso tag -> id_a {t_id} tag_a {self.token_visited[t_id][0].tag} e id_b {token_to_add.persistent_id} tag_b {token_to_add.tag}"
-                    )
-                elif (
-                    self.token_visited[token_to_add.persistent_id][1]
-                    and comparison == -1
-                ):
-                    self.token_visited[token_to_add.persistent_id] = (
-                        token_to_add,
-                        False,
-                    )
-                elif self.token_visited[t_id][1] and comparison == 1:
-                    self.token_visited[t_id] = (self.token_visited[t_id][0], False)
         self.port_tokens.setdefault(port_name_to_add, set()).add(
             token_to_add.persistent_id
         )
@@ -148,10 +139,10 @@ class WorkflowRecovery(RecoveryContext):
         self,
         port_name_key: str,
         port_name_to_add: str,
-        token_to_add: Token,
+        token_to_add: Token = None,
     ):
         output_port_forward = await is_output_port_forward(
-            self.port_name_ids[port_name_to_add], self.context
+            next(iter(self.port_name_ids[port_name_to_add])), self.context
         )
         if token_to_add:
             self.add_into_vertex(
@@ -210,12 +201,10 @@ class WorkflowRecovery(RecoveryContext):
         # {old_job_token_id : (new_job_token_id, new_output_token_id)}
         available_new_job_tokens = {}
 
-        loop_combinator_ports = {}
-        loop_output_ports = {}
         while token_frontier:
             token = token_frontier.pop()
 
-            if not await self.context.failure_manager._has_token_already_been_recovered(
+            if not await self.context.failure_manager.has_token_already_been_recovered(
                 token,
                 all_token_visited,
                 available_new_job_tokens,
@@ -231,55 +220,24 @@ class WorkflowRecovery(RecoveryContext):
                 port_row = await workflow.context.database.get_port_from_token(
                     token.persistent_id
                 )
-                self.port_name_ids[port_row["name"]] = port_row["id"]
+                self.port_name_ids.setdefault(port_row["name"], set()).add(
+                    port_row["id"]
+                )
                 step_rows = await get_steps_from_output_port(
                     port_row["id"], workflow.context
                 )
-                if len(s := [dict(sr)["name"] for sr in step_rows]) > 1:
-                    pass  # for debug
                 is_available = await _is_token_available(token, workflow.context)
 
-                invalidate = False
+                invalidate = True
                 for step_row in step_rows:
                     print(
                         f"build_dag: Trovato {step_row['name']} di tipo {get_class_from_name(step_row['type'])} dalla port {port_row['name']}"
                     )
                     if issubclass(
                         get_class_from_name(step_row["type"]),
-                        BackPropagationTransformer,
+                        (ExecuteStep, InputInjectorStep, BackPropagationTransformer),
                     ):
                         invalidate = False
-                        break
-                    elif issubclass(
-                        get_class_from_name(step_row["type"]),
-                        (
-                            TransferStep,
-                            # Transformer is necessary to have the same tag in all input parameters in the scatter case
-                            Transformer,
-                            ConditionalStep,
-                            ForwardTransformer,
-                            CombinatorStep,
-                            # CustomLoopConditionalStep,  # deprecated
-                            # ScatterStep,
-                        ),
-                    ):
-                        invalidate = True
-                        if issubclass(
-                            get_class_from_name(step_row["type"]),
-                            LoopCombinatorStep,
-                        ):
-                            loop_combinator_ports.setdefault(
-                                port_row["name"], port_row["id"]
-                            )
-                    elif issubclass(
-                        get_class_from_name(step_row["type"]), LoopOutputStep
-                    ):
-                        # questo step si può usare come punto di checkpoint. Se l'output qui è available
-                        # si può evitare di fare il loop
-                        # edit. affermazione da ripensare dato che questo step è necessario nel recovery di iterazioni passate
-                        # possibile soluzione mettere dopo di questo step un altro step di forward e usare lui come punto di checkpoint
-                        loop_output_ports[port_row["id"]] = port_row["name"]
-                # if invalidate is True, then is_available is set to False, otherwise leave the original value
                 if invalidate:
                     is_available = False
 
@@ -302,9 +260,9 @@ class WorkflowRecovery(RecoveryContext):
                             f"build_dag: Dal token id {token.persistent_id} ho recuperato prev-tokens {[pt.persistent_id for pt in prev_tokens]}"
                         )
                         for pt, prev_port_row in zip(prev_tokens, prev_port_rows):
-                            self.port_name_ids[prev_port_row["name"]] = prev_port_row[
-                                "id"
-                            ]
+                            self.port_name_ids.setdefault(
+                                prev_port_row["name"], set()
+                            ).add(prev_port_row["id"])
                             await self.add_into_graph(
                                 prev_port_row["name"],
                                 port_row["name"],
@@ -330,7 +288,6 @@ class WorkflowRecovery(RecoveryContext):
                         port_row["name"],
                         token,
                     )
-                # alternativa al doppio else -> if available or not prev_tokens: add_into_graph # però ricordarsi di definire "prev_tokens=None" prima del if not available. ALtrimenti protrebbe prendere il prev_tokens dell'iterazione precedente e non essere corretto
             else:
                 port_row = await workflow.context.database.get_port_from_token(
                     token.persistent_id
@@ -340,10 +297,11 @@ class WorkflowRecovery(RecoveryContext):
                     port_row["name"],
                     token,
                 )
-
-        print("build_dag: While tokens terminato")
         print(
-            f"build_dag: JobTokens: {set([ t.value.name for t, _ in get_necessary_tokens(self.port_tokens, all_token_visited).values() if isinstance(t, JobToken)])}"
+            f"build_dag: {len(get_necessary_tokens(self.port_tokens, all_token_visited))} and {len(self.token_visited)}"
+        )
+        print(
+            f"build_dag: JobTokens: {set([t.value.name for t, _ in get_necessary_tokens(self.port_tokens, all_token_visited).values() if isinstance(t, JobToken)])}",
         )
 
         all_token_visited = dict(sorted(all_token_visited.items()))
@@ -352,8 +310,9 @@ class WorkflowRecovery(RecoveryContext):
             print(
                 f"build_dag: Token id: {t.persistent_id} tag: {t.tag} val: {t} is available? {a}"
             )
-        print("\nPORT_TOKENS", jsonizza(self.port_tokens))
-        print("\nDAG_PORTS", jsonizza(self.dag_ports))
+        print("\nPORT_TOKENS", convert_to_json(self.port_tokens))
+        print("\nDAG_PORTS", convert_to_json(self.dag_ports))
+
         print(
             f"build_dag: available_new_job_tokens n.elems: {len(available_new_job_tokens)}",
             json.dumps(available_new_job_tokens, indent=2),
@@ -552,71 +511,62 @@ class WorkflowRecovery(RecoveryContext):
                     f"remove_prev: token {token_id_to_remove} volevo rm prev token id {token_row['dependee']} tag {self.token_visited[token_row['dependee']][0].tag} ma è un token del ConnectorPort"
                 )
 
-    async def get_port_and_step_ids(self):
-        ports = {}
-        steps = set()
-        # todo: cambiare port_name_ids da {str : int} a { str : {int} } e togliere questa var tmp
-        tmp = {k: {v} for k, v in self.port_name_ids.items()}
-        for token_id, (_, is_available) in self.token_visited.items():
-            row = await self.context.database.get_port_from_token(token_id)
-            if TOKEN_WAITER not in self.port_tokens[row["name"]]:
-                print(
-                    f"get_port_and_step_ids: Token {token_id} ha caricato port id {row['id']} name {row['name']}"
-                )
-                if row["id"] in ports.keys():
-                    ports[row["id"]] = ports[row["id"]] and is_available
-                else:
-                    ports[row["id"]] = is_available
-                tmp.setdefault(row["name"], set()).add(row["id"])
-            # else nothing because the ports are already loading in the new_workflow
+    async def explore_top_down(self):
+        ports_frontier = {port_name for port_name in self.dag_ports[INIT_DAG_FLAG]}
 
-        back_prop_ports = {
-            port_id
-            for port_id in ports.keys()
-            if await is_output_port_forward(port_id, self.context)
+        ports_visited = set()
+
+        while ports_frontier:
+            port_name = ports_frontier.pop()
+            ports_visited.add(port_name)
+            port_id = next(iter(self.port_name_ids[port_name]))
+            dep_steps_port_rows = await self.context.database.get_steps_from_input_port(
+                port_id
+            )
+            step_rows = await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        self.context.database.get_step(dependency_row["step"])
+                    )
+                    for dependency_row in dep_steps_port_rows
+                )
+            )
+            for step_row in step_rows:
+                for port_row in await get_output_ports(step_row["id"], self.context):
+                    self.port_name_ids.setdefault(port_row["name"], set()).add(
+                        port_row["id"]
+                    )
+                    if port_row["name"] not in ports_visited:
+                        ports_frontier.add(port_row["name"])
+                    await self.add_into_graph(port_name, port_row["name"])
+        pass
+
+    async def get_port_and_step_ids(self):
+        steps = set()
+        ports = {
+            next(iter(self.port_name_ids[port_name]))
+            for port_name in self.port_tokens.keys()
         }
         for row_dependencies in await asyncio.gather(
             *(
                 asyncio.create_task(
                     self.context.database.get_steps_from_output_port(port_id)
                 )
-                for port_id in ports.keys()
-                if (
-                    get_key_by_value(port_id, tmp) not in self.dag_ports[INIT_DAG_FLAG]
-                    or port_id in back_prop_ports
-                )
+                for port_id in ports
             )
         ):
             for row_dependency in row_dependencies:
                 print(
-                    f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} recuperato dalla port {get_key_by_value(row_dependency['port'], tmp)}"
+                    f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} recuperato dalla port {get_key_by_value(row_dependency['port'], self.port_name_ids)}"
                 )
-                # todo prendere tutti i suoi input ports da dependency e se i loro nomi non sono presenti nel new_workflow,
-                #  significa che è uno step da non caricare.
-                #  Questo evita il controllo che viene effettuato sotto if not(set() - set())
                 steps.add(row_dependency["step"])
-
-        # Soluzione carina e poco costosa rispetto a quella attuale. Solo che con i sync e replace si scassa.
-        # Ad esempio nella param-scatter con i sync posso trovare tutti i token available... ma nella normale esploratione
-        # i token di questo step vengono tutti segnati non disponibili per risalire all'execute dello step precedente
-        # for row_dependencies in await asyncio.gather(
-        #     *(
-        #         asyncio.create_task(
-        #             self.context.database.get_steps_from_output_port(port_id)
-        #         )
-        #         for port_id, port_availability in ports.items()
-        #         if not port_availability
-        #     )
-        # ):
-        #     for row_dependency in row_dependencies:
-        #         steps.add(row_dependency["step"])
-        return set(ports.keys()), steps
+        return ports, steps
 
 
 async def _put_tokens(
     new_workflow: Workflow,
-    init_ports: MutableSequence[str],
-    port_tokens: MutableMapping[str, MutableSequence[int]],
+    init_ports: MutableSet[str],
+    port_tokens: MutableMapping[str, MutableSet[int]],
     token_visited: MutableMapping[int, Tuple[Token, bool]],
 ):
     for port_name in init_ports:
@@ -874,15 +824,16 @@ async def load_missing_ports(new_workflow, step_name_id, loading_context):
 
 
 def check_port_list(port_list, msg):
-    header = "46-"
-    for port_name in port_list:
-        if port_name.startswith(header):
-            print(f"check_port_list: {msg} - Presente port {port_name}")
-            return
-    print(f"check_port_list: {msg} - NON presente port starts with {header}")
+    # header = "46-"
+    # for port_name in port_list:
+    #     if port_name.startswith(header):
+    #         print(f"check_port_list: {msg} - Presente port {port_name}")
+    #         return
+    # print(f"check_port_list: {msg} - NON presente port starts with {header}")
+    pass
 
 
-async def _populate_workflow_lean(
+async def _populate_workflow(
     wr,
     port_ids: MutableSequence[int],
     step_ids: MutableSequence[int],

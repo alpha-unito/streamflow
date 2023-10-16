@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import MutableMapping, Tuple, MutableSequence
+from typing import MutableMapping, Tuple, MutableSequence, Any
 from streamflow.core.utils import get_class_fullname, get_class_from_name
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
@@ -30,6 +30,24 @@ TOKEN_WAITER = "twaiter"
 #  - get_token_by_tag forse meglio in utils core?
 #  - get_input_ports in persistence.utils?
 #    oppure cambiare query ritornando le row delle ports
+
+
+async def get_input_ports(step_id, context):
+    return await asyncio.gather(
+        *(
+            asyncio.create_task(context.database.get_port(dep_row["port"]))
+            for dep_row in await context.database.get_input_ports(step_id)
+        )
+    )
+
+
+async def get_output_ports(step_id, context):
+    return await asyncio.gather(
+        *(
+            asyncio.create_task(context.database.get_port(dep_row["port"]))
+            for dep_row in await context.database.get_output_ports(step_id)
+        )
+    )
 
 
 def get_files_from_token(token: Token) -> MutableSequence[str]:
