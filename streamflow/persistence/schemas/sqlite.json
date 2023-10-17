@@ -12,6 +12,11 @@
       "type": "integer",
       "description": "The time (in seconds) after which a thread waiting for the database lock raises an exception",
       "default": 20
+    },
+    "cache_size": {
+      "type": "integer",
+      "description": "Max cache size in bytes",
+      "default": 20
     }
   },
   "required": [

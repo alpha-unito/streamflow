@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from typing import Any, MutableMapping, MutableSequence
 
 import aiosqlite
+import objsize
 import pkg_resources
 
 from streamflow.core import utils
@@ -62,8 +64,9 @@ class SqliteDatabase(CachedDatabase):
         context: StreamFlowContext,
         connection: str = DEFAULT_SQLITE_CONNECTION,
         timeout: int = 20,
+        cache_size: int = 1000**3,
     ):
-        super().__init__(context)
+        super().__init__(context, cache_size)
         # Open connection to database
         if connection != ":memory:":
             os.makedirs(os.path.dirname(connection), exist_ok=True)
@@ -250,7 +253,6 @@ class SqliteDatabase(CachedDatabase):
         self, job_token_id: int
     ) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             # todo: ottimizzare le query
             async with db.execute(
                 "SELECT token.* "
@@ -310,7 +312,6 @@ class SqliteDatabase(CachedDatabase):
         self, port_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM dependency WHERE port = :port AND type = :type",
                 {"port": port_id, "type": DependencyType.OUTPUT.value},
@@ -332,7 +333,6 @@ class SqliteDatabase(CachedDatabase):
         self, step_id: int, dependency_name: str
     ) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM dependency WHERE step = :step AND type = :type AND name = :name",
                 {
@@ -347,7 +347,6 @@ class SqliteDatabase(CachedDatabase):
         self, port_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM dependency WHERE port = :port AND type = :type",
                 {"port": port_id, "type": DependencyType.INPUT.value},
@@ -358,7 +357,6 @@ class SqliteDatabase(CachedDatabase):
         self, port_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM dependency WHERE port = :port AND type = :type",
                 {"port": port_id, "type": DependencyType.OUTPUT.value},
@@ -369,7 +367,6 @@ class SqliteDatabase(CachedDatabase):
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM dependency WHERE step = :step AND type = :type",
                 {"step": step_id, "type": DependencyType.INPUT.value},
@@ -401,7 +398,6 @@ class SqliteDatabase(CachedDatabase):
 
     async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT port.* FROM token JOIN port ON token.port = port.id WHERE token.id = :token_id",
                 {"token_id": token_id},
@@ -412,7 +408,6 @@ class SqliteDatabase(CachedDatabase):
         self, token_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT dep_out.name AS dep_out_name, port.* "
                 "FROM token "
