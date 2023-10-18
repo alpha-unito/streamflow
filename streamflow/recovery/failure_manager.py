@@ -222,7 +222,6 @@ class DefaultFailureManager(FailureManager):
         self,
         new_workflow,
         loading_context,
-        dir_path,
         failed_step,
         wr,
     ):
@@ -457,7 +456,6 @@ class DefaultFailureManager(FailureManager):
         job_executed_in_new_workflow = await self.sync_rollbacks(
             new_workflow,
             loading_context,
-            dir_path,
             failed_step,
             wr,
         )
