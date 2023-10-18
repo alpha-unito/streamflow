@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import MutableMapping, Tuple, MutableSequence, Any
+from typing import MutableMapping, Tuple, MutableSequence
+
 from streamflow.core.utils import get_class_fullname, get_class_from_name
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
@@ -17,8 +18,6 @@ from streamflow.data import remotepath
 from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.token import (
     JobToken,
-    IterationTerminationToken,
-    TerminationToken,
     ListToken,
     ObjectToken,
 )

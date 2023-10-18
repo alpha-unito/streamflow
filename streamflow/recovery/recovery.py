@@ -712,10 +712,11 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
                 else:
                     continue
             elif isinstance(step, OutputForwardTransformer):
+                port_id = next(iter(wr.port_name_ids[step.get_output_port().name]))
                 for (
                     step_dep_row
                 ) in await new_workflow.context.database.get_steps_from_input_port(
-                    wr.port_name_ids[step.get_output_port().name]
+                    port_id
                 ):
                     step_row = await new_workflow.context.database.get_step(
                         step_dep_row["step"]

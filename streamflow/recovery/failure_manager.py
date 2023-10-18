@@ -9,9 +9,7 @@ from typing import MutableMapping, MutableSequence
 
 import pkg_resources
 
-from streamflow.core.utils import (
-    random_name,
-)
+from streamflow.core.utils import random_name
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowTransferException,
@@ -34,10 +32,8 @@ from streamflow.recovery.utils import (
     INIT_DAG_FLAG,
     TOKEN_WAITER,
     get_execute_step_out_token_ids,
-    str_id,
 )
 
-# from streamflow.token_printer import dag_workflow
 from streamflow.workflow.step import ScatterStep, TransferStep
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -590,16 +586,12 @@ class DefaultFailureManager(FailureManager):
                     ],
                 )
                 for t_id in port_tokens[port.name]:
-                    if (
-                        t_id
-                        not in dag_ports[
-                            INIT_DAG_FLAG
-                        ]  # todo: questo controllo è sempre true.... in dag_ports non ci sono t_id
-                        # and not token_visited[t_id][1]
-                    ):
-                        self.retags[new_workflow.name].setdefault(port.name, set()).add(
-                            token_visited[t_id][0]
-                        )
+                    print(
+                        f"Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if token_visited[t_id][1] else 'NOT '}available"
+                    )
+                    self.retags[new_workflow.name].setdefault(port.name, set()).add(
+                        token_visited[t_id][0]
+                    )
 
     async def get_job_token(self, job_token):
         if job_token.value.name in self.job_requests.keys():
@@ -697,7 +689,7 @@ class DefaultFailureManager(FailureManager):
 
                 for elem in elems:
                     self.job_requests[job_name].queue.remove(elem)
-                logger.info("Notify end job {job_name} - done")
+                logger.info(f"Notify end job {job_name} - done")
 
     @classmethod
     def get_schema(cls) -> str:
