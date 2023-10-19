@@ -585,7 +585,7 @@ async def _put_tokens(
 
         port = new_workflow.ports[port_name]
         loop_combinator_input = False
-        reduced = False
+
         # Valori validi 0 oppure 1. Se però contiamo tutti i tipi di forward allora può essere maggiore di 1
         back_prop_list = [
             s
@@ -593,9 +593,7 @@ async def _put_tokens(
             if isinstance(s, BackPropagationTransformer)
         ]
         output_port_forward = len(back_prop_list) == 1
-        # output_port_forward = await is_output_port_forward(
-        #     wr.port_name_ids[port_name], new_workflow.context
-        # )
+
         for ss in port.get_output_steps():
             # se la port è output di un back-prop allora metti meno token
             if isinstance(ss, LoopCombinatorStep):
@@ -620,13 +618,6 @@ async def _put_tokens(
 
         len_port_token_list = len(port.token_list)
         len_port_tokens = len(port_tokens[port_name])
-        if loop_combinator_input:
-            print(
-                f"put_tokens: Port {port.name} inserts TerminationToken as second element in token_list (it simulates the TerminationToken of InputForwardStep)"
-            )
-            port.token_list.insert(1, TerminationToken())
-        if reduced:
-            len_port_tokens -= 1
 
         if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
             print(f"put_tokens: Port {port.name} with {len(port.token_list)} tokens")
@@ -650,6 +641,23 @@ async def _put_tokens(
                     f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[0].tag}"
                 )
                 port.put(IterationTerminationToken(port.token_list[0].tag))
+
+                base_lvl = (
+                    get_tag_level(port.token_list[0].tag) if port.token_list else None
+                )
+                for i in range(len(port.token_list)):
+                    if (
+                        base_lvl < get_tag_level(port.token_list[i].tag)
+                        or isinstance(port.token_list[i], IterationTerminationToken)
+                        or i == len(port.token_list) - 1
+                    ):
+                        # Di solito è position 1 pero inserirlo di cattiveria in position 1 non credo sia sempre giusto.
+                        # Nel caso di un loop dentro una scatter, con questo approccio dovrebbe supportarlo
+                        print(
+                            f"put_tokens: Port {port.name} inserts TerminationToken as {i}-th element in token_list (it simulates the TerminationToken of InputForwardStep)"
+                        )
+                        port.token_list.insert(i, TerminationToken())
+                        break
             else:
                 port.put(TerminationToken())
         else:
