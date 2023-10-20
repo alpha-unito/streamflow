@@ -12,9 +12,7 @@ from streamflow.core.utils import (
     contains_id,
     get_tag_level,
 )
-from streamflow.core.exception import (
-    FailureHandlingException,
-)
+from streamflow.core.exception import FailureHandlingException
 
 from streamflow.core.workflow import Job, Step, Port, Token
 from streamflow.cwl.step import CWLLoopConditionalStep, CWLRecoveryLoopConditionalStep
@@ -87,6 +85,10 @@ class WorkflowRecovery(RecoveryContext):
 
         # { id : (Token, is_available) }
         self.token_visited = {}
+
+        # LoopCombinatorStep name if the failed step is inside a loop
+        self.external_loop_step_name = None
+        self.external_loop_step = None
 
     def add_into_vertex(
         self,
@@ -201,6 +203,10 @@ class WorkflowRecovery(RecoveryContext):
         # {old_job_token_id : (new_job_token_id, new_output_token_id)}
         available_new_job_tokens = {}
 
+        # counter of LoopCombinatorStep and LoopTerminator visited
+        # if it is odd, it means that the failed step is inside a loop
+        counter_loop = 0
+
         while token_frontier:
             token = token_frontier.pop()
 
@@ -238,6 +244,34 @@ class WorkflowRecovery(RecoveryContext):
                         (ExecuteStep, InputInjectorStep, BackPropagationTransformer),
                     ):
                         invalidate = False
+                    elif issubclass(
+                        get_class_from_name(step_row["type"]), CombinatorStep
+                    ) and issubclass(
+                        get_class_from_name(
+                            json.loads(step_row["params"])["combinator"]["type"]
+                        ),
+                        LoopTerminationCombinator,
+                    ):
+                        counter_loop += 1
+                        if (
+                            not self.external_loop_step_name
+                            and counter_loop % 2 == 1
+                            and issubclass(
+                                get_class_from_name(
+                                    json.loads(step_row["params"])["combinator"]["type"]
+                                ),
+                                LoopTerminationCombinator,
+                            )
+                        ):
+                            raise FailureHandlingException(
+                                "Visited a LoopTerminationCombinator but not a CWLLoopConditionalStep before"
+                            )
+                    elif issubclass(
+                        get_class_from_name(step_row["type"]), CWLLoopConditionalStep
+                    ):
+                        counter_loop += 1
+                        if not self.external_loop_step_name and counter_loop % 2 == 1:
+                            self.external_loop_step_name = step_row["name"]
                 if invalidate:
                     is_available = False
 
@@ -582,46 +616,34 @@ async def _put_tokens(
                     raise FailureHandlingException(
                         f"Tag ripetuto id1: {t.persistent_id} id2: {t1.persistent_id}"
                     )
-
         port = new_workflow.ports[port_name]
-        loop_combinator_input = False
-
-        # Valori validi 0 oppure 1. Se però contiamo tutti i tipi di forward allora può essere maggiore di 1
-        back_prop_list = [
+        is_back_prop_output_port = any(
             s
             for s in port.get_input_steps()
             if isinstance(s, BackPropagationTransformer)
-        ]
-        output_port_forward = len(back_prop_list) == 1
+        )
+        loop_combinator_input = any(
+            s for s in port.get_output_steps() if isinstance(s, LoopCombinatorStep)
+        )
 
-        for ss in port.get_output_steps():
-            # se la port è output di un back-prop allora metti meno token
-            if isinstance(ss, LoopCombinatorStep):
-                loop_combinator_input = True
-
-                if len(token_list) == 1:  # tmp soluzione
-                    break
-                found = False
-                for ss1 in port.get_input_steps():
-                    found = found or isinstance(ss1, BackPropagationTransformer)
-                if not found:
-                    break
-                break
         for t in token_list:
             if isinstance(t, TerminationToken):
                 raise FailureHandlingException(
                     f"Aggiungo un termination token nell port {port.name} ma non dovrei"
                 )
             port.put(t)
-            if output_port_forward:
+            if is_back_prop_output_port:
+                port.put(TerminationToken())
                 break
 
         len_port_token_list = len(port.token_list)
         len_port_tokens = len(port_tokens[port_name])
 
         if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
-            print(f"put_tokens: Port {port.name} with {len(port.token_list)} tokens")
-            if loop_combinator_input and not output_port_forward:
+            print(
+                f"put_tokens: Port {port.name} with {len(port.token_list)} tokens, insert termination token"
+            )
+            if loop_combinator_input and not is_back_prop_output_port:
                 if len_port_token_list > 1:
                     if isinstance(port.token_list[-1], TerminationToken):
                         token = port.token_list[-1]
@@ -641,25 +663,7 @@ async def _put_tokens(
                     f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[0].tag}"
                 )
                 port.put(IterationTerminationToken(port.token_list[0].tag))
-
-                base_lvl = (
-                    get_tag_level(port.token_list[0].tag) if port.token_list else None
-                )
-                for i in range(len(port.token_list)):
-                    if (
-                        base_lvl < get_tag_level(port.token_list[i].tag)
-                        or isinstance(port.token_list[i], IterationTerminationToken)
-                        or i == len(port.token_list) - 1
-                    ):
-                        # Di solito è position 1 pero inserirlo di cattiveria in position 1 non credo sia sempre giusto.
-                        # Nel caso di un loop dentro una scatter, con questo approccio dovrebbe supportarlo
-                        print(
-                            f"put_tokens: Port {port.name} inserts TerminationToken as {i}-th element in token_list (it simulates the TerminationToken of InputForwardStep)"
-                        )
-                        port.token_list.insert(i, TerminationToken())
-                        break
-            else:
-                port.put(TerminationToken())
+            port.put(TerminationToken())
         else:
             print(
                 f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
@@ -692,7 +696,6 @@ async def load_and_add_ports(port_ids, new_workflow, loading_context):
 
 async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
     new_step_ids = set()
-    replace_step = None
     step_name_id = {}
     for sid, step in zip(
         step_ids,
@@ -714,9 +717,18 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
 
         # if there are not the input ports in the workflow, the step is not added
         if not (set(step.input_ports.values()) - set(new_workflow.ports.keys())):
+            res = wr.external_loop_step_name.removesuffix(
+                "-recovery"
+            ) == step.name.removesuffix("-recovery")
             if isinstance(step, CWLLoopConditionalStep):
-                if not replace_step:
-                    replace_step = step
+                pass
+            # removesuffix python 3.9
+            if isinstance(step, CWLLoopConditionalStep) and (
+                wr.external_loop_step_name.removesuffix("-recovery")
+                == step.name.removesuffix("-recovery")
+            ):
+                if not wr.external_loop_step:
+                    wr.external_loop_step = step
                 else:
                     continue
             elif isinstance(step, OutputForwardTransformer):
@@ -737,10 +749,6 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
                         )
                         new_step_ids.add(step_row["id"])
             elif isinstance(step, BackPropagationTransformer):
-                # aggiungere condizione che lo step sia del loop più esterno.
-                # la condizione potrebbe essere l'assenza del relativo LoopOutputStep
-                # edit. Quando itero aggiungo loopoutputstep, quindi non è un discriminante
-
                 # for port_name in step.output_ports.values(): # potrebbe sostituire questo for
                 for (
                     port_dep_row
@@ -777,7 +785,6 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
             print(
                 f"populate_workflow: Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}. It is present in the workflow: {step.name in new_workflow.steps.keys()}"
             )
-    check_port_list(new_workflow.ports.keys(), "intermezzo load_and_add_steps")
     for sid, other_step in zip(
         new_step_ids,
         await asyncio.gather(
@@ -800,7 +807,7 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
         step_name_id[other_step.name] = sid
         new_workflow.add_step(other_step)
     print("populate_workflow: Step caricati")
-    return step_name_id, replace_step
+    return step_name_id
 
 
 async def load_missing_ports(new_workflow, step_name_id, loading_context):
@@ -832,14 +839,11 @@ async def load_missing_ports(new_workflow, step_name_id, loading_context):
         new_workflow.add_port(port)
 
 
-def check_port_list(port_list, msg):
-    # header = "46-"
-    # for port_name in port_list:
-    #     if port_name.startswith(header):
-    #         print(f"check_port_list: {msg} - Presente port {port_name}")
-    #         return
-    # print(f"check_port_list: {msg} - NON presente port starts with {header}")
-    pass
+def get_failed_loop_conditional_step(new_workflow, wr):
+    if not wr.external_loop_step_name:
+        return None
+
+    return wr.external_loop_step
 
 
 async def _populate_workflow(
@@ -854,18 +858,12 @@ async def _populate_workflow(
         f"populate_workflow: wf {new_workflow.name} dag[INIT] {wr.dag_ports[INIT_DAG_FLAG]}\n",
         f"populate_workflow: wf {new_workflow.name} port {new_workflow.ports.keys()}",
     )
-    check_port_list(new_workflow.ports.keys(), "pre load_and_add_ports")
     await load_and_add_ports(port_ids, new_workflow, loading_context)
 
-    check_port_list(new_workflow.ports.keys(), "pre load_and_add_steps")
-    step_name_id, replace_step = await load_and_add_steps(
-        step_ids, new_workflow, wr, loading_context
-    )
+    step_name_id = await load_and_add_steps(step_ids, new_workflow, wr, loading_context)
 
-    check_port_list(new_workflow.ports.keys(), "pre load_missing_ports")
     await load_missing_ports(new_workflow, step_name_id, loading_context)
 
-    check_port_list(new_workflow.ports.keys(), "pre output port failed step")
     # add failed step into new_workflow
     print(f"populate_workflow: wf {new_workflow.name} add_3.0 step {failed_step.name}")
     new_workflow.add_step(
@@ -890,20 +888,14 @@ async def _populate_workflow(
             print(f"populate_workflow: wf {new_workflow.name} add_3 port {port.name}")
             new_workflow.add_port(port)
 
-    check_port_list(new_workflow.ports.keys(), "pre replace step")
-    if replace_step:  # se c'è un LoopOutputStep non serve fare sto casino
+    if replace_step := get_failed_loop_conditional_step(new_workflow, wr):
         port_name = list(replace_step.input_ports.values()).pop()
         ll_cond_step = CWLRecoveryLoopConditionalStep(
             replace_step.name
             if isinstance(replace_step, CWLRecoveryLoopConditionalStep)
             else replace_step.name + "-recovery",
             new_workflow,
-            get_recovery_loop_expression(
-                len(wr.port_tokens[port_name])
-                # 1
-                # if len(wr.port_tokens[port_name]) == 1
-                # else len(wr.port_tokens[port_name]) - 1
-            ),
+            get_recovery_loop_expression(len(wr.port_tokens[port_name])),
             full_js=True,
         )
         print(
@@ -930,14 +922,6 @@ async def _populate_workflow(
                 f"Step {ll_cond_step.name} (wf {new_workflow.name}) add skip {dep_name} {port.name}"
             )
             ll_cond_step.add_skip_port(dep_name, port)
-            # if port.name in wr.port_name_ids.keys():
-            #     print(
-            #         f"Step {ll_cond_step.name} (wf {new_workflow.name}) add skip {dep_name} {port.name}"
-            #     )
-            #     ll_cond_step.add_skip_port(dep_name, port)
-            # else:
-            #     print(f"wf {new_workflow.name} pop skip-port {port.name}")
-            #     new_workflow.ports.pop(port.name)
         new_workflow.steps.pop(replace_step.name)
         new_workflow.add_step(ll_cond_step)
         print(
@@ -947,8 +931,7 @@ async def _populate_workflow(
             f"populate_workflow: Rimuovo lo step {replace_step.name} dal wf {new_workflow.name} perché lo rimpiazzo con il nuovo step {ll_cond_step.name}"
         )
 
-    check_port_list(new_workflow.ports.keys(), "pre check LoopTerminationCombinator")
-
+    # fixing skip ports in loop-terminator
     for step in new_workflow.steps.values():
         if isinstance(step, CombinatorStep) and isinstance(
             step.combinator, LoopTerminationCombinator
@@ -963,8 +946,8 @@ async def _populate_workflow(
                 step.input_ports.pop(name)
                 step.combinator.items.remove(name)
 
-    check_port_list(new_workflow.ports.keys(), "pre rm_steps")
-    rm_steps = set()
+    # remove steps which have not input ports loaded in new workflow
+    steps_to_remove = set()
     for step in new_workflow.steps.values():
         if isinstance(step, InputInjectorStep):
             continue
@@ -976,8 +959,10 @@ async def _populate_workflow(
                 print(
                     f"populate_workflow: Rimuovo step {step.name} dal wf {new_workflow.name} perché manca la input port {p_name}"
                 )
-                rm_steps.add(step.name)
-        if step.name not in rm_steps and isinstance(step, BackPropagationTransformer):
+                steps_to_remove.add(step.name)
+        if step.name not in steps_to_remove and isinstance(
+            step, BackPropagationTransformer
+        ):
             loop_terminator = False
             for port in step.get_output_ports().values():
                 for prev_step in port.get_input_steps():
@@ -992,17 +977,13 @@ async def _populate_workflow(
                 print(
                     f"populate_workflow: Rimuovo step {step.name} dal wf {new_workflow.name} perché manca come prev step un LoopTerminationCombinator"
                 )
-                rm_steps.add(step.name)
-
-    check_port_list(new_workflow.ports.keys(), "pre pop step")
-    for step_name in rm_steps:
+                steps_to_remove.add(step.name)
+    for step_name in steps_to_remove:
         print(
             f"populate_workflow: Rimozione (2) definitiva step {step_name} dal new_workflow {new_workflow.name}"
         )
         new_workflow.steps.pop(step_name)
-
-    check_port_list(new_workflow.ports.keys(), "end populate")
-    print("populate_workflow: Ultime Port caricate")
+    print("populate_workflow: Finish")
 
 
 class JobVersion:

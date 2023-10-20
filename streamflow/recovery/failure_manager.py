@@ -562,11 +562,7 @@ class DefaultFailureManager(FailureManager):
         if output_port.name not in self.retags[workflow_name].keys():
             return True
 
-        token_list = self.retags[workflow_name][output_port.name]
-        for t in token_list:
-            if t.tag == tag:
-                return True
-        return False
+        return tag in (t.tag for t in self.retags[workflow_name][output_port.name])
 
     def _save_for_retag(self, new_workflow, dag_ports, port_tokens, token_visited):
         # todo: aggiungere la possibilità di eserguire comunque tutti i job delle scatter aggiungendo un parametro nel StreamFlow file
