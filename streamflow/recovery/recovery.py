@@ -602,7 +602,9 @@ async def _put_tokens(
     init_ports: MutableSet[str],
     port_tokens: MutableMapping[str, MutableSet[int]],
     token_visited: MutableMapping[int, Tuple[Token, bool]],
+    wr,
 ):
+    last_iteration = set()
     for port_name in init_ports:
         token_list = [
             token_visited[t_id][0]
@@ -625,6 +627,10 @@ async def _put_tokens(
         loop_combinator_input = any(
             s for s in port.get_output_steps() if isinstance(s, LoopCombinatorStep)
         )
+        if loop_combinator_input and len(token_list) > 1:
+            # token_list.pop()
+            # last_iteration[port.name] = wr.port_tokens[port.name].pop()
+            last_iteration.add(port.name)
 
         for t in token_list:
             if isinstance(t, TerminationToken):
@@ -663,11 +669,13 @@ async def _put_tokens(
                     f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[0].tag}"
                 )
                 port.put(IterationTerminationToken(port.token_list[0].tag))
-            port.put(TerminationToken())
+            if not any(t for t in port.token_list if isinstance(t, TerminationToken)):
+                port.put(TerminationToken())
         else:
             print(
                 f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
             )
+    return last_iteration
 
 
 async def load_and_add_ports(port_ids, new_workflow, loading_context):

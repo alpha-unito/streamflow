@@ -10,15 +10,22 @@ from typing import MutableMapping, MutableSequence
 import pkg_resources
 
 from streamflow.core.utils import random_name
+from streamflow.core.workflow import Workflow
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.recovery import FailureManager
+from streamflow.core.workflow import CommandOutput, Job, Status, Step, Port, Token
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowTransferException,
     WorkflowExecutionException,
 )
-from streamflow.core.recovery import FailureManager
-from streamflow.core.workflow import CommandOutput, Job, Status, Step, Port, Token
-from streamflow.cwl.step import CWLLoopConditionalStep, CWLRecoveryLoopConditionalStep
+
 from streamflow.log_handler import logger
+from streamflow.recovery.utils import (
+    INIT_DAG_FLAG,
+    TOKEN_WAITER,
+    get_execute_step_out_token_ids,
+)
 from streamflow.recovery.recovery import (
     JobVersion,
     _is_token_available,
@@ -28,24 +35,17 @@ from streamflow.recovery.recovery import (
     WorkflowRecovery,
     _populate_workflow,
 )
-from streamflow.recovery.utils import (
-    INIT_DAG_FLAG,
-    TOKEN_WAITER,
-    get_execute_step_out_token_ids,
-)
 
-from streamflow.workflow.step import ScatterStep, TransferStep
-from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+
+from streamflow.workflow.utils import get_job_token
+from streamflow.workflow.executor import StreamFlowExecutor
+from streamflow.workflow.step import ScatterStep, TransferStep
 from streamflow.workflow.token import (
     TerminationToken,
     JobToken,
 )
 
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.workflow import Workflow
-
-from streamflow.workflow.utils import get_job_token
 
 
 class PortRecovery:
@@ -56,7 +56,7 @@ class PortRecovery:
 
 class JobRequest:
     def __init__(self):
-        self.job_token: JobToken = None
+        self.job_token: JobToken | None = None
         self.token_output: MutableMapping[str, Token] = {}
         self.lock = asyncio.Condition()
         self.is_running = True
@@ -368,7 +368,7 @@ class DefaultFailureManager(FailureManager):
                     job_executed_in_new_workflow.add(token.value.name)
                     self.jobs[token.value.name].version += 1
                     logger.debug(
-                        f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times"
+                        f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times (wf {new_workflow.name})"
                     )
 
                     # free resources scheduler
@@ -393,8 +393,20 @@ class DefaultFailureManager(FailureManager):
     # quello vecchio? quello vecchio e quello nuovo? In teoria solo quello vecchio, da gestire comunque?
     # oppure lasciamo che fallisce e poi il failure manager prende l'output nuovo di A?
     async def _recover_jobs(self, failed_job: Job, failed_step: Step):
-        loading_context = DefaultDatabaseLoadingContext()
+        new_workflow = await self._recover_jobs_1(failed_job, failed_step)
+        await self._recover_jobs_2(new_workflow)
+        return new_workflow, DefaultDatabaseLoadingContext()
 
+    async def _recover_jobs_2(self, new_workflow):
+        loading_context = DefaultDatabaseLoadingContext()
+        await new_workflow.save(new_workflow.context)
+        executor = StreamFlowExecutor(new_workflow)
+        await executor.run()
+        print("executor.run", new_workflow.name, "terminated")
+        return new_workflow, loading_context
+
+    async def _recover_jobs_1(self, failed_job: Job, failed_step: Step):
+        loading_context = DefaultDatabaseLoadingContext()
         workflow = failed_step.workflow
         new_workflow = Workflow(
             context=workflow.context,
@@ -494,67 +506,16 @@ class DefaultFailureManager(FailureManager):
         )
         print("end save_for_retag")
 
-        await _put_tokens(
+        last_iteration = await _put_tokens(
             new_workflow,
             wr.dag_ports[INIT_DAG_FLAG],
             wr.port_tokens,
             wr.token_visited,
+            wr,
         )
         print("end _put_tokens")
-
-        # for debug
-        print(f"New workflow {new_workflow.name} popolato così:")
-        sorted_jobs = list(job_executed_in_new_workflow)
-        sorted_jobs.sort()
-        print(
-            f"\t{len(new_workflow.steps.keys())} steps e {len(new_workflow.ports.keys())} ports"
         )
-        print(f"\tJobs da rieseguire: {sorted_jobs}")
-        # dag_workflow(new_workflow, dir_path + "/new-wf")
-        for step in new_workflow.steps.values():
-            print(f"step {step.name} wf {step.workflow.name}")
-            try:
-                print(
-                    f"Step {step.name}\n\tinput ports",
-                    {
-                        k_p: [(str_id(t), t.tag) for t in port.token_list]
-                        for k_p, port in step.get_input_ports().items()
-                    },
-                    "\n\tkey-port_name",
-                    {k: v.name for k, v in step.get_input_ports().items()},
-                )
-            except Exception as e:
-                print(f"exception {step.name} -> {e}")
-                raise
-
-        # PROBLEMA: Ci sono troppi when-recovery step
-        if (
-            a := len(
-                [
-                    s
-                    for s in new_workflow.steps.values()
-                    if isinstance(
-                        s, (CWLLoopConditionalStep, CWLRecoveryLoopConditionalStep)
-                    )
-                ]
-            )
-        ) > 1:
-            raise FailureHandlingException(f"Ci sono troppi LoopConditionalStep: {a}")
-
-        # PROBLEMA: c'è uno step che non dovrebbe essere caricato
-        if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
-            raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
-
-        # INFO: ci sarà una iterazione precedente
-        # "/subworkflow-loop-terminator" in new_workflow.steps.keys()
-        pass
-
-        print(f"VIAAAAAAAAAAAAAA {new_workflow.name}")
-        await new_workflow.save(workflow.context)
-        executor = StreamFlowExecutor(new_workflow)
-        await executor.run()
-        print("executor.run", new_workflow.name, "terminated")
-        return new_workflow, loading_context
+        return new_workflow
 
     def is_valid_tag(self, workflow_name, tag, output_port):
         if workflow_name not in self.retags.keys():
