@@ -633,9 +633,9 @@ async def _put_tokens(
             last_iteration.add(port.name)
 
         for t in token_list:
-            if isinstance(t, TerminationToken):
+            if isinstance(t, (TerminationToken, IterationTerminationToken)):
                 raise FailureHandlingException(
-                    f"Aggiungo un termination token nell port {port.name} ma non dovrei"
+                    f"Added {type(t)} into port {port.name} but it is wrong"
                 )
             port.put(t)
             if is_back_prop_output_port:
@@ -646,9 +646,6 @@ async def _put_tokens(
         len_port_tokens = len(port_tokens[port_name])
 
         if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
-            print(
-                f"put_tokens: Port {port.name} with {len(port.token_list)} tokens, insert termination token"
-            )
             if loop_combinator_input and not is_back_prop_output_port:
                 if len_port_token_list > 1:
                     if isinstance(port.token_list[-1], TerminationToken):
@@ -919,17 +916,11 @@ async def _populate_workflow(
                 f"Step {ll_cond_step.name} (wf {new_workflow.name}) add output port {dep_name} {port.name}"
             )
             ll_cond_step.add_output_port(dep_name, port)
-        skip_deps = set()
         for dep_name, port_name in replace_step.skip_ports.items():
-            if port_name not in new_workflow.ports.keys():
-                skip_deps.add(dep_name)
-        for dep_name in skip_deps:
-            replace_step.skip_ports.pop(dep_name)
-        for dep_name, port in replace_step.get_skip_ports().items():
             print(
-                f"Step {ll_cond_step.name} (wf {new_workflow.name}) add skip {dep_name} {port.name}"
+                f"Step {ll_cond_step.name} (wf {new_workflow.name}) add output port {dep_name} {port_name}"
             )
-            ll_cond_step.add_skip_port(dep_name, port)
+            ll_cond_step.unsafe_add_skip_port(dep_name, port_name)
         new_workflow.steps.pop(replace_step.name)
         new_workflow.add_step(ll_cond_step)
         print(

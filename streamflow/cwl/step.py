@@ -141,14 +141,12 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             params["skip_ports"].keys(),
             await asyncio.gather(
                 *(
-                    asyncio.create_task(
-                        Port.load(context, value, loading_context, change_wf)
-                    )
-                    for value in params["skip_ports"].values()
+                    asyncio.create_task(context.database.get_port(port_id))
+                    for port_id in params["skip_ports"].values()
                 )
             ),
         ):
-            step.add_skip_port(k, port)
+            step.skip_ports[k] = port["name"]
         return step
 
 
@@ -226,6 +224,30 @@ class CWLRecoveryLoopConditionalStep(CWLLoopConditionalStep):
             raise WorkflowDefinitionException(
                 "Conditional 'when' must evaluate to 'true' or 'false'"
             )
+
+    async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Step {self.name} (wf {self.workflow.name}) condition evaluated false "
+                f"on inputs {[t.tag for t in inputs.values()]}"
+            )
+        # Loop termination: propagate outputs outside the loop
+        print(f"Step {self.name} skip ports {self.skip_ports}")
+        for port_name in self.skip_ports.values():
+            if port_name in self.workflow.ports.keys():
+                self.workflow.ports[port_name].put(
+                    IterationTerminationToken(tag=get_tag(inputs.values()))
+                )
+
+    def get_skip_ports(self) -> MutableMapping[str, Port]:
+        return {
+            k: self.workflow.ports[v]
+            for k, v in self.skip_ports.items()
+            if v in self.workflow.ports.keys()
+        }
+
+    def unsafe_add_skip_port(self, dependency_name, port_name):
+        self.skip_ports[dependency_name] = port_name
 
 
 class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
