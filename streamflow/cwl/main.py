@@ -92,7 +92,7 @@ async def main(
         logger.info("COMPLETED Building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)
     if logger.isEnabledFor(logging.INFO):
-        logger.info(f"Running workflow {args.name}")
+        logger.info(f"Running workflow {workflow.name}")
     output_tokens = await executor.run()
     await context.checkpoint_manager.wait()
     if logger.isEnabledFor(logging.INFO):

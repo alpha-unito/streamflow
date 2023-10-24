@@ -722,11 +722,6 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
 
         # if there are not the input ports in the workflow, the step is not added
         if not (set(step.input_ports.values()) - set(new_workflow.ports.keys())):
-            res = wr.external_loop_step_name.removesuffix(
-                "-recovery"
-            ) == step.name.removesuffix("-recovery")
-            if isinstance(step, CWLLoopConditionalStep):
-                pass
             # removesuffix python 3.9
             if isinstance(step, CWLLoopConditionalStep) and (
                 wr.external_loop_step_name.removesuffix("-recovery")

@@ -5,7 +5,7 @@ import json
 import asyncio
 import logging
 import datetime
-from typing import MutableMapping, MutableSequence
+from typing import MutableMapping, MutableSequence, MutableSet
 
 import pkg_resources
 
@@ -81,9 +81,7 @@ class DefaultFailureManager(FailureManager):
         self.retry_delay: int | None = retry_delay
 
         # { workflow.name : { port.id: [ token ] } }
-        self.retags: MutableMapping[
-            str, MutableMapping[str, MutableSequence[Token]]
-        ] = {}
+        self.retags: MutableMapping[str, MutableMapping[str, MutableSet[Token]]] = {}
 
         # { job.name : RequestJob }
         self.job_requests: MutableMapping[str, JobRequest] = {}

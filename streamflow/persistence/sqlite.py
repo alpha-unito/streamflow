@@ -6,7 +6,6 @@ import sys
 from typing import Any, MutableMapping, MutableSequence
 
 import aiosqlite
-import objsize
 import pkg_resources
 
 from streamflow.core import utils

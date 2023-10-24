@@ -1202,10 +1202,10 @@ class LoopCombinatorStep(CombinatorStep):
                             self.combinator.combine(task_name, token),
                         ):
                             ins = [id for t in schema.values() for id in t["input_ids"]]
-                            for port_name, token in schema.items():
+                            for port_name, out_token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=token["token"],
+                                        token=out_token["token"],
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )
