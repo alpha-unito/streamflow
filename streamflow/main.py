@@ -264,10 +264,10 @@ def main(args):
             elif args.debug:
                 logger.setLevel(logging.DEBUG)
             if args.color and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
-                coloredStreamHandler = logging.StreamHandler()
-                coloredStreamHandler.setFormatter(CustomFormatter())
+                colored_stream_handler = logging.StreamHandler(sys.stdout)
+                colored_stream_handler.setFormatter(CustomFormatter())
                 logger.handlers = []
-                logger.addHandler(coloredStreamHandler)
+                logger.addHandler(colored_stream_handler)
                 logger.addFilter(HighlitingFilter())
             asyncio.run(_async_run(args))
         else:

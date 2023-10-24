@@ -85,9 +85,8 @@ class HighlitingFilter(logging.Filter):
         super().__init__()
 
     def filter(self, record):
-        if res := record.levelno < self.level:
-            record.msg = self.highlight(record.msg)
-        return res
+        record.msg = self.highlight(record.msg)
+        return True
 
     def highlight(self, msg):
         msg = str(msg)
@@ -116,6 +115,15 @@ class HighlitingFilter(logging.Filter):
         return " ".join(msg_tok)
 
 
+class LogFilter(logging.Filter):
+    def __init__(self, level):
+        super().__init__()
+        self.level = level
+
+    def filter(self, record):
+        return record.levelno < self.level
+
+
 logger = logging.getLogger("streamflow")
 formatter = logging.Formatter(
     fmt="%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s",
@@ -123,8 +131,8 @@ formatter = logging.Formatter(
 )
 
 stdout_handler = logging.StreamHandler(sys.stdout)
-stdout_handler.setLevel(min(logging.INFO, logging.DEBUG, logging.WARNING))
 stdout_handler.setFormatter(formatter)
+stdout_handler.addFilter(LogFilter(max(logging.INFO, logging.DEBUG, logging.WARNING)))
 logger.addHandler(stdout_handler)
 
 stderr_handler = logging.StreamHandler(sys.stderr)
