@@ -44,47 +44,6 @@ from streamflow.workflow.token import (
 from tests.conftest import get_docker_deployment_config
 
 
-async def _put_tokens(token_list, in_port, context):
-    for t in token_list:
-        if not isinstance(t, TerminationToken):
-            await t.save(context, in_port.persistent_id)
-        in_port.put(t)
-    in_port.put(TerminationToken())
-
-
-async def _create_workflow(context: StreamFlowContext, num_port=2):
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    ports = []
-    for _ in range(num_port):
-        ports.append(workflow.create_port())
-    await workflow.save(context)
-    return workflow, *ports
-
-
-async def _general_test(
-    context: StreamFlowContext,
-    workflow: Workflow,
-    in_port: Port,
-    out_port: Port,
-    step_cls: Type[Step],
-    kargs_step: MutableMapping[str, Any],
-    token_list: MutableSequence[Token],
-    port_name: str = "test",
-):
-    step = workflow.create_step(cls=step_cls, **kargs_step)
-    step.add_input_port(port_name, in_port)
-    step.add_output_port(port_name, out_port)
-
-    await _put_tokens(token_list, in_port, context)
-
-    await workflow.save(context)
-    executor = StreamFlowExecutor(workflow)
-    await executor.run()
-    return step
-
-
 def create_deploy_step(workflow, deployment_config=None):
     connector_port = workflow.create_port(cls=ConnectorPort)
     if not deployment_config:
