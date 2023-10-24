@@ -67,7 +67,7 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             test-requirements.txt
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: "15"
       - name: "Install Docker (MacOS X)"
@@ -206,7 +206,7 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             tox.ini
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: "15"
       - name: "Install Docker (MacOs X)"
