@@ -264,7 +264,7 @@ def main(args):
             elif args.debug:
                 logger.setLevel(logging.DEBUG)
             if args.color and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
-                colored_stream_handler = logging.StreamHandler(sys.stdout)
+                colored_stream_handler = logging.StreamHandler()
                 colored_stream_handler.setFormatter(CustomFormatter())
                 logger.handlers = []
                 logger.addHandler(colored_stream_handler)

@@ -1,5 +1,4 @@
 import logging
-import sys
 
 dateFormat = "%(asctime)s"
 levelFormat = " %(levelname)-8s"
@@ -115,30 +114,13 @@ class HighlitingFilter(logging.Filter):
         return " ".join(msg_tok)
 
 
-class LogFilter(logging.Filter):
-    def __init__(self, level):
-        super().__init__()
-        self.level = level
-
-    def filter(self, record):
-        return record.levelno < self.level
-
-
 logger = logging.getLogger("streamflow")
+defaultStreamHandler = logging.StreamHandler()
 formatter = logging.Formatter(
     fmt="%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-
-stdout_handler = logging.StreamHandler(sys.stdout)
-stdout_handler.setFormatter(formatter)
-stdout_handler.addFilter(LogFilter(max(logging.INFO, logging.DEBUG, logging.WARNING)))
-logger.addHandler(stdout_handler)
-
-stderr_handler = logging.StreamHandler(sys.stderr)
-stderr_handler.setLevel(logging.ERROR)
-stderr_handler.setFormatter(formatter)
-logger.addHandler(stderr_handler)
-
+defaultStreamHandler.setFormatter(formatter)
+logger.addHandler(defaultStreamHandler)
 logger.setLevel(logging.INFO)
 logger.propagate = False
