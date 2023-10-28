@@ -1196,7 +1196,6 @@ class LoopCombinatorStep(CombinatorStep):
                             self.iteration_terminaton_checklist[task_name].add(
                                 token.tag
                             )
-
                         async for schema in cast(
                             AsyncIterable,
                             self.combinator.combine(task_name, token),

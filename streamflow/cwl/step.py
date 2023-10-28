@@ -232,7 +232,7 @@ class CWLRecoveryLoopConditionalStep(CWLLoopConditionalStep):
                 f"on inputs {[t.tag for t in inputs.values()]}"
             )
         # Loop termination: propagate outputs outside the loop
-        print(f"Step {self.name} skip ports {self.skip_ports}")
+        logger.info(f"Step {self.name} skip ports {self.skip_ports}")
         for port_name in self.skip_ports.values():
             if port_name in self.workflow.ports.keys():
                 self.workflow.ports[port_name].put(

@@ -110,7 +110,7 @@ class DefaultFailureManager(FailureManager):
             #  momento. Poi sync_rollbacks aggiusta tutto. La pecca è di costruire tutto il grafo quando in realtà
             #  non serve perché poi verrà prunato fino al job running.
             if job_request.is_running:
-                print(
+                logger.debug(
                     f"Il job {token.value.name} {token.persistent_id} - è running, dovrei aspettare il suo output"
                 )
 
@@ -132,12 +132,12 @@ class DefaultFailureManager(FailureManager):
                 )
                 # out_tokens_json dovrebbe essere una lista...caso in cui un job produce più token
                 if not out_tokens_json:
-                    print(
+                    logger.debug(
                         f"il job {token.value.name} ({token.persistent_id}) ha il out_token_json null",
                     )
                     return False
-                print(
-                    f"il job {token.value.name} ({token.persistent_id}) ha il out_token_json['id']: {out_tokens_json['id']} vs job_request.token_output: {job_request.token_output}",
+                logger.debug(
+                    f"il job {token.value.name} ({token.persistent_id}) ha il out_token_json['id']: {out_tokens_json['id']} vs job_request.token_output: {job_request.token_output}"
                     f"\n\t out_tokens_json: {dict(out_tokens_json)}",
                 )
                 port_json = await context.database.get_port_from_token(
@@ -146,9 +146,9 @@ class DefaultFailureManager(FailureManager):
                 is_available = await _is_token_available(
                     job_request.token_output[port_json["name"]], context
                 )
-                print(
-                    f"il job {token.value.name} ({token.persistent_id}) - out_token_json['id'] {out_tokens_json['id']} ha il port_json {dict(port_json)}",
-                    f"\n\til token di output {job_request.token_output[port_json['name']]} è già disponibile? {is_available}",
+                logger.debug(
+                    f"il job {token.value.name} ({token.persistent_id}) - out_token_json['id'] {out_tokens_json['id']} ha il port_json {dict(port_json)}"
+                    f"\n\til token di output {job_request.token_output[port_json['name']]} è già disponibile? {is_available}"
                 )
                 if is_available:
                     available_new_job_tokens[token.persistent_id] = {
@@ -209,7 +209,7 @@ class DefaultFailureManager(FailureManager):
             raise
         except WorkflowTransferException as e:
             logger.exception(e)
-            print("WorkflowTransferException ma stavo gestendo execute job")
+            logger.debug("WorkflowTransferException ma stavo gestendo execute job")
             raise
         except Exception as e:
             logger.exception(e)
@@ -239,7 +239,7 @@ class DefaultFailureManager(FailureManager):
             else:
                 async with self.job_requests[token.value.name].lock:
                     if self.job_requests[token.value.name].is_running:
-                        print(
+                        logger.debug(
                             f"Job {token.value.name} già in esecuzione nel workflow {self.job_requests[token.value.name].workflow} -> Ricostruire dag"
                         )
 
@@ -285,7 +285,7 @@ class DefaultFailureManager(FailureManager):
                                 raise FailureHandlingException(
                                     f"wf {new_workflow.name} Port {p.name} non presente tra quelle presente nel dag_ports {next_port_names}"
                                 )
-                            print(
+                            logger.debug(
                                 f"wf {new_workflow.name} Porta {p.name} trovata tra le next con il secondo metodo {next_port_names}"
                             )
 
@@ -296,7 +296,7 @@ class DefaultFailureManager(FailureManager):
                             for pr in self.job_requests[token.value.name].queue:
                                 if pr.port.name == row["name"]:
                                     pr.waiting_token += 1
-                                    print(
+                                    logger.debug(
                                         f"new_workflow {new_workflow.name} already has port {pr.port.name}. Increased waiting_tokens: {pr.waiting_token}"
                                     )
                                     break
@@ -304,7 +304,7 @@ class DefaultFailureManager(FailureManager):
                         # add port in the workflow and create port recovery (request)
                         for port in execute_step_outports:
                             new_workflow.add_port(port)
-                            print(
+                            logger.debug(
                                 f"new_workflow {new_workflow.name} added port {port.name} -> {new_workflow.ports.keys()}"
                             )
                             self.job_requests[token.value.name].queue.append(
@@ -336,13 +336,13 @@ class DefaultFailureManager(FailureManager):
                                 wr.dag_ports[INIT_DAG_FLAG].add(p.name)
                             wr.port_tokens.setdefault(p.name, set()).add(TOKEN_WAITER)
 
-                        print(
-                            f"SYNCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC job {token.value.name}",
-                            f"in esecuzione in wf {self.job_requests[token.value.name].workflow}",
+                        logger.debug(
+                            f"SYNCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC job {token.value.name} "
+                            f"in esecuzione in wf {self.job_requests[token.value.name].workflow} "
                             f"servirà al wf {new_workflow.name}",
                         )
                     else:
-                        print(
+                        logger.debug(
                             f"Job {token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[token.value.name].job_token} - t: {self.job_requests[token.value.name].token_output})"
                         )
                         job_token_list_updated.append(token)
@@ -400,8 +400,7 @@ class DefaultFailureManager(FailureManager):
         await new_workflow.save(new_workflow.context)
         executor = StreamFlowExecutor(new_workflow)
         await executor.run()
-        print("executor.run", new_workflow.name, "terminated")
-        return new_workflow, loading_context
+        logger.debug(f"executor.run {new_workflow.name} terminated")
 
     async def _recover_jobs_1(self, failed_job: Job, failed_step: Step):
         loading_context = DefaultDatabaseLoadingContext()
@@ -445,7 +444,7 @@ class DefaultFailureManager(FailureManager):
             if k in failed_step.input_ports.keys():
                 dag[failed_step.get_input_port(k).name] = {failed_step.name}
             else:
-                print(f"Step {failed_step.name} has not the input port {k}")
+                logger.debug(f"Step {failed_step.name} has not the input port {k}")
         dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
 
         wr = WorkflowRecovery(
@@ -459,9 +458,9 @@ class DefaultFailureManager(FailureManager):
         )
         await wr.build_dag(tokens, workflow, loading_context)
         wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-        print("build_dag: end build dag")
+        logger.debug("build_dag: end build dag")
 
-        print("Start sync-rollbacks")
+        logger.debug("Start sync-rollbacks")
         # update class state (attributes) and jobs synchronization
         job_executed_in_new_workflow = await self.sync_rollbacks(
             new_workflow,
@@ -470,15 +469,13 @@ class DefaultFailureManager(FailureManager):
             wr,
         )
         wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-        print("End sync-rollbacks")
+        logger.debug("End sync-rollbacks")
 
         # todo wr.inputs_ports non viene aggiornato
         # if (set(wr.input_ports) - set(wr.dag_ports[INIT_DAG_FLAG])) or (set(wr.dag_ports[INIT_DAG_FLAG]) - set(wr.input_ports)):
         #     pass
 
-        print()
         p, s = await wr.get_port_and_step_ids()
-        print()
 
         await _populate_workflow(
             wr,
@@ -491,7 +488,7 @@ class DefaultFailureManager(FailureManager):
         if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
             pass
             # raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
-        print("end populate")
+        logger.debug("end populate")
 
         for port in failed_step.get_input_ports().values():
             if port.name not in new_workflow.ports.keys():
@@ -502,7 +499,7 @@ class DefaultFailureManager(FailureManager):
         self._save_for_retag(
             new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
         )
-        print("end save_for_retag")
+        logger.debug("end save_for_retag")
 
         last_iteration = await _put_tokens(
             new_workflow,
@@ -531,15 +528,15 @@ class DefaultFailureManager(FailureManager):
         for step in new_workflow.steps.values():
             if isinstance(step, ScatterStep):
                 port = step.get_output_port()
-                print(
-                    f"_save_for_retag wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]:",
-                    [
-                        (t_id, token_visited[t_id][0].tag, token_visited[t_id][1])
-                        for t_id in port_tokens[port.name]
-                    ],
+                str_t = [
+                    (t_id, token_visited[t_id][0].tag, token_visited[t_id][1])
+                    for t_id in port_tokens[port.name]
+                ]
+                logger.debug(
+                    f"_save_for_retag wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
                 )
                 for t_id in port_tokens[port.name]:
-                    print(
+                    logger.debug(
                         f"Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if token_visited[t_id][1] else 'NOT '}available"
                     )
                     self.retags[new_workflow.name].setdefault(port.name, set()).add(
@@ -602,17 +599,15 @@ class DefaultFailureManager(FailureManager):
                         f"Job {job_name} is notifing on port {out_port_name}. There are {len(self.job_requests[job_name].queue)} workflows in waiting"
                     )
                 if len(self.job_requests[job_name].queue):
-                    print(
-                        "port in coda:",
-                        "".join(
-                            [
-                                f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} workflow {elem.port.workflow.name} token_list {elem.port.token_list} queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del terminationtoken"
-                                if elem
-                                else "\n\t\tElem-None"
-                                for elem in self.job_requests[job_name].queue
-                            ]
-                        ),
+                    str_port = "".join(
+                        [
+                            f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} workflow {elem.port.workflow.name} token_list {elem.port.token_list} queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del terminationtoken"
+                            if elem
+                            else "\n\t\tElem-None"
+                            for elem in self.job_requests[job_name].queue
+                        ]
                     )
+                    logger.debug("port in coda: {str_port}")
 
                 for elem in self.job_requests[job_name].queue:
                     if elem.port.name == out_port_name:
@@ -622,22 +617,22 @@ class DefaultFailureManager(FailureManager):
                         if elem.waiting_token == 0:
                             elems.append(elem)
                             elem.port.put(TerminationToken())
-                        print(
-                            "Token added into Port of another wf",
-                            json.dumps(
-                                {
-                                    "p.name": elem.port.name,
-                                    "p.id": elem.port.persistent_id,
-                                    "wf": elem.port.workflow.name,
-                                    "p.token_list_len": len(elem.port.token_list),
-                                    "p.queue": list(elem.port.queues.keys()),
-                                    "Ha ricevuto token": token.persistent_id,
-                                },
-                                indent=2,
-                            ),
+                        str_t = json.dumps(
+                            {
+                                "p.name": elem.port.name,
+                                "p.id": elem.port.persistent_id,
+                                "wf": elem.port.workflow.name,
+                                "p.token_list_len": len(elem.port.token_list),
+                                "p.queue": list(elem.port.queues.keys()),
+                                "Ha ricevuto token": token.persistent_id,
+                            },
+                            indent=2,
+                        )
+                        logger.debug(
+                            f"Token added into Port of another wf {str_t}."
                             f"Aspetta {elem.waiting_token} tokens prima di mettere il terminationtoken"
                             if elem.waiting_token
-                            else "Mandato anche termination token",
+                            else f"Mandato anche termination token"
                         )
 
                 for elem in elems:
