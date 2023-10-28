@@ -148,7 +148,7 @@ class WorkflowRecovery(RecoveryContext):
         token_to_add: Token = None,
     ):
         output_port_forward = await is_output_port_forward(
-            next(iter(self.port_name_ids[port_name_to_add])), self.context
+            min(self.port_name_ids[port_name_to_add]), self.context
         )
         if token_to_add:
             self.add_into_vertex(
@@ -588,7 +588,7 @@ class WorkflowRecovery(RecoveryContext):
         while ports_frontier:
             port_name = ports_frontier.pop()
             ports_visited.add(port_name)
-            port_id = next(iter(self.port_name_ids[port_name]))
+            port_id = min(self.port_name_ids[port_name])
             dep_steps_port_rows = await self.context.database.get_steps_from_input_port(
                 port_id
             )
@@ -613,7 +613,7 @@ class WorkflowRecovery(RecoveryContext):
     async def get_port_and_step_ids(self):
         steps = set()
         ports = {
-            next(iter(self.port_name_ids[port_name]))
+            min(self.port_name_ids[port_name])
             for port_name in self.port_tokens.keys()
         }
         for row_dependencies in await asyncio.gather(
@@ -796,7 +796,7 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
                 else:
                     continue
             elif isinstance(step, OutputForwardTransformer):
-                port_id = next(iter(wr.port_name_ids[step.get_output_port().name]))
+                port_id = min(wr.port_name_ids[step.get_output_port().name])
                 for (
                     step_dep_row
                 ) in await new_workflow.context.database.get_steps_from_input_port(
