@@ -15,11 +15,14 @@ from streamflow.core.utils import (
 from streamflow.core.exception import FailureHandlingException
 
 from streamflow.core.workflow import Job, Step, Port, Token
+from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.step import CWLLoopConditionalStep, CWLRecoveryLoopConditionalStep
 from streamflow.cwl.transformer import (
     BackPropagationTransformer,
     OutputForwardTransformer,
+    CWLTokenTransformer,
 )
+from streamflow.log_handler import logger
 from streamflow.recovery.utils import (
     is_output_port_forward,
     is_next_of_someone,
@@ -32,6 +35,7 @@ from streamflow.recovery.utils import (
     convert_to_json,
     get_recovery_loop_expression,
     get_output_ports,
+    is_input_port_forward,
 )
 from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -194,7 +198,11 @@ class WorkflowRecovery(RecoveryContext):
             else:
                 logger.debug(f"add_into_graph: port {port_name_to_add} is kept in init")
 
-    async def build_dag(self, token_frontier, workflow, loading_context):
+    async def build_dag(
+        self, token_frontier, workflow, loading_context, graph_cut=None
+    ):
+        if not graph_cut:
+            graph_cut = []
         # todo: cambiarlo in {token_id: is_available} e quando è necessaria l'istanza del token recuperarla dal loading_context.load_token(id)
         # { token_id: (token, is_available)}
         all_token_visited = self.token_visited
@@ -211,8 +219,9 @@ class WorkflowRecovery(RecoveryContext):
 
         while token_frontier:
             token = token_frontier.pop()
-
-            if not await self.context.failure_manager.has_token_already_been_recovered(
+            if len(
+                graph_cut
+            ) > 0 or not await self.context.failure_manager.has_token_already_been_recovered(
                 token,
                 all_token_visited,
                 available_new_job_tokens,
@@ -276,7 +285,11 @@ class WorkflowRecovery(RecoveryContext):
                             self.external_loop_step_name = step_row["name"]
                 if invalidate:
                     is_available = False
-
+                if port_row["name"] in graph_cut:
+                    logger.debug(
+                        f"build_dag: port {port_row['name']} in graph_cut and token {token.persistent_id} turned available True (original val {is_available}). Graph_cut len {len(graph_cut)} -> {graph_cut}"
+                    )
+                    is_available = True
                 all_token_visited[token.persistent_id] = (token, is_available)
                 if not is_available:
                     if prev_tokens := await loading_context.load_prev_tokens(
@@ -616,6 +629,27 @@ class WorkflowRecovery(RecoveryContext):
                     f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} recuperato dalla port {get_key_by_value(row_dependency['port'], self.port_name_ids)}"
                 )
                 steps.add(row_dependency["step"])
+        rows_dependencies = await asyncio.gather(
+            *(
+                asyncio.create_task(self.context.database.get_input_ports(step_id))
+                for step_id in steps
+            )
+        )
+        step_to_remove = set()
+        for step_id, row_dependencies in zip(steps, rows_dependencies):
+            for row_port in await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        self.context.database.get_port(row_dependency["port"])
+                    )
+                    for row_dependency in row_dependencies
+                )
+            ):
+                if row_port["name"] not in self.port_tokens.keys():
+                    step_to_remove.add(step_id)
+        for s_id in step_to_remove:
+            steps.remove(s_id)
+        pass
         return ports, steps
 
 
@@ -626,7 +660,7 @@ async def _put_tokens(
     token_visited: MutableMapping[int, Tuple[Token, bool]],
     wr,
 ):
-    last_iteration = set()
+    last_iteration = {}
     for port_name in init_ports:
         token_list = [
             token_visited[t_id][0]
@@ -649,10 +683,12 @@ async def _put_tokens(
         loop_combinator_input = any(
             s for s in port.get_output_steps() if isinstance(s, LoopCombinatorStep)
         )
-        if loop_combinator_input and len(token_list) > 1:
+        if loop_combinator_input and len(port_tokens[port_name]) > 1:
             # token_list.pop()
-            # last_iteration[port.name] = wr.port_tokens[port.name].pop()
-            last_iteration.add(port.name)
+            # wr.port_tokens[port.name].pop()
+            last_iteration.setdefault(port.name, set())
+            for p_id in wr.port_name_ids[port.name]:
+                last_iteration[port.name].add(p_id)
 
         for t in token_list:
             if isinstance(t, (TerminationToken, IterationTerminationToken)):
@@ -669,14 +705,15 @@ async def _put_tokens(
 
         if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
             if loop_combinator_input and not is_back_prop_output_port:
-                if len_port_token_list > 1:
+                if last_iteration:
                     if isinstance(port.token_list[-1], TerminationToken):
                         token = port.token_list[-1]
                     else:
-                        tag = port.token_list[-1].tag.split(".")
-                        tag[-1] = str(int(tag[-1]) + 1)
-                        token = Token(tag=".".join(tag), value=None)
-                        print(
+                        token = port.token_list[-1]
+                        # tag = port.token_list[-1].tag.split(".")
+                        # tag[-1] = str(int(tag[-1]) + 1)
+                        # token = Token(tag=".".join(tag), value=None)
+                        logger.debug(
                             f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts EMPTY token with tag {token.tag}"
                         )
                         # port.put(token)
@@ -930,7 +967,12 @@ async def _populate_workflow(
             if isinstance(replace_step, CWLRecoveryLoopConditionalStep)
             else replace_step.name + "-recovery",
             new_workflow,
-            get_recovery_loop_expression(len(wr.port_tokens[port_name])),
+            get_recovery_loop_expression(
+                # len(wr.port_tokens[port_name])
+                1
+                if len(wr.port_tokens[port_name]) == 1
+                else len(wr.port_tokens[port_name]) - 1
+            ),
             full_js=True,
         )
         logger.debug(
@@ -946,11 +988,11 @@ async def _populate_workflow(
                 f"Step {ll_cond_step.name} (wf {new_workflow.name}) add output port {dep_name} {port.name}"
             )
             ll_cond_step.add_output_port(dep_name, port)
-        for dep_name, port_name in replace_step.skip_ports.items():
-            print(
-                f"Step {ll_cond_step.name} (wf {new_workflow.name}) add output port {dep_name} {port_name}"
+        for dep_name, port in replace_step.get_skip_ports().items():
+            logger.debug(
+                f"Step {ll_cond_step.name} (wf {new_workflow.name}) add skip port {dep_name} {port.name}"
             )
-            ll_cond_step.unsafe_add_skip_port(dep_name, port_name)
+            ll_cond_step.add_skip_port(dep_name, port)
         new_workflow.steps.pop(replace_step.name)
         new_workflow.add_step(ll_cond_step)
         logger.debug(

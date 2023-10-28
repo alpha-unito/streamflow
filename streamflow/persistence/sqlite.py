@@ -317,6 +317,16 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
+    async def get_output_steps(
+        self, port_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            async with db.execute(
+                "SELECT * FROM dependency WHERE port = :port AND type = :type",
+                {"port": port_id, "type": DependencyType.INPUT.value},
+            ) as cursor:
+                return await cursor.fetchall()
+
     async def get_output_ports(
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:

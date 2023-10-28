@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import MutableMapping, Tuple, MutableSequence
+from typing import MutableMapping, Tuple, MutableSequence, Collection
 
 from streamflow.core.utils import get_class_fullname, get_class_from_name
 from streamflow.core.deployment import Connector, Location
@@ -167,6 +167,21 @@ async def is_output_port_forward(port_id, context):
     return result
 
 
+async def is_input_port_forward(port_id, context):
+    step_rows = await asyncio.gather(
+        *(
+            asyncio.create_task(context.database.get_step(dep_row["step"]))
+            for dep_row in await context.database.get_output_steps(port_id)
+        )
+    )
+    result = False
+    for step_row in step_rows:
+        result = result or issubclass(
+            get_class_from_name(step_row["type"]), BackPropagationTransformer
+        )
+    return result
+
+
 def get_port_from_token(token, port_tokens, token_visited):
     for port_name, token_ids in port_tokens.items():
         if token.tag in (token_visited[t_id][0].tag for t_id in token_ids):
@@ -175,7 +190,7 @@ def get_port_from_token(token, port_tokens, token_visited):
 
 
 def get_key_by_value(
-    searched_value: int, dictionary: MutableMapping[str, MutableSequence[int]]
+    searched_value: int, dictionary: MutableMapping[str, Collection[int]]
 ):
     for key, values in dictionary.items():
         if searched_value in values:
@@ -188,3 +203,9 @@ def get_key_by_value(
 def get_recovery_loop_expression(upper_limit):
     return f"$(inputs.index < {upper_limit})"
 
+
+def get_last_token(token_list):
+    for token in token_list[::-1]:
+        if not isinstance(token, (IterationTerminationToken, TerminationToken)):
+            return token
+    return None

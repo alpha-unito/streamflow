@@ -141,12 +141,14 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             params["skip_ports"].keys(),
             await asyncio.gather(
                 *(
-                    asyncio.create_task(context.database.get_port(port_id))
-                    for port_id in params["skip_ports"].values()
+                    asyncio.create_task(
+                        Port.load(context, value, loading_context, change_wf)
+                    )
+                    for value in params["skip_ports"].values()
                 )
             ),
         ):
-            step.skip_ports[k] = port["name"]
+            step.add_skip_port(k, port)
         return step
 
 
@@ -239,15 +241,15 @@ class CWLRecoveryLoopConditionalStep(CWLLoopConditionalStep):
                     IterationTerminationToken(tag=get_tag(inputs.values()))
                 )
 
-    def get_skip_ports(self) -> MutableMapping[str, Port]:
-        return {
-            k: self.workflow.ports[v]
-            for k, v in self.skip_ports.items()
-            if v in self.workflow.ports.keys()
-        }
-
-    def unsafe_add_skip_port(self, dependency_name, port_name):
-        self.skip_ports[dependency_name] = port_name
+    # def get_skip_ports(self) -> MutableMapping[str, Port]:
+    #     return {
+    #         k: self.workflow.ports[v]
+    #         for k, v in self.skip_ports.items()
+    #         if v in self.workflow.ports.keys()
+    #     }
+    #
+    # def unsafe_add_skip_port(self, dependency_name, port_name):
+    #     self.skip_ports[dependency_name] = port_name
 
 
 class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
