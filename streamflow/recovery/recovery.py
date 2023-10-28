@@ -1054,7 +1054,18 @@ async def _populate_workflow(
             f"populate_workflow: Rimozione (2) definitiva step {step_name} dal new_workflow {new_workflow.name}"
         )
         new_workflow.steps.pop(step_name)
-    print("populate_workflow: Finish")
+
+    graph = None
+    # tmp soluzione. risolvere a monte, nel momento in cui si fa la load
+    for s in new_workflow.steps.values():
+        if isinstance(s, CWLTokenTransformer) and isinstance(
+            s.processor, CWLTokenProcessor
+        ):
+            if not graph:
+                graph = s.processor.format_graph
+            else:
+                s.processor.format_graph = graph
+    logger.debug("populate_workflow: Finish")
 
 
 class JobVersion:
