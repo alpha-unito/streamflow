@@ -4,7 +4,7 @@ import os
 import json
 import asyncio
 import logging
-from typing import MutableMapping, MutableSequence, MutableSet, cast
+from typing import MutableMapping, MutableSequence, MutableSet
 
 import pkg_resources
 
@@ -40,7 +40,7 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 from streamflow.workflow.utils import get_job_token
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.step import ScatterStep, TransferStep, CombinatorStep
+from streamflow.workflow.step import ScatterStep, TransferStep
 from streamflow.workflow.token import (
     TerminationToken,
     JobToken,
@@ -411,18 +411,10 @@ class DefaultFailureManager(FailureManager):
                 f"Last iteration {new_workflow.name} managed by {new_workflow_1.name}"
             )
             for port_name in last_iteration:
-                a = new_workflow.ports[port_name].token_list
-                b = new_workflow_1.ports[port_name].token_list
-                pass
-                t = new_workflow_1.ports[port_name].token_list.pop(0)
+                new_workflow_1.ports[port_name].token_list.pop(0)
                 new_workflow_1.ports[port_name].token_list.insert(
                     0, get_last_token(new_workflow.ports[port_name].token_list)
                 )
-                for step in new_workflow_1.steps.values():
-                    if isinstance(step, CombinatorStep):
-                        prefix = ".".join(t.tag.split(".")[:-1])
-                        step.combinator.iteration_map[prefix] = int(prefix)
-                        pass
             await self._recover_jobs_2(new_workflow_1)
             new_workflow = new_workflow_1
         return new_workflow, DefaultDatabaseLoadingContext()
@@ -727,7 +719,7 @@ class DefaultFailureManager(FailureManager):
                             for elem in self.job_requests[job_name].queue
                         ]
                     )
-                    logger.debug("port in coda: {str_port}")
+                    logger.debug(f"port in coda: {str_port}")
 
                 for elem in self.job_requests[job_name].queue:
                     if elem.port.name == out_port_name:

@@ -35,7 +35,6 @@ from streamflow.recovery.utils import (
     convert_to_json,
     get_recovery_loop_expression,
     get_output_ports,
-    is_input_port_forward,
 )
 from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -218,7 +217,7 @@ class WorkflowRecovery(RecoveryContext):
         counter_loop = 0
 
         while token_frontier:
-            token = token_frontier.pop()
+            token = token_frontier.pop(0)
             if len(
                 graph_cut
             ) > 0 or not await self.context.failure_manager.has_token_already_been_recovered(
@@ -613,8 +612,7 @@ class WorkflowRecovery(RecoveryContext):
     async def get_port_and_step_ids(self):
         steps = set()
         ports = {
-            min(self.port_name_ids[port_name])
-            for port_name in self.port_tokens.keys()
+            min(self.port_name_ids[port_name]) for port_name in self.port_tokens.keys()
         }
         for row_dependencies in await asyncio.gather(
             *(
@@ -734,6 +732,16 @@ async def _put_tokens(
             logger.debug(
                 f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
             )
+
+    for step in new_workflow.steps.values():
+        if isinstance(step, LoopCombinatorStep):
+            t = list(step.get_input_ports().values()).pop().token_list[0]
+            if t.tag.split(".")[-1] != "0":
+                prefix = ".".join(t.tag.split(".")[:-1])
+                step.combinator.iteration_map[prefix] = int(t.tag.split(".")[-1])
+                logger.debug(
+                    f"recover_jobs-last_iteration: Step {step.name} combinator updated map[{prefix}] = {step.combinator.iteration_map[prefix]}"
+                )
     return last_iteration
 
 
