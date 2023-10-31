@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import posixpath
-from typing import Any, MutableMapping, MutableSequence, cast, Type
+from typing import Any, MutableMapping, MutableSequence, cast
 
 import pytest
 
