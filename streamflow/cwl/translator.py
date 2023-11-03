@@ -163,7 +163,7 @@ def _create_command(
     for input_port in cwl_element.inputs:
         command.processors.append = _get_command_token_processor_from_input(
             cwl_element=input_port,
-            port_type=input_port.type,
+            port_type=input_port.type_,
             input_name=utils.get_name("", cwl_name_prefix, input_port.id),
             is_shell_command=command.is_shell_command,
             schema_def_types=schema_def_types,
@@ -287,7 +287,7 @@ def _create_command_output_processor(
             name=port_name,
             workflow=workflow,
             target=port_target,
-            token_type=port_type.type,
+            token_type=port_type.type_,
             enum_symbols=[
                 posixpath.relpath(
                     utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
@@ -317,7 +317,7 @@ def _create_command_output_processor(
                     port_name=port_name,
                     port_target=port_target,
                     workflow=workflow,
-                    port_type=port_type.type,
+                    port_type=port_type.type_,
                     cwl_element=port_type,
                     cwl_name_prefix=posixpath.join(
                         record_name_prefix,
@@ -600,11 +600,11 @@ def _create_token_processor(
                 cwl_name_prefix=cwl_name_prefix,
                 schema_def_types=schema_def_types,
                 context=context,
+                optional=optional,
                 check_type=check_type,
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
             ),
-            optional=optional,
         )
     # Enum type: -> create output processor
     elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
@@ -622,7 +622,7 @@ def _create_token_processor(
         return CWLTokenProcessor(
             name=port_name,
             workflow=workflow,
-            token_type=port_type.type,
+            token_type=port_type.type_,
             check_type=check_type,
             enum_symbols=[
                 posixpath.relpath(
@@ -648,7 +648,7 @@ def _create_token_processor(
                 ): _create_token_processor(
                     port_name=port_name,
                     workflow=workflow,
-                    port_type=port_type.type,
+                    port_type=port_type.type_,
                     cwl_element=port_type,
                     cwl_name_prefix=posixpath.join(
                         record_name_prefix,
@@ -662,7 +662,6 @@ def _create_token_processor(
                 )
                 for port_type in port_type.fields
             },
-            optional=optional,
         )
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
@@ -790,7 +789,7 @@ def _create_token_transformer(
         processor=_create_token_processor(
             port_name=port_name,
             workflow=workflow,
-            port_type=cwl_element.type,
+            port_type=cwl_element.type_,
             cwl_element=cwl_element,
             cwl_name_prefix=cwl_name_prefix,
             schema_def_types=schema_def_types,
@@ -882,7 +881,7 @@ def _get_command_token_processor_from_input(
             key = utils.get_name("", record_name_prefix, el.name)
             processors[key] = _get_command_token_processor_from_input(
                 cwl_element=el,
-                port_type=el.type,
+                port_type=el.type_,
                 input_name=key,
                 is_shell_command=is_shell_command,
                 schema_def_types=schema_def_types,
@@ -1725,23 +1724,32 @@ class CWLTranslator:
                 if "NetworkAccess" in requirements
                 else False
             )
-            binding_config.targets = [
-                _process_docker_requirement(
-                    config_dir=os.path.dirname(self.context.config["path"]),
-                    config=self.workflow_config.propagate(
-                        path=PurePosixPath(name_prefix),
-                        name="docker",
-                        default=CWLDockerTranslatorConfig(
-                            name="default", type="default", config={}
-                        ),
-                    ),
-                    context=context,
-                    docker_requirement=requirements["DockerRequirement"],
-                    network_access=network_access,
-                    target=t,
-                )
-                for t in binding_config.targets
-            ]
+            for target in binding_config.targets:
+                # If original target is local, use a container
+                if target.deployment.type == "local":
+                    binding_config.targets.append(
+                        _process_docker_requirement(
+                            config_dir=os.path.dirname(self.context.config["path"]),
+                            config=self.workflow_config.propagate(
+                                path=PurePosixPath(name_prefix),
+                                name="docker",
+                                default=CWLDockerTranslatorConfig(
+                                    name="default", type="default", config={}
+                                ),
+                            ),
+                            context=context,
+                            docker_requirement=requirements["DockerRequirement"],
+                            network_access=network_access,
+                            target=target,
+                        )
+                    )
+                # Otherwise, throw a warning and skip the DockerRequirement conversion
+                else:
+                    if logger.isEnabledFor(logging.WARN):
+                        logger.warn(
+                            f"Skipping DockerRequirement conversion for step `{name_prefix}` "
+                            f"when executing on `{target.deployment.name}` deployment."
+                        )
         # Create DeploySteps to initialise the execution environment
         deployments = {t.deployment.name: t.deployment for t in binding_config.targets}
         deploy_steps = {
@@ -1846,22 +1854,22 @@ class CWLTranslator:
                 "v1.1",
                 "v1.2",
             ]:
-                if isinstance(element_output.type, MutableSequence):
-                    port_type = element_output.type
+                if isinstance(element_output.type_, MutableSequence):
+                    port_type = element_output.type_
                     if "null" not in port_type:
                         port_type.append("null")
                     if "Any" not in port_type:
                         port_type.append("Any")
-                elif isinstance(element_output.type, str):
-                    port_type = [element_output.type]
-                    if element_output.type != "null":
+                elif isinstance(element_output.type_, str):
+                    port_type = [element_output.type_]
+                    if element_output.type_ != "null":
                         port_type.append("null")
-                    if element_output.type != "Any":
+                    if element_output.type_ != "Any":
                         port_type.append("Any")
                 else:
-                    port_type = ["null", element_output.type, "Any"]
+                    port_type = ["null", element_output.type_, "Any"]
             else:
-                port_type = element_output.type
+                port_type = element_output.type_
             # Add output port to ExecuteStep
             step.add_output_port(
                 name=port_name,
@@ -2856,7 +2864,7 @@ class CWLTranslator:
                         processor=_create_token_processor(
                             port_name=port_name,
                             workflow=workflow,
-                            port_type=cwl_elements[output_name].type,
+                            port_type=cwl_elements[output_name].type_,
                             cwl_element=cwl_elements[output_name],
                             cwl_name_prefix=posixpath.join(cwl_root_prefix, port_name),
                             schema_def_types=_get_schema_def_types(requirements),
