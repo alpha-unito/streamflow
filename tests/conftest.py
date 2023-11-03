@@ -20,6 +20,7 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.persistence import PersistableEntity
+from streamflow.core.utils import object_to_dict
 from streamflow.core.workflow import Port, Step, Token, Workflow
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -136,15 +137,6 @@ def random_job_names(n_jobs=1):
 
 def is_primitive_type(elem):
     return type(elem) in (int, float, str, bool)
-
-
-# The function given in input an object return a dictionary with attribute:value
-def object_to_dict(obj):
-    return {
-        attr: getattr(obj, attr)
-        for attr in dir(obj)
-        if not attr.startswith("__") and not callable(getattr(obj, attr))
-    }
 
 
 # The function return True if the elems are the same, otherwise False
