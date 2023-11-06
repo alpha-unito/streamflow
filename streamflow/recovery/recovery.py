@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import deque
 from typing import MutableMapping, MutableSequence, Tuple, MutableSet
 
 from streamflow.core.context import StreamFlowContext
@@ -11,9 +12,11 @@ from streamflow.core.utils import (
     get_class_from_name,
     contains_id,
     get_tag_level,
+    compare_tags,
 )
 from streamflow.core.exception import FailureHandlingException
 
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.core.workflow import Job, Step, Port, Token
 from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.step import CWLLoopConditionalStep, CWLRecoveryLoopConditionalStep
@@ -198,7 +201,11 @@ class WorkflowRecovery(RecoveryContext):
                 logger.debug(f"add_into_graph: port {port_name_to_add} is kept in init")
 
     async def build_dag(
-        self, token_frontier, workflow, loading_context, graph_cut=None
+        self,
+        token_frontier: deque,
+        workflow: Workflow,
+        loading_context: DefaultDatabaseLoadingContext,
+        graph_cut: MutableSequence[str] = None,
     ):
         if not graph_cut:
             graph_cut = []
@@ -216,8 +223,9 @@ class WorkflowRecovery(RecoveryContext):
         # if it is odd, it means that the failed step is inside a loop
         counter_loop = 0
 
+        # Visit the (token provenance) graph with a Breadth First Search approach using token_frontier as a Queue
         while token_frontier:
-            token = token_frontier.pop(0)
+            token = token_frontier.popleft()
             if len(
                 graph_cut
             ) > 0 or not await self.context.failure_manager.has_token_already_been_recovered(
@@ -708,9 +716,6 @@ async def _put_tokens(
                         token = port.token_list[-1]
                     else:
                         token = port.token_list[-1]
-                        # tag = port.token_list[-1].tag.split(".")
-                        # tag[-1] = str(int(tag[-1]) + 1)
-                        # token = Token(tag=".".join(tag), value=None)
                         logger.debug(
                             f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts EMPTY token with tag {token.tag}"
                         )
@@ -732,13 +737,52 @@ async def _put_tokens(
             logger.debug(
                 f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
             )
+    return last_iteration
 
+
+async def set_combinator_status(new_workflow, workflow, wr, loading_context):
     for step in new_workflow.steps.values():
         if isinstance(step, LoopCombinatorStep):
-            t = list(step.get_input_ports().values()).pop().token_list[0]
-            if t.tag.split(".")[-1] != "0":
-                prefix = ".".join(t.tag.split(".")[:-1])
-                step.combinator.iteration_map[prefix] = int(t.tag.split(".")[-1])
+            port = list(step.get_input_ports().values()).pop()
+            token = port.token_list[0]
+
+            # tags = {
+            #     wr.token_visited[t_id][0].tag
+            #     for port in step.get_input_ports().values()
+            #     for t_id in wr.port_tokens[port.name]
+            # }
+            # len_tags = {len(tag.split(".")) for tag in tags}
+            # db_tokens = await asyncio.gather(
+            #     *(
+            #         asyncio.create_task(
+            #             Token.load(new_workflow.context, t_id, loading_context)
+            #         )
+            #         for t_id in await new_workflow.context.database.get_port_tokens(
+            #             min(wr.port_name_ids[port.name])
+            #         )
+            #     )
+            # )
+            # db_tags = list({t.tag for t in db_tokens})
+            # db_len_tags = {len(tag.split(".")) for tag in db_tags}
+
+            # for k in workflow.steps[step.name].combinator.iteration_map.keys():
+            #     step.combinator.iteration_map[k] = int(token.tag.split(".")[-1])
+            #     pass
+
+            # logger.debug(
+            #     f"recover_jobs-last_iteration: Port {port.name} db toks {db_tags} and ref-token {token.tag}\n\tlen_t {len(token.tag.split('.'))} vs len_min_ts {min(sorted(db_len_tags))} => {len(token.tag.split('.')) != min(sorted(db_len_tags))}"
+            # )
+
+            # if has_same_depth_of_succ(db_tags, token, port):
+            #     prefix = ".".join(token.tag.split(".")[:-1])
+            #     step.combinator.iteration_map[prefix] = int(token.tag.split(".")[-1])
+            #     logger.debug(
+            #         f"recover_jobs-last_iteration: Step {step.name} combinator updated map[{prefix}] = {step.combinator.iteration_map[prefix]}"
+            #     )
+
+            prefix = ".".join(token.tag.split(".")[:-1])
+            if prefix != "":
+                step.combinator.iteration_map[prefix] = int(token.tag.split(".")[-1])
                 logger.debug(
                     f"recover_jobs-last_iteration: Step {step.name} combinator updated map[{prefix}] = {step.combinator.iteration_map[prefix]}"
                 )

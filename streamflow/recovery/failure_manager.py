@@ -4,6 +4,7 @@ import os
 import json
 import asyncio
 import logging
+from collections import deque
 from typing import MutableMapping, MutableSequence, MutableSet
 
 import pkg_resources
@@ -34,6 +35,7 @@ from streamflow.recovery.recovery import (
     _put_tokens,
     WorkflowRecovery,
     _populate_workflow,
+    set_combinator_status,
 )
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -105,7 +107,7 @@ class DefaultFailureManager(FailureManager):
 
             # todo: togliere parametro is_running, usare lo status dello step OPPURE status dentro lo scheduler
             # todo: questo controllo forse meglio toglierlo da qui. Dal momento tra cui li individuo is_running al
-            #  momento in cui li attacco al wofklow (sync_rollbacks) i job potrebbero terminare e non avrei i token
+            #  momento in cui li attacco al workflow (sync_rollbacks) i job potrebbero terminare e non avrei i token
             #  in input. Una soluzione facile è costruire tutto il grafo ignorando quelli running in questo
             #  momento. Poi sync_rollbacks aggiusta tutto. La pecca è di costruire tutto il grafo quando in realtà
             #  non serve perché poi verrà prunato fino al job running.
@@ -455,7 +457,7 @@ class DefaultFailureManager(FailureManager):
             failed_job.name,
             failed_step.get_input_port("__job__").token_list,
         )
-        tokens = list(failed_job.inputs.values())  # tokens to check
+        tokens = deque(failed_job.inputs.values())  # tokens to check
         tokens.append(job_token)
         logger.debug(f"last_iteration: {set(last_iteration.keys())}")
         await wr.build_dag(
@@ -498,6 +500,8 @@ class DefaultFailureManager(FailureManager):
             wr,
         )
         logger.debug("end _put_tokens")
+        await set_combinator_status(new_workflow, prev_workflow, wr, loading_context)
+
         if last_iteration:
             raise FailureHandlingException(
                 f"Workflow {new_workflow.name} has too much iteration (just 1 iteration is valid) {last_iteration}"
@@ -534,20 +538,6 @@ class DefaultFailureManager(FailureManager):
                 f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
             )
 
-        job_token = get_job_token(
-            failed_job.name,
-            failed_step.get_input_port("__job__").token_list,
-        )
-
-        tokens = list(failed_job.inputs.values())  # tokens to check
-        tokens.append(job_token)
-
-        # todo: se la risorsa non torna più su, penso si vada in un loop continuo di:
-        #  - costruisco il dag
-        #  - controllo che il file esiste
-        #  - errore, test fallito perché la risorsa è giù
-        #  - costruisci dag ...
-
         dag = {}
         for k, t in failed_job.inputs.items():
             if t.persistent_id is None:
@@ -568,6 +558,14 @@ class DefaultFailureManager(FailureManager):
             },
             dag_ports=dag,
         )
+
+        job_token = get_job_token(
+            failed_job.name,
+            failed_step.get_input_port("__job__").token_list,
+        )
+        tokens = deque(failed_job.inputs.values())
+        tokens.append(job_token)
+
         await wr.build_dag(tokens, workflow, loading_context)
         wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
         logger.debug("build_dag: end build dag")
@@ -621,6 +619,13 @@ class DefaultFailureManager(FailureManager):
             wr,
         )
         logger.debug("end _put_tokens")
+        await set_combinator_status(new_workflow, workflow, wr, loading_context)
+        extra_data_print(
+            workflow,
+            new_workflow,
+            job_executed_in_new_workflow,
+            wr,
+            last_iteration,
         )
         return new_workflow, last_iteration
 
@@ -633,7 +638,6 @@ class DefaultFailureManager(FailureManager):
         return tag in (t.tag for t in self.retags[workflow_name][output_port.name])
 
     def _save_for_retag(self, new_workflow, dag_ports, port_tokens, token_visited):
-        # todo: aggiungere la possibilità di eserguire comunque tutti i job delle scatter aggiungendo un parametro nel StreamFlow file
         if new_workflow.name not in self.retags.keys():
             self.retags[new_workflow.name] = {}
 
