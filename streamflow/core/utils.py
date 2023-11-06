@@ -16,7 +16,9 @@ from typing import (
     TYPE_CHECKING,
 )
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location
@@ -276,3 +278,28 @@ def random_name() -> str:
 
 def wrap_command(command: str):
     return ["/bin/sh", "-c", f"{command}"]
+
+
+async def get_dependencies(
+    dependency_rows: MutableSequence[MutableMapping[str, Any]],
+    load_ports: bool,
+    context: StreamFlowContext,
+    loading_context: DatabaseLoadingContext,
+):
+    if load_ports:
+        ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in dependency_rows
+            )
+        )
+        return {d["name"]: p.name for d, p in zip(dependency_rows, ports)}
+    else:
+        # it is not helpful to have an instance in loading_context when it is building a new workflow
+        port_rows = await asyncio.gather(
+            *(
+                asyncio.create_task(context.database.get_port(d["port"]))
+                for d in dependency_rows
+            )
+        )
+        return {d["name"]: p["name"] for d, p in zip(dependency_rows, port_rows)}
