@@ -66,7 +66,7 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
 
 
 def get_kubernetes_deployment_config():
-    with open(pkg_resources.resource_filename(__name__, "pod.jinja2")) as t:
+    with open(pkg_resources.resource_filename(__name__, "./pod.jinja2")) as t:
         template = Template(t.read())
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         template.stream(name=utils.random_name()).dump(f.name)
