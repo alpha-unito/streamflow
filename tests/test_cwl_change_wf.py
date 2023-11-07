@@ -27,7 +27,7 @@ from tests.test_change_wf import (
     persistent_id_test,
     set_val_to_attributes,
     base_step_test_process,
-    set_workflow_in_combinator,
+    set_workflow_in_combinator, workflow_in_combinator_test,
 )
 from tests.utils.get_instances import create_workflow
 
@@ -77,6 +77,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
     )
     set_val_to_attributes(step, ["persistent_id", "workflow"], None)
     set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    assert step.processor.workflow.persistent_id != new_step.processor.workflow.persistent_id
     set_val_to_attributes(step.processor, ["workflow"], None)
     set_val_to_attributes(new_step.processor, ["workflow"], None)
     assert are_equals(step, new_step)
@@ -167,6 +168,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 
     set_val_to_attributes(step, ["persistent_id", "workflow"], None)
     set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    workflow_in_combinator_test(step.combinator, new_step.combinator)
     set_workflow_in_combinator(step.combinator, None)
     set_workflow_in_combinator(new_step.combinator, None)
     assert are_equals(step, new_step)
@@ -196,6 +198,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
 
     set_val_to_attributes(step, ["persistent_id", "workflow"], None)
     set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    assert step.processor.workflow.persistent_id != new_step.processor.workflow.persistent_id
     set_val_to_attributes(step.processor, ["workflow"], None)
     set_val_to_attributes(new_step.processor, ["workflow"], None)
     assert are_equals(step, new_step)

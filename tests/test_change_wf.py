@@ -93,11 +93,13 @@ def set_val_to_attributes(elem, str_attributes: MutableSequence[str], val):
         if attr in attrs.keys():
             setattr(elem, attr, val)
 
+def workflow_in_combinator_test(original_combinator, new_combinator):
+    assert original_combinator.workflow.persistent_id != new_combinator.workflow.persistent_id
+    for original_inner, new_inner in zip(original_combinator.combinators.values(), new_combinator.combinators.values()):
+        workflow_in_combinator_test(original_inner, new_inner)
 
 def set_workflow_in_combinator(combinator, workflow):
     combinator.workflow = workflow
-    if not combinator.combinators:
-        return
     for c in combinator.combinators.values():
         set_workflow_in_combinator(c, workflow)
 
@@ -171,13 +173,15 @@ async def test_execute_step(context: StreamFlowContext):
     new_workflow, new_step = await clone_step(step, workflow, context)
     persistent_id_test(workflow, new_workflow, step, new_step)
 
+    assert step.command.step.persistent_id != new_step.command.step.persistent_id
     step.command.step = None
     new_step.command.step = None
     for original_processor, new_processor in zip(
         step.output_processors.values(), new_step.output_processors.values()
     ):
-        set_val_to_attributes(original_processor, ["persistent_id", "workflow"], None)
-        set_val_to_attributes(new_processor, ["persistent_id", "workflow"], None)
+        assert original_processor.workflow.persistent_id != new_processor.workflow.persistent_id
+        set_val_to_attributes(original_processor, ["workflow"], None)
+        set_val_to_attributes(new_processor, ["workflow"], None)
     set_val_to_attributes(step, ["persistent_id", "workflow"], None)
     set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
     assert are_equals(step, new_step)
@@ -210,6 +214,8 @@ async def test_schedule_step(context: StreamFlowContext):
     for original_filter, new_filter in zip(
         step.binding_config.filters, new_step.binding_config.filters
     ):
+        # Config are read-only so workflows can share the same
+        assert original_filter.persistent_id == new_filter.persistent_id
         set_val_to_attributes(original_filter, ["persistent_id", "workflow"], None)
         set_val_to_attributes(new_filter, ["persistent_id", "workflow"], None)
     set_val_to_attributes(step, ["persistent_id", "workflow"], None)
@@ -258,6 +264,7 @@ async def test_combinator_step(context: StreamFlowContext, combinator: Combinato
 
     set_val_to_attributes(step, ["persistent_id", "workflow"], None)
     set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    workflow_in_combinator_test(step.combinator, new_step.combinator)
     set_workflow_in_combinator(step.combinator, None)
     set_workflow_in_combinator(new_step.combinator, None)
     assert are_equals(step, new_step)
@@ -289,6 +296,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
 
     set_val_to_attributes(step, ["persistent_id", "workflow"], None)
     set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    workflow_in_combinator_test(step.combinator, new_step.combinator)
     set_workflow_in_combinator(step.combinator, None)
     set_workflow_in_combinator(new_step.combinator, None)
     assert are_equals(step, new_step)
