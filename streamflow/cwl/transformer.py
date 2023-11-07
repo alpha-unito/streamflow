@@ -261,7 +261,7 @@ class ValueFromTransformer(ManyToOneTransformer):
             else await loading_context.load_workflow(context, row["workflow"]),
             port_name=params["port_name"],
             processor=await TokenProcessor.load(
-                context, params["processor"], loading_context
+                context, params["processor"], loading_context, change_wf
             ),
             value_from=params["value_from"],
             expression_lib=params["expression_lib"],
