@@ -295,7 +295,7 @@ async def get_dependencies(
         )
         return {d["name"]: p.name for d, p in zip(dependency_rows, ports)}
     else:
-        # it is not helpful to have an instance in loading_context when it is building a new workflow
+        # it is not helpful to have the Port instance in loading_context when it is loading on a new workflow
         port_rows = await asyncio.gather(
             *(
                 asyncio.create_task(context.database.get_port(d["port"]))

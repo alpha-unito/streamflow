@@ -138,7 +138,7 @@ async def test_forward_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_list_to_element_transformer(context: StreamFlowContext):
-    """Test saving FirstNonNullTransformer on database and re-load it in a new Workflow"""
+    """Test saving ListToElementTransformer on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=1))[0]
     await base_step_test_process(
         workflow,
@@ -152,6 +152,7 @@ async def test_list_to_element_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_only_non_null_transformer(context: StreamFlowContext):
+    """Test saving OnlyNonNullTransformer on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=1))[0]
     await base_step_test_process(
         workflow,
@@ -165,7 +166,7 @@ async def test_only_non_null_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_cwl_token_transformer(context: StreamFlowContext):
-    """Test saving CWLTokenProcessor on database and re-load it in a new Workflow"""
+    """Test saving CWLTokenTransformer on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=1))[0]
     step_name = utils.random_name()
     step, new_workflow, new_step = await base_step_test_process(

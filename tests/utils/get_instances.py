@@ -159,7 +159,7 @@ def create_schedule_step(
     deploy_steps: MutableSequence[DeployStep],
     binding_config: BindingConfig = None,
 ):
-    """It is necessary to pass in the correct order biding_config.targets and deploy_steps for the mapping"""
+    # It is necessary to pass in the correct order biding_config.targets and deploy_steps for the mapping
     if not binding_config:
         binding_config = BindingConfig(
             targets=[
