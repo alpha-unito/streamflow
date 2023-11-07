@@ -93,10 +93,17 @@ def set_val_to_attributes(elem, str_attributes: MutableSequence[str], val):
         if attr in attrs.keys():
             setattr(elem, attr, val)
 
+
 def workflow_in_combinator_test(original_combinator, new_combinator):
-    assert original_combinator.workflow.persistent_id != new_combinator.workflow.persistent_id
-    for original_inner, new_inner in zip(original_combinator.combinators.values(), new_combinator.combinators.values()):
+    assert (
+        original_combinator.workflow.persistent_id
+        != new_combinator.workflow.persistent_id
+    )
+    for original_inner, new_inner in zip(
+        original_combinator.combinators.values(), new_combinator.combinators.values()
+    ):
         workflow_in_combinator_test(original_inner, new_inner)
+
 
 def set_workflow_in_combinator(combinator, workflow):
     combinator.workflow = workflow
@@ -179,7 +186,10 @@ async def test_execute_step(context: StreamFlowContext):
     for original_processor, new_processor in zip(
         step.output_processors.values(), new_step.output_processors.values()
     ):
-        assert original_processor.workflow.persistent_id != new_processor.workflow.persistent_id
+        assert (
+            original_processor.workflow.persistent_id
+            != new_processor.workflow.persistent_id
+        )
         set_val_to_attributes(original_processor, ["workflow"], None)
         set_val_to_attributes(new_processor, ["workflow"], None)
     set_val_to_attributes(step, ["persistent_id", "workflow"], None)
