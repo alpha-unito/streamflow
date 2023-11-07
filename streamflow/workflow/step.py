@@ -1279,7 +1279,7 @@ class ScheduleStep(BaseStep):
             if change_wf
             else await loading_context.load_workflow(context, row["workflow"]),
             binding_config=await BindingConfig.load(
-                context, params["binding_config"], loading_context, change_wf
+                context, params["binding_config"], loading_context
             ),
             connector_ports={
                 k: cast(
