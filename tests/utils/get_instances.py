@@ -35,40 +35,8 @@ def get_docker_deployment_config():
     )
 
 
-async def get_deployment_config(
-    _context: StreamFlowContext, deployment_t: str
-) -> DeploymentConfig:
-    if deployment_t == "local":
-        return get_local_deployment_config()
-    elif deployment_t == "docker":
-        return get_docker_deployment_config()
-    elif deployment_t == "kubernetes":
-        return get_kubernetes_deployment_config()
-    elif deployment_t == "singularity":
-        return get_singularity_deployment_config()
-    elif deployment_t == "ssh":
-        return await get_ssh_deployment_config(_context)
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
-
-
-def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
-    if deployment_t == "local":
-        return None
-    elif deployment_t == "docker":
-        return None
-    elif deployment_t == "kubernetes":
-        return "sf-test"
-    elif deployment_t == "singularity":
-        return None
-    elif deployment_t == "ssh":
-        return None
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
-
-
 def get_kubernetes_deployment_config():
-    with open(pkg_resources.resource_filename(__name__, "./pod.jinja2")) as t:
+    with open(pkg_resources.resource_filename(__name__, "pod.jinja2")) as t:
         template = Template(t.read())
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         template.stream(name=utils.random_name()).dump(f.name)
