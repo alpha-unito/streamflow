@@ -20,7 +20,7 @@ Similarly to steps, ports are uniquely identified using a Posix-like path, where
          file: main.cwl
          settings: config.yml
        bindings:
-         - step: /compile/src
+         - port: /compile/src
            target:
              deployment: hpc-slurm
              workdir: /archive/home/myuser
