@@ -5,11 +5,11 @@ import json
 import asyncio
 import logging
 from collections import deque
-from typing import MutableMapping, MutableSequence, MutableSet
+from typing import MutableMapping, MutableSequence
 
 import pkg_resources
 
-from streamflow.core.utils import random_name
+from streamflow.core.utils import random_name, get_class_from_name
 from streamflow.core.workflow import Workflow
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.recovery import FailureManager
@@ -26,6 +26,8 @@ from streamflow.recovery.utils import (
     TOKEN_WAITER,
     get_execute_step_out_token_ids,
     get_last_token,
+    get_key_by_value,
+    _execute_recovered_workflow,
 )
 from streamflow.recovery.recovery import (
     JobVersion,
@@ -36,13 +38,14 @@ from streamflow.recovery.recovery import (
     WorkflowRecovery,
     _populate_workflow,
     set_combinator_status,
+    RollbackRecoveryPolicy,
+    _save_for_retag,
 )
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 
 from streamflow.workflow.utils import get_job_token
-from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.step import ScatterStep, TransferStep
+from streamflow.workflow.step import TransferStep, ExecuteStep
 from streamflow.workflow.token import (
     TerminationToken,
     JobToken,
@@ -186,7 +189,7 @@ class DefaultFailureManager(FailureManager):
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
         try:
-            new_workflow, loading_context = await self._recover_jobs(job, step)
+            new_workflow = await self._recover_jobs(job, step)
             async with self.job_requests[job.name].lock:
                 new_job_token = get_job_token(
                     job.name,
@@ -215,6 +218,172 @@ class DefaultFailureManager(FailureManager):
             return await self.handle_exception(job, step, e)
         return command_output
 
+    async def _sync_requests(
+        self,
+        job_token,
+        failed_step,
+        new_workflow,
+        wr,
+        loading_context,
+        job_token_list_updated,
+        map_job_port,
+    ):
+        async with self.job_requests[job_token.value.name].lock:
+            if self.job_requests[job_token.value.name].is_running:
+                logger.debug(
+                    f"Job {job_token.value.name} già in esecuzione nel workflow {self.job_requests[job_token.value.name].workflow} -> Ricostruire dag"
+                )
+
+                # alternativa: dal dag_ports prendo tutte le port successive al job_token,
+                # con il database ricavo quali di queste porte sono output di uno ExecuteStep
+                # get outport ScheduleStep
+                job_token_port_row = await wr.context.database.get_port_from_token(
+                    job_token.persistent_id
+                )
+                job_token_port_name = job_token_port_row["name"]
+                job_token_port_name_m2 = get_key_by_value(
+                    job_token.persistent_id, wr.port_tokens
+                )  # new version of job_token_port_row["name"]
+                if job_token_port_name != job_token_port_name_m2:
+                    raise FailureHandlingException(
+                        "Ottenere port name del job token. Il nuovo metodo e quello vecchio hanno dato risultati diversi"
+                    )
+
+                # these can be outport of ExecuteStep and TransferStep
+                next_port_names = wr.dag_ports[job_token_port_name]
+                output_ports = []
+                for port_name in next_port_names:
+                    port_id = min(wr.port_name_ids[port_name])
+                    step_rows = await wr.context.database.get_steps_from_output_port(
+                        port_id
+                    )
+                    for step_row in await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                wr.context.database.get_step(sr["step"])
+                            )
+                            for sr in step_rows
+                        )
+                    ):
+                        if issubclass(
+                            get_class_from_name(step_row["type"]), ExecuteStep
+                        ):
+                            output_ports.append(
+                                await Port.load(
+                                    wr.context,
+                                    port_id,
+                                    loading_context,
+                                    new_workflow,
+                                )
+                            )
+
+                rows = await wr.context.database.get_executestep_outports_from_jobtoken(
+                    job_token.persistent_id
+                )
+                execute_step_outports = await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            Port.load(
+                                wr.context,
+                                row["id"],
+                                loading_context,
+                                new_workflow,
+                            )
+                        )
+                        for row in rows
+                        if row["name"] not in new_workflow.ports.keys()
+                        and row["name"] not in failed_step.output_ports.values()
+                    )
+                )
+                # controllo per debug
+                for p in execute_step_outports:
+                    if (
+                        p.name not in next_port_names
+                        and p.name not in failed_step.output_ports.values()
+                    ):
+                        if isinstance(failed_step, TransferStep):
+                            pass
+                        raise FailureHandlingException(
+                            f"wf {new_workflow.name} Port {p.name} non presente tra quelle presente nel dag_ports {next_port_names}"
+                        )
+                    logger.debug(
+                        f"wf {new_workflow.name} Porta {p.name} trovata tra le next con il secondo metodo {next_port_names}"
+                    )
+
+                # output_ports is the new version of execute_step_outports
+                a = set([op.name for op in execute_step_outports])
+                b = set([op.name for op in output_ports])
+                c = a - b
+                d = b - a
+                if c or d:
+                    raise FailureHandlingException(
+                        "Recupero port. Il nuovo metodo e quello vecchio hanno dato risultati diversi"
+                    )
+
+                # if the port can have more tokens (todo: caso non testato)
+                for row in rows:
+                    if row["name"] not in new_workflow.ports.keys():
+                        continue
+                    for pr in self.job_requests[job_token.value.name].queue:
+                        if pr.port.name == row["name"]:
+                            pr.waiting_token += 1
+                            logger.debug(
+                                f"new_workflow {new_workflow.name} already has port {pr.port.name}. Increased waiting_tokens: {pr.waiting_token}"
+                            )
+                            break
+
+                # add port in the workflow and create port recovery (request)
+                for port in execute_step_outports:
+                    port.workflow = None
+                    map_job_port[job_token.value.name] = port
+                    logger.debug(
+                        f"new_workflow {new_workflow.name} added in map_job_port[{job_token.value.name}] = {port.name}"
+                    )
+                    new_workflow.add_port(port)
+                    port.workflow = new_workflow
+                    logger.debug(
+                        f"new_workflow {new_workflow.name} added port {port.name} -> {new_workflow.ports.keys()}"
+                    )
+                    self.job_requests[job_token.value.name].queue.append(
+                        PortRecovery(port)
+                    )
+
+                # rimuovo i token generati da questo job token, pero'
+                # non posso togliere tutti i token della port perché non so quali job li genera
+                execute_step_out_token_ids = await get_execute_step_out_token_ids(
+                    [
+                        row["depender"]
+                        for row in await wr.context.database.get_dependers(
+                            job_token.persistent_id
+                        )
+                    ],
+                    wr.context,
+                )
+                for t_id in execute_step_out_token_ids:
+                    for prev_t_id in (
+                        row["dependee"]
+                        for row in await wr.context.database.get_dependees(t_id)
+                    ):
+                        await wr.remove_token_by_id(prev_t_id)
+                for p in execute_step_outports:
+                    if not is_next_of_someone(p.name, wr.dag_ports):
+                        wr.dag_ports[INIT_DAG_FLAG].add(p.name)
+                    wr.port_tokens.setdefault(p.name, set()).add(TOKEN_WAITER)
+                logger.debug(
+                    f"SYNC job {job_token.value.name} "
+                    f"in esecuzione in wf {self.job_requests[job_token.value.name].workflow} "
+                    f"servirà al wf {new_workflow.name}",
+                )
+            else:
+                logger.debug(
+                    f"Job {job_token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[job_token.value.name].job_token} - t: {self.job_requests[job_token.value.name].token_output})"
+                )
+                job_token_list_updated.append(job_token)
+                self.job_requests[job_token.value.name].is_running = True
+                self.job_requests[job_token.value.name].job_token = None
+                self.job_requests[job_token.value.name].token_output = None
+                self.job_requests[job_token.value.name].workflow = new_workflow.name
+
     async def sync_rollbacks(
         self,
         new_workflow,
@@ -228,6 +397,7 @@ class DefaultFailureManager(FailureManager):
             if isinstance(token, JobToken):
                 job_token_list.append(token)
 
+        map_job_port = {}
         job_token_list_updated = []
         for token in job_token_list:
             # update job request
@@ -236,128 +406,19 @@ class DefaultFailureManager(FailureManager):
                 self.job_requests[token.value.name].workflow = new_workflow.name
                 job_token_list_updated.append(token)
             else:
-                async with self.job_requests[token.value.name].lock:
-                    if self.job_requests[token.value.name].is_running:
-                        logger.debug(
-                            f"Job {token.value.name} già in esecuzione nel workflow {self.job_requests[token.value.name].workflow} -> Ricostruire dag"
-                        )
-
-                        # alternativa: dal dag_ports prendo tutte le port successive al job_token,
-                        # con il database ricavo quali di queste porte sono output di uno ExecuteStep
-                        # get outport ScheduleStep
-                        job_token_port_row = (
-                            await new_workflow.context.database.get_port_from_token(
-                                token.persistent_id
-                            )
-                        )
-                        job_token_port_name = job_token_port_row["name"]
-
-                        # these can be outport of ExecuteStep and TransferStep
-                        next_port_names = wr.dag_ports[job_token_port_name]
-
-                        rows = await new_workflow.context.database.get_executestep_outports_from_jobtoken(
-                            token.persistent_id
-                        )
-                        execute_step_outports = await asyncio.gather(
-                            *(
-                                asyncio.create_task(
-                                    Port.load(
-                                        new_workflow.context,
-                                        row["id"],
-                                        loading_context,
-                                        new_workflow,
-                                    )
-                                )
-                                for row in rows
-                                if row["name"] not in new_workflow.ports.keys()
-                                and row["name"] not in failed_step.output_ports.values()
-                            )
-                        )
-                        # controllo per debug
-                        for p in execute_step_outports:
-                            if (
-                                p.name not in next_port_names
-                                and p.name not in failed_step.output_ports.values()
-                            ):
-                                if isinstance(failed_step, TransferStep):
-                                    pass
-                                raise FailureHandlingException(
-                                    f"wf {new_workflow.name} Port {p.name} non presente tra quelle presente nel dag_ports {next_port_names}"
-                                )
-                            logger.debug(
-                                f"wf {new_workflow.name} Porta {p.name} trovata tra le next con il secondo metodo {next_port_names}"
-                            )
-
-                        # if the port can have more tokens (todo: caso non testato)
-                        for row in rows:
-                            if row["name"] not in new_workflow.ports.keys():
-                                continue
-                            for pr in self.job_requests[token.value.name].queue:
-                                if pr.port.name == row["name"]:
-                                    pr.waiting_token += 1
-                                    logger.debug(
-                                        f"new_workflow {new_workflow.name} already has port {pr.port.name}. Increased waiting_tokens: {pr.waiting_token}"
-                                    )
-                                    break
-
-                        # add port in the workflow and create port recovery (request)
-                        for port in execute_step_outports:
-                            new_workflow.add_port(port)
-                            logger.debug(
-                                f"new_workflow {new_workflow.name} added port {port.name} -> {new_workflow.ports.keys()}"
-                            )
-                            self.job_requests[token.value.name].queue.append(
-                                PortRecovery(port)
-                            )
-
-                        # rimuovo i token generati da questo job token, pero'
-                        # non posso togliere tutti i token della port perché non so quali job li genera
-                        execute_step_out_token_ids = (
-                            await get_execute_step_out_token_ids(
-                                [
-                                    row["depender"]
-                                    for row in await wr.context.database.get_dependers(
-                                        token.persistent_id
-                                    )
-                                ],
-                                new_workflow.context,
-                            )
-                        )
-                        for t_id in execute_step_out_token_ids:
-                            for prev_t_id in [
-                                row["dependee"]
-                                for row in await wr.context.database.get_dependees(t_id)
-                            ]:
-                                await wr.remove_token_by_id(prev_t_id)
-
-                        for p in execute_step_outports:
-                            if not is_next_of_someone(p.name, wr.dag_ports):
-                                wr.dag_ports[INIT_DAG_FLAG].add(p.name)
-                            wr.port_tokens.setdefault(p.name, set()).add(TOKEN_WAITER)
-
-                        logger.debug(
-                            f"SYNCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC job {token.value.name} "
-                            f"in esecuzione in wf {self.job_requests[token.value.name].workflow} "
-                            f"servirà al wf {new_workflow.name}",
-                        )
-                    else:
-                        logger.debug(
-                            f"Job {token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[token.value.name].job_token} - t: {self.job_requests[token.value.name].token_output})"
-                        )
-                        job_token_list_updated.append(token)
-                        self.job_requests[token.value.name].is_running = True
-                        self.job_requests[token.value.name].job_token = None
-                        self.job_requests[token.value.name].token_output = None
-                        self.job_requests[token.value.name].workflow = new_workflow.name
-
+                await self._sync_requests(
+                    token,
+                    failed_step,
+                    new_workflow,
+                    wr,
+                    loading_context,
+                    job_token_list_updated,
+                    map_job_port,
+                )
         for token in job_token_list_updated:
             async with self.job_requests[token.value.name].lock:
                 # save jobs recovered
-                if token.value.name not in self.jobs.keys():
-                    self.jobs[token.value.name] = JobVersion(
-                        version=1,
-                    )
-
+                self.jobs.setdefault(token.value.name, JobVersion(version=1))
                 if (
                     self.max_retries is None
                     or self.jobs[token.value.name].version < self.max_retries
@@ -391,48 +452,45 @@ class DefaultFailureManager(FailureManager):
     # oppure lasciamo che fallisce e poi il failure manager prende l'output nuovo di A?
     async def _recover_jobs(self, failed_job: Job, failed_step: Step):
         loading_context = DefaultDatabaseLoadingContext()
-        new_workflow, last_iteration = await self._recover_jobs_1(
+        rrp = RollbackRecoveryPolicy(self.context)
+        new_workflow, last_iteration = await rrp.recover_workflow(
             failed_job, failed_step, loading_context
         )
-        await self._recover_jobs_2(new_workflow)
+        await _execute_recovered_workflow(new_workflow)
         if last_iteration:
             logger.debug(f"Create last iteration from wf {new_workflow.name}")
-            new_workflow_1 = await self._recover_jobs_3(
+            new_workflow_last_iteration = await self._recover_jobs_3(
                 failed_step,
                 failed_job,
                 last_iteration,
-                new_workflow.context,
-                new_workflow.type,
-                new_workflow.config,
                 loading_context,
+                new_workflow,
             )
             logger.debug(
-                f"Last iteration {new_workflow.name} managed by {new_workflow_1.name}"
+                f"Last iteration {new_workflow.name} managed by {new_workflow_last_iteration.name}"
             )
             for port_name in last_iteration:
-                new_workflow_1.ports[port_name].token_list.pop(0)
-                new_workflow_1.ports[port_name].token_list.insert(
+                new_workflow_last_iteration.ports[port_name].token_list.pop(0)
+                new_workflow_last_iteration.ports[port_name].token_list.insert(
                     0, get_last_token(new_workflow.ports[port_name].token_list)
                 )
-            await self._recover_jobs_2(new_workflow_1)
-            new_workflow = new_workflow_1
-        return new_workflow, DefaultDatabaseLoadingContext()
+            await _execute_recovered_workflow(new_workflow_last_iteration)
+            return new_workflow_last_iteration
+        return new_workflow
 
     async def _recover_jobs_3(
         self,
         failed_step,
         failed_job,
         last_iteration,
-        context,
-        workflow_type,
-        config,
         loading_context,
+        prev_workflow,
     ):
         new_workflow = Workflow(
-            context=context,
-            type=workflow_type,
+            context=prev_workflow.context,
+            type=prev_workflow.type,
             name=random_name(),
-            config=config,
+            config=prev_workflow.config,
         )
         dag = {}
         for k, t in failed_job.inputs.items():
@@ -445,7 +503,7 @@ class DefaultFailureManager(FailureManager):
                 logger.debug(f"Step {failed_step.name} has not the input port {k}")
         dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
         wr = WorkflowRecovery(
-            context=context,
+            context=new_workflow.context,
             output_ports=list(failed_step.input_ports.values()),
             port_name_ids={k: {v for v in vals} for k, vals in last_iteration.items()},
             dag_ports=dag,
@@ -502,124 +560,13 @@ class DefaultFailureManager(FailureManager):
                 f"Workflow {new_workflow.name} has too much iteration (just 1 iteration is valid) {last_iteration}"
             )
         extra_data_print(
-            None,
+            prev_workflow,
             new_workflow,
             None,
             wr,
             last_iteration,
         )
         return new_workflow
-
-    async def _recover_jobs_2(self, new_workflow):
-        await new_workflow.save(new_workflow.context)
-        executor = StreamFlowExecutor(new_workflow)
-        await executor.run()
-        logger.debug(f"executor.run {new_workflow.name} terminated")
-
-    async def _recover_jobs_1(
-        self, failed_job: Job, failed_step: Step, loading_context
-    ):
-        workflow = failed_step.workflow
-        new_workflow = Workflow(
-            context=workflow.context,
-            type=workflow.type,
-            name=random_name(),
-            config=workflow.config,
-        )
-
-        # should be an impossible case
-        if failed_step.persistent_id is None:
-            raise FailureHandlingException(
-                f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
-            )
-
-        dag = {}
-        for k, t in failed_job.inputs.items():
-            if t.persistent_id is None:
-                raise FailureHandlingException("Token has not a persistent_id")
-            # se lo step è Transfer, allora non tutti gli input del job saranno nello step
-            if k in failed_step.input_ports.keys():
-                dag[failed_step.get_input_port(k).name] = {failed_step.name}
-            else:
-                logger.debug(f"Step {failed_step.name} has not the input port {k}")
-        dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
-
-        wr = WorkflowRecovery(
-            context=workflow.context,
-            output_ports=list(failed_step.input_ports.values()),
-            port_name_ids={
-                port.name: {port.persistent_id}
-                for port in failed_step.get_input_ports().values()
-            },
-            dag_ports=dag,
-        )
-
-        job_token = get_job_token(
-            failed_job.name,
-            failed_step.get_input_port("__job__").token_list,
-        )
-        tokens = deque(failed_job.inputs.values())
-        tokens.append(job_token)
-
-        await wr.build_dag(tokens, workflow, loading_context)
-        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-        logger.debug("build_dag: end build dag")
-
-        logger.debug("Start sync-rollbacks")
-        # update class state (attributes) and jobs synchronization
-        job_executed_in_new_workflow = await self.sync_rollbacks(
-            new_workflow,
-            loading_context,
-            failed_step,
-            wr,
-        )
-        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-        logger.debug("End sync-rollbacks")
-
-        # todo wr.inputs_ports non viene aggiornato
-        # if (set(wr.input_ports) - set(wr.dag_ports[INIT_DAG_FLAG])) or (set(wr.dag_ports[INIT_DAG_FLAG]) - set(wr.input_ports)):
-        #     pass
-
-        p, s = await wr.get_port_and_step_ids()
-
-        await _populate_workflow(
-            wr,
-            p,
-            s,
-            failed_step,
-            new_workflow,
-            loading_context,
-        )
-        if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
-            pass
-            # raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
-        logger.debug("end populate")
-
-        for port in failed_step.get_input_ports().values():
-            if port.name not in new_workflow.ports.keys():
-                raise FailureHandlingException(
-                    f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
-                )
-
-        logger.debug("end save_for_retag")
-
-        last_iteration = await _put_tokens(
-            new_workflow,
-            wr.dag_ports[INIT_DAG_FLAG],
-            wr.port_tokens,
-            wr.token_visited,
-            wr,
-        )
-        logger.debug("end _put_tokens")
-        await set_combinator_status(new_workflow, workflow, wr, loading_context)
-        extra_data_print(
-            workflow,
-            new_workflow,
-            job_executed_in_new_workflow,
-            wr,
-            last_iteration,
-        )
-        return new_workflow, last_iteration
 
     async def get_job_token(self, job_token):
         if job_token.value.name in self.job_requests.keys():
@@ -758,7 +705,7 @@ class DefaultFailureManager(FailureManager):
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
         try:
-            new_workflow, loading_context = await self._recover_jobs(job, step)
+            new_workflow = await self._recover_jobs(job, step)
             token = await self._execute_transfer_step(step, new_workflow, port_name)
         # When receiving a FailureHandlingException, simply fail
         except FailureHandlingException as e:

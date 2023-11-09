@@ -12,7 +12,7 @@ from streamflow.core.utils import (
     get_class_from_name,
     contains_id,
     get_tag_level,
-    compare_tags,
+    random_name,
 )
 from streamflow.core.exception import FailureHandlingException
 
@@ -47,6 +47,7 @@ from streamflow.workflow.step import (
     InputInjectorStep,
     LoopCombinatorStep,
     ExecuteStep,
+    ScatterStep,
 )
 from streamflow.workflow.token import (
     TerminationToken,
@@ -54,6 +55,7 @@ from streamflow.workflow.token import (
     IterationTerminationToken,
 )
 from streamflow.core.workflow import Workflow
+from streamflow.workflow.utils import get_job_token
 
 
 class RecoveryContext:
@@ -71,6 +73,140 @@ class RecoveryContext:
 
         # { name : [ ids ] }
         self.port_name_ids = port_name_ids
+
+
+class RollbackRecoveryPolicy:
+    def __init__(self, context):
+        self.context = context
+
+    async def recover_workflow(
+        self, failed_job: Job, failed_step: Step, loading_context
+    ):
+        workflow = failed_step.workflow
+        new_workflow = Workflow(
+            context=workflow.context,
+            type=workflow.type,
+            name=random_name(),
+            config=workflow.config,
+        )
+
+        # should be an impossible case
+        if failed_step.persistent_id is None:
+            raise FailureHandlingException(
+                f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
+            )
+
+        dag = {}
+        for k, t in failed_job.inputs.items():
+            if t.persistent_id is None:
+                raise FailureHandlingException("Token has not a persistent_id")
+            # se lo step è Transfer, allora non tutti gli input del job saranno nello step
+            if k in failed_step.input_ports.keys():
+                dag[failed_step.get_input_port(k).name] = {failed_step.name}
+            else:
+                logger.debug(f"Step {failed_step.name} has not the input port {k}")
+        dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
+
+        wr = WorkflowRecovery(
+            context=workflow.context,
+            output_ports=list(failed_step.input_ports.values()),
+            port_name_ids={
+                port.name: {port.persistent_id}
+                for port in failed_step.get_input_ports().values()
+            },
+            dag_ports=dag,
+        )
+
+        job_token = get_job_token(
+            failed_job.name,
+            failed_step.get_input_port("__job__").token_list,
+        )
+        tokens = deque(failed_job.inputs.values())
+        tokens.append(job_token)
+
+        await wr.build_dag(tokens, workflow, loading_context)
+        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
+        logger.debug("build_dag: end build dag")
+
+        logger.debug("Start sync-rollbacks")
+        # update class state (attributes) and jobs synchronization
+        job_executed_in_new_workflow = (
+            await self.context.failure_manager.sync_rollbacks(
+                new_workflow,
+                loading_context,
+                failed_step,
+                wr,
+            )
+        )
+        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
+        logger.debug("End sync-rollbacks")
+
+        # todo wr.inputs_ports non viene aggiornato
+        # if (set(wr.input_ports) - set(wr.dag_ports[INIT_DAG_FLAG])) or (set(wr.dag_ports[INIT_DAG_FLAG]) - set(wr.input_ports)):
+        #     pass
+
+        p, s = await wr.get_port_and_step_ids()
+
+        await _populate_workflow(
+            wr,
+            p,
+            s,
+            failed_step,
+            new_workflow,
+            loading_context,
+        )
+        if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
+            pass
+            # raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
+        logger.debug("end populate")
+
+        for port in failed_step.get_input_ports().values():
+            if port.name not in new_workflow.ports.keys():
+                raise FailureHandlingException(
+                    f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
+                )
+
+        _save_for_retag(new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited)
+        logger.debug("end save_for_retag")
+
+        last_iteration = await _put_tokens(
+            new_workflow,
+            wr.dag_ports[INIT_DAG_FLAG],
+            wr.port_tokens,
+            wr.token_visited,
+            wr,
+        )
+        logger.debug("end _put_tokens")
+        await set_combinator_status(new_workflow, workflow, wr, loading_context)
+        extra_data_print(
+            workflow,
+            new_workflow,
+            job_executed_in_new_workflow,
+            wr,
+            last_iteration,
+        )
+        return new_workflow, last_iteration
+
+
+def _save_for_retag(new_workflow, dag_ports, port_tokens, token_visited):
+    for step in new_workflow.steps.values():
+        if isinstance(step, ScatterStep):
+            port = step.get_output_port()
+            str_t = [
+                (t_id, token_visited[t_id][0].tag, token_visited[t_id][1])
+                for t_id in port_tokens[port.name]
+            ]
+            logger.debug(
+                f"_save_for_retag wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
+            )
+            for t_id in port_tokens[port.name]:
+                logger.debug(
+                    f"Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if token_visited[t_id][1] else 'NOT '}available"
+                )
+                if step.valid_tags is None:
+                    step.valid_tags = {token_visited[t_id][0].tag}
+                else:
+                    step.valid_tags.add(token_visited[t_id][0].tag)
 
 
 class WorkflowRecovery(RecoveryContext):
@@ -690,8 +826,6 @@ async def _put_tokens(
             s for s in port.get_output_steps() if isinstance(s, LoopCombinatorStep)
         )
         if loop_combinator_input and len(port_tokens[port_name]) > 1:
-            # token_list.pop()
-            # wr.port_tokens[port.name].pop()
             last_iteration.setdefault(port.name, set())
             for p_id in wr.port_name_ids[port.name]:
                 last_iteration[port.name].add(p_id)

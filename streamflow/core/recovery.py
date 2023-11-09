@@ -58,10 +58,6 @@ class FailureManager(SchemaEntity):
         ...
 
     @abstractmethod
-    def is_valid_tag(self, workflow_name: str, tag: str, output_port: Port):
-        ...
-
-    @abstractmethod
     async def notify_jobs(self, job_token: JobToken, out_port_name: str, token: Token):
         ...
 

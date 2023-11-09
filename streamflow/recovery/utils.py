@@ -15,6 +15,8 @@ from streamflow.core.workflow import Token
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.transformer import BackPropagationTransformer
 from streamflow.data import remotepath
+from streamflow.log_handler import logger
+from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.token import (
     JobToken,
@@ -209,3 +211,10 @@ def get_last_token(token_list):
         if not isinstance(token, (IterationTerminationToken, TerminationToken)):
             return token
     return None
+
+
+async def _execute_recovered_workflow(new_workflow):
+    await new_workflow.save(new_workflow.context)
+    executor = StreamFlowExecutor(new_workflow)
+    await executor.run()
+    logger.debug(f"executor.run {new_workflow.name} terminated")
