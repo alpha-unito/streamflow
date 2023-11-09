@@ -733,8 +733,12 @@ class ExecuteStep(BaseStep):
                 output_tokens = await self.workflow.context.failure_manager.get_tokens(
                     job.name
                 )
-                for output_name, token in output_tokens.items():
-                    self.get_output_port(output_name).put(token)
+                for out_port_name, token in output_tokens.items():
+                    if out_port_name not in self.output_ports.values():
+                        raise Exception(
+                            f"Step {self.name} (wf {self.workflow.name}) does not have port {out_port_name}"
+                        )
+                    self.workflow.ports[out_port_name].put(token)
             # If failure cannot be recovered, simply fail
             except Exception as ie:
                 if ie != e:
