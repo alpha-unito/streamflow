@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import deque
-from typing import MutableMapping, MutableSequence, Tuple, MutableSet
+from typing import MutableMapping, MutableSequence, Tuple, MutableSet, Iterable
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.utils import (
@@ -58,23 +58,6 @@ from streamflow.core.workflow import Workflow
 from streamflow.workflow.utils import get_job_token
 
 
-class RecoveryContext:
-    def __init__(
-        self,
-        output_ports: MutableSequence[str],
-        port_name_ids: MutableMapping[str, MutableSet[int]],
-        context,
-    ):
-        self.context = context
-        self.input_ports = set()
-
-        # { port_names }
-        self.output_ports = output_ports
-
-        # { name : [ ids ] }
-        self.port_name_ids = port_name_ids
-
-
 class RollbackRecoveryPolicy:
     def __init__(self, context):
         self.context = context
@@ -107,7 +90,7 @@ class RollbackRecoveryPolicy:
                 logger.debug(f"Step {failed_step.name} has not the input port {k}")
         dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
 
-        wr = WorkflowRecovery(
+        wr = ProvenanceGraphNavigation(
             context=workflow.context,
             output_ports=list(failed_step.input_ports.values()),
             port_name_ids={
@@ -145,12 +128,12 @@ class RollbackRecoveryPolicy:
         # if (set(wr.input_ports) - set(wr.dag_ports[INIT_DAG_FLAG])) or (set(wr.dag_ports[INIT_DAG_FLAG]) - set(wr.input_ports)):
         #     pass
 
-        p, s = await wr.get_port_and_step_ids()
+        ports, steps = await wr.get_port_and_step_ids()
 
         await _populate_workflow(
             wr,
-            p,
-            s,
+            ports,
+            steps,
             failed_step,
             new_workflow,
             loading_context,
@@ -166,7 +149,9 @@ class RollbackRecoveryPolicy:
                     f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
                 )
 
-        _save_for_retag(new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited)
+        _set_scatter_inner_state(
+            new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
+        )
         logger.debug("end save_for_retag")
 
         last_iteration = await _put_tokens(
@@ -188,7 +173,7 @@ class RollbackRecoveryPolicy:
         return new_workflow, last_iteration
 
 
-def _save_for_retag(new_workflow, dag_ports, port_tokens, token_visited):
+def _set_scatter_inner_state(new_workflow, dag_ports, port_tokens, token_visited):
     for step in new_workflow.steps.values():
         if isinstance(step, ScatterStep):
             port = step.get_output_port()
@@ -197,7 +182,7 @@ def _save_for_retag(new_workflow, dag_ports, port_tokens, token_visited):
                 for t_id in port_tokens[port.name]
             ]
             logger.debug(
-                f"_save_for_retag wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
+                f"_set_scatter_inner_state: wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
             )
             for t_id in port_tokens[port.name]:
                 logger.debug(
@@ -209,7 +194,7 @@ def _save_for_retag(new_workflow, dag_ports, port_tokens, token_visited):
                     step.valid_tags.add(token_visited[t_id][0].tag)
 
 
-class WorkflowRecovery(RecoveryContext):
+class ProvenanceGraphNavigation:
     def __init__(
         self,
         dag_ports: MutableMapping[str, MutableSet[str]],
@@ -217,7 +202,14 @@ class WorkflowRecovery(RecoveryContext):
         port_name_ids: MutableMapping[str, MutableSet[int]],
         context: StreamFlowContext,
     ):
-        super().__init__(output_ports, port_name_ids, context)
+        self.context = context
+        self.input_ports = set()
+
+        # { port_names }
+        self.output_ports = output_ports
+
+        # { name : [ ids ] }
+        self.port_name_ids = port_name_ids
 
         # { port_name : [ next_port_names ] }
         self.dag_ports = dag_ports
@@ -725,7 +717,6 @@ class WorkflowRecovery(RecoveryContext):
 
     async def explore_top_down(self):
         ports_frontier = {port_name for port_name in self.dag_ports[INIT_DAG_FLAG]}
-
         ports_visited = set()
 
         while ports_frontier:
@@ -791,7 +782,6 @@ class WorkflowRecovery(RecoveryContext):
                     step_to_remove.add(step_id)
         for s_id in step_to_remove:
             steps.remove(s_id)
-        pass
         return ports, steps
 
 
@@ -1100,8 +1090,8 @@ def get_failed_loop_conditional_step(new_workflow, wr):
 
 async def _populate_workflow(
     wr,
-    port_ids: MutableSequence[int],
-    step_ids: MutableSequence[int],
+    port_ids: Iterable[int],
+    step_ids: Iterable[int],
     failed_step,
     new_workflow,
     loading_context,

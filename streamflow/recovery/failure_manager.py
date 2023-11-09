@@ -35,11 +35,11 @@ from streamflow.recovery.recovery import (
     get_necessary_tokens,
     is_next_of_someone,
     _put_tokens,
-    WorkflowRecovery,
+    ProvenanceGraphNavigation,
     _populate_workflow,
     set_combinator_status,
     RollbackRecoveryPolicy,
-    _save_for_retag,
+    _set_scatter_inner_state,
 )
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -502,7 +502,7 @@ class DefaultFailureManager(FailureManager):
             else:
                 logger.debug(f"Step {failed_step.name} has not the input port {k}")
         dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
-        wr = WorkflowRecovery(
+        wr = ProvenanceGraphNavigation(
             context=new_workflow.context,
             output_ports=list(failed_step.input_ports.values()),
             port_name_ids={k: {v for v in vals} for k, vals in last_iteration.items()},
@@ -542,8 +542,10 @@ class DefaultFailureManager(FailureManager):
                     f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
                 )
 
-        _save_for_retag(new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited)
-        logger.debug("end save_for_retag")
+        _set_scatter_inner_state(
+            new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
+        )
+        logger.debug("end _set_scatter_inner_state")
 
         last_iteration = await _put_tokens(
             new_workflow,
