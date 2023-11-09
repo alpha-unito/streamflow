@@ -82,9 +82,6 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
 
-        # { workflow.name : { port.id: [ token ] } }
-        self.retags: MutableMapping[str, MutableMapping[str, MutableSet[Token]]] = {}
-
         # { job.name : RequestJob }
         self.job_requests: MutableMapping[str, JobRequest] = {}
 
@@ -487,9 +484,7 @@ class DefaultFailureManager(FailureManager):
                     f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
                 )
 
-        self._save_for_retag(
-            new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
-        )
+        _save_for_retag(new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited)
         logger.debug("end save_for_retag")
 
         last_iteration = await _put_tokens(
@@ -606,9 +601,6 @@ class DefaultFailureManager(FailureManager):
                     f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
                 )
 
-        self._save_for_retag(
-            new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
-        )
         logger.debug("end save_for_retag")
 
         last_iteration = await _put_tokens(
@@ -628,36 +620,6 @@ class DefaultFailureManager(FailureManager):
             last_iteration,
         )
         return new_workflow, last_iteration
-
-    def is_valid_tag(self, workflow_name, tag, output_port):
-        if workflow_name not in self.retags.keys():
-            return True
-        if output_port.name not in self.retags[workflow_name].keys():
-            return True
-
-        return tag in (t.tag for t in self.retags[workflow_name][output_port.name])
-
-    def _save_for_retag(self, new_workflow, dag_ports, port_tokens, token_visited):
-        if new_workflow.name not in self.retags.keys():
-            self.retags[new_workflow.name] = {}
-
-        for step in new_workflow.steps.values():
-            if isinstance(step, ScatterStep):
-                port = step.get_output_port()
-                str_t = [
-                    (t_id, token_visited[t_id][0].tag, token_visited[t_id][1])
-                    for t_id in port_tokens[port.name]
-                ]
-                logger.debug(
-                    f"_save_for_retag wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
-                )
-                for t_id in port_tokens[port.name]:
-                    logger.debug(
-                        f"Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if token_visited[t_id][1] else 'NOT '}available"
-                    )
-                    self.retags[new_workflow.name].setdefault(port.name, set()).add(
-                        token_visited[t_id][0]
-                    )
 
     async def get_job_token(self, job_token):
         if job_token.value.name in self.job_requests.keys():
@@ -851,9 +813,6 @@ class DummyFailureManager(FailureManager):
 
     async def get_job_token(self, job_token):
         return job_token
-
-    def is_valid_tag(self, workflow_name, tag, output_port):
-        return True
 
     async def notify_jobs(self, job_name, out_port_name, token):
         ...

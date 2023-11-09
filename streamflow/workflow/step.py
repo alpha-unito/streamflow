@@ -1579,6 +1579,13 @@ class ScheduleStep(BaseStep):
 
 
 class ScatterStep(BaseStep):
+    def __init__(self, name: str, workflow: Workflow):
+        super().__init__(name, workflow)
+        # valid tags filters the data with not valid tags
+        # None: any tags is valid
+        # set of tags: only these tags are used, other tags are discarded
+        self.valid_tags = None
+
     async def _scatter(self, token: Token):
         if isinstance(token.value, Token):
             await self._scatter(token.value)
@@ -1586,9 +1593,7 @@ class ScatterStep(BaseStep):
             output_port = self.get_output_port()
             for i, t in enumerate(token.value):
                 tag = token.tag + "." + str(i)
-                if self.workflow.context.failure_manager.is_valid_tag(
-                    self.workflow.name, tag, output_port
-                ):
+                if self.valid_tags is None or tag in self.valid_tags:
                     output_port.put(
                         await self._persist_token(
                             token=t.retag(tag),
