@@ -74,6 +74,7 @@ class PortRecovery:
 
 class JobRequest:
     def __init__(self):
+        self.version = 1
         self.job_token: JobToken | None = None
         self.token_output: MutableMapping[str, Token] = {}
         self.lock = asyncio.Condition()
@@ -94,7 +95,6 @@ class DefaultFailureManager(FailureManager):
         retry_delay: int | None = None,
     ):
         super().__init__(context)
-        self.jobs: MutableMapping[str, JobVersion] = {}
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
 
@@ -196,7 +196,6 @@ class DefaultFailureManager(FailureManager):
                     self.job_requests[token.value.name].token_output = None
                     self.job_requests[token.value.name].workflow = None
         return False
-
 
     async def _sync_requests(
         self,
@@ -398,15 +397,13 @@ class DefaultFailureManager(FailureManager):
         for token in job_token_list_updated:
             async with self.job_requests[token.value.name].lock:
                 # save jobs recovered
-                self.jobs.setdefault(token.value.name, JobVersion(version=1))
                 if (
                     self.max_retries is None
-                    or self.jobs[token.value.name].version < self.max_retries
+                    or self.job_requests[token.value.name].version < self.max_retries
                 ):
-                    job_executed_in_new_workflow.add(token.value.name)
-                    self.jobs[token.value.name].version += 1
+                    self.job_requests[token.value.name].version += 1
                     logger.debug(
-                        f"Updated Job {token.value.name} at {self.jobs[token.value.name].version} times (wf {new_workflow.name})"
+                        f"Updated Job {token.value.name} at {self.job_requests[token.value.name].version} times (wf {new_workflow.name})"
                     )
 
                     # free resources scheduler
@@ -418,10 +415,10 @@ class DefaultFailureManager(FailureManager):
                     )
                 else:
                     logger.error(
-                        f"FAILED Job {token.value.name} {self.jobs[token.value.name].version} times. Execution aborted"
+                        f"FAILED Job {token.value.name} {self.job_requests[token.value.name].version} times. Execution aborted"
                     )
                     raise FailureHandlingException()
-        return job_executed_in_new_workflow
+        return [t.value.name for t in job_token_list]
 
     # todo: situazione problematica
     #  A -> B
