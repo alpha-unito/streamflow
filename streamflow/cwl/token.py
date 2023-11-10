@@ -75,7 +75,7 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
             else:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Invalidated location {data_loc.deployment} (Losted path {data_loc.path})"
+                        f"Invalidated location {data_loc.deployment} (Lost path {data_loc.path})"
                     )
                 context.data_manager.invalidate_location(data_loc, "/")
         return is_available

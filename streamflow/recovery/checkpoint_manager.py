@@ -59,7 +59,7 @@ class DefaultCheckpointManager(CheckpointManager):
                 ).get_available_locations(self.service)
             ).values()
         )[0]
-        # writable is setted to True, in this way it is not created a symbolic link if file is available in the same location
+        # writable is set to True, in this way it is not created a symbolic link if file is available in the same location
         await self.context.data_manager.transfer_data(
             src_locations=[data_location],
             src_path=data_location.path,

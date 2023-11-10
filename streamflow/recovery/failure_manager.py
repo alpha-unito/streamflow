@@ -204,7 +204,7 @@ class DefaultFailureManager(FailureManager):
         new_workflow,
         wr,
         loading_context,
-        job_token_list_updated,
+        job_token_list,
         map_job_port,
     ):
         async with self.job_requests[job_token.value.name].lock:
@@ -357,7 +357,7 @@ class DefaultFailureManager(FailureManager):
                 logger.debug(
                     f"Job {job_token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[job_token.value.name].job_token} - t: {self.job_requests[job_token.value.name].token_output})"
                 )
-                job_token_list_updated.append(job_token)
+                job_token_list.append(job_token)
                 self.job_requests[job_token.value.name].is_running = True
                 self.job_requests[job_token.value.name].job_token = None
                 self.job_requests[job_token.value.name].token_output = None
@@ -370,20 +370,16 @@ class DefaultFailureManager(FailureManager):
         failed_step,
         wr,
     ):
-        job_executed_in_new_workflow = set()  # debug variable
-        job_token_list = []
-        for token, _ in wr.token_visited.values():
-            if isinstance(token, JobToken):
-                job_token_list.append(token)
-
         map_job_port = {}
-        job_token_list_updated = []
-        for token in job_token_list:
+        job_token_list = []
+        for token in (
+            t for t, _ in wr.token_visited.values() if isinstance(t, JobToken)
+        ):
             # update job request
             if token.value.name not in self.job_requests.keys():
                 self.job_requests[token.value.name] = JobRequest()
                 self.job_requests[token.value.name].workflow = new_workflow.name
-                job_token_list_updated.append(token)
+                job_token_list.append(token)
             else:
                 await self._sync_requests(
                     token,
@@ -391,10 +387,10 @@ class DefaultFailureManager(FailureManager):
                     new_workflow,
                     wr,
                     loading_context,
-                    job_token_list_updated,
+                    job_token_list,
                     map_job_port,
                 )
-        for token in job_token_list_updated:
+        for token in job_token_list:
             async with self.job_requests[token.value.name].lock:
                 # save jobs recovered
                 if (
