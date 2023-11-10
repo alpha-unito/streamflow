@@ -51,6 +51,19 @@ from streamflow.workflow.token import (
     JobToken,
 )
 
+async def _execute_transfer_step(failed_step, new_workflow, port_name):
+    token_list = (
+        new_workflow.steps[failed_step.name].get_output_port(port_name).token_list
+    )
+    if len(token_list) != 2:
+        raise FailureHandlingException(
+            f"Step recovery {failed_step.name} did not generate the right number of tokens: {len(token_list)}"
+        )
+    if not isinstance(token_list[1], TerminationToken):
+        raise FailureHandlingException(
+            f"Step recovery {failed_step.name} did not work well. It moved two tokens instead of one: {[t.persistent_id for t in token_list]}"
+        )
+    return token_list[0]
 
 
 class PortRecovery:
@@ -184,39 +197,6 @@ class DefaultFailureManager(FailureManager):
                     self.job_requests[token.value.name].workflow = None
         return False
 
-    async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
-        # Delay rescheduling to manage temporary failures (e.g. connection lost)
-        if self.retry_delay is not None:
-            await asyncio.sleep(self.retry_delay)
-        try:
-            new_workflow = await self._recover_jobs(job, step)
-            async with self.job_requests[job.name].lock:
-                new_job_token = get_job_token(
-                    job.name,
-                    new_workflow.steps[step.name].get_input_port("__job__").token_list,
-                )
-                if self.job_requests[job.name].job_token is None:
-                    raise FailureHandlingException(
-                        f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found job_token {new_job_token.persistent_id}."
-                    )
-            command_output = CommandOutput(
-                value=None, status=new_workflow.steps[step.name].status
-            )
-            # When receiving a FailureHandlingException, simply fail
-        except FailureHandlingException as e:
-            logger.exception(e)
-            raise
-        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-        except KeyboardInterrupt:
-            raise
-        except WorkflowTransferException as e:
-            logger.exception(e)
-            logger.debug("WorkflowTransferException ma stavo gestendo execute job")
-            raise
-        except Exception as e:
-            logger.exception(e)
-            return await self.handle_exception(job, step, e)
-        return command_output
 
     async def _sync_requests(
         self,
@@ -659,7 +639,7 @@ class DefaultFailureManager(FailureManager):
                             f"Token added into Port of another wf {str_t}."
                             f"Aspetta {elem.waiting_token} tokens prima di mettere il terminationtoken"
                             if elem.waiting_token
-                            else f"Mandato anche termination token"
+                            else "Mandato anche termination token"
                         )
 
                 for elem in elems:
@@ -671,6 +651,40 @@ class DefaultFailureManager(FailureManager):
         return pkg_resources.resource_filename(
             __name__, os.path.join("schemas", "default_failure_manager.json")
         )
+
+    async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
+        # Delay rescheduling to manage temporary failures (e.g. connection lost)
+        if self.retry_delay is not None:
+            await asyncio.sleep(self.retry_delay)
+        try:
+            new_workflow = await self._recover_jobs(job, step)
+            async with self.job_requests[job.name].lock:
+                new_job_token = get_job_token(
+                    job.name,
+                    new_workflow.steps[step.name].get_input_port("__job__").token_list,
+                )
+                if self.job_requests[job.name].job_token is None:
+                    raise FailureHandlingException(
+                        f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found job_token {new_job_token.persistent_id}."
+                    )
+            command_output = CommandOutput(
+                value=None, status=new_workflow.steps[step.name].status
+            )
+            # When receiving a FailureHandlingException, simply fail
+        except FailureHandlingException as e:
+            logger.exception(e)
+            raise
+        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+        except KeyboardInterrupt:
+            raise
+        except WorkflowTransferException as e:
+            logger.exception(e)
+            logger.debug("WorkflowTransferException ma stavo gestendo execute job")
+            raise
+        except Exception as e:
+            logger.exception(e)
+            return await self.handle_exception(job, step, e)
+        return command_output
 
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
@@ -700,15 +714,13 @@ class DefaultFailureManager(FailureManager):
             logger.info(
                 f"Handling {WorkflowTransferException.__name__} failure for job {job.name}"
             )
-
         if job.name in self.job_requests.keys():
             self.job_requests[job.name].is_running = False
-
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
         try:
             new_workflow = await self._recover_jobs(job, step)
-            token = await self._execute_transfer_step(step, new_workflow, port_name)
+            token = await _execute_transfer_step(step, new_workflow, port_name)
         # When receiving a FailureHandlingException, simply fail
         except FailureHandlingException as e:
             logger.exception(e)
@@ -722,22 +734,7 @@ class DefaultFailureManager(FailureManager):
         except Exception as e:
             logger.exception(e)
             raise e
-            # return await self.handle_exception(job, step, e)
         return token
-
-    async def _execute_transfer_step(self, failed_step, new_workflow, port_name):
-        token_list = (
-            new_workflow.steps[failed_step.name].get_output_port(port_name).token_list
-        )
-        if len(token_list) != 2:
-            raise FailureHandlingException(
-                f"Step recovery {failed_step.name} did not generate the right number of tokens: {len(token_list)}"
-            )
-        if not isinstance(token_list[1], TerminationToken):
-            raise FailureHandlingException(
-                f"Step recovery {failed_step.name} did not work well. It moved two tokens instead of one: {[t.persistent_id for t in token_list]}"
-            )
-        return token_list[0]
 
 
 class DummyFailureManager(FailureManager):

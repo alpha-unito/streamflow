@@ -531,7 +531,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
                 for path in globpath:
-                    # todo: add asyncio.create_task?
+                    # todo: add asyncio.create_task ?
                     resolve_tasks.append(
                         utils.expand_glob(
                             connector=connector,

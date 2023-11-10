@@ -38,6 +38,7 @@ from streamflow.recovery.utils import (
     convert_to_json,
     get_recovery_loop_expression,
     get_output_ports,
+    extra_data_print,
 )
 from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -139,8 +140,7 @@ class RollbackRecoveryPolicy:
             loading_context,
         )
         if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
-            pass
-            # raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
+            raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
         logger.debug("end populate")
 
         for port in failed_step.get_input_ports().values():
@@ -186,8 +186,9 @@ def _set_scatter_inner_state(new_workflow, dag_ports, port_tokens, token_visited
             )
             for t_id in port_tokens[port.name]:
                 logger.debug(
-                    f"Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if token_visited[t_id][1] else 'NOT '}available"
+                    f"_set_scatter_inner_state: Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if token_visited[t_id][1] else 'NOT '}available"
                 )
+                # a possible control can be if not token_visited[t_id][1]: then add in valid tags
                 if step.valid_tags is None:
                     step.valid_tags = {token_visited[t_id][0].tag}
                 else:
@@ -827,6 +828,9 @@ async def _put_tokens(
                 )
             port.put(t)
             if is_back_prop_output_port:
+                logger.debug(
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, insert termination token (it is output port of a Back-prop)"
+                )
                 port.put(TerminationToken())
                 break
 
@@ -910,7 +914,30 @@ async def set_combinator_status(new_workflow, workflow, wr, loading_context):
                 logger.debug(
                     f"recover_jobs-last_iteration: Step {step.name} combinator updated map[{prefix}] = {step.combinator.iteration_map[prefix]}"
                 )
-    return last_iteration
+
+
+# def has_same_depth_of_succ(db_tags, token, port):
+#     # ordina la lista per tag,
+#     # vedi la posizione di token.tag nella lista,
+#     # vedi il tag successivo. (idea iniziale era precedente, ma con rollback annidati si perdono info sui token prodotti nella port iniziale)
+#     # se ha un livello meno, allora return true
+#     from functools import cmp_to_key
+#
+#     db_tags.sort(key=cmp_to_key(compare_tags))
+#     if token.tag in db_tags:
+#         index = db_tags.index(token.tag)
+#     else:
+#         raise Exception("Tag non trovato")
+#     logger.debug(
+#         f"recover_jobs-last_iteration: Port {port.name} db toks {db_tags} and ref-token {token.tag}. Index: {index}"
+#     )
+#     # if index > 0:
+#     #     res = len(db_tags[index - 1].split(".")) == len(db_tags[index].split("."))
+#     #     return res
+#     if index < len(db_tags) - 1:
+#         res = len(db_tags[index + 1].split(".")) == len(db_tags[index].split("."))
+#         return res
+#     return False
 
 
 async def load_and_add_ports(port_ids, new_workflow, loading_context):
