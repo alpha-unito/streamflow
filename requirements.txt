@@ -5,7 +5,7 @@ asyncssh==2.14.1
 bcrypt==4.0.1
 cachetools==5.3.2
 cwltool==3.1.20231020140205
-cwl-utils==0.30
+cwl-utils==0.31
 importlib_metadata==6.8.0
 Jinja2==3.1.2
 jsonschema==4.19.2
