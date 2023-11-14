@@ -197,6 +197,22 @@ class DefaultFailureManager(FailureManager):
                     self.job_requests[token.value.name].workflow = None
         return False
 
+    async def is_running_token(self, token):
+        if isinstance(token, JobToken) and token.value.name in self.job_requests.keys():
+            async with self.job_requests[token.value.name].lock:
+                if self.job_requests[token.value.name].is_running:
+                    return True
+                elif self.job_requests[token.value.name].token_output and all(
+                    [
+                        await _is_token_available(t, self.context)
+                        for t in self.job_requests[
+                            token.value.name
+                        ].token_output.values()
+                    ]
+                ):
+                    return True
+        return False
+
     async def _sync_requests(
         self,
         job_token,

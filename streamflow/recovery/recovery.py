@@ -26,6 +26,7 @@ from streamflow.cwl.transformer import (
     CWLTokenTransformer,
 )
 from streamflow.log_handler import logger
+from streamflow.recovery.rollback_recovery import NewProvenanceGraphNavigation
 from streamflow.recovery.utils import (
     is_output_port_forward,
     is_next_of_someone,
@@ -105,24 +106,26 @@ class RollbackRecoveryPolicy:
             failed_job.name,
             failed_step.get_input_port("__job__").token_list,
         )
+        npgn = NewProvenanceGraphNavigation(workflow.context)
+        await npgn.build_unfold_graph((*failed_job.inputs.values(), job_token))
+
         tokens = deque(failed_job.inputs.values())
         tokens.append(job_token)
-
         await wr.build_dag(tokens, workflow, loading_context)
         wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
         logger.debug("build_dag: end build dag")
 
         logger.debug("Start sync-rollbacks")
         # update class state (attributes) and jobs synchronization
-        job_executed_in_new_workflow = (
-            await self.context.failure_manager.sync_rollbacks(
-                new_workflow,
-                loading_context,
-                failed_step,
-                wr,
-            )
+        await npgn.sync_running_jobs()
+        job_rollback = await self.context.failure_manager.sync_rollbacks(
+            new_workflow,
+            loading_context,
+            failed_step,
+            wr,
         )
         wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
+        inner_graph = await npgn.refold_graphs()
         logger.debug("End sync-rollbacks")
 
         # todo wr.inputs_ports non viene aggiornato
@@ -167,7 +170,7 @@ class RollbackRecoveryPolicy:
         extra_data_print(
             workflow,
             new_workflow,
-            job_executed_in_new_workflow,
+            job_rollback,
             wr,
             last_iteration,
         )
