@@ -149,9 +149,9 @@ class RollbackRecoveryPolicy:
                     f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
                 )
 
-        _set_scatter_inner_state(
-            new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
-        )
+        # _set_scatter_inner_state(
+        #     new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
+        # )
         logger.debug("end save_for_retag")
 
         last_iteration = await _put_tokens(
@@ -162,7 +162,8 @@ class RollbackRecoveryPolicy:
             wr,
         )
         logger.debug("end _put_tokens")
-        await set_combinator_status(new_workflow, workflow, wr, loading_context)
+        # await set_combinator_status(new_workflow, workflow, wr, loading_context)
+        await _set_steps_state(new_workflow, wr)
         extra_data_print(
             workflow,
             new_workflow,
@@ -171,28 +172,6 @@ class RollbackRecoveryPolicy:
             last_iteration,
         )
         return new_workflow, last_iteration
-
-
-def _set_scatter_inner_state(new_workflow, dag_ports, port_tokens, token_visited):
-    for step in new_workflow.steps.values():
-        if isinstance(step, ScatterStep):
-            port = step.get_output_port()
-            str_t = [
-                (t_id, token_visited[t_id][0].tag, token_visited[t_id][1])
-                for t_id in port_tokens[port.name]
-            ]
-            logger.debug(
-                f"_set_scatter_inner_state: wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
-            )
-            for t_id in port_tokens[port.name]:
-                logger.debug(
-                    f"_set_scatter_inner_state: Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if token_visited[t_id][1] else 'NOT '}available"
-                )
-                # a possible control can be if not token_visited[t_id][1]: then add in valid tags
-                if step.valid_tags is None:
-                    step.valid_tags = {token_visited[t_id][0].tag}
-                else:
-                    step.valid_tags.add(token_visited[t_id][0].tag)
 
 
 class ProvenanceGraphNavigation:
@@ -292,7 +271,7 @@ class ProvenanceGraphNavigation:
         #   in particolare se la port è presente in init e si sta aggiungendo in un'altra port
         #       - o non si aggiunge
         #       - o si toglie da init e si aggiunge nella nuova port
-        #   stessa cosa viceversa, se è in un'altra port e si sta aggiungendo in init
+        #   stessa cosa vice-versa, se è in un'altra port e si sta aggiungendo in init
         # edit. attuale implementazione: si toglie da init e si aggiunge alla port nuova
         if (
             INIT_DAG_FLAG in self.dag_ports.keys()
@@ -866,6 +845,60 @@ async def _put_tokens(
                 f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
             )
     return last_iteration
+
+
+async def _set_steps_state(new_workflow, wr):
+    for step in new_workflow.steps.values():
+        if isinstance(step, ScatterStep):
+            port = step.get_output_port()
+            str_t = [
+                (t_id, wr.token_visited[t_id][0].tag, wr.token_visited[t_id][1])
+                for t_id in wr.port_tokens[port.name]
+            ]
+            logger.debug(
+                f"_set_scatter_inner_state: wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
+            )
+            for t_id in wr.port_tokens[port.name]:
+                logger.debug(
+                    f"_set_scatter_inner_state: Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if wr.token_visited[t_id][1] else 'NOT '}available"
+                )
+                # a possible control can be if not token_visited[t_id][1]: then add in valid tags
+                if step.valid_tags is None:
+                    step.valid_tags = {wr.token_visited[t_id][0].tag}
+                else:
+                    step.valid_tags.add(wr.token_visited[t_id][0].tag)
+        elif isinstance(step, LoopCombinatorStep):
+            port = list(step.get_input_ports().values()).pop()
+            token = port.token_list[0]
+
+            prefix = ".".join(token.tag.split(".")[:-1])
+            if prefix != "":
+                step.combinator.iteration_map[prefix] = int(token.tag.split(".")[-1])
+                logger.debug(
+                    f"recover_jobs-last_iteration: Step {step.name} combinator updated map[{prefix}] = {step.combinator.iteration_map[prefix]}"
+                )
+
+
+def _set_scatter_inner_state(new_workflow, dag_ports, port_tokens, token_visited):
+    for step in new_workflow.steps.values():
+        if isinstance(step, ScatterStep):
+            port = step.get_output_port()
+            str_t = [
+                (t_id, token_visited[t_id][0].tag, token_visited[t_id][1])
+                for t_id in port_tokens[port.name]
+            ]
+            logger.debug(
+                f"_set_scatter_inner_state: wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
+            )
+            for t_id in port_tokens[port.name]:
+                logger.debug(
+                    f"_set_scatter_inner_state: Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if token_visited[t_id][1] else 'NOT '}available"
+                )
+                # a possible control can be if not token_visited[t_id][1]: then add in valid tags
+                if step.valid_tags is None:
+                    step.valid_tags = {token_visited[t_id][0].tag}
+                else:
+                    step.valid_tags.add(token_visited[t_id][0].tag)
 
 
 async def set_combinator_status(new_workflow, workflow, wr, loading_context):
