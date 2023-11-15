@@ -406,6 +406,25 @@ class DefaultFailureManager(FailureManager):
                     job_token_list,
                     map_job_port,
                 )
+            if enable_sync:
+                await self.update_job_status(job_token_list)
+        return [t.value.name for t in job_token_list]
+
+    def add_waiter(self, job_name, port_name, port_recovery=None):
+        if port_recovery:
+            port_recovery.waiting_token += 1
+        else:
+            port_recovery = PortRecovery(Port(None, port_name))
+            self.job_requests[job_name].queue.append(port_recovery)
+        return port_recovery
+
+    def setup_job_request(self, job_name, default_is_running=None):
+        jr = JobRequest()
+        if default_is_running is not None:
+            jr.is_running = default_is_running
+        self.job_requests.setdefault(job_name, jr)
+
+    async def update_job_status(self, job_token_list):
         for token in job_token_list:
             async with self.job_requests[token.value.name].lock:
                 # save jobs recovered
@@ -415,14 +434,13 @@ class DefaultFailureManager(FailureManager):
                 ):
                     self.job_requests[token.value.name].version += 1
                     logger.debug(
-                        f"Updated Job {token.value.name} at {self.job_requests[token.value.name].version} times (wf {new_workflow.name})"
+                        f"Updated Job {token.value.name} at {self.job_requests[token.value.name].version} times"
                     )
-
                     # free resources scheduler
-                    await wr.context.scheduler.notify_status(
+                    await self.context.scheduler.notify_status(
                         token.value.name, Status.ROLLBACK
                     )
-                    wr.context.scheduler.deallocate_job(
+                    self.context.scheduler.deallocate_job(
                         token.value.name, keep_job_allocation=True
                     )
                 else:
@@ -430,7 +448,6 @@ class DefaultFailureManager(FailureManager):
                         f"FAILED Job {token.value.name} {self.job_requests[token.value.name].version} times. Execution aborted"
                     )
                     raise FailureHandlingException()
-        return [t.value.name for t in job_token_list]
 
     # todo: situazione problematica
     #  A -> B
@@ -644,11 +661,13 @@ class DefaultFailureManager(FailureManager):
                             },
                             indent=2,
                         )
-                        logger.debug(
-                            f"Token added into Port of another wf {str_t}."
+                        msg_pt2 = (
                             f"Aspetta {elem.waiting_token} tokens prima di mettere il terminationtoken"
                             if elem.waiting_token
                             else "Mandato anche termination token"
+                        )
+                        logger.debug(
+                            f"Token added into Port of another wf {str_t}. {msg_pt2}"
                         )
 
                 for elem in elems:

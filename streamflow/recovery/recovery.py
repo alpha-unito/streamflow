@@ -81,26 +81,26 @@ class RollbackRecoveryPolicy:
                 f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
             )
 
-        dag = {}
-        for k, t in failed_job.inputs.items():
-            if t.persistent_id is None:
-                raise FailureHandlingException("Token has not a persistent_id")
-            # se lo step è Transfer, allora non tutti gli input del job saranno nello step
-            if k in failed_step.input_ports.keys():
-                dag[failed_step.get_input_port(k).name] = {failed_step.name}
-            else:
-                logger.debug(f"Step {failed_step.name} has not the input port {k}")
-        dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
-
-        wr = ProvenanceGraphNavigation(
-            context=workflow.context,
-            output_ports=list(failed_step.input_ports.values()),
-            port_name_ids={
-                port.name: {port.persistent_id}
-                for port in failed_step.get_input_ports().values()
-            },
-            dag_ports=dag,
-        )
+        # dag = {}
+        # for k, t in failed_job.inputs.items():
+        #     if t.persistent_id is None:
+        #         raise FailureHandlingException("Token has not a persistent_id")
+        #     # se lo step è Transfer, allora non tutti gli input del job saranno nello step
+        #     if k in failed_step.input_ports.keys():
+        #         dag[failed_step.get_input_port(k).name] = {failed_step.name}
+        #     else:
+        #         logger.debug(f"Step {failed_step.name} has not the input port {k}")
+        # dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
+        #
+        # wr = ProvenanceGraphNavigation(
+        #     context=workflow.context,
+        #     output_ports=list(failed_step.input_ports.values()),
+        #     port_name_ids={
+        #         port.name: {port.persistent_id}
+        #         for port in failed_step.get_input_ports().values()
+        #     },
+        #     dag_ports=dag,
+        # )
 
         job_token = get_job_token(
             failed_job.name,
@@ -109,22 +109,25 @@ class RollbackRecoveryPolicy:
         npgn = NewProvenanceGraphNavigation(workflow.context)
         await npgn.build_unfold_graph((*failed_job.inputs.values(), job_token))
 
-        tokens = deque(failed_job.inputs.values())
-        tokens.append(job_token)
-        await wr.build_dag(tokens, workflow, loading_context)
-        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-        logger.debug("build_dag: end build dag")
+        # tokens = deque(failed_job.inputs.values())
+        # tokens.append(job_token)
+        # await wr.build_dag(tokens, workflow, loading_context)
+        # wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
+        # logger.debug("build_dag: end build dag")
 
         logger.debug("Start sync-rollbacks")
         # update class state (attributes) and jobs synchronization
-        await npgn.sync_running_jobs()
-        job_rollback = await self.context.failure_manager.sync_rollbacks(
-            new_workflow,
-            loading_context,
-            failed_step,
-            wr,
-        )
-        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
+        map_job_port = await npgn.sync_running_jobs(new_workflow)
+
+        # job_rollback = await self.context.failure_manager.sync_rollbacks(
+        #     new_workflow, loading_context, failed_step, wr, enable_sync=False
+        # )
+        # wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
+
+        # todo tmp soluzione perché con i loop non funziona
+        for pr in map_job_port.values():
+            pr.port.workflow = new_workflow
+            new_workflow.add_port(pr.port)
         inner_graph = await npgn.refold_graphs()
         logger.debug("End sync-rollbacks")
 
@@ -170,7 +173,7 @@ class RollbackRecoveryPolicy:
         extra_data_print(
             workflow,
             new_workflow,
-            job_rollback,
+            None,  # job_rollback,
             wr,
             last_iteration,
         )
@@ -787,7 +790,7 @@ async def _put_tokens(
             for t1 in token_list[i:]:
                 if t.persistent_id != t1.persistent_id and t.tag == t1.tag:
                     raise FailureHandlingException(
-                        f"Tag ripetuto id1: {t.persistent_id} id2: {t1.persistent_id}"
+                        f"Tag {t.tag} ripetuto id1: {t.persistent_id} id2: {t1.persistent_id}"
                     )
         port = new_workflow.ports[port_name]
         is_back_prop_output_port = any(
@@ -1215,7 +1218,7 @@ async def _populate_workflow(
             full_js=True,
         )
         logger.debug(
-            f"Step {ll_cond_step.name} (wf {new_workflow.name}) setted with expression: {ll_cond_step.expression}"
+            f"Step {ll_cond_step.name} (wf {new_workflow.name}) set with expression: {ll_cond_step.expression}"
         )
         for dep_name, port in replace_step.get_input_ports().items():
             logger.debug(
@@ -1264,7 +1267,7 @@ async def _populate_workflow(
         for p_name in step.input_ports.values():
             if p_name not in new_workflow.ports.keys():
                 # problema nato dai loop. Vengono caricati nel new_workflow tutti gli step che hanno come output le port
-                # nel grafo. Però nei loop, più step hanno stessa porta di output (forwad, backprop, loop-term).
+                # nel grafo. Però nei loop, più step hanno stessa porta di output (forward, backprop, loop-term).
                 # per capire se lo step sia necessario controlliamo che anche le sue port di input siano state caricate
                 logger.debug(
                     f"populate_workflow: Rimuovo step {step.name} dal wf {new_workflow.name} perché manca la input port {p_name}"
@@ -1295,7 +1298,7 @@ async def _populate_workflow(
         new_workflow.steps.pop(step_name)
 
     graph = None
-    # tmp soluzione. risolvere a monte, nel momento in cui si fa la load
+    # todo tmp soluzione. risolvere a monte, nel momento in cui si fa la load
     for s in new_workflow.steps.values():
         if isinstance(s, CWLTokenTransformer) and isinstance(
             s.processor, CWLTokenProcessor

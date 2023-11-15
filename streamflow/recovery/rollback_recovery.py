@@ -135,7 +135,40 @@ class RollbackDeterministicWorkflowPolicy:
         # { token id : is_available }
         self.token_available = {}
 
+        self.token_instances = {}
+
         self.context = context
+
+    def is_present(self, t_id):
+        for ts in self.port_tokens.values():
+            if t_id in ts:
+                return True
+        return False
+
+    def add(self, port_name, token, is_av):
+        self.port_tokens.setdefault(port_name, set())
+        for t_id in self.port_tokens[port_name]:
+            if isinstance(token, JobToken):
+                if self.token_instances[t_id].value.name == token.value.name:
+                    if t_id < token.persistent_id:
+                        self.port_tokens[port_name].remove(t_id)
+                        if not self.is_present(t_id):
+                            self.token_available.pop(t_id)
+                            self.token_instances.pop(t_id)
+                        break
+                    return False
+            elif self.token_instances[t_id].tag == token.tag:
+                if t_id < token.persistent_id:
+                    self.port_tokens[port_name].remove(t_id)
+                    if not self.is_present(t_id):
+                        self.token_available.pop(t_id)
+                        self.token_instances.pop(t_id)
+                    break
+                return False
+        self.port_tokens[port_name].add(token.persistent_id)
+        self.token_available[token.persistent_id] = is_av
+        self.token_instances[token.persistent_id] = token
+        return True
 
 
 class TokenAvailability(Enum):
@@ -200,7 +233,7 @@ class NewProvenanceGraphNavigation:
             # questa condizione si potrebbe mettere come parametro e utilizzarla come taglio. Ovvero, dove l'utente vuole che si fermi la ricerca indietro
             if await self.context.failure_manager.is_running_token(token):
                 self.add(None, token)
-                is_available = TokenAvailability.FutureAvailable
+                is_available = TokenAvailability.Unavailable
                 logger.debug(
                     f"new_build_dag: Token id {token.persistent_id} is running. Added in INIT"
                 )
@@ -255,43 +288,43 @@ class NewProvenanceGraphNavigation:
                 output_token_ids.add(next_t_id)
         return output_token_ids
 
-    async def sync_running_jobs(self):
-        logger.debug(f"INIZIO sync RUNNING JOBS")
-        b = set(
-            k
-            for k, t in self.info_tokens.items()
-            if isinstance(t.instance, JobToken)
-            and t.is_available == TokenAvailability.Available
-        )
+    async def sync_running_jobs(self, workflow):
+        logger.debug(f"INIZIO sync (wf {workflow.name}) RUNNING JOBS")
+        map_job_port = {}
         for job_token in [
             t_info.instance
             for t_info in self.info_tokens.values()
             if isinstance(t_info.instance, JobToken)
         ]:
-            if (
-                job_token.value.name
-                not in self.context.failure_manager.job_requests.keys()
-            ):
-                continue
+            self.context.failure_manager.setup_job_request(
+                job_token.value.name, default_is_running=False
+            )
             job_request = self.context.failure_manager.job_requests[
                 job_token.value.name
             ]
             async with job_request.lock:
                 if job_request.is_running:
-                    cp = DirectGraph()
-                    for k, values in self.dag_tokens.items():
-                        for v in values:
-                            cp.add(k, v)
                     logger.debug(
-                        f"Sync Job {job_token.value.name}: JobRequest is running"
+                        f"Sync (wf {workflow.name}) Job {job_token.value.name}: JobRequest is running."
                     )
                     for output_token_id in await self.get_execute_token_ids(job_token):
+                        self.info_tokens[
+                            output_token_id
+                        ].is_available = TokenAvailability.FutureAvailable
                         for prev in self.dag_tokens.prev(output_token_id):
                             self.remove(self.info_tokens[prev].instance)
                             logger.debug(
-                                f"Sync Job {job_token.value.name}: From JobToken {job_token.persistent_id}, found {output_token_id} execute token and removed {prev} token"
+                                f"Sync (wf {workflow.name}) Job {job_token.value.name}: From JobToken {job_token.persistent_id}, found {output_token_id} execute token and removed {prev} token"
                             )
-                    pass
+                        port_recovery = self.context.failure_manager.add_waiter(
+                            job_token.value.name,
+                            self.info_tokens[output_token_id].port_row["name"],
+                            map_job_port.get(job_token.value.name, None),
+                        )
+                        logger.debug(
+                            f"Created port {port_recovery.port.name} for wf {workflow.name} with waiting token {port_recovery.waiting_token}"
+                        )
+                        map_job_port.setdefault(job_token.value.name, port_recovery)
                 elif job_request.token_output and all(
                     [
                         await _is_token_available(t, self.context)
@@ -312,7 +345,7 @@ class NewProvenanceGraphNavigation:
                             port_row["id"], self.context
                         )
                         logger.debug(
-                            f"Sync Job {job_token.value.name}: Replace {self.info_tokens[output_token_id].instance.persistent_id} with {new_token.persistent_id}"
+                            f"Sync (wf {workflow.name}) Job {job_token.value.name}: Replace {self.info_tokens[output_token_id].instance.persistent_id} with {new_token.persistent_id}"
                         )
                         self.replace_and_remove(
                             self.info_tokens[output_token_id].instance,
@@ -325,17 +358,25 @@ class NewProvenanceGraphNavigation:
                         )
                 else:
                     logger.debug(
-                        f"Sync Job {job_token.value.name}: JobRequest set to running while its job_token and token_output to None."
+                        f"Sync (wf {workflow.name}) Job {job_token.value.name}: JobRequest set to running while its job_token and token_output to None."
                         f"\n\t- Prev value job_token: {job_request.job_token}\n\t- Prev value token_output: {job_request.token_output}"
                     )
-                    # job_request.is_running = True
-                    # job_request.job_token = None
-                    # job_request.token_output = None
-                    # job_request.workflow = None
-            logger.debug(
-                f"DEVO sync CON JOB TOKEN {job_token.persistent_id} JOB {job_token.value.name}"
-            )
-        logger.debug(f"FINE sync RUNNING JOBS")
+                    job_request.is_running = True
+                    job_request.job_token = None
+                    job_request.token_output = None
+                    job_request.workflow = None
+                logger.debug(
+                    f"DEVO sync (wf {workflow.name}) CON JOB TOKEN {job_token.persistent_id} JOB {job_token.value.name}"
+                )
+        await self.context.failure_manager.update_job_status(
+            [
+                t_info.instance
+                for t_info in self.info_tokens.values()
+                if isinstance(t_info.instance, JobToken)
+            ],
+        )
+        logger.debug(f"FINE sync (wf {workflow.name}) RUNNING JOBS")
+        return map_job_port
 
     async def _refold_graphs(self):
         rdwp = RollbackDeterministicWorkflowPolicy(self.context)
@@ -346,11 +387,10 @@ class NewProvenanceGraphNavigation:
                 rdwp.port_name_ids.setdefault(port_row["name"], set()).add(
                     self.info_tokens[t_id].port_row["id"]
                 )
-                # todo aggiustare inserimento token. se due token hanno stesso tag, mettere token disponibile o più giovane
                 # todo introdurre futureavailable anche in RDWP (?)
-                rdwp.port_tokens.setdefault(port_row["name"], set()).add(t_id)
-                rdwp.token_available.setdefault(
-                    t_id,
+                rdwp.add(
+                    port_row["name"],
+                    self.info_tokens[t_id].instance,
                     self.info_tokens[t_id].is_available == TokenAvailability.Available,
                 )
                 port_name = port_row["name"]
@@ -361,11 +401,9 @@ class NewProvenanceGraphNavigation:
                     rdwp.port_name_ids.setdefault(next_port_row["name"], set()).add(
                         next_port_row["id"]
                     )
-                    rdwp.port_tokens.setdefault(next_port_row["name"], set()).add(
-                        next_t_id
-                    )
-                    rdwp.token_available.setdefault(
-                        next_t_id,
+                    rdwp.add(
+                        next_port_row["name"],
+                        self.info_tokens[next_t_id].instance,
                         self.info_tokens[next_t_id].is_available
                         == TokenAvailability.Available,
                     )
