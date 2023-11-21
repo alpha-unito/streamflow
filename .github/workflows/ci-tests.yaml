@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-22.04" ]
-        python: [ "3.8", "3.9", "3.10", "3.11" ]
+        python: [ "3.8", "3.9", "3.10", "3.11", "3.12" ]
         version: [ "v1.0", "v1.1", "v1.2" ]
         docker: [ "docker" ]
         include:
@@ -44,16 +44,16 @@ jobs:
             commit: "5f4a24cfd46aa9072d8418733b61a42261365b7b"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
             on: "ubuntu-22.04"
-            python: "3.11"
+            python: "3.12"
             version: "v1.2"
           - docker: "kubernetes"
             commit: "5f4a24cfd46aa9072d8418733b61a42261365b7b"
             exclude: "docker_entrypoint,modify_file_content"
             on: "ubuntu-22.04"
-            python: "3.11"
+            python: "3.12"
             version: "v1.2"
           - on: "macos-13"
-            python: "3.11"
+            python: "3.12"
             commit: "5f4a24cfd46aa9072d8418733b61a42261365b7b"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.2"
@@ -173,7 +173,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -190,10 +190,10 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-22.04"]
-        python: [ "3.8", "3.9", "3.10", "3.11" ]
+        python: [ "3.8", "3.9", "3.10", "3.11", "3.12" ]
         include:
           - on: "macos-13"
-            python: "3.11"
+            python: "3.12"
     runs-on: ${{ matrix.on }}
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
