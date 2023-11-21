@@ -9,7 +9,7 @@ cwl-utils==0.31
 importlib_metadata==6.8.0
 Jinja2==3.1.2
 jsonschema==4.20.0
-kubernetes_asyncio==28.2.0
+kubernetes_asyncio==28.2.1
 psutil==5.9.6
 rdflib==7.0.0
 yattag==1.15.2
