@@ -2,31 +2,29 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import platform
-import tempfile
 from asyncio.locks import Lock
 from typing import Collection
 
-import asyncssh.public_key
-import pkg_resources
 import pytest
 import pytest_asyncio
-from jinja2 import Template
 
-from streamflow.core import utils
-from streamflow.core.config import Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     DeploymentConfig,
     LOCAL_LOCATION,
     Location,
-    Target,
 )
 from streamflow.core.persistence import PersistableEntity
-from streamflow.core.workflow import Port, Step, Token, Workflow
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from tests.utils.get_instances import (
+    get_local_deployment_config,
+    get_docker_deployment_config,
+    get_kubernetes_deployment_config,
+    get_singularity_deployment_config,
+    get_ssh_deployment_config,
+)
 
 
 def csvtype(choices):
@@ -147,93 +145,6 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
         raise Exception(f"{deployment_t} deployment type not supported")
 
 
-def get_docker_deployment_config():
-    return DeploymentConfig(
-        name="alpine-docker",
-        type="docker",
-        config={"image": "alpine:3.16.2"},
-        external=False,
-        lazy=False,
-    )
-
-
-def get_kubernetes_deployment_config():
-    with open(pkg_resources.resource_filename(__name__, "pod.jinja2")) as t:
-        template = Template(t.read())
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        template.stream(name=utils.random_name()).dump(f.name)
-    return DeploymentConfig(
-        name="alpine-kubernetes",
-        type="kubernetes",
-        config={"files": [f.name]},
-        external=False,
-        lazy=False,
-    )
-
-
-def get_singularity_deployment_config():
-    return DeploymentConfig(
-        name="alpine-singularity",
-        type="singularity",
-        config={"image": "docker://alpine:3.16.2"},
-        external=False,
-        lazy=False,
-    )
-
-
-async def get_ssh_deployment_config(_context: StreamFlowContext):
-    skey = asyncssh.public_key.generate_private_key(
-        alg_name="ssh-rsa",
-        comment="streamflow-test",
-        key_size=4096,
-    )
-    public_key = skey.export_public_key().decode("utf-8")
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        skey.write_private_key(f.name)
-    docker_config = DeploymentConfig(
-        name="linuxserver-ssh-docker",
-        type="docker",
-        config={
-            "image": "lscr.io/linuxserver/openssh-server",
-            "env": [f"PUBLIC_KEY={public_key}"],
-            "init": False,
-            "publish": ["2222:2222"],
-        },
-        external=False,
-        lazy=False,
-    )
-    await _context.deployment_manager.deploy(docker_config)
-    await asyncio.sleep(5)
-    return DeploymentConfig(
-        name="linuxserver-ssh",
-        type="ssh",
-        config={
-            "nodes": [
-                {
-                    "checkHostKey": False,
-                    "hostname": "127.0.0.1:2222",
-                    "sshKey": f.name,
-                    "username": "linuxserver.io",
-                }
-            ],
-            "maxConcurrentSessions": 10,
-        },
-        external=False,
-        lazy=False,
-    )
-
-
-def get_local_deployment_config():
-    return DeploymentConfig(
-        name=LOCAL_LOCATION,
-        type="local",
-        config={},
-        external=True,
-        lazy=False,
-        workdir=os.path.realpath(tempfile.gettempdir()),
-    )
-
-
 @pytest_asyncio.fixture(scope="module")
 async def context(chosen_deployment_types) -> StreamFlowContext:
     _context = build_context(
@@ -338,17 +249,5 @@ async def save_load_and_test(elem: PersistableEntity, context):
     # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
     # (and not take their reference saved in the attributes)
     loading_context = DefaultDatabaseLoadingContext()
-    loaded = None
-    if isinstance(elem, Step):
-        loaded = await loading_context.load_step(context, elem.persistent_id)
-    elif isinstance(elem, Port):
-        loaded = await loading_context.load_port(context, elem.persistent_id)
-    elif isinstance(elem, Token):
-        loaded = await loading_context.load_token(context, elem.persistent_id)
-    elif isinstance(elem, Workflow):
-        loaded = await loading_context.load_workflow(context, elem.persistent_id)
-    elif isinstance(elem, Target):
-        loaded = await loading_context.load_target(context, elem.persistent_id)
-    elif isinstance(elem, Config):
-        loaded = await loading_context.load_deployment(context, elem.persistent_id)
+    loaded = await type(elem).load(context, elem.persistent_id, loading_context)
     assert are_equals(elem, loaded)
