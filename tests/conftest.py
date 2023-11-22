@@ -10,21 +10,10 @@ import pytest
 import pytest_asyncio
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import (
-    DeploymentConfig,
-    LOCAL_LOCATION,
-    Location,
-)
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from tests.utils.get_instances import (
-    get_local_deployment_config,
-    get_docker_deployment_config,
-    get_kubernetes_deployment_config,
-    get_singularity_deployment_config,
-    get_ssh_deployment_config,
-)
+from tests.utils.deployment import get_deployment_config
 
 
 def csvtype(choices):
@@ -82,67 +71,6 @@ def all_deployment_types():
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity"])
     return deployments_
-
-
-async def get_deployment_config(
-    _context: StreamFlowContext, deployment_t: str
-) -> DeploymentConfig:
-    if deployment_t == "local":
-        return get_local_deployment_config()
-    elif deployment_t == "docker":
-        return get_docker_deployment_config()
-    elif deployment_t == "kubernetes":
-        return get_kubernetes_deployment_config()
-    elif deployment_t == "singularity":
-        return get_singularity_deployment_config()
-    elif deployment_t == "ssh":
-        return await get_ssh_deployment_config(_context)
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
-
-
-async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
-    if deployment_t == "local":
-        return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
-    elif deployment_t == "docker":
-        connector = _context.deployment_manager.get_connector("alpine-docker")
-        locations = await connector.get_available_locations()
-        return Location(deployment="alpine-docker", name=next(iter(locations.keys())))
-    elif deployment_t == "kubernetes":
-        connector = _context.deployment_manager.get_connector("alpine-kubernetes")
-        locations = await connector.get_available_locations(service="sf-test")
-        return Location(
-            deployment="alpine-kubernetes",
-            service="sf-test",
-            name=next(iter(locations.keys())),
-        )
-    elif deployment_t == "singularity":
-        connector = _context.deployment_manager.get_connector("alpine-singularity")
-        locations = await connector.get_available_locations()
-        return Location(
-            deployment="alpine-singularity", name=next(iter(locations.keys()))
-        )
-    elif deployment_t == "ssh":
-        connector = _context.deployment_manager.get_connector("linuxserver-ssh")
-        locations = await connector.get_available_locations()
-        return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
-    else:
-        raise Exception(f"{deployment_t} location type not supported")
-
-
-def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
-    if deployment_t == "local":
-        return None
-    elif deployment_t == "docker":
-        return None
-    elif deployment_t == "kubernetes":
-        return "sf-test"
-    elif deployment_t == "singularity":
-        return None
-    elif deployment_t == "ssh":
-        return None
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
 
 
 @pytest_asyncio.fixture(scope="module")

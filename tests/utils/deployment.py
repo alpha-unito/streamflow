@@ -2,22 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import os
-import posixpath
 import tempfile
 from jinja2 import Template
-from typing import MutableSequence, cast
 
 import asyncssh
 import asyncssh.public_key
 import pkg_resources
 
 from streamflow.core import utils
-from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Target, DeploymentConfig, LOCAL_LOCATION
-from streamflow.core.workflow import Workflow, Port
-from streamflow.workflow.port import ConnectorPort
-from streamflow.workflow.step import DeployStep, ScheduleStep
+from streamflow.core.deployment import (
+    DeploymentConfig,
+    LOCAL_LOCATION,
+    Location,
+)
 
 
 def get_docker_deployment_config():
@@ -107,47 +105,62 @@ def get_local_deployment_config():
     )
 
 
-def create_deploy_step(workflow, deployment_config=None):
-    connector_port = workflow.create_port(cls=ConnectorPort)
-    if not deployment_config:
-        deployment_config = get_docker_deployment_config()
-    return workflow.create_step(
-        cls=DeployStep,
-        name=posixpath.join("__deploy__", deployment_config.name),
-        deployment_config=deployment_config,
-        connector_port=connector_port,
-    )
+async def get_deployment_config(
+    _context: StreamFlowContext, deployment_t: str
+) -> DeploymentConfig:
+    if deployment_t == "local":
+        return get_local_deployment_config()
+    elif deployment_t == "docker":
+        return get_docker_deployment_config()
+    elif deployment_t == "kubernetes":
+        return get_kubernetes_deployment_config()
+    elif deployment_t == "singularity":
+        return get_singularity_deployment_config()
+    elif deployment_t == "ssh":
+        return await get_ssh_deployment_config(_context)
+    else:
+        raise Exception(f"{deployment_t} deployment type not supported")
 
 
-def create_schedule_step(workflow, deploy_step, binding_config=None):
-    if not binding_config:
-        binding_config = BindingConfig(
-            targets=[
-                Target(
-                    deployment=deploy_step.deployment_config,
-                    workdir=utils.random_name(),
-                )
-            ]
+async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
+    if deployment_t == "local":
+        return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
+    elif deployment_t == "docker":
+        connector = _context.deployment_manager.get_connector("alpine-docker")
+        locations = await connector.get_available_locations()
+        return Location(deployment="alpine-docker", name=next(iter(locations.keys())))
+    elif deployment_t == "kubernetes":
+        connector = _context.deployment_manager.get_connector("alpine-kubernetes")
+        locations = await connector.get_available_locations(service="sf-test")
+        return Location(
+            deployment="alpine-kubernetes",
+            service="sf-test",
+            name=next(iter(locations.keys())),
         )
-    return workflow.create_step(
-        cls=ScheduleStep,
-        name=posixpath.join(utils.random_name(), "__schedule__"),
-        job_prefix="something",
-        connector_ports={
-            binding_config.targets[0].deployment.name: deploy_step.get_output_port()
-        },
-        binding_config=binding_config,
-    )
+    elif deployment_t == "singularity":
+        connector = _context.deployment_manager.get_connector("alpine-singularity")
+        locations = await connector.get_available_locations()
+        return Location(
+            deployment="alpine-singularity", name=next(iter(locations.keys()))
+        )
+    elif deployment_t == "ssh":
+        connector = _context.deployment_manager.get_connector("linuxserver-ssh")
+        locations = await connector.get_available_locations()
+        return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
+    else:
+        raise Exception(f"{deployment_t} location type not supported")
 
 
-async def create_workflow(
-    context: StreamFlowContext, num_port: int = 2
-) -> tuple[Workflow, tuple[Port]]:
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    ports = []
-    for _ in range(num_port):
-        ports.append(workflow.create_port())
-    await workflow.save(context)
-    return workflow, tuple(cast(MutableSequence[Port], ports))
+def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
+    if deployment_t == "local":
+        return None
+    elif deployment_t == "docker":
+        return None
+    elif deployment_t == "kubernetes":
+        return "sf-test"
+    elif deployment_t == "singularity":
+        return None
+    elif deployment_t == "ssh":
+        return None
+    else:
+        raise Exception(f"{deployment_t} deployment type not supported")

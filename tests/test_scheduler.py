@@ -19,8 +19,11 @@ from streamflow.core.deployment import (
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
-from tests.utils.get_instances import get_docker_deployment_config
-from tests.conftest import get_service, get_deployment_config
+from tests.utils.deployment import (
+    get_docker_deployment_config,
+    get_service,
+    get_deployment_config,
+)
 
 
 @pytest_asyncio.fixture(scope="module")

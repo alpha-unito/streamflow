@@ -31,7 +31,7 @@ from streamflow.workflow.token import (
     ListToken,
     TerminationToken,
 )
-from tests.utils.get_instances import (
+from tests.utils.workflow import (
     create_workflow,
     create_deploy_step,
     create_schedule_step,
