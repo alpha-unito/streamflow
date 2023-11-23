@@ -8,13 +8,14 @@ from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import DeploymentConfig, Target
+    from streamflow.core.config import Config
+    from streamflow.core.deployment import Target
     from streamflow.core.workflow import Port, Step, Token, Workflow
 
 
 class DatabaseLoadingContext(ABC):
     @abstractmethod
-    def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
+    def add_config(self, persistent_id: int, config: Config):
         ...
 
     @abstractmethod
@@ -38,7 +39,7 @@ class DatabaseLoadingContext(ABC):
         ...
 
     @abstractmethod
-    async def load_deployment(self, context: StreamFlowContext, persistent_id: int):
+    async def load_config(self, context: StreamFlowContext, persistent_id: int):
         ...
 
     @abstractmethod
@@ -102,14 +103,13 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def add_deployment(
+    async def add_config(
         self,
         name: str,
-        type: str,
-        config: str,
-        external: bool,
-        lazy: bool,
-        workdir: str | None,
+        type: type[Config],
+        attr_type: str,
+        config: MutableMapping[str, Any],
+        params: MutableMapping[str, Any],
     ) -> int:
         ...
 
@@ -189,7 +189,7 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_deployment(self, deplyoment_id: int) -> MutableMapping[str, Any]:
+    async def get_config(self, config_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
@@ -265,8 +265,8 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def update_deployment(
-        self, deployment_id: int, updates: MutableMapping[str, Any]
+    async def update_config(
+        self, config_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         ...
 

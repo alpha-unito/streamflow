@@ -10,6 +10,7 @@ from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.config import Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
 from streamflow.core.persistence import DependencyType
@@ -105,26 +106,24 @@ class SqliteDatabase(CachedDatabase):
                 {"step": step, "port": port, "type": type.value, "name": name},
             )
 
-    async def add_deployment(
+    async def add_config(
         self,
         name: str,
-        type: str,
-        config: str,
-        external: bool,
-        lazy: bool,
-        workdir: str | None,
+        attr_type: str,
+        type: type[Config],
+        config: MutableMapping[str, Any],
+        params: MutableMapping[str, Any],
     ) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO deployment(name, type, config, external, lazy, workdir) "
-                "VALUES (:name, :type, :config, :external, :lazy, :workdir)",
+                "INSERT INTO config(name, attr_type, config, type, params) "
+                "VALUES (:name, :attr_type, :config, :type, :params)",
                 {
                     "name": name,
-                    "type": type,
-                    "config": config,
-                    "external": external,
-                    "lazy": lazy,
-                    "workdir": workdir,
+                    "attr_type": attr_type,
+                    "config": json.dumps(config),
+                    "type": utils.get_class_fullname(type),
+                    "params": json.dumps(params),
                 },
             ) as cursor:
                 return cursor.lastrowid
@@ -279,11 +278,11 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    @cachedmethod(lambda self: self.deployment_cache)
-    async def get_deployment(self, deplyoment_id: int) -> MutableMapping[str, Any]:
+    @cachedmethod(lambda self: self.config_cache)
+    async def get_config(self, config_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
-                "SELECT * FROM deployment WHERE id = :id", {"id": deplyoment_id}
+                "SELECT * FROM config WHERE id = :id", {"id": config_id}
             ) as cursor:
                 return await cursor.fetchone()
 
@@ -446,18 +445,18 @@ class SqliteDatabase(CachedDatabase):
             )
             return command_id
 
-    async def update_deployment(
-        self, deployment_id: int, updates: MutableMapping[str, Any]
+    async def update_config(
+        self, config_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         async with self.connection as db:
             await db.execute(
-                "UPDATE deployment SET {} WHERE id = :id".format(  # nosec
+                "UPDATE config SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": deployment_id}},
+                {**updates, **{"id": config_id}},
             )
-            self.deployment_cache.pop(deployment_id, None)
-            return deployment_id
+            self.config_cache.pop(config_id, None)
+            return config_id
 
     async def update_port(self, port_id: int, updates: MutableMapping[str, Any]) -> int:
         async with self.connection as db:

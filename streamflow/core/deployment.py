@@ -182,36 +182,30 @@ class DeploymentConfig(Config):
         self.wraps: str | None = wraps
 
     @classmethod
-    async def load(
+    async def _load(
         cls,
         context: StreamFlowContext,
-        persistent_id: int,
+        row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> DeploymentConfig:
-        row = await context.database.get_deployment(persistent_id)
-        obj = cls(
+        params = json.loads(row["params"])
+        return cls(
             name=row["name"],
-            type=row["type"],
+            type=row["attr_type"],
             config=json.loads(row["config"]),
-            external=row["external"],
-            lazy=row["lazy"],
-            workdir=row["workdir"],
+            external=params["external"],
+            lazy=params["lazy"],
+            workdir=params["workdir"],
         )
-        obj.persistent_id = persistent_id
-        loading_context.add_deployment(persistent_id, obj)
-        return obj
 
-    async def save(self, context: StreamFlowContext) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                self.persistent_id = await context.database.add_deployment(
-                    name=self.name,
-                    type=self.type,
-                    config=json.dumps(self.config),
-                    external=self.external,
-                    lazy=self.lazy,
-                    workdir=self.workdir,
-                )
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {
+            "external": self.external,
+            "lazy": self.lazy,
+            "workdir": self.workdir,
+        }
 
 
 class Target(PersistableEntity):
@@ -307,5 +301,5 @@ class LocalTarget(Target):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Target:
+    ) -> LocalTarget:
         return cls(workdir=row["workdir"])

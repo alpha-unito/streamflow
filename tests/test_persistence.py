@@ -3,7 +3,7 @@ import posixpath
 import pytest
 
 from streamflow.core import utils
-from streamflow.core.config import BindingConfig
+from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import LocalTarget, Target
 from streamflow.core.workflow import Job, Token, Workflow
@@ -317,6 +317,13 @@ async def test_iteration_termination_token(context: StreamFlowContext):
     """Test saving and loading IterationTerminationToken from database"""
     token = IterationTerminationToken("1")
     await save_load_and_test(token, context)
+
+
+@pytest.mark.asyncio
+async def test_config(context: StreamFlowContext):
+    """Test saving and loading config configuration from database"""
+    config = Config(config={"hello": "world"}, name=utils.random_name(), type="shuffle")
+    await save_load_and_test(config, context)
 
 
 @pytest.mark.asyncio

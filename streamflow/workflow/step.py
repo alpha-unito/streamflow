@@ -454,7 +454,7 @@ class DeployStep(BaseStep):
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
-            deployment_config=await loading_context.load_deployment(
+            deployment_config=await loading_context.load_config(
                 context, params["deployment_config"]
             ),
             connector_port=cast(
