@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import posixpath
 from typing import Any, MutableMapping, MutableSequence, cast
 
 import pytest
 
 from streamflow.core import utils
-from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Target
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Port, Status, Step, Token, Workflow
 from streamflow.cwl.command import CWLCommand, CWLCommandToken
@@ -22,22 +19,23 @@ from streamflow.workflow.combinator import (
     LoopTerminationCombinator,
 )
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.port import ConnectorPort
 from streamflow.workflow.step import (
     CombinatorStep,
-    DeployStep,
     ExecuteStep,
     GatherStep,
     LoopCombinatorStep,
     ScatterStep,
-    ScheduleStep,
 )
 from streamflow.workflow.token import (
     IterationTerminationToken,
     ListToken,
     TerminationToken,
 )
-from tests.conftest import get_docker_deployment_config
+from tests.utils.workflow import (
+    create_workflow,
+    create_deploy_step,
+    create_schedule_step,
+)
 
 
 def _contains_id(id_: int, token_list: MutableSequence[Token]) -> bool:
@@ -81,52 +79,6 @@ async def _load_dependers(
     )
 
 
-def create_deploy_step(workflow, deployment_config=None):
-    connector_port = workflow.create_port(cls=ConnectorPort)
-    if not deployment_config:
-        deployment_config = get_docker_deployment_config()
-    return workflow.create_step(
-        cls=DeployStep,
-        name=posixpath.join("__deploy__", deployment_config.name),
-        deployment_config=deployment_config,
-        connector_port=connector_port,
-    )
-
-
-def create_schedule_step(workflow, deploy_step, binding_config=None):
-    if not binding_config:
-        binding_config = BindingConfig(
-            targets=[
-                Target(
-                    deployment=deploy_step.deployment_config,
-                    workdir=utils.random_name(),
-                )
-            ]
-        )
-    return workflow.create_step(
-        cls=ScheduleStep,
-        name=posixpath.join(utils.random_name(), "__schedule__"),
-        job_prefix="something",
-        connector_ports={
-            binding_config.targets[0].deployment.name: deploy_step.get_output_port()
-        },
-        binding_config=binding_config,
-    )
-
-
-async def create_workflow(
-    context: StreamFlowContext, num_port: int = 2
-) -> tuple[Workflow, tuple[Port]]:
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    ports = []
-    for _ in range(num_port):
-        ports.append(workflow.create_port())
-    await workflow.save(context)
-    return workflow, tuple(cast(MutableSequence[Port], ports))
-
-
 async def general_test(
     context: StreamFlowContext,
     workflow: Workflow,
@@ -137,7 +89,6 @@ async def general_test(
     token_list: MutableSequence[Token],
     port_name: str = "test",
 ) -> Step:
-    """ """
     step = workflow.create_step(cls=step_cls, **kwargs_step)
     step.add_input_port(port_name, in_port)
     step.add_output_port(port_name, out_port)

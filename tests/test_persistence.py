@@ -30,7 +30,8 @@ from streamflow.workflow.token import (
     ObjectToken,
     TerminationToken,
 )
-from tests.conftest import get_docker_deployment_config, save_load_and_test
+from tests.conftest import save_load_and_test
+from tests.utils.deployment import get_docker_deployment_config
 
 
 @pytest.mark.asyncio
