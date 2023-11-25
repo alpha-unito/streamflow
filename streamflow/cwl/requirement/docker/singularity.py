@@ -4,7 +4,7 @@ import os
 import posixpath
 from typing import MutableSequence
 
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.deployment import DeploymentConfig, Target
@@ -143,8 +143,11 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "singularity.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("singularity.json")
+            .read_text("utf-8")
         )
 
     def get_target(

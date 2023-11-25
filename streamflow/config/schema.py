@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 import posixpath
 from typing import MutableMapping
 
-import pkg_resources
+from importlib_resources import files
 from referencing import Registry, Resource
 
 from streamflow.core.context import SchemaEntity
@@ -31,9 +30,9 @@ _CONFIGS = {
 
 
 ext_schemas = [
-    pkg_resources.resource_filename(
-        "streamflow.deployment.connector", os.path.join("schemas", "queue_manager.json")
-    )
+    files("streamflow.deployment.connector")
+    .joinpath("schemas")
+    .joinpath("queue_manager.json")
 ]
 
 
@@ -41,10 +40,13 @@ class SfSchema:
     def __init__(self):
         self.registry: Registry = Registry()
         for version in _CONFIGS.keys():
-            schema = pkg_resources.resource_filename(
-                __name__, os.path.join("schemas", version, "config_schema.json")
+            self.add_schema(
+                files(__package__)
+                .joinpath("schemas")
+                .joinpath(version)
+                .joinpath("config_schema.json")
+                .read_text("utf-8")
             )
-            self.add_schema(schema)
         self.inject_ext(binding_filter_classes, "bindingFilter")
         self.inject_ext(checkpoint_manager_classes, "checkpointManager")
         self.inject_ext(cwl_docker_translator_classes, "cwl/docker")
@@ -56,14 +58,13 @@ class SfSchema:
         self.inject_ext(policy_classes, "policy")
         self.inject_ext(scheduler_classes, "scheduler")
         for schema in ext_schemas:
-            self.add_schema(schema)
+            self.add_schema(schema.read_text("utf-8"))
         self.registry = self.registry.crawl()
 
     def add_schema(self, schema: str) -> Resource:
-        with open(schema) as f:
-            resource = Resource.from_contents(json.load(f))
-            self.registry = resource @ self.registry
-            return resource
+        resource = Resource.from_contents(json.loads(schema))
+        self.registry = resource @ self.registry
+        return resource
 
     def get_config(self, version: str) -> Resource:
         if version not in _CONFIGS:

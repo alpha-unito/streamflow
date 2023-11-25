@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import MutableMapping, cast
 
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, Location
@@ -181,8 +180,11 @@ class DefaultFailureManager(FailureManager):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "default_failure_manager.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("default_failure_manager.json")
+            .read_text("utf-8")
         )
 
     async def handle_exception(
@@ -260,8 +262,11 @@ class DummyFailureManager(FailureManager):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "dummy_failure_manager.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("dummy_failure_manager.json")
+            .read_text("utf-8")
         )
 
     async def handle_exception(

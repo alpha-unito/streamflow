@@ -1,8 +1,7 @@
-import os
 import random
 from typing import MutableSequence
 
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core.deployment import BindingFilter, Target
 from streamflow.core.workflow import Job
@@ -17,6 +16,9 @@ class ShuffleBindingFilter(BindingFilter):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "shuffle.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("shuffle.json")
+            .read_text("utf-8")
         )

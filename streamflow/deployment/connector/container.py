@@ -10,8 +10,8 @@ from abc import ABC, abstractmethod
 from shutil import which
 from typing import Any, MutableMapping, MutableSequence
 
-import pkg_resources
 from cachetools import Cache, TTLCache
+from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -684,8 +684,11 @@ class DockerConnector(DockerBaseConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "docker.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("docker.json")
+            .read_text("utf-8")
         )
 
     async def undeploy(self, external: bool) -> None:
@@ -867,8 +870,11 @@ class DockerComposeConnector(DockerBaseConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "docker-compose.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("docker-compose.json")
+            .read_text("utf-8")
         )
 
     async def undeploy(self, external: bool) -> None:
@@ -1186,8 +1192,11 @@ class SingularityConnector(ContainerConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "singularity.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("singularity.json")
+            .read_text("utf-8")
         )
 
     async def undeploy(self, external: bool) -> None:

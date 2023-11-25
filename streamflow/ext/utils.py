@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from importlib_metadata import entry_points
 from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence
 
-from importlib_metadata import entry_points
 from referencing._core import Resolver, Resource
 
 from streamflow.config.schema import SfSchema
@@ -308,9 +308,8 @@ def show_extension(name: str, type_: str):
         class_name = get_class_fullname(class_)
         entity_schema = class_.get_schema()
         schema = SfSchema()
-        with open(entity_schema) as f:
-            resource = Resource.from_contents(json.load(f))
-            entity_schema = resource.contents
+        resource = Resource.from_contents(json.loads(entity_schema))
+        entity_schema = resource.contents
         _replace_refs(entity_schema, schema.registry.resolver(base_uri=resource.id()))
         if "allOf" in entity_schema:
             entity_schema["properties"] = _flatten_all_of(entity_schema)

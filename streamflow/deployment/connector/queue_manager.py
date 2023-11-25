@@ -11,7 +11,7 @@ from functools import partial
 from typing import Any, MutableMapping, MutableSequence, cast
 
 import cachetools
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -566,8 +566,11 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
 class SlurmConnector(QueueManagerConnector):
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "slurm.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("slurm.json")
+            .read_text("utf-8")
         )
 
     async def _get_output(self, job_id: str, location: Location) -> str:
@@ -802,8 +805,11 @@ class SlurmConnector(QueueManagerConnector):
 class PBSConnector(QueueManagerConnector):
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "pbs.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("pbs.json")
+            .read_text("utf-8")
         )
 
     async def _get_output(self, job_id: str, location: Location) -> str:
@@ -958,8 +964,11 @@ class PBSConnector(QueueManagerConnector):
 class FluxConnector(QueueManagerConnector):
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "flux.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("flux.json")
+            .read_text("utf-8")
         )
 
     async def _get_output(self, job_id: str, location: Location) -> str:

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import TYPE_CHECKING
 
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
@@ -77,6 +76,9 @@ class DataLocalityPolicy(Policy):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "data_locality.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("data_locality.json")
+            .read_text("utf-8")
         )

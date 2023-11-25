@@ -6,7 +6,7 @@ import os
 from typing import Any, MutableMapping, MutableSequence
 
 import aiosqlite
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -36,14 +36,15 @@ class SqliteConnection:
                 database=self.connection, timeout=self.timeout
             )
             if self.init_db:
-                schema_path = pkg_resources.resource_filename(
-                    __name__, os.path.join("schemas", "sqlite.sql")
-                )
-                with open(schema_path) as f:
-                    async with self._connection.cursor() as cursor:
-                        await cursor.execute("PRAGMA journal_mode = WAL")
-                        await cursor.execute("PRAGMA wal_autocheckpoint = 10")
-                        await cursor.executescript(f.read())
+                async with self._connection.cursor() as cursor:
+                    await cursor.execute("PRAGMA journal_mode = WAL")
+                    await cursor.execute("PRAGMA wal_autocheckpoint = 10")
+                    await cursor.executescript(
+                        files(__package__)
+                        .joinpath("schemas")
+                        .joinpath("sqlite.sql")
+                        .read_text("utf-8")
+                    )
             self._connection.row_factory = aiosqlite.Row
         return self._connection
 
@@ -79,8 +80,11 @@ class SqliteDatabase(CachedDatabase):
 
     @classmethod
     def get_schema(cls):
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "sqlite.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("sqlite.json")
+            .read_text("utf-8")
         )
 
     async def add_command(self, step_id: int, tag: str, cmd: str) -> int:

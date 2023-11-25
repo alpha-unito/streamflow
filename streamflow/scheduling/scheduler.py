@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import posixpath
 from typing import MutableSequence, TYPE_CHECKING
 
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.deployment import BindingFilter, Location, Target
@@ -342,8 +341,11 @@ class DefaultScheduler(Scheduler):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "scheduler.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("scheduler.json")
+            .read_text("utf-8")
         )
 
     async def notify_status(self, job_name: str, status: Status) -> None:
