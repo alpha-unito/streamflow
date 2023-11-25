@@ -7,8 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import MutableMapping, MutableSequence
 
-import pkg_resources
 import psutil
+from importlib_resources import files
 
 from streamflow.core.deployment import Connector, LOCAL_LOCATION, Location
 from streamflow.core.scheduling import AvailableLocation, Hardware
@@ -109,8 +109,11 @@ class LocalConnector(BaseConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "local.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("local.json")
+            .read_text("utf-8")
         )
 
     async def undeploy(self, external: bool) -> None:

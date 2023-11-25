@@ -39,7 +39,7 @@ The ``cls`` attribute points to the class that implements the extension point, w
 
 The ``register`` method of the ``StreamFlowPlugin`` implementation must contain all the required calls to the ``register_extension_point`` methods in order to make the extension points available to the StreamFlow control plane. Note that a single ``StreamFlowPlugin`` can register multiple extension points, and even multiple implementations for the same extension point.
 
-Each extension point class extends the ``SchemaEntity`` abstract class, whose method ``get_schema`` returns the path to the class configuration in `JSON Schema 2019-09 <https://json-schema.org/draft/2019-09/release-notes.html>`_ format. The root entity of this file must be an ``object`` defining a set of properties, which will be exposed to the user in the ``config`` section of the ``streamflow.yml`` file, type-checked by StreamFlow at the beginning of each workflow run, and passed to the class constructor at every instantiation.
+Each extension point class extends the ``SchemaEntity`` abstract class, whose method ``get_schema`` returns the class configuration in `JSON Schema 2019-09 <https://json-schema.org/draft/2019-09/release-notes.html>`_ format. The root entity of this file must be an ``object`` defining a set of properties, which will be exposed to the user in the ``config`` section of the ``streamflow.yml`` file, type-checked by StreamFlow at the beginning of each workflow run, and passed to the class constructor at every instantiation.
 
 The base class for each extension point defined by StreamFlow and the respective registration method exposed by the ``StreamFlowPlugin`` class are reported in the table below:
 
@@ -58,7 +58,7 @@ Base Class                                                                      
 :ref:`streamflow.core.scheduling.Scheduler <Scheduler>`                                           ``register_scheduler``
 =============================================================================================     ===================================
 
-In addition, a ``register_schema`` method allows to register additional JSON Schema files, which are not directly referenced by any ``SchemaEntity`` class through the ``get_schema`` method. This feature is useful to, for example, define some base abstract JSON Schema that concrete entities can extend.
+In addition, a ``register_schema`` method allows to register additional JSON Schemas, which are not directly referenced by any ``SchemaEntity`` class through the ``get_schema`` method. This feature is useful to, for example, define some base abstract JSON Schema that concrete entities can extend.
 
 Note that there is no official way to make JSON Schema files inherit properties from each other, as vanilla JSON Schema format does not support inheritance. However, it is possible to extend base schemas using the combination of `allOf <https://json-schema.org/understanding-json-schema/reference/combining.html#allof>`_ and `unevaluatedProperties <https://json-schema.org/understanding-json-schema/reference/object.html#unevaluated-properties>`_ directives of JSON Schema 2019-09, as follows:
 
@@ -107,8 +107,11 @@ As an example, suppose that a class ``PostgreSQLDatabase`` implements a `Postgre
     class PostgreSQLDatabase(Database):
         @classmethod
         def get_schema(cls) -> str:
-            return pkg_resources.resource_filename(
-                __name__, os.path.join("schemas", "postgresql.json")
+            return (
+                files(__package__)
+                .joinpath("schemas")
+                .joinpath("postgresql.json")
+                .read_text("utf-8")
             )
         ...
 
@@ -116,7 +119,7 @@ As an example, suppose that a class ``PostgreSQLDatabase`` implements a `Postgre
         def register(self) -> None:
             self.register_database("unito.postgresql", PostgresqlDatabase)
 
-Each extension point class must implement a ``get_schema`` method, pointing to a `JSON Schema <https://json-schema.org/>`_ file, which contains all the configurable parameters that can be specified by the user in the ``streamflow.yml`` file. Such parameters will be propagated to the class constructor at each invocation. For example, the ``PostgreSQLDatabase`` class specified above points to a ``schemas/postgresql.json`` schema file in the same Python module.
+Each extension point class must implement a ``get_schema`` method, which returns a `JSON Schema <https://json-schema.org/>`_ with all the configurable parameters that can be specified by the user in the ``streamflow.yml`` file. Such parameters will be propagated to the class constructor at each invocation. For example, the ``PostgreSQLDatabase`` class specified above points to a ``schemas/postgresql.json`` schema file in the same Python module.
 
 A schema file should follow the `2019-09 <https://json-schema.org/draft/2019-09/release-notes.html>`_ version of JSON Schema. StreamFlow uses schema files to validate the ``streamflow.yml`` file at runtime before executing a workflow instance. Plus, it relies on schema ``properties`` to print documentation when a user invokes the ``streamflow ext show`` CLI subcommand. An example of schema file for the ``PostreSQLDatabase`` class is the following:
 

@@ -10,9 +10,9 @@ from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
-import pkg_resources
 from asyncssh import ChannelOpenError
 from cachetools import Cache, LRUCache
+from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -686,8 +686,11 @@ class SSHConnector(BaseConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "ssh.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("ssh.json")
+            .read_text("utf-8")
         )
 
     async def run(

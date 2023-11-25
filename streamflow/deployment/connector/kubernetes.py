@@ -22,9 +22,9 @@ from typing import (
     cast,
 )
 
-import pkg_resources
 import yaml
 from cachetools import Cache, TTLCache
+from importlib_resources import files
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiClient, Configuration, V1Container, V1PodList
 from kubernetes_asyncio.config import (
@@ -852,8 +852,11 @@ class KubernetesConnector(BaseKubernetesConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "kubernetes.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("kubernetes.json")
+            .read_text("utf-8")
         )
 
     async def undeploy(self, external: bool) -> None:
@@ -1056,8 +1059,11 @@ class Helm3Connector(BaseKubernetesConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "helm3.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("helm3.json")
+            .read_text("utf-8")
         )
 
     async def undeploy(self, external: bool) -> None:

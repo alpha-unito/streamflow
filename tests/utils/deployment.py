@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from importlib_resources import files
+
 from jinja2 import Template
 
 import asyncssh
 import asyncssh.public_key
-import pkg_resources
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -29,8 +30,7 @@ def get_docker_deployment_config():
 
 
 def get_kubernetes_deployment_config():
-    with open(pkg_resources.resource_filename(__name__, "pod.jinja2")) as t:
-        template = Template(t.read())
+    template = Template(files(__package__).joinpath("pod.jinja2").read_text("utf-8"))
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         template.stream(name=utils.random_name()).dump(f.name)
     return DeploymentConfig(

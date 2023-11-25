@@ -5,7 +5,7 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core.deployment import (
     Connector,
@@ -166,8 +166,11 @@ class DefaultDeploymentManager(DeploymentManager):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "deployment_manager.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("deployment_manager.json")
+            .read_text("utf-8")
         )
 
     async def undeploy(self, deployment_name: str) -> None:

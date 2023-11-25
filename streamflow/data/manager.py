@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-import pkg_resources
+from importlib_resources import files
 
 from streamflow.core.data import DataLocation, DataManager, DataType
 from streamflow.core.deployment import Connector, Location
@@ -77,8 +76,11 @@ class DefaultDataManager(DataManager):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "data_manager.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("data_manager.json")
+            .read_text("utf-8")
         )
 
     def get_source_location(

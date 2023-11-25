@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
 import tempfile
 
-import pkg_resources
+from importlib_resources import files
 from jinja2 import Template
 
 from streamflow.core import utils
@@ -30,9 +29,16 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
         wait: bool = True,
     ):
         super().__init__(config_dir=config_dir, wrapper=wrapper)
-        self.template: str | None = template or pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "kubernetes.jinja2")
-        )
+        if template is not None:
+            with open(template) as t:
+                self.template: Template = Template(t.read())
+        else:
+            self.template: Template = Template(
+                files(__package__)
+                .joinpath("schemas")
+                .joinpath("kubernetes.jinja2")
+                .read_text("utf-8")
+            )
         self.debug: bool = debug
         self.inCluster: bool = inCluster
         self.kubeconfig: str | None = kubeconfig
@@ -47,8 +53,11 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "kubernetes.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("kubernetes.json")
+            .read_text("utf-8")
         )
 
     def get_target(
@@ -59,10 +68,8 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
         target: Target,
     ) -> Target:
         name = utils.random_name()
-        with open(self.template) as t:
-            template = Template(t.read())
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            template.stream(
+            self.template.stream(
                 name=name,
                 image=image,
                 network_access=network_access,

@@ -8,7 +8,7 @@ import re
 from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
-import pkg_resources
+from importlib_resources import files
 from ruamel.yaml import YAML
 
 from streamflow.core import utils
@@ -394,8 +394,11 @@ class OccamConnector(SSHConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "occam.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("occam.json")
+            .read_text("utf-8")
         )
 
     async def undeploy(self, external: bool) -> None:
