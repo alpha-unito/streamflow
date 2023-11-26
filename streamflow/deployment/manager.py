@@ -147,7 +147,7 @@ class DefaultDeploymentManager(DeploymentManager):
         else:
             if deployment_config.wraps is not None:
                 if logger.isEnabledFor(logging.WARN):
-                    logger.warn(
+                    logger.warning(
                         f"The `wraps` directive has no effect on deployment {deployment_config.name}, "
                         f"as the `{deployment_config.type}` connector does not inherit from the ConnectorWrapper class."
                     )

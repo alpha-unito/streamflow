@@ -571,7 +571,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         dst_parent = posixpath.dirname(posixpath.normpath(dst))
         if src in self.files_map:
             if logger.isEnabledFor(logging.WARN):
-                logger.warn(f"File {src} is already present in the archive.")
+                logger.warning(f"File {src} is already present in the archive.")
         else:
             if os.path.isfile(os.path.realpath(src)):
                 checksum = _file_checksum(
@@ -681,7 +681,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
             current_obj = current_obj[k]
         if logger.isEnabledFor(logging.WARN):
             if keys[-1] in current_obj:
-                logger.warn(
+                logger.warning(
                     f"Key {key} already exists in archive manifest and will be overridden."
                 )
         value = ESCAPED_EQUAL.sub("=", value)
@@ -889,7 +889,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                     if dst not in archive.namelist():
                         archive.write(src, dst)
                 else:
-                    logger.warn(f"File {src} does not exist.")
+                    logger.warning(f"File {src} does not exist.")
         print(f"Successfully created run_crate archive at {path}")
 
     @abstractmethod

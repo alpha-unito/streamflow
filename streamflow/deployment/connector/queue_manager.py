@@ -341,7 +341,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         self._inner_ssh_connector: bool = False
         if hostname is not None:
             if logger.isEnabledFor(logging.WARN):
-                logger.warn(
+                logger.warning(
                     "Inline SSH options are deprecated and will be removed in StreamFlow 0.3.0. "
                     f"Define a standalone `SSHConnector` and link the `{self.__class__.__name__}` "
                     "to it using the `wraps` property."
@@ -375,7 +375,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                         files_map[name] = f.read()
         if file is not None:
             if logger.isEnabledFor(logging.WARN):
-                logger.warn(
+                logger.warning(
                     "The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                     "Use `services` instead."
                 )
@@ -553,12 +553,12 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         self.scheduledJobs = {}
         if self._inner_ssh_connector:
             if logger.isEnabledFor(logging.INFO):
-                logger.warn(
+                logger.warning(
                     f"UNDEPLOYING inner SSH connector for {self.deployment_name} deployment."
                 )
             await self.connector.undeploy(external)
             if logger.isEnabledFor(logging.INFO):
-                logger.warn(
+                logger.warning(
                     f"COMPLETED Undeployment of inner SSH connector for {self.deployment_name} deployment."
                 )
 

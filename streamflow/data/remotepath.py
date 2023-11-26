@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import cgi
 import errno
 import glob
 import hashlib
 import os
 import posixpath
 import shutil
+from email.message import Message
 from typing import MutableSequence, TYPE_CHECKING
 
 import aiohttp
+from aiohttp import ClientResponse
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -39,6 +40,15 @@ def _file_checksum_local(path: str) -> str:
         while data := f.read(2**16):
             sha1_checksum.update(data)
         return sha1_checksum.hexdigest()
+
+
+def _get_filename_from_response(response: ClientResponse, url: str):
+    if cd_header := response.headers.get("Content-Disposition"):
+        message = Message()
+        message["Content-Disposition"] = cd_header
+        if filename := message.get_param("filename"):
+            return filename
+    return url.rsplit("/", 1)[-1]
 
 
 def _listdir_local(path: str, file_type: FileType | None) -> MutableSequence[str]:
@@ -95,25 +105,22 @@ async def download(
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:
-                    _, params = cgi.parse_header(
-                        response.headers.get("Content-Disposition", "")
+                    filepath = os.path.join(
+                        parent_dir, _get_filename_from_response(response, url)
                     )
-                    filepath = os.path.join(parent_dir, params["filename"])
-                    content = await response.read()
+                    with open(filepath, mode="wb") as f:
+                        f.write(await response.read())
                 else:
                     raise Exception(
                         f"Downloading {url} failed with status {response.status}:\n{response.content}"
                     )
-        with open(filepath, mode="wb") as f:
-            f.write(content)
     else:
         async with aiohttp.ClientSession() as session:
             async with session.head(url, allow_redirects=True) as response:
                 if response.status == 200:
-                    _, params = cgi.parse_header(
-                        response.headers.get("Content-Disposition", "")
+                    filepath = posixpath.join(
+                        parent_dir, _get_filename_from_response(response, url)
                     )
-                    filepath = posixpath.join(parent_dir, params["filename"])
                 else:
                     raise Exception(
                         f"Downloading {url} failed with status {response.status}:\n{response.content}"
@@ -125,9 +132,8 @@ async def download(
                     connector.run(
                         location=location,
                         command=[
-                            'if [ command -v curl ]; curl -L -o "{path}"; else wget -P "{dir}" {url}; fi'.format(
-                                dir=parent_dir, path=filepath, url=url
-                            )
+                            f'if [ command -v curl ]; then curl -L -o "{filepath}" "{url}"; '
+                            f'else wget -P "{parent_dir}" "{url}"; fi'
                         ],
                     )
                 )

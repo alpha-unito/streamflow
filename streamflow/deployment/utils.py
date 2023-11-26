@@ -31,7 +31,7 @@ def get_binding_config(
             else:
                 target_deployment = workflow_config.deplyoments[target["model"]]
                 if logger.isEnabledFor(logging.WARN):
-                    logger.warn(
+                    logger.warning(
                         "The `model` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `deployment` instead."
                     )
@@ -40,7 +40,7 @@ def get_binding_config(
                 locations = target.get("resources")
                 if locations is not None:
                     if logger.isEnabledFor(logging.WARN):
-                        logger.warn(
+                        logger.warning(
                             "The `resources` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                             "Use `locations` instead."
                         )
