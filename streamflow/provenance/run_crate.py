@@ -570,7 +570,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         dst = file.get("dst", posixpath.sep)
         dst_parent = posixpath.dirname(posixpath.normpath(dst))
         if src in self.files_map:
-            if logger.isEnabledFor(logging.WARN):
+            if logger.isEnabledFor(logging.WARNING):
                 logger.warning(f"File {src} is already present in the archive.")
         else:
             if os.path.isfile(os.path.realpath(src)):
@@ -679,7 +679,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                     f"Token `{k}` of key `{key}` does not exist in archive manifest."
                 )
             current_obj = current_obj[k]
-        if logger.isEnabledFor(logging.WARN):
+        if logger.isEnabledFor(logging.WARNING):
             if keys[-1] in current_obj:
                 logger.warning(
                     f"Key {key} already exists in archive manifest and will be overridden."
