@@ -49,7 +49,7 @@ class StreamFlowPlugin(ABC):
         )
         if name in extension_points[extension_point]:
             if logger.isEnabledFor(logging.WARN):
-                logger.warn(
+                logger.warning(
                     "{} is already installed and will be overridden by {}".format(
                         name, self.__class__.__module__ + "." + self.__class__.__name__
                     )

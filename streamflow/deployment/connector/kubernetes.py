@@ -189,7 +189,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             cacheSize = resourcesCacheSize
             if cacheSize is not None:
                 if logger.isEnabledFor(logging.WARN):
-                    logger.warn(
+                    logger.warning(
                         "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `locationsCacheSize` instead."
                     )
@@ -200,7 +200,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             cacheTTL = resourcesCacheTTL
             if cacheTTL is not None:
                 if logger.isEnabledFor(logging.WARN):
-                    logger.warn(
+                    logger.warning(
                         "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `locationsCacheTTL` instead."
                     )

@@ -284,7 +284,7 @@ class SSHConnector(BaseConnector):
                     services_map[name] = f.read()
         if file is not None:
             if logger.isEnabledFor(logging.WARN):
-                logger.warn(
+                logger.warning(
                     "The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                     "Use `services` instead."
                 )

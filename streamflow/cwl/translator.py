@@ -1533,7 +1533,7 @@ class CWLTranslator:
                 # Otherwise, throw a warning and skip the DockerRequirement conversion
                 else:
                     if logger.isEnabledFor(logging.WARN):
-                        logger.warn(
+                        logger.warning(
                             f"Skipping DockerRequirement conversion for step `{name_prefix}` "
                             f"when executing on `{target.deployment.name}` deployment."
                         )
