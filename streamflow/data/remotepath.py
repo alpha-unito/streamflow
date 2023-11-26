@@ -45,8 +45,8 @@ def _file_checksum_local(path: str) -> str:
 def _get_filename_from_response(response: ClientResponse, url: str):
     if cd_header := response.headers.get("Content-Disposition"):
         message = Message()
-        message["Content-Disposition"] = cd_header
-        if filename := message.get_param("filename"):
+        message["content-disposition"] = cd_header
+        if filename := message.get_param("filename", header="content-disposition"):
             return filename
     return url.rsplit("/", 1)[-1]
 
@@ -133,7 +133,7 @@ async def download(
                         location=location,
                         command=[
                             f'if [ command -v curl ]; then curl -L -o "{filepath}" "{url}"; '
-                            f'else wget -P "{parent_dir}" "{url}"; fi'
+                            f'else wget -O "{filepath}" "{url}"; fi'
                         ],
                     )
                 )

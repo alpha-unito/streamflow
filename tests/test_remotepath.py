@@ -65,15 +65,23 @@ async def test_directory(context, connector, location):
 @pytest.mark.asyncio
 async def test_download(context, connector, location):
     """Test remote file download."""
-    url1 = "https://raw.githubusercontent.com/alpha-unito/streamflow/master/LICENSE"
-    url2 = "https://github.com/alpha-unito/streamflow/archive/refs/tags/0.1.6.zip"
+    urls = [
+        "https://raw.githubusercontent.com/alpha-unito/streamflow/master/LICENSE",
+        "https://github.com/alpha-unito/streamflow/archive/refs/tags/0.1.6.zip",
+    ]
     parent_dir = (
         tempfile.gettempdir() if isinstance(connector, LocalConnector) else "/tmp"
     )
+    path_processor = get_path_processor(connector)
+    paths = [
+        path_processor.join(parent_dir, "LICENSE"),
+        path_processor.join(parent_dir, "streamflow-0.1.6.zip"),
+    ]
 
-    for url in [url1, url2]:
+    for i, url in enumerate(urls):
         try:
             path = await remotepath.download(connector, [location], url, parent_dir)
+            assert path == paths[i]
             assert await remotepath.exists(connector, location, path)
         finally:
             if await remotepath.exists(connector, location, path):
