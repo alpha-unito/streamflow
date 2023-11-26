@@ -78,14 +78,15 @@ CREATE TABLE IF NOT EXISTS provenance
 );
 
 
-CREATE TABLE IF NOT EXISTS config
+CREATE TABLE IF NOT EXISTS deployment
 (
-    id              INTEGER PRIMARY KEY,
-    name            TEXT,
-    attr_type       TEXT,
-    config          TEXT,
-    type            TEXT,
-    params          TEXT
+    id       INTEGER PRIMARY KEY,
+    name     TEXT,
+    type     TEXT,
+    config   TEXT,
+    external INTEGER,
+    lazy     INTEGER,
+    workdir  TEXT
 );
 
 
@@ -99,4 +100,13 @@ CREATE TABLE IF NOT EXISTS target
     workdir    TEXT,
     params     TEXT,
     FOREIGN KEY (deployment) REFERENCES deployment (id)
+);
+
+
+CREATE TABLE IF NOT EXISTS filter
+(
+    id              INTEGER PRIMARY KEY,
+    name            TEXT,
+    type            TEXT,
+    config          TEXT
 );

@@ -10,7 +10,6 @@ from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.config import Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
 from streamflow.core.persistence import DependencyType
@@ -106,24 +105,44 @@ class SqliteDatabase(CachedDatabase):
                 {"step": step, "port": port, "type": type.value, "name": name},
             )
 
-    async def add_config(
+    async def add_deployment(
         self,
         name: str,
-        attr_type: str,
-        type: type[Config],
-        config: MutableMapping[str, Any],
-        params: MutableMapping[str, Any],
+        type: str,
+        config: str,
+        external: bool,
+        lazy: bool,
+        workdir: str | None,
     ) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO config(name, attr_type, config, type, params) "
-                "VALUES (:name, :attr_type, :config, :type, :params)",
+                "INSERT INTO deployment(name, type, config, external, lazy, workdir) "
+                "VALUES (:name, :type, :config, :external, :lazy, :workdir)",
                 {
                     "name": name,
-                    "attr_type": attr_type,
-                    "config": json.dumps(config),
-                    "type": utils.get_class_fullname(type),
-                    "params": json.dumps(params),
+                    "type": type,
+                    "config": config,
+                    "external": external,
+                    "lazy": lazy,
+                    "workdir": workdir,
+                },
+            ) as cursor:
+                return cursor.lastrowid
+
+    async def add_filter(
+        self,
+        name: str,
+        type: str,
+        config: str,
+    ) -> int:
+        async with self.connection as db:
+            async with db.execute(
+                "INSERT INTO filter(name, type, config) "
+                "VALUES (:name, :type, :config)",
+                {
+                    "name": name,
+                    "type": type,
+                    "config": config,
                 },
             ) as cursor:
                 return cursor.lastrowid
@@ -278,11 +297,19 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    @cachedmethod(lambda self: self.config_cache)
-    async def get_config(self, config_id: int) -> MutableMapping[str, Any]:
+    @cachedmethod(lambda self: self.deployment_cache)
+    async def get_deployment(self, deployment_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
-                "SELECT * FROM config WHERE id = :id", {"id": config_id}
+                "SELECT * FROM deployment WHERE id = :id", {"id": deployment_id}
+            ) as cursor:
+                return await cursor.fetchone()
+
+    @cachedmethod(lambda self: self.filter_cache)
+    async def get_filter(self, filter_id: int) -> MutableMapping[str, Any]:
+        async with self.connection as db:
+            async with db.execute(
+                "SELECT * FROM filter WHERE id = :id", {"id": filter_id}
             ) as cursor:
                 return await cursor.fetchone()
 
@@ -445,18 +472,31 @@ class SqliteDatabase(CachedDatabase):
             )
             return command_id
 
-    async def update_config(
-        self, config_id: int, updates: MutableMapping[str, Any]
+    async def update_deployment(
+        self, deployment_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         async with self.connection as db:
             await db.execute(
-                "UPDATE config SET {} WHERE id = :id".format(  # nosec
+                "UPDATE deployment SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": config_id}},
+                {**updates, **{"id": deployment_id}},
             )
-            self.config_cache.pop(config_id, None)
-            return config_id
+            self.deployment_cache.pop(deployment_id, None)
+            return deployment_id
+
+    async def update_filter(
+        self, filter_id: int, updates: MutableMapping[str, Any]
+    ) -> int:
+        async with self.connection as db:
+            await db.execute(
+                "UPDATE filter SET {} WHERE id = :id".format(  # nosec
+                    ", ".join([f"{k} = :{k}" for k in updates])
+                ),
+                {**updates, **{"id": filter_id}},
+            )
+            self.filter_cache.pop(filter_id, None)
+            return filter_id
 
     async def update_port(self, port_id: int, updates: MutableMapping[str, Any]) -> int:
         async with self.connection as db:

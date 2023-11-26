@@ -3,9 +3,9 @@ import posixpath
 import pytest
 
 from streamflow.core import utils
-from streamflow.core.config import BindingConfig, Config
+from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import LocalTarget, Target
+from streamflow.core.deployment import LocalTarget, Target, FilterConfig
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
@@ -146,7 +146,9 @@ async def test_schedule_step(context: StreamFlowContext):
             ),
         ],
         filters=[
-            Config(config={"hello": "world"}, name=utils.random_name(), type="shuffle")
+            FilterConfig(
+                config={"hello": "world"}, name=utils.random_name(), type="shuffle"
+            )
         ],
     )
     connector_ports = {
@@ -333,9 +335,11 @@ async def test_iteration_termination_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_config(context: StreamFlowContext):
-    """Test saving and loading config configuration from database"""
-    config = Config(config={"hello": "world"}, name=utils.random_name(), type="shuffle")
+async def test_filter_config(context: StreamFlowContext):
+    """Test saving and loading filter configuration from database"""
+    config = FilterConfig(
+        config={"hello": "world"}, name=utils.random_name(), type="shuffle"
+    )
     await save_load_and_test(config, context)
 
 

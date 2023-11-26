@@ -10,9 +10,10 @@ from streamflow.core.persistence import Database
 class CachedDatabase(Database, ABC):
     def __init__(self, context: StreamFlowContext):
         super().__init__(context)
-        self.config_cache: Cache = LRUCache(maxsize=sys.maxsize)
+        self.deployment_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.port_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.step_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.target_cache: Cache = LRUCache(maxsize=sys.maxsize)
+        self.filter_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.token_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.workflow_cache: Cache = LRUCache(maxsize=sys.maxsize)

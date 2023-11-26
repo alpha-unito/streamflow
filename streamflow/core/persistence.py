@@ -8,14 +8,17 @@ from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 
 if TYPE_CHECKING:
-    from streamflow.core.config import Config
-    from streamflow.core.deployment import Target
+    from streamflow.core.deployment import DeploymentConfig, Target, FilterConfig
     from streamflow.core.workflow import Port, Step, Token, Workflow
 
 
 class DatabaseLoadingContext(ABC):
     @abstractmethod
-    def add_config(self, persistent_id: int, config: Config):
+    def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
+        ...
+
+    @abstractmethod
+    def add_filter(self, persistent_id: int, filter_config: FilterConfig):
         ...
 
     @abstractmethod
@@ -39,7 +42,11 @@ class DatabaseLoadingContext(ABC):
         ...
 
     @abstractmethod
-    async def load_config(self, context: StreamFlowContext, persistent_id: int):
+    async def load_deployment(self, context: StreamFlowContext, persistent_id: int):
+        ...
+
+    @abstractmethod
+    async def load_filter(self, context: StreamFlowContext, persistent_id: int):
         ...
 
     @abstractmethod
@@ -103,13 +110,23 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def add_config(
+    async def add_deployment(
         self,
         name: str,
-        type: type[Config],
-        attr_type: str,
-        config: MutableMapping[str, Any],
-        params: MutableMapping[str, Any],
+        type: str,
+        config: str,
+        external: bool,
+        lazy: bool,
+        workdir: str | None,
+    ) -> int:
+        ...
+
+    @abstractmethod
+    async def add_filter(
+        self,
+        name: str,
+        type: str,
+        config: str,
     ) -> int:
         ...
 
@@ -189,7 +206,11 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_config(self, config_id: int) -> MutableMapping[str, Any]:
+    async def get_deployment(self, deployment_id: int) -> MutableMapping[str, Any]:
+        ...
+
+    @abstractmethod
+    async def get_filter(self, filter_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
@@ -265,8 +286,14 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def update_config(
-        self, config_id: int, updates: MutableMapping[str, Any]
+    async def update_deployment(
+        self, deployment_id: int, updates: MutableMapping[str, Any]
+    ) -> int:
+        ...
+
+    @abstractmethod
+    async def update_filter(
+        self, filter_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         ...
 

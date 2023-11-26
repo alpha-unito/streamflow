@@ -162,7 +162,7 @@ class DeploymentManager(SchemaEntity):
         ...
 
 
-class DeploymentConfig(Config):
+class DeploymentConfig(Config, PersistableEntity):
     __slots__ = ("name", "type", "config", "external", "lazy", "workdir", "wraps")
 
     def __init__(
@@ -175,37 +175,44 @@ class DeploymentConfig(Config):
         workdir: str | None = None,
         wraps: str | None = None,
     ) -> None:
-        super().__init__(name, type, config)
+        Config.__init__(self, name, type, config)
+        PersistableEntity.__init__(self)
         self.external: bool = external
         self.lazy: bool = lazy
         self.workdir: str | None = workdir
         self.wraps: str | None = wraps
 
     @classmethod
-    async def _load(
+    async def load(
         cls,
         context: StreamFlowContext,
-        row: MutableMapping[str, Any],
+        persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> DeploymentConfig:
-        params = json.loads(row["params"])
-        return cls(
+        row = await context.database.get_deployment(persistent_id)
+        obj = cls(
             name=row["name"],
-            type=row["attr_type"],
+            type=row["type"],
             config=json.loads(row["config"]),
-            external=params["external"],
-            lazy=params["lazy"],
-            workdir=params["workdir"],
+            external=row["external"],
+            lazy=row["lazy"],
+            workdir=row["workdir"],
         )
+        obj.persistent_id = persistent_id
+        loading_context.add_deployment(persistent_id, obj)
+        return obj
 
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {
-            "external": self.external,
-            "lazy": self.lazy,
-            "workdir": self.workdir,
-        }
+    async def save(self, context: StreamFlowContext) -> None:
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_deployment(
+                    name=self.name,
+                    type=self.type,
+                    config=json.dumps(self.config),
+                    external=self.external,
+                    lazy=self.lazy,
+                    workdir=self.workdir,
+                )
 
 
 class Target(PersistableEntity):
@@ -303,3 +310,35 @@ class LocalTarget(Target):
         loading_context: DatabaseLoadingContext,
     ) -> LocalTarget:
         return cls(workdir=row["workdir"])
+
+
+class FilterConfig(Config, PersistableEntity):
+    def __init__(self, name: str, type: str, config: MutableMapping[str, Any]):
+        Config.__init__(self, name, type, config)
+        PersistableEntity.__init__(self)
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        persistent_id: int,
+        loading_context: DatabaseLoadingContext,
+    ) -> FilterConfig:
+        row = await context.database.get_filter(persistent_id)
+        obj = cls(
+            name=row["name"],
+            type=row["type"],
+            config=json.loads(row["config"]),
+        )
+        obj.persistent_id = persistent_id
+        loading_context.add_filter(persistent_id, obj)
+        return obj
+
+    async def save(self, context: StreamFlowContext) -> None:
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_filter(
+                    name=self.name,
+                    type=self.type,
+                    config=json.dumps(self.config),
+                )

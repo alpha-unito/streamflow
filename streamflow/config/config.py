@@ -26,7 +26,7 @@ class WorkflowConfig(Config):
         super().__init__(
             name=name, type=workflow_config["type"], config=workflow_config["config"]
         )
-        self.deplyoments = config.get("deployments", {})
+        self.deployments = config.get("deployments", {})
         self.policies = {
             k: Config(name=k, type=v["type"], config=v["config"])
             for k, v in config.get("scheduling", {}).get("policies", {}).items()
@@ -38,16 +38,16 @@ class WorkflowConfig(Config):
             k: Config(name=k, type=v["type"], config=v["config"])
             for k, v in config.get("bindingFilters", {}).items()
         }
-        if not self.deplyoments:
-            self.deplyoments = config.get("models", {})
-            if self.deplyoments:
+        if not self.deployments:
+            self.deployments = config.get("models", {})
+            if self.deployments:
                 if logger.isEnabledFor(logging.WARNING):
                     logger.warning(
                         "The `models` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `deployments` instead."
                     )
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
-        for name, deployment in self.deplyoments.items():
+        for name, deployment in self.deployments.items():
             deployment["name"] = name
         self.filesystem = {"children": {}}
         for binding in workflow_config.get("bindings", []):
@@ -68,7 +68,7 @@ class WorkflowConfig(Config):
         for target in targets:
             policy = target.get(
                 "policy",
-                self.deplyoments[target.get("deployment", target.get("model", {}))].get(
+                self.deployments[target.get("deployment", target.get("model", {}))].get(
                     "policy", "__DEFAULT__"
                 ),
             )
