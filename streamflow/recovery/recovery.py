@@ -41,6 +41,7 @@ from streamflow.recovery.utils import (
     get_output_ports,
     extra_data_print,
 )
+from streamflow.token_printer import dag_ports
 from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
@@ -64,7 +65,7 @@ class RollbackRecoveryPolicy:
     def __init__(self, context):
         self.context = context
 
-    async def recover_workflow(
+    async def recover_workflow_mix(
         self, failed_job: Job, failed_step: Step, loading_context
     ):
         workflow = failed_step.workflow
@@ -115,9 +116,10 @@ class RollbackRecoveryPolicy:
         # wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
         # logger.debug("build_dag: end build dag")
 
-        logger.debug("Start sync-rollbacks")
         # update class state (attributes) and jobs synchronization
-        map_job_port = await npgn.sync_running_jobs(new_workflow)
+        inner_graph = await npgn.refold_graphs(failed_step.output_ports.values())
+        logger.debug("Start sync-rollbacks")
+        map_job_port = await inner_graph.sync_running_jobs(new_workflow)
 
         # job_rollback = await self.context.failure_manager.sync_rollbacks(
         #     new_workflow, loading_context, failed_step, wr, enable_sync=False
@@ -128,7 +130,79 @@ class RollbackRecoveryPolicy:
         for pr in map_job_port.values():
             pr.port.workflow = new_workflow
             new_workflow.add_port(pr.port)
-        inner_graph = await npgn.refold_graphs()
+
+        def div(dict_a, dict_b, title):
+            if dict_a.keys() != dict_b.keys():
+                c = set(dict_a.keys()) - set(dict_b.keys())
+                d = set(dict_b.keys()) - set(dict_a.keys())
+                pass
+            for key, values in dict_a.items():
+                if values != dict_a[key]:
+                    pass
+
+        # div(
+        #     {k: i for k, (_, i) in wr.token_visited.items()},
+        #     inner_graph.token_available,
+        #     "token_visited",
+        # )
+        # div(wr.dag_ports, inner_graph.dcg_port, "graph_port")
+        # div(wr.port_tokens, inner_graph.port_tokens, "port_tokens")
+        # div(wr.port_name_ids, inner_graph.port_name_ids, "port_name_ids")
+
+        await dag_ports(
+            {
+                npgn.info_tokens[k].port_row["id"]: {
+                    npgn.info_tokens[v].port_row["id"]
+                    for v in values
+                    if isinstance(v, int)
+                }
+                for k, values in npgn.dag_tokens.items()
+                if isinstance(k, int)
+            },
+            self.context,
+            "p-new",
+        )
+        await dag_ports(
+            {
+                min(inner_graph.port_name_ids[k]): {
+                    min(inner_graph.port_name_ids[v])
+                    for v in values
+                    if v in inner_graph.port_name_ids.keys()
+                }
+                for k, values in inner_graph.dcg_port.items()
+                if k in inner_graph.port_name_ids.keys()
+            },
+            self.context,
+            "p-new-2",
+        )
+        # await dag_ports(
+        #     {
+        #         min(wr.port_name_ids[k]): {
+        #             min(wr.port_name_ids[v])
+        #             for v in values
+        #             if v in wr.port_name_ids.keys()
+        #         }
+        #         for k, values in wr.dag_ports.items()
+        #         if k in wr.port_name_ids.keys()
+        #     },
+        #     self.context,
+        #     "p-old",
+        # )
+
+        wr = ProvenanceGraphNavigation(
+            {k: {v for v in vs} for k, vs in inner_graph.dcg_port.items()},
+            [],
+            {k: {v for v in vs} for k, vs in inner_graph.port_name_ids.items()},
+            self.context,
+        )
+        wr.token_visited = {
+            k: (inner_graph.token_instances[k], i)
+            for k, i in inner_graph.token_available.items()
+        }
+        wr.port_tokens = {
+            k: {v for v in vs} for k, vs in inner_graph.port_tokens.items()
+        }
+
         logger.debug("End sync-rollbacks")
 
         # todo wr.inputs_ports non viene aggiornato
@@ -169,6 +243,209 @@ class RollbackRecoveryPolicy:
         )
         logger.debug("end _put_tokens")
         # await set_combinator_status(new_workflow, workflow, wr, loading_context)
+        await _set_steps_state(new_workflow, wr)
+        extra_data_print(
+            workflow,
+            new_workflow,
+            None,  # job_rollback,
+            wr,
+            last_iteration,
+        )
+        return new_workflow, last_iteration
+
+    async def recover_workflow(
+        self, failed_job: Job, failed_step: Step, loading_context
+    ):
+        new_workflow, lw = await self.recover_workflow_new(
+            failed_job, failed_step, loading_context
+        )
+        # new_workflow_old_style, _ = await self.recover_workflow_old(
+        #     failed_job, failed_step, loading_context
+        # )
+        # a = set(new_workflow.steps.keys()) - set(new_workflow_old_style.steps.keys())
+        # b = set(new_workflow_old_style.steps.keys()) - set(new_workflow.steps.keys())
+        #
+        # c = set(new_workflow.ports.keys()) - set(new_workflow_old_style.ports.keys())
+        # d = set(new_workflow_old_style.ports.keys()) - set(new_workflow.ports.keys())
+
+        pass
+        return new_workflow, lw
+
+    async def recover_workflow_new(
+        self, failed_job: Job, failed_step: Step, loading_context
+    ):
+        workflow = failed_step.workflow
+        new_workflow = Workflow(
+            context=workflow.context,
+            type=workflow.type,
+            name=random_name(),
+            config=workflow.config,
+        )
+
+        # should be an impossible case
+        if failed_step.persistent_id is None:
+            raise FailureHandlingException(
+                f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
+            )
+
+        job_token = get_job_token(
+            failed_job.name,
+            failed_step.get_input_port("__job__").token_list,
+        )
+        npgn = NewProvenanceGraphNavigation(workflow.context)
+        await npgn.build_unfold_graph((*failed_job.inputs.values(), job_token))
+
+        # update class state (attributes) and jobs synchronization
+        inner_graph = await npgn.refold_graphs(failed_step.get_output_ports().values())
+        logger.debug("Start sync-rollbacks")
+        map_job_port = await inner_graph.sync_running_jobs(new_workflow)
+
+        # todo tmp soluzione perché con i loop non funziona
+        for pr in map_job_port.values():
+            pr.port.workflow = new_workflow
+            new_workflow.add_port(pr.port)
+
+        wr = ProvenanceGraphNavigation(
+            {k: {v for v in vs} for k, vs in inner_graph.dcg_port.items()},
+            [],
+            {k: {v for v in vs} for k, vs in inner_graph.port_name_ids.items()},
+            self.context,
+        )
+        wr.token_visited = {
+            k: (inner_graph.token_instances[k], i)
+            for k, i in inner_graph.token_available.items()
+        }
+        wr.port_tokens = {
+            k: {v for v in vs} for k, vs in inner_graph.port_tokens.items()
+        }
+
+        logger.debug("End sync-rollbacks")
+        ports, steps = await wr.get_port_and_step_ids()
+
+        await _populate_workflow(
+            wr,
+            ports,
+            steps,
+            failed_step,
+            new_workflow,
+            loading_context,
+        )
+        if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
+            raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
+        logger.debug("end populate")
+
+        for port in failed_step.get_input_ports().values():
+            if port.name not in new_workflow.ports.keys():
+                raise FailureHandlingException(
+                    f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
+                )
+        logger.debug("end save_for_retag")
+
+        last_iteration = await _put_tokens(
+            new_workflow,
+            wr.dag_ports[INIT_DAG_FLAG],
+            wr.port_tokens,
+            wr.token_visited,
+            wr,
+        )
+        logger.debug("end _put_tokens")
+        await _set_steps_state(new_workflow, wr)
+        extra_data_print(
+            workflow,
+            new_workflow,
+            None,  # job_rollback,
+            wr,
+            last_iteration,
+        )
+        return new_workflow, last_iteration
+
+    async def recover_workflow_old(
+        self, failed_job: Job, failed_step: Step, loading_context
+    ):
+        workflow = failed_step.workflow
+        new_workflow = Workflow(
+            context=workflow.context,
+            type=workflow.type,
+            name=random_name(),
+            config=workflow.config,
+        )
+
+        # should be an impossible case
+        if failed_step.persistent_id is None:
+            raise FailureHandlingException(
+                f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
+            )
+
+        dag = {}
+        for k, t in failed_job.inputs.items():
+            if t.persistent_id is None:
+                raise FailureHandlingException("Token has not a persistent_id")
+            # se lo step è Transfer, allora non tutti gli input del job saranno nello step
+            if k in failed_step.input_ports.keys():
+                dag[failed_step.get_input_port(k).name] = {failed_step.name}
+            else:
+                logger.debug(f"Step {failed_step.name} has not the input port {k}")
+        dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
+
+        wr = ProvenanceGraphNavigation(
+            context=workflow.context,
+            output_ports=list(failed_step.input_ports.values()),
+            port_name_ids={
+                port.name: {port.persistent_id}
+                for port in failed_step.get_input_ports().values()
+            },
+            dag_ports=dag,
+        )
+
+        job_token = get_job_token(
+            failed_job.name,
+            failed_step.get_input_port("__job__").token_list,
+        )
+
+        tokens = deque(failed_job.inputs.values())
+        tokens.append(job_token)
+        await wr.build_dag(tokens, workflow, loading_context)
+        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
+        logger.debug("build_dag: end build dag")
+
+        # update class state (attributes) and jobs synchronization
+        logger.debug("Start sync-rollbacks")
+        # job_rollback = await self.context.failure_manager.sync_rollbacks(
+        #     new_workflow, loading_context, failed_step, wr, enable_sync=False
+        # )
+        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
+
+        logger.debug("End sync-rollbacks")
+        ports, steps = await wr.get_port_and_step_ids()
+
+        await _populate_workflow(
+            wr,
+            ports,
+            steps,
+            failed_step,
+            new_workflow,
+            loading_context,
+        )
+        if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
+            raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
+        logger.debug("end populate")
+
+        for port in failed_step.get_input_ports().values():
+            if port.name not in new_workflow.ports.keys():
+                raise FailureHandlingException(
+                    f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
+                )
+
+        logger.debug("end save_for_retag")
+
+        last_iteration = await _put_tokens(
+            new_workflow,
+            wr.dag_ports[INIT_DAG_FLAG],
+            wr.port_tokens,
+            wr.token_visited,
+            wr,
+        )
+        logger.debug("end _put_tokens")
         await _set_steps_state(new_workflow, wr)
         extra_data_print(
             workflow,
@@ -745,7 +1022,7 @@ class ProvenanceGraphNavigation:
         ):
             for row_dependency in row_dependencies:
                 logger.debug(
-                    f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} recuperato dalla port {get_key_by_value(row_dependency['port'], self.port_name_ids)}"
+                    f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} (id {row_dependency['step']}) recuperato dalla port {get_key_by_value(row_dependency['port'], self.port_name_ids)} (id {row_dependency['port']})"
                 )
                 steps.add(row_dependency["step"])
         rows_dependencies = await asyncio.gather(
@@ -765,6 +1042,9 @@ class ProvenanceGraphNavigation:
                 )
             ):
                 if row_port["name"] not in self.port_tokens.keys():
+                    logger.debug(
+                        f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} (id {step_id}) rimosso perché port {row_port['name']} non presente nei port_tokens. è presente nelle ports? {row_port['id'] in ports}"
+                    )
                     step_to_remove.add(step_id)
         for s_id in step_to_remove:
             steps.remove(s_id)
@@ -790,7 +1070,7 @@ async def _put_tokens(
             for t1 in token_list[i:]:
                 if t.persistent_id != t1.persistent_id and t.tag == t1.tag:
                     raise FailureHandlingException(
-                        f"Tag {t.tag} ripetuto id1: {t.persistent_id} id2: {t1.persistent_id}"
+                        f"Port {port_name} has tag {t.tag} ripetuto - id_a: {t.persistent_id} id_b: {t1.persistent_id}"
                     )
         port = new_workflow.ports[port_name]
         is_back_prop_output_port = any(
@@ -1024,6 +1304,7 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
             )
         ),
     ):
+        logger.debug(f"Loaded step {step.name} (id {sid})")
         step_name_id[step.name] = sid
 
         # if there are not the input ports in the workflow, the step is not added
