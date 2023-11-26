@@ -222,6 +222,7 @@ class DefaultFailureManager(FailureManager):
         loading_context,
         job_token_list,
         map_job_port,
+        enable_sync,
     ):
         async with self.job_requests[job_token.value.name].lock:
             if self.job_requests[job_token.value.name].is_running:
@@ -248,6 +249,8 @@ class DefaultFailureManager(FailureManager):
                 next_port_names = wr.dag_ports[job_token_port_name]
                 output_ports = []
                 for port_name in next_port_names:
+                    if port_name not in wr.port_name_ids.keys():
+                        continue
                     port_id = min(wr.port_name_ids[port_name])
                     step_rows = await wr.context.database.get_steps_from_output_port(
                         port_id
@@ -328,20 +331,21 @@ class DefaultFailureManager(FailureManager):
                             break
 
                 # add port in the workflow and create port recovery (request)
-                for port in execute_step_outports:
-                    port.workflow = None
-                    map_job_port[job_token.value.name] = port
-                    logger.debug(
-                        f"new_workflow {new_workflow.name} added in map_job_port[{job_token.value.name}] = {port.name}"
-                    )
-                    new_workflow.add_port(port)
-                    port.workflow = new_workflow
-                    logger.debug(
-                        f"new_workflow {new_workflow.name} added port {port.name} -> {new_workflow.ports.keys()}"
-                    )
-                    self.job_requests[job_token.value.name].queue.append(
-                        PortRecovery(port)
-                    )
+                if enable_sync:
+                    for port in execute_step_outports:
+                        port.workflow = None
+                        map_job_port[job_token.value.name] = port
+                        logger.debug(
+                            f"new_workflow {new_workflow.name} added in map_job_port[{job_token.value.name}] = {port.name}"
+                        )
+                        new_workflow.add_port(port)
+                        port.workflow = new_workflow
+                        # logger.debug(
+                        #     f"new_workflow {new_workflow.name} added port {port.name} -> {new_workflow.ports.keys()}"
+                        # )
+                        self.job_requests[job_token.value.name].queue.append(
+                            PortRecovery(port)
+                        )
 
                 # rimuovo i token generati da questo job token, pero'
                 # non posso togliere tutti i token della port perché non so quali job li genera
@@ -374,10 +378,11 @@ class DefaultFailureManager(FailureManager):
                     f"Job {job_token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[job_token.value.name].job_token} - t: {self.job_requests[job_token.value.name].token_output})"
                 )
                 job_token_list.append(job_token)
-                self.job_requests[job_token.value.name].is_running = True
-                self.job_requests[job_token.value.name].job_token = None
-                self.job_requests[job_token.value.name].token_output = None
-                self.job_requests[job_token.value.name].workflow = new_workflow.name
+                if enable_sync:
+                    self.job_requests[job_token.value.name].is_running = True
+                    self.job_requests[job_token.value.name].job_token = None
+                    self.job_requests[job_token.value.name].token_output = None
+                    self.job_requests[job_token.value.name].workflow = new_workflow.name
 
     async def sync_rollbacks(
         self,
@@ -385,6 +390,7 @@ class DefaultFailureManager(FailureManager):
         loading_context,
         failed_step,
         wr,
+        enable_sync=True,
     ):
         map_job_port = {}
         job_token_list = []
@@ -393,8 +399,9 @@ class DefaultFailureManager(FailureManager):
         ):
             # update job request
             if token.value.name not in self.job_requests.keys():
-                self.job_requests[token.value.name] = JobRequest()
-                self.job_requests[token.value.name].workflow = new_workflow.name
+                if enable_sync:
+                    self.job_requests[token.value.name] = JobRequest()
+                    self.job_requests[token.value.name].workflow = new_workflow.name
                 job_token_list.append(token)
             else:
                 await self._sync_requests(
@@ -405,6 +412,7 @@ class DefaultFailureManager(FailureManager):
                     loading_context,
                     job_token_list,
                     map_job_port,
+                    enable_sync,
                 )
             if enable_sync:
                 await self.update_job_status(job_token_list)
@@ -448,6 +456,24 @@ class DefaultFailureManager(FailureManager):
                         f"FAILED Job {token.value.name} {self.job_requests[token.value.name].version} times. Execution aborted"
                     )
                     raise FailureHandlingException()
+
+    async def update_single_job_status(self, job_name, lock):
+        if (
+            self.max_retries is None
+            or self.job_requests[job_name].version < self.max_retries
+        ):
+            self.job_requests[job_name].version += 1
+            logger.debug(
+                f"Updated Job {job_name} at {self.job_requests[job_name].version} times"
+            )
+            # free resources scheduler
+            await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
+            self.context.scheduler.deallocate_job(job_name, keep_job_allocation=True)
+        else:
+            logger.error(
+                f"FAILED Job {job_name} {self.job_requests[job_name].version} times. Execution aborted"
+            )
+            raise FailureHandlingException()
 
     # todo: situazione problematica
     #  A -> B
@@ -531,7 +557,6 @@ class DefaultFailureManager(FailureManager):
         #     pass
 
         p, s = await wr.get_port_and_step_ids()
-
         await _populate_workflow(
             wr,
             p,
