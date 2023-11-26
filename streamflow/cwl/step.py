@@ -171,7 +171,7 @@ class CWLLoopConditionalStep(CWLConditionalStep):
     async def _on_true(self, inputs: MutableMapping[str, Token]) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"Step {self.name} condition evaluated true "
+                f"Step {self.name} (wf {self.workflow.name}) condition evaluated true "
                 f"on inputs {[t.tag for t in inputs.values()]}"
             )
         # Next iteration: propagate outputs to the loop
@@ -188,11 +188,15 @@ class CWLLoopConditionalStep(CWLConditionalStep):
     async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"Step {self.name} condition evaluated false "
+                f"Step {self.name} (wf {self.workflow.name}) condition evaluated false "
                 f"on inputs {[t.tag for t in inputs.values()]}"
             )
         # Loop termination: propagate outputs outside the loop
+        logger.info(f"Step {self.name} skip ports {self.skip_ports}")
         for port in self.get_skip_ports().values():
+            logger.debug(
+                f"Step {self.name} (wf {self.workflow.name}) add IterationTerminationToken({get_tag(inputs.values())}) in port {[k for k, v in self.skip_ports.items() if v == port.name].pop()} (name {port.name})"
+            )
             port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
 
 

@@ -387,6 +387,9 @@ class CombinatorStep(BaseStep):
                             )
                             ins = [id for t in schema.values() for id in t["input_ids"]]
                             for port_name, token in schema.items():
+                                logger.debug(
+                                    f"Step {self.name} (wf {self.workflow.name}) generated token {token['token'].tag} ({'itt' if isinstance(token['token'], IterationTerminationToken) else 'tt' if isinstance(token['token'], TerminationToken) else 't'}) on port {port_name}",
+                                )
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
                                         token=token["token"],
@@ -820,7 +823,9 @@ class ExecuteStep(BaseStep):
             await self._retrieve_outputs(job, command_output, connectors)
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"{command_output.status.name} Job {job.name} terminated")
+            logger.debug(
+                f"{command_output.status.name} Job {job.name} terminated (wf {self.workflow.name})"
+            )
         return command_output.status
 
     async def _save_additional_params(
@@ -1195,7 +1200,7 @@ class LoopCombinatorStep(CombinatorStep):
                             not in self.iteration_terminaton_checklist[task_name]
                         ):
                             logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) add token tag {token.tag} on iteration_terminaton_checklist {task_name}"
+                                f"Step {self.name} (wf {self.workflow.name}) add token tag {token.tag} on iteration_terminaton_checklist {task_name}. {'.'.join(token.tag.split('.')[:-1])} not in {self.iteration_terminaton_checklist[task_name]}"
                             )
                             self.iteration_terminaton_checklist[task_name].add(
                                 token.tag
