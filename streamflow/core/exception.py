@@ -21,6 +21,7 @@ class WorkflowTransferException(WorkflowException):
     ...
 
 
+# todo: WorkflowFatalException per poterlo usare in giro su streamflow e non essere legato alla fault tolerance?
 class FailureHandlingException(WorkflowException):
     ...
 
