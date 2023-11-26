@@ -260,7 +260,7 @@ def main(args):
             asyncio.run(_async_report(args))
         elif args.context == "run":
             if args.quiet:
-                logger.setLevel(logging.WARN)
+                logger.setLevel(logging.WARNING)
             elif args.debug:
                 logger.setLevel(logging.DEBUG)
             if args.color and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():

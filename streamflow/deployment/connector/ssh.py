@@ -283,7 +283,7 @@ class SSHConnector(BaseConnector):
                 with open(os.path.join(self.config_dir, service)) as f:
                     services_map[name] = f.read()
         if file is not None:
-            if logger.isEnabledFor(logging.WARN):
+            if logger.isEnabledFor(logging.WARNING):
                 logger.warning(
                     "The `file` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                     "Use `services` instead."
@@ -717,6 +717,13 @@ class SSHConnector(BaseConnector):
             job_name=job_name,
         )
         if job_name is not None:
+            if logger.isEnabledFor(logging.WARNING):
+                if not self.template_map.is_empty() and location.service is None:
+                    logger.warning(
+                        f"Deployment {self.deployment_name} contains some service definitions, "
+                        f"but none of them has been specified to execute job {job_name}. Execution "
+                        f"will fall back to the default template."
+                    )
             command = self.template_map.get_command(
                 command=command,
                 template=location.service,

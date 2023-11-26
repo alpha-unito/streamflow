@@ -105,7 +105,7 @@ def main(args) -> int:
             print(f"StreamFlow version {VERSION}")
             return 0
         if args.quiet:
-            logger.setLevel(logging.WARN)
+            logger.setLevel(logging.WARNING)
         elif args.debug:
             logger.setLevel(logging.DEBUG)
         asyncio.run(_async_main(args))

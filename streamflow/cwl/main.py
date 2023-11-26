@@ -63,7 +63,7 @@ async def main(
     # Configure log level
     if args.quiet:
         # noinspection PyProtectedMember
-        cwltool.loghandler._logger.setLevel(logging.WARN)
+        cwltool.loghandler._logger.setLevel(logging.WARNING)
     # Load CWL workflow definition
     cwl_definition, loading_context = load_cwl_workflow(cwl_args[0])
     if len(cwl_args) == 2:

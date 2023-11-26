@@ -122,7 +122,7 @@ class ContainerConnector(BaseConnector, ABC):
         if cacheSize is None:
             cacheSize = resourcesCacheSize
             if cacheSize is not None:
-                if logger.isEnabledFor(logging.WARN):
+                if logger.isEnabledFor(logging.WARNING):
                     logger.warning(
                         "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `locationsCacheSize` instead."
@@ -133,7 +133,7 @@ class ContainerConnector(BaseConnector, ABC):
         if cacheTTL is None:
             cacheTTL = resourcesCacheTTL
             if cacheTTL is not None:
-                if logger.isEnabledFor(logging.WARN):
+                if logger.isEnabledFor(logging.WARNING):
                     logger.warning(
                         "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `locationsCacheTTL` instead."
