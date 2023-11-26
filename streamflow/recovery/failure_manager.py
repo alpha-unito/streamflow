@@ -649,7 +649,7 @@ class DefaultFailureManager(FailureManager):
                 self.job_requests[job_name].token_output.setdefault(
                     out_port_name, token
                 )
-                self.job_requests[job_name].is_running = False
+
                 # todo: fare a tutte le port nella queue la put del token
                 elems = []
                 if logger.isEnabledFor(logging.DEBUG):
@@ -697,6 +697,8 @@ class DefaultFailureManager(FailureManager):
 
                 for elem in elems:
                     self.job_requests[job_name].queue.remove(elem)
+                logger.info(f"notify - job {job_name} is not running anymore")
+                self.job_requests[job_name].is_running = False
                 logger.info(f"Notify end job {job_name} - done")
 
     @classmethod
@@ -757,6 +759,7 @@ class DefaultFailureManager(FailureManager):
             logger.info(f"Handling command failure for job {job.name}")
 
         if job.name in self.job_requests.keys():
+            logger.info(f"handle_failure: job {job.name} is not running anymore")
             self.job_requests[job.name].is_running = False
         return await self._do_handle_failure(job, step)
 
@@ -768,6 +771,9 @@ class DefaultFailureManager(FailureManager):
                 f"Handling {WorkflowTransferException.__name__} failure for job {job.name}"
             )
         if job.name in self.job_requests.keys():
+            logger.info(
+                f"handle_failure_transfer: job {job.name} is not running anymore"
+            )
             self.job_requests[job.name].is_running = False
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
