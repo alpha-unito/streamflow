@@ -343,8 +343,14 @@ class DockerBaseConnector(ContainerConnector, ABC):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await proc.communicate()
-        return json.loads(stdout.decode().strip()) if stdout else []
+        stdout, stderr = await proc.communicate()
+        try:
+            return json.loads(stdout.decode().strip()) if stdout else []
+        except json.decoder.JSONDecodeError:
+            raise WorkflowExecutionException(
+                f"Error retrieving volumes for Docker container {location.name}: "
+                f"{stderr.decode().strip()}"
+            )
 
 
 class DockerConnector(DockerBaseConnector):

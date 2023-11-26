@@ -550,11 +550,11 @@ def _create_token_processor(
                         schema_def_types=schema_def_types,
                         format_graph=format_graph,
                         context=context,
-                        optional=optional,
                         check_type=check_type,
                         force_deep_listing=force_deep_listing,
                         only_propagate_secondary_files=only_propagate_secondary_files,
                     ),
+                    optional=optional,
                 )
             # Enum type: -> create output processor
             elif port_type["type"] == "enum":
@@ -613,6 +613,7 @@ def _create_token_processor(
                         )
                         for port_type in port_type["fields"]
                     },
+                    optional=optional,
                 )
             # Unknown type -> raise Exception
             else:
