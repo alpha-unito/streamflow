@@ -707,9 +707,16 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
 
 
 class CWLMapTokenProcessor(TokenProcessor):
-    def __init__(self, name: str, workflow: Workflow, processor: TokenProcessor):
+    def __init__(
+        self,
+        name: str,
+        workflow: Workflow,
+        processor: TokenProcessor,
+        optional: bool = False,
+    ):
         super().__init__(name, workflow)
         self.processor: TokenProcessor = processor
+        self.optional: bool = optional
 
     @classmethod
     async def _load(
@@ -724,18 +731,28 @@ class CWLMapTokenProcessor(TokenProcessor):
             processor=await TokenProcessor.load(
                 context, row["processor"], loading_context
             ),
+            optional=row["optional"],
         )
 
     async def _save_additional_params(self, context: StreamFlowContext):
         return {
             **await super()._save_additional_params(context),
-            **{"processor": await self.processor.save(context)},
+            **{
+                "processor": await self.processor.save(context),
+                "optional": self.optional,
+            },
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
         # If value is token, propagate the process call
         if isinstance(token.value, Token):
             return token.update(await self.process(inputs, token.value))
+        # Check if value is None
+        if token.value is None:
+            if self.optional:
+                return token.update(token.value)
+            else:
+                raise WorkflowExecutionException(f"Token {self.name} is not optional.")
         # Check if token value is a list
         if not isinstance(token, ListToken):
             raise WorkflowDefinitionException(
@@ -830,9 +847,11 @@ class CWLObjectTokenProcessor(TokenProcessor):
         name: str,
         workflow: Workflow,
         processors: MutableMapping[str, TokenProcessor],
+        optional: bool = False,
     ):
         super().__init__(name, workflow)
         self.processors: MutableMapping[str, TokenProcessor] = processors
+        self.optional: bool = optional
 
     @classmethod
     async def _load(
@@ -858,6 +877,7 @@ class CWLObjectTokenProcessor(TokenProcessor):
                     ),
                 )
             },
+            optional=row["optional"],
         )
 
     async def _save_additional_params(self, context: StreamFlowContext):
@@ -875,7 +895,8 @@ class CWLObjectTokenProcessor(TokenProcessor):
                             )
                         ),
                     )
-                }
+                },
+                "optional": self.optional,
             },
         }
 
@@ -883,6 +904,12 @@ class CWLObjectTokenProcessor(TokenProcessor):
         # If value is token, propagate the process call
         if isinstance(token.value, Token):
             return token.update(await self.process(inputs, token.value))
+        # Check if value is None
+        if token.value is None:
+            if self.optional:
+                return token.update(token.value)
+            else:
+                raise WorkflowExecutionException(f"Token {self.name} is not optional.")
         # Check if token value is a dictionary
         if not isinstance(token.value, MutableMapping):
             raise WorkflowDefinitionException(
