@@ -71,7 +71,6 @@ def get_binding_config(
         return BindingConfig(
             targets=targets,
             filters=[
-                # tmp solution
                 FilterConfig(name=c.name, type=c.type, config=c.config)
                 for c in config.get("filters")
             ],

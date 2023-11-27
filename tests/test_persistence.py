@@ -145,11 +145,7 @@ async def test_schedule_step(context: StreamFlowContext):
                 workdir=utils.random_name(),
             ),
         ],
-        filters=[
-            FilterConfig(
-                config={"hello": "world"}, name=utils.random_name(), type="shuffle"
-            )
-        ],
+        filters=[FilterConfig(config={}, name=utils.random_name(), type="shuffle")],
     )
     connector_ports = {
         target.deployment.name: workflow.create_port(ConnectorPort)
@@ -337,9 +333,7 @@ async def test_iteration_termination_token(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_filter_config(context: StreamFlowContext):
     """Test saving and loading filter configuration from database"""
-    config = FilterConfig(
-        config={"hello": "world"}, name=utils.random_name(), type="shuffle"
-    )
+    config = FilterConfig(config={}, name=utils.random_name(), type="shuffle")
     await save_load_and_test(config, context)
 
 
