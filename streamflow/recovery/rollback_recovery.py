@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections import deque
 from enum import Enum
 from typing import MutableMapping, MutableSet, Any
@@ -174,6 +175,9 @@ class DirectGraph:
     def values(self):
         return self.graph.values()
 
+    def __str__(self):
+        return f"{json.dumps({k :list(v) for k, v in self.graph.items()}, indent=2)}"
+
 
 class RollbackDeterministicWorkflowPolicy:
     def __init__(self, context):
@@ -337,24 +341,20 @@ class RollbackDeterministicWorkflowPolicy:
             for token in self.token_instances.values()
             if isinstance(token, JobToken)
         ]
+        logger.debug(f"GT: {self.dag_tokens}\nGP: {self.dcg_port}")
         for job_token in [
             token
             for token in self.token_instances.values()
             if isinstance(token, JobToken)
         ]:
-            self.context.failure_manager.setup_job_request(
+            job_request = await self.context.failure_manager.setup_job_request(
                 job_token.value.name, default_is_running=False
             )
-            job_request = self.context.failure_manager.job_requests[
-                job_token.value.name
-            ]
             async with job_request.lock:
-                job_to_rollback = False
                 if job_request.is_running:
                     logger.debug(
                         f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest is running. {job_token_names}"
                     )
-                    a = None
                     for (
                         output_port_name
                     ) in await self.get_output_port_name_execute_step(job_token):
@@ -367,9 +367,10 @@ class RollbackDeterministicWorkflowPolicy:
                             f"Created port {port_recovery.port.name} for wf {workflow.name} with waiting token {port_recovery.waiting_token}"
                         )
                         map_job_port.setdefault(job_token.value.name, port_recovery)
-                        a = 1
-                    pass  # debug: a is none
-                    pass  # debug: there is only one job and it is running.....strange. significa che ci sono più esecuzioni dello stesso step
+                    if len(job_token_names) == 1:
+                        raise FailureHandlingException(
+                            "There is only job job in this rollback, but it is already running in another workflow. Something is wrong."
+                        )
                     execute_step_out_token_ids = await get_execute_step_out_token_ids(
                         [
                             row["depender"]
@@ -434,7 +435,7 @@ class RollbackDeterministicWorkflowPolicy:
                             port_row["id"], self.context
                         )
                         logger.debug(
-                            f"Sync Job {job_token.value.name} (wf {workflow.name}): Replace ... with {new_token.persistent_id}"
+                            f"Sync Job {job_token.value.name} (wf {workflow.name}): Replace {self.get_equal_token(port_name, new_token)} with {new_token.persistent_id}"
                         )
                         # todo: viene prunata lo step e/o la port di input (tosort-empty-scatter-blabla). Male.
                         await self.replace_token_and_remove(
@@ -455,24 +456,15 @@ class RollbackDeterministicWorkflowPolicy:
                     job_request.job_token = None
                     job_request.token_output = None
                     job_request.workflow = None
-                    job_to_rollback = True
-                # logger.debug(
-                #     f"DEVO sync (wf {workflow.name}) CON JOB TOKEN {job_token.persistent_id} JOB {job_token.value.name}"
-                # )
-                if job_to_rollback:
-                    await self.context.failure_manager.update_single_job_status(
+                    await self.context.failure_manager.update_job_status(
                         job_token.value.name, job_request.lock
                     )
-        # await self.context.failure_manager.update_job_status(
-        #     [
-        #         token
-        #         for token in self.token_instances.values()
-        #         if isinstance(token, JobToken)
-        #     ],
-        # )
+            # end lock
+        # end for job token
         logger.debug(f"FINE sync (wf {workflow.name}) RUNNING JOBS")
         return map_job_port
 
+    # rename it in get_equal_token_id ?
     def get_equal_token(self, port_name, token):
         for t_id in self.port_tokens.get(port_name, []):
             if isinstance(token, JobToken):

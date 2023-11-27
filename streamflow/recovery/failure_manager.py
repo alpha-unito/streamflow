@@ -98,6 +98,7 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
 
+        self.create_request_lock = asyncio.Condition()
         # { job.name : RequestJob }
         self.job_requests: MutableMapping[str, JobRequest] = {}
 
@@ -415,7 +416,7 @@ class DefaultFailureManager(FailureManager):
                     enable_sync,
                 )
             if enable_sync:
-                await self.update_job_status(job_token_list)
+                await self.update_job_statuses(job_token_list)
         return [t.value.name for t in job_token_list]
 
     def add_waiter(self, job_name, port_name, port_recovery=None):
@@ -426,13 +427,15 @@ class DefaultFailureManager(FailureManager):
             self.job_requests[job_name].queue.append(port_recovery)
         return port_recovery
 
-    def setup_job_request(self, job_name, default_is_running=None):
-        jr = JobRequest()
-        if default_is_running is not None:
-            jr.is_running = default_is_running
-        self.job_requests.setdefault(job_name, jr)
+    async def setup_job_request(self, job_name, default_is_running=True):
+        if job_name not in self.job_requests.keys():
+            async with self.create_request_lock:
+                request = JobRequest()
+                request.is_running = default_is_running
+                return self.job_requests.setdefault(job_name, request)
+        return self.job_requests[job_name]
 
-    async def update_job_status(self, job_token_list):
+    async def update_job_statuses(self, job_token_list):
         for token in job_token_list:
             async with self.job_requests[token.value.name].lock:
                 # save jobs recovered
@@ -457,7 +460,7 @@ class DefaultFailureManager(FailureManager):
                     )
                     raise FailureHandlingException()
 
-    async def update_single_job_status(self, job_name, lock):
+    async def update_job_status(self, job_name, lock):
         if (
             self.max_retries is None
             or self.job_requests[job_name].version < self.max_retries
@@ -749,6 +752,7 @@ class DefaultFailureManager(FailureManager):
                 f"Handling {type(exception).__name__} failure for job {job.name}"
             )
         if job.name in self.job_requests.keys():
+            logger.info(f"handle_exception: job {job.name} is not running anymore")
             self.job_requests[job.name].is_running = False
         return await self._do_handle_failure(job, step)
 
