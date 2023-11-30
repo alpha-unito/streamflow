@@ -14,5 +14,6 @@ class CachedDatabase(Database, ABC):
         self.port_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.step_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.target_cache: Cache = LRUCache(maxsize=sys.maxsize)
+        self.filter_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.token_cache: Cache = LRUCache(maxsize=sys.maxsize)
         self.workflow_cache: Cache = LRUCache(maxsize=sys.maxsize)

@@ -5,7 +5,7 @@ import pytest
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import LocalTarget, Target
+from streamflow.core.deployment import LocalTarget, Target, FilterConfig
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
@@ -32,6 +32,7 @@ from streamflow.workflow.token import (
 )
 from tests.conftest import save_load_and_test
 from tests.utils.deployment import get_docker_deployment_config
+from tests.utils.workflow import create_workflow
 
 
 @pytest.mark.asyncio
@@ -135,21 +136,31 @@ async def test_deploy_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_schedule_step(context: StreamFlowContext):
     """Test saving and loading ScheduleStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow, _ = await create_workflow(context, 0)
+    binding_config = BindingConfig(
+        targets=[
+            LocalTarget(workdir=utils.random_name()),
+            Target(
+                deployment=get_docker_deployment_config(),
+                workdir=utils.random_name(),
+            ),
+        ],
+        filters=[FilterConfig(config={}, name=utils.random_name(), type="shuffle")],
     )
-    port = workflow.create_port()
+    connector_ports = {
+        target.deployment.name: workflow.create_port(ConnectorPort)
+        for target in binding_config.targets
+    }
     await workflow.save(context)
 
-    binding_config = BindingConfig(targets=[LocalTarget(workdir=utils.random_name())])
     schedule_step = workflow.create_step(
         cls=ScheduleStep,
-        name=posixpath.join(utils.random_name() + "-injector", "__schedule__"),
+        name=posixpath.join(utils.random_name(), "__schedule__"),
         job_prefix="something",
-        connector_ports={binding_config.targets[0].deployment.name: port},
-        input_directory=binding_config.targets[0].workdir,
-        output_directory=binding_config.targets[0].workdir,
-        tmp_directory=binding_config.targets[0].workdir,
+        connector_ports=connector_ports,
+        input_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
+        output_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
+        tmp_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
         binding_config=binding_config,
     )
     await save_load_and_test(schedule_step, context)
@@ -317,6 +328,13 @@ async def test_iteration_termination_token(context: StreamFlowContext):
     """Test saving and loading IterationTerminationToken from database"""
     token = IterationTerminationToken("1")
     await save_load_and_test(token, context)
+
+
+@pytest.mark.asyncio
+async def test_filter_config(context: StreamFlowContext):
+    """Test saving and loading filter configuration from database"""
+    config = FilterConfig(config={}, name=utils.random_name(), type="shuffle")
+    await save_load_and_test(config, context)
 
 
 @pytest.mark.asyncio

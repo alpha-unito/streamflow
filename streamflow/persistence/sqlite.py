@@ -129,6 +129,24 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return cursor.lastrowid
 
+    async def add_filter(
+        self,
+        name: str,
+        type: str,
+        config: str,
+    ) -> int:
+        async with self.connection as db:
+            async with db.execute(
+                "INSERT INTO filter(name, type, config) "
+                "VALUES (:name, :type, :config)",
+                {
+                    "name": name,
+                    "type": type,
+                    "config": config,
+                },
+            ) as cursor:
+                return cursor.lastrowid
+
     async def add_port(
         self,
         name: str,
@@ -280,10 +298,18 @@ class SqliteDatabase(CachedDatabase):
                 return await cursor.fetchall()
 
     @cachedmethod(lambda self: self.deployment_cache)
-    async def get_deployment(self, deplyoment_id: int) -> MutableMapping[str, Any]:
+    async def get_deployment(self, deployment_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
-                "SELECT * FROM deployment WHERE id = :id", {"id": deplyoment_id}
+                "SELECT * FROM deployment WHERE id = :id", {"id": deployment_id}
+            ) as cursor:
+                return await cursor.fetchone()
+
+    @cachedmethod(lambda self: self.filter_cache)
+    async def get_filter(self, filter_id: int) -> MutableMapping[str, Any]:
+        async with self.connection as db:
+            async with db.execute(
+                "SELECT * FROM filter WHERE id = :id", {"id": filter_id}
             ) as cursor:
                 return await cursor.fetchone()
 
@@ -458,6 +484,19 @@ class SqliteDatabase(CachedDatabase):
             )
             self.deployment_cache.pop(deployment_id, None)
             return deployment_id
+
+    async def update_filter(
+        self, filter_id: int, updates: MutableMapping[str, Any]
+    ) -> int:
+        async with self.connection as db:
+            await db.execute(
+                "UPDATE filter SET {} WHERE id = :id".format(  # nosec
+                    ", ".join([f"{k} = :{k}" for k in updates])
+                ),
+                {**updates, **{"id": filter_id}},
+            )
+            self.filter_cache.pop(filter_id, None)
+            return filter_id
 
     async def update_port(self, port_id: int, updates: MutableMapping[str, Any]) -> int:
         async with self.connection as db:

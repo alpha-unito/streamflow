@@ -1,7 +1,7 @@
 from typing import MutableMapping
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import DeploymentConfig, Target
+from streamflow.core.deployment import DeploymentConfig, Target, FilterConfig
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Port, Step, Token, Workflow
 
@@ -13,11 +13,15 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
         self._ports: MutableMapping[int, Port] = {}
         self._steps: MutableMapping[int, Step] = {}
         self._targets: MutableMapping[int, Target] = {}
+        self._filter_configs: MutableMapping[int, FilterConfig] = {}
         self._tokens: MutableMapping[int, Token] = {}
         self._workflows: MutableMapping[int, Workflow] = {}
 
     def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
         self._deployment_configs[persistent_id] = deployment
+
+    def add_filter(self, persistent_id: int, filter_config: FilterConfig):
+        self._filter_configs[persistent_id] = filter_config
 
     def add_port(self, persistent_id: int, port: Port):
         self._ports[persistent_id] = port
@@ -38,6 +42,11 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
         return self._deployment_configs.get(
             persistent_id
         ) or await DeploymentConfig.load(context, persistent_id, self)
+
+    async def load_filter(self, context: StreamFlowContext, persistent_id: int):
+        return self._filter_configs.get(persistent_id) or await FilterConfig.load(
+            context, persistent_id, self
+        )
 
     async def load_port(self, context: StreamFlowContext, persistent_id: int):
         return self._ports.get(persistent_id) or await Port.load(

@@ -101,3 +101,12 @@ CREATE TABLE IF NOT EXISTS target
     params     TEXT,
     FOREIGN KEY (deployment) REFERENCES deployment (id)
 );
+
+
+CREATE TABLE IF NOT EXISTS filter
+(
+    id              INTEGER PRIMARY KEY,
+    name            TEXT,
+    type            TEXT,
+    config          TEXT
+);
