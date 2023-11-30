@@ -4,12 +4,18 @@ from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.scheduling import AvailableLocation
-from streamflow.deployment.future import FutureAware
+from streamflow.deployment.connector.base import BaseConnector
 
 
-class ConnectorWrapper(Connector, FutureAware, ABC):
-    def __init__(self, deployment_name: str, config_dir: str, connector: Connector):
-        super().__init__(deployment_name, config_dir)
+class ConnectorWrapper(BaseConnector, ABC):
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        connector: Connector,
+        transferBufferSize: int,
+    ):
+        super().__init__(deployment_name, config_dir, transferBufferSize)
         self.connector: Connector = connector
 
     async def copy_local_to_remote(

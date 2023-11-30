@@ -270,7 +270,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     async def _copy_remote_to_local(
         self, src: str, dst: str, location: Location, read_only: bool = False
     ):
-        async with self._get_stream_reader(location, src) as reader:
+        async with (await self.get_stream_reader(location, src)) as reader:
             try:
                 async with aiotarstream.open(
                     stream=reader,
@@ -311,8 +311,8 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                     dst=dst,
                 )
             )
-            async with source_connector._get_stream_reader(
-                source_location, src
+            async with (
+                await source_connector.get_stream_reader(source_location, src)
             ) as reader:
                 # Open a target response for each location
                 writers = [
@@ -410,7 +410,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 effective_locations.append(location)
         return effective_locations
 
-    def _get_run_command(
+    async def get_run_command(
         self, command: str, location: Location, interactive: bool = False
     ):
         pod, container = location.name.split(":")
@@ -428,7 +428,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     async def _get_running_pods(self) -> V1PodList:
         ...
 
-    def _get_stream_reader(self, location: Location, src: str) -> StreamWrapperContext:
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
         pod, container = location.name.split(":")
         dirname, basename = posixpath.split(src)
         return KubernetesResponseWrapperContext(

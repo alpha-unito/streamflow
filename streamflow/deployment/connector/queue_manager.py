@@ -8,7 +8,7 @@ import os
 import shlex
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, MutableMapping, MutableSequence, cast
+from typing import Any, MutableMapping, MutableSequence, cast, TYPE_CHECKING
 
 import cachetools
 from importlib_resources import files
@@ -26,6 +26,9 @@ from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
+
+if TYPE_CHECKING:
+    from streamflow.core.data import StreamWrapperContext
 
 
 class QueueManagerService:
@@ -361,7 +364,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 transferBufferSize=transferBufferSize,
                 username=username,
             )
-        super().__init__(deployment_name, config_dir, connector)
+        super().__init__(deployment_name, config_dir, connector, transferBufferSize)
         files_map: MutableMapping[str, Any] = {}
         self.services = (
             {k: self._service_class(**v) for k, v in services.items()}
@@ -574,6 +577,16 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 logger.warning(
                     f"COMPLETED Undeployment of inner SSH connector for {self.deployment_name} deployment."
                 )
+
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
+        return await self.connector.get_stream_reader(location, src)
+
+    async def get_run_command(
+        self, command: str, location: Location, interactive: bool = False
+    ) -> str:
+        return await self.connector.get_run_command(command, location, interactive)
 
 
 class SlurmConnector(QueueManagerConnector):

@@ -29,7 +29,7 @@ class LocalConnector(BaseConnector):
         self.cores = float(psutil.cpu_count())
         self.memory = float(psutil.virtual_memory().available / 2**20)
 
-    def _get_run_command(
+    async def get_run_command(
         self, command: str, location: Location, interactive: bool = False
     ):
         if sys.platform == "win32":

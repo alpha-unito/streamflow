@@ -14,6 +14,7 @@ from streamflow.core.context import SchemaEntity
 from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
 
 if TYPE_CHECKING:
+    from streamflow.core.data import StreamWrapperContext
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
     from streamflow.core.workflow import Job
@@ -134,6 +135,18 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def undeploy(self, external: bool) -> None:
+        ...
+
+    @abstractmethod
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
+        ...
+
+    @abstractmethod
+    async def get_run_command(
+        self, command: str, location: Location, interactive: bool = False
+    ) -> str:
         ...
 
 

@@ -327,7 +327,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             hostname=stdout.decode().strip(),
         )
 
-    def _get_run_command(
+    async def get_run_command(
         self, command: str, location: Location, interactive: bool = False
     ):
         return f"docker exec {'-i' if interactive else ''} {location.name} sh -c '{command}'"
@@ -1088,7 +1088,7 @@ class SingularityConnector(ContainerConnector):
             if line.split()[0] not in ["tmpfs", "overlay"]
         ]
 
-    def _get_run_command(
+    async def get_run_command(
         self, command: str, location: Location, interactive: bool = False
     ):
         return f"singularity exec instance://{location.name} sh -c '{command}'"
