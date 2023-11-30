@@ -6,6 +6,7 @@ import os
 import posixpath
 import shlex
 import tarfile
+from abc import abstractmethod
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
@@ -56,8 +57,7 @@ async def extract_tar_stream(
 
 class BaseConnector(Connector, FutureAware):
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
-        super().__init__(deployment_name, config_dir)
-        self.transferBufferSize: int = transferBufferSize
+        super().__init__(deployment_name, config_dir, transferBufferSize)
 
     async def _copy_local_to_remote(
         self,
@@ -83,7 +83,7 @@ class BaseConnector(Connector, FutureAware):
     ) -> None:
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(
-                await self.get_run_command(
+                self._get_run_command(
                     command="tar xf - -C /", location=location, interactive=True
                 )
             ),
@@ -114,7 +114,7 @@ class BaseConnector(Connector, FutureAware):
         dirname, basename = posixpath.split(src)
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(
-                await self.get_run_command(
+                self._get_run_command(
                     command=f"tar chf - -C {dirname} {basename}",
                     location=location,
                 )
@@ -169,29 +169,23 @@ class BaseConnector(Connector, FutureAware):
                 await source_connector.get_stream_reader(source_location, src)
             ) as reader:
                 # Open a target StreamWriter for each location
-                results = await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self.get_run_command(
-                                command=write_command,
-                                location=location,
-                                interactive=True,
-                            )
-                        )
-                        for location in locations
-                    )
-                )
                 writers = await asyncio.gather(
                     *(
                         asyncio.create_task(
                             asyncio.create_subprocess_exec(
-                                *shlex.split(result),
+                                *shlex.split(
+                                    self._get_run_command(
+                                        command=write_command,
+                                        location=location,
+                                        interactive=True,
+                                    )
+                                ),
                                 stdin=asyncio.subprocess.PIPE,
                                 stdout=asyncio.subprocess.DEVNULL,
                                 stderr=asyncio.subprocess.DEVNULL,
                             )
                         )
-                        for result in results
+                        for location in locations
                     )
                 )
                 try:
@@ -215,6 +209,12 @@ class BaseConnector(Connector, FutureAware):
                         *(asyncio.create_task(writer.wait()) for writer in writers)
                     )
 
+    @abstractmethod
+    def _get_run_command(
+        self, command: str, location: Location, interactive: bool = False
+    ) -> str:
+        ...
+
     def _get_shell(self) -> str:
         return "sh"
 
@@ -225,7 +225,7 @@ class BaseConnector(Connector, FutureAware):
         return SubprocessStreamReaderWrapperContext(
             coro=asyncio.create_subprocess_exec(
                 *shlex.split(
-                    await self.get_run_command(
+                    self._get_run_command(
                         command=f"tar chf - -C {dirname} {basename}",
                         location=location,
                     )
@@ -353,7 +353,7 @@ class BaseConnector(Connector, FutureAware):
                 )
             )
         command = utils.encode_command(command, self._get_shell())
-        run_command = await self.get_run_command(command, location)
+        run_command = self._get_run_command(command, location)
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(run_command),
             stdin=None,

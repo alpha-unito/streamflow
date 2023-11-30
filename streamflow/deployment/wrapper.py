@@ -4,10 +4,10 @@ from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.scheduling import AvailableLocation
-from streamflow.deployment.connector.base import BaseConnector
+from streamflow.deployment.future import FutureAware
 
 
-class ConnectorWrapper(BaseConnector, ABC):
+class ConnectorWrapper(Connector, FutureAware, ABC):
     def __init__(
         self,
         deployment_name: str,

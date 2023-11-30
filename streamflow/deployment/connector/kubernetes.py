@@ -410,7 +410,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 effective_locations.append(location)
         return effective_locations
 
-    async def get_run_command(
+    def _get_run_command(
         self, command: str, location: Location, interactive: bool = False
     ):
         pod, container = location.name.split(":")

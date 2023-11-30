@@ -434,9 +434,6 @@ class SSHConnector(BaseConnector):
                                 )
                             )
 
-    def get_transfer_buffer_size(self):
-        return self.transferBufferSize
-
     def _get_command(
         self,
         location: Location,
@@ -599,7 +596,7 @@ class SSHConnector(BaseConnector):
             else:
                 raise WorkflowExecutionException(result.returncode)
 
-    async def get_run_command(
+    def _get_run_command(
         self, command: str, location: Location, interactive: bool = False
     ):
         return f"ssh {location.name} {command}"

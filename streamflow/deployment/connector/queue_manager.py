@@ -583,11 +583,6 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
     ) -> StreamWrapperContext:
         return await self.connector.get_stream_reader(location, src)
 
-    async def get_run_command(
-        self, command: str, location: Location, interactive: bool = False
-    ) -> str:
-        return await self.connector.get_run_command(command, location, interactive)
-
 
 class SlurmConnector(QueueManagerConnector):
     @classmethod

@@ -22,7 +22,7 @@ class FutureConnector(Connector):
         external: bool,
         **kwargs,
     ):
-        super().__init__(name, config_dir)
+        super().__init__(name, config_dir, kwargs.get("transferBufferSize", 2**16))
         self.type: type[Connector] = connector_type
         self.external: bool = external
         self.parameters: MutableMapping[str, Any] = kwargs
@@ -178,17 +178,6 @@ class FutureConnector(Connector):
             else:
                 await self.deploy_event.wait()
         return await self.connector.get_stream_reader(location, src)
-
-    async def get_run_command(
-        self, command: str, location: Location, interactive: bool = False
-    ) -> str:
-        if self.connector is None:
-            if not self.deploying:
-                self.deploying = True
-                await self.deploy(self.external)
-            else:
-                await self.deploy_event.wait()
-        return await self.connector.get_run_command(command, location, interactive)
 
 
 class FutureMeta(ABCMeta):
