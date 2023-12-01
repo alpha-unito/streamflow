@@ -24,7 +24,7 @@ from tests.conftest import (
     are_equals,
     object_to_dict,
 )
-from tests.utils.get_instances import (
+from tests.utils.workflow import (
     create_workflow,
     create_schedule_step,
     create_deploy_step,

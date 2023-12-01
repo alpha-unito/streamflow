@@ -212,7 +212,7 @@ async def test_schedule_step(context: StreamFlowContext):
     """Test token provenance for ScheduleStep"""
     workflow = (await create_workflow(context, num_port=0))[0]
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, deploy_step)
+    schedule_step = create_schedule_step(workflow, [deploy_step])
 
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
@@ -241,7 +241,7 @@ async def test_execute_step(context: StreamFlowContext):
         context, num_port=3
     )
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, deploy_step)
+    schedule_step = create_schedule_step(workflow, [deploy_step])
 
     in_port_name = "in-1"
     out_port_name = "out-1"

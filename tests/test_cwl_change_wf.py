@@ -36,7 +36,7 @@ from tests.test_change_wf import (
     set_workflow_in_combinator,
     workflow_in_combinator_test,
 )
-from tests.utils.get_instances import create_workflow
+from tests.utils.workflow import create_workflow
 
 
 @pytest.mark.asyncio
