@@ -483,7 +483,7 @@ class DeployStep(BaseStep):
             workflow=change_wf
             if change_wf
             else await loading_context.load_workflow(context, row["workflow"]),
-            deployment_config=await loading_context.load_config(
+            deployment_config=await loading_context.load_deployment(
                 context, params["deployment_config"]
             ),
             connector_port=cast(

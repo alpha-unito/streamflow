@@ -3,9 +3,9 @@ from typing import Type, cast, MutableSequence
 import pytest
 
 from streamflow.core import utils
-from streamflow.core.config import BindingConfig, Config
+from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import LocalTarget
+from streamflow.core.deployment import LocalTarget, FilterConfig
 from streamflow.core.workflow import Workflow, Port, Step
 from streamflow.cwl.command import CWLCommand, CWLCommandToken
 from streamflow.cwl.translator import _create_command_output_processor_base
@@ -202,18 +202,15 @@ async def test_schedule_step(context: StreamFlowContext):
     """Test saving ScheduleStep on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=0))[0]
     deploy_step = create_deploy_step(workflow)
+    nof_deployments = 2
     step = create_schedule_step(
         workflow,
-        [deploy_step, deploy_step],
+        [deploy_step for _ in range(nof_deployments)],
         BindingConfig(
-            targets=[LocalTarget(), LocalTarget()],
+            targets=[LocalTarget() for _ in range(nof_deployments)],
             filters=[
-                Config(
-                    config={"hello": "world"}, name=utils.random_name(), type="shuffle"
-                ),
-                Config(
-                    config={"ciao": "mondo"}, name=utils.random_name(), type="linear"
-                ),
+                FilterConfig(config={}, name=utils.random_name(), type="shuffle")
+                for _ in range(nof_deployments)
             ],
         ),
     )
