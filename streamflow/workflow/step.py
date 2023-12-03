@@ -58,8 +58,8 @@ async def _get_port(
 ):
     if change_wf:
         port_row = await context.database.get_port(port_id)
-        if port_row["name"] in change_wf.ports.keys():
-            return change_wf.ports[port_row["name"]]
+        if port := change_wf.ports.get(port_row["name"]):
+            return port
 
         # If the port is not available in the new workflow, a new one must be created
         return await Port.load(context, port_id, loading_context, change_wf)

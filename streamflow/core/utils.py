@@ -286,6 +286,8 @@ async def get_dependencies(
     context: StreamFlowContext,
     loading_context: DatabaseLoadingContext,
 ):
+    # This method is generally called from the step load method. If the change_wf is enabled,
+    # it is not helpful to get the Port instance in loading_context
     if load_ports:
         ports = await asyncio.gather(
             *(
@@ -295,7 +297,6 @@ async def get_dependencies(
         )
         return {d["name"]: p.name for d, p in zip(dependency_rows, ports)}
     else:
-        # it is not helpful to have the Port instance in loading_context when it is loading on a new workflow
         port_rows = await asyncio.gather(
             *(
                 asyncio.create_task(context.database.get_port(d["port"]))

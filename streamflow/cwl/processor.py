@@ -166,7 +166,7 @@ class CWLTokenProcessor(TokenProcessor):
                 format_graph.parse(data=row["format_graph"])
                 if row["format_graph"] is not None
                 else None
-            ),  # todo: fix multiple instance
+            ),  # todo: fix multiple instances
             full_js=row["full_js"],
             load_contents=row["load_contents"],
             load_listing=LoadListing(row["load_listing"])
