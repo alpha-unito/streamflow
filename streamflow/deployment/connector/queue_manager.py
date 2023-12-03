@@ -8,7 +8,7 @@ import os
 import shlex
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, MutableMapping, MutableSequence, cast, TYPE_CHECKING
+from typing import Any, MutableMapping, MutableSequence, cast
 
 import cachetools
 from importlib_resources import files
@@ -26,9 +26,6 @@ from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
-
-if TYPE_CHECKING:
-    from streamflow.core.data import StreamWrapperContext
 
 
 class QueueManagerService:
@@ -577,11 +574,6 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 logger.warning(
                     f"COMPLETED Undeployment of inner SSH connector for {self.deployment_name} deployment."
                 )
-
-    async def get_stream_reader(
-        self, location: Location, src: str
-    ) -> StreamWrapperContext:
-        return await self.connector.get_stream_reader(location, src)
 
 
 class SlurmConnector(QueueManagerConnector):
