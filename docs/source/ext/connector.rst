@@ -71,6 +71,11 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
     ) -> None:
         ...
 
+    async def get_stream_reader(
+            self, location: Location, src: str
+        ) -> StreamWrapperContext:
+
+
 The ``deploy`` method instantiates the remote execution environment, making it ready to receive requests for data transfers and command executions. A ``deployment`` object can be marked as ``external`` in the StreamFlow file. In that case, the ``Connector`` should assume that the execution environment is already up and running, and the ``deploy`` method should only open the necessary connections to communicate with it.
 
 The ``undeploy`` method destroys the remote execution environment, potentially cleaning up all the temporary resources instantiated during the workflow execution (e.g., intermediate results). If a ``deployment`` object is marked as ``external``, the ``undeploy`` method should not destroy it but just close all the connections opened by the ``deploy`` method.
@@ -80,6 +85,8 @@ The ``get_available_locations`` method is used in the scheduling phase to obtain
 The ``copy`` methods perform a data transfer from a ``src`` path to a ``dst`` path in one or more destination ``locations`` in the execution environment controlled by the ``Connector``. The ``read_only`` parameter notifies the ``Connector`` if the destination files will be modified in place or not. This parameter prevents unattended side effects (e.g., symlink optimizations on the remote locations). The ``copy_remote_to_remote`` method accepts two additional parameters: a ``source_location`` and an optional ``source_connector``. The latter identifies the ``Connector`` instance that controls the ``source_location`` and defaults to ``self`` when not specified.
 
 The ``run`` method performs a remote ``command`` execution on a remote ``location``. The ``command`` parameter is a list of arguments, mimicking the Python `subprocess <https://docs.python.org/3/library/subprocess.html>`_ abstraction. Many optional parameters can be passed to the ``run`` method. The ``environment`` parameter is a dictionary of environment variables, which should be defined in the remote execution context before executing the command. The ``workdir`` parameter identifies the remote working directory. The ``stdin``, ``stdout``, and ``stderr`` parameters are used for remote stream redirection. The ``capture_output`` parameter specifies if the command output should be retrieved or not. If ``capture_output`` is set to ``True``, the ``run`` method returns the command output and return code, while it does not return anything if ``capture_output`` is set to ``False``. The ``timeout`` parameter specifies a maximum completion time for the remote execution, after which the ``run`` method throws a ``WorkflowExecutionException``. Finally, the ``job_name`` parameter is the unique identifier of a StreamFlow job, which is used for debugging purposes.
+
+The ``get_stream_reader`` method returns an ``StreamWrapperContext`` instance, which allows the ``src`` data on the ``location`` to be read using a stream. The stream must be read respecting the size of the available buffer, which is defined inside the ``Connector`` by the ``transferBufferSize`` attribute. This method is helpful for the data copy between different locations.
 
 BaseConnector
 =============
