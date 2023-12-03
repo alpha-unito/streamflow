@@ -51,6 +51,11 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
     ) -> MutableMapping[str, AvailableLocation]:
         ...
 
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
+        ...
+
     async def run(
         self,
         location: Location,
@@ -70,11 +75,6 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
         self, external: bool
     ) -> None:
         ...
-
-    async def get_stream_reader(
-            self, location: Location, src: str
-        ) -> StreamWrapperContext:
-
 
 The ``deploy`` method instantiates the remote execution environment, making it ready to receive requests for data transfers and command executions. A ``deployment`` object can be marked as ``external`` in the StreamFlow file. In that case, the ``Connector`` should assume that the execution environment is already up and running, and the ``deploy`` method should only open the necessary connections to communicate with it.
 

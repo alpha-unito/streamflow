@@ -129,6 +129,17 @@ class FutureConnector(Connector):
             tmp_directory=tmp_directory,
         )
 
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
+        if self.connector is None:
+            if not self.deploying:
+                self.deploying = True
+                await self.deploy(self.external)
+            else:
+                await self.deploy_event.wait()
+        return await self.connector.get_stream_reader(location, src)
+
     def get_schema(self) -> str:
         return self.type.get_schema()
 
@@ -167,17 +178,6 @@ class FutureConnector(Connector):
     async def undeploy(self, external: bool) -> None:
         if self.connector is not None:
             await self.connector.undeploy(external)
-
-    async def get_stream_reader(
-        self, location: Location, src: str
-    ) -> StreamWrapperContext:
-        if self.connector is None:
-            if not self.deploying:
-                self.deploying = True
-                await self.deploy(self.external)
-            else:
-                await self.deploy_event.wait()
-        return await self.connector.get_stream_reader(location, src)
 
 
 class FutureMeta(ABCMeta):
