@@ -14,6 +14,7 @@ from streamflow.core.context import SchemaEntity
 from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
 
 if TYPE_CHECKING:
+    from streamflow.core.data import StreamWrapperContext
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
     from streamflow.core.workflow import Job
@@ -66,9 +67,10 @@ class BindingFilter(SchemaEntity):
 
 
 class Connector(SchemaEntity):
-    def __init__(self, deployment_name: str, config_dir: str):
+    def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
         self.deployment_name: str = deployment_name
         self.config_dir: str = config_dir
+        self.transferBufferSize: int = transferBufferSize
 
     @abstractmethod
     async def copy_local_to_remote(
@@ -134,6 +136,12 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def undeploy(self, external: bool) -> None:
+        ...
+
+    @abstractmethod
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
         ...
 
 

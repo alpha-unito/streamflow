@@ -361,7 +361,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 transferBufferSize=transferBufferSize,
                 username=username,
             )
-        super().__init__(deployment_name, config_dir, connector)
+        super().__init__(deployment_name, config_dir, connector, transferBufferSize)
         files_map: MutableMapping[str, Any] = {}
         self.services = (
             {k: self._service_class(**v) for k, v in services.items()}

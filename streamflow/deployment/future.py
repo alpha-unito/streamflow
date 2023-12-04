@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABCMeta
-from typing import Any, MutableMapping, MutableSequence
+from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
+
+if TYPE_CHECKING:
+    from streamflow.core.data import StreamWrapperContext
 
 
 class FutureConnector(Connector):
@@ -19,7 +22,7 @@ class FutureConnector(Connector):
         external: bool,
         **kwargs,
     ):
-        super().__init__(name, config_dir)
+        super().__init__(name, config_dir, kwargs.get("transferBufferSize", 2**16))
         self.type: type[Connector] = connector_type
         self.external: bool = external
         self.parameters: MutableMapping[str, Any] = kwargs
@@ -125,6 +128,17 @@ class FutureConnector(Connector):
             output_directory=output_directory,
             tmp_directory=tmp_directory,
         )
+
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
+        if self.connector is None:
+            if not self.deploying:
+                self.deploying = True
+                await self.deploy(self.external)
+            else:
+                await self.deploy_event.wait()
+        return await self.connector.get_stream_reader(location, src)
 
     def get_schema(self) -> str:
         return self.type.get_schema()

@@ -5,11 +5,18 @@ from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.future import FutureAware
+from streamflow.core.data import StreamWrapperContext
 
 
 class ConnectorWrapper(Connector, FutureAware, ABC):
-    def __init__(self, deployment_name: str, config_dir: str, connector: Connector):
-        super().__init__(deployment_name, config_dir)
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        connector: Connector,
+        transferBufferSize: int,
+    ):
+        super().__init__(deployment_name, config_dir, transferBufferSize)
         self.connector: Connector = connector
 
     async def copy_local_to_remote(
@@ -74,6 +81,11 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
             output_directory=output_directory,
             tmp_directory=tmp_directory,
         )
+
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
+        return await self.connector.get_stream_reader(location, src)
 
     async def run(
         self,

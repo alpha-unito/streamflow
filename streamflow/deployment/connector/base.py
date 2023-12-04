@@ -57,8 +57,7 @@ async def extract_tar_stream(
 
 class BaseConnector(Connector, FutureAware):
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
-        super().__init__(deployment_name, config_dir)
-        self.transferBufferSize: int = transferBufferSize
+        super().__init__(deployment_name, config_dir, transferBufferSize)
 
     async def _copy_local_to_remote(
         self,
@@ -166,8 +165,8 @@ class BaseConnector(Connector, FutureAware):
                 )
             )
             # Open source StreamReader
-            async with source_connector._get_stream_reader(
-                source_location, src
+            async with (
+                await source_connector.get_stream_reader(source_location, src)
             ) as reader:
                 # Open a target StreamWriter for each location
                 writers = await asyncio.gather(
@@ -219,7 +218,9 @@ class BaseConnector(Connector, FutureAware):
     def _get_shell(self) -> str:
         return "sh"
 
-    def _get_stream_reader(self, location: Location, src: str) -> StreamWrapperContext:
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
         dirname, basename = posixpath.split(src)
         return SubprocessStreamReaderWrapperContext(
             coro=asyncio.create_subprocess_exec(

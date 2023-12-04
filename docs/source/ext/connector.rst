@@ -51,6 +51,11 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
     ) -> MutableMapping[str, AvailableLocation]:
         ...
 
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
+        ...
+
     async def run(
         self,
         location: Location,
@@ -76,6 +81,8 @@ The ``deploy`` method instantiates the remote execution environment, making it r
 The ``undeploy`` method destroys the remote execution environment, potentially cleaning up all the temporary resources instantiated during the workflow execution (e.g., intermediate results). If a ``deployment`` object is marked as ``external``, the ``undeploy`` method should not destroy it but just close all the connections opened by the ``deploy`` method.
 
 The ``get_available_locations`` method is used in the scheduling phase to obtain the locations available for job execution, identified by their unique name (see :ref:`here <Scheduling>`). The method receives some optional input parameters to filter valid locations. The ``service`` parameter specifies a specific set of locations in a deployment, and its precise meaning differs for each deployment type (see :ref:`here <Binding steps and deployments>`). The other three parameters (``input_directory``, ``output_directory``, and ``tmp_directory``) allow the ``Connector`` to return correct disk usage values for each of the three folders in case of remote instances with multiple volumes attached.
+
+The ``get_stream_reader`` method returns an ``StreamWrapperContext`` instance, which allows the ``src`` data on the ``location`` to be read using a stream. The stream must be read respecting the size of the available buffer, which is defined inside the ``Connector`` by the ``transferBufferSize`` attribute. This method is helpful for the data copy between different locations.
 
 The ``copy`` methods perform a data transfer from a ``src`` path to a ``dst`` path in one or more destination ``locations`` in the execution environment controlled by the ``Connector``. The ``read_only`` parameter notifies the ``Connector`` if the destination files will be modified in place or not. This parameter prevents unattended side effects (e.g., symlink optimizations on the remote locations). The ``copy_remote_to_remote`` method accepts two additional parameters: a ``source_location`` and an optional ``source_connector``. The latter identifies the ``Connector`` instance that controls the ``source_location`` and defaults to ``self`` when not specified.
 

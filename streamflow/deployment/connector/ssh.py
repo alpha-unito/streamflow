@@ -400,8 +400,8 @@ class SSHConnector(BaseConnector):
                 locations[i : i + rounds] for i in range(0, len(locations), rounds)
             ]
             for location_group in location_groups:
-                async with source_connector._get_stream_reader(
-                    source_location, src
+                async with (
+                    await source_connector.get_stream_reader(source_location, src)
                 ) as reader:
                     async with contextlib.AsyncExitStack() as exit_stack:
                         # Open a target StreamWriter for each location
@@ -625,7 +625,9 @@ class SSHConnector(BaseConnector):
             encoding=encoding,
         )
 
-    def _get_stream_reader(self, location: Location, src: str) -> StreamWrapperContext:
+    async def get_stream_reader(
+        self, location: Location, src: str
+    ) -> StreamWrapperContext:
         if self.dataTransferConfig:
             if location not in self.data_transfer_context_factories:
                 self.data_transfer_context_factories[location.name] = SSHContextFactory(
