@@ -1291,7 +1291,7 @@ class ScheduleStep(BaseStep):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        await self.get_output_port("__job__").save(context),
+        await self.get_output_port("__job__").save(context)
         params = {
             **await super()._save_additional_params(context),
             **{
