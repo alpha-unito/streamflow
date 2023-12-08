@@ -13,7 +13,7 @@ import tarfile
 import time
 from abc import ABC
 from builtins import open as bltn_open
-from typing import Any
+from typing import Any, cast
 
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper
@@ -189,9 +189,10 @@ class LZMAStreamWrapper(CompressionStreamWrapper):
 
 
 class FileStreamReaderWrapper(StreamWrapper):
-    def __init__(self, stream, size, blockinfo=None):
+    def __init__(self, stream, offset, size, blockinfo=None):
         super().__init__(stream)
         self.size = size
+        self.offset = offset
         self.position = 0
         self.closed = False
         if blockinfo is None:
@@ -199,13 +200,15 @@ class FileStreamReaderWrapper(StreamWrapper):
         self.map_index = 0
         self.map = []
         lastpos = 0
+        realpos = self.offset
         for offset, size in blockinfo:
             if offset > lastpos:
-                self.map.append((False, lastpos, offset))
-            self.map.append((True, offset, offset + size))
+                self.map.append((False, lastpos, offset, None))
+            self.map.append((True, offset, offset + size, realpos))
+            realpos += size
             lastpos = offset + size
         if lastpos < self.size:
-            self.map.append((False, lastpos, self.size))
+            self.map.append((False, lastpos, self.size, None))
 
     async def __aenter__(self):
         return self
@@ -223,7 +226,7 @@ class FileStreamReaderWrapper(StreamWrapper):
             else min(size, self.size - self.position)
         )
         while True:
-            data, start, stop = self.map[self.map_index]
+            data, start, stop, offset = self.map[self.map_index]
             if start <= self.position < stop:
                 break
             else:
@@ -232,6 +235,7 @@ class FileStreamReaderWrapper(StreamWrapper):
                     return b""
         length = min(size, stop - self.position)
         if data:
+            self.stream.seek(offset + (self.position - start))
             buf = await self.stream.read(length)
             self.position += len(buf)
             return buf
@@ -243,16 +247,49 @@ class FileStreamReaderWrapper(StreamWrapper):
         raise NotImplementedError
 
 
+class TellableStreamWrapper(BaseStreamWrapper):
+    def __init__(self, stream):
+        super().__init__(stream)
+        self.position: int = 0
+
+    async def read(self, size: int | None = None):
+        buf = await self.stream.read(size)
+        self.position += len(buf)
+        return buf
+
+    def tell(self):
+        return self.position
+
+    async def write(self, data: Any):
+        await self.stream.write(data)
+        self.position += len(data)
+
+
+class SeekableStreamReaderWrapper(TellableStreamWrapper):
+    def __init__(self, stream):
+        super().__init__(stream)
+
+    async def seek(self, offset: int):
+        if offset > self.position:
+            await self.stream.read(offset - self.position)
+            self.position = offset
+        else:
+            raise tarfile.ReadError("Cannot seek backward with streams")
+
+    async def write(self, data: Any):
+        raise NotImplementedError
+
+
 class AioTarInfo(tarfile.TarInfo):
     @classmethod
     async def fromtarfile(cls, tarstream):
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
         obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
-        obj.offset = tarstream.offset - tarfile.BLOCKSIZE
+        obj.offset = tarstream.stream.tell() - tarfile.BLOCKSIZE
         return await obj._proc_member(tarstream)
 
     def _proc_builtin(self, tarstream):
-        self.offset_data = tarstream.offset
+        self.offset_data = tarstream.stream.tell()
         offset = self.offset_data
         if self.isreg() or self.type not in tarfile.SUPPORTED_TYPES:
             offset += self._block(self.size)
@@ -285,7 +322,7 @@ class AioTarInfo(tarfile.TarInfo):
                 buf += await tarstream.stream.read(tarfile.BLOCKSIZE)
             number, buf = buf.split(b"\n", 1)
             sparse.append(int(number))
-        next.offset_data = tarstream.offset
+        next.offset_data = tarstream.stream.tell()
         next.sparse = list(zip(sparse[::2], sparse[1::2]))
 
     async def _proc_member(self, tarstream):
@@ -376,7 +413,7 @@ class AioTarInfo(tarfile.TarInfo):
                 pos += 24
             isextended = bool(buf[504])
         self.sparse = structs
-        self.offset_data = tarstream.offset
+        self.offset_data = tarstream.stream.tell()
         tarstream.offset = self.offset_data + self._block(self.size)
         self.size = origsize
         return self
@@ -412,9 +449,11 @@ class AioTarStream:
         if mode not in modes:
             raise ValueError("mode must be 'r', 'a', 'w' or 'x'")
         self.mode = mode
-        self._mode = stream.mode if hasattr(stream, "mode") else modes[mode]
-        self.stream = stream
         self.offset = 0
+        if self.mode is not None and self.mode in "ra":
+            self.stream = SeekableStreamReaderWrapper(stream)
+        else:
+            self.stream = TellableStreamWrapper(stream)
         self.index = 0
         if format is not None:
             self.format = format
@@ -765,7 +804,10 @@ class AioTarStream:
         tarinfo = await self.getmember(member) if isinstance(member, str) else member
         if tarinfo.isreg() or tarinfo.type not in tarinfo.SUPPORTED_TYPES:
             return self.fileobject(
-                stream=self.stream, size=tarinfo.size, blockinfo=tarinfo.sparse
+                stream=self.stream,
+                offset=tarinfo.offset_data,
+                size=tarinfo.size,
+                blockinfo=tarinfo.sparse,
             )
         elif tarinfo.islnk() or tarinfo.issym():
             raise tarinfo.StreamError("cannot extract (sym)link as file object")
@@ -955,6 +997,10 @@ class AioTarStream:
             m = self.firstmember
             self.firstmember = None
             return m
+        if self.offset != self.stream.tell():
+            if self.offset == 0:
+                return None
+            await cast(SeekableStreamReaderWrapper, self.stream).seek(self.offset)
         tarinfo = None
         while True:
             try:

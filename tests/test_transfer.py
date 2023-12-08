@@ -49,23 +49,36 @@ async def test_directory_to_directory(
     else:
         dst_path = posixpath.join("/tmp", utils.random_name())
     path_processor = get_path_processor(src_connector)
-    inner_file = utils.random_name()
+    inner_file_1 = utils.random_name()
+    inner_file_2 = utils.random_name()
     try:
         await remotepath.mkdir(src_connector, [src_location], src_path)
         await remotepath.write(
             src_connector,
             src_location,
-            path_processor.join(src_path, inner_file),
+            path_processor.join(src_path, inner_file_1),
+            "Hello",
+        )
+        await remotepath.write(
+            src_connector,
+            src_location,
+            path_processor.join(src_path, inner_file_2),
             "StreamFlow",
         )
         src_path = await remotepath.follow_symlink(
             context, src_connector, src_location, src_path
         )
-        src_digest = await remotepath.checksum(
+        src_digest_1 = await remotepath.checksum(
             context,
             src_connector,
             src_location,
-            path_processor.join(src_path, inner_file),
+            path_processor.join(src_path, inner_file_1),
+        )
+        src_digest_2 = await remotepath.checksum(
+            context,
+            src_connector,
+            src_location,
+            path_processor.join(src_path, inner_file_1),
         )
         context.data_manager.register_path(
             location=src_location,
@@ -85,15 +98,25 @@ async def test_directory_to_directory(
         path_processor = get_path_processor(dst_connector)
         assert await remotepath.exists(dst_connector, dst_location, dst_path)
         assert await remotepath.exists(
-            dst_connector, dst_location, path_processor.join(dst_path, inner_file)
+            dst_connector, dst_location, path_processor.join(dst_path, inner_file_1)
         )
-        dst_digest = await remotepath.checksum(
+        assert await remotepath.exists(
+            dst_connector, dst_location, path_processor.join(dst_path, inner_file_2)
+        )
+        dst_digest_1 = await remotepath.checksum(
             context,
             dst_connector,
             dst_location,
-            path_processor.join(dst_path, inner_file),
+            path_processor.join(dst_path, inner_file_1),
         )
-        assert src_digest == dst_digest
+        assert src_digest_1 == dst_digest_1
+        dst_digest_2 = await remotepath.checksum(
+            context,
+            dst_connector,
+            dst_location,
+            path_processor.join(dst_path, inner_file_1),
+        )
+        assert src_digest_2 == dst_digest_2
     finally:
         await remotepath.rm(src_connector, src_location, src_path)
         await remotepath.rm(dst_connector, dst_location, dst_path)
