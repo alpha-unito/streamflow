@@ -208,7 +208,7 @@ async def test_execute_step(context: StreamFlowContext):
             port_target=None,
             port_type="string",
             cwl_element={},
-            context={"hints": {}, "requirements": {}},
+            context={"hints": {}, "requirements": {}, "version": "v1.2"},
         ),
     )
     step.add_input_port(in_port_name, in_port)
@@ -350,7 +350,7 @@ async def test_workflow(context: StreamFlowContext):
             port_target=None,
             port_type="string",
             cwl_element={},
-            context={"hints": {}, "requirements": {}},
+            context={"hints": {}, "requirements": {}, "version": "v1.2"},
         ),
     )
     exec_step.add_input_port(in_port_name, in_port)
