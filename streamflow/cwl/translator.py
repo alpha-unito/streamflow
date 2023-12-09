@@ -177,8 +177,12 @@ def _create_command_output_processor_base(
     port_name: str,
     workflow: Workflow,
     port_target: Target | None,
-    port_type: Any,
-    cwl_element: cwl_utils.parser.CommandOutputParameter,
+    port_type: str | MutableSequence[str],
+    cwl_element: (
+        cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.OutputRecordField
+        | cwl_utils.parser.ExpressionToolOutputParameter
+    ),
     context: MutableMapping[str, Any],
     optional: bool = False,
 ) -> CWLCommandOutputProcessor:
@@ -204,7 +208,7 @@ def _create_command_output_processor_base(
             glob=(
                 cwl_element.outputBinding.glob
                 if getattr(cwl_element, "outputBinding", None)
-                else getattr(cwl_element, "path", None)
+                else None
             ),
             load_contents=_get_load_contents(cwl_element),
             load_listing=_get_load_listing(cwl_element, context),
@@ -248,8 +252,23 @@ def _create_command_output_processor(
     port_name: str,
     workflow: Workflow,
     port_target: Target | None,
-    port_type: Any,
-    cwl_element: cwl_utils.parser.CommandOutputParameter,
+    port_type: (
+        str
+        | cwl_utils.parser.OutputArraySchema
+        | cwl_utils.parser.OutputEnumSchema
+        | cwl_utils.parser.OutputRecordSchema
+        | MutableSequence[
+            str,
+            cwl_utils.parser.OutputArraySchema,
+            cwl_utils.parser.OutputEnumSchema,
+            cwl_utils.parser.OutputRecordSchema,
+        ]
+    ),
+    cwl_element: (
+        cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.OutputRecordField
+        | cwl_utils.parser.ExpressionToolOutputParameter
+    ),
     cwl_name_prefix: str,
     schema_def_types: MutableMapping[str, Any],
     context: MutableMapping[str, Any],
@@ -1899,13 +1918,19 @@ class CWLTranslator:
             global_name = utils.get_name(
                 name_prefix, cwl_name_prefix, element_output.id
             )
+            link_merge = element_output.linkMerge
+            pick_value = (
+                None
+                if context["version"] in ["v1.0", "v1.1"]
+                else element_output.pickValue
+            )
             # If outputSource element is a list, the output element can depend on multiple ports
             if isinstance(element_output.outputSource, MutableSequence):
                 # If the list contains only one element and no `linkMerge` or `pickValue` are specified
                 if (
                     len(element_output.outputSource) == 1
-                    and not getattr(element_output, "linkMerge", None)
-                    and not getattr(element_output, "pickValue", None)
+                    and link_merge is None
+                    and pick_value is None
                 ):
                     # Treat it as a singleton
                     source_name = utils.get_name(
@@ -1941,8 +1966,8 @@ class CWLTranslator:
                         workflow=workflow,
                         ports=ports,
                         output_port=self._get_source_port(workflow, global_name),
-                        link_merge=getattr(element_output, "linkMerge", None),
-                        pick_value=getattr(element_output, "pickValue", None),
+                        link_merge=link_merge,
+                        pick_value=pick_value,
                     )
             # Otherwise, the output element depends on a single output port
             else:
@@ -1950,15 +1975,15 @@ class CWLTranslator:
                     name_prefix, cwl_name_prefix, element_output.outputSource
                 )
                 # If `pickValue` is specified, create a ListMergeCombinator
-                if getattr(element_output, "pickValue", None):
+                if pick_value is not None:
                     source_port = self._get_source_port(workflow, source_name)
                     _create_list_merger(
                         name=global_name,
                         workflow=workflow,
                         ports={source_name: source_port},
                         output_port=self._get_source_port(workflow, global_name),
-                        link_merge=getattr(element_output, "linkMerge", None),
-                        pick_value=getattr(element_output, "pickValue", None),
+                        link_merge=link_merge,
+                        pick_value=pick_value,
                     )
                 else:
                     # If the output source is an input port, link the output to the input
@@ -2183,12 +2208,15 @@ class CWLTranslator:
         self.input_ports = {**self.input_ports, **input_ports}
         # Process condition
         conditional_step = None
-        if getattr(cwl_element, "when", None):
+        cwl_condition = (
+            None if context["version"] in ["v1.0", "v1.1"] else cwl_element.when
+        )
+        if cwl_condition is not None:
             # Create conditional step
             conditional_step = workflow.create_step(
                 cls=CWLConditionalStep,
                 name=step_name + "-when",
-                expression=cwl_element.when,
+                expression=cwl_condition,
                 expression_lib=expression_lib,
                 full_js=full_js,
             )
@@ -2262,7 +2290,7 @@ class CWLTranslator:
                     port_name, external_output_ports[global_name]
                 )
             # Add skip ports if there is a condition
-            if getattr(cwl_element, "when", None):
+            if cwl_condition:
                 cast(CWLConditionalStep, conditional_step).add_skip_port(
                     port_name, internal_output_ports[global_name]
                 )
@@ -2392,7 +2420,7 @@ class CWLTranslator:
                     port_name, combinator_step.get_input_port(port_name)
                 )
         # Add skip ports if there is a condition
-        if getattr(cwl_element, "when", None):
+        if cwl_condition:
             for element_output in cwl_element.out:
                 global_name = utils.get_name(step_name, cwl_step_name, element_output)
                 port_name = posixpath.relpath(global_name, step_name)
@@ -2528,13 +2556,20 @@ class CWLTranslator:
             ) or {global_name}
         # If `source` entry is present, process output dependencies
         if element_input.source is not None:
+            link_merge = element_input.linkMerge
+            pick_value = (
+                None
+                if context["version"] in ["v1.0", "v1.1"]
+                else element_input.pickValue
+            )
             # If source element is a list, the input element can depend on multiple ports
             if isinstance(element_input.source, MutableSequence):
-                # If the list contains only one element and no `linkMerge` is specified, treat it as a singleton
+                # If the list contains only one element and no `linkMerge` or `pickValue`
+                # are specified, treat it as a singleton
                 if (
                     len(element_input.source) == 1
-                    and not getattr(element_input, "linkMerge", None)
-                    and not getattr(element_input, "pickValue", None)
+                    and link_merge is None
+                    and pick_value is None
                 ):
                     source_name = utils.get_name(
                         name_prefix, cwl_name_prefix, element_input.source[0]
@@ -2577,8 +2612,8 @@ class CWLTranslator:
                         + "-list-merge-combinator",
                         workflow=workflow,
                         ports=ports,
-                        link_merge=getattr(element_input, "linkMerge", None),
-                        pick_value=getattr(element_input, "pickValue", None),
+                        link_merge=link_merge,
+                        pick_value=pick_value,
                     )
                     # Add ListMergeCombinator output port to the list of input ports for the current step
                     input_ports[global_name] = list_merger.get_output_port()
