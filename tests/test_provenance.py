@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, MutableMapping, MutableSequence, cast
 
+import cwl_utils.parser.cwl_v1_2
 import pytest
 
 from streamflow.core import utils
@@ -261,8 +262,8 @@ async def test_execute_step(context: StreamFlowContext):
             workflow,
             None,
             "string",
-            {},
-            {"hints": {}, "requirements": {}},
+            cwl_utils.parser.cwl_v1_2.CommandOutputParameter(type_="string"),
+            {"hints": {}, "requirements": {}, "version": "v1.2"},
         ),
     )
     token_list = [Token(token_value)]

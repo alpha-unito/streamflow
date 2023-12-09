@@ -5,7 +5,7 @@ asyncssh==2.14.1
 bcrypt==4.1.1
 cachetools==5.3.2
 cwltool==3.1.20231207110929
-cwl-utils==0.32
+cwl-utils @ git+https://github.com/common-workflow-language/cwl-utils@refs/pull/267/head
 importlib_metadata==7.0.0
 importlib_resources==6.1.1
 Jinja2==3.1.2

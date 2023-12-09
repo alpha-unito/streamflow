@@ -15,6 +15,7 @@ from typing import (
 )
 
 import cwl_utils.expression
+import cwl_utils.parser
 import cwltool.context
 import cwltool.load_tool
 import cwltool.main
@@ -658,11 +659,11 @@ def infer_type_from_token(token_value: Any) -> str:
 
 def load_cwl_inputs(
     loading_context: cwltool.context.LoadingContext,
-    cwl_process: cwltool.process.Process,
+    loadingOptions: cwl_utils.parser.LoadingOptions,
     path: str,
 ) -> MutableMapping[str, Any]:
     loader = cwltool.load_tool.default_loader(loading_context.fetcher_constructor)
-    loader.add_namespaces(cwl_process.metadata.get("$namespaces", {}))
+    loader.add_namespaces(loadingOptions.namespaces or {})
     cwl_inputs, _ = loader.resolve_ref(
         path, checklinks=False, content_types=cwltool.CWL_CONTENT_TYPES
     )
