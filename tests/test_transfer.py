@@ -38,7 +38,7 @@ async def _compare_remote_dirs(
         ),
     )
     assert len(src_files) == len(dst_files)
-    for src_file, dst_file in zip(src_files, dst_files):
+    for src_file, dst_file in zip(sorted(src_files), sorted(dst_files)):
         checksums = await asyncio.gather(
             asyncio.create_task(
                 remotepath.checksum(
@@ -73,7 +73,7 @@ async def _compare_remote_dirs(
     )
     assert len(src_dirs) == len(dst_dirs)
     tasks = []
-    for src_dir, dst_dir in zip(src_dirs, dst_dirs):
+    for src_dir, dst_dir in zip(sorted(src_dirs), sorted(dst_dirs)):
         assert os.path.basename(src_dir) == os.path.basename(dst_dir)
         tasks.append(
             asyncio.create_task(
