@@ -5,7 +5,7 @@ import pytest
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import LocalTarget, Target, FilterConfig
+from streamflow.core.deployment import FilterConfig, LocalTarget, Target
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,

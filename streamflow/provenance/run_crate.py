@@ -12,13 +12,11 @@ import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any, cast
+from typing import Any, cast, get_args
 from zipfile import ZipFile
 
-import cwltool.command_line_tool
-import cwltool.context
-import cwltool.process
-import cwltool.workflow
+import cwl_utils.parser
+import cwl_utils.parser.utils
 from yattag import Doc
 
 import streamflow.core.utils
@@ -78,6 +76,47 @@ def _get_action_status(status: Status) -> str:
         raise WorkflowProvenanceException(f"Action status {status.name} not supported.")
 
 
+def _get_cwl_embedded_tool(
+    cwl_prefix: str,
+    prefix: str,
+    cwl_step: cwl_utils.parser.WorkflowStep,
+    step_name: str,
+    version: str,
+) -> tuple[cwl_utils.parser.Process, str]:
+    run_command = cwl_step.run
+    if cwl_utils.parser.is_process(run_command):
+        run_command.cwlVersion = version
+        cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
+        if ":" in run_command.id.split("#")[-1]:
+            cwl_step_name = streamflow.cwl.utils.get_name(
+                prefix, cwl_prefix, cwl_step.id, preserve_cwl_prefix=True
+            )
+            cwl_prefix = (
+                step_name if version == "v1.0" else posixpath.join(cwl_step_name, "run")
+            )
+        else:
+            cwl_prefix = streamflow.cwl.utils.get_name(
+                prefix,
+                cwl_prefix,
+                run_command.id,
+                preserve_cwl_prefix=True,
+            )
+    else:
+        run_command = cwl_step.loadingOptions.fetcher.urljoin(
+            cwl_step.loadingOptions.fileuri, run_command
+        )
+        run_command = cwl_utils.parser.load_document_by_uri(
+            run_command, loadingOptions=cwl_step.loadingOptions
+        )
+        cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
+        cwl_prefix = (
+            streamflow.cwl.utils.get_name(posixpath.sep, posixpath.sep, run_command.id)
+            if "#" in run_command.id
+            else posixpath.sep
+        )
+    return run_command, cwl_prefix
+
+
 def _get_cwl_entity_id(entity_id: str) -> str:
     tokens = entity_id.split("#")
     if len(tokens) > 1:
@@ -86,33 +125,32 @@ def _get_cwl_entity_id(entity_id: str) -> str:
         return tokens[0].split("/")[-1]
 
 
-def _get_cwl_param(cwl_param: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
-    name = "#".join(cwl_param["id"].split("#")[1:])
+def _get_cwl_param(
+    cwl_param: cwl_utils.parser.InputParameter > cwl_utils.parser.OutputParameter,
+) -> MutableMapping[str, Any]:
+    name = "#".join(cwl_param.id.split("#")[1:])
     jsonld_param = {
-        "@id": _get_cwl_entity_id(cwl_param["id"]),
+        "@id": _get_cwl_entity_id(cwl_param.id),
         "@type": "FormalParameter",
         "additionalType": [],
         "name": name,
         "conformsTo": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE/",
     }
-    if "default" in cwl_param:
-        jsonld_param["defaultValue"] = str(cwl_param["default"])
-    if "doc" in cwl_param:
-        jsonld_param["description"] = cwl_param["doc"]
-    if "format" in cwl_param:
-        jsonld_param["encodingFormat"] = cwl_param["format"]
-    _process_cwl_type(cwl_param["type"], jsonld_param, cwl_param)
+    if getattr(cwl_param, "default", None) is not None:
+        jsonld_param["defaultValue"] = str(cwl_param.default)
+    if getattr(cwl_param, "doc", None) is not None:
+        jsonld_param["description"] = cwl_param.doc
+    if getattr(cwl_param, "format", None) is not None:
+        jsonld_param["encodingFormat"] = cwl_param.format
+    _process_cwl_type(cwl_param.type_, jsonld_param, cwl_param)
     if len(jsonld_param["additionalType"]) == 1:
         jsonld_param["additionalType"] = jsonld_param["additionalType"][0]
     return jsonld_param
 
 
 def _get_cwl_programming_language(
-    loading_context: cwltool.context.LoadingContext,
+    version: str,
 ) -> MutableMapping[str, Any]:
-    version = loading_context.metadata[
-        "http://commonwl.org/cwltool#original_cwlVersion"
-    ]
     return {
         "@id": "https://w3id.org/workflowhub/workflow-ro-crate#cwl",
         "@type": "ComputerLanguage",
@@ -174,7 +212,13 @@ def _is_existing_directory(path: str, graph: MutableMapping[str, Any]) -> bool:
 
 
 def _process_cwl_type(
-    cwl_type: str | MutableSequence[Any] | MutableMapping[str, Any],
+    cwl_type: (
+        str
+        | MutableSequence[Any]
+        | cwl_utils.parser.ArraySchema
+        | cwl_utils.parser.EnumSchema
+        | cwl_utils.parser.RecordSchema
+    ),
     jsonld_param: MutableMapping[str, Any],
     cwl_param: MutableMapping[str, Any],
 ) -> None:
@@ -188,7 +232,7 @@ def _process_cwl_type(
         elif cwl_type == "string":
             jsonld_param["additionalType"].append("Text")
         elif cwl_type == "File":
-            if "secondaryFiles" in cwl_param:
+            if cast(cwl_utils.parser.File, cwl_param).secondaryFiles:
                 jsonld_param["additionalType"].append("Collection")
             else:
                 jsonld_param["additionalType"].append("File")
@@ -202,16 +246,15 @@ def _process_cwl_type(
                 jsonld_param["valueRequired"] = "False"
             else:
                 _process_cwl_type(t, jsonld_param, cwl_param)
-    elif isinstance(cwl_type, MutableMapping):
-        if cwl_type["type"] == "array":
-            jsonld_param["multipleValues"] = "True"
-            _process_cwl_type(cwl_type["items"], jsonld_param, cwl_param)
-        elif cwl_type["type"] == "enum":
-            jsonld_param["additionalType"] = "Text"
-            jsonld_param["valuePattern"] = "|".join(cwl_type["symbols"])
-        elif cwl_type["type"] == "record":
-            jsonld_param["additionalType"] = "PropertyValue"
-            jsonld_param["multipleValues"] = "True"
+    elif isinstance(cwl_type, get_args(cwl_utils.parser.ArraySchema)):
+        jsonld_param["multipleValues"] = "True"
+        _process_cwl_type(cwl_type.items, jsonld_param, cwl_param)
+    elif isinstance(cwl_type, get_args(cwl_utils.parser.EnumSchema)):
+        jsonld_param["additionalType"] = "Text"
+        jsonld_param["valuePattern"] = "|".join(cwl_type.symbols)
+    elif isinstance(cwl_type, get_args(cwl_utils.parser.RecordSchema)):
+        jsonld_param["additionalType"] = "PropertyValue"
+        jsonld_param["multipleValues"] = "True"
 
 
 class RunCrateProvenanceManager(ProvenanceManager, ABC):
@@ -934,23 +977,23 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             raise WorkflowProvenanceException(
                 "Cannot build a single workflow provenance for multiple workflow definitions."
             )
-        (
-            self.cwl_definition,
-            self.loading_context,
-        ) = streamflow.cwl.utils.load_cwl_workflow(list(paths)[0])
+        self.cwl_definition = cwl_utils.parser.load_document_by_uri(next(iter(paths)))
         self.scatter_map: MutableMapping[str, MutableSequence[str]] = {}
 
     def _add_metadata(
         self,
-        cwl_object: cwltool.process.Process,
+        cwl_object: cwl_utils.parser.Process,
         jsonld_object: MutableMapping[str, Any],
     ) -> None:
-        for key, value in cwl_object.metadata.items():
-            jsonld_object[
-                key.removeprefix("http://schema.org/").removeprefix(
-                    "https://schema.org/"
+        for key, value in cwl_object.loadingOptions.addl_metadata.items():
+            if key.startswith("http://schema.org/"):
+                jsonld_object[key.removeprefix("http://schema.org/")] = (
+                    self._add_metadata_entry(value)
                 )
-            ] = self._add_metadata_entry(value)
+            elif key.startswith("https://schema.org/"):
+                jsonld_object[key.removeprefix("https://schema.org/")] = (
+                    self._add_metadata_entry(value)
+                )
 
     def _add_metadata_entry(self, metadata: Any) -> Any:
         if isinstance(metadata, MutableMapping):
@@ -985,28 +1028,28 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         cwl_prefix: str,
         prefix: str,
         jsonld_element: MutableMapping[str, Any],
-        cwl_element: cwltool.process.Process,
+        cwl_element: cwl_utils.parser.Process,
     ) -> None:
         # Add inputs
-        for cwl_input in cwl_element.tool["inputs"]:
+        for cwl_input in cwl_element.inputs or []:
             jsonld_param = _get_cwl_param(cwl_input)
             self.graph[jsonld_param["@id"]] = jsonld_param
             jsonld_element.setdefault("input", []).append({"@id": jsonld_param["@id"]})
             self.param_parent_map[jsonld_param["@id"]] = jsonld_element
             port_name = posixpath.join(
                 prefix,
-                streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_input["id"]),
+                streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_input.id),
             )
             self.register_input_port(port_name, jsonld_param)
         # Add outputs
-        for cwl_output in cwl_element.tool["outputs"]:
+        for cwl_output in cwl_element.outputs or []:
             jsonld_param = _get_cwl_param(cwl_output)
             self.graph[jsonld_param["@id"]] = jsonld_param
             jsonld_element.setdefault("output", []).append({"@id": jsonld_param["@id"]})
             self.param_parent_map[jsonld_param["@id"]] = jsonld_element
             port_name = posixpath.join(
                 prefix,
-                streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_output["id"]),
+                streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_output.id),
             )
             self.register_output_port(port_name, jsonld_param)
 
@@ -1064,25 +1107,33 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             return {"@id": self.output_port_map[source_name]["@id"]}
 
     def _get_step(
-        self, cwl_prefix: str, prefix: str, cwl_step: cwltool.workflow.WorkflowStep
+        self,
+        cwl_prefix: str,
+        prefix: str,
+        cwl_step: cwl_utils.parser.WorkflowStep,
+        version: str,
     ) -> MutableMapping[str, Any]:
         jsonld_step = {
             "@id": _get_cwl_entity_id(cwl_step.id),
             "@type": "HowToStep",
         }
         step_name = streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_step.id)
-        cwl_prefix = streamflow.cwl.utils.get_inner_cwl_prefix(
-            prefix, cwl_prefix, cwl_step
+        embedded_tool, cwl_prefix = _get_cwl_embedded_tool(
+            cwl_prefix=cwl_prefix,
+            prefix=prefix,
+            cwl_step=cwl_step,
+            step_name=step_name,
+            version=version,
         )
-        if isinstance(cwl_step.embedded_tool, cwltool.workflow.Workflow):
+        if isinstance(embedded_tool, get_args(cwl_utils.parser.Workflow)):
             work_example = self._get_workflow(
                 cwl_prefix=cwl_prefix,
                 prefix=step_name,
-                cwl_workflow=cwl_step.embedded_tool,
+                cwl_workflow=embedded_tool,
             )
         else:
             work_example = self._get_tool(
-                cwl_prefix=cwl_prefix, prefix=step_name, cwl_tool=cwl_step.embedded_tool
+                cwl_prefix=cwl_prefix, prefix=step_name, cwl_tool=embedded_tool
             )
         self.register_step(step_name, jsonld_step)
         jsonld_step["workExample"] = {"@id": work_example["@id"]}
@@ -1093,14 +1144,11 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         self,
         cwl_prefix: str,
         prefix: str,
-        cwl_tool: (
-            cwltool.command_line_tool.CommandLineTool
-            | cwltool.command_line_tool.ExpressionTool
-        ),
+        cwl_tool: cwl_utils.parser.CommandLineTool | cwl_utils.parser.ExpressionTool,
     ) -> MutableMapping[str, Any]:
         # Create entity
-        entity_id = _get_cwl_entity_id(cwl_tool.tool["id"])
-        path = cwl_tool.tool["id"].split("#")[0][7:]
+        entity_id = _get_cwl_entity_id(cwl_tool.id)
+        path = cwl_tool.id.split("#")[0][7:]
         if path not in self.files_map:
             self.graph["./"]["hasPart"].append({"@id": entity_id})
             self.files_map[path] = os.path.basename(path)
@@ -1113,8 +1161,8 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             "@type": ["SoftwareApplication", "File"],
         }
         # Add description
-        if "doc" in cwl_tool.tool:
-            jsonld_tool["description"] = cwl_tool.tool["doc"]
+        if cwl_tool.doc:
+            jsonld_tool["description"] = cwl_tool.doc
         # Add metadata
         self._add_metadata(cwl_tool, jsonld_tool)
         # Add inputs and outputs
@@ -1122,21 +1170,21 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         return jsonld_tool
 
     def _get_workflow(
-        self, cwl_prefix: str, prefix: str, cwl_workflow: cwltool.workflow.Workflow
+        self, cwl_prefix: str, prefix: str, cwl_workflow: cwl_utils.parser.Workflow
     ) -> MutableMapping[str, Any]:
         # Create entity
-        entity_id = _get_cwl_entity_id(cwl_workflow.tool["id"])
-        path = cwl_workflow.tool["id"].split("#")[0][7:]
+        entity_id = _get_cwl_entity_id(cwl_workflow.id)
+        path = cwl_workflow.id.split("#")[0][7:]
         jsonld_workflow = cast(
             dict[str, Any], _get_workflow_template(entity_id, entity_id.split("#")[-1])
         ) | {"sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False))}
-        if (path := cwl_workflow.tool["id"].split("#")[0][7:]) not in self.files_map:
+        if (path := cwl_workflow.id.split("#")[0][7:]) not in self.files_map:
             self.graph["./"]["hasPart"].append({"@id": entity_id})
             self.files_map[path] = os.path.basename(path)
-        jsonld_workflow["@type"].append("File")
+        cast(MutableSequence, jsonld_workflow["@type"]).append("File")
         # Add description
-        if "doc" in cwl_workflow.tool:
-            jsonld_workflow["description"] = cwl_workflow.tool["doc"]
+        if cwl_workflow.doc:
+            jsonld_workflow["description"] = cwl_workflow.doc
         # Add metadata
         self._add_metadata(cwl_workflow, jsonld_workflow)
         # Add inputs and outputs
@@ -1145,7 +1193,13 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         if len(cwl_workflow.steps) > 0:
             jsonld_workflow["step"] = []
             jsonld_steps = [
-                self._get_step(cwl_prefix, prefix, s) for s in cwl_workflow.steps
+                self._get_step(
+                    cwl_prefix=cwl_prefix,
+                    prefix=prefix,
+                    cwl_step=s,
+                    version=cwl_workflow.cwlVersion,
+                )
+                for s in cwl_workflow.steps
             ]
             self._register_steps(
                 cwl_prefix=cwl_prefix,
@@ -1153,10 +1207,11 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 jsonld_entity=jsonld_workflow,
                 jsonld_steps=jsonld_steps,
                 cwl_steps=cwl_workflow.steps,
+                version=cwl_workflow.cwlVersion,
             )
         # Connect output sources
         workflow_inputs = [inp["@id"] for inp in jsonld_workflow.get("output", [])]
-        for cwl_output in cwl_workflow.tool.get("outputs", []):
+        for cwl_output in cwl_workflow.outputs or []:
             if source := cwl_output.get("outputSource"):
                 connection = self._get_connection(
                     cwl_prefix=cwl_prefix,
@@ -1253,7 +1308,8 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         prefix: str,
         jsonld_entity: MutableMapping[str, Any],
         jsonld_steps: MutableSequence[MutableMapping[str, Any]],
-        cwl_steps: MutableSequence[cwltool.workflow.WorkflowStep],
+        cwl_steps: MutableSequence[cwl_utils.parser.WorkflowStep],
+        version: str,
     ):
         has_part = set()
         for cwl_step, jsonld_step in zip(cwl_steps, jsonld_steps):
@@ -1261,8 +1317,12 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             cwl_step_name = streamflow.cwl.utils.get_name(
                 prefix, cwl_prefix, cwl_step.id, preserve_cwl_prefix=True
             )
-            inner_cwl_prefix = streamflow.cwl.utils.get_inner_cwl_prefix(
-                prefix, cwl_prefix, cwl_step
+            embedded_tool, inner_cwl_prefix = _get_cwl_embedded_tool(
+                cwl_prefix=cwl_prefix,
+                prefix=prefix,
+                step_name=step_name,
+                cwl_step=cwl_step,
+                version=version,
             )
             # Register step
             jsonld_entity["step"].append({"@id": jsonld_step["@id"]})
@@ -1270,28 +1330,28 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             # Register workExample
             has_part.add(jsonld_step["workExample"]["@id"])
             # Find scatter elements
-            if isinstance(cwl_step.tool.get("scatter"), str):
+            if isinstance(cwl_step.scatter, str):
                 self.scatter_map[step_name] = [
                     streamflow.cwl.utils.get_name(
-                        step_name, cwl_step_name, cwl_step.tool["scatter"]
+                        step_name, cwl_step_name, cwl_step.scatter
                     )
                 ]
             else:
                 self.scatter_map[step_name] = [
                     streamflow.cwl.utils.get_name(step_name, cwl_step_name, n)
-                    for n in cwl_step.tool.get("scatter", [])
+                    for n in (cwl_step.scatter or [])
                 ]
             # Connect sources
             workflow_inputs = [inp["@id"] for inp in jsonld_entity.get("input", [])]
-            for cwl_input in cwl_step.tool.get("inputs", []):
-                if source := cwl_input.get("source"):
+            for cwl_input in cwl_step.in_ or []:
+                if source := cwl_input.source:
                     global_name = streamflow.cwl.utils.get_name(
-                        prefix, cwl_prefix, cwl_input["id"]
+                        prefix, cwl_prefix, cwl_input.id
                     )
                     port_name = posixpath.relpath(global_name, step_name)
-                    for inner_input in cwl_step.embedded_tool.tool.get("inputs", []):
+                    for inner_input in embedded_tool.inputs or []:
                         inner_global_name = streamflow.cwl.utils.get_name(
-                            step_name, inner_cwl_prefix, inner_input["id"]
+                            step_name, inner_cwl_prefix, inner_input.id
                         )
                         inner_port_name = posixpath.relpath(
                             inner_global_name, step_name
@@ -1301,7 +1361,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                                 cwl_prefix=cwl_prefix,
                                 prefix=prefix,
                                 source=source,
-                                target_parameter=_get_cwl_entity_id(inner_input["id"]),
+                                target_parameter=_get_cwl_entity_id(inner_input.id),
                                 workflow_inputs=workflow_inputs,
                             )
                             self.graph[connection["@id"]] = connection
@@ -1315,14 +1375,14 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         if "settings" in workflow.config:
             cwl_prefix = (
                 streamflow.cwl.utils.get_name(
-                    posixpath.sep, posixpath.sep, self.cwl_definition.tool["id"]
+                    posixpath.sep, posixpath.sep, self.cwl_definition.id
                 )
-                if "#" in self.cwl_definition.tool["id"]
+                if "#" in self.cwl_definition.id
                 else posixpath.sep
             )
-            for cwl_input in self.cwl_definition.tool.get("inputs"):
+            for cwl_input in self.cwl_definition.inputs or []:
                 input_name = streamflow.cwl.utils.get_name(
-                    posixpath.sep, cwl_prefix, cwl_input["id"]
+                    posixpath.sep, cwl_prefix, cwl_input.id
                 )
                 port_name = posixpath.relpath(input_name, posixpath.sep)
                 port = workflow.steps[
@@ -1343,21 +1403,23 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         # Create entity
         cwl_prefix = (
             streamflow.cwl.utils.get_name(
-                posixpath.sep, posixpath.sep, self.cwl_definition.tool["id"]
+                posixpath.sep, posixpath.sep, self.cwl_definition.id
             )
-            if "#" in self.cwl_definition.tool["id"]
+            if "#" in self.cwl_definition.id
             else posixpath.sep
         )
-        path = self.cwl_definition.tool["id"].split("#")[0][7:]
+        path = self.cwl_definition.id.split("#")[0][7:]
         self.files_map[path] = os.path.basename(path)
-        entity_id = _get_cwl_entity_id(self.cwl_definition.tool["id"]).split("#")[0]
+        entity_id = _get_cwl_entity_id(self.cwl_definition.id).split("#")[0]
         main_entity = _get_workflow_template(entity_id, entity_id)
         main_entity["@type"].append("File")
         main_entity["sha1"] = _file_checksum(
             path, hashlib.new("sha1", usedforsecurity=False)
         )
         # Add programming language
-        programming_language = _get_cwl_programming_language(self.loading_context)
+        programming_language = _get_cwl_programming_language(
+            self.cwl_definition.cwlVersion
+        )
         self.graph[programming_language["@id"]] = programming_language
         main_entity["programmingLanguage"] = {"@id": programming_language["@id"]}
         # Add metadata
@@ -1366,12 +1428,14 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         self._add_params(cwl_prefix, posixpath.sep, main_entity, self.cwl_definition)
         # Add steps if present
         if (
-            isinstance(self.cwl_definition, cwltool.workflow.Workflow)
+            isinstance(self.cwl_definition, get_args(cwl_utils.parser.Workflow))
             and len(self.cwl_definition.steps) > 0
         ):
             main_entity["step"] = []
             jsonld_steps = [
-                self._get_step(cwl_prefix, posixpath.sep, s)
+                self._get_step(
+                    cwl_prefix, posixpath.sep, s, self.cwl_definition.cwlVersion
+                )
                 for s in self.cwl_definition.steps
             ]
             self._register_steps(
@@ -1380,16 +1444,17 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 jsonld_entity=main_entity,
                 jsonld_steps=jsonld_steps,
                 cwl_steps=self.cwl_definition.steps,
+                version=self.cwl_definition.cwlVersion,
             )
             # Connect output sources
             workflow_inputs = [inp["@id"] for inp in main_entity.get("output", [])]
-            for cwl_output in self.cwl_definition.tool.get("outputs", []):
-                if source := cwl_output.get("outputSource"):
+            for cwl_output in self.cwl_definition.outputs or []:
+                if source := cwl_output.outputSource:
                     connection = self._get_connection(
                         cwl_prefix=cwl_prefix,
                         prefix=posixpath.sep,
                         source=source,
-                        target_parameter=_get_cwl_entity_id(cwl_output["id"]),
+                        target_parameter=_get_cwl_entity_id(cwl_output.id),
                         workflow_inputs=workflow_inputs,
                     )
                     self.graph[connection["@id"]] = connection

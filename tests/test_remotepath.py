@@ -14,7 +14,7 @@ from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
-from tests.utils.deployment import get_location, get_docker_deployment_config
+from tests.utils.deployment import get_docker_deployment_config, get_location
 
 
 async def _symlink(

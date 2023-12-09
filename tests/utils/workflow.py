@@ -9,13 +9,13 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.deployment import Target
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.workflow import Workflow, Port
+from streamflow.core.workflow import Port, Workflow
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.step import CWLScheduleStep
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import (
-    DotProductCombinator,
     CartesianProductCombinator,
+    DotProductCombinator,
     LoopTerminationCombinator,
 )
 from streamflow.workflow.port import ConnectorPort

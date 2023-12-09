@@ -12,9 +12,9 @@ from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     DeploymentConfig,
+    FilterConfig,
     LocalTarget,
     Target,
-    FilterConfig,
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, Storage
@@ -23,13 +23,13 @@ from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.data import utils
 from tests.utils.connector import ParameterizableHardwareConnector
 from tests.utils.deployment import (
-    get_docker_deployment_config,
-    get_service,
     get_deployment_config,
-    get_parameterizable_hardware_deployment_config,
+    get_docker_deployment_config,
     get_local_deployment_config,
+    get_parameterizable_hardware_deployment_config,
+    get_service,
 )
-from tests.utils.workflow import random_job_name, CWL_VERSION
+from tests.utils.workflow import CWL_VERSION, random_job_name
 
 
 async def _notify_status_and_test(

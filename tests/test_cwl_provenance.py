@@ -4,11 +4,10 @@ import posixpath
 from typing import cast
 
 import pytest
-from streamflow.cwl.workflow import CWLWorkflow
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.workflow import Status, Token, Step
+from streamflow.core.workflow import Status, Step, Token
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.step import (
@@ -23,18 +22,19 @@ from streamflow.cwl.step import (
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
     CWLTokenTransformer,
+    CartesianProductSizeTransformer,
+    CloneTransformer,
     DefaultRetagTransformer,
     DefaultTransformer,
+    DotProductSizeTransformer,
     FirstNonNullTransformer,
     ForwardTransformer,
     ListToElementTransformer,
     LoopValueFromTransformer,
     OnlyNonNullTransformer,
     ValueFromTransformer,
-    CloneTransformer,
-    CartesianProductSizeTransformer,
-    DotProductSizeTransformer,
 )
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
@@ -46,11 +46,11 @@ from streamflow.workflow.token import (
     ListToken,
     TerminationToken,
 )
-from tests.test_provenance import _general_test, _verify_dependency_tokens, _put_tokens
+from tests.test_provenance import _general_test, _put_tokens, _verify_dependency_tokens
 from tests.utils.workflow import (
-    create_workflow,
     create_deploy_step,
     create_schedule_step,
+    create_workflow,
 )
 
 
