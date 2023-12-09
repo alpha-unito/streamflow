@@ -6,21 +6,17 @@ from collections.abc import MutableMapping
 from pathlib import PurePosixPath
 from typing import Any
 
-import cwltool.context
 import pytest
+from cwltool.tests.util import get_data
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
-from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.workflow import CWLWorkflow
-
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.runner import main
-
-from cwltool.tests.util import get_data
-
+from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.translator import CWLTranslator
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.deployment.utils import get_binding_config
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.token import TerminationToken
@@ -126,8 +122,8 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
         output_directory=tempfile.gettempdir(),
         cwl_definition=None,  # cwltool.process.Process,
         cwl_inputs={"model": input_data},
+        cwl_inputs_path=None,
         workflow_config=workflow_config,
-        loading_context=cwltool.context.LoadingContext(),
     )
     workflow = CWLWorkflow(
         context=context,
