@@ -295,13 +295,9 @@ class AioTarInfo(tarfile.TarInfo):
     async def fromtarfile(cls, tarstream):
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
         try:
-            res_nti = tarfile.nti(buf[148:156])
-            cs_list = tarfile.calc_chksums(buf)
             logger.info(f"buf: {buf}")
             logger.info(f"stream_type: {type(tarstream.stream)}")
-            logger.info(
-                f"buf: {len(buf)}, stream.pos: {tarstream.stream.position}, res_nti: {res_nti}, cs_list: {cs_list}"
-            )
+            logger.info(f"buf: {len(buf)}, stream.pos: {tarstream.stream.position}")
             obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
         except Exception as e:
             logger.info(f"error {e}")
