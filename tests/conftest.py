@@ -9,6 +9,7 @@ from typing import Collection
 import pytest
 import pytest_asyncio
 
+import streamflow.log_handler
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
@@ -16,9 +17,7 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from tests.utils.deployment import get_deployment_config
 
 
-import logging
-
-LOGGER = logging.getLogger(__name__)
+LOGGER = streamflow.log_handler.logger
 
 
 def csvtype(choices):

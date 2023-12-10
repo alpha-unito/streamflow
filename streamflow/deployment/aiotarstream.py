@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import grp
-import logging
 import os
 import pwd
 import re
@@ -19,6 +18,8 @@ from typing import Any, cast
 
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper
+from streamflow.log_handler import logger
+
 
 # import asyncssh
 # from streamflow.log_handler import defaultStreamHandler
@@ -244,7 +245,6 @@ class FileStreamReaderWrapper(StreamWrapper):
         length = min(size, stop - self.position)
         if data:
             await self.stream.seek(offset + (self.position - start))
-            logger = logging.getLogger()
             logger.info(
                 f"offset: {offset}, self.position: {self.position}, start: {start}, self.stream.pos: {self.stream.position}"
             )
@@ -303,7 +303,6 @@ class AioTarInfo(tarfile.TarInfo):
     @classmethod
     async def fromtarfile(cls, tarstream):
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
-        logger = logging.getLogger()
         try:
             res_nti = tarfile.nti(buf[148:156])
             cs_list = tarfile.calc_chksums(buf)
@@ -555,7 +554,6 @@ class AioTarStream:
                 try:
                     tarinfo = await self.next()
                 except Exception as e:
-                    logger = logging.getLogger()
                     logger.info(f"error {e}")
                     raise e from e
                 if not tarinfo:
