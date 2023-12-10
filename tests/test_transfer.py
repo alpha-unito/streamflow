@@ -139,6 +139,7 @@ def dst_connector(context, dst_location) -> Connector:
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(300)
 async def test_directory_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
