@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import grp
+import logging
 import os
 import pwd
 import re
@@ -15,8 +16,15 @@ from abc import ABC
 from builtins import open as bltn_open
 from typing import Any, cast
 
+
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper
+
+# import asyncssh
+# from streamflow.log_handler import defaultStreamHandler
+# asyncssh.logging.logger.setLevel(logging.DEBUG)
+# asyncssh.logging.logger.set_debug_level(2)
+# asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
 
 
 async def copyfileobj(src, dst, length=None, bufsize=None):
@@ -290,7 +298,18 @@ class AioTarInfo(tarfile.TarInfo):
     @classmethod
     async def fromtarfile(cls, tarstream):
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
-        obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
+        logger = logging.getLogger()
+        try:
+            res_nti = tarfile.nti(buf[148:156])
+            cs_list = tarfile.calc_chksums(buf)
+            logger.info(f"buf: {buf}")
+            logger.info(f"stream_type: {type(tarstream.stream)}")
+            logger.info(
+                f"buf: {len(buf)}, stream.pos: {tarstream.stream.position}, res_nti: {res_nti}, cs_list: {cs_list}"
+            )
+            obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
+        except Exception as e:
+            raise e from e
         obj.offset = tarstream.stream.tell() - tarfile.BLOCKSIZE
         return await obj._proc_member(tarstream)
 
@@ -527,7 +546,12 @@ class AioTarStream:
             elif index < len(self.members):
                 return self.members[index]
             else:
-                tarinfo = await self.next()
+                try:
+                    tarinfo = await self.next()
+                except Exception as e:
+                    logger = logging.getLogger()
+                    logger.info(f"error {e}")
+                    raise e from e
                 if not tarinfo:
                     self._loaded = True
                     raise StopAsyncIteration
@@ -1022,7 +1046,7 @@ class AioTarStream:
                     self.offset += tarfile.BLOCKSIZE
                     continue
                 elif self.offset == 0:
-                    raise tarfile.ReadError(str(e)) from None
+                    raise tarfile.ReadError(str(e)) from e
             except tarfile.EmptyHeaderError:
                 if self.offset == 0:
                     raise tarfile.ReadError("empty file") from None

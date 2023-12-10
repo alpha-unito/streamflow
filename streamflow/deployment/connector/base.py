@@ -60,6 +60,8 @@ async def extract_tar_stream(
         # move all the file hierarchy inside `dst`
         else:
             member.path = posixpath.relpath(member.path, posixpath.basename(src))
+            if member.path != member.name:
+                raise Exception(f"Path {member.path} != name {member.name}")
             await tar.extract(
                 member, os.path.normpath(os.path.join(dst, os.path.curdir))
             )
