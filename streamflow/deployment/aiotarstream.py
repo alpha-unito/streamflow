@@ -237,10 +237,10 @@ class FileStreamReaderWrapper(StreamWrapper):
                     return b""
         length = min(size, stop - self.position)
         if data:
-            await self.stream.seek(offset + (self.position - start))
             logger.info(
-                f"offset: {offset}, self.position: {self.position}, start: {start}, self.stream.pos: {self.stream.position}"
+                f"self.position: {self.position}, start: {start}, stop: {stop}, offset: {offset}, length: {length}, self.stream.position: {self.stream.position}"
             )
+            await self.stream.seek(offset + (self.position - start))
             buf = await self.stream.read(length)
             logger.info(f"len(buf): {len(buf)}, length: {length}")
             self.position += len(buf)
@@ -280,6 +280,7 @@ class SeekableStreamReaderWrapper(TellableStreamWrapper):
         super().__init__(stream)
 
     async def seek(self, offset: int):
+        logger.debug(f"seek -> self.position: {self.position},  offset: {offset}")
         if offset > self.position:
             await self.stream.read(offset - self.position)
             self.position = offset
@@ -300,8 +301,12 @@ class AioTarInfo(tarfile.TarInfo):
             logger.info(f"buf: {len(buf)}, stream.pos: {tarstream.stream.position}")
             obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
         except tarfile.InvalidHeaderError as e:
-            logger.info(f" {tarfile.nti(buf[148:156])} {tarfile.calc_chksums(buf)}")
-            logger.info(f"error {e}")
+            chksum = tarfile.nti(buf[148:156])
+            calc_chksums = tarfile.calc_chksums(buf)
+            logger.info(
+                f"chksum: {chksum}, calc_chksums {calc_chksums} -> Got {chksum not in calc_chksums}, expected True because the `tarfile.InvalidHeaderError` was thrown"
+            )
+            logger.info(f"detected error {e}")
             raise e
         obj.offset = tarstream.stream.tell() - tarfile.BLOCKSIZE
         return await obj._proc_member(tarstream)
@@ -491,6 +496,8 @@ class AioTarStream:
         )
         if debug is not None:
             self.debug = debug
+        tarfile.debug = 3
+        self.debug = 3
         if errorlevel is not None:
             self.errorlevel = errorlevel
         self.copybufsize = copybufsize
@@ -976,8 +983,14 @@ class AioTarStream:
         with bltn_open(targetpath, "wb") as target:
             if tarinfo.sparse is not None:
                 for offset, size in tarinfo.sparse:
+                    logger.info(
+                        f"makefile call target.seek with offset {offset}, target.position {target.position}"
+                    )
                     target.seek(offset)
                     await copyfileobj(self.stream, target, size, bufsize)
+                logger.info(
+                    f"makefile call target.seek with tarinfo.size {tarinfo.size}, target.position: {target.position}"
+                )
                 target.seek(tarinfo.size)
                 target.truncate()
             else:
@@ -1022,6 +1035,9 @@ class AioTarStream:
         if self.offset != self.stream.tell():
             if self.offset == 0:
                 return None
+            logger.info(
+                f"next call seek with offset {self.offset}, self.stream.position: {self.stream.position}"
+            )
             await cast(SeekableStreamReaderWrapper, self.stream).seek(self.offset)
         tarinfo = None
         while True:
