@@ -235,7 +235,7 @@ class FileStreamReaderWrapper(StreamWrapper):
                     return b""
         length = min(size, stop - self.position)
         if data:
-            self.stream.seek(offset + (self.position - start))
+            await self.stream.seek(offset + (self.position - start))
             buf = await self.stream.read(length)
             self.position += len(buf)
             return buf
@@ -273,7 +273,7 @@ class SeekableStreamReaderWrapper(TellableStreamWrapper):
         if offset > self.position:
             await self.stream.read(offset - self.position)
             self.position = offset
-        else:
+        elif offset < self.position:
             raise tarfile.ReadError("Cannot seek backward with streams")
 
     async def write(self, data: Any):
