@@ -16,6 +16,10 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from tests.utils.deployment import get_deployment_config
 
 
+import logging
+LOGGER = logging.getLogger(__name__)
+
+
 def csvtype(choices):
     """Return a function that splits and checks comma-separated values."""
 
