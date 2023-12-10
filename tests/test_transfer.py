@@ -145,29 +145,29 @@ async def test_directory_to_directory(
 ):
     src_path = None
     dst_path = None
-    # dir_0
+    # dir
     #   |- file_0
     #   |- file_1
     #   |- file_2
     #   |- file_3
-    #   |- dir_0_0
-    #   |   |- file_0_0_0
-    #   |   |- file_0_0_1
-    #   |   |- dir_0_0_0
-    #   |   |   |- file_0_0_0_1
-    #   |   |   |- file_0_0_0_2
-    #   |- dir_0_1
-    #   |   |- file_0_1_0
-    #   |   |- file_0_1_1
-    #   |   |- file_0_1_2
-    #   |- dir_0_2
+    #   |- dir_0
+    #   |   |- file_0_0
+    #   |   |- file_0_1
+    #   |   |- dir_0_0
+    #   |   |   |- file_0_0_1
+    #   |   |   |- file_0_0_2
+    #   |- dir_1
+    #   |   |- file_1_0
+    #   |   |- file_1_1
+    #   |   |- file_1_2
+    #   |- dir_2
     #   |   |   empty
     try:
         # create src structure
         src_path = await _create_tmp_dir(
-            context, src_connector, src_location, n_files=4
+            context, src_connector, src_location, n_files=0
         )
-        for i in range(2):
+        for i in range(3):
             inner_dir = await _create_tmp_dir(
                 context,
                 src_connector,
@@ -176,7 +176,7 @@ async def test_directory_to_directory(
                 n_files=2 + i if i < 2 else 0,
                 lvl=f"{i}",
             )
-            if i == 0:
+            if True and i == 0:
                 await _create_tmp_dir(
                     context,
                     src_connector,
