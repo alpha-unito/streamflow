@@ -245,7 +245,9 @@ class FileStreamReaderWrapper(StreamWrapper):
         if data:
             await self.stream.seek(offset + (self.position - start))
             logger = logging.getLogger()
-            logger.info(f"offset: {offset}, self.position: {self.position}, start: {start}, self.stream.pos: {self.stream.position}")
+            logger.info(
+                f"offset: {offset}, self.position: {self.position}, start: {start}, self.stream.pos: {self.stream.position}"
+            )
             buf = await self.stream.read(length)
             logger.info(f"len(buf): {len(buf)}, length: {length}")
             if len(buf) != length:

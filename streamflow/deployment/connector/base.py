@@ -54,7 +54,9 @@ async def extract_tar_stream(
                     if inputfile.offset > tar.offset:
                         raise Exception("Infinity transfer")
                     while content := await inputfile.read(transferBufferSize):
-                        logger.info(f"content {content}, inputfile.offset: {inputfile.offset}, tar: {tar.offset}")
+                        logger.info(
+                            f"content {content}, inputfile.offset: {inputfile.offset}, tar: {tar.offset}"
+                        )
                         outputfile.write(content)
 
         # Otherwise, if copying a directory, modify the member path to
@@ -63,7 +65,9 @@ async def extract_tar_stream(
             logger.info(f"init member.path: {member.path}, member.name {member.name}")
             member.path = posixpath.relpath(member.path, posixpath.basename(src))
             logger.info(f"dst: {dst}, os.path.curdir: {os.path.curdir}")
-            logger.info(f"fixed member.path: {member.path}, member.name {member.name}, value of `path` param of `extract` method: {os.path.normpath(os.path.join(dst, os.path.curdir))}")
+            logger.info(
+                f"fixed member.path: {member.path}, member.name {member.name}, value of `path` param of `extract` method: {os.path.normpath(os.path.join(dst, os.path.curdir))}"
+            )
             if member.path != member.name:
                 raise Exception(f"Path {member.path} != name {member.name}")
             await tar.extract(
