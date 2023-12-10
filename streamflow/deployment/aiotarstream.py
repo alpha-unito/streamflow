@@ -299,9 +299,10 @@ class AioTarInfo(tarfile.TarInfo):
             logger.info(f"stream_type: {type(tarstream.stream)}")
             logger.info(f"buf: {len(buf)}, stream.pos: {tarstream.stream.position}")
             obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
-        except Exception as e:
+        except tarfile.InvalidHeaderError as e:
+            logger.info(f" {tarfile.nti(buf[148:156])} {tarfile.calc_chksums(buf)}")
             logger.info(f"error {e}")
-            raise e from e
+            raise e
         obj.offset = tarstream.stream.tell() - tarfile.BLOCKSIZE
         return await obj._proc_member(tarstream)
 
