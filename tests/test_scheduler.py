@@ -26,6 +26,7 @@ from tests.utils.deployment import (
 )
 from tests.conftest import LOGGER
 
+
 @pytest_asyncio.fixture(scope="module")
 async def deployment_config(context, deployment) -> DeploymentConfig:
     return await get_deployment_config(context, deployment)
@@ -102,13 +103,13 @@ async def test_scheduling(
     binding_config = BindingConfig(targets=[target])
     LOGGER.info(f"deployment {deployment_config.name}")
     await context.scheduler.schedule(job, binding_config, hardware_requirement)
-    LOGGER.info(f"end schedule")
+    LOGGER.info("end schedule")
     assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
-    LOGGER.info(f"end check job status is fireable")
+    LOGGER.info("end check job status is fireable")
     await context.scheduler.notify_status(job.name, Status.COMPLETED)
-    LOGGER.info(f"end change job status to COMPLETED")
+    LOGGER.info("end change job status to COMPLETED")
     assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
-    LOGGER.info(f"end check job status is completed")
+    LOGGER.info("end check job status is completed")
 
 
 @pytest.mark.asyncio

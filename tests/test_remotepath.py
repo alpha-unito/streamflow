@@ -13,6 +13,7 @@ from streamflow.deployment.utils import get_path_processor
 from tests.utils.deployment import get_location
 from tests.conftest import LOGGER
 
+
 @pytest_asyncio.fixture(scope="module")
 async def location(context, deployment_src) -> Location:
     return await get_location(context, deployment_src)
@@ -237,7 +238,7 @@ async def test_symlink(context, connector, location):
         assert not await remotepath.exists(connector, location, path)
         LOGGER.info(f"end dir not exists path {path}")
     finally:
-        LOGGER.info(f"finally")
+        LOGGER.info("finally")
         await remotepath.rm(connector, location, path)
         LOGGER.info(f"end finally rm path {path}")
         await remotepath.rm(connector, location, src)

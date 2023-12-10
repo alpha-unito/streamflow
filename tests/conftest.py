@@ -17,6 +17,7 @@ from tests.utils.deployment import get_deployment_config
 
 
 import logging
+
 LOGGER = logging.getLogger(__name__)
 
 
