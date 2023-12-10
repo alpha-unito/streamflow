@@ -237,7 +237,13 @@ class FileStreamReaderWrapper(StreamWrapper):
         if data:
             await self.stream.seek(offset + (self.position - start))
             buf = await self.stream.read(length)
+            if len(buf) != length:
+                raise tarfile.ReadError("unexpected end of data")
             self.position += len(buf)
+
+            # only for debug
+            if self.closed:
+                raise Exception("Infinity")
             return buf
         else:
             self.position += length

@@ -51,6 +51,8 @@ async def extract_tar_stream(
                     )
                 )
                 with open(path, "wb") as outputfile:
+                    if inputfile.offset > tar.offset:
+                        raise Exception("Infinity transfer")
                     while content := await inputfile.read(transferBufferSize):
                         outputfile.write(content)
 
