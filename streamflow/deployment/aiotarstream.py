@@ -244,7 +244,10 @@ class FileStreamReaderWrapper(StreamWrapper):
         length = min(size, stop - self.position)
         if data:
             await self.stream.seek(offset + (self.position - start))
+            logger = logging.getLogger()
+            logger.info(f"offset: {offset}, self.position: {self.position}, start: {start}, self.stream.pos: {self.stream.position}")
             buf = await self.stream.read(length)
+            logger.info(f"len(buf): {len(buf)}, length: {length}")
             if len(buf) != length:
                 raise tarfile.ReadError("unexpected end of data")
             self.position += len(buf)
@@ -309,6 +312,7 @@ class AioTarInfo(tarfile.TarInfo):
             )
             obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
         except Exception as e:
+            logger.info(f"error {e}")
             raise e from e
         obj.offset = tarstream.stream.tell() - tarfile.BLOCKSIZE
         return await obj._proc_member(tarstream)
