@@ -24,11 +24,12 @@ from streamflow.deployment import aiotarstream
 from streamflow.deployment.connector.base import BaseConnector, extract_tar_stream
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.template import CommandTemplateMap
-from streamflow.log_handler import logger, defaultStreamHandler
+from streamflow.log_handler import logger
 
-asyncssh.logging.logger.setLevel(logging.DEBUG)
-asyncssh.logging.logger.set_debug_level(2)
-asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
+# from streamflow.log_handler import defaultStreamHandler
+# asyncssh.logging.logger.setLevel(logging.INFO)
+# asyncssh.logging.logger.set_debug_level(2)
+# asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
 
 
 def _parse_hostname(hostname):

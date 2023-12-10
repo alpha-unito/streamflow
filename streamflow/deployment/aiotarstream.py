@@ -21,13 +21,6 @@ from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.log_handler import logger
 
 
-# import asyncssh
-# from streamflow.log_handler import defaultStreamHandler
-# asyncssh.logging.logger.setLevel(logging.DEBUG)
-# asyncssh.logging.logger.set_debug_level(2)
-# asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
-
-
 async def copyfileobj(src, dst, length=None, bufsize=None):
     bufsize = bufsize or 16 * 1024
     if length == 0:
@@ -250,8 +243,6 @@ class FileStreamReaderWrapper(StreamWrapper):
             )
             buf = await self.stream.read(length)
             logger.info(f"len(buf): {len(buf)}, length: {length}")
-            if len(buf) != length:
-                raise tarfile.ReadError("unexpected end of data")
             self.position += len(buf)
 
             # only for debug
