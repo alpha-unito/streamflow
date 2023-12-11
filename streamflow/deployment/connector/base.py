@@ -52,9 +52,6 @@ async def extract_tar_stream(
                 )
                 with open(path, "wb") as outputfile:
                     while content := await inputfile.read(transferBufferSize):
-                        logger.info(
-                            f"content {content}, inputfile.offset: {inputfile.offset}, tar: {tar.offset}"
-                        )
                         outputfile.write(content)
 
         # Otherwise, if copying a directory, modify the member path to
