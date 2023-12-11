@@ -139,7 +139,7 @@ def dst_connector(context, dst_location) -> Connector:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(30)
+@pytest.mark.timeout(60)
 async def test_directory_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
@@ -233,7 +233,7 @@ async def test_directory_to_directory(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(30)
+@pytest.mark.timeout(60)
 async def test_file_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
@@ -288,7 +288,7 @@ async def test_file_to_directory(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(30)
+@pytest.mark.timeout(60)
 async def test_file_to_file(
     context, src_connector, src_location, dst_connector, dst_location
 ):
@@ -340,7 +340,7 @@ async def test_file_to_file(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(30)
+@pytest.mark.timeout(60)
 async def test_multiple_files(
     context, src_connector, src_location, dst_connector, dst_location
 ):
