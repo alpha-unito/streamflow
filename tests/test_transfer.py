@@ -165,7 +165,7 @@ async def test_directory_to_directory(
     try:
         # create src structure
         src_path = await _create_tmp_dir(
-            context, src_connector, src_location, n_files=0
+            context, src_connector, src_location, n_files=4
         )
         for i in range(3):
             inner_dir = await _create_tmp_dir(
@@ -176,7 +176,7 @@ async def test_directory_to_directory(
                 n_files=2 + i if i < 2 else 0,
                 lvl=f"{i}",
             )
-            if True and i == 0:
+            if i == 0:
                 await _create_tmp_dir(
                     context,
                     src_connector,

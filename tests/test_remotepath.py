@@ -10,8 +10,8 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
+from streamflow.log_handler import logger
 from tests.utils.deployment import get_location
-from tests.conftest import LOGGER
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -194,52 +194,52 @@ async def test_symlink(context, connector, location):
     path_processor = get_path_processor(connector)
     try:
         # Test symlink to file
-        LOGGER.info(f"conn: {connector.deployment_name}, loc: {location}")
+        logger.info(f"conn: {connector.deployment_name}, loc: {location}")
         await remotepath.write(connector, location, src, "StreamFlow")
-        LOGGER.info(f"end write src {src}")
+        logger.info(f"end write src {src}")
         await remotepath.symlink(connector, location, src, path)
-        LOGGER.info(f"end symlink src {src}, path: {path}")
+        logger.info(f"end symlink src {src}, path: {path}")
         assert await remotepath.exists(connector, location, path)
-        LOGGER.info(f"end exists path: {path}")
+        logger.info(f"end exists path: {path}")
         assert await remotepath.islink(connector, location, path)
-        LOGGER.info(f"end islink path: {path}")
+        logger.info(f"end islink path: {path}")
         assert (
             path_processor.basename(
                 await remotepath.follow_symlink(context, connector, location, path)
             )
             == src
         )
-        LOGGER.info(f"end check symlink basename path {path} is equal to src {src}")
+        logger.info(f"end check symlink basename path {path} is equal to src {src}")
         await remotepath.rm(connector, location, path)
-        LOGGER.info(f"end rm path {path}")
+        logger.info(f"end rm path {path}")
         assert not await remotepath.exists(connector, location, path)
-        LOGGER.info(f"end not exists path {path}")
+        logger.info(f"end not exists path {path}")
         await remotepath.rm(connector, location, src)
-        LOGGER.info(f"end rm src {src}")
+        logger.info(f"end rm src {src}")
         # Test symlink to directory
 
         await remotepath.mkdir(connector, [location], src)
-        LOGGER.info(f"end mkdir src {src}")
+        logger.info(f"end mkdir src {src}")
         await remotepath.symlink(connector, location, src, path)
-        LOGGER.info(f"end dir symlink src {src} to path {path}")
+        logger.info(f"end dir symlink src {src} to path {path}")
         assert await remotepath.exists(connector, location, path)
-        LOGGER.info(f"end dir exists path {path}")
+        logger.info(f"end dir exists path {path}")
         assert await remotepath.islink(connector, location, path)
-        LOGGER.info(f"end dir islink path {path}")
+        logger.info(f"end dir islink path {path}")
         assert (
             path_processor.basename(
                 await remotepath.follow_symlink(context, connector, location, path)
             )
             == src
         )
-        LOGGER.info(f"end dir check symlink basename path {path} is equal to src {src}")
+        logger.info(f"end dir check symlink basename path {path} is equal to src {src}")
         await remotepath.rm(connector, location, path)
-        LOGGER.info(f"end dir rm path {path}")
+        logger.info(f"end dir rm path {path}")
         assert not await remotepath.exists(connector, location, path)
-        LOGGER.info(f"end dir not exists path {path}")
+        logger.info(f"end dir not exists path {path}")
     finally:
-        LOGGER.info("finally")
+        logger.info("finally")
         await remotepath.rm(connector, location, path)
-        LOGGER.info(f"end finally rm path {path}")
+        logger.info(f"end finally rm path {path}")
         await remotepath.rm(connector, location, src)
-        LOGGER.info(f"end finally rm src {src}")
+        logger.info(f"end finally rm src {src}")

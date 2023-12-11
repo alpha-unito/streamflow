@@ -15,10 +15,8 @@ from abc import ABC
 from builtins import open as bltn_open
 from typing import Any, cast
 
-
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper
-from streamflow.log_handler import logger
 
 
 async def copyfileobj(src, dst, length=None, bufsize=None):
@@ -237,16 +235,8 @@ class FileStreamReaderWrapper(StreamWrapper):
                     return b""
         length = min(size, stop - self.position)
         if data:
-            logger.info(
-                f"self.position: {self.position}, start: {start}, stop: {stop}, offset: {offset}, length: {length}, self.stream.position: {self.stream.position}"
-            )
             await self.stream.seek(offset + (self.position - start))
-
-            logger.info(f"FileStreamReaderWrapper.read() -> length: {length}")
             buf = await self.stream.read(length)
-            logger.info(
-                f"FileStreamReaderWrapper.read() -> len(buf): {len(buf)}, buf: {buf}"
-            )
             self.position += len(buf)
 
             # only for debug
@@ -267,14 +257,8 @@ class TellableStreamWrapper(BaseStreamWrapper):
         self.position: int = 0
 
     async def read(self, size: int | None = None):
-        logger.info(
-            f"TellableStreamWrapper.read() -> position: {self.position} read: {size}"
-        )
         buf = await self.stream.read(size)
         self.position += len(buf)
-        logger.info(
-            f"TellableStreamWrapper.read() -> upd-pos: {self.position}, len_buf: {len(buf)}"
-        )
         return buf
 
     def tell(self):
@@ -290,7 +274,6 @@ class SeekableStreamReaderWrapper(TellableStreamWrapper):
         super().__init__(stream)
 
     async def seek(self, offset: int):
-        logger.debug(f"seek -> self.position: {self.position},  offset: {offset}")
         if offset > self.position:
             await self.stream.read(offset - self.position)
             self.position = offset
@@ -304,30 +287,8 @@ class SeekableStreamReaderWrapper(TellableStreamWrapper):
 class AioTarInfo(tarfile.TarInfo):
     @classmethod
     async def fromtarfile(cls, tarstream):
-        logger.info(f"fromtarfile: read -> blocksize {tarfile.BLOCKSIZE}")
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
-        logger.info(f"fromtarfile: read -> len_buf: {len(buf)}, buf: {buf}")
-        try:
-            logger.info(f"(fromtarfile) buf: {buf}")
-            logger.info(f"(fromtarfile) stream_type: {type(tarstream.stream)}")
-            logger.info(
-                f"(fromtarfile) len_buf: {len(buf)}, stream.pos: {tarstream.stream.position}"
-            )
-            obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
-        except tarfile.InvalidHeaderError as e:
-            chksum = tarfile.nti(buf[148:156])
-            calc_chksums = tarfile.calc_chksums(buf)
-            logger.info(
-                f"chksum: {chksum}, calc_chksums {calc_chksums} -> Got {chksum not in calc_chksums}, expected True because the `tarfile.InvalidHeaderError` was thrown"
-            )
-            logger.info(f"detected invalidHeaderError {e}")
-            raise e
-        except tarfile.TruncatedHeaderError as e:
-            logger.info(
-                f"len(buf): {len(buf)}, tarfile.BLOCKSIZE: {tarfile.BLOCKSIZE}, len(buf) != BLOCKSIZE: {len(buf) != tarfile.BLOCKSIZE}"
-            )
-            logger.info(f"detected TruncatedHeaderError {e}")
-            raise e
+        obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
         obj.offset = tarstream.stream.tell() - tarfile.BLOCKSIZE
         return await obj._proc_member(tarstream)
 
@@ -343,9 +304,7 @@ class AioTarInfo(tarfile.TarInfo):
         return self
 
     async def _proc_gnulong(self, tarstream):
-        logger.info(f"_proc_gnulong: read -> size: {self.size}")
         buf = await tarstream.stream.read(self._block(self.size))
-        logger.info(f"_proc_gnulong: read -> len_buf: {len(buf)}, buf: {buf}")
         try:
             next = await self.fromtarfile(tarstream)
         except tarfile.HeaderError as e:
@@ -359,20 +318,12 @@ class AioTarInfo(tarfile.TarInfo):
 
     async def _proc_gnusparse_10(self, next, pax_headers, tarstream):
         sparse = []
-        logger.info(f"_proc_gnusparse_10: read -> blocksize {tarfile.BLOCKSIZE}")
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
-        logger.info(f"_proc_gnusparse_10: read -> len_buf: {len(buf)}, buf {buf}")
         fields, buf = buf.split(b"\n", 1)
         fields = int(fields)
         while len(sparse) < fields * 2:
             if b"\n" not in buf:
-                logger.info(
-                    f"_proc_gnusparse_10 while: read -> blocksize {tarfile.BLOCKSIZE}"
-                )
                 buf += await tarstream.stream.read(tarfile.BLOCKSIZE)
-                logger.info(
-                    f"_proc_gnusparse_10 while: read -> len_buf: {len(buf)}, buf: {buf}"
-                )
             number, buf = buf.split(b"\n", 1)
             sparse.append(int(number))
         next.offset_data = tarstream.stream.tell()
@@ -389,9 +340,7 @@ class AioTarInfo(tarfile.TarInfo):
             return self._proc_builtin(tarstream)
 
     async def _proc_pax(self, tarstream):
-        logger.info(f"_proc_pax: read -> size: {self.size}")
         buf = await tarstream.stream.read(self._block(self.size))
-        logger.info(f"_proc_pax: read -> len_buf: {len(buf)}, buf: {buf}")
         if self.type == tarfile.XGLTYPE:
             pax_headers = tarstream.pax_headers
         else:
@@ -455,9 +404,7 @@ class AioTarInfo(tarfile.TarInfo):
         structs, isextended, origsize = self._sparse_structs
         del self._sparse_structs
         while isextended:
-            logger.info(f"_proc_sparse: read -> blocksize {tarfile.BLOCKSIZE}")
             buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
-            logger.info(f"_proc_sparse: read -> len_buf {len(buf)}, buf: {buf}")
             pos = 0
             for _ in range(21):
                 try:
@@ -580,11 +527,7 @@ class AioTarStream:
             elif index < len(self.members):
                 return self.members[index]
             else:
-                try:
-                    tarinfo = await self.next()
-                except Exception as e:
-                    logger.info(f"error {e}")
-                    raise e from e
+                tarinfo = await self.next()
                 if not tarinfo:
                     self._loaded = True
                     raise StopAsyncIteration
@@ -1017,14 +960,8 @@ class AioTarStream:
         with bltn_open(targetpath, "wb") as target:
             if tarinfo.sparse is not None:
                 for offset, size in tarinfo.sparse:
-                    logger.info(
-                        f"makefile call target.seek with offset {offset}, t_target {type(target)}, target.position {target.position}"
-                    )
                     target.seek(offset)
                     await copyfileobj(self.stream, target, size, bufsize)
-                logger.info(
-                    f"makefile call target.seek with tarinfo.size {tarinfo.size}, t_target {type(target)}, target.position: {target.position}"
-                )
                 target.seek(tarinfo.size)
                 target.truncate()
             else:
@@ -1069,9 +1006,6 @@ class AioTarStream:
         if self.offset != self.stream.tell():
             if self.offset == 0:
                 return None
-            logger.info(
-                f"next call seek with offset {self.offset}, self.stream.position: {self.stream.position}"
-            )
             await cast(SeekableStreamReaderWrapper, self.stream).seek(self.offset)
         tarinfo = None
         while True:
@@ -1088,7 +1022,7 @@ class AioTarStream:
                     self.offset += tarfile.BLOCKSIZE
                     continue
                 elif self.offset == 0:
-                    raise tarfile.ReadError(str(e)) from e
+                    raise tarfile.ReadError(str(e)) from None
             except tarfile.EmptyHeaderError:
                 if self.offset == 0:
                     raise tarfile.ReadError("empty file") from None

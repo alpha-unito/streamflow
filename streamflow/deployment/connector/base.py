@@ -18,7 +18,6 @@ from streamflow.core.deployment import (
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.utils import get_local_to_remote_destination
-from streamflow.data import remotepath
 from streamflow.deployment import aiotarstream
 from streamflow.deployment.future import FutureAware
 from streamflow.deployment.stream import (
@@ -30,19 +29,6 @@ from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import Any, MutableMapping
-
-
-async def _inner_print_struct(conn, loc, path, lvl):
-    for entity in await remotepath.listdir(conn, loc, path):
-        logger.info("\t" * lvl + os.path.basename(entity))
-        if await remotepath.isdir(conn, loc, entity):
-            await _inner_print_struct(conn, loc, entity, lvl + 1)
-
-
-async def _print_struct(conn, loc, path):
-    logger.info(f"loc {loc} -> root path: {path}")
-    if await remotepath.isdir(conn, loc, path):
-        await _inner_print_struct(conn, loc, path, 1)
 
 
 async def extract_tar_stream(
@@ -76,14 +62,7 @@ async def extract_tar_stream(
         # Otherwise, if copying a directory, modify the member path to
         # move all the file hierarchy inside `dst`
         else:
-            logger.info(f"init member.path: {member.path}, member.name {member.name}")
             member.path = posixpath.relpath(member.path, posixpath.basename(src))
-            logger.info(f"dst: {dst}, os.path.curdir: {os.path.curdir}")
-            logger.info(
-                f"fixed member.path: {member.path}, member.name {member.name}, value of `path` param of `extract` method: {os.path.normpath(os.path.join(dst, os.path.curdir))}"
-            )
-            if member.path != member.name:
-                raise Exception(f"Path {member.path} != name {member.name}")
             await tar.extract(
                 member, os.path.normpath(os.path.join(dst, os.path.curdir))
             )
@@ -315,7 +294,6 @@ class BaseConnector(Connector, FutureAware):
             logger.info(
                 f"COPYING {src} on location {locations[0]} to {dst} on local file-system"
             )
-        await _print_struct(self, locations[0], src)
         await self._copy_remote_to_local(
             src=src, dst=dst, location=locations[0], read_only=read_only
         )
