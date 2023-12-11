@@ -144,22 +144,22 @@ async def test_directory_to_directory(
 ):
     src_path = None
     dst_path = None
-    # dir_0
+    # dir
     #   |- file_0
     #   |- file_1
     #   |- file_2
     #   |- file_3
-    #   |- dir_0_0
-    #   |   |- file_0_0_0
-    #   |   |- file_0_0_1
-    #   |   |- dir_0_0_0
-    #   |   |   |- file_0_0_0_1
-    #   |   |   |- file_0_0_0_2
-    #   |- dir_0_1
-    #   |   |- file_0_1_0
-    #   |   |- file_0_1_1
-    #   |   |- file_0_1_2
-    #   |- dir_0_2
+    #   |- dir_0
+    #   |   |- file_0_0
+    #   |   |- file_0_1
+    #   |   |- dir_0_0
+    #   |   |   |- file_0_0_1
+    #   |   |   |- file_0_0_2
+    #   |- dir_1
+    #   |   |- file_1_0
+    #   |   |- file_1_1
+    #   |   |- file_1_2
+    #   |- dir_2
     #   |   |   empty
     try:
         # create src structure
