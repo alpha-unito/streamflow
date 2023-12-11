@@ -660,9 +660,15 @@ class SSHConnector(BaseConnector):
     ) -> MutableMapping[str, AvailableLocation]:
         locations = {}
         for location_obj in self.nodes.values():
-            inpdir = await self._get_existing_parent(location_obj.hostname, input_directory)
-            outdir = await self._get_existing_parent(location_obj.hostname, output_directory)
-            tmpdir = await self._get_existing_parent(location_obj.hostname, tmp_directory)
+            inpdir = await self._get_existing_parent(
+                location_obj.hostname, input_directory
+            )
+            outdir = await self._get_existing_parent(
+                location_obj.hostname, output_directory
+            )
+            tmpdir = await self._get_existing_parent(
+                location_obj.hostname, tmp_directory
+            )
             hardware = await self._get_location_hardware(
                 location=location_obj.hostname,
                 input_directory=inpdir,
