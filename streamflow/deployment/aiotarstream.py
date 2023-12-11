@@ -257,7 +257,13 @@ class TellableStreamWrapper(BaseStreamWrapper):
         self.position: int = 0
 
     async def read(self, size: int | None = None):
-        buf = await self.stream.read(size)
+        buf = b""
+        while size > 0:
+            res = await self.stream.read(size)
+            if len(res) == 0:
+                break
+            size -= len(res)
+            buf += res
         self.position += len(buf)
         return buf
 

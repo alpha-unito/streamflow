@@ -335,7 +335,7 @@ class SSHConnector(BaseConnector):
             encoding=None,
         ) as proc:
             try:
-                logger.info(f"Open write waiting remote data")
+                logger.info("Open write waiting remote data")
                 async with aiotarstream.open(
                     stream=StreamWriterWrapper(proc.stdin),
                     format=tarfile.GNU_FORMAT,
@@ -343,9 +343,9 @@ class SSHConnector(BaseConnector):
                     dereference=True,
                     copybufsize=self.transferBufferSize,
                 ) as tar:
-                    logger.info(f"Start l-to-r copy")
+                    logger.info("Start l-to-r copy")
                     await tar.add(src, arcname=dst)
-                    logger.info(f"End l-to-r copy")
+                    logger.info("End l-to-r copy")
             except tarfile.TarError as e:
                 raise WorkflowExecutionException(
                     f"Error copying {src} to {dst} on location {location}: {e}"
@@ -363,15 +363,15 @@ class SSHConnector(BaseConnector):
             encoding=None,
         ) as proc:
             try:
-                logger.info(f"Open reader waiting remote data")
+                logger.info("Open reader waiting remote data")
                 async with aiotarstream.open(
                     stream=StreamReaderWrapper(proc.stdout),
                     mode="r",
                     copybufsize=self.transferBufferSize,
                 ) as tar:
-                    logger.info(f"Start r-to-l copy")
+                    logger.info("Start r-to-l copy")
                     await extract_tar_stream(tar, src, dst, self.transferBufferSize)
-                    logger.info(f"End r-to-l copy")
+                    logger.info("End r-to-l copy")
             except tarfile.TarError as e:
                 raise WorkflowExecutionException(
                     f"Error copying {src} from location {location} to {dst}: {e}"
@@ -386,7 +386,9 @@ class SSHConnector(BaseConnector):
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
-        logger.info(f"Copying remote {source_location} to remote {locations} -> {src} to {dst}")
+        logger.info(
+            f"Copying remote {source_location} to remote {locations} -> {src} to {dst}"
+        )
         source_connector = source_connector or self
         if source_connector == self and source_location.name in [
             loc.name for loc in locations
