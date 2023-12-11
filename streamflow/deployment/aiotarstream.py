@@ -241,8 +241,12 @@ class FileStreamReaderWrapper(StreamWrapper):
                 f"self.position: {self.position}, start: {start}, stop: {stop}, offset: {offset}, length: {length}, self.stream.position: {self.stream.position}"
             )
             await self.stream.seek(offset + (self.position - start))
+
+            logger.info(f"FileStreamReaderWrapper.read() -> length: {length}")
             buf = await self.stream.read(length)
-            logger.info(f"len(buf): {len(buf)}, length: {length}")
+            logger.info(
+                f"FileStreamReaderWrapper.read() -> len(buf): {len(buf)}, buf: {buf}"
+            )
             self.position += len(buf)
 
             # only for debug
@@ -302,6 +306,7 @@ class AioTarInfo(tarfile.TarInfo):
     async def fromtarfile(cls, tarstream):
         logger.info(f"fromtarfile: read -> blocksize {tarfile.BLOCKSIZE}")
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
+        logger.info(f"fromtarfile: read -> len_buf: {len(buf)}, buf: {buf}")
         try:
             logger.info(f"(fromtarfile) buf: {buf}")
             logger.info(f"(fromtarfile) stream_type: {type(tarstream.stream)}")
@@ -340,6 +345,7 @@ class AioTarInfo(tarfile.TarInfo):
     async def _proc_gnulong(self, tarstream):
         logger.info(f"_proc_gnulong: read -> size: {self.size}")
         buf = await tarstream.stream.read(self._block(self.size))
+        logger.info(f"_proc_gnulong: read -> len_buf: {len(buf)}, buf: {buf}")
         try:
             next = await self.fromtarfile(tarstream)
         except tarfile.HeaderError as e:
@@ -355,6 +361,7 @@ class AioTarInfo(tarfile.TarInfo):
         sparse = []
         logger.info(f"_proc_gnusparse_10: read -> blocksize {tarfile.BLOCKSIZE}")
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
+        logger.info(f"_proc_gnusparse_10: read -> len_buf: {len(buf)}, buf {buf}")
         fields, buf = buf.split(b"\n", 1)
         fields = int(fields)
         while len(sparse) < fields * 2:
@@ -363,6 +370,9 @@ class AioTarInfo(tarfile.TarInfo):
                     f"_proc_gnusparse_10 while: read -> blocksize {tarfile.BLOCKSIZE}"
                 )
                 buf += await tarstream.stream.read(tarfile.BLOCKSIZE)
+                logger.info(
+                    f"_proc_gnusparse_10 while: read -> len_buf: {len(buf)}, buf: {buf}"
+                )
             number, buf = buf.split(b"\n", 1)
             sparse.append(int(number))
         next.offset_data = tarstream.stream.tell()
@@ -381,6 +391,7 @@ class AioTarInfo(tarfile.TarInfo):
     async def _proc_pax(self, tarstream):
         logger.info(f"_proc_pax: read -> size: {self.size}")
         buf = await tarstream.stream.read(self._block(self.size))
+        logger.info(f"_proc_pax: read -> len_buf: {len(buf)}, buf: {buf}")
         if self.type == tarfile.XGLTYPE:
             pax_headers = tarstream.pax_headers
         else:
@@ -446,6 +457,7 @@ class AioTarInfo(tarfile.TarInfo):
         while isextended:
             logger.info(f"_proc_sparse: read -> blocksize {tarfile.BLOCKSIZE}")
             buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
+            logger.info(f"_proc_sparse: read -> len_buf {len(buf)}, buf: {buf}")
             pos = 0
             for _ in range(21):
                 try:
