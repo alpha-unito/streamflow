@@ -238,10 +238,6 @@ class FileStreamReaderWrapper(StreamWrapper):
             await self.stream.seek(offset + (self.position - start))
             buf = await self.stream.read(length)
             self.position += len(buf)
-
-            # only for debug
-            if self.closed:
-                raise Exception("Infinity")
             return buf
         else:
             self.position += length

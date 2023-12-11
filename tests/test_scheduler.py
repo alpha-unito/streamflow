@@ -24,7 +24,8 @@ from tests.utils.deployment import (
     get_service,
     get_deployment_config,
 )
-from streamflow.log_handler import logger
+
+# from streamflow.log_handler import logger
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -101,15 +102,15 @@ async def test_scheduling(
         workdir="/tmp/streamflow",
     )
     binding_config = BindingConfig(targets=[target])
-    logger.info(f"deployment {deployment_config.name}")
+    # logger.info(f"deployment {deployment_config.name}")
     await context.scheduler.schedule(job, binding_config, hardware_requirement)
-    logger.info("end schedule")
+    # logger.info("end schedule")
     assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
-    logger.info("end check job status is fireable")
+    # logger.info("end check job status is fireable")
     await context.scheduler.notify_status(job.name, Status.COMPLETED)
-    logger.info("end change job status to COMPLETED")
+    # logger.info("end change job status to COMPLETED")
     assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
-    logger.info("end check job status is completed")
+    # logger.info("end check job status is completed")
 
 
 @pytest.mark.asyncio
