@@ -12,6 +12,7 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
+from streamflow.log_handler import logger
 from tests.utils.deployment import get_location
 
 
@@ -143,6 +144,7 @@ def dst_connector(context, dst_location) -> Connector:
 async def test_directory_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
+    logger.info(f"test_directory_to_directory {src_location} to {dst_location}")
     src_path = None
     dst_path = None
     # dir
@@ -204,12 +206,18 @@ async def test_directory_to_directory(
         )
 
         # transfer src_path to dst_path
+        logger.info(
+            f"test directory to directory {src_location} to {dst_location}. Start transfer"
+        )
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
             dst_locations=[dst_location],
             dst_path=dst_path,
             writable=False,
+        )
+        logger.info(
+            f"test directory to directory {src_location} to {dst_location}. End transfer"
         )
 
         # check if dst exists
@@ -238,6 +246,7 @@ async def test_file_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a file from one location to a directory into another location."""
+    logger.info(f"test_file_to_directory {src_location} to {dst_location}")
     if isinstance(src_connector, LocalConnector):
         src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
@@ -264,12 +273,19 @@ async def test_file_to_directory(
             relpath=src_path,
             data_type=DataType.PRIMARY,
         )
+        logger.info(
+            f"test_file_to_directory {src_location} to {dst_location}. Start transfer"
+        )
+
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
             dst_locations=[dst_location],
             dst_path=dst_path,
             writable=False,
+        )
+        logger.info(
+            f"test_file_to_directory {src_location} to {dst_location}. End transfer"
         )
         path_processor = get_path_processor(dst_connector)
         assert await remotepath.exists(
@@ -293,6 +309,7 @@ async def test_file_to_file(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a file from one location to another."""
+    logger.info(f"test_file_to_file {src_location} to {dst_location}")
     if isinstance(src_connector, LocalConnector):
         src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
@@ -322,6 +339,10 @@ async def test_file_to_file(
             relpath=src_path,
             data_type=DataType.PRIMARY,
         )
+
+        logger.info(
+            f"test_file_to_file {src_location} to {dst_location}. Start transfer"
+        )
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
@@ -329,6 +350,8 @@ async def test_file_to_file(
             dst_path=dst_path,
             writable=False,
         )
+
+        logger.info(f"test_file_to_file {src_location} to {dst_location}. End transfer")
         assert await remotepath.exists(dst_connector, dst_location, dst_path)
         dst_digest = await remotepath.checksum(
             context, dst_connector, dst_location, dst_path
@@ -345,6 +368,9 @@ async def test_multiple_files(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring multiple files simultaneously from one location to another."""
+    logger.info(
+        f"test_file_to_file {src_location} to {dst_location}. test_multiple_files"
+    )
     await asyncio.gather(
         *(
             asyncio.create_task(
