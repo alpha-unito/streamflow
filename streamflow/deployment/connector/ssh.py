@@ -54,13 +54,13 @@ class SSHContext:
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
-                # logger.info("_get_connection")
+                logger.info("_get_connection")
                 self._ssh_connection = await self._get_connection(self._config)
                 self._connect_event.set()
             else:
-                # logger.info("_connect_event.wait()")
+                logger.info("_connect_event.wait()")
                 await self._connect_event.wait()
-        # logger.info("get_connection returns ssh_connection")
+        logger.info("get_connection returns ssh_connection")
         return self._ssh_connection
 
     def get_hostname(self) -> str:
@@ -82,7 +82,7 @@ class SSHContext:
             if config.password_file
             else None
         )
-        # logger.info("asyncssh.connect")
+        logger.info("asyncssh.connect")
         return await asyncssh.connect(
             client_keys=config.client_keys,
             compression_algs=None,
@@ -140,16 +140,16 @@ class SSHContextManager:
         self._proc: asyncssh.SSHClientProcess | None = None
 
     async def __aenter__(self) -> asyncssh.SSHClientProcess:
-        # logger.info("Hello. Sono prima della condition")
+        logger.info("Hello. Sono prima della condition")
         async with self._condition:
-            # logger.info("Hello. Sono dopo la condition")
+            logger.info("Hello. Sono dopo la condition")
             while True:
-                # logger.info("Sono nel while")
+                logger.info("Sono nel while")
                 for context in self._contexts:
-                    # logger.info(f"Context: {context}, context.full(): {context.full()}")
+                    logger.info(f"Context: {context}, context.full(): {context.full()}")
                     if not context.full():
                         ssh_connection = await context.get_connection()
-                        # logger.info(f"SSH_CONNECTION: {ssh_connection}")
+                        logger.info(f"SSH_CONNECTION: {ssh_connection}")
                         try:
                             self._selected_context = context
                             self._proc = await ssh_connection.create_process(
@@ -159,16 +159,16 @@ class SSHContextManager:
                                 stderr=self.stderr,
                                 encoding=self.encoding,
                             )
-                            # logger.info("Proc aenter start")
+                            logger.info("Proc aenter start")
                             await self._proc.__aenter__()
-                            # logger.info("Proc aenter end")
+                            logger.info("Proc aenter end")
                             return self._proc
                         except ChannelOpenError as coe:
                             logger.warning(
                                 f"Error opening SSH session to {context.get_hostname()} "
                                 f"to execute command `{self.command}`: [{coe.code}] {coe.reason}"
                             )
-                # logger.info("Pre _condition.wait")
+                logger.info("Pre _condition.wait")
                 await self._condition.wait()
             # end while
 
@@ -624,7 +624,7 @@ class SSHConnector(BaseConnector):
         )
 
     async def _get_memory(self, location: str) -> float:
-        # logger.info(f"get memory for {location}")
+        logger.info(f"get memory for {location}")
         async with self._get_ssh_client_process(
             location=location,
             command="free | grep Mem | awk '{print $2}'",
