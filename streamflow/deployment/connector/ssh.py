@@ -438,20 +438,26 @@ class SSHConnector(BaseConnector):
                         logger.info(
                             "_copy_remote_to_remote _get_data_transfer_process on writers"
                         )
-                        writers = await asyncio.gather(
+
+                        data_transfer_processes = await asyncio.gather(
                             *(
                                 asyncio.create_task(
-                                    exit_stack.enter_async_context(
-                                        await self._get_data_transfer_process(
-                                            location=location.name,
-                                            command=write_command,
-                                            stderr=asyncio.subprocess.DEVNULL,
-                                            stdout=asyncio.subprocess.DEVNULL,
-                                            encoding=None,
-                                        )
+                                    self._get_data_transfer_process(
+                                        location=location.name,
+                                        command=write_command,
+                                        stderr=asyncio.subprocess.DEVNULL,
+                                        stdout=asyncio.subprocess.DEVNULL,
+                                        encoding=None,
                                     )
                                 )
                                 for location in location_group
+                            )
+                        )
+
+                        writers = await asyncio.gather(
+                            *(
+                                asyncio.create_task(exit_stack.enter_async_context(dtp))
+                                for dtp in data_transfer_processes
                             )
                         )
                         # Multiplex the reader output to all the writers
