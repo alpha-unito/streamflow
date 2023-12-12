@@ -60,7 +60,7 @@ jobs:
     runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -171,7 +171,7 @@ jobs:
       TOXENV: ${{ matrix.step }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
@@ -199,7 +199,7 @@ jobs:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
           cache: pip
