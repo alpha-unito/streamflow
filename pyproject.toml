@@ -116,4 +116,4 @@ omit = [
 exclude = "streamflow/cwl/antlr"
 
 [tool.pytest.ini_options]
-addopts = "-vv -s"
+addopts = "-vv" # flag -s enable logs print
