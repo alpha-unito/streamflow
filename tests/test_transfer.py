@@ -12,7 +12,8 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
-from streamflow.log_handler import logger
+
+# from streamflow.log_handler import logger
 from tests.utils.deployment import get_location
 
 
@@ -209,9 +210,9 @@ async def test_directory_to_directory(
         )
 
         # transfer src_path to dst_path
-        logger.info(
-            f"test directory to directory {src_location} to {dst_location}. Start transfer"
-        )
+        # logger.info(
+        #     f"test directory to directory {src_location} to {dst_location}. Start transfer"
+        # )
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
@@ -219,9 +220,9 @@ async def test_directory_to_directory(
             dst_path=dst_path,
             writable=False,
         )
-        logger.info(
-            f"test directory to directory {src_location} to {dst_location}. End transfer"
-        )
+        # logger.info(
+        #     f"test directory to directory {src_location} to {dst_location}. End transfer"
+        # )
 
         # check if dst exists
         await remotepath.exists(dst_connector, dst_location, dst_path)
@@ -278,9 +279,9 @@ async def test_file_to_directory(
             relpath=src_path,
             data_type=DataType.PRIMARY,
         )
-        logger.info(
-            f"test_file_to_directory {src_location} to {dst_location}. Start transfer"
-        )
+        # logger.info(
+        #     f"test_file_to_directory {src_location} to {dst_location}. Start transfer"
+        # )
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
@@ -288,9 +289,9 @@ async def test_file_to_directory(
             dst_path=dst_path,
             writable=False,
         )
-        logger.info(
-            f"test_file_to_directory {src_location} to {dst_location}. End transfer"
-        )
+        # logger.info(
+        #     f"test_file_to_directory {src_location} to {dst_location}. End transfer"
+        # )
         path_processor = get_path_processor(dst_connector)
         assert await remotepath.exists(
             dst_connector, dst_location, path_processor.join(dst_path, src_name)
@@ -357,7 +358,7 @@ async def test_file_to_file(
             writable=False,
         )
 
-        logger.info(f"test_file_to_file {src_location} to {dst_location}. End transfer")
+        # logger.info(f"test_file_to_file {src_location} to {dst_location}. End transfer")
         assert await remotepath.exists(dst_connector, dst_location, dst_path)
         dst_digest = await remotepath.checksum(
             context, dst_connector, dst_location, dst_path
