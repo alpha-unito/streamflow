@@ -337,7 +337,7 @@ class SSHConnector(BaseConnector):
     ):
         # logger.info("_copy_local_to_remote_single _get_data_transfer_process")
         async with (
-            await self._get_data_transfer_process(
+            self._get_data_transfer_process(
                 location=location.name,
                 command="tar xf - -C /",
                 stderr=asyncio.subprocess.DEVNULL,
@@ -368,7 +368,7 @@ class SSHConnector(BaseConnector):
         # logger.info("_copy_remote_to_local _get_data_transfer_process")
         dirname, basename = posixpath.split(src)
         async with (
-            await self._get_data_transfer_process(
+            self._get_data_transfer_process(
                 location=location.name,
                 command=f"tar chf - -C {dirname} {basename}",
                 stdin=asyncio.subprocess.DEVNULL,
@@ -438,26 +438,20 @@ class SSHConnector(BaseConnector):
                         # logger.info(
                         #     "_copy_remote_to_remote _get_data_transfer_process on writers"
                         # )
-
-                        data_transfer_processes = await asyncio.gather(
+                        writers = await asyncio.gather(
                             *(
                                 asyncio.create_task(
-                                    self._get_data_transfer_process(
-                                        location=location.name,
-                                        command=write_command,
-                                        stderr=asyncio.subprocess.DEVNULL,
-                                        stdout=asyncio.subprocess.DEVNULL,
-                                        encoding=None,
+                                    exit_stack.enter_async_context(
+                                        self._get_data_transfer_process(
+                                            location=location.name,
+                                            command=write_command,
+                                            stderr=asyncio.subprocess.DEVNULL,
+                                            stdout=asyncio.subprocess.DEVNULL,
+                                            encoding=None,
+                                        )
                                     )
                                 )
                                 for location in location_group
-                            )
-                        )
-
-                        writers = await asyncio.gather(
-                            *(
-                                asyncio.create_task(exit_stack.enter_async_context(dtp))
-                                for dtp in data_transfer_processes
                             )
                         )
                         # Multiplex the reader output to all the writers
@@ -541,7 +535,7 @@ class SSHConnector(BaseConnector):
     async def _get_cores(self, location: str) -> float:
         # logger.info(f"Getting cores: {location}")
         async with (
-            await self._get_ssh_client_process(
+            self._get_ssh_client_process(
                 location=location, command="nproc", stderr=asyncio.subprocess.STDOUT
             )
         ) as proc:
@@ -551,7 +545,7 @@ class SSHConnector(BaseConnector):
             else:
                 raise WorkflowExecutionException(result.returncode)
 
-    async def _get_data_transfer_process(
+    def _get_data_transfer_process(
         self,
         location: str,
         command: str,
@@ -577,7 +571,7 @@ class SSHConnector(BaseConnector):
                 encoding=encoding,
             )
         else:
-            return await self._get_ssh_client_process(
+            return self._get_ssh_client_process(
                 location=location,
                 command=command,
                 stdin=stdin,
@@ -589,7 +583,7 @@ class SSHConnector(BaseConnector):
     async def _get_disk_usage(self, location: str, directory: str) -> float:
         # logger.info(f"get disk usage of directory {directory}")
         async with (
-            await self._get_ssh_client_process(
+            self._get_ssh_client_process(
                 location=location,
                 command=f"df {directory} | tail -n 1 | awk '{{print $2}}'",
                 stderr=asyncio.subprocess.STDOUT,
@@ -610,7 +604,7 @@ class SSHConnector(BaseConnector):
             return None
         while True:
             async with (
-                await self._get_ssh_client_process(
+                self._get_ssh_client_process(
                     location=location,
                     command=f'test -e "{directory}"',
                     stderr=asyncio.subprocess.STDOUT,
@@ -643,7 +637,7 @@ class SSHConnector(BaseConnector):
     async def _get_memory(self, location: str) -> float:
         # logger.info(f"get memory for {location}")
         async with (
-            await self._get_ssh_client_process(
+            self._get_ssh_client_process(
                 location=location,
                 command="free | grep Mem | awk '{print $2}'",
                 stderr=asyncio.subprocess.STDOUT,
@@ -660,7 +654,7 @@ class SSHConnector(BaseConnector):
     ):
         return f"ssh {location.name} {command}"
 
-    async def _get_ssh_client_process(
+    def _get_ssh_client_process(
         self,
         location: str,
         command: str,
@@ -669,14 +663,13 @@ class SSHConnector(BaseConnector):
         stderr: int = asyncio.subprocess.PIPE,
         encoding: str | None = "utf-8",
     ) -> SSHContextManager:
-        async with self.lock:
-            if location not in self.ssh_context_factories:
-                self.ssh_context_factories[location] = SSHContextFactory(
-                    streamflow_config_dir=self.config_dir,
-                    config=self.nodes[location],
-                    max_concurrent_sessions=self.maxConcurrentSessions,
-                    max_connections=self.maxConnections,
-                )
+        if location not in self.ssh_context_factories:
+            self.ssh_context_factories[location] = SSHContextFactory(
+                streamflow_config_dir=self.config_dir,
+                config=self.nodes[location],
+                max_concurrent_sessions=self.maxConcurrentSessions,
+                max_connections=self.maxConnections,
+            )
         return self.ssh_context_factories[location].get(
             command=command,
             stdin=stdin,
@@ -792,7 +785,7 @@ class SSHConnector(BaseConnector):
             )
             command = utils.encode_command(command)
             async with (
-                await self._get_ssh_client_process(
+                self._get_ssh_client_process(
                     location=location.name,
                     command=command,
                     stderr=asyncio.subprocess.STDOUT,
@@ -801,7 +794,7 @@ class SSHConnector(BaseConnector):
                 result = await proc.wait(timeout=timeout)
         else:
             async with (
-                await self._get_ssh_client_process(
+                self._get_ssh_client_process(
                     location=location.name,
                     command=command,
                     stderr=asyncio.subprocess.STDOUT,

@@ -13,7 +13,7 @@ from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 
-# from streamflow.log_handler import logger
+from streamflow.log_handler import logger
 from tests.utils.deployment import get_location
 
 
@@ -146,9 +146,9 @@ async def test_directory_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a directory and its content from one location to another."""
-    # logger.info(f"test_directory_to_directory {src_location} to {dst_location}")
-    # assert src_location.deployment != "failed"
-    # assert dst_location.deployment != "failed"
+    logger.info(f"test_directory_to_directory {src_location} to {dst_location}")
+    assert src_location.deployment != "failed"
+    assert dst_location.deployment != "failed"
     src_path = None
     dst_path = None
     # dir
@@ -250,9 +250,9 @@ async def test_file_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a file from one location to a directory into another location."""
-    # logger.info(f"test_file_to_directory {src_location} to {dst_location}")
-    # assert src_location.deployment != "failed"
-    # assert dst_location.deployment != "failed"
+    logger.info(f"test_file_to_directory {src_location} to {dst_location}")
+    assert src_location.deployment != "failed"
+    assert dst_location.deployment != "failed"
     if isinstance(src_connector, LocalConnector):
         src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
@@ -314,9 +314,9 @@ async def test_file_to_file(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a file from one location to another."""
-    # logger.info(f"test_file_to_file {src_location} to {dst_location}")
-    # assert src_location.deployment != "failed"
-    # assert dst_location.deployment != "failed"
+    logger.info(f"test_file_to_file {src_location} to {dst_location}")
+    assert src_location.deployment != "failed"
+    assert dst_location.deployment != "failed"
     if isinstance(src_connector, LocalConnector):
         src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
@@ -375,9 +375,9 @@ async def test_multiple_files(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring multiple files simultaneously from one location to another."""
-    # logger.info(f"test_file_to_file {src_location} to {dst_location}")
-    # assert src_location.deployment != "failed"
-    # assert dst_location.deployment != "failed"
+    logger.info(f"test_file_to_file {src_location} to {dst_location}")
+    assert src_location.deployment != "failed"
+    assert dst_location.deployment != "failed"
 
     await asyncio.gather(
         *(

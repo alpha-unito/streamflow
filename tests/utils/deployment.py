@@ -93,11 +93,11 @@ async def get_location(_context: StreamFlowContext, deployment_t: str) -> Locati
         )
     elif deployment_t == "ssh":
         connector = _context.deployment_manager.get_connector("linuxserver-ssh")
-        locations = await connector.get_available_locations()
-        # try:
-        #     locations = await connector.get_available_locations()
-        # except Exception as e:
-        #     return Location(deployment="failed", name=f"{e}")
+        # locations = await connector.get_available_locations()
+        try:
+            locations = await connector.get_available_locations()
+        except Exception as e:
+            return Location(deployment="failed", name=f"{e}")
         return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
     else:
         raise Exception(f"{deployment_t} location type not supported")
