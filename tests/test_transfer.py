@@ -281,7 +281,6 @@ async def test_file_to_directory(
         logger.info(
             f"test_file_to_directory {src_location} to {dst_location}. Start transfer"
         )
-
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,

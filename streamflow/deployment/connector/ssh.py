@@ -54,10 +54,13 @@ class SSHContext:
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
+                logger.info("_get_connection")
                 self._ssh_connection = await self._get_connection(self._config)
                 self._connect_event.set()
             else:
+                logger.info("_connect_event.wait()")
                 await self._connect_event.wait()
+        logger.info("get_connection returns ssh_connection")
         return self._ssh_connection
 
     def get_hostname(self) -> str:
@@ -79,6 +82,7 @@ class SSHContext:
             if config.password_file
             else None
         )
+        logger.info("asyncssh.connect")
         return await asyncssh.connect(
             client_keys=config.client_keys,
             compression_algs=None,
@@ -330,6 +334,7 @@ class SSHConnector(BaseConnector):
     async def _copy_local_to_remote_single(
         self, src: str, dst: str, location: Location, read_only: bool = False
     ):
+        logger.info("_copy_local_to_remote_single _get_data_transfer_process")
         async with self._get_data_transfer_process(
             location=location.name,
             command="tar xf - -C /",
@@ -338,6 +343,7 @@ class SSHConnector(BaseConnector):
             encoding=None,
         ) as proc:
             try:
+                logger.info("_copy_local_to_remote_single tarstream.open")
                 async with aiotarstream.open(
                     stream=StreamWriterWrapper(proc.stdin),
                     format=tarfile.GNU_FORMAT,
@@ -345,7 +351,9 @@ class SSHConnector(BaseConnector):
                     dereference=True,
                     copybufsize=self.transferBufferSize,
                 ) as tar:
+                    logger.info("_copy_local_to_remote_single tar.add")
                     await tar.add(src, arcname=dst)
+                    logger.info("_copy_local_to_remote_single tar.added")
             except tarfile.TarError as e:
                 raise WorkflowExecutionException(
                     f"Error copying {src} to {dst} on location {location}: {e}"
@@ -354,6 +362,7 @@ class SSHConnector(BaseConnector):
     async def _copy_remote_to_local(
         self, src: str, dst: str, location: Location, read_only: bool = False
     ) -> None:
+        logger.info("_copy_remote_to_local _get_data_transfer_process")
         dirname, basename = posixpath.split(src)
         async with self._get_data_transfer_process(
             location=location.name,
@@ -362,12 +371,15 @@ class SSHConnector(BaseConnector):
             encoding=None,
         ) as proc:
             try:
+                logger.info("_copy_remote_to_local tarstream.open")
                 async with aiotarstream.open(
                     stream=StreamReaderWrapper(proc.stdout),
                     mode="r",
                     copybufsize=self.transferBufferSize,
                 ) as tar:
+                    logger.info("_copy_remote_to_local extract_tar_stream start")
                     await extract_tar_stream(tar, src, dst, self.transferBufferSize)
+                    logger.info("_copy_remote_to_local extract_tar_stream end")
             except tarfile.TarError as e:
                 raise WorkflowExecutionException(
                     f"Error copying {src} from location {location} to {dst}: {e}"
@@ -382,6 +394,7 @@ class SSHConnector(BaseConnector):
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
+        logger.info("_copy_remote_to_remote")
         source_connector = source_connector or self
         if source_connector == self and source_location.name in [
             loc.name for loc in locations
@@ -390,6 +403,7 @@ class SSHConnector(BaseConnector):
                 command = ["/bin/cp", "-rf", src, dst]
                 await self.run(source_location, command)
                 locations.remove(source_location)
+        logger.info("_copy_remote_to_remote write_command")
         write_command = " ".join(
             await utils.get_remote_to_remote_write_command(
                 src_connector=source_connector,
@@ -408,12 +422,17 @@ class SSHConnector(BaseConnector):
             location_groups = [
                 locations[i : i + rounds] for i in range(0, len(locations), rounds)
             ]
+
+            logger.info(f"_copy_remote_to_remote get_stream_reader {source_location}")
             for location_group in location_groups:
                 async with (
                     await source_connector.get_stream_reader(source_location, src)
                 ) as reader:
                     async with contextlib.AsyncExitStack() as exit_stack:
                         # Open a target StreamWriter for each location
+                        logger.info(
+                            "_copy_remote_to_remote _get_data_transfer_process on writers"
+                        )
                         writers = await asyncio.gather(
                             *(
                                 asyncio.create_task(
@@ -431,10 +450,17 @@ class SSHConnector(BaseConnector):
                             )
                         )
                         # Multiplex the reader output to all the writers
+                        logger.info("_copy_remote_to_remote reader.read")
                         while content := await reader.read(
                             source_connector.transferBufferSize
                         ):
+                            logger.info(
+                                f"_copy_remote_to_remote reader.read content: {content}"
+                            )
                             for writer in writers:
+                                logger.info(
+                                    f"_copy_remote_to_remote writer.write content: {content}"
+                                )
                                 writer.stdin.write(content)
                             await asyncio.gather(
                                 *(
