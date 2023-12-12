@@ -140,13 +140,18 @@ def dst_connector(context, dst_location) -> Connector:
     return context.deployment_manager.get_connector(dst_location.deployment)
 
 
+async def custom_timeout():
+    await asyncio.sleep(60)
+    raise AssertionError()
+
+
 @pytest.mark.asyncio
-@pytest.mark.timeout(60)
 async def test_directory_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a directory and its content from one location to another."""
     logger.info(f"test_directory_to_directory {src_location} to {dst_location}")
+    t = asyncio.create_task(custom_timeout())
     assert src_location.deployment != "failed"
     assert dst_location.deployment != "failed"
     src_path = None
@@ -242,10 +247,14 @@ async def test_directory_to_directory(
             await remotepath.rm(src_connector, src_location, src_path)
         if dst_path:
             await remotepath.rm(dst_connector, dst_location, dst_path)
+        try:
+            t.cancel()
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(60)
 async def test_file_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
@@ -253,6 +262,7 @@ async def test_file_to_directory(
     logger.info(f"test_file_to_directory {src_location} to {dst_location}")
     assert src_location.deployment != "failed"
     assert dst_location.deployment != "failed"
+    t = asyncio.create_task(custom_timeout())
     if isinstance(src_connector, LocalConnector):
         src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
@@ -306,6 +316,11 @@ async def test_file_to_directory(
     finally:
         await remotepath.rm(src_connector, src_location, src_path)
         await remotepath.rm(dst_connector, dst_location, dst_path)
+        try:
+            t.cancel()
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
 @pytest.mark.asyncio
