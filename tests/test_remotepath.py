@@ -10,6 +10,7 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
+from streamflow.log_handler import logger
 
 # from streamflow.log_handler import logger
 from tests.utils.deployment import get_location
@@ -28,6 +29,9 @@ def connector(context, location) -> Connector:
 @pytest.mark.asyncio
 async def test_directory(context, connector, location):
     """Test directory creation and deletion."""
+    logger.info(f"test_directory {location}")
+    assert location.deployment != "failed"
+
     path = utils.random_name()
     try:
         await remotepath.mkdir(connector, [location], path)
@@ -67,6 +71,8 @@ async def test_directory(context, connector, location):
 @pytest.mark.asyncio
 async def test_download(context, connector, location):
     """Test remote file download."""
+    logger.info(f"test_download: {location}")
+    assert location.deployment != "failed"
     urls = [
         "https://raw.githubusercontent.com/alpha-unito/streamflow/master/LICENSE",
         "https://github.com/alpha-unito/streamflow/archive/refs/tags/0.1.6.zip",
@@ -93,6 +99,9 @@ async def test_download(context, connector, location):
 @pytest.mark.asyncio
 async def test_file(context, connector, location):
     """Test file creation, size, checksum and deletion."""
+    logger.info(f"test_file {location}")
+    assert location.deployment != "failed"
+
     path = utils.random_name()
     path2 = utils.random_name()
     try:
@@ -118,6 +127,9 @@ async def test_file(context, connector, location):
 @pytest.mark.asyncio
 async def test_resolve(context, connector, location):
     """Test glob resolution."""
+    logger.info(f"test_resolve {location}")
+    assert location.deployment != "failed"
+
     path_processor = get_path_processor(connector)
     path = utils.random_name()
     await remotepath.mkdir(connector, [location], path)
@@ -190,6 +202,9 @@ async def test_resolve(context, connector, location):
 @pytest.mark.asyncio
 async def test_symlink(context, connector, location):
     """Test symlink creation, resolution and deletion."""
+    logger.info(f"test_symlink {location}")
+    assert location.deployment != "failed"
+
     src = utils.random_name()
     path = utils.random_name()
     path_processor = get_path_processor(connector)
