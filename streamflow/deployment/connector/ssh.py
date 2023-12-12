@@ -136,7 +136,9 @@ class SSHContextManager:
         self._proc: asyncssh.SSHClientProcess | None = None
 
     async def __aenter__(self) -> asyncssh.SSHClientProcess:
+        logger.info("Hello. Sono prima della condition")
         async with self._condition:
+            logger.info("Hello. Sono dopo la condition")
             while True:
                 for context in self._contexts:
                     if not context.full():
