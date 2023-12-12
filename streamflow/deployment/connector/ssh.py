@@ -140,9 +140,12 @@ class SSHContextManager:
         async with self._condition:
             logger.info("Hello. Sono dopo la condition")
             while True:
+                logger.info("Sono nel while")
                 for context in self._contexts:
+                    logger.info(f"Context: {context}, context.full(): {context.full()}")
                     if not context.full():
                         ssh_connection = await context.get_connection()
+                        logger.info(f"SSH_CONNECTION: {ssh_connection}")
                         try:
                             self._selected_context = context
                             self._proc = await ssh_connection.create_process(
@@ -152,14 +155,18 @@ class SSHContextManager:
                                 stderr=self.stderr,
                                 encoding=self.encoding,
                             )
+                            logger.info("Proc aenter start")
                             await self._proc.__aenter__()
+                            logger.info("Proc aenter end")
                             return self._proc
                         except ChannelOpenError as coe:
                             logger.warning(
                                 f"Error opening SSH session to {context.get_hostname()} "
                                 f"to execute command `{self.command}`: [{coe.code}] {coe.reason}"
                             )
+                logger.info("Pre _condition.wait")
                 await self._condition.wait()
+            # end while
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         async with self._condition:
