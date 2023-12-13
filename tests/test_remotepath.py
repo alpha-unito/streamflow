@@ -10,8 +10,6 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
-
-from streamflow.log_handler import logger
 from tests.utils.deployment import get_location
 
 
@@ -28,9 +26,6 @@ def connector(context, location) -> Connector:
 @pytest.mark.asyncio
 async def test_directory(context, connector, location):
     """Test directory creation and deletion."""
-    logger.info(f"test_directory {location}")
-    assert location.deployment != "failed"
-
     path = utils.random_name()
     try:
         await remotepath.mkdir(connector, [location], path)
@@ -70,8 +65,6 @@ async def test_directory(context, connector, location):
 @pytest.mark.asyncio
 async def test_download(context, connector, location):
     """Test remote file download."""
-    logger.info(f"test_download: {location}")
-    assert location.deployment != "failed"
     urls = [
         "https://raw.githubusercontent.com/alpha-unito/streamflow/master/LICENSE",
         "https://github.com/alpha-unito/streamflow/archive/refs/tags/0.1.6.zip",
@@ -98,9 +91,6 @@ async def test_download(context, connector, location):
 @pytest.mark.asyncio
 async def test_file(context, connector, location):
     """Test file creation, size, checksum and deletion."""
-    logger.info(f"test_file {location}")
-    assert location.deployment != "failed"
-
     path = utils.random_name()
     path2 = utils.random_name()
     try:
@@ -126,9 +116,6 @@ async def test_file(context, connector, location):
 @pytest.mark.asyncio
 async def test_resolve(context, connector, location):
     """Test glob resolution."""
-    logger.info(f"test_resolve {location}")
-    assert location.deployment != "failed"
-
     path_processor = get_path_processor(connector)
     path = utils.random_name()
     await remotepath.mkdir(connector, [location], path)
@@ -201,60 +188,37 @@ async def test_resolve(context, connector, location):
 @pytest.mark.asyncio
 async def test_symlink(context, connector, location):
     """Test symlink creation, resolution and deletion."""
-    logger.info(f"test_symlink {location}")
-    assert location.deployment != "failed"
-
     src = utils.random_name()
     path = utils.random_name()
     path_processor = get_path_processor(connector)
     try:
         # Test symlink to file
-        # logger.info(f"conn: {connector.deployment_name}, loc: {location}")
         await remotepath.write(connector, location, src, "StreamFlow")
-        # logger.info(f"end write src {src}")
         await remotepath.symlink(connector, location, src, path)
-        # logger.info(f"end symlink src {src}, path: {path}")
         assert await remotepath.exists(connector, location, path)
-        # logger.info(f"end exists path: {path}")
         assert await remotepath.islink(connector, location, path)
-        # logger.info(f"end islink path: {path}")
         assert (
             path_processor.basename(
                 await remotepath.follow_symlink(context, connector, location, path)
             )
             == src
         )
-        # logger.info(f"end check symlink basename path {path} is equal to src {src}")
         await remotepath.rm(connector, location, path)
-        # logger.info(f"end rm path {path}")
         assert not await remotepath.exists(connector, location, path)
-        # logger.info(f"end not exists path {path}")
         await remotepath.rm(connector, location, src)
-        # logger.info(f"end rm src {src}")
         # Test symlink to directory
-
         await remotepath.mkdir(connector, [location], src)
-        # logger.info(f"end mkdir src {src}")
         await remotepath.symlink(connector, location, src, path)
-        # logger.info(f"end dir symlink src {src} to path {path}")
         assert await remotepath.exists(connector, location, path)
-        # logger.info(f"end dir exists path {path}")
         assert await remotepath.islink(connector, location, path)
-        # logger.info(f"end dir islink path {path}")
         assert (
             path_processor.basename(
                 await remotepath.follow_symlink(context, connector, location, path)
             )
             == src
         )
-        # logger.info(f"end dir check symlink basename path {path} is equal to src {src}")
         await remotepath.rm(connector, location, path)
-        # logger.info(f"end dir rm path {path}")
         assert not await remotepath.exists(connector, location, path)
-        # logger.info(f"end dir not exists path {path}")
     finally:
-        # logger.info("finally")
         await remotepath.rm(connector, location, path)
-        # logger.info(f"end finally rm path {path}")
         await remotepath.rm(connector, location, src)
-        # logger.info(f"end finally rm src {src}")

@@ -253,13 +253,7 @@ class TellableStreamWrapper(BaseStreamWrapper):
         self.position: int = 0
 
     async def read(self, size: int | None = None):
-        buf = b""
-        while size > 0:
-            res = await self.stream.read(size)
-            if len(res) == 0:
-                break
-            size -= len(res)
-            buf += res
+        buf = await self.stream.read(size)
         self.position += len(buf)
         return buf
 
@@ -479,8 +473,6 @@ class AioTarStream:
         )
         if debug is not None:
             self.debug = debug
-        tarfile.debug = 3
-        self.debug = 3
         if errorlevel is not None:
             self.errorlevel = errorlevel
         self.copybufsize = copybufsize

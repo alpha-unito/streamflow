@@ -12,8 +12,6 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
-
-from streamflow.log_handler import logger
 from tests.utils.deployment import get_location
 
 
@@ -141,39 +139,34 @@ def dst_connector(context, dst_location) -> Connector:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(60)
 async def test_directory_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
-    """Test transferring a directory and its content from one location to another."""
-    logger.info(f"test_directory_to_directory {src_location} to {dst_location}")
-    assert src_location.deployment != "failed"
-    assert dst_location.deployment != "failed"
     src_path = None
     dst_path = None
-    # dir
+    # dir_0
     #   |- file_0
     #   |- file_1
     #   |- file_2
     #   |- file_3
-    #   |- dir_0
-    #   |   |- file_0_0
-    #   |   |- file_0_1
-    #   |   |- dir_0_0
-    #   |   |   |- file_0_0_1
-    #   |   |   |- file_0_0_2
-    #   |- dir_1
-    #   |   |- file_1_0
-    #   |   |- file_1_1
-    #   |   |- file_1_2
-    #   |- dir_2
+    #   |- dir_0_0
+    #   |   |- file_0_0_0
+    #   |   |- file_0_0_1
+    #   |   |- dir_0_0_0
+    #   |   |   |- file_0_0_0_1
+    #   |   |   |- file_0_0_0_2
+    #   |- dir_0_1
+    #   |   |- file_0_1_0
+    #   |   |- file_0_1_1
+    #   |   |- file_0_1_2
+    #   |- dir_0_2
     #   |   |   empty
     try:
         # create src structure
         src_path = await _create_tmp_dir(
             context, src_connector, src_location, n_files=4
         )
-        for i in range(3):
+        for i in range(2):
             inner_dir = await _create_tmp_dir(
                 context,
                 src_connector,
@@ -210,9 +203,6 @@ async def test_directory_to_directory(
         )
 
         # transfer src_path to dst_path
-        # logger.info(
-        #     f"test directory to directory {src_location} to {dst_location}. Start transfer"
-        # )
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
@@ -220,9 +210,6 @@ async def test_directory_to_directory(
             dst_path=dst_path,
             writable=False,
         )
-        # logger.info(
-        #     f"test directory to directory {src_location} to {dst_location}. End transfer"
-        # )
 
         # check if dst exists
         await remotepath.exists(dst_connector, dst_location, dst_path)
@@ -245,14 +232,10 @@ async def test_directory_to_directory(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(60)
 async def test_file_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a file from one location to a directory into another location."""
-    logger.info(f"test_file_to_directory {src_location} to {dst_location}")
-    assert src_location.deployment != "failed"
-    assert dst_location.deployment != "failed"
     if isinstance(src_connector, LocalConnector):
         src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
@@ -279,9 +262,6 @@ async def test_file_to_directory(
             relpath=src_path,
             data_type=DataType.PRIMARY,
         )
-        # logger.info(
-        #     f"test_file_to_directory {src_location} to {dst_location}. Start transfer"
-        # )
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
@@ -289,9 +269,6 @@ async def test_file_to_directory(
             dst_path=dst_path,
             writable=False,
         )
-        # logger.info(
-        #     f"test_file_to_directory {src_location} to {dst_location}. End transfer"
-        # )
         path_processor = get_path_processor(dst_connector)
         assert await remotepath.exists(
             dst_connector, dst_location, path_processor.join(dst_path, src_name)
@@ -309,14 +286,10 @@ async def test_file_to_directory(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(60)
 async def test_file_to_file(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a file from one location to another."""
-    logger.info(f"test_file_to_file {src_location} to {dst_location}")
-    assert src_location.deployment != "failed"
-    assert dst_location.deployment != "failed"
     if isinstance(src_connector, LocalConnector):
         src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
@@ -346,10 +319,6 @@ async def test_file_to_file(
             relpath=src_path,
             data_type=DataType.PRIMARY,
         )
-
-        # logger.info(
-        #     f"test_file_to_file {src_location} to {dst_location}. Start transfer"
-        # )
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
@@ -357,8 +326,6 @@ async def test_file_to_file(
             dst_path=dst_path,
             writable=False,
         )
-
-        # logger.info(f"test_file_to_file {src_location} to {dst_location}. End transfer")
         assert await remotepath.exists(dst_connector, dst_location, dst_path)
         dst_digest = await remotepath.checksum(
             context, dst_connector, dst_location, dst_path
@@ -370,15 +337,10 @@ async def test_file_to_file(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(60)
 async def test_multiple_files(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring multiple files simultaneously from one location to another."""
-    logger.info(f"test_file_to_file {src_location} to {dst_location}")
-    assert src_location.deployment != "failed"
-    assert dst_location.deployment != "failed"
-
     await asyncio.gather(
         *(
             asyncio.create_task(

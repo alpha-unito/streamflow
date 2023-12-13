@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-
-# import sys
 import tempfile
 from importlib_resources import files
 
@@ -19,8 +17,6 @@ from streamflow.core.deployment import (
     LOCAL_LOCATION,
     Location,
 )
-
-# from streamflow.log_handler import logger
 
 
 async def get_deployment_config(
@@ -98,12 +94,6 @@ async def get_location(_context: StreamFlowContext, deployment_t: str) -> Locati
     elif deployment_t == "ssh":
         connector = _context.deployment_manager.get_connector("linuxserver-ssh")
         locations = await connector.get_available_locations()
-        # try:
-        #     locations = await connector.get_available_locations()
-        # except Exception as e:
-        #     logger.info(f"Error occurred: {e}. Traceback: {e.with_traceback()}")
-        #     logger.info(sys.exc_info()[2])
-        #     return Location(deployment="failed", name=f"{e}")
         return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
     else:
         raise Exception(f"{deployment_t} location type not supported")
