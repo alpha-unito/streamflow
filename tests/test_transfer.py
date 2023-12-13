@@ -142,6 +142,7 @@ def dst_connector(context, dst_location) -> Connector:
 async def test_directory_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
+    """Test transferring a directory and its content from one location to another."""
     src_path = None
     dst_path = None
     # dir
