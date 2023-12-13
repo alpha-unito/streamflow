@@ -60,6 +60,10 @@ class SSHContext:
             else:
                 logger.info("_connect_event.wait()")
                 await self._connect_event.wait()
+                if self._ssh_connection is None:
+                    raise WorkflowExecutionException(
+                        f"Impossible to connect to {self._config.hostname}"
+                    )
         logger.info("get_connection returns ssh_connection")
         return self._ssh_connection
 
@@ -83,23 +87,29 @@ class SSHContext:
             else None
         )
         logger.info("asyncssh.connect")
-        return await asyncssh.connect(
-            client_keys=config.client_keys,
-            compression_algs=None,
-            encryption_algs=[
-                "aes128-gcm@openssh.com",
-                "aes256-ctr",
-                "aes192-ctr",
-                "aes128-ctr",
-            ],
-            known_hosts=() if config.check_host_key else None,
-            host=hostname,
-            passphrase=passphrase,
-            password=password,
-            port=port,
-            tunnel=await self._get_connection(config.tunnel),
-            username=config.username,
-        )
+        try:
+            return await asyncssh.connect(
+                client_keys=config.client_keys,
+                compression_algs=None,
+                encryption_algs=[
+                    "aes128-gcm@openssh.com",
+                    "aes256-ctr",
+                    "aes192-ctr",
+                    "aes128-ctr",
+                ],
+                known_hosts=() if config.check_host_key else None,
+                host=hostname,
+                passphrase=passphrase,
+                password=password,
+                port=port,
+                tunnel=await self._get_connection(config.tunnel),
+                username=config.username,
+            )
+        except ConnectionRefusedError:
+            logger.info("Detected ConnectionRefusedError")
+            self._ssh_connection = None
+            self._connect_event.set()
+            raise
 
     def _get_param_from_file(self, file_path: str):
         if not os.path.isabs(file_path):
