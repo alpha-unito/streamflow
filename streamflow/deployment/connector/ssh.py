@@ -59,7 +59,7 @@ class SSHContext:
                     self._ssh_connection = await self._get_connection(self._config)
                 except ConnectionError as e:
                     logger.exception(
-                        f"Impossible to connect at {self._config.hostname}: {e}"
+                        f"Impossible to connect to {self._config.hostname}: {e}"
                     )
                     self.close()
                     raise
@@ -69,7 +69,7 @@ class SSHContext:
                 await self._connect_event.wait()
                 if self._ssh_connection is None:
                     raise WorkflowExecutionException(
-                        f"Impossible to connect at {self._config.hostname}"
+                        f"Impossible to connect to {self._config.hostname}"
                     )
         logger.info("get_connection returns ssh_connection")
         return self._ssh_connection
