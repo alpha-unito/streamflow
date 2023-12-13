@@ -55,7 +55,14 @@ class SSHContext:
             if not self._connecting:
                 self._connecting = True
                 logger.info("_get_connection")
-                self._ssh_connection = await self._get_connection(self._config)
+                try:
+                    self._ssh_connection = await self._get_connection(self._config)
+                except ConnectionError as e:
+                    logger.exception(
+                        f"Impossible to connect at {self._config.hostname}: {e}"
+                    )
+                    self.close()
+                    raise
                 self._connect_event.set()
             else:
                 logger.info("_connect_event.wait()")
@@ -87,31 +94,23 @@ class SSHContext:
             else None
         )
         logger.info("asyncssh.connect")
-        try:
-            return await asyncssh.connect(
-                client_keys=config.client_keys,
-                compression_algs=None,
-                encryption_algs=[
-                    "aes128-gcm@openssh.com",
-                    "aes256-ctr",
-                    "aes192-ctr",
-                    "aes128-ctr",
-                ],
-                known_hosts=() if config.check_host_key else None,
-                host=hostname,
-                passphrase=passphrase,
-                password=password,
-                port=port,
-                tunnel=await self._get_connection(config.tunnel),
-                username=config.username,
-            )
-        except ConnectionRefusedError:
-            # logger.info("Detected ConnectionRefusedError")
-            # self._ssh_connection = None
-            # self._connect_event.set()
-            # raise
-            self._connecting = False  # to test
-            raise
+        return await asyncssh.connect(
+            client_keys=config.client_keys,
+            compression_algs=None,
+            encryption_algs=[
+                "aes128-gcm@openssh.com",
+                "aes256-ctr",
+                "aes192-ctr",
+                "aes128-ctr",
+            ],
+            known_hosts=() if config.check_host_key else None,
+            host=hostname,
+            passphrase=passphrase,
+            password=password,
+            port=port,
+            tunnel=await self._get_connection(config.tunnel),
+            username=config.username,
+        )
 
     def _get_param_from_file(self, file_path: str):
         if not os.path.isabs(file_path):
