@@ -3,7 +3,7 @@ import logging
 from abc import ABC
 from cachetools import Cache, LRUCache
 
-from streamflow.core.utils import get_size
+from streamflow.core.utils import get_size_obj
 from streamflow.log_handler import logger
 from streamflow.core.persistence import Database
 from streamflow.core.context import StreamFlowContext
@@ -15,7 +15,7 @@ def wrapper_get_size(x):
         if logger.isEnabledFor(logger.isEnabledFor(logging.WARN)):
             logger.warn(f"Memory almost finished {psutil.virtual_memory()}.")
         raise FailureHandlingException("Memory ends")
-    return get_size(x)
+    return get_size_obj(x)
 
 
 class CachedDatabase(Database, ABC):
