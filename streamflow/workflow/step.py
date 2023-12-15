@@ -1810,7 +1810,7 @@ class Transformer(BaseStep, ABC):
                                     if not (p := self.get_output_port(port_name)):
                                         # for debug
                                         raise Exception(
-                                            f"Step {self.name} non ha output port {port_name}"
+                                            f"Step {self.name} non ha output port {port_name}: {p.name}"
                                         )
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(

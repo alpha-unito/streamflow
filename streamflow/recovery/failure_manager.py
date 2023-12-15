@@ -30,7 +30,6 @@ from streamflow.recovery.utils import (
     _execute_recovered_workflow,
 )
 from streamflow.recovery.recovery import (
-    JobVersion,
     _is_token_available,
     get_necessary_tokens,
     is_next_of_someone,
