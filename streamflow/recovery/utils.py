@@ -213,8 +213,31 @@ def get_last_token(token_list):
     return None
 
 
-async def _execute_recovered_workflow(new_workflow):
-    await new_workflow.save(new_workflow.context)
-    executor = StreamFlowExecutor(new_workflow)
-    await executor.run()
-    logger.debug(f"executor.run {new_workflow.name} terminated")
+def get_value(elem, dictionary):
+    for k, v in dictionary.items():
+        if v == elem:
+            return k
+    raise Exception("Value not found in dictionary")
+
+
+async def _execute_recovered_workflow(new_workflow, step_name, output_ports):
+    if not new_workflow.steps.keys():
+        logger.info(
+            f"Workflow {new_workflow.name} is empty. Waiting output ports {[p.name for p in new_workflow.ports.values() if not isinstance(p, (JobPort, ConnectorPort))]}"
+        )
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    p.get(posixpath.join(step_name, get_value(p.name, output_ports)))
+                )
+                for p in new_workflow.ports.values()
+                if not isinstance(p, (JobPort, ConnectorPort))
+            )
+        )
+        logger.info(f"Workflow {new_workflow.name}: Port terminated")
+    else:
+        await new_workflow.save(new_workflow.context)
+        executor = StreamFlowExecutor(new_workflow)
+        await executor.run()
+        logger.info(f"COMPLETED Workflow execution {new_workflow.name}")
+

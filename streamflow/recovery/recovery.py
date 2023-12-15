@@ -223,11 +223,11 @@ class RollbackRecoveryPolicy:
             raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
         logger.debug("end populate")
 
-        for port in failed_step.get_input_ports().values():
-            if port.name not in new_workflow.ports.keys():
-                raise FailureHandlingException(
-                    f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
-                )
+        # for port in failed_step.get_input_ports().values():
+        #     if port.name not in new_workflow.ports.keys():
+        #         raise FailureHandlingException(
+        #             f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
+        #         )
 
         # _set_scatter_inner_state(
         #     new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
@@ -334,11 +334,11 @@ class RollbackRecoveryPolicy:
             raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
         logger.debug("end populate")
 
-        for port in failed_step.get_input_ports().values():
-            if port.name not in new_workflow.ports.keys():
-                raise FailureHandlingException(
-                    f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
-                )
+        # for port in failed_step.get_input_ports().values():
+        #     if port.name not in new_workflow.ports.keys():
+        #         raise FailureHandlingException(
+        #             f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
+        #         )
         logger.debug("end save_for_retag")
 
         last_iteration = await _put_tokens(
@@ -430,11 +430,11 @@ class RollbackRecoveryPolicy:
             raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
         logger.debug("end populate")
 
-        for port in failed_step.get_input_ports().values():
-            if port.name not in new_workflow.ports.keys():
-                raise FailureHandlingException(
-                    f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
-                )
+        # for port in failed_step.get_input_ports().values():
+        #     if port.name not in new_workflow.ports.keys():
+        #         raise FailureHandlingException(
+        #             f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
+        #         )
 
         logger.debug("end save_for_retag")
 
