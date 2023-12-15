@@ -356,26 +356,26 @@ def object_to_dict(obj):
     }
 
 
-def get_size(obj, seen=None):
-    """Recursively finds size of objects"""
-    size = sys.getsizeof(obj)
-    if seen is None:
-        seen = set()
-    obj_id = id(obj)
-    if obj_id in seen:
-        return 0
-    # Important mark as seen *before* entering recursion to gracefully handle
-    # self-referential objects
-    seen.add(obj_id)
-    if isinstance(obj, (str, bytes, bytearray)):
-        return size
-    if isinstance(obj, dict):
-        size += sum(get_size(v, seen) for v in obj.values())
-        size += sum(get_size(k, seen) for k in obj.keys())
-    elif hasattr(obj, "__dict__"):
-        size += get_size(obj.__dict__, seen)
-    elif isinstance(obj, Collection):
-        size += sum([get_size(i, seen) for i in obj])
-    else:
-        size += get_size(object_to_dict(obj), seen)
-    return size
+# def get_size(obj, seen=None):
+#     """Recursively finds size of objects"""
+#     size = sys.getsizeof(obj)
+#     if seen is None:
+#         seen = set()
+#     obj_id = id(obj)
+#     if obj_id in seen:
+#         return 0
+#     # Important mark as seen *before* entering recursion to gracefully handle
+#     # self-referential objects
+#     seen.add(obj_id)
+#     if isinstance(obj, (str, bytes, bytearray)):
+#         return size
+#     if isinstance(obj, dict):
+#         size += sum(get_size(v, seen) for v in obj.values())
+#         size += sum(get_size(k, seen) for k in obj.keys())
+#     elif hasattr(obj, "__dict__"):
+#         size += get_size(obj.__dict__, seen)
+#     elif isinstance(obj, Collection):
+#         size += sum([get_size(i, seen) for i in obj])
+#     else:
+#         size += get_size(object_to_dict(obj), seen)
+#     return size
