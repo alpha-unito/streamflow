@@ -2,7 +2,7 @@ import asyncio
 import json
 from collections import deque
 from enum import Enum
-from typing import MutableMapping, MutableSet, Any
+from typing import MutableMapping, Iterable
 
 from streamflow.core.utils import (
     get_class_from_name,

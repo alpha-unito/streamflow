@@ -40,6 +40,9 @@ from streamflow.recovery.utils import (
     get_recovery_loop_expression,
     get_output_ports,
     extra_data_print,
+    load_and_add_ports,
+    load_and_add_steps,
+    load_missing_ports,
 )
 from streamflow.token_printer import dag_ports
 from streamflow.workflow.combinator import LoopTerminationCombinator
@@ -305,6 +308,34 @@ class RollbackRecoveryPolicy:
             pr.port.workflow = new_workflow
             new_workflow.add_port(pr.port)
 
+        logger.debug("End sync-rollbacks")
+        ports, steps = await inner_graph.get_port_and_step_ids()
+        await inner_graph._populate_workflow(
+            ports,
+            steps,
+            failed_step,
+            new_workflow,
+            loading_context,
+        )
+        # await _populate_workflow(
+        #     wr,
+        #     ports,
+        #     steps,
+        #     failed_step,
+        #     new_workflow,
+        #     loading_context,
+        # )
+        if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
+            raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
+        logger.debug("end populate")
+
+        # for port in failed_step.get_input_ports().values():
+        #     if port.name not in new_workflow.ports.keys():
+        #         raise FailureHandlingException(
+        #             f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
+        #         )
+        logger.debug("end save_for_retag")
+
         wr = ProvenanceGraphNavigation(
             {k: {v for v in vs} for k, vs in inner_graph.dcg_port.items()},
             [],
@@ -318,28 +349,6 @@ class RollbackRecoveryPolicy:
         wr.port_tokens = {
             k: {v for v in vs} for k, vs in inner_graph.port_tokens.items()
         }
-
-        logger.debug("End sync-rollbacks")
-        ports, steps = await wr.get_port_and_step_ids()
-
-        await _populate_workflow(
-            wr,
-            ports,
-            steps,
-            failed_step,
-            new_workflow,
-            loading_context,
-        )
-        if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
-            raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
-        logger.debug("end populate")
-
-        # for port in failed_step.get_input_ports().values():
-        #     if port.name not in new_workflow.ports.keys():
-        #         raise FailureHandlingException(
-        #             f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
-        #         )
-        logger.debug("end save_for_retag")
 
         last_iteration = await _put_tokens(
             new_workflow,

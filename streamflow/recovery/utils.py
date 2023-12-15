@@ -11,15 +11,19 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
 )
-from streamflow.core.workflow import Token
+from streamflow.core.workflow import Token, Port, Step
 
 from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.transformer import BackPropagationTransformer
+from streamflow.cwl.transformer import (
+    BackPropagationTransformer,
+    OutputForwardTransformer,
+)
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
+from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import JobPort, ConnectorPort
-from streamflow.workflow.step import ExecuteStep
+from streamflow.workflow.step import ExecuteStep, InputInjectorStep, LoopOutputStep
 from streamflow.workflow.token import (
     JobToken,
     ListToken,
@@ -244,6 +248,175 @@ async def _execute_recovered_workflow(new_workflow, step_name, output_ports):
         logger.info(f"COMPLETED Workflow execution {new_workflow.name}")
 
 
+async def load_and_add_ports(port_ids, new_workflow, loading_context):
+    for port in await asyncio.gather(
+        *(
+            asyncio.create_task(
+                Port.load(
+                    new_workflow.context,
+                    port_id,
+                    loading_context,
+                    new_workflow,
+                )
+            )
+            for port_id in port_ids
+        )
+    ):
+        if port.name not in new_workflow.ports.keys():
+            new_workflow.add_port(port)
+            logger.debug(
+                f"populate_workflow: wf {new_workflow.name} add_1 port {port.name}"
+            )
+        else:
+            logger.debug(
+                f"populate_workflow: La port {port.name} è già presente nel workflow {new_workflow.name}"
+            )
+    logger.debug("populate_workflow: Port caricate")
+
+
+async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
+    new_step_ids = set()
+    step_name_id = {}
+    for sid, step in zip(
+        step_ids,
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    Step.load(
+                        new_workflow.context,
+                        step_id,
+                        loading_context,
+                        new_workflow,
+                    )
+                )
+                for step_id in step_ids
+            )
+        ),
+    ):
+        logger.debug(f"Loaded step {step.name} (id {sid})")
+        step_name_id[step.name] = sid
+
+        # if there are not the input ports in the workflow, the step is not added
+        if not (set(step.input_ports.values()) - set(new_workflow.ports.keys())):
+            # removesuffix python 3.9
+            if isinstance(step, CWLLoopConditionalStep) and (
+                wr.external_loop_step_name.removesuffix("-recovery")
+                == step.name.removesuffix("-recovery")
+            ):
+                if not wr.external_loop_step:
+                    wr.external_loop_step = step
+                else:
+                    continue
+            elif isinstance(step, OutputForwardTransformer):
+                port_id = min(wr.port_name_ids[step.get_output_port().name])
+                for (
+                    step_dep_row
+                ) in await new_workflow.context.database.get_steps_from_input_port(
+                    port_id
+                ):
+                    step_row = await new_workflow.context.database.get_step(
+                        step_dep_row["step"]
+                    )
+                    if step_row["name"] not in new_workflow.steps.keys() and issubclass(
+                        get_class_from_name(step_row["type"]), LoopOutputStep
+                    ):
+                        logger.debug(
+                            f"Step {step_row['name']} from id {step_row['id']} will be added soon (2)"
+                        )
+                        new_step_ids.add(step_row["id"])
+            elif isinstance(step, BackPropagationTransformer):
+                # for port_name in step.output_ports.values(): # potrebbe sostituire questo for
+                for (
+                    port_dep_row
+                ) in await new_workflow.context.database.get_output_ports(
+                    step_name_id[step.name]
+                ):
+                    # if there are more iterations
+                    if len(wr.port_tokens[step.output_ports[port_dep_row["name"]]]) > 1:
+                        for (
+                            step_dep_row
+                        ) in await new_workflow.context.database.get_steps_from_output_port(
+                            port_dep_row["port"]
+                        ):
+                            step_row = await new_workflow.context.database.get_step(
+                                step_dep_row["step"]
+                            )
+                            if issubclass(
+                                get_class_from_name(step_row["type"]), CombinatorStep
+                            ) and issubclass(
+                                get_class_from_name(
+                                    json.loads(step_row["params"])["combinator"]["type"]
+                                ),
+                                LoopTerminationCombinator,
+                            ):
+                                logger.debug(
+                                    f"Step {step_row['name']} from id {step_row['id']} will be added soon (1)"
+                                )
+                                new_step_ids.add(step_row["id"])
+            logger.debug(
+                f"populate_workflow: (1) Step {step.name} caricato nel wf {new_workflow.name}"
+            )
+            new_workflow.add_step(step)
+        else:
+            logger.debug(
+                f"populate_workflow: Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}. It is present in the workflow: {step.name in new_workflow.steps.keys()}"
+            )
+    for sid, other_step in zip(
+        new_step_ids,
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    Step.load(
+                        new_workflow.context,
+                        step_id,
+                        loading_context,
+                        new_workflow,
+                    )
+                )
+                for step_id in new_step_ids
+            )
+        ),
+    ):
+        logger.debug(
+            f"populate_workflow: (2) Step {other_step.name} (from step id {sid}) caricato nel wf {new_workflow.name}"
+        )
+        step_name_id[other_step.name] = sid
+        new_workflow.add_step(other_step)
+    logger.debug("populate_workflow: Step caricati")
+    return step_name_id
+
+
+async def load_missing_ports(new_workflow, step_name_id, loading_context):
+    missing_ports = set()
+    for step in new_workflow.steps.values():
+        if isinstance(step, InputInjectorStep):
+            continue
+        for dep_name, p_name in step.output_ports.items():
+            if p_name not in new_workflow.ports.keys():
+                # problema nato dai loop. when-loop ha output tutti i param. Però il grafo è costruito sulla presenza o
+                # meno dei file, invece i param str, int, ..., no. Quindi le port di questi param non vengono esplorate
+                # le aggiungo ma durante l'esecuzione verranno utilizzati come "port pozzo" dei token prodotti
+                logger.debug(
+                    f"populate_workflow: Aggiungo port {p_name} al wf {new_workflow.name} perché è un output port dello step {step.name}"
+                )
+                depe_row = await new_workflow.context.database.get_output_port(
+                    step_name_id[step.name], dep_name
+                )
+                missing_ports.add(depe_row["port"])
+    for port in await asyncio.gather(
+        *(
+            asyncio.create_task(
+                Port.load(new_workflow.context, p_id, loading_context, new_workflow)
+            )
+            for p_id in missing_ports
+        )
+    ):
+        logger.debug(
+            f"populate_workflow: wf {new_workflow.name} add_2 port {port.name}"
+        )
+        new_workflow.add_port(port)
+
+
 #########################################################################
 ############################ debug ######################################
 #########################################################################
@@ -439,7 +612,7 @@ def print_cached_db_size(new_workflow):
     curr_size_0 = 0
     curr_size_1 = 0
     curr_objsize = 0
-    lrucache_maintenance = 0
+    # lrucache_maintenance = 0
     for obj in dictionary.values():
         curr_size += obj.currsize
         max_size += obj.maxsize
