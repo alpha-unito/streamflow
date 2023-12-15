@@ -28,6 +28,7 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
+from streamflow.core.utils import get_class_fullname
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -137,7 +138,7 @@ class BaseStep(Step, ABC):
                     f"Step {self.name} (wf {self.workflow.name}) received termination token"
                 )
             logger.debug(
-                f"Step {self.name} (wf {self.workflow.name}) received inputs {[t.tag for t in inputs.values()]}"
+                f"Step {self.name} (wf {self.workflow.name}) received inputs {[(t.tag, get_class_fullname(type(t))) for t in inputs.values()]}"
             )
         return inputs
 
@@ -174,6 +175,8 @@ class BaseStep(Step, ABC):
                 self._log_level,
                 f"{status.name} Step {self.name} (wf {self.workflow.name})",
             )
+        else:
+            logger.debug(f"Step {self.name} is already terminated")
 
 
 class Combinator(ABC):
@@ -777,10 +780,12 @@ class ExecuteStep(BaseStep):
                 job.name, Status.RUNNING
             )
             command_output = await self.command.execute(job)
+            logger.debug(f"Job {job.name} executed the cmd")
+            _ = self.command.get_work_reuse(job)  # debug
             if command_output.status == Status.FAILED:
                 jt = self.get_input_port("__job__").token_list
                 logger.error(
-                    f"FAILED Job {job.name} {get_job_token(job.name, jt if isinstance(jt, Iterable) else [jt]).persistent_id} with error:\n\t{command_output.value}"
+                    f"FAILED Job {job.name} {get_job_token(job.name, jt if isinstance(jt, Iterable) else [jt]).persistent_id} (wf {self.workflow.name}) with error:\n\t{command_output.value}"
                 )
                 command_output = (
                     await self.workflow.context.failure_manager.handle_failure(
@@ -820,11 +825,12 @@ class ExecuteStep(BaseStep):
             )
         # Retrieve output tokens
         if not self.terminated:
+            logger.debug(f"Job {job.name} (wf {self.workflow.name}) _retrieve_outputs")
             await self._retrieve_outputs(job, command_output, connectors)
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"{command_output.status.name} Job {job.name} terminated (wf {self.workflow.name})"
+                f"{command_output.status.name} Job {job.name} (wf {self.workflow.name}) terminated"
             )
         return command_output.status
 
@@ -1521,7 +1527,7 @@ class ScheduleStep(BaseStep):
                                 )
                             ) and job_alloc.status != Status.ROLLBACK:
                                 raise WorkflowExecutionException(
-                                    f"Job {job_name} cannot be scheduled because it has already finished. Status: {job_alloc.status}"
+                                    f"Workflow {self.workflow.name}: Job {job_name} cannot be scheduled because it has already finished. Status: {job_alloc.status}"
                                 )
                             # Create Job
                             job = Job(
@@ -1539,7 +1545,10 @@ class ScheduleStep(BaseStep):
                                 else None
                             )
                             await self.workflow.context.scheduler.schedule(
-                                job, self.binding_config, hardware_requirement
+                                job,
+                                self.binding_config,
+                                hardware_requirement,
+                                self.workflow,
                             )
                             locations = self.workflow.context.scheduler.get_locations(
                                 job.name
@@ -1564,6 +1573,7 @@ class ScheduleStep(BaseStep):
                     self.hardware_requirement.eval({})
                     if self.hardware_requirement
                     else None,
+                    self.workflow,
                 )
                 locations = self.workflow.context.scheduler.get_locations(job.name)
                 await self._propagate_job(
@@ -1599,6 +1609,9 @@ class ScatterStep(BaseStep):
             for i, t in enumerate(token.value):
                 tag = token.tag + "." + str(i)
                 if self.valid_tags is None or tag in self.valid_tags:
+                    logger.debug(
+                        f"Step {self.name} (wf {self.workflow.name}) generated token retag {token.tag + '.' + str(i)}"
+                    )
                     output_port.put(
                         await self._persist_token(
                             token=t.retag(tag),
@@ -1794,6 +1807,11 @@ class Transformer(BaseStep, ABC):
                             # Check for iteration termination and propagate
                             if check_iteration_termination(inputs.values()):
                                 for port_name, token in inputs.items():
+                                    if not (p := self.get_output_port(port_name)):
+                                        # for debug
+                                        raise Exception(
+                                            f"Step {self.name} non ha output port {port_name}"
+                                        )
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
                                             token=token.update(token.value),

@@ -1,52 +1,17 @@
 from __future__ import annotations
 
-import copy
-import os
 from abc import ABC, abstractmethod
-from collections.abc import (
-    Callable,
-    Iterable,
-    MutableMapping,
-    MutableSequence,
-    MutableSet,
-)
-from typing import TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING, Type, cast
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
-from streamflow.core.deployment import ExecutionLocation
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.deployment import Connector, Location, Target
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
-    from typing import Any
-
-    from streamflow.core.deployment import Connector, Target
-    from streamflow.core.workflow import Job, Status
-
-
-def _check_storages(hardware_a: Hardware, hardware_b: Hardware) -> None:
-    if set(hardware_b.get_mount_points()) - set(hardware_a.get_mount_points()):
-        raise WorkflowExecutionException(
-            f"Invalid `Hardware` comparison: {hardware_a} should contain all the storage included in {hardware_b}."
-        )
-
-
-def _reduce_storages(
-    storages: Iterable[Storage], operator: Callable[[Storage, Any], Storage]
-) -> MutableMapping[str, Storage]:
-    storage = {}
-    for disk in storages:
-        if disk.mount_point in storage.keys():
-            storage[disk.mount_point] = operator(storage[disk.mount_point], disk)
-        else:
-            storage[disk.mount_point] = Storage(
-                mount_point=disk.mount_point,
-                size=disk.size,
-                bind=disk.bind,
-            )
-    return storage
+    from streamflow.core.workflow import Job, Status, Token
+    from typing import MutableSequence, MutableMapping
 
 
 class Hardware:
@@ -54,150 +19,67 @@ class Hardware:
         self,
         cores: float = 0.0,
         memory: float = 0.0,
-        storage: MutableMapping[str, Storage] | None = None,
+        input_directory: float = 0.0,
+        output_directory: float = 0.0,
+        tmp_directory: float = 0.0,
     ):
-        """
-        The `Hardware` class serves as a representation of the system's resources.
-
-        The `storage` attribute is a map with `key : storage`. The `key` meaning is left to the implementation of
-        the `HardwareRequirement`. No assumption should be made about any specific behaviour of the `key` field
-        outside this class. Only other classes of the same `HardwareRequirement` domain should be allowed to use
-        the `key` as a fast entry point to the `Storage`. When an operation (arithmetic or comparison) is done,
-        a new `Hardware` instance is created following a normalized form. In the normalized form, the `key` is equal
-        to the storage's mount point, and there is only one (aggregated) `Storage` object for each mount point.
-        Instead, the merge operators preserve the existing storage keys, but pretend that all `Storage` objects
-        under the same key expose the same mount point. Conversely, the operation throws an exception.
-
-        :param cores: total number of cores
-        :param memory: total amount of memory (in MB)
-        :param storage: a map with string keys and `Storage` values
-        """
         self.cores: float = cores
         self.memory: float = memory
-        self.storage: MutableMapping[str, Storage] = storage or {
-            os.sep: Storage(os.sep, 0.0)
-        }
+        self.input_directory: float = input_directory
+        self.output_directory: float = output_directory
+        self.tmp_directory: float = tmp_directory
 
-    def _normalize_storage(self) -> MutableMapping[str, Storage]:
-        return _reduce_storages(self.storage.values(), Storage.__add__.__call__)
-
-    def get_mount_point(self, path: str) -> str:
-        return self.get_storage(path).mount_point
-
-    def get_mount_points(self) -> MutableSequence[str]:
-        return list({storage.mount_point for storage in self.storage.values()})
-
-    def get_size(self, path: str) -> float:
-        return self.get_storage(path).size
-
-    def get_storage(self, path: str) -> Storage:
-        for disk in self.storage.values():
-            if path == disk.mount_point or path in disk.paths:
-                return disk
-        raise KeyError(path)
-
-    def __repr__(self):
-        return f"Hardware(cores={self.cores}, memory={self.memory}, storage={self.storage})"
-
-    def __add__(self, other: Any) -> Hardware:
+    def __add__(self, other):
         if not isinstance(other, Hardware):
-            raise NotImplementedError
-        return Hardware(
-            self.cores + other.cores,
-            self.memory + other.memory,
-            _reduce_storages(
-                (
-                    *self._normalize_storage().values(),
-                    *other._normalize_storage().values(),
-                ),
-                Storage.__add__.__call__,
-            ),
+            return NotImplementedError
+        return self.__class__(
+            **{
+                k: vars(self).get(k, 0.0) + vars(other).get(k, 0.0)
+                for k in vars(self).keys()
+            }
         )
 
-    def __ior__(self, other) -> None:
+    def __sub__(self, other):
         if not isinstance(other, Hardware):
-            raise NotImplementedError
-        self.cores += other.cores
-        self.memory += other.memory
-        for key, disk in other.storage.items():
-            if key not in self.storage.keys():
-                self.storage[key] = disk
-            else:
-                self.storage[key] |= disk
-
-    def __or__(self, other) -> Hardware:
-        if not isinstance(other, Hardware):
-            raise NotImplementedError
-        hardware = copy.deepcopy(self)
-        hardware |= other
-        return hardware
-
-    def __sub__(self, other: Any) -> Hardware:
-        if not isinstance(other, Hardware):
-            raise NotImplementedError
-        return Hardware(
-            self.cores - other.cores,
-            self.memory - other.memory,
-            _reduce_storages(
-                (
-                    *self._normalize_storage().values(),
-                    *other._normalize_storage().values(),
-                ),
-                Storage.__sub__.__call__,
-            ),
+            return NotImplementedError
+        return self.__class__(
+            **{
+                k: vars(self).get(k, 0.0) - vars(other).get(k, 0.0)
+                for k in vars(self).keys()
+            }
         )
 
-    def __ge__(self, other: Any) -> bool:
+    def __ge__(self, other):
         if not isinstance(other, Hardware):
-            raise NotImplementedError
-        if self.cores >= other.cores and self.memory >= other.memory:
-            _check_storages(self, other)
-            self_norm = self._normalize_storage()
-            return all(
-                self_norm[other_disk.mount_point] >= other_disk
-                for other_disk in other._normalize_storage().values()
-            )
-        else:
-            return False
+            return NotImplementedError
+        return all(
+            vars(self).get(k, 0.0) >= vars(other).get(k, 0.0)
+            for k in set().union(vars(self).keys(), vars(other).keys())
+        )
 
-    def __gt__(self, other: Any) -> bool:
+    def __gt__(self, other):
         if not isinstance(other, Hardware):
-            raise NotImplementedError
-        if self.cores > other.cores and self.memory > other.memory:
-            _check_storages(self, other)
-            self_norm = self._normalize_storage()
-            return all(
-                self_norm[other_disk.mount_point] > other_disk
-                for other_disk in other._normalize_storage().values()
-            )
-        else:
-            return False
+            return NotImplementedError
+        return all(
+            vars(self).get(k, 0.0) > vars(other).get(k, 0.0)
+            for k in set().union(vars(self).keys(), vars(other).keys())
+        )
 
-    def __le__(self, other: Any) -> bool:
+    def __le__(self, other):
         if not isinstance(other, Hardware):
-            raise NotImplementedError
-        if self.cores <= other.cores and self.memory <= other.memory:
-            _check_storages(other, self)
-            other_norm = other._normalize_storage()
-            return all(
-                self_disk <= other_norm[self_disk.mount_point]
-                for self_disk in self._normalize_storage().values()
-            )
-        else:
-            return False
+            return NotImplementedError
+        return all(
+            vars(self).get(k, 0.0) <= vars(other).get(k, 0.0)
+            for k in set().union(vars(self).keys(), vars(other).keys())
+        )
 
-    def __lt__(self, other: Any) -> bool:
+    def __lt__(self, other):
         if not isinstance(other, Hardware):
-            raise NotImplementedError
-        if self.cores < other.cores and self.memory < other.memory:
-            _check_storages(other, self)
-            other_norm = other._normalize_storage()
-            return all(
-                self_disk < other_norm[self_disk.mount_point]
-                for self_disk in self._normalize_storage().values()
-            )
-        else:
-            return False
+            return NotImplementedError
+        return all(
+            vars(self).get(k, 0.0) < vars(other).get(k, 0.0)
+            for k in set().union(vars(self).keys(), vars(other).keys())
+        )
 
 
 class HardwareRequirement(ABC):
@@ -208,15 +90,18 @@ class HardwareRequirement(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ): ...
+    ):
+        ...
 
     @abstractmethod
     async def _save_additional_params(
         self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]: ...
+    ) -> MutableMapping[str, Any]:
+        ...
 
     @abstractmethod
-    def eval(self, job: Job) -> Hardware: ...
+    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware:
+        ...
 
     @classmethod
     async def load(
@@ -225,8 +110,10 @@ class HardwareRequirement(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type_ = cast(type[HardwareRequirement], utils.get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context)
+        type = utils.get_class_from_name(row["type"])
+        return await cast(Type[HardwareRequirement], type)._load(
+            context, row["params"], loading_context
+        )
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -242,83 +129,46 @@ class JobAllocation:
         self,
         job: str,
         target: Target,
-        locations: MutableSequence[ExecutionLocation],
+        locations: MutableSequence[Location],
         status: Status,
         hardware: Hardware,
     ):
         self.job: str = job
         self.target: Target = target
-        self.locations: MutableSequence[ExecutionLocation] = locations
+        self.locations: MutableSequence[Location] = locations
         self.status: Status = status
         self.hardware: Hardware = hardware
 
 
-class AvailableLocation:
-    __slots__ = (
-        "hardware",
-        "location",
-        "slots",
-        "stacked",
-        "wraps",
-    )
+class AvailableLocation(Location):
+    __slots__ = ("hostname", "hardware", "slots")
 
     def __init__(
         self,
         name: str,
         deployment: str,
         hostname: str,
-        local: bool | None = False,
         service: str | None = None,
-        slots: int | None = None,
-        stacked: bool = False,
+        slots: int = 1,
         hardware: Hardware | None = None,
-        wraps: AvailableLocation | None = None,
     ):
+        super().__init__(name, deployment, service)
+        self.hostname: str = hostname
+        self.slots: int = slots
         self.hardware: Hardware | None = hardware
-        self.location: ExecutionLocation = ExecutionLocation(
-            deployment=deployment,
-            hostname=hostname,
-            local=local,
-            mounts=(
-                {
-                    storage.mount_point: storage.bind
-                    for storage in self.hardware.storage.values()
-                    if storage.bind is not None
-                }
-                if hardware is not None
-                else {}
-            ),
-            name=name,
-            service=service,
-            stacked=stacked,
-            wraps=wraps.location if wraps else None,
-        )
-        self.slots: int | None = slots
-        self.stacked: bool = stacked
-        self.wraps: AvailableLocation | None = wraps
 
-    @property
-    def deployment(self) -> str:
-        return self.location.deployment
+    def __eq__(self, other):
+        if not isinstance(other, AvailableLocation):
+            return False
+        else:
+            return (
+                self.deployment == other.deployment
+                and self.service == other.service
+                and self.name == other.name
+            )
 
-    @property
-    def hostname(self) -> str:
-        return self.location.hostname
-
-    @property
-    def local(self) -> bool:
-        return self.location.local
-
-    @property
-    def name(self) -> str:
-        return self.location.name
-
-    @property
-    def service(self) -> str | None:
-        return self.location.service
-
-    def __str__(self):
-        return self.location.__str__()
+    def __hash__(self):
+        return hash((self.deployment, self.service, self.name))
 
 
 class LocationAllocation:
@@ -346,7 +196,8 @@ class Policy(SchemaEntity):
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> AvailableLocation | None: ...
+    ) -> Location | None:
+        ...
 
 
 class Scheduler(SchemaEntity):
@@ -358,7 +209,8 @@ class Scheduler(SchemaEntity):
         ] = {}
 
     @abstractmethod
-    async def close(self) -> None: ...
+    async def close(self) -> None:
+        ...
 
     def get_allocation(self, job_name: str) -> JobAllocation | None:
         return self.job_allocations.get(job_name)
@@ -379,7 +231,7 @@ class Scheduler(SchemaEntity):
 
     def get_locations(
         self, job_name: str, statuses: MutableSequence[Status] | None = None
-    ) -> MutableSequence[ExecutionLocation]:
+    ) -> MutableSequence[AvailableLocation]:
         allocation = self.get_allocation(job_name)
         return (
             allocation.locations
@@ -393,134 +245,15 @@ class Scheduler(SchemaEntity):
         return allocation.target.service if allocation else None
 
     @abstractmethod
-    async def notify_status(self, job_name: str, status: Status) -> None: ...
+    async def notify_status(self, job_name: str, status: Status) -> None:
+        ...
 
     @abstractmethod
     async def schedule(
         self,
         job: Job,
         binding_config: BindingConfig,
-        hardware_requirement: HardwareRequirement | None,
-    ) -> None: ...
-
-
-class Storage:
-    __slots__ = ("mount_point", "size", "paths", "bind")
-
-    def __init__(
-        self,
-        mount_point: str,
-        size: float,
-        paths: MutableSet[str] | None = None,
-        bind: str | None = None,
-    ):
-        """
-        The `Storage` class represents a persistent volume
-
-        :param mount_point: the path of the volume's mount point
-        :param size: the total size of the volume, expressed in Kilobyte
-        :param paths: a list of paths inside the volume
-        :param bind: the path bound by the volume, if any
-        """
-        self.mount_point: str = mount_point
-        self.paths: MutableSet[str] = paths or set()
-        if size < 0:
-            raise WorkflowExecutionException(
-                f"Storage {mount_point} with {paths} paths cannot have negative size: {size}"
-            )
-        self.size: float = size
-        self.bind: str | None = bind
-
-    def add_path(self, path: str):
-        self.paths.add(path)
-
-    def __repr__(self):
-        return f"Storage(mount_point={self.mount_point}, size={self.size}, bind={self.bind}, paths={self.paths})"
-
-    def __add__(self, other: Any) -> Storage:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise WorkflowExecutionException(
-                f"Cannot sum two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return Storage(
-            mount_point=self.mount_point,
-            size=self.size + other.size,
-            paths=self.paths | other.paths,
-            bind=self.bind,
-        )
-
-    def __ior__(self, other) -> None:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise WorkflowExecutionException(
-                f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        self.size = max(self.size, other.size)
-        self.paths |= other.paths
-
-    def __or__(self, other) -> Storage:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise WorkflowExecutionException(
-                f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return Storage(
-            mount_point=self.mount_point,
-            size=max(self.size, other.size),
-            paths=self.paths | other.paths,
-            bind=self.bind,
-        )
-
-    def __sub__(self, other: Any) -> Storage:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise WorkflowExecutionException(
-                f"Cannot subtract two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return Storage(
-            mount_point=self.mount_point,
-            size=self.size - other.size,
-            paths=self.paths | other.paths,
-            bind=self.bind,
-        )
-
-    def __ge__(self, other: Any) -> bool:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise KeyError(
-                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return self.size >= other.size
-
-    def __gt__(self, other: Any) -> bool:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise KeyError(
-                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return self.size > other.size
-
-    def __le__(self, other: Any) -> bool:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise KeyError(
-                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return self.size <= other.size
-
-    def __lt__(self, other: Any) -> bool:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise KeyError(
-                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return self.size < other.size
+        hardware_requirement: Hardware,
+        workflow,
+    ) -> None:
+        ...

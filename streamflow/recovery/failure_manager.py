@@ -51,6 +51,9 @@ from streamflow.workflow.token import (
     JobToken,
 )
 
+from streamflow.recovery.utils import extra_data_print
+
+
 async def _execute_transfer_step(failed_step, new_workflow, port_name):
     token_list = (
         new_workflow.steps[failed_step.name].get_output_port(port_name).token_list
@@ -491,7 +494,9 @@ class DefaultFailureManager(FailureManager):
         new_workflow, last_iteration = await rrp.recover_workflow(
             failed_job, failed_step, loading_context
         )
-        await _execute_recovered_workflow(new_workflow)
+        await _execute_recovered_workflow(
+            new_workflow, failed_step.name, failed_step.output_ports
+        )
         if last_iteration:
             logger.debug(f"Create last iteration from wf {new_workflow.name}")
             new_workflow_last_iteration = await self._recover_jobs_3(
@@ -716,17 +721,26 @@ class DefaultFailureManager(FailureManager):
             await asyncio.sleep(self.retry_delay)
         try:
             new_workflow = await self._recover_jobs(job, step)
-            async with self.job_requests[job.name].lock:
-                new_job_token = get_job_token(
-                    job.name,
-                    new_workflow.steps[step.name].get_input_port("__job__").token_list,
-                )
-                if self.job_requests[job.name].job_token is None:
-                    raise FailureHandlingException(
-                        f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found job_token {new_job_token.persistent_id}."
+
+            # debug
+            if new_workflow.steps.keys():
+                async with self.job_requests[job.name].lock:
+                    new_job_token = get_job_token(
+                        job.name,
+                        new_workflow.steps[step.name]
+                        .get_input_port("__job__")
+                        .token_list,
                     )
+                    if self.job_requests[job.name].job_token is None:
+                        raise FailureHandlingException(
+                            f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found job_token {new_job_token.persistent_id}."
+                        )
+
             command_output = CommandOutput(
-                value=None, status=new_workflow.steps[step.name].status
+                value=None,
+                status=new_workflow.steps[step.name].status
+                if new_workflow.steps.keys()
+                else Status.COMPLETED,
             )
             # When receiving a FailureHandlingException, simply fail
         except FailureHandlingException as e:
@@ -753,7 +767,8 @@ class DefaultFailureManager(FailureManager):
             )
         if job.name in self.job_requests.keys():
             logger.info(f"handle_exception: job {job.name} is not running anymore")
-            self.job_requests[job.name].is_running = False
+            async with self.job_requests[job.name].lock:
+                self.job_requests[job.name].is_running = False
         return await self._do_handle_failure(job, step)
 
     async def handle_failure(
@@ -764,7 +779,8 @@ class DefaultFailureManager(FailureManager):
 
         if job.name in self.job_requests.keys():
             logger.info(f"handle_failure: job {job.name} is not running anymore")
-            self.job_requests[job.name].is_running = False
+            async with self.job_requests[job.name].lock:
+                self.job_requests[job.name].is_running = False
         return await self._do_handle_failure(job, step)
 
     async def handle_failure_transfer(
@@ -778,7 +794,8 @@ class DefaultFailureManager(FailureManager):
             logger.info(
                 f"handle_failure_transfer: job {job.name} is not running anymore"
             )
-            self.job_requests[job.name].is_running = False
+            async with self.job_requests[job.name].lock:
+                self.job_requests[job.name].is_running = False
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
         try:

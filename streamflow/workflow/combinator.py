@@ -196,9 +196,11 @@ class LoopTerminationCombinator(DotProductCombinator):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
         self.output_items: MutableSequence[str] = []
+
+        # todo: ma serve? è un attributo già presente nel DotProductCombinator
         self.token_values: MutableMapping[
             str, MutableMapping[str, MutableSequence[Any]]
-        ] = {}  # todo: ma serve? è un attributo già presente nel DotProductCombinator
+        ] = {}
 
     def add_output_item(self, item: str) -> None:
         self.output_items.append(item)
