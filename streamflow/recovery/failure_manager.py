@@ -513,7 +513,9 @@ class DefaultFailureManager(FailureManager):
                 new_workflow_last_iteration.ports[port_name].token_list.insert(
                     0, get_last_token(new_workflow.ports[port_name].token_list)
                 )
-            await _execute_recovered_workflow(new_workflow_last_iteration)
+            await _execute_recovered_workflow(
+                new_workflow_last_iteration, failed_step.name, None
+            )
             return new_workflow_last_iteration
         return new_workflow
 
