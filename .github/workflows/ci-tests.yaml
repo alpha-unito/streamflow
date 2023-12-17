@@ -102,7 +102,7 @@ jobs:
           DOCKER: ${{ matrix.docker }}
         run: ./cwl-conformance-test.sh
       - name: "Upload coverage report for conformance tests"
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ format('py{0}-cwl{1}-conformance-tests', matrix.python, matrix.version) }}
           path: ./coverage.xml
@@ -237,7 +237,7 @@ jobs:
       - name: "Run StreamFlow tests via Tox"
         run: python -m tox
       - name: "Upload coverage report for unit tests"
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ format('py{0}-unit-tests', matrix.python) }}
           path: ./coverage.xml
