@@ -54,10 +54,21 @@ class SSHContext:
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
-                self._ssh_connection = await self._get_connection(self._config)
+                try:
+                    self._ssh_connection = await self._get_connection(self._config)
+                except ConnectionError as e:
+                    logger.exception(
+                        f"Impossible to connect to {self._config.hostname}: {e}"
+                    )
+                    self.close()
+                    raise
                 self._connect_event.set()
             else:
                 await self._connect_event.wait()
+                if self._ssh_connection is None:
+                    raise WorkflowExecutionException(
+                        f"Impossible to connect to {self._config.hostname}"
+                    )
         return self._ssh_connection
 
     def get_hostname(self) -> str:
@@ -103,9 +114,13 @@ class SSHContext:
         with open(file_path) as f:
             return f.read().strip()
 
-    async def close(self):
+    def close(self):
+        self._connecting = False
         if self._ssh_connection is not None:
             self._ssh_connection.close()
+            self._ssh_connection = None
+        if self._connect_event.is_set():
+            self._connect_event.clear()
 
     def full(self) -> bool:
         if self._ssh_connection:
@@ -185,8 +200,9 @@ class SSHContextFactory:
             for _ in range(max_connections)
         ]
 
-    async def close(self):
-        await asyncio.gather(*(asyncio.create_task(c.close()) for c in self._contexts))
+    def close(self):
+        for c in self._contexts:
+            c.close()
 
     def get(
         self,
@@ -750,8 +766,8 @@ class SSHConnector(BaseConnector):
 
     async def undeploy(self, external: bool) -> None:
         for ssh_context in self.ssh_context_factories.values():
-            await ssh_context.close()
+            ssh_context.close()
         self.ssh_context_factories = {}
         for ssh_context in self.data_transfer_context_factories.values():
-            await ssh_context.close()
+            ssh_context.close()
         self.data_transfer_context_factories = {}
