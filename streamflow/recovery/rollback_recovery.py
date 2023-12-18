@@ -199,6 +199,7 @@ class RollbackDeterministicWorkflowPolicy:
         # { token id : is_available }
         self.token_available = {}
 
+        # { token id : token instance }
         self.token_instances = {}
 
         self.context = context
@@ -209,82 +210,24 @@ class RollbackDeterministicWorkflowPolicy:
                 return True
         return False
 
-    def add(self, port_name, token, is_av):
-        self.port_tokens.setdefault(port_name, set())
-        if token is None:
-            logger.debug(f"add rdwp. Port {port_name} none token")
-            return
-        logger.debug(
-            f"Add token id: {token.persistent_id} tag: {token.tag} is_av: {is_av} in port {port_name}"
-        )
-        for t_id in self.port_tokens[port_name]:
-            if isinstance(token, JobToken):
-                if self.token_instances[t_id].value.name == token.value.name:
-                    if t_id < token.persistent_id:
-                        self.port_tokens[port_name].remove(t_id)
-                        if not self.is_present(t_id):
-                            logger.debug(
-                                f"Replace jobtoken name: {token.value.name} of id: {token.persistent_id} with id: {t_id} on port {port_name}"
-                            )
-                            self.token_available.pop(t_id, None)
-                            self.token_instances.pop(t_id, None)
-                        break
-                    return False
-            elif self.token_instances[t_id].tag == token.tag:
-                if t_id < token.persistent_id:
-                    self.port_tokens[port_name].remove(t_id)
-                    if not self.is_present(t_id):
-                        logger.debug(
-                            f"Replace token tag: {token.tag} of id: {t_id} with id: {token.persistent_id} on port {port_name}"
-                        )
-                        self.token_available.pop(t_id, None)
-                        self.token_instances.pop(t_id, None)
-                    break
-                return False
-        self.port_tokens[port_name].add(token.persistent_id)
-        self.token_available[token.persistent_id] = is_av
-        self.token_instances[token.persistent_id] = token
-        return True
-
     def _remove_port_names(self, port_names):
         orphan_tokens = set()  # probably a orphan token
         for port_name in port_names:
-            logger.debug(f"Remove port {port_name}")
+            logger.debug(f"_remove_port_names: remove port {port_name}")
             for t_id in self.port_tokens.pop(port_name, []):
                 orphan_tokens.add(t_id)
             self.port_name_ids.pop(port_name, None)
         for t_id in orphan_tokens:
-            if not self.is_present(t_id):
-                logger.debug(f"Remove orphan token {t_id}")
-                self.token_available.pop(t_id, None)
-                self.token_instances.pop(t_id, None)
+            logger.debug(f"_remove_port_names: remove orphan token {t_id}")
+            self.remove_token(t_id)
+            # if not self.is_present(t_id):
+            #     logger.debug(f"Remove orphan token {t_id}")
+            #     self.token_available.pop(t_id, None)
+            #     self.token_instances.pop(t_id, None)
 
-    def remove(self, port_name):
-        logger.debug(f"remove {port_name}")
+    def remove_port(self, port_name):
+        logger.debug(f"remove_port {port_name}")
         self._remove_port_names(self.dcg_port.remove(port_name))
-
-    async def replace_token_and_remove(self, port_name, provenance_token):
-        old_token_id = self.get_equal_token(port_name, provenance_token.instance)
-
-        for prev_t_id in self.dag_tokens.prev(old_token_id):
-            # self.remove_token_by_id(prev_t_id)
-            await self.remove_token(prev_t_id)
-            logger.debug(
-                f"replace_token_and_remove: from {old_token_id} remove prev token {prev_t_id}"
-            )
-        self.port_tokens[port_name].remove(old_token_id)
-        self.port_tokens[port_name].add(provenance_token.instance.persistent_id)
-        self.token_available[provenance_token.instance.persistent_id] = (
-            provenance_token.is_available == TokenAvailability.Available
-        )
-        self.token_instances[
-            provenance_token.instance.persistent_id
-        ] = provenance_token.instance
-        self.dag_tokens.replace(old_token_id, provenance_token.instance.persistent_id)
-        logger.debug(
-            f"replace_token_and_remove: token id: {provenance_token.instance.persistent_id} av: {provenance_token.is_available == TokenAvailability.Available}"
-        )
-        pass
 
     async def get_execute_output_port_names(self, job_token: JobToken):
         port_names = set()
@@ -307,60 +250,6 @@ class RollbackDeterministicWorkflowPolicy:
                 if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
                     port_names.add(port_name)
         return list(port_names)
-
-    async def get_execute_output_port_names_old(self, job_token):
-        port_names = []
-        job_port_name_a = get_key_by_value(job_token.persistent_id, self.port_tokens)
-        job_port_name = (
-            await self.context.database.get_port_from_token(job_token.persistent_id)
-        )["name"]
-        if job_port_name != job_port_name_a:
-            pass
-        logger.debug(
-            f"JobToken id: {job_token.persistent_id} name: {job_token.value.name} è prodotto dalla porta {job_port_name}"
-        )
-        for port_name in self.dcg_port.succ(job_port_name):
-            logger.debug(f"Port {port_name} è successiva alla port {job_port_name}")
-            if port_name in (DirectGraph.INIT_GRAPH_FLAG, DirectGraph.LAST_GRAPH_FLAG):
-                continue
-            port_id = min(self.port_name_ids[port_name])
-            step_rows = await self.context.database.get_steps_from_output_port(port_id)
-            for step_row in await asyncio.gather(
-                *(
-                    asyncio.create_task(self.context.database.get_step(sr["step"]))
-                    for sr in step_rows
-                )
-            ):
-                if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
-                    port_names.append(port_name)
-        return port_names
-
-    async def wrapper_get_execute_output_port_names(self, job_token):
-        res_new = await self.get_execute_output_port_names(job_token)
-        res_old = await self.get_execute_output_port_names_old(job_token)
-
-        if set(res_new) != set(res_old):
-            pass
-
-        return res_new
-
-    def remove_token_by_id(self, token_id_to_remove: int):
-        logger.debug(
-            f"remove_token_by_id: remove token id {token_id_to_remove} from visited"
-        )
-        ports_to_remove = set()
-        for port_name, token_ids in self.port_tokens.items():
-            if token_id_to_remove in token_ids:
-                token_ids.remove(token_id_to_remove)
-                logger.debug(
-                    f"remove_token_by_id: remove token id {token_id_to_remove} from {port_name}"
-                )
-            if len(token_ids) == 0:
-                ports_to_remove.add(port_name)
-        for port_name in ports_to_remove:
-            self.remove(port_name)
-        self.token_available.pop(token_id_to_remove, None)
-        self.token_instances.pop(token_id_to_remove, None)
 
     async def sync_running_jobs(self, workflow):
         logger.debug(f"INIZIO sync (wf {workflow.name}) RUNNING JOBS")
@@ -399,7 +288,7 @@ class RollbackDeterministicWorkflowPolicy:
                         )
                         map_job_port.setdefault(job_token.value.name, port_recovery)
                     if len(job_token_names) == 1:
-                        logger.debug(f"New workflow {workflow.name} will be empty.")
+                        logger.debug(f"New-workflow {workflow.name} will be empty.")
                         pass
                         # raise FailureHandlingException(
                         #     "There is only job job in this rollback, but it is already running in another workflow. Something is wrong."
@@ -418,19 +307,21 @@ class RollbackDeterministicWorkflowPolicy:
                         f"Lista execute_step_out_token_ids: {execute_step_out_token_ids}"
                     )
                     for t_id in execute_step_out_token_ids:
-                        for prev_t_id in self.dag_tokens.prev(t_id):
-                            # consider the token t_id and get its prev tokens.
-                            # If they have in next only t_id, then remove prev.
-                            if (
-                                (tokens := self.dag_tokens.succ(prev_t_id))
-                                and len(tokens) == 1
-                                and t_id in tokens
-                            ):
-                                logger.debug(
-                                    f"Sync remove token {prev_t_id} (dependee of {t_id})"
-                                )
-                                # self.remove_token_by_id(prev_t_id)
-                                await self.remove_token(prev_t_id)
+                        for t_id_dead_path in self.remove_token_prev_links(t_id):
+                            self.remove_token(t_id_dead_path)
+                        # for prev_t_id in self.dag_tokens.prev(t_id):
+                        #     # consider the token t_id and get its prev tokens.
+                        #     # If they have in next only t_id, then remove prev.
+                        #     if (
+                        #         (tokens := self.dag_tokens.succ(prev_t_id))
+                        #         and len(tokens) == 1
+                        #         and t_id in tokens
+                        #     ):
+                        #         logger.debug(
+                        #             f"Sync remove token {prev_t_id} (dependee of {t_id})"
+                        #         )
+                        #         # self.remove_token_by_id(prev_t_id)
+                        #         self.remove_token(prev_t_id)
                     pass
                 elif job_request.token_output and all(
                     [
@@ -491,13 +382,156 @@ class RollbackDeterministicWorkflowPolicy:
                 return t_id
         return None
 
+    def remove_token_prev_links(self, token_id):
+        prev_ids = self.dag_tokens.prev(token_id)
+        logger.info(f"Remove token link: from {token_id} to {prev_ids}")
+        token_without_successors = set()
+        for prev_t_id in prev_ids:
+            self.dag_tokens[prev_t_id].remove(token_id)
+            if len(self.dag_tokens[prev_t_id]) == 0 or (
+                prev_t_id != DirectGraph.INIT_GRAPH_FLAG
+                and isinstance(self.token_instances[prev_t_id], JobToken)
+            ):
+                if prev_t_id == DirectGraph.INIT_GRAPH_FLAG:
+                    raise Exception(
+                        "Impossible execute a workflow without a INIT token"
+                    )
+                token_without_successors.add(prev_t_id)
+        logger.info(
+            f"Remove token link: token {token_id} found token_without_successors: {token_without_successors}"
+        )
+        return token_without_successors
+
+    async def replace_token_and_remove(self, port_name, provenance_token):
+        # todo : vedere di unire con update_token perché fanno praticamente la stessa cosa
+        token = provenance_token.instance
+        old_token_id = self.get_equal_token(port_name, token)
+        # if token.persistent_id == old_token_id:
+        #     return
+        logger.info(f"Replacing {old_token_id} with {token.persistent_id}")
+        token_without_successors = self.remove_token_prev_links(old_token_id)
+        for t_id in token_without_successors:
+            self.remove_token(t_id)
+
+        # remove old token
+        self.port_tokens[port_name].remove(old_token_id)
+        self.token_available.pop(old_token_id)
+        self.token_instances.pop(old_token_id)
+
+        # replace
+        pass
+        self.dag_tokens.replace(old_token_id, token.persistent_id)
+
+        # add new token
+        self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
+        self.token_instances[token.persistent_id] = token
+        self.token_available[token.persistent_id] = (
+            provenance_token.is_available == TokenAvailability.Available
+        )
+
+        logger.debug(
+            f"replace_token_and_remove: token id: {token.persistent_id} av: {provenance_token.is_available == TokenAvailability.Available}"
+        )
+        pass
+
+    # def remove_token_by_id(self, token_id_to_remove: int):
+    #     logger.debug(
+    #         f"remove_token_by_id: remove token id {token_id_to_remove} from visited"
+    #     )
+    #     ports_to_remove = set()
+    #     for port_name, token_ids in self.port_tokens.items():
+    #         if token_id_to_remove in token_ids:
+    #             token_ids.remove(token_id_to_remove)
+    #             logger.debug(
+    #                 f"remove_token_by_id: remove token id {token_id_to_remove} from {port_name}"
+    #             )
+    #         if len(token_ids) == 0:
+    #             ports_to_remove.add(port_name)
+    #     for port_name in ports_to_remove:
+    #         self.remove(port_name)
+    #     self.token_available.pop(token_id_to_remove, None)
+    #     self.token_instances.pop(token_id_to_remove, None)
+    #
+    #
+    #
+    #
+    # async def remove_token(self, token_id):
+    #     if token_id == DirectGraph.INIT_GRAPH_FLAG:
+    #         return
+    #     prev_t_ids = self.dag_tokens.prev(token_id)
+    #     self.dag_tokens.remove(token_id)
+    #     self.remove_token_by_id(token_id)
+    #     logger.debug(f"remove_token: id {token_id}. Its prevs {prev_t_ids}")
+    #     for prev_t_id in prev_t_ids:
+    #         if prev_t_id in self.token_instances.keys() and isinstance(
+    #             self.token_instances[prev_t_id], JobToken
+    #         ):
+    #             logger.debug(f"rimosso {token_id}. remove suo jobtoken {prev_t_id}")
+    #             await self.remove_token(prev_t_id)
+    #             prev_t_ids.remove(prev_t_id)
+    #             break
+    #     for prev_t_id in prev_t_ids:
+    #         if not isinstance(prev_t_id, int):  # init
+    #             continue
+    #         # token_row = await self.context.database.get_token(prev_t_id)
+    #         port_row = await self.context.database.get_port_from_token(prev_t_id)
+    #         if issubclass(get_class_from_name(port_row["type"]), ConnectorPort):
+    #             logger.debug(f"Token {prev_t_id} is in a ConnectorPort. Not remove it")
+    #             continue
+    #         tokens = self.dag_tokens.succ(prev_t_id)
+    #         if len(tokens) == 0:
+    #             logger.debug(f"rimosso {token_id}. remove suo prev {prev_t_id}")
+    #             await self.remove_token(prev_t_id)
+    #         else:
+    #             logger.debug(
+    #                 f"rimosso {token_id}, suo prev token {prev_t_id} ha ancora come successivi {tokens}"
+    #             )
+
+    def remove_token(self, token_id):
+        if token_id == DirectGraph.INIT_GRAPH_FLAG:
+            return
+        if succ_ids := self.dag_tokens.succ(token_id):
+            # noop
+            logger.info(f"WARN. Deleting {token_id} but it has successors: {succ_ids}")
+            # raise Exception(
+            #     f"Impossible remove token {token_id} because it has successors: {succ_ids}"
+            # )
+        logger.info(f"Remove token: token {token_id}")
+        self.token_available.pop(token_id, None)
+        self.token_instances.pop(token_id, None)
+        token_without_successors = self.remove_token_prev_links(token_id)
+        self.dag_tokens.remove(token_id)
+        for t_id in token_without_successors:
+            self.remove_token(t_id)
+        empty_ports = set()
+        for port_name, token_list in self.port_tokens.items():
+            if token_id in token_list:
+                self.port_tokens[port_name].remove(token_id)
+            if len(self.port_tokens[port_name]) == 0:
+                empty_ports.add(port_name)
+        for port_name in empty_ports:
+            logger.info(
+                f"Remove token: token {token_id} found to remove port {port_name}"
+            )
+            self.remove_port(port_name)
+
     def _update_token(self, port_name, token, is_av):
         if equal_token_id := self.get_equal_token(port_name, token):
-            if equal_token_id >= token.persistent_id:
+            if (
+                equal_token_id > token.persistent_id
+                or self.token_available[equal_token_id]
+            ):
                 logger.debug(
-                    f"update_token: port {port_name} ricevuto in input t_id {token.persistent_id}. Pero' uso il token id {equal_token_id} che avevo già"
+                    f"update_token: port {port_name} ricevuto in input t_id {token.persistent_id} (avai {is_av}). Pero' uso il token id {equal_token_id} (avai {self.token_available[equal_token_id]}) che avevo già. "
                 )
                 return equal_token_id
+            if is_av:
+                logger.debug(
+                    f"update_token: Sostituisco old_token_id: {equal_token_id} con new_token_id: {token.persistent_id}. Inoltre rimuovo i suoi vecchi legami perché new token è disponibile"
+                )
+                token_without_successors = self.remove_token_prev_links(equal_token_id)
+                for t_id in token_without_successors:
+                    self.remove_token(t_id)
             self.port_tokens[port_name].remove(equal_token_id)
             self.token_instances.pop(equal_token_id)
             self.token_available.pop(equal_token_id)
@@ -513,38 +547,6 @@ class RollbackDeterministicWorkflowPolicy:
             f"update_token: port {port_name} ricevuto in input t_id {token.persistent_id}. E lo userò"
         )
         return token.persistent_id
-
-    async def remove_token(self, token_id):
-        if token_id == DirectGraph.INIT_GRAPH_FLAG:
-            return
-        logger.debug(f"remove_token: id {token_id}")
-        prev_t_ids = self.dag_tokens.prev(token_id)
-        self.dag_tokens.remove(token_id)
-        self.remove_token_by_id(token_id)
-        for prev_t_id in prev_t_ids:
-            if prev_t_id in self.token_instances.keys() and isinstance(
-                self.token_instances[prev_t_id], JobToken
-            ):
-                logger.debug(f"rimosso {token_id}. remove suo jobtoken {prev_t_id}")
-                await self.remove_token(prev_t_id)
-                prev_t_ids.remove(prev_t_id)
-                break
-        for prev_t_id in prev_t_ids:
-            if not isinstance(prev_t_id, int):  # init
-                continue
-            # token_row = await self.context.database.get_token(prev_t_id)
-            port_row = await self.context.database.get_port_from_token(prev_t_id)
-            if issubclass(get_class_from_name(port_row["type"]), ConnectorPort):
-                logger.debug(f"Token {prev_t_id} is in a ConnectorPort. Not remove it")
-                continue
-            tokens = self.dag_tokens.succ(prev_t_id)
-            if len(tokens) == 0:
-                logger.debug(f"rimosso {token_id}. remove suo prev {prev_t_id}")
-                await self.remove_token(prev_t_id)
-            else:
-                logger.debug(
-                    f"rimosso {token_id}, suo prev token {prev_t_id} ha ancora come successivi {tokens}"
-                )
 
     def new_add(self, token_info_a: ProvenanceToken, token_info_b: ProvenanceToken):
         port_name_a = token_info_a.port_row["name"] if token_info_a else None
@@ -572,21 +574,6 @@ class RollbackDeterministicWorkflowPolicy:
         )
         token_a = self.token_instances.get(token_a_id, None)
         token_b = self.token_instances.get(token_b_id, None)
-
-        # if not (
-        #     next_token_ids_a := self.dag_tokens.graph.get(
-        #         token_a.persistent_id if token_a else DirectGraph.INIT_GRAPH_FLAG, None
-        #     )
-        # ) or (token_b and token_b.persistent_id not in next_token_ids_a):
-        #     logger.debug(
-        #         f"new_add: {token_a.persistent_id if token_a else None} -> {token_b.persistent_id if token_b else None}"
-        #     )
-        #     self.dag_tokens.add(
-        #         token_a.persistent_id if token_a else None,
-        #         token_b.persistent_id if token_b else None,
-        #     )
-        # else:
-        #     pass
 
         logger.debug(
             f"new_add: {token_a.persistent_id if token_a else None} -> {token_b.persistent_id if token_b else None}"
@@ -871,7 +858,11 @@ class RollbackDeterministicWorkflowPolicy:
                     ):
                         # if there are more iterations
                         if (
-                            len(self.port_tokens[step.output_ports[port_dep_row["name"]]])
+                            len(
+                                self.port_tokens[
+                                    step.output_ports[port_dep_row["name"]]
+                                ]
+                            )
                             > 1
                         ):
                             for (
@@ -1063,75 +1054,75 @@ class NewProvenanceGraphNavigation:
             )
         return rdwp
 
-    async def _refold_graphs_old(self, output_ports):
-        rdwp = RollbackDeterministicWorkflowPolicy(self.context)
-        for t_id, next_t_ids in self.dag_tokens.items():
-            logger.debug(f"dag[{t_id}] = {next_t_ids}")
-        for t_id, next_t_ids in self.dag_tokens.items():
-            port_name = None
-            if isinstance(t_id, int):
-                port_row = self.info_tokens[t_id].port_row
-                rdwp.port_name_ids.setdefault(port_row["name"], set()).add(
-                    self.info_tokens[t_id].port_row["id"]
-                )
-                # todo introdurre futureavailable anche in RDWP (?)
-                rdwp.add(
-                    port_row["name"],
-                    self.info_tokens[t_id].instance,
-                    self.info_tokens[t_id].is_available == TokenAvailability.Available,
-                )
-                port_name = port_row["name"]
-                # logger.debug(f"_refold_graphs: port {port_name} from token {t_id}")
-            next_port_names = set()
-            for next_t_id in next_t_ids:
-                next_port_name = None
-                if isinstance(next_t_id, int):
-                    next_port_row = self.info_tokens[next_t_id].port_row
-                    rdwp.port_name_ids.setdefault(next_port_row["name"], set()).add(
-                        next_port_row["id"]
-                    )
-                    rdwp.add(
-                        next_port_row["name"],
-                        self.info_tokens[next_t_id].instance,
-                        self.info_tokens[next_t_id].is_available
-                        == TokenAvailability.Available,
-                    )
-                    next_port_name = next_port_row["name"]
-                    # logger.debug(
-                    #     f"_refold_graphs: (next) port {next_port_name} from token {next_t_id}"
-                    # )
-                if next_port_name is None:
-                    # it is an input port of the failed step, so the next ports are the failed step output ports
-                    # next_port_names = (p.name for p in output_ports)
-                    # if len(next_t_ids) > 1:
-                    #     raise Exception(
-                    #         "Input tokens of failed step can not have next tokens"
-                    #     )
-                    for npn in (p.name for p in output_ports):
-                        rdwp.dcg_port.add(port_name, npn)
-                else:
-                    next_port_names.add(next_port_name)
-            for next_port_name in next_port_names:
-                rdwp.dcg_port.add(port_name, next_port_name)
-        for out in output_ports:
-            rdwp.dcg_port.add(out.name, None)
-            placeholder = Token(
-                None,
-                get_tag(
-                    self.info_tokens[t].instance
-                    for t in self.dag_tokens.prev(DirectGraph.LAST_GRAPH_FLAG)
-                    if not isinstance(t, JobToken)
-                ),
-            )
-            placeholder.persistent_id = -1
-            rdwp.add(out.name, placeholder, False)
-            logger.debug(
-                f"_refold_graphs. added in port {out.name} placeholder token id: {placeholder.persistent_id} value: {placeholder.value} tag: {placeholder.tag}"
-            )
-            rdwp.port_name_ids.setdefault(out.name, set()).add(out.persistent_id)
-        for k, v in rdwp.dcg_port.items():
-            logger.debug(f"_refold_graphs: dcg port[{k}] = {v}")
-        return rdwp
+    # async def _refold_graphs_old(self, output_ports):
+    #     rdwp = RollbackDeterministicWorkflowPolicy(self.context)
+    #     for t_id, next_t_ids in self.dag_tokens.items():
+    #         logger.debug(f"dag[{t_id}] = {next_t_ids}")
+    #     for t_id, next_t_ids in self.dag_tokens.items():
+    #         port_name = None
+    #         if isinstance(t_id, int):
+    #             port_row = self.info_tokens[t_id].port_row
+    #             rdwp.port_name_ids.setdefault(port_row["name"], set()).add(
+    #                 self.info_tokens[t_id].port_row["id"]
+    #             )
+    #             # todo introdurre futureavailable anche in RDWP (?)
+    #             await rdwp.add(
+    #                 port_row["name"],
+    #                 self.info_tokens[t_id].instance,
+    #                 self.info_tokens[t_id].is_available == TokenAvailability.Available,
+    #             )
+    #             port_name = port_row["name"]
+    #             # logger.debug(f"_refold_graphs: port {port_name} from token {t_id}")
+    #         next_port_names = set()
+    #         for next_t_id in next_t_ids:
+    #             next_port_name = None
+    #             if isinstance(next_t_id, int):
+    #                 next_port_row = self.info_tokens[next_t_id].port_row
+    #                 rdwp.port_name_ids.setdefault(next_port_row["name"], set()).add(
+    #                     next_port_row["id"]
+    #                 )
+    #                 await rdwp.add(
+    #                     next_port_row["name"],
+    #                     self.info_tokens[next_t_id].instance,
+    #                     self.info_tokens[next_t_id].is_available
+    #                     == TokenAvailability.Available,
+    #                 )
+    #                 next_port_name = next_port_row["name"]
+    #                 # logger.debug(
+    #                 #     f"_refold_graphs: (next) port {next_port_name} from token {next_t_id}"
+    #                 # )
+    #             if next_port_name is None:
+    #                 # it is an input port of the failed step, so the next ports are the failed step output ports
+    #                 # next_port_names = (p.name for p in output_ports)
+    #                 # if len(next_t_ids) > 1:
+    #                 #     raise Exception(
+    #                 #         "Input tokens of failed step can not have next tokens"
+    #                 #     )
+    #                 for npn in (p.name for p in output_ports):
+    #                     rdwp.dcg_port.add(port_name, npn)
+    #             else:
+    #                 next_port_names.add(next_port_name)
+    #         for next_port_name in next_port_names:
+    #             rdwp.dcg_port.add(port_name, next_port_name)
+    #     for out in output_ports:
+    #         rdwp.dcg_port.add(out.name, None)
+    #         placeholder = Token(
+    #             None,
+    #             get_tag(
+    #                 self.info_tokens[t].instance
+    #                 for t in self.dag_tokens.prev(DirectGraph.LAST_GRAPH_FLAG)
+    #                 if not isinstance(t, JobToken)
+    #             ),
+    #         )
+    #         placeholder.persistent_id = -1
+    #         await rdwp.add(out.name, placeholder, False)
+    #         logger.debug(
+    #             f"_refold_graphs. added in port {out.name} placeholder token id: {placeholder.persistent_id} value: {placeholder.value} tag: {placeholder.tag}"
+    #         )
+    #         rdwp.port_name_ids.setdefault(out.name, set()).add(out.persistent_id)
+    #     for k, v in rdwp.dcg_port.items():
+    #         logger.debug(f"_refold_graphs: dcg port[{k}] = {v}")
+    #     return rdwp
 
     async def refold_graphs(
         self, output_ports, split_last_iteration=True
@@ -1139,8 +1130,11 @@ class NewProvenanceGraphNavigation:
         # inner_graph, outer_graph = None, None
 
         res = await self._refold_graphs(output_ports)
-        res_old = await self._refold_graphs_old(output_ports)
-
-        if res.dcg_port.graph != res_old.dcg_port.graph:
-            pass
+        # res_old = await self._refold_graphs_old(output_ports)
+        #
+        # if res.dcg_port.keys() != res_old.dcg_port.keys():
+        #     pass
+        # for k, vals in res.dcg_port.items():
+        #     if vals != res_old.dcg_port[k]:
+        #         pass
         return res
