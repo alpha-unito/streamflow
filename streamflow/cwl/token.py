@@ -45,7 +45,6 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
 
 async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
     if path := utils.get_path_from_token(value):
-        # todo: checks also secondaryfiles
         if not (data_locs := context.data_manager.get_data_locations(path)):
             return False
         is_available = False
@@ -56,8 +55,8 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
                     logger.debug(
                         f"Location {data_loc.deployment} has valid data {data_loc.path}"
                     )
-                # It is not immediately returned True, because it is necessary to check
-                # all the location and invalidate the missing data.
+                # It does not immediately return True, because it is necessary to check
+                # all the locations and invalidate when data is no longer available.
                 is_available = True
             else:
                 if logger.isEnabledFor(logging.DEBUG):
