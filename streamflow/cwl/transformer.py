@@ -276,19 +276,20 @@ class ValueFromTransformer(ManyToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
-        if self.get_output_name() in inputs:
+        output_name = self.get_output_name()
+        if output_name in inputs:
             inputs = {
                 **inputs,
                 **{
-                    self.get_output_name(): await self.processor.process(
-                        inputs, inputs[self.get_output_name()]
+                    output_name: await self.processor.process(
+                        inputs, inputs[output_name]
                     )
                 },
             }
         context = utils.build_context(inputs)
-        context = {**context, **{"self": context["inputs"].get(self.get_output_name())}}
+        context = {**context, **{"self": context["inputs"].get(output_name)}}
         return {
-            self.get_output_name(): Token(
+            output_name: Token(
                 tag=get_tag(inputs.values()),
                 value=utils.eval_expression(
                     expression=self.value_from,

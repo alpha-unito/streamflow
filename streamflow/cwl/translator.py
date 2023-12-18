@@ -2360,7 +2360,7 @@ class CWLTranslator:
                 processor=_create_token_processor(
                     port_name=port_name,
                     workflow=workflow,
-                    port_type=element_input.get("type", "Any"),
+                    port_type="Any",
                     cwl_element=element_input,
                     cwl_name_prefix=posixpath.join(cwl_step_name, port_name),
                     schema_def_types=schema_def_types,
