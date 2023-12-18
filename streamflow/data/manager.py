@@ -404,7 +404,9 @@ class RemotePathMapper:
             node_location = node.locations.setdefault(
                 location.deployment, {}
             ).setdefault(location.name, [])
-            paths = [loc.path for loc in node_location]
+            paths = [
+                loc.path for loc in node_location if loc.data_type != DataType.INVALID
+            ]
             if location.path in paths:
                 break
             else:
