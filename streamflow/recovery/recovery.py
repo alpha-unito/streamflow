@@ -25,7 +25,10 @@ from streamflow.cwl.transformer import (
     CWLTokenTransformer,
 )
 from streamflow.log_handler import logger
-from streamflow.recovery.rollback_recovery import NewProvenanceGraphNavigation
+from streamflow.recovery.rollback_recovery import (
+    NewProvenanceGraphNavigation,
+    DirectGraph,
+)
 from streamflow.recovery.utils import (
     is_output_port_forward,
     is_next_of_someone,
@@ -43,6 +46,7 @@ from streamflow.recovery.utils import (
     load_and_add_steps,
     load_missing_ports,
 )
+
 # from streamflow.token_printer import print_dag_ports
 from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -249,7 +253,7 @@ class RollbackRecoveryPolicy:
     #         workflow,
     #         new_workflow,
     #         None,  # job_rollback,
-    #         wr,
+    #         wr.token_visited,
     #         last_iteration,
     #     )
     #     return new_workflow, last_iteration
@@ -334,34 +338,38 @@ class RollbackRecoveryPolicy:
         #         )
         logger.debug("end save_for_retag")
 
-        wr = ProvenanceGraphNavigation(
-            {k: {v for v in vs} for k, vs in inner_graph.dcg_port.items()},
-            [],
-            {k: {v for v in vs} for k, vs in inner_graph.port_name_ids.items()},
-            self.context,
-        )
-        wr.token_visited = {
-            k: (inner_graph.token_instances[k], i)
-            for k, i in inner_graph.token_available.items()
-        }
-        wr.port_tokens = {
-            k: {v for v in vs} for k, vs in inner_graph.port_tokens.items()
-        }
-
-        last_iteration = await _put_tokens(
+        last_iteration = await _new_put_tokens(
             new_workflow,
-            wr.dag_ports[INIT_DAG_FLAG],
-            wr.port_tokens,
-            wr.token_visited,
-            wr,
+            inner_graph.dcg_port[DirectGraph.INIT_GRAPH_FLAG],
+            inner_graph.port_tokens,
+            inner_graph.token_instances,
+            inner_graph.token_available,
+            inner_graph.port_name_ids,
         )
         logger.debug("end _put_tokens")
-        await _set_steps_state(new_workflow, wr)
+
+        # wr = ProvenanceGraphNavigation(
+        #     {k: {v for v in vs} for k, vs in inner_graph.dcg_port.items()},
+        #     [],
+        #     {k: {v for v in vs} for k, vs in inner_graph.port_name_ids.items()},
+        #     self.context,
+        # )
+        # wr.token_visited = {
+        #     k: (inner_graph.token_instances[k], i)
+        #     for k, i in inner_graph.token_available.items()
+        # }
+        # wr.port_tokens = {
+        #     k: {v for v in vs} for k, vs in inner_graph.port_tokens.items()
+        # }
+        await _new_set_steps_state(new_workflow, inner_graph)
         extra_data_print(
             workflow,
             new_workflow,
             None,  # job_rollback,
-            wr,
+            {
+                t_id: (instance, inner_graph.token_available[t_id])
+                for t_id, instance in inner_graph.token_instances.items()
+            },
             last_iteration,
         )
         return new_workflow, last_iteration
@@ -458,7 +466,7 @@ class RollbackRecoveryPolicy:
     #         workflow,
     #         new_workflow,
     #         None,  # job_rollback,
-    #         wr,
+    #         wr.token_visited,
     #         last_iteration,
     #     )
     #     return new_workflow, last_iteration
@@ -1056,6 +1064,121 @@ class ProvenanceGraphNavigation:
         for s_id in step_to_remove:
             steps.remove(s_id)
         return ports, steps
+
+
+async def _new_put_tokens(
+    new_workflow: Workflow,
+    init_ports: MutableSet[str],
+    port_tokens: MutableMapping[str, MutableSet[int]],
+    token_instances: MutableMapping[int, Token],
+    token_available: MutableMapping[int, bool],
+    port_name_ids: MutableSet[str, MutableSet[int]],
+):
+    last_iteration = {}
+    for port_name in init_ports:
+        token_list = [
+            token_instances[t_id]
+            for t_id in port_tokens[port_name]
+            if isinstance(t_id, int) and token_available[t_id]
+        ]
+        token_list.sort(key=lambda x: x.tag, reverse=False)
+        for i, t in enumerate(token_list):
+            for t1 in token_list[i:]:
+                if t.persistent_id != t1.persistent_id and t.tag == t1.tag:
+                    raise FailureHandlingException(
+                        f"Port {port_name} has tag {t.tag} ripetuto - id_a: {t.persistent_id} id_b: {t1.persistent_id}"
+                    )
+        port = new_workflow.ports[port_name]
+        is_back_prop_output_port = any(
+            s
+            for s in port.get_input_steps()
+            if isinstance(s, BackPropagationTransformer)
+        )
+        loop_combinator_input = any(
+            s for s in port.get_output_steps() if isinstance(s, LoopCombinatorStep)
+        )
+        if loop_combinator_input and len(port_tokens[port_name]) > 1:
+            last_iteration.setdefault(port.name, set())
+            for p_id in port_name_ids[port.name]:
+                last_iteration[port.name].add(p_id)
+
+        for t in token_list:
+            if isinstance(t, (TerminationToken, IterationTerminationToken)):
+                raise FailureHandlingException(
+                    f"Added {type(t)} into port {port.name} but it is wrong"
+                )
+            port.put(t)
+            if is_back_prop_output_port:
+                logger.debug(
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, insert termination token (it is output port of a Back-prop)"
+                )
+                port.put(TerminationToken())
+                break
+
+        len_port_token_list = len(port.token_list)
+        len_port_tokens = len(port_tokens[port_name])
+
+        if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
+            if loop_combinator_input and not is_back_prop_output_port:
+                if last_iteration:
+                    if isinstance(port.token_list[-1], TerminationToken):
+                        token = port.token_list[-1]
+                    else:
+                        token = port.token_list[-1]
+                        logger.debug(
+                            f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts EMPTY token with tag {token.tag}"
+                        )
+                        # port.put(token)
+                    logger.debug(
+                        f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {token.tag}"
+                    )
+                    port.put(IterationTerminationToken(token.tag))
+                logger.debug(
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[0].tag}"
+                )
+                port.put(IterationTerminationToken(port.token_list[0].tag))
+            if not any(t for t in port.token_list if isinstance(t, TerminationToken)):
+                logger.debug(
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, insert termination token"
+                )
+                port.put(TerminationToken())
+        else:
+            logger.debug(
+                f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
+            )
+    return last_iteration
+
+
+async def _new_set_steps_state(new_workflow, rdwp):
+    for step in new_workflow.steps.values():
+        if isinstance(step, ScatterStep):
+            port = step.get_output_port()
+            str_t = [
+                (t_id, rdwp.token_instances[t_id].tag, rdwp.token_available[t_id])
+                for t_id in rdwp.port_tokens[port.name]
+            ]
+            logger.debug(
+                f"_set_scatter_inner_state: wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
+            )
+            for t_id in rdwp.port_tokens[port.name]:
+                logger.debug(
+                    f"_set_scatter_inner_state: Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if rdwp.token_available[t_id] else 'NOT '}available"
+                )
+                # a possible control can be if not token_visited[t_id][1]: then add in valid tags
+                if step.valid_tags is None:
+                    step.valid_tags = {rdwp.token_instances[t_id].tag}
+                else:
+                    step.valid_tags.add(rdwp.token_instances[t_id].tag)
+        elif isinstance(step, LoopCombinatorStep):
+            port = list(step.get_input_ports().values()).pop()
+            token = port.token_list[0]
+
+            prefix = ".".join(token.tag.split(".")[:-1])
+            if prefix != "":
+                step.combinator.iteration_map[prefix] = int(token.tag.split(".")[-1])
+                logger.debug(
+                    f"recover_jobs-last_iteration: Step {step.name} combinator updated map[{prefix}] = {step.combinator.iteration_map[prefix]}"
+                )
 
 
 async def _put_tokens(

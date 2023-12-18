@@ -449,7 +449,7 @@ def extra_data_print(
     workflow,
     new_workflow,
     job_executed_in_new_workflow,
-    wr,
+    token_visited,
     last_iteration,
 ):
     if not workflow:
@@ -458,7 +458,7 @@ def extra_data_print(
         )
     if not job_executed_in_new_workflow:
         job_executed_in_new_workflow = []
-        for t, _ in wr.token_visited.values():
+        for t, _ in token_visited.values():
             if isinstance(t, JobToken):
                 job_executed_in_new_workflow.append(t.value.name)
     dt = str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")

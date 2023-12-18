@@ -605,7 +605,7 @@ class DefaultFailureManager(FailureManager):
             prev_workflow,
             new_workflow,
             None,
-            wr,
+            wr.token_visited,
             last_iteration,
         )
         return new_workflow
