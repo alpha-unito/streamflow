@@ -11,6 +11,6 @@ importlib_resources==6.1.1
 Jinja2==3.1.2
 jsonschema==4.20.0
 kubernetes_asyncio==28.2.1
-psutil==5.9.6
+psutil==5.9.7
 rdflib==7.0.0
 yattag==1.15.2
