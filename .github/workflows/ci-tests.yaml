@@ -104,7 +104,7 @@ jobs:
       - name: "Upload coverage report for conformance tests"
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ format('py{0}-cwl{1}-conformance-tests', matrix.python, matrix.version) }}
+          name: ${{ format('{0}-py{1}-cwl{2}-{3}-conformance-tests', matrix.on, matrix.python, matrix.version, matrix.docker) }}
           path: ./coverage.xml
           retention-days: 1
           if-no-files-found: error
@@ -239,7 +239,7 @@ jobs:
       - name: "Upload coverage report for unit tests"
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ format('py{0}-unit-tests', matrix.python) }}
+          name: ${{ format('{0}-py{1}-unit-tests', matrix.on, matrix.python) }}
           path: ./coverage.xml
           retention-days: 1
           if-no-files-found: error
@@ -250,7 +250,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: "Download artifacts"
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
       - name: "Upload coverage to Codecov"
         uses: codecov/codecov-action@v3
         with:
