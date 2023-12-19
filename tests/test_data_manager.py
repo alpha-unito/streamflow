@@ -49,7 +49,11 @@ async def test_data_locations(
         dst_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
         dst_path = posixpath.join("/tmp", utils.random_name())
+
+    # Create working directories in src and dst locations
     await remotepath.mkdir(src_connector, [src_location], str(Path(src_path).parent))
+    await remotepath.mkdir(dst_connector, [dst_location], dst_path)
+
     try:
         await remotepath.write(
             src_connector,
