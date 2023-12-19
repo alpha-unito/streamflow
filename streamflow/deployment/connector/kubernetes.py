@@ -215,7 +215,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     def _configure_incluster_namespace(self):
         if self.namespace is None:
             if not os.path.isfile(SERVICE_NAMESPACE_FILENAME):
-                raise ConfigException("Service namespace file does not exists.")
+                raise ConfigException("Service namespace file does not exist.")
 
             with open(SERVICE_NAMESPACE_FILENAME) as f:
                 self.namespace = f.read()
