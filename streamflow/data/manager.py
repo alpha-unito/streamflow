@@ -184,8 +184,11 @@ class DefaultDataManager(DataManager):
                 if primary_loc.name == dst_location.name:
                     # Wait for the source location to be available on the destination path
                     await primary_loc.available.wait()
-                    # If yes, perform a symbolic link if possible
+
+                    # save data location of destination folder created
                     self.register_path(dst_location, str(Path(dst_path).parent))
+
+                    # If yes, perform a symbolic link if possible
                     if not writable:
                         await remotepath.symlink(
                             dst_connector, dst_location, primary_loc.path, dst_path
@@ -235,7 +238,10 @@ class DefaultDataManager(DataManager):
             # Otherwise, perform a remote copy and mark the destination as primary
             if not found_existing_loc:
                 remote_locations.append(dst_location)
+
+                # save data location of destination folder created
                 self.register_path(dst_location, str(Path(dst_path).parent))
+
                 if writable:
                     data_locations.append(
                         self.path_mapper.put(
