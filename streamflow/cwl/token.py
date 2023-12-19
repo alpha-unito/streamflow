@@ -63,7 +63,12 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
                     logger.debug(
                         f"Invalidated location {data_loc.deployment} (Lost data {data_loc.path})"
                     )
-                context.data_manager.invalidate_location(data_loc, "/")
+                root_data_loc = context.data_manager.get_data_locations(
+                    "/", data_loc.deployment
+                )[0]
+                context.data_manager.invalidate_location(
+                    root_data_loc, root_data_loc.path
+                )
         return is_available
     raise Exception(f"It is not possible to verify the data {value} availability")
 
