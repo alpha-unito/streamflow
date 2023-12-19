@@ -67,7 +67,7 @@ async def test_data_locations(
             data_type=DataType.PRIMARY,
         )
 
-        # check src data locations
+        # Check src data locations
         path = "/"
         for basename in src_path.split("/")[1:]:
             path = os.path.join(path, basename)
@@ -78,7 +78,7 @@ async def test_data_locations(
             assert data_locs[0].path == path
             assert data_locs[0].deployment == src_connector.deployment_name
 
-        # transfer data from src to dst
+        # Transfer data from src to dst
         await context.data_manager.transfer_data(
             src_location=src_location,
             src_path=src_path,
@@ -87,7 +87,7 @@ async def test_data_locations(
             writable=False,
         )
 
-        # check dst data locations
+        # Check dst data locations
         path = "/"
         for basename in dst_path.split("/")[1:]:
             path = os.path.join(path, basename)
@@ -123,7 +123,7 @@ async def test_invalidate_location(context, src_connector, src_location):
         data_type=DataType.PRIMARY,
     )
 
-    # check initial data location
+    # Check initial data location
     path = "/"
     for basename in src_path.split("/")[1:]:
         path = os.path.join(path, basename)
@@ -133,13 +133,14 @@ async def test_invalidate_location(context, src_connector, src_location):
         assert len(data_locs) == 1
         assert data_locs[0].path == path
         assert data_locs[0].deployment == src_connector.deployment_name
-    # invalidate location
+
+    # Invalidate location
     root_data_loc = context.data_manager.get_data_locations(
         "/", src_connector.deployment_name
     )[0]
     context.data_manager.invalidate_location(root_data_loc, root_data_loc.path)
 
-    # Checks data manager invalidated the location
+    # Check data manager has invalidated the location
     path = "/"
     for basename in src_path.split("/")[1:]:
         path = os.path.join(path, basename)
