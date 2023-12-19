@@ -1,6 +1,7 @@
 import os
 import posixpath
 import tempfile
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -40,14 +41,15 @@ async def test_data_locations(
     """Test the existence of data locations after the transfer data"""
     if isinstance(src_connector, LocalConnector):
         src_path = os.path.join(
-            tempfile.gettempdir(), tempfile.gettempdir(), utils.random_name()
+            tempfile.gettempdir(), utils.random_name(), utils.random_name()
         )
     else:
-        src_path = posixpath.join("/tmp", tempfile.gettempdir(), utils.random_name())
+        src_path = posixpath.join("/tmp", utils.random_name(), utils.random_name())
     if isinstance(dst_connector, LocalConnector):
         dst_path = os.path.join(tempfile.gettempdir(), utils.random_name())
     else:
         dst_path = posixpath.join("/tmp", utils.random_name())
+    await remotepath.mkdir(src_connector, [src_location], str(Path(src_path).parent))
     try:
         await remotepath.write(
             src_connector,
