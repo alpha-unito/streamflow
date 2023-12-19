@@ -89,7 +89,7 @@ class HighlitingFilter(logging.Filter):
 
     def highlight(self, msg):
         msg = str(msg)
-        msg_tok = msg.split()
+        msg_tok = msg.split(" ")
         for pattern, category in self.patterns.items():
             if msg_tok[0] == pattern:
                 if category == 0:
