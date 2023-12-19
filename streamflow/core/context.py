@@ -36,11 +36,11 @@ class StreamFlowContext:
     async def close(self):
         try:
             await asyncio.gather(
-                self.checkpoint_manager.close(),
-                self.data_manager.close(),
-                self.deployment_manager.close(),
-                self.failure_manager.close(),
-                self.scheduler.close(),
+                asyncio.create_task(self.checkpoint_manager.close()),
+                asyncio.create_task(self.data_manager.close()),
+                asyncio.create_task(self.deployment_manager.close()),
+                asyncio.create_task(self.failure_manager.close()),
+                asyncio.create_task(self.scheduler.close()),
             )
         except Exception as e:
             logger.exception(e)
