@@ -28,7 +28,13 @@ class CommandTemplateMap:
     ) -> str:
         return self.templates.get(template, self.templates["__DEFAULT__"]).render(
             streamflow_command=command,
-            streamflow_environment=environment,
+            streamflow_environment=(
+                " && ".join(
+                    [f'export {key}="{value}"' for (key, value) in environment.items()]
+                )
+                if environment is not None
+                else ""
+            ),
             streamflow_workdir=workdir,
             **kwargs,
         )
