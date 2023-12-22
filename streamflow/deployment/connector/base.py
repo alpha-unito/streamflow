@@ -275,6 +275,27 @@ class BaseConnector(Connector, FutureAware):
         await self._copy_local_to_remote(
             src=src, dst=dst, locations=locations, read_only=read_only
         )
+        if logger.isEnabledFor(logging.INFO):
+            if len(locations) > 1:
+                logger.info(
+                    "COMPLETED copy {src} on local file-system to {dst} on locations:\n\t{locations}".format(
+                        src=src,
+                        dst=dst,
+                        locations="\n\t".join([str(loc) for loc in locations]),
+                    )
+                )
+            else:
+                logger.info(
+                    "COMPLETED copy {src} on local file-system to {dst} {location}".format(
+                        src=src,
+                        dst=dst,
+                        location=(
+                            "on local file-system"
+                            if locations[0].name == LOCAL_LOCATION
+                            else f"on location {locations[0]}"
+                        ),
+                    )
+                )
 
     async def copy_remote_to_local(
         self,
@@ -292,6 +313,10 @@ class BaseConnector(Connector, FutureAware):
         await self._copy_remote_to_local(
             src=src, dst=dst, location=locations[0], read_only=read_only
         )
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                f"COMPLETED copy {src} on location {locations[0]} to {dst} on local file-system"
+            )
 
     async def copy_remote_to_remote(
         self,
@@ -329,6 +354,25 @@ class BaseConnector(Connector, FutureAware):
             source_connector=source_connector,
             read_only=read_only,
         )
+        if logger.isEnabledFor(logging.INFO):
+            if len(locations) > 1:
+                logger.info(
+                    "COMPLETED copy {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
+                        src_loc=source_location,
+                        src=src,
+                        dst=dst,
+                        locations="\n\t".join([str(loc) for loc in locations]),
+                    )
+                )
+            else:
+                logger.info(
+                    "COMPLETED copy {src} on location {src_loc} to {dst} on location {location}".format(
+                        src_loc=source_location,
+                        src=src,
+                        dst=dst,
+                        location=locations[0],
+                    )
+                )
 
     async def run(
         self,
