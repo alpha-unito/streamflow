@@ -334,7 +334,7 @@ class CWLBaseCommand(Command, ABC):
             },
         }
 
-    def _get_timeout(self, job: Job, step: Step) -> int | None:
+    def _get_timeout(self, job: Job) -> int | None:
         timeout = 0
         if isinstance(self.time_limit, int):
             timeout = self.time_limit
@@ -355,7 +355,7 @@ class CWLBaseCommand(Command, ABC):
             )
         if timeout and timeout < 0:
             raise WorkflowDefinitionException(
-                f"Invalid time limit for step {step.name}: {timeout}. Time limit should be >= 0."
+                f"Invalid time limit for step {self.step.name}: {timeout}. Time limit should be >= 0."
             )
         elif timeout == 0:
             return None
@@ -824,7 +824,7 @@ class CWLCommand(CWLBaseCommand):
             else stdout
         )
         # Get timeout
-        timeout = self._get_timeout(job=job, step=self.step)
+        timeout = self._get_timeout(job=job)
         # Execute remote command
         start_time = time.time_ns()
         result, exit_code = await connector.run(

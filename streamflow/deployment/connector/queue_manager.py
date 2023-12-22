@@ -389,12 +389,13 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 template_map=files_map,
             )
         self.maxConcurrentJobs: int = maxConcurrentJobs
-        if logger.isEnabledFor(logging.WARNING):
-            logger.warning(
-                "The `maxConcurrentJobs` parameter is set to the default value 1, which prevents "
-                "multiple jobs to be concurrently submitted to the queue manager. Consider raising "
-                "this value to improve performance."
-            )
+        if self.maxConcurrentJobs == 1:
+            if logger.isEnabledFor(logging.WARNING):
+                logger.warning(
+                    "The `maxConcurrentJobs` parameter is set to the default value 1, which prevents "
+                    "multiple jobs to be concurrently submitted to the queue manager. Consider raising "
+                    "this value to improve performance."
+                )
         self.pollingInterval: int = pollingInterval
         self.scheduledJobs: MutableSequence[str] = []
         self.jobsCache: cachetools.Cache = cachetools.TTLCache(

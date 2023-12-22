@@ -127,7 +127,7 @@ prov_parser.add_argument(
     "--all",
     "-a",
     action="store_true",
-    help="If true, include all executions of the selected worwflow. "
+    help="If true, include all executions of the selected workflow. "
     "If false, include just the last one. (default: false)",
 )
 prov_parser.add_argument(
@@ -168,7 +168,7 @@ report_parser.add_argument(
     "--all",
     "-a",
     action="store_true",
-    help="If true, include all executions of the selected worwflow. "
+    help="If true, include all executions of the selected workflow. "
     "If false, include just the last one. (default: false)",
 )
 report_parser.add_argument(

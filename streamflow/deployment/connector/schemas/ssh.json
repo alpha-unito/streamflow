@@ -29,7 +29,7 @@
             "string",
             "null"
           ],
-          "description": "Path to the SSH key needed to connect with Slurm environment"
+          "description": "Path to the SSH key needed to connect with the environment"
         },
         "sshKeyPassphraseFile": {
           "type": [
@@ -133,7 +133,7 @@
     },
     "sshKey": {
       "type": "string",
-      "description": "Path to the SSH key needed to connect with Slurm environment"
+      "description": "Path to the SSH key needed to connect with the environment"
     },
     "sshKeyPassphraseFile": {
       "type": "string",

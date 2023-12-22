@@ -514,10 +514,10 @@ class DeployStep(BaseStep):
                             )
                             # Propagate the connector in the output port
                             self.get_output_port().put(
-                                await self.persist_token(
+                                await self._persist_token(
                                     token=Token(value=self.deployment_config.name),
                                     port=self.get_output_port(),
-                                    inputs=_get_token_ids(inputs.values()),
+                                    input_token_ids=_get_token_ids(inputs.values()),
                                 )
                             )
             else:

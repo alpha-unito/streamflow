@@ -8,7 +8,7 @@
       "items": {
         "type": "string"
       },
-      "description": "A list of yaml file to deploy. Files will be deployed in direct order and undeplyoed in reverse order"
+      "description": "A list of yaml file to deploy. Files will be deployed in direct order and undeployed in reverse order"
     },
     "debug": {
       "type": "boolean",
