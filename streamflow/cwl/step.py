@@ -257,6 +257,10 @@ class CWLInputInjectorStep(InputInjectorStep):
         if filepath:
             if not path_processor.isabs(filepath):
                 filepath = path_processor.join(job.output_directory, filepath)
+            real_filepaths = []
+            for location in locations:
+                 real_filepaths.append(await remotepath.follow_symlink(self.workflow.context, connector, location, filepath))
+            filepath = real_filepaths[0]
             new_token_value = await utils.get_file_token(
                 context=self.workflow.context,
                 connector=connector,
