@@ -559,6 +559,19 @@ class CWLTransferStep(TransferStep):
                 load_contents="contents" in token_value,
                 load_listing=LoadListing.no_listing,
             )
+
+            if (
+                "checksum" in token_value
+                and new_token_value["checksum"] != token_value["checksum"]
+            ):
+                raise WorkflowExecutionException(
+                    "Error creating file {} with path {} in locations {}.".format(
+                        token_value["path"],
+                        new_token_value["path"],
+                        dst_locations
+                    )
+                )
+
             # If listing is specified, recursively process its contents
             if "listing" in token_value:
                 new_token_value["listing"] = await asyncio.gather(
