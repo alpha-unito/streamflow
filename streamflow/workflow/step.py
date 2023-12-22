@@ -19,6 +19,7 @@ from typing import (
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import DataType
 from streamflow.core.deployment import Connector, DeploymentConfig, Location, Target
 from streamflow.core.exception import (
     FailureHandlingException,
@@ -1261,15 +1262,23 @@ class ScheduleStep(BaseStep):
         )
         # Register paths
         for location in locations:
-            for directory in [
+            for directory in (
                 job.input_directory,
                 job.output_directory,
                 job.tmp_directory,
-            ]:
+            ):
+                realpath = await remotepath.follow_symlink(self.workflow.context, connector, location, directory)
+                if realpath != directory:
+                    self.workflow.context.data_manager.register_path(
+                        location=location,
+                        path=realpath,
+                        relpath=realpath,
+                    )
                 self.workflow.context.data_manager.register_path(
                     location=location,
                     path=directory,
                     relpath=directory,
+                    data_type=DataType.PRIMARY if realpath == directory else DataType.SYMBOLIC_LINK
                 )
         # Propagate job
         token_inputs = []
