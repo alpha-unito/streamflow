@@ -523,30 +523,32 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 )
                 for path in globpath:
                     resolve_tasks.append(
-                        utils.expand_glob(
-                            connector=connector,
-                            workflow=self.workflow,
-                            location=location,
-                            input_directory=(
-                                self.target.workdir
-                                if self.target
-                                else job.input_directory
-                            ),
-                            output_directory=(
-                                self.target.workdir
-                                if self.target
-                                else job.output_directory
-                            ),
-                            tmp_directory=(
-                                self.target.workdir
-                                if self.target
-                                else job.tmp_directory
-                            ),
-                            path=(
-                                path_processor.join(output_directory, path)
-                                if not path_processor.isabs(path)
-                                else path
-                            ),
+                        asyncio.create_task(
+                            utils.expand_glob(
+                                connector=connector,
+                                workflow=self.workflow,
+                                location=location,
+                                input_directory=(
+                                    self.target.workdir
+                                    if self.target
+                                    else job.input_directory
+                                ),
+                                output_directory=(
+                                    self.target.workdir
+                                    if self.target
+                                    else job.output_directory
+                                ),
+                                tmp_directory=(
+                                    self.target.workdir
+                                    if self.target
+                                    else job.tmp_directory
+                                ),
+                                path=(
+                                    path_processor.join(output_directory, path)
+                                    if not path_processor.isabs(path)
+                                    else path
+                                ),
+                            )
                         )
                     )
             paths, effective_paths = [
