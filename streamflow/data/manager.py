@@ -169,7 +169,14 @@ class DefaultDataManager(DataManager):
         )
         # Create destination folder
         await remotepath.mkdir(dst_connector, dst_locations, str(Path(dst_path).parent))
-
+        # Follow symlink for source path
+        for src_data_loc in self.get_data_locations(
+            src_path, src_location.deployment, src_location.name
+        ):
+            await src_data_loc.available.wait()
+        src_path = await remotepath.follow_symlink(
+            self.context, src_connector, src_location, src_path
+        )
         primary_locations = self.path_mapper.get(src_path, DataType.PRIMARY)
         copy_tasks = []
         remote_locations = []
