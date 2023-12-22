@@ -170,6 +170,7 @@ class DefaultDataManager(DataManager):
         # Create destination folder
         await remotepath.mkdir(dst_connector, dst_locations, str(Path(dst_path).parent))
         # Follow symlink for source path
+        await src_location.available.wait()
         src_path = await remotepath.follow_symlink(
             self.context, src_connector, src_location, src_path
         )
