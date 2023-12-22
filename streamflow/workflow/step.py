@@ -1267,7 +1267,9 @@ class ScheduleStep(BaseStep):
                 job.output_directory,
                 job.tmp_directory,
             ):
-                realpath = await remotepath.follow_symlink(self.workflow.context, connector, location, directory)
+                realpath = await remotepath.follow_symlink(
+                    self.workflow.context, connector, location, directory
+                )
                 if realpath != directory:
                     self.workflow.context.data_manager.register_path(
                         location=location,
@@ -1278,7 +1280,9 @@ class ScheduleStep(BaseStep):
                     location=location,
                     path=directory,
                     relpath=directory,
-                    data_type=DataType.PRIMARY if realpath == directory else DataType.SYMBOLIC_LINK
+                    data_type=DataType.PRIMARY
+                    if realpath == directory
+                    else DataType.SYMBOLIC_LINK,
                 )
         # Propagate job
         token_inputs = []
