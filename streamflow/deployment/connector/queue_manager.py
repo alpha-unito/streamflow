@@ -633,7 +633,12 @@ class SlurmConnector(QueueManagerConnector):
             command=command,
             capture_output=True,
         )
-        return int(stdout.strip())
+        try:
+            return int(stdout.strip())
+        except ValueError:
+            raise WorkflowExecutionException(
+                f"Error while retrieving return code for job {job_id}: {stdout.strip()}"
+            )
 
     @cachedmethod(
         lambda self: self.jobsCache,
@@ -1024,7 +1029,12 @@ class FluxConnector(QueueManagerConnector):
             command=command,
             capture_output=True,
         )
-        return int(stdout.strip())
+        try:
+            return int(stdout.strip())
+        except ValueError:
+            raise WorkflowExecutionException(
+                f"Error while retrieving return code for job {job_id}: {stdout.strip()}"
+            )
 
     @cachedmethod(
         lambda self: self.jobsCache,
