@@ -184,6 +184,10 @@ class DefaultDataManager(DataManager):
                 if primary_loc.name == dst_location.name:
                     # Wait for the source location to be available on the destination path
                     await primary_loc.available.wait()
+
+                    # save data location of destination folder created
+                    self.register_path(dst_location, str(Path(dst_path).parent))
+
                     # If yes, perform a symbolic link if possible
                     if not writable:
                         await remotepath.symlink(
@@ -234,6 +238,10 @@ class DefaultDataManager(DataManager):
             # Otherwise, perform a remote copy and mark the destination as primary
             if not found_existing_loc:
                 remote_locations.append(dst_location)
+
+                # save data location of destination folder created
+                self.register_path(dst_location, str(Path(dst_path).parent))
+
                 if writable:
                     data_locations.append(
                         self.path_mapper.put(
@@ -360,10 +368,13 @@ class RemotePathMapper:
         node = self._filesystem
         for token in path.parts:
             node = node.children[token]
-        for loc in node.locations.setdefault(location.deployment, {}).get(
-            location.name, []
-        ):
-            loc.data_type = DataType.INVALID
+        for node_child in node.children.values():
+            for data_loc in node_child.locations.setdefault(
+                location.deployment, {}
+            ).get(location.name, []):
+                if data_loc.data_type != DataType.INVALID:
+                    self.invalidate_location(data_loc, data_loc.path)
+                    data_loc.data_type = DataType.INVALID
 
     def put(
         self, path: str, data_location: DataLocation, recursive: bool = False
@@ -402,7 +413,9 @@ class RemotePathMapper:
             node_location = node.locations.setdefault(
                 location.deployment, {}
             ).setdefault(location.name, [])
-            paths = [loc.path for loc in node_location]
+            paths = [
+                loc.path for loc in node_location if loc.data_type != DataType.INVALID
+            ]
             if location.path in paths:
                 break
             else:

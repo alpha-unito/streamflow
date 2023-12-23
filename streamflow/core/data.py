@@ -88,7 +88,7 @@ class DataManager(SchemaEntity):
         self,
         location: Location,
         path: str,
-        relpath: str,
+        relpath: str | None = None,
         data_type: DataType = DataType.PRIMARY,
     ) -> DataLocation:
         ...
