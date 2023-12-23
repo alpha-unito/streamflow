@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio.subprocess
 from typing import Any, Coroutine
 
-from streamflow.core.data import StreamWrapper, StreamWrapperContext
+from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
 
 
 class BaseStreamWrapper(StreamWrapper):
@@ -48,7 +48,7 @@ class StreamWriterWrapper(StreamWrapper):
         await self.stream.drain()
 
 
-class SubprocessStreamReaderWrapperContext(StreamWrapperContext):
+class SubprocessStreamReaderWrapperContextManager(StreamWrapperContextManager):
     def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
         self.proc: asyncio.subprocess.Process | None = None
@@ -65,7 +65,7 @@ class SubprocessStreamReaderWrapperContext(StreamWrapperContext):
             await self.stream.close()
 
 
-class SubprocessStreamWriterWrapperContext(StreamWrapperContext):
+class SubprocessStreamWriterWrapperContextManager(StreamWrapperContextManager):
     def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
         self.proc: asyncio.subprocess.Process | None = None

@@ -53,7 +53,7 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
 
     async def get_stream_reader(
         self, location: Location, src: str
-    ) -> StreamWrapperContext:
+    ) -> StreamWrapperContextManager:
         ...
 
     async def run(
@@ -82,7 +82,7 @@ The ``undeploy`` method destroys the remote execution environment, potentially c
 
 The ``get_available_locations`` method is used in the scheduling phase to obtain the locations available for job execution, identified by their unique name (see :ref:`here <Scheduling>`). The method receives some optional input parameters to filter valid locations. The ``service`` parameter specifies a specific set of locations in a deployment, and its precise meaning differs for each deployment type (see :ref:`here <Binding steps and deployments>`). The other three parameters (``input_directory``, ``output_directory``, and ``tmp_directory``) allow the ``Connector`` to return correct disk usage values for each of the three folders in case of remote instances with multiple volumes attached.
 
-The ``get_stream_reader`` method returns an ``StreamWrapperContext`` instance, which allows the ``src`` data on the ``location`` to be read using a stream. The stream must be read respecting the size of the available buffer, which is defined inside the ``Connector`` by the ``transferBufferSize`` attribute. This method is helpful for the data copy between different locations.
+The ``get_stream_reader`` method returns a ``StreamWrapperContextManager`` instance, which allows the ``src`` data on the ``location`` to be read using a stream (see :ref:`here <Streaming>`). The stream must be read respecting the size of the available buffer, which is defined by the ``transferBufferSize`` attribute of the ``Connector`` instance. This method improve performance of data copies between pairs of remote locations.
 
 The ``copy`` methods perform a data transfer from a ``src`` path to a ``dst`` path in one or more destination ``locations`` in the execution environment controlled by the ``Connector``. The ``read_only`` parameter notifies the ``Connector`` if the destination files will be modified in place or not. This parameter prevents unattended side effects (e.g., symlink optimizations on the remote locations). The ``copy_remote_to_remote`` method accepts two additional parameters: a ``source_location`` and an optional ``source_connector``. The latter identifies the ``Connector`` instance that controls the ``source_location`` and defaults to ``self`` when not specified.
 
@@ -109,6 +109,40 @@ ConnectorWrapper
 ================
 
 StreamFlow supports :ref:`stacked locations <Stacked locations>` using the ``wraps`` directive. However, not all ``Connector`` instances support inner connectors, but only those that extend the ``ConenctorWrapper`` interface. By default, a ``ConnectorWrapper`` instance receives an internal ``Connector`` object as a constructor parameter and delegates all the method calls to the wrapped ``Connector``. Plus, it already extends the ``FutureAware`` class, correctly handling :ref:`FutureConnector <FutureConnector>` instances. Users who want to create a custom ``Connector`` instance with support for the ``wraps`` directive must extend the ``ConnectorWrapper`` class and not the ``BaseConnector`` as in other cases.
+
+Streaming
+=========
+
+StreamFlow uses `tar` streams as the primary way to transfer data between locations. The main reason is that the `tar` command is so standard nowadays that it can be found OOTB in almost all execution environments, and its API does not vary significantly across implementations.
+
+To ensure compatibility between different `Connector` instances when performing data transfers, StreamFlow implements two interfaces: a `StreamWrapper` API to read and write data streams and a `get_stream_reader` method to obtain a `StreamWrapper` object from a `Connector` instance.
+
+The `StreamWrapper` interface is straightforward. It is reported below:
+
+.. code-block:: python
+
+    def __init__(self, stream: Any):
+        self.stream: Any = stream
+
+    @abstractmethod
+    async def close(self):
+        ...
+
+    @abstractmethod
+    async def read(self, size: int | None = None):
+        ...
+
+    @abstractmethod
+    async def write(self, data: Any):
+        ...
+
+The constructor receives an internal `stream` object, which can be of `Any` type. The `read`, `write`, and `close` methods wrap the APIs of the native `stream` object to provide a unified API to interact with streams. In particular, the `read` method reads up to `size` bytes from the internal `stream`. The `write` method writes the content of the `data` parameter into the internal `stream`. The `close` method closes the inner `stream`.
+
+Each `Connector` instance can implement its own `StreamWrapper` classes by extending the `BaseStreamWrapper` class. In particular, it can be helpful to specialize further the `StreamWrapper` interface to implement unidirectional streams. This can be achieved by extending the `StreamReaderWrapper` and `StreamWriterWrapper` base classes, which raise a `NotImplementedError` if the stream is used in the wrong direction.
+
+The `StreamWrapperContextManager` interface provides the `Asynchronous Context Manager <https://docs.python.org/3/reference/datamodel.html#async-context-managers>`_ primitives for the `StreamWrapper` object, allowing it to be used inside `async with` statements.
+
+
 
 Implementations
 ===============
