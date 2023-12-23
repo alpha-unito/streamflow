@@ -16,7 +16,7 @@ from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.data import StreamWrapperContext
+from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware
@@ -223,7 +223,7 @@ class SSHContextFactory:
         )
 
 
-class SSHStreamWrapperContext(StreamWrapperContext):
+class SSHStreamWrapperContextManager(StreamWrapperContextManager):
     def __init__(self, src: str, ssh_context_factory: SSHContextFactory):
         super().__init__()
         self.src: str = src
@@ -643,7 +643,7 @@ class SSHConnector(BaseConnector):
 
     async def get_stream_reader(
         self, location: Location, src: str
-    ) -> StreamWrapperContext:
+    ) -> StreamWrapperContextManager:
         if self.dataTransferConfig:
             if location not in self.data_transfer_context_factories:
                 self.data_transfer_context_factories[location.name] = SSHContextFactory(
@@ -662,7 +662,9 @@ class SSHConnector(BaseConnector):
                     max_connections=self.maxConnections,
                 )
             ssh_context_factory = self.ssh_context_factories[location.name]
-        return SSHStreamWrapperContext(src=src, ssh_context_factory=ssh_context_factory)
+        return SSHStreamWrapperContextManager(
+            src=src, ssh_context_factory=ssh_context_factory
+        )
 
     async def deploy(self, external: bool) -> None:
         pass

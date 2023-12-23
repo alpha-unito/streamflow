@@ -121,7 +121,7 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         ...
 
     async def get_deployment(
-        self, deplyoment_id: int
+        self, deployment_id: int
     ) -> MutableMapping[str, Any]:
         ...
 

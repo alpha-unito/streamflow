@@ -10,7 +10,7 @@ from abc import abstractmethod
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
-from streamflow.core.data import StreamWrapperContext
+from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import (
     Connector,
     LOCAL_LOCATION,
@@ -23,7 +23,7 @@ from streamflow.deployment.future import FutureAware
 from streamflow.deployment.stream import (
     StreamReaderWrapper,
     StreamWriterWrapper,
-    SubprocessStreamReaderWrapperContext,
+    SubprocessStreamReaderWrapperContextManager,
 )
 from streamflow.log_handler import logger
 
@@ -228,9 +228,9 @@ class BaseConnector(Connector, FutureAware):
 
     async def get_stream_reader(
         self, location: Location, src: str
-    ) -> StreamWrapperContext:
+    ) -> StreamWrapperContextManager:
         dirname, basename = posixpath.split(src)
-        return SubprocessStreamReaderWrapperContext(
+        return SubprocessStreamReaderWrapperContextManager(
             coro=asyncio.create_subprocess_exec(
                 *shlex.split(
                     self._get_run_command(

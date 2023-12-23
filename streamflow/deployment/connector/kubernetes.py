@@ -37,7 +37,7 @@ from kubernetes_asyncio.utils import create_from_yaml
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.data import StreamWrapperContext
+from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     WorkflowDefinitionException,
@@ -138,7 +138,7 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
         await self.stream.send_bytes(payload)
 
 
-class KubernetesResponseWrapperContext(StreamWrapperContext):
+class KubernetesResponseWrapperContextManager(StreamWrapperContextManager):
     def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
         self.response: KubernetesResponseWrapper | None = None
@@ -430,10 +430,10 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 
     async def get_stream_reader(
         self, location: Location, src: str
-    ) -> StreamWrapperContext:
+    ) -> StreamWrapperContextManager:
         pod, container = location.name.split(":")
         dirname, basename = posixpath.split(src)
-        return KubernetesResponseWrapperContext(
+        return KubernetesResponseWrapperContextManager(
             coro=cast(
                 Coroutine,
                 self.client_ws.connect_get_namespaced_pod_exec(

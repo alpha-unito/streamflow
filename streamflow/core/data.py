@@ -117,8 +117,8 @@ class FileType(Enum):
 
 
 class StreamWrapper(ABC):
-    def __init__(self, stream):
-        self.stream = stream
+    def __init__(self, stream: Any):
+        self.stream: Any = stream
 
     @abstractmethod
     async def close(self):
@@ -133,7 +133,7 @@ class StreamWrapper(ABC):
         ...
 
 
-class StreamWrapperContext(ABC):
+class StreamWrapperContextManager(ABC):
     @abstractmethod
     async def __aenter__(self) -> StreamWrapper:
         ...

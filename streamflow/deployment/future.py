@@ -10,7 +10,7 @@ from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
-    from streamflow.core.data import StreamWrapperContext
+    from streamflow.core.data import StreamWrapperContextManager
 
 
 class FutureConnector(Connector):
@@ -131,7 +131,7 @@ class FutureConnector(Connector):
 
     async def get_stream_reader(
         self, location: Location, src: str
-    ) -> StreamWrapperContext:
+    ) -> StreamWrapperContextManager:
         if self.connector is None:
             if not self.deploying:
                 self.deploying = True
