@@ -12,8 +12,8 @@ from streamflow.core.exception import FailureHandlingException
 
 def wrapper_get_size(x):
     if psutil.virtual_memory().available < 2 * 10**8:
-        if logger.isEnabledFor(logger.isEnabledFor(logging.WARN)):
-            logger.warn(f"Memory almost finished {psutil.virtual_memory()}.")
+        # if logger.isEnabledFor(logger.isEnabledFor(logging.WARN)):
+        logger.info(f"Memory almost finished {psutil.virtual_memory()}.")
         raise FailureHandlingException("Memory ends")
     return get_size_obj(x)
 
