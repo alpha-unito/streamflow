@@ -970,7 +970,7 @@ class InputInjectorStep(BaseStep, ABC):
                 key_port, token = next(
                     iter((await self._get_inputs(input_ports)).items())
                 )
-                # Save input token of the dataset
+                # Save workflow input
                 if not token.persistent_id:
                     await token.save(
                         self.workflow.context,
@@ -990,11 +990,9 @@ class InputInjectorStep(BaseStep, ABC):
                     in_list = [
                         get_job_token(
                             job.name, self.get_input_port("__job__").token_list
-                        )
+                        ),
+                        token,
                     ]
-                    # if token.persistent is none it means it comes from the dataset
-                    if token.persistent_id:
-                        in_list.append(token)
                     # Process value and inject token in the output port
                     self.get_output_port().put(
                         await self._persist_token(
