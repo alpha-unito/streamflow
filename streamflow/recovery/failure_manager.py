@@ -496,27 +496,27 @@ class DefaultFailureManager(FailureManager):
         await _execute_recovered_workflow(
             new_workflow, failed_step.name, failed_step.output_ports
         )
-        if last_iteration:
-            logger.debug(f"Create last iteration from wf {new_workflow.name}")
-            new_workflow_last_iteration = await self._recover_jobs_3(
-                failed_step,
-                failed_job,
-                last_iteration,
-                loading_context,
-                new_workflow,
-            )
-            logger.debug(
-                f"Last iteration {new_workflow.name} managed by {new_workflow_last_iteration.name}"
-            )
-            for port_name in last_iteration:
-                new_workflow_last_iteration.ports[port_name].token_list.pop(0)
-                new_workflow_last_iteration.ports[port_name].token_list.insert(
-                    0, get_last_token(new_workflow.ports[port_name].token_list)
-                )
-            await _execute_recovered_workflow(
-                new_workflow_last_iteration, failed_step.name, None
-            )
-            return new_workflow_last_iteration
+        # if last_iteration:
+        #     logger.debug(f"Create last iteration from wf {new_workflow.name}")
+        #     new_workflow_last_iteration = await self._recover_jobs_3(
+        #         failed_step,
+        #         failed_job,
+        #         last_iteration,
+        #         loading_context,
+        #         new_workflow,
+        #     )
+        #     logger.debug(
+        #         f"Last iteration {new_workflow.name} managed by {new_workflow_last_iteration.name}"
+        #     )
+        #     for port_name in last_iteration:
+        #         new_workflow_last_iteration.ports[port_name].token_list.pop(0)
+        #         new_workflow_last_iteration.ports[port_name].token_list.insert(
+        #             0, get_last_token(new_workflow.ports[port_name].token_list)
+        #         )
+        #     await _execute_recovered_workflow(
+        #         new_workflow_last_iteration, failed_step.name, None
+        #     )
+        #     return new_workflow_last_iteration
         return new_workflow
 
     async def _recover_jobs_3(
