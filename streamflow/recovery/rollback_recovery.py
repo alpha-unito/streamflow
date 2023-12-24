@@ -545,6 +545,7 @@ class RollbackDeterministicWorkflowPolicy:
                 token_without_successors = self.remove_token_prev_links(equal_token_id)
                 for t_id in token_without_successors:
                     self.remove_token(t_id)
+                self.dag_tokens.add(None, equal_token_id)
             self.port_tokens[port_name].remove(equal_token_id)
             self.token_instances.pop(equal_token_id)
             self.token_available.pop(equal_token_id)
