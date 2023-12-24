@@ -179,7 +179,8 @@ class DirectGraph:
         return self.graph.values()
 
     def __str__(self):
-        return f"{json.dumps({k :list(v) for k, v in self.graph.items()}, indent=2)}"
+        # return f"{json.dumps({k : list(v) for k, v in self.graph.items()}, indent=2)}"
+        return "\n".join([f"{k}: {v}" for k, v in self.graph.items()])
 
 
 class RollbackDeterministicWorkflowPolicy:
@@ -259,7 +260,19 @@ class RollbackDeterministicWorkflowPolicy:
             for token in self.token_instances.values()
             if isinstance(token, JobToken)
         ]
-        logger.debug(f"GT: {self.dag_tokens}\nGP: {self.dcg_port}")
+        logger.debug(f"TOKEN_GRAPH: {self.dag_tokens}")
+        # logger.debug(f"PORT_GRAPH: {self.dcg_port}")
+        str_token_tags = "\n".join(
+            [
+                f"{self.token_instances[k].tag if k in self.token_instances.keys() else k}: {[self.token_instances[v].tag if v in self.token_instances.keys() else v for v in values]}"
+                for k, values in self.dag_tokens.items()
+            ]
+        )
+        logger.debug(f"TOKEN_TAGS: {str_token_tags}")
+        logger.debug(
+            f"PORT_TAGS: { { k : [self.token_instances[v].tag for v in values] for k, values in self.port_tokens.items()} }"
+        )
+
         for job_token in [
             token
             for token in self.token_instances.values()
@@ -644,7 +657,7 @@ class RollbackDeterministicWorkflowPolicy:
         loading_context,
     ):
         logger.debug(
-            f"populate_workflow: wf {new_workflow.name} dag[INIT] {self.dcg_port[DirectGraph.INIT_GRAPH_FLAG]}"
+            f"populate_workflow: wf {new_workflow.name} dag[INIT] {[ get_key_by_value(t_id, self.port_tokens) for t_id in self.dag_tokens[DirectGraph.INIT_GRAPH_FLAG]]}"
         )
         logger.debug(
             f"populate_workflow: wf {new_workflow.name} port {new_workflow.ports.keys()}"
@@ -1002,8 +1015,8 @@ class NewProvenanceGraphNavigation:
             )
         for info in self.info_tokens.values():
             logger.debug(
-                f"info\n\tid: {info.instance.persistent_id}\n\ttype: {type(info.instance)}\n\tvalue: {info.instance.value.name if isinstance(info.instance, JobToken) else info.instance.value['basename'] if isinstance(info.instance, CWLFileToken) else info.instance.value}"
-                f"\n\tis_avai: {info.is_available}\n\tport: {dict(info.port_row)}\n\tsteps: {[ s['name'] for s in info.step_rows] }"
+                f"token-info\n\tid: {info.instance.persistent_id}\n\ttype: {type(info.instance)}\n\tvalue: {info.instance.value.name if isinstance(info.instance, JobToken) else info.instance.value['basename'] if isinstance(info.instance, CWLFileToken) else info.instance.value}"
+                f"\n\ttag: {info.instance.tag}\n\tis_avai: {info.is_available}\n\tport: {dict(info.port_row)}\n\tsteps: {[ s['name'] for s in info.step_rows] }"
             )
         pass
 
