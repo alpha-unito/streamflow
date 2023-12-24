@@ -13,7 +13,9 @@ from streamflow.cwl.step import (
     CWLConditionalStep,
     CWLEmptyScatterConditionalStep,
     CWLInputInjectorStep,
+    CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
+    CWLLoopOutputLastStep,
     CWLTransferStep,
 )
 from streamflow.cwl.transformer import (
@@ -303,6 +305,63 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
         in_port=in_port,
         out_port=out_port,
         step_cls=CWLConditionalStep,
+        kwargs_step={
+            "name": utils.random_name() + "-when",
+            "expression": f"$(inputs.{port_name}.length == 1)",
+            "full_js": True,
+        },
+        token_list=token_list,
+        port_name=port_name,
+    )
+    assert len(out_port.token_list) == 2
+    await verify_dependency_tokens(
+        token=out_port.token_list[0],
+        port=out_port,
+        context=context,
+        expected_dependee=token_list,
+    )
+
+
+@pytest.mark.asyncio
+async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
+    """Test token provenance for CWLEmptyScatterConditionalStep"""
+    workflow, (in_port, out_port) = await create_workflow(context)
+    port_name = "test"
+    token_list = [ListToken([Token("a")])]
+    await general_test(
+        context=context,
+        workflow=workflow,
+        in_port=in_port,
+        out_port=out_port,
+        step_cls=CWLEmptyScatterConditionalStep,
+        kwargs_step={
+            "name": utils.random_name() + "-empty-scatter-condition",
+            "scatter_method": "dotproduct",
+        },
+        token_list=token_list,
+        port_name=port_name,
+    )
+    assert len(out_port.token_list) == 2
+    await verify_dependency_tokens(
+        token=out_port.token_list[0],
+        port=out_port,
+        context=context,
+        expected_dependee=token_list,
+    )
+
+
+@pytest.mark.asyncio
+async def test_cwl_loop_conditional_step(context: StreamFlowContext):
+    """Test token provenance for CWLLoopConditionalStep"""
+    workflow, (in_port, out_port) = await create_workflow(context)
+    port_name = "test"
+    token_list = [ListToken([Token("a")])]
+    await general_test(
+        context=context,
+        workflow=workflow,
+        in_port=in_port,
+        out_port=out_port,
+        step_cls=CWLLoopConditionalStep,
         kwargs_step={
             "name": utils.random_name() + "-when",
             "expression": f"$(inputs.{port_name}.length == 1)",
