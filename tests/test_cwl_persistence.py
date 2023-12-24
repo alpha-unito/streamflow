@@ -677,6 +677,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
+    skip_port = workflow.create_port()
     await workflow.save(context)
 
     step = workflow.create_step(
@@ -686,6 +687,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
         expression_lib=[],
         full_js=True,
     )
+    step.add_skip_port("test", skip_port)
     await save_load_and_test(step, context)
 
 
