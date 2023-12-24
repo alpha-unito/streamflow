@@ -29,7 +29,9 @@ from streamflow.cwl.processor import (
 )
 from streamflow.cwl.step import (
     CWLConditionalStep,
+    CWLEmptyScatterConditionalStep,
     CWLInputInjectorStep,
+    CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
     CWLTransferStep,
@@ -672,6 +674,27 @@ async def test_only_non_null_transformer(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
+async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
+    """Test saving and loading CWLEmptyScatterConditionalStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    in_port = workflow.create_port()
+    out_port = workflow.create_port()
+    await workflow.save(context)
+
+    name = utils.random_name()
+    empty_scatter_conditional_step = workflow.create_step(
+        cls=CWLEmptyScatterConditionalStep,
+        name=name + "-empty-scatter-condition",
+        scatter_method="dotproduct",
+    )
+    empty_scatter_conditional_step.add_input_port(name, in_port)
+    empty_scatter_conditional_step.add_output_port(name, out_port)
+    await save_load_and_test(empty_scatter_conditional_step, context)
+
+
+@pytest.mark.asyncio
 async def test_cwl_conditional_step(context: StreamFlowContext):
     """Test saving and loading CWLConditionalStep from database"""
     workflow = Workflow(
@@ -682,6 +705,26 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
 
     step = workflow.create_step(
         cls=CWLConditionalStep,
+        name=utils.random_name() + "-when",
+        expression="$(inputs.name.length == 10)",
+        expression_lib=[],
+        full_js=True,
+    )
+    step.add_skip_port("test", skip_port)
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_loop_conditional_step(context: StreamFlowContext):
+    """Test saving and loading CWLLoopConditionalStep from database"""
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    skip_port = workflow.create_port()
+    await workflow.save(context)
+
+    step = workflow.create_step(
+        cls=CWLLoopConditionalStep,
         name=utils.random_name() + "-when",
         expression="$(inputs.name.length == 10)",
         expression_lib=[],
