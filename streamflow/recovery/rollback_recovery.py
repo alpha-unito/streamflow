@@ -744,20 +744,20 @@ class RollbackDeterministicWorkflowPolicy:
         #         f"populate_workflow: Rimuovo lo step {replace_step.name} dal wf {new_workflow.name} perché lo rimpiazzo con il nuovo step {ll_cond_step.name}"
         #     )
         #
-        # # fixing skip ports in loop-terminator
-        # for step in new_workflow.steps.values():
-        #     if isinstance(step, CombinatorStep) and isinstance(
-        #         step.combinator, LoopTerminationCombinator
-        #     ):
-        #         dependency_names = set()
-        #         for dep_name, port_name in step.input_ports.items():
-        #             # Some data are available so added directly in the LoopCombinatorStep inputs.
-        #             # In this case, LoopTerminationCombinator must not wait on ports where these data are created.
-        #             if port_name not in new_workflow.ports.keys():
-        #                 dependency_names.add(dep_name)
-        #         for name in dependency_names:
-        #             step.input_ports.pop(name)
-        #             step.combinator.items.remove(name)
+        # fixing skip ports in loop-terminator
+        for step in new_workflow.steps.values():
+            if isinstance(step, CombinatorStep) and isinstance(
+                step.combinator, LoopTerminationCombinator
+            ):
+                dependency_names = set()
+                for dep_name, port_name in step.input_ports.items():
+                    # Some data are available so added directly in the LoopCombinatorStep inputs.
+                    # In this case, LoopTerminationCombinator must not wait on ports where these data are created.
+                    if port_name not in new_workflow.ports.keys():
+                        dependency_names.add(dep_name)
+                for name in dependency_names:
+                    step.input_ports.pop(name)
+                    step.combinator.items.remove(name)
 
         # remove steps which have not input ports loaded in new workflow
         steps_to_remove = set()

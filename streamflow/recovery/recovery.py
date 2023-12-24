@@ -13,6 +13,7 @@ from streamflow.core.utils import (
     contains_id,
     get_tag_level,
     random_name,
+    compare_tags,
 )
 from streamflow.core.exception import FailureHandlingException
 
@@ -56,6 +57,8 @@ from streamflow.workflow.step import (
     LoopCombinatorStep,
     ExecuteStep,
     ScatterStep,
+    ConditionalStep,
+    Transformer,
 )
 from streamflow.workflow.token import (
     TerminationToken,
@@ -113,14 +116,7 @@ class RollbackRecoveryPolicy:
             new_workflow,
             loading_context,
         )
-        # await _populate_workflow(
-        #     wr,
-        #     ports,
-        #     steps,
-        #     failed_step,
-        #     new_workflow,
-        #     loading_context,
-        # )
+        _replace_loop_condition(new_workflow, inner_graph)
         if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
             raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
         logger.debug("end populate")
@@ -155,102 +151,51 @@ class RollbackRecoveryPolicy:
         )
         return new_workflow, last_iteration
 
-    # async def recover_workflow_old(
-    #     self, failed_job: Job, failed_step: Step, loading_context
-    # ):
-    #     workflow = failed_step.workflow
-    #     new_workflow = Workflow(
-    #         context=workflow.context,
-    #         type=workflow.type,
-    #         name=random_name(),
-    #         config=workflow.config,
-    #     )
-    #
-    #     # should be an impossible case
-    #     if failed_step.persistent_id is None:
-    #         raise FailureHandlingException(
-    #             f"Workflow {workflow.name} has the step {failed_step.name} not saved in the database."
-    #         )
-    #
-    #     dag = {}
-    #     for k, t in failed_job.inputs.items():
-    #         if t.persistent_id is None:
-    #             raise FailureHandlingException("Token has not a persistent_id")
-    #         # se lo step è Transfer, allora non tutti gli input del job saranno nello step
-    #         if k in failed_step.input_ports.keys():
-    #             dag[failed_step.get_input_port(k).name] = {failed_step.name}
-    #         else:
-    #             logger.debug(f"Step {failed_step.name} has not the input port {k}")
-    #     dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
-    #
-    #     wr = ProvenanceGraphNavigation(
-    #         context=workflow.context,
-    #         output_ports=list(failed_step.input_ports.values()),
-    #         port_name_ids={
-    #             port.name: {port.persistent_id}
-    #             for port in failed_step.get_input_ports().values()
-    #         },
-    #         dag_ports=dag,
-    #     )
-    #
-    #     job_token = get_job_token(
-    #         failed_job.name,
-    #         failed_step.get_input_port("__job__").token_list,
-    #     )
-    #
-    #     tokens = deque(failed_job.inputs.values())
-    #     tokens.append(job_token)
-    #     await wr.build_dag(tokens, workflow, loading_context)
-    #     wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-    #     logger.debug("build_dag: end build dag")
-    #
-    #     # update class state (attributes) and jobs synchronization
-    #     logger.debug("Start sync-rollbacks")
-    #     # job_rollback = await self.context.failure_manager.sync_rollbacks(
-    #     #     new_workflow, loading_context, failed_step, wr, enable_sync=False
-    #     # )
-    #     wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-    #
-    #     logger.debug("End sync-rollbacks")
-    #     ports, steps = await wr.get_port_and_step_ids()
-    #
-    #     await _populate_workflow(
-    #         wr,
-    #         ports,
-    #         steps,
-    #         failed_step,
-    #         new_workflow,
-    #         loading_context,
-    #     )
-    #     if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
-    #         raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
-    #     logger.debug("end populate")
-    #
-    #     # for port in failed_step.get_input_ports().values():
-    #     #     if port.name not in new_workflow.ports.keys():
-    #     #         raise FailureHandlingException(
-    #     #             f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
-    #     #         )
-    #
-    #     logger.debug("end save_for_retag")
-    #
-    #     last_iteration = await _put_tokens(
-    #         new_workflow,
-    #         wr.dag_ports[INIT_DAG_FLAG],
-    #         wr.port_tokens,
-    #         wr.token_visited,
-    #         wr,
-    #     )
-    #     logger.debug("end _put_tokens")
-    #     await _set_steps_state(new_workflow, wr)
-    #     extra_data_print(
-    #         workflow,
-    #         new_workflow,
-    #         None,  # job_rollback,
-    #         wr.token_visited,
-    #         last_iteration,
-    #     )
-    #     return new_workflow, last_iteration
+
+def _replace_loop_condition(new_workflow, rdwp):
+    if replace_step := get_failed_loop_conditional_step(new_workflow, rdwp):
+        port_name = list(replace_step.input_ports.values()).pop()
+        n_iter = 0
+        tag = get_max_tag_list(
+            rdwp.token_instances[t_id].tag for t_id in rdwp.port_tokens[port_name]
+        )
+        n_iter = int(tag.split(".")[-1]) + 1
+        # n_iter = len(rdwp.port_tokens[port_name])
+        # n_iter = 1 if len(rdwp.port_tokens[port_name]) == 1 else len(rdwp.port_tokens[port_name]) - 1
+        ll_cond_step = CWLRecoveryLoopConditionalStep(
+            replace_step.name
+            if isinstance(replace_step, CWLRecoveryLoopConditionalStep)
+            else replace_step.name + "-recovery",
+            new_workflow,
+            get_recovery_loop_expression(n_iter),
+            full_js=True,
+        )
+        logger.debug(
+            f"Step {ll_cond_step.name} (wf {new_workflow.name}) set with expression: {ll_cond_step.expression}"
+        )
+        for dep_name, port in replace_step.get_input_ports().items():
+            logger.debug(
+                f"Step {ll_cond_step.name} (wf {new_workflow.name}) add input port {dep_name} {port.name}"
+            )
+            ll_cond_step.add_input_port(dep_name, port)
+        for dep_name, port in replace_step.get_output_ports().items():
+            logger.debug(
+                f"Step {ll_cond_step.name} (wf {new_workflow.name}) add output port {dep_name} {port.name}"
+            )
+            ll_cond_step.add_output_port(dep_name, port)
+        for dep_name, port in replace_step.get_skip_ports().items():
+            logger.debug(
+                f"Step {ll_cond_step.name} (wf {new_workflow.name}) add skip port {dep_name} {port.name}"
+            )
+            ll_cond_step.add_skip_port(dep_name, port)
+        new_workflow.steps.pop(replace_step.name)
+        new_workflow.add_step(ll_cond_step)
+        logger.debug(
+            f"populate_workflow: (3) Step {ll_cond_step.name} caricato nel wf {new_workflow.name}"
+        )
+        logger.debug(
+            f"populate_workflow: Rimuovo lo step {replace_step.name} dal wf {new_workflow.name} perché lo rimpiazzo con il nuovo step {ll_cond_step.name}"
+        )
 
 
 class ProvenanceGraphNavigation:
@@ -867,19 +812,25 @@ async def _new_put_tokens(
 
         if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
             if loop_combinator_input and not is_back_prop_output_port:
-                if last_iteration:
-                    if isinstance(port.token_list[-1], TerminationToken):
-                        token = port.token_list[-1]
-                    else:
-                        token = port.token_list[-1]
-                        logger.debug(
-                            f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts EMPTY token with tag {token.tag}"
+                # if isinstance(port.token_list[-1], TerminationToken):
+                #     token = port.token_list[-1]
+                # else:
+                #     token = port.token_list[-1]
+                #     logger.debug(
+                #         f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts EMPTY token with tag {token.tag}"
+                #     )
+                if port.token_list[-1].tag != "0":
+                    increased_tag = ".".join(
+                        (
+                            *port.token_list[-1].tag.split(".")[:-1],
+                            str(int(port.token_list[-1].tag.split(".")[-1]) + 1),
                         )
-                        # port.put(token)
-                    logger.debug(
-                        f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {token.tag}"
                     )
-                    port.put(IterationTerminationToken(token.tag))
+                    port.put(Token(value=None, tag=increased_tag))
+                logger.debug(
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[-1].tag}"
+                )
+                port.put(IterationTerminationToken(port.token_list[-1].tag))
                 logger.debug(
                     f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[0].tag}"
                 )
@@ -893,9 +844,15 @@ async def _new_put_tokens(
             logger.debug(
                 f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
             )
-    return last_iteration
     return None
 
+
+def get_max_tag_list(tag_list):
+    max_tag = "0"
+    for curr_tag in tag_list:
+        if compare_tags(curr_tag, max_tag) == 1:
+            max_tag = curr_tag
+    return max_tag
 
 
 async def _new_set_steps_state(new_workflow, rdwp):
@@ -928,6 +885,37 @@ async def _new_set_steps_state(new_workflow, rdwp):
                 logger.debug(
                     f"recover_jobs-last_iteration: Step {step.name} combinator updated map[{prefix}] = {step.combinator.iteration_map[prefix]}"
                 )
+        if not isinstance(
+            step, (BackPropagationTransformer, CombinatorStep, ConditionalStep)
+        ):
+            max_tag = "0"
+            for port_name in step.input_ports.values():
+                curr_tag = get_max_tag(
+                    {
+                        rdwp.token_instances[t_id]
+                        for t_id in rdwp.port_tokens.get(port_name, [])
+                        if t_id > 0
+                    }
+                )
+                if curr_tag and compare_tags(curr_tag, max_tag) == 1:
+                    max_tag = curr_tag
+            if max_tag != "0":
+                step.token_tag_stop = ".".join(
+                    (*max_tag.split(".")[:-1], str(int(max_tag.split(".")[-1]) + 1))
+                )
+                logger.info(
+                    f"wf {new_workflow.name}. Step {step.name}. token tag stop {step.token_tag_stop}"
+                )
+            pass
+    logger.info("end _new_set_steps_state")
+
+
+def get_max_tag(token_list):
+    max_tag = None
+    for t in token_list:
+        if max_tag is None or compare_tags(t.tag, max_tag) == 1:
+            max_tag = t.tag
+    return max_tag
 
 
 async def _put_tokens(
@@ -1139,10 +1127,15 @@ async def set_combinator_status(new_workflow, workflow, wr, loading_context):
 
 
 def get_failed_loop_conditional_step(new_workflow, wr):
-    if not wr.external_loop_step_name:
-        return None
-
-    return wr.external_loop_step
+    # if not wr.external_loop_step_name:
+    #     return None
+    #
+    # return wr.external_loop_step
+    for step in new_workflow.steps.values():
+        # todo: tmp soluzione. Possono esserci più loop conditional. Deve essere modificato solo quello in cui è coinvolto lo step fallito
+        if isinstance(step, CWLLoopConditionalStep):
+            return step
+    return None
 
 
 async def _populate_workflow(

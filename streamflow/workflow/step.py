@@ -110,6 +110,7 @@ class BaseStep(Step, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
         self._log_level: int = logging.DEBUG
+        self.token_tag_stop: str | None = None
 
     async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
         logger.debug(
@@ -127,11 +128,15 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
-        tags = set()
-        for t in inputs.values():
-            tags.add(t.tag)
-        if len(tags) != 1:
+        if (
+            self.token_tag_stop
+            and utils.get_tag(inputs.values()) == self.token_tag_stop
+        ):
+            inputs = {k: TerminationToken() for k in input_ports.keys()}
+
+        if len({t.tag for t in inputs.values()}) != 1:
             raise Exception("Input hanno tag diversi")
+
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs):
                 logger.debug(
@@ -1167,6 +1172,9 @@ class LoopCombinatorStep(CombinatorStep):
                         port.get(posixpath.join(self.name, port_name)), name=port_name
                     )
                 )
+            termination_token_counter = {
+                port_name: 0 for port_name in self.input_ports.keys()
+            }
             while input_tasks:
                 # Wait for the next token
                 finished, unfinished = await asyncio.wait(
@@ -1178,11 +1186,18 @@ class LoopCombinatorStep(CombinatorStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
+                        termination_token_counter[task_name] += 1
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 f"Step {self.name} (wf {self.workflow.name}) received termination token for port {task_name}"
                             )
                         terminated.append(task_name)
+                        if termination_token_counter[task_name] == 2:
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.warning(
+                                    f"Step {self.name} (wf {self.workflow.name}) anomalously terminates the iteration on port {task_name}."
+                                )
+                            self.iteration_terminaton_checklist[task_name].clear()
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
                     elif check_iteration_termination(token):
                         if token.tag in self.iteration_terminaton_checklist[task_name]:
