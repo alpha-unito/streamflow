@@ -88,12 +88,13 @@ async def general_test(
     kwargs_step: MutableMapping[str, Any],
     token_list: MutableSequence[Token],
     port_name: str = "test",
+    save_input_token: bool = True,
 ) -> Step:
     step = workflow.create_step(cls=step_cls, **kwargs_step)
     step.add_input_port(port_name, in_port)
     step.add_output_port(port_name, out_port)
 
-    await put_tokens(token_list, in_port, context)
+    await put_tokens(token_list, in_port, context, save_input_token)
 
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
@@ -102,10 +103,13 @@ async def general_test(
 
 
 async def put_tokens(
-    token_list: MutableSequence[Token], in_port: Port, context: StreamFlowContext
+    token_list: MutableSequence[Token],
+    in_port: Port,
+    context: StreamFlowContext,
+    save_input_token: bool = True,
 ) -> None:
     for t in token_list:
-        if not isinstance(t, TerminationToken):
+        if save_input_token and not isinstance(t, TerminationToken):
             await t.save(context, in_port.persistent_id)
         in_port.put(t)
     in_port.put(TerminationToken())

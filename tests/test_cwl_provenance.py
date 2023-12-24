@@ -430,6 +430,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
             "job_port": schedule_step.get_output_port(),
         },
         token_list=token_list,
+        save_input_token=True,
     )
     job_token = injector.get_input_port("__job__").token_list[0]
     await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
