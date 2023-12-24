@@ -970,6 +970,7 @@ class InputInjectorStep(BaseStep, ABC):
                 key_port, token = next(
                     iter((await self._get_inputs(input_ports)).items())
                 )
+                # Save input token of the dataset
                 if not token.persistent_id:
                     await token.save(
                         self.workflow.context,
