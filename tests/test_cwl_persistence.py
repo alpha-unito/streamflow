@@ -767,32 +767,17 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
     )
     await save_load_and_test(step, context)
 
-
 @pytest.mark.asyncio
-async def test_cwl_loop_output_all_step(context: StreamFlowContext):
-    """Test saving and loading CWLLoopOutputAllStep from database"""
+@pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
+async def test_cwl_loop_output(context: StreamFlowContext, step_cls):
+    """Test saving and loading CWLLoopOutput from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     await workflow.save(context)
 
     step = workflow.create_step(
-        cls=CWLLoopOutputAllStep,
+        cls=step_cls,
         name=posixpath.join(utils.random_name(), "-loop-output"),
-    )
-    await save_load_and_test(step, context)
-
-
-@pytest.mark.asyncio
-async def test_cwl_loop_output_last_step(context: StreamFlowContext):
-    """Test saving and loading CWLLoopOutputLastStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    await workflow.save(context)
-
-    step = workflow.create_step(
-        cls=CWLLoopOutputLastStep,
-        name=posixpath.join(utils.random_name(), "-last"),
     )
     await save_load_and_test(step, context)
