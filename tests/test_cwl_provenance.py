@@ -551,43 +551,13 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_loop_output_all_step(context: StreamFlowContext):
-    """Test token provenance for CWLLoopOutputAllStep"""
+@pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
+async def test_cwl_loop_output(context: StreamFlowContext, step_cls):
+    """Test token provenance for CWLLoopOutput"""
     workflow, (in_port, out_port) = await create_workflow(context)
 
     step = workflow.create_step(
-        cls=CWLLoopOutputAllStep,
-        name=posixpath.join(utils.random_name(), "-loop-output"),
-    )
-    port_name = "test"
-    step.add_input_port(port_name, in_port)
-    step.add_output_port(port_name, out_port)
-    token_list = [
-        Token("b", tag="0.1"),
-        IterationTerminationToken("0.1"),
-    ]
-    await put_tokens(token_list, in_port, context)
-
-    await workflow.save(context)
-    executor = StreamFlowExecutor(workflow)
-    await executor.run()
-
-    assert len(out_port.token_list) == 2
-    await verify_dependency_tokens(
-        token=out_port.token_list[0],
-        port=out_port,
-        context=context,
-        expected_dependee=[token_list[0]],
-    )
-
-
-@pytest.mark.asyncio
-async def test_cwl_loop_output_last_step(context: StreamFlowContext):
-    """Test token provenance for CWLLoopOutputLastStep"""
-    workflow, (in_port, out_port) = await create_workflow(context)
-
-    step = workflow.create_step(
-        cls=CWLLoopOutputLastStep,
+        cls=step_cls,
         name=posixpath.join(utils.random_name(), "-loop-output"),
     )
     port_name = "test"
