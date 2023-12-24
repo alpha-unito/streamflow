@@ -170,6 +170,14 @@ class DefaultDataManager(DataManager):
         # Create destination folder
         await remotepath.mkdir(dst_connector, dst_locations, str(Path(dst_path).parent))
         # Follow symlink for source path
+        await asyncio.gather(
+            *(
+                asyncio.create_task(src_data_loc.available.wait())
+                for src_data_loc in self.get_data_locations(
+                    src_path, src_location.deployment, src_location.name
+                )
+            )
+        )
         src_path = await remotepath.follow_symlink(
             self.context, src_connector, src_location, src_path
         )
