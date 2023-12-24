@@ -767,6 +767,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
     )
     await save_load_and_test(step, context)
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
 async def test_cwl_loop_output(context: StreamFlowContext, step_cls):
