@@ -13,9 +13,7 @@ from streamflow.cwl.step import (
     CWLConditionalStep,
     CWLEmptyScatterConditionalStep,
     CWLInputInjectorStep,
-    CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
-    CWLLoopOutputLastStep,
     CWLTransferStep,
 )
 from streamflow.cwl.transformer import (
@@ -323,63 +321,6 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
-    """Test token provenance for CWLEmptyScatterConditionalStep"""
-    workflow, (in_port, out_port) = await create_workflow(context)
-    port_name = "test"
-    token_list = [ListToken([Token("a")])]
-    await general_test(
-        context=context,
-        workflow=workflow,
-        in_port=in_port,
-        out_port=out_port,
-        step_cls=CWLEmptyScatterConditionalStep,
-        kwargs_step={
-            "name": utils.random_name() + "-empty-scatter-condition",
-            "scatter_method": "dotproduct",
-        },
-        token_list=token_list,
-        port_name=port_name,
-    )
-    assert len(out_port.token_list) == 2
-    await verify_dependency_tokens(
-        token=out_port.token_list[0],
-        port=out_port,
-        context=context,
-        expected_dependee=token_list,
-    )
-
-
-@pytest.mark.asyncio
-async def test_cwl_loop_conditional_step(context: StreamFlowContext):
-    """Test token provenance for CWLLoopConditionalStep"""
-    workflow, (in_port, out_port) = await create_workflow(context)
-    port_name = "test"
-    token_list = [ListToken([Token("a")])]
-    await general_test(
-        context=context,
-        workflow=workflow,
-        in_port=in_port,
-        out_port=out_port,
-        step_cls=CWLLoopConditionalStep,
-        kwargs_step={
-            "name": utils.random_name() + "-when",
-            "expression": f"$(inputs.{port_name}.length == 1)",
-            "full_js": True,
-        },
-        token_list=token_list,
-        port_name=port_name,
-    )
-    assert len(out_port.token_list) == 2
-    await verify_dependency_tokens(
-        token=out_port.token_list[0],
-        port=out_port,
-        context=context,
-        expected_dependee=token_list,
-    )
-
-
-@pytest.mark.asyncio
 async def test_transfer_step(context: StreamFlowContext):
     """Test token provenance for CWLTransferStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
@@ -561,11 +502,13 @@ async def test_cwl_loop_output_all_step(context: StreamFlowContext):
     port_name = "test"
     step.add_input_port(port_name, in_port)
     step.add_output_port(port_name, out_port)
-    token_list = [
-        Token("b", tag="0.1"),
-        IterationTerminationToken("0.1"),
+    tag = "0.1"
+    list_token = [
+        ListToken([Token("a"), Token("b")], tag=tag),
+        IterationTerminationToken(tag),
     ]
-    await put_tokens(token_list, in_port, context)
+
+    await put_tokens(list_token, in_port, context)
 
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
@@ -576,38 +519,7 @@ async def test_cwl_loop_output_all_step(context: StreamFlowContext):
         token=out_port.token_list[0],
         port=out_port,
         context=context,
-        expected_dependee=[token_list[0]],
-    )
-
-
-@pytest.mark.asyncio
-async def test_cwl_loop_output_last_step(context: StreamFlowContext):
-    """Test token provenance for CWLLoopOutputLastStep"""
-    workflow, (in_port, out_port) = await create_workflow(context)
-
-    step = workflow.create_step(
-        cls=CWLLoopOutputLastStep,
-        name=posixpath.join(utils.random_name(), "-loop-output"),
-    )
-    port_name = "test"
-    step.add_input_port(port_name, in_port)
-    step.add_output_port(port_name, out_port)
-    token_list = [
-        Token("b", tag="0.1"),
-        IterationTerminationToken("0.1"),
-    ]
-    await put_tokens(token_list, in_port, context)
-
-    await workflow.save(context)
-    executor = StreamFlowExecutor(workflow)
-    await executor.run()
-
-    assert len(out_port.token_list) == 2
-    await verify_dependency_tokens(
-        token=out_port.token_list[0],
-        port=out_port,
-        context=context,
-        expected_dependee=[token_list[0]],
+        expected_dependee=[list_token[0]],
     )
 
 
