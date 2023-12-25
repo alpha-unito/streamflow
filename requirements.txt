@@ -6,7 +6,7 @@ bcrypt==4.1.2
 cachetools==5.3.2
 cwltool==3.1.20231207110929
 cwl-utils==0.32
-importlib_metadata==7.0.0
+importlib_metadata==7.0.1
 importlib_resources==6.1.1
 Jinja2==3.1.2
 jsonschema==4.20.0
