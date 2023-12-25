@@ -4,6 +4,7 @@ from typing import Any, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Token
 from streamflow.cwl import utils
 from streamflow.data import remotepath
@@ -70,7 +71,9 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
                     root_data_loc, root_data_loc.path
                 )
         return is_available
-    raise Exception(f"It is not possible to verify the data {value} availability")
+    raise WorkflowExecutionException(
+        f"It is not possible to verify the data {value} availability"
+    )
 
 
 class CWLFileToken(FileToken):
