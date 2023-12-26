@@ -295,12 +295,14 @@ class RollbackDeterministicWorkflowPolicy:
                         port_recovery = self.context.failure_manager.add_waiter(
                             job_token.value.name,
                             output_port_name,
+                            workflow,
                             map_job_port.get(job_token.value.name, None),
                         )
                         logger.debug(
                             f"Created port {port_recovery.port.name} for wf {workflow.name} with waiting token {port_recovery.waiting_token}"
                         )
                         map_job_port.setdefault(job_token.value.name, port_recovery)
+                        workflow.add_port(port_recovery.port)
                     if len(job_token_names) == 1:
                         logger.debug(f"New-workflow {workflow.name} will be empty.")
                         pass
@@ -308,12 +310,6 @@ class RollbackDeterministicWorkflowPolicy:
                         #     "There is only job job in this rollback, but it is already running in another workflow. Something is wrong."
                         # )
                     execute_step_out_token_ids = await get_execute_step_out_token_ids(
-                        # [
-                        #     row["depender"]
-                        #     for row in await self.context.database.get_dependers(
-                        #         job_token.persistent_id
-                        #     )
-                        # ],
                         self.dag_tokens.succ(job_token.persistent_id),
                         self.context,
                     )
@@ -323,20 +319,7 @@ class RollbackDeterministicWorkflowPolicy:
                     for t_id in execute_step_out_token_ids:
                         for t_id_dead_path in self.remove_token_prev_links(t_id):
                             self.remove_token(t_id_dead_path)
-                        # for prev_t_id in self.dag_tokens.prev(t_id):
-                        #     # consider the token t_id and get its prev tokens.
-                        #     # If they have in next only t_id, then remove prev.
-                        #     if (
-                        #         (tokens := self.dag_tokens.succ(prev_t_id))
-                        #         and len(tokens) == 1
-                        #         and t_id in tokens
-                        #     ):
-                        #         logger.debug(
-                        #             f"Sync remove token {prev_t_id} (dependee of {t_id})"
-                        #         )
-                        #         # self.remove_token_by_id(prev_t_id)
-                        #         self.remove_token(prev_t_id)
-                    pass
+
                 elif job_request.token_output and all(
                     [
                         await _is_token_available(t, self.context)
@@ -384,7 +367,6 @@ class RollbackDeterministicWorkflowPolicy:
             # end lock
         # end for job token
         logger.debug(f"FINE sync (wf {workflow.name}) RUNNING JOBS")
-        return map_job_port
 
     # rename it in get_equal_token_id ?
     def get_equal_token(self, port_name, token):

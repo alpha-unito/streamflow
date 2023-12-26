@@ -70,12 +70,7 @@ class RollbackRecoveryPolicy:
         # update class state (attributes) and jobs synchronization
         inner_graph = await npgn.refold_graphs(failed_step.get_output_ports().values())
         logger.debug("Start sync-rollbacks")
-        map_job_port = await inner_graph.sync_running_jobs(new_workflow)
-
-        # todo tmp soluzione perché con i loop non funziona
-        for pr in map_job_port.values():
-            pr.port.workflow = new_workflow
-            new_workflow.add_port(pr.port)
+        await inner_graph.sync_running_jobs(new_workflow)
 
         logger.debug("End sync-rollbacks")
         ports, steps = await inner_graph.get_port_and_step_ids(

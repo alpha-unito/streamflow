@@ -23,6 +23,7 @@ from streamflow.recovery.recovery import (
     RollbackRecoveryPolicy,
 )
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.workflow.port import FilterTokenPort
 from streamflow.workflow.utils import get_job_token
 from streamflow.workflow.token import (
     TerminationToken,
@@ -97,11 +98,12 @@ class DefaultFailureManager(FailureManager):
                     return True
         return False
 
-    def add_waiter(self, job_name, port_name, port_recovery=None):
+    def add_waiter(self, job_name, port_name, workflow, port_recovery=None):
         if port_recovery:
             port_recovery.waiting_token += 1
         else:
-            port_recovery = PortRecovery(Port(None, port_name))
+            # todo: fix stop tags
+            port_recovery = PortRecovery(FilterTokenPort(workflow, port_name, []))
             self.job_requests[job_name].queue.append(port_recovery)
         return port_recovery
 
