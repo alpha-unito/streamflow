@@ -110,7 +110,6 @@ class BaseStep(Step, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
         self._log_level: int = logging.DEBUG
-        self.token_tag_stop: str | None = None
 
     async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
         logger.debug(
@@ -128,11 +127,6 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
-        if (
-            self.token_tag_stop
-            and utils.get_tag(inputs.values()) == self.token_tag_stop
-        ):
-            inputs = {k: TerminationToken() for k in input_ports.keys()}
 
         if len({t.tag for t in inputs.values()}) != 1:
             raise Exception("Input hanno tag diversi")

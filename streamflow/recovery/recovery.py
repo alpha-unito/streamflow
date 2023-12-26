@@ -935,6 +935,39 @@ async def _new_set_steps_state(new_workflow, rdwp):
         #             f"wf {new_workflow.name}. Step {step.name}. token tag stop {step.token_tag_stop}"
         #         )
         #     pass
+        # max_tag = "0"
+        # for port_name in step.input_ports.values():
+        #     curr_tag = get_max_tag(
+        #         {
+        #             rdwp.token_instances[t_id]
+        #             for t_id in rdwp.port_tokens.get(port_name, [])
+        #             if t_id > 0
+        #         }
+        #     )
+        #     if curr_tag and compare_tags(curr_tag, max_tag) == 1:
+        #         max_tag = curr_tag
+        for port_name, port in new_workflow.ports.items():
+            if not isinstance(port, (ConnectorPort, JobPort, FilterTokenPort)):
+                max_tag = get_max_tag(
+                    {
+                        rdwp.token_instances[t_id]
+                        for t_id in rdwp.port_tokens.get(port_name, [])
+                        if t_id > 0
+                    }
+                )
+                if max_tag is None:
+                    max_tag = "0"
+                stop_tag = ".".join(
+                    (*max_tag.split(".")[:-1], str(int(max_tag.split(".")[-1]) + 1))
+                )
+                new_workflow.ports[port_name] = FilterTokenPort(
+                    new_workflow, port_name, [stop_tag]
+                )
+                new_workflow.ports[port_name].token_list = port.token_list
+                logger.info(
+                    f"wf {new_workflow.name}. Port {port.name}. token tag stop {stop_tag}"
+                )
+
     logger.info("end _new_set_steps_state")
 
 
