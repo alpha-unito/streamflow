@@ -195,7 +195,8 @@ async def follow_symlink(
             )
         if not (output := result.strip()):
             # todo: WfTransferException oppure WfExecutionException ?
-            raise WorkflowTransferException(f"Symbolic Link {path} does not exist")
+            # raise WorkflowTransferException(f"Symbolic Link {path} does not exist")
+            pass
         return output
 
 

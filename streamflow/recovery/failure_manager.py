@@ -490,123 +490,13 @@ class DefaultFailureManager(FailureManager):
     async def _recover_jobs(self, failed_job: Job, failed_step: Step):
         loading_context = DefaultDatabaseLoadingContext()
         rrp = RollbackRecoveryPolicy(self.context)
+        # Generate new workflow
         new_workflow, last_iteration = await rrp.recover_workflow(
             failed_job, failed_step, loading_context
         )
+        # Execute new workflow
         await _execute_recovered_workflow(
             new_workflow, failed_step.name, failed_step.output_ports
-        )
-        # if last_iteration:
-        #     logger.debug(f"Create last iteration from wf {new_workflow.name}")
-        #     new_workflow_last_iteration = await self._recover_jobs_3(
-        #         failed_step,
-        #         failed_job,
-        #         last_iteration,
-        #         loading_context,
-        #         new_workflow,
-        #     )
-        #     logger.debug(
-        #         f"Last iteration {new_workflow.name} managed by {new_workflow_last_iteration.name}"
-        #     )
-        #     for port_name in last_iteration:
-        #         new_workflow_last_iteration.ports[port_name].token_list.pop(0)
-        #         new_workflow_last_iteration.ports[port_name].token_list.insert(
-        #             0, get_last_token(new_workflow.ports[port_name].token_list)
-        #         )
-        #     await _execute_recovered_workflow(
-        #         new_workflow_last_iteration, failed_step.name, None
-        #     )
-        #     return new_workflow_last_iteration
-        return new_workflow
-
-    async def _recover_jobs_3(
-        self,
-        failed_step,
-        failed_job,
-        last_iteration,
-        loading_context,
-        prev_workflow,
-    ):
-        new_workflow = Workflow(
-            context=prev_workflow.context,
-            type=prev_workflow.type,
-            name=random_name(),
-            config=prev_workflow.config,
-        )
-        dag = {}
-        for k, t in failed_job.inputs.items():
-            if t.persistent_id is None:
-                raise FailureHandlingException("Token has not a persistent_id")
-            # se lo step è Transfer, allora non tutti gli input del job saranno nello step
-            if k in failed_step.input_ports.keys():
-                dag[failed_step.get_input_port(k).name] = {failed_step.name}
-            else:
-                logger.debug(f"Step {failed_step.name} has not the input port {k}")
-        dag[failed_step.get_input_port("__job__").name] = {failed_step.name}
-        wr = ProvenanceGraphNavigation(
-            context=new_workflow.context,
-            output_ports=list(failed_step.input_ports.values()),
-            port_name_ids={k: {v for v in vals} for k, vals in last_iteration.items()},
-            dag_ports=dag,
-        )
-        job_token = get_job_token(
-            failed_job.name,
-            failed_step.get_input_port("__job__").token_list,
-        )
-        tokens = deque(failed_job.inputs.values())  # tokens to check
-        tokens.append(job_token)
-        logger.debug(f"last_iteration: {set(last_iteration.keys())}")
-        await wr.build_dag(
-            tokens, new_workflow, loading_context, set(last_iteration.keys())
-        )
-        wr.token_visited = get_necessary_tokens(wr.port_tokens, wr.token_visited)
-
-        # todo wr.inputs_ports non viene aggiornato
-        # if (set(wr.input_ports) - set(wr.dag_ports[INIT_DAG_FLAG])) or (set(wr.dag_ports[INIT_DAG_FLAG]) - set(wr.input_ports)):
-        #     pass
-
-        p, s = await wr.get_port_and_step_ids()
-        await _populate_workflow(
-            wr,
-            p,
-            s,
-            failed_step,
-            new_workflow,
-            loading_context,
-        )
-        logger.debug("end populate")
-
-        for port in failed_step.get_input_ports().values():
-            if port.name not in new_workflow.ports.keys():
-                raise FailureHandlingException(
-                    f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
-                )
-
-        _set_scatter_inner_state(
-            new_workflow, wr.dag_ports, wr.port_tokens, wr.token_visited
-        )
-        logger.debug("end _set_scatter_inner_state")
-
-        last_iteration = await _put_tokens(
-            new_workflow,
-            wr.dag_ports[INIT_DAG_FLAG],
-            wr.port_tokens,
-            wr.token_visited,
-            wr,
-        )
-        logger.debug("end _put_tokens")
-        await set_combinator_status(new_workflow, prev_workflow, wr, loading_context)
-
-        if last_iteration:
-            raise FailureHandlingException(
-                f"Workflow {new_workflow.name} has too much iteration (just 1 iteration is valid) {last_iteration}"
-            )
-        extra_data_print(
-            prev_workflow,
-            new_workflow,
-            None,
-            wr.token_visited,
-            last_iteration,
         )
         return new_workflow
 
