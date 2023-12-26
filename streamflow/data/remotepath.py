@@ -15,10 +15,7 @@ import aiohttp
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType, FileType
-from streamflow.core.exception import (
-    WorkflowExecutionException,
-    WorkflowTransferException,
-)
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:

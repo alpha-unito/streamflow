@@ -4,13 +4,10 @@ import os
 import json
 import asyncio
 import logging
-from collections import deque
 from typing import MutableMapping, MutableSequence
 
 import pkg_resources
 
-from streamflow.core.utils import random_name, get_class_from_name
-from streamflow.core.workflow import Workflow
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.recovery import FailureManager
 from streamflow.core.workflow import CommandOutput, Job, Status, Step, Port, Token
@@ -21,36 +18,16 @@ from streamflow.core.exception import (
 )
 
 from streamflow.log_handler import logger
-from streamflow.recovery.utils import (
-    INIT_DAG_FLAG,
-    TOKEN_WAITER,
-    get_execute_step_out_token_ids,
-    get_last_token,
-    get_key_by_value,
-    _execute_recovered_workflow,
-)
+from streamflow.recovery.utils import _is_token_available, _execute_recovered_workflow
 from streamflow.recovery.recovery import (
-    _is_token_available,
-    get_necessary_tokens,
-    is_next_of_someone,
-    _put_tokens,
-    ProvenanceGraphNavigation,
-    _populate_workflow,
-    set_combinator_status,
     RollbackRecoveryPolicy,
-    _set_scatter_inner_state,
 )
-
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-
 from streamflow.workflow.utils import get_job_token
-from streamflow.workflow.step import TransferStep, ExecuteStep
 from streamflow.workflow.token import (
     TerminationToken,
     JobToken,
 )
-
-from streamflow.recovery.utils import extra_data_print
 
 
 async def _execute_transfer_step(failed_step, new_workflow, port_name):
@@ -104,102 +81,6 @@ class DefaultFailureManager(FailureManager):
         # { job.name : RequestJob }
         self.job_requests: MutableMapping[str, JobRequest] = {}
 
-    async def has_token_already_been_recovered(
-        self,
-        token,
-        token_visited,
-        available_new_job_tokens,
-        running_new_job_tokens,
-        context,
-    ):
-        if (
-            not isinstance(token, JobToken)
-            or token.value.name not in self.job_requests.keys()
-        ):
-            return False
-
-        async with self.job_requests[token.value.name].lock:
-            job_request = self.job_requests[token.value.name]
-
-            # todo: togliere parametro is_running, usare lo status dello step OPPURE status dentro lo scheduler
-            # todo: questo controllo forse meglio toglierlo da qui. Dal momento tra cui li individuo is_running al
-            #  momento in cui li attacco al workflow (sync_rollbacks) i job potrebbero terminare e non avrei i token
-            #  in input. Una soluzione facile è costruire tutto il grafo ignorando quelli running in questo
-            #  momento. Poi sync_rollbacks aggiusta tutto. La pecca è di costruire tutto il grafo quando in realtà
-            #  non serve perché poi verrà prunato fino al job running.
-            if job_request.is_running:
-                logger.debug(
-                    f"Il job {token.value.name} {token.persistent_id} - è running, dovrei aspettare il suo output"
-                )
-
-                running_new_job_tokens[token.persistent_id] = {
-                    "job_request": job_request
-                }
-                # raise FailureHandlingException(f"Job {token.value.name} is already running. This case is still a working progress")
-            elif (
-                job_request.job_token
-                and job_request.job_token.persistent_id
-                and token.persistent_id != job_request.job_token.persistent_id
-                and job_request.token_output
-            ):
-                # todo: Fare lo load del token direttamente quando recupero
-                #   così se più avanti serve, non si deve riaccedere al db ....
-                #   update: FORSE NON SERVE FARLO
-                out_tokens_json = await context.database.get_out_tokens_from_job_token(
-                    token.persistent_id
-                )
-                # out_tokens_json dovrebbe essere una lista...caso in cui un job produce più token
-                if not out_tokens_json:
-                    logger.debug(
-                        f"il job {token.value.name} ({token.persistent_id}) ha il out_token_json null",
-                    )
-                    return False
-                logger.debug(
-                    f"il job {token.value.name} ({token.persistent_id}) ha il out_token_json['id']: {out_tokens_json['id']} vs job_request.token_output: {job_request.token_output}"
-                    f"\n\t out_tokens_json: {dict(out_tokens_json)}",
-                )
-                port_json = await context.database.get_port_from_token(
-                    out_tokens_json["id"]
-                )
-                is_available = await _is_token_available(
-                    job_request.token_output[port_json["name"]], context
-                )
-                logger.debug(
-                    f"il job {token.value.name} ({token.persistent_id}) - out_token_json['id'] {out_tokens_json['id']} ha il port_json {dict(port_json)}"
-                    f"\n\til token di output {job_request.token_output[port_json['name']]} è già disponibile? {is_available}"
-                )
-                if is_available:
-                    available_new_job_tokens[token.persistent_id] = {
-                        "out-token-port-name": port_json["name"],
-                        # "new-job-token": job_request.job_token.persistent_id,
-                        "new-out-token": job_request.token_output[
-                            port_json["name"]
-                        ].persistent_id,
-                        # "old-job-token": token.persistent_id,
-                        "old-out-token": out_tokens_json["id"],
-                        "job-name": token.value.name,  # solo per debug
-                        # "value": out_tokens_json["value"],
-                    }
-                    token_visited[token.persistent_id] = (
-                        token,
-                        True,
-                    )
-                    # token_visited[job_request.job_token.persistent_id] = (
-                    #     job_request.job_token,
-                    #     True,
-                    # )
-                    token_visited[
-                        job_request.token_output[port_json["name"]].persistent_id
-                    ] = (job_request.token_output[port_json["name"]], True)
-                    return True
-                else:
-                    self.job_requests[token.value.name].job_token = None
-                    # todo: come gestire i vari kport? Se un token non è valido mettere a None solo la kport
-                    #  di quel token o tutta? la cosa migliore sarebbe solo di quella persa
-                    self.job_requests[token.value.name].token_output = None
-                    self.job_requests[token.value.name].workflow = None
-        return False
-
     async def is_running_token(self, token):
         if isinstance(token, JobToken) and token.value.name in self.job_requests.keys():
             async with self.job_requests[token.value.name].lock:
@@ -215,211 +96,6 @@ class DefaultFailureManager(FailureManager):
                 ):
                     return True
         return False
-
-    async def _sync_requests(
-        self,
-        job_token,
-        failed_step,
-        new_workflow,
-        wr,
-        loading_context,
-        job_token_list,
-        map_job_port,
-        enable_sync,
-    ):
-        async with self.job_requests[job_token.value.name].lock:
-            if self.job_requests[job_token.value.name].is_running:
-                logger.debug(
-                    f"Job {job_token.value.name} già in esecuzione nel workflow {self.job_requests[job_token.value.name].workflow} -> Ricostruire dag"
-                )
-
-                # alternativa: dal dag_ports prendo tutte le port successive al job_token,
-                # con il database ricavo quali di queste porte sono output di uno ExecuteStep
-                # get outport ScheduleStep
-                job_token_port_row = await wr.context.database.get_port_from_token(
-                    job_token.persistent_id
-                )
-                job_token_port_name = job_token_port_row["name"]
-                job_token_port_name_m2 = get_key_by_value(
-                    job_token.persistent_id, wr.port_tokens
-                )  # new version of job_token_port_row["name"]
-                if job_token_port_name != job_token_port_name_m2:
-                    raise FailureHandlingException(
-                        "Ottenere port name del job token. Il nuovo metodo e quello vecchio hanno dato risultati diversi"
-                    )
-
-                # these can be outport of ExecuteStep and TransferStep
-                next_port_names = wr.dag_ports[job_token_port_name]
-                output_ports = []
-                for port_name in next_port_names:
-                    if port_name not in wr.port_name_ids.keys():
-                        continue
-                    port_id = min(wr.port_name_ids[port_name])
-                    step_rows = await wr.context.database.get_steps_from_output_port(
-                        port_id
-                    )
-                    for step_row in await asyncio.gather(
-                        *(
-                            asyncio.create_task(
-                                wr.context.database.get_step(sr["step"])
-                            )
-                            for sr in step_rows
-                        )
-                    ):
-                        if issubclass(
-                            get_class_from_name(step_row["type"]), ExecuteStep
-                        ):
-                            output_ports.append(
-                                await Port.load(
-                                    wr.context,
-                                    port_id,
-                                    loading_context,
-                                    new_workflow,
-                                )
-                            )
-
-                rows = await wr.context.database.get_executestep_outports_from_jobtoken(
-                    job_token.persistent_id
-                )
-                execute_step_outports = await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            Port.load(
-                                wr.context,
-                                row["id"],
-                                loading_context,
-                                new_workflow,
-                            )
-                        )
-                        for row in rows
-                        if row["name"] not in new_workflow.ports.keys()
-                        and row["name"] not in failed_step.output_ports.values()
-                    )
-                )
-                # controllo per debug
-                for p in execute_step_outports:
-                    if (
-                        p.name not in next_port_names
-                        and p.name not in failed_step.output_ports.values()
-                    ):
-                        if isinstance(failed_step, TransferStep):
-                            pass
-                        raise FailureHandlingException(
-                            f"wf {new_workflow.name} Port {p.name} non presente tra quelle presente nel dag_ports {next_port_names}"
-                        )
-                    logger.debug(
-                        f"wf {new_workflow.name} Porta {p.name} trovata tra le next con il secondo metodo {next_port_names}"
-                    )
-
-                # output_ports is the new version of execute_step_outports
-                a = set([op.name for op in execute_step_outports])
-                b = set([op.name for op in output_ports])
-                c = a - b
-                d = b - a
-                if c or d:
-                    raise FailureHandlingException(
-                        "Recupero port. Il nuovo metodo e quello vecchio hanno dato risultati diversi"
-                    )
-
-                # if the port can have more tokens (todo: caso non testato)
-                for row in rows:
-                    if row["name"] not in new_workflow.ports.keys():
-                        continue
-                    for pr in self.job_requests[job_token.value.name].queue:
-                        if pr.port.name == row["name"]:
-                            pr.waiting_token += 1
-                            logger.debug(
-                                f"new_workflow {new_workflow.name} already has port {pr.port.name}. Increased waiting_tokens: {pr.waiting_token}"
-                            )
-                            break
-
-                # add port in the workflow and create port recovery (request)
-                if enable_sync:
-                    for port in execute_step_outports:
-                        port.workflow = None
-                        map_job_port[job_token.value.name] = port
-                        logger.debug(
-                            f"new_workflow {new_workflow.name} added in map_job_port[{job_token.value.name}] = {port.name}"
-                        )
-                        new_workflow.add_port(port)
-                        port.workflow = new_workflow
-                        # logger.debug(
-                        #     f"new_workflow {new_workflow.name} added port {port.name} -> {new_workflow.ports.keys()}"
-                        # )
-                        self.job_requests[job_token.value.name].queue.append(
-                            PortRecovery(port)
-                        )
-
-                # rimuovo i token generati da questo job token, pero'
-                # non posso togliere tutti i token della port perché non so quali job li genera
-                execute_step_out_token_ids = await get_execute_step_out_token_ids(
-                    [
-                        row["depender"]
-                        for row in await wr.context.database.get_dependers(
-                            job_token.persistent_id
-                        )
-                    ],
-                    wr.context,
-                )
-                for t_id in execute_step_out_token_ids:
-                    for prev_t_id in (
-                        row["dependee"]
-                        for row in await wr.context.database.get_dependees(t_id)
-                    ):
-                        await wr.remove_token_by_id(prev_t_id)
-                for p in execute_step_outports:
-                    if not is_next_of_someone(p.name, wr.dag_ports):
-                        wr.dag_ports[INIT_DAG_FLAG].add(p.name)
-                    wr.port_tokens.setdefault(p.name, set()).add(TOKEN_WAITER)
-                logger.debug(
-                    f"SYNC job {job_token.value.name} "
-                    f"in esecuzione in wf {self.job_requests[job_token.value.name].workflow} "
-                    f"servirà al wf {new_workflow.name}",
-                )
-            else:
-                logger.debug(
-                    f"Job {job_token.value.name} posto running, mentre job_token e token_output posti a None. (Valore corrente jt: {self.job_requests[job_token.value.name].job_token} - t: {self.job_requests[job_token.value.name].token_output})"
-                )
-                job_token_list.append(job_token)
-                if enable_sync:
-                    self.job_requests[job_token.value.name].is_running = True
-                    self.job_requests[job_token.value.name].job_token = None
-                    self.job_requests[job_token.value.name].token_output = None
-                    self.job_requests[job_token.value.name].workflow = new_workflow.name
-
-    async def sync_rollbacks(
-        self,
-        new_workflow,
-        loading_context,
-        failed_step,
-        wr,
-        enable_sync=True,
-    ):
-        map_job_port = {}
-        job_token_list = []
-        for token in (
-            t for t, _ in wr.token_visited.values() if isinstance(t, JobToken)
-        ):
-            # update job request
-            if token.value.name not in self.job_requests.keys():
-                if enable_sync:
-                    self.job_requests[token.value.name] = JobRequest()
-                    self.job_requests[token.value.name].workflow = new_workflow.name
-                job_token_list.append(token)
-            else:
-                await self._sync_requests(
-                    token,
-                    failed_step,
-                    new_workflow,
-                    wr,
-                    loading_context,
-                    job_token_list,
-                    map_job_port,
-                    enable_sync,
-                )
-            if enable_sync:
-                await self.update_job_statuses(job_token_list)
-        return [t.value.name for t in job_token_list]
 
     def add_waiter(self, job_name, port_name, port_recovery=None):
         if port_recovery:

@@ -508,7 +508,7 @@ def extra_data_print(
     # INFO: ci sarà una iterazione precedente
     # "/subworkflow-loop-terminator" in new_workflow.steps.keys()
     if "/subworkflow-loop-terminator" in new_workflow.steps.keys():
-        print(f"There will be a/some prev iteration/s", file=sys.stderr)
+        print("There will be a/some prev iteration/s", file=sys.stderr)
         pass
     # print_wr_size(wr)
     # print_wf_size(new_workflow)
