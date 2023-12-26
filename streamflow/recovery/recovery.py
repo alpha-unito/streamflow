@@ -16,8 +16,15 @@ from streamflow.log_handler import logger
 from streamflow.recovery.rollback_recovery import (
     NewProvenanceGraphNavigation,
     DirectGraph,
+    ProvenanceToken,
+    TokenAvailability,
 )
-from streamflow.recovery.utils import extra_data_print
+from streamflow.recovery.utils import (
+    extra_data_print,
+    _is_token_available,
+    get_execute_step_out_token_ids,
+    get_steps_from_output_port,
+)
 from streamflow.workflow.port import ConnectorPort, JobPort, FilterTokenPort
 from streamflow.workflow.step import (
     LoopCombinatorStep,
@@ -26,9 +33,16 @@ from streamflow.workflow.step import (
 from streamflow.workflow.token import (
     TerminationToken,
     IterationTerminationToken,
+    JobToken,
 )
 from streamflow.core.workflow import Workflow
 from streamflow.workflow.utils import get_job_token
+
+
+class PortRecovery:
+    def __init__(self, port):
+        self.port = port
+        self.waiting_token = 1
 
 
 class RollbackRecoveryPolicy:
@@ -70,7 +84,7 @@ class RollbackRecoveryPolicy:
         # update class state (attributes) and jobs synchronization
         inner_graph = await npgn.refold_graphs(failed_step.get_output_ports().values())
         logger.debug("Start sync-rollbacks")
-        await inner_graph.sync_running_jobs(new_workflow)
+        await self.sync_running_jobs(inner_graph, new_workflow)
 
         logger.debug("End sync-rollbacks")
         ports, steps = await inner_graph.get_port_and_step_ids(
@@ -119,6 +133,132 @@ class RollbackRecoveryPolicy:
         )
 
         return new_workflow, last_iteration
+
+    def add_waiter(self, job_name, port_name, workflow, port_recovery=None):
+        if port_recovery:
+            port_recovery.waiting_token += 1
+        else:
+            # todo: fix stop tags
+            port_recovery = PortRecovery(FilterTokenPort(workflow, port_name, []))
+            self.context.failure_manager.job_requests[job_name].queue.append(
+                port_recovery
+            )
+        return port_recovery
+
+    async def sync_running_jobs(self, rdwp, workflow):
+        logger.debug(f"INIZIO sync (wf {workflow.name}) RUNNING JOBS")
+        map_job_port = {}
+        job_token_names = [
+            token.value.name
+            for token in rdwp.token_instances.values()
+            if isinstance(token, JobToken)
+        ]
+        logger.debug(f"TOKEN_GRAPH: {rdwp.dag_tokens}")
+        # logger.debug(f"PORT_GRAPH: {self.dcg_port}")
+        str_token_tags = "\n".join(
+            [
+                f"{rdwp.token_instances[k].tag if k in rdwp.token_instances.keys() else k}: {[rdwp.token_instances[v].tag if v in rdwp.token_instances.keys() else v for v in values]}"
+                for k, values in rdwp.dag_tokens.items()
+            ]
+        )
+        logger.debug(f"TOKEN_TAGS: {str_token_tags}")
+        logger.debug(
+            f"PORT_TAGS: { {k: [rdwp.token_instances[v].tag for v in values] for k, values in rdwp.port_tokens.items()} }"
+        )
+
+        for job_token in [
+            token
+            for token in rdwp.token_instances.values()
+            if isinstance(token, JobToken)
+        ]:
+            job_request = await self.context.failure_manager.setup_job_request(
+                job_token.value.name, default_is_running=False
+            )
+            async with job_request.lock:
+                if job_request.is_running:
+                    logger.debug(
+                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest is running on wf {job_request.workflow.name}. Other jobs: {job_token_names}"
+                    )
+                    output_port_names = await rdwp.get_execute_output_port_names(
+                        job_token
+                    )
+                    logger.debug(f"Lista output_port_names: {output_port_names}")
+                    for output_port_name in output_port_names:
+                        port_recovery = self.add_waiter(
+                            job_token.value.name,
+                            output_port_name,
+                            workflow,
+                            map_job_port.get(job_token.value.name, None),
+                        )
+                        logger.debug(
+                            f"Created port {port_recovery.port.name} for wf {workflow.name} with waiting token {port_recovery.waiting_token}"
+                        )
+                        map_job_port.setdefault(job_token.value.name, port_recovery)
+                        workflow.add_port(port_recovery.port)
+                    if len(job_token_names) == 1:
+                        logger.debug(f"New-workflow {workflow.name} will be empty.")
+                        pass
+                        # raise FailureHandlingException(
+                        #     "There is only job job in this rollback, but it is already running in another workflow. Something is wrong."
+                        # )
+                    execute_step_out_token_ids = await get_execute_step_out_token_ids(
+                        rdwp.dag_tokens.succ(job_token.persistent_id),
+                        self.context,
+                    )
+                    logger.debug(
+                        f"Lista execute_step_out_token_ids: {execute_step_out_token_ids}"
+                    )
+                    for t_id in execute_step_out_token_ids:
+                        for t_id_dead_path in rdwp.remove_token_prev_links(t_id):
+                            rdwp.remove_token(t_id_dead_path)
+
+                elif job_request.token_output and all(
+                    [
+                        await _is_token_available(t, self.context)
+                        for t in job_request.token_output.values()
+                    ]
+                ):
+                    # search execute token after job token, replace this token with job_requ token. then remove all the prev tokens
+                    logger.debug(
+                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest has token_output { {k: v.persistent_id for k, v in job_request.token_output.items()} }"
+                    )
+                    for port_name in await rdwp.get_execute_output_port_names(
+                        job_token
+                    ):
+                        new_token = job_request.token_output[port_name]
+                        port_row = await self.context.database.get_port_from_token(
+                            new_token.persistent_id
+                        )
+                        step_rows = await get_steps_from_output_port(
+                            port_row["id"], self.context
+                        )
+                        logger.debug(
+                            f"Sync Job {job_token.value.name} (wf {workflow.name}): Replace {rdwp.get_equal_token(port_name, new_token)} with {new_token.persistent_id}"
+                        )
+                        await rdwp.replace_token_and_remove(
+                            port_name,
+                            ProvenanceToken(
+                                new_token,
+                                TokenAvailability.Available,
+                                port_row,
+                                step_rows,
+                            ),
+                        )
+                else:
+                    logger.debug(
+                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest set to running and job_token and token_output to None."
+                        f"\n\t- Prev value job_token: {job_request.job_token}\n\t- Prev value token_output: {job_request.token_output}"
+                    )
+                    job_request.is_running = True
+                    job_request.job_token = None
+                    job_request.token_output = None
+                    job_request.workflow = workflow
+                    await self.context.failure_manager.update_job_status(
+                        job_token.value.name, job_request.lock
+                    )
+            # end lock
+        # end for job token
+        logger.debug(f"FINE sync (wf {workflow.name}) RUNNING JOBS")
 
 
 async def _new_put_tokens(

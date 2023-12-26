@@ -21,9 +21,9 @@ from streamflow.log_handler import logger
 from streamflow.recovery.utils import _is_token_available, _execute_recovered_workflow
 from streamflow.recovery.recovery import (
     RollbackRecoveryPolicy,
+    PortRecovery,
 )
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.workflow.port import FilterTokenPort
 from streamflow.workflow.utils import get_job_token
 from streamflow.workflow.token import (
     TerminationToken,
@@ -44,12 +44,6 @@ async def _execute_transfer_step(failed_step, new_workflow, port_name):
             f"Step recovery {failed_step.name} did not work well. It moved two tokens instead of one: {[t.persistent_id for t in token_list]}"
         )
     return token_list[0]
-
-
-class PortRecovery:
-    def __init__(self, port):
-        self.port = port
-        self.waiting_token = 1
 
 
 class JobRequest:
@@ -97,15 +91,6 @@ class DefaultFailureManager(FailureManager):
                 ):
                     return True
         return False
-
-    def add_waiter(self, job_name, port_name, workflow, port_recovery=None):
-        if port_recovery:
-            port_recovery.waiting_token += 1
-        else:
-            # todo: fix stop tags
-            port_recovery = PortRecovery(FilterTokenPort(workflow, port_name, []))
-            self.job_requests[job_name].queue.append(port_recovery)
-        return port_recovery
 
     async def setup_job_request(self, job_name, default_is_running=True):
         if job_name not in self.job_requests.keys():
