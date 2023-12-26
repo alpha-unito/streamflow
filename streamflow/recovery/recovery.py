@@ -25,7 +25,6 @@ from streamflow.cwl.step import CWLLoopConditionalStep, CWLRecoveryLoopCondition
 from streamflow.cwl.transformer import (
     BackPropagationTransformer,
     CWLTokenTransformer,
-    TokenFilterTransformer,
 )
 from streamflow.log_handler import logger
 from streamflow.recovery.rollback_recovery import (

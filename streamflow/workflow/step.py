@@ -700,63 +700,6 @@ class ExecuteStep(BaseStep):
             )
             self.workflow.context.checkpoint_manager.save_data(token)
 
-    async def _retrieve_outputs(self, job, command_output, connectors):
-        try:
-            job_token = get_job_token(
-                job.name, self.get_input_port("__job__").token_list
-            )
-            if (
-                jt := await self.workflow.context.failure_manager.get_job_token(
-                    job_token
-                )
-            ) and jt.persistent_id > job_token.persistent_id:
-                output_tokens = await self.workflow.context.failure_manager.get_tokens(
-                    job.name
-                )
-                for output_name, token in output_tokens.items():
-                    self.workflow.ports[output_name].put(token)
-            else:
-                job_token.value = job
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._retrieve_output(
-                                job_token=job_token,
-                                output_name=output_name,
-                                output_port=self.workflow.ports[output_port],
-                                command_output=command_output,
-                                connector=connectors.get(output_name),
-                            )
-                        )
-                        for output_name, output_port in self.output_ports.items()
-                    )
-                )
-        except Exception as e:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Step {self.name} (wf {self.workflow.name}) fails to analyze output data"
-                )
-            logger.exception(e)
-            try:
-                await self.workflow.context.failure_manager.handle_exception(
-                    job, self, e
-                )
-                output_tokens = await self.workflow.context.failure_manager.get_tokens(
-                    job.name
-                )
-                for out_port_name, token in output_tokens.items():
-                    if out_port_name not in self.output_ports.values():
-                        raise Exception(
-                            f"Step {self.name} (wf {self.workflow.name}) does not have port {out_port_name}"
-                        )
-                    self.workflow.ports[out_port_name].put(token)
-            # If failure cannot be recovered, simply fail
-            except Exception as ie:
-                if ie != e:
-                    logger.exception(ie)
-                command_output.status = Status.FAILED
-                await self.terminate(command_output.status)
-
     async def _run_job(
         self,
         job: Job,
@@ -797,6 +740,26 @@ class ExecuteStep(BaseStep):
                         job, self, command_output
                     )
                 )
+            else:
+                logger.info(f"Job {job.name} recupera token di output")
+                job_token = get_job_token(
+                    job.name, self.get_input_port("__job__").token_list
+                )
+                job_token.value = job
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self._retrieve_output(
+                                job_token=job_token,
+                                output_name=output_name,
+                                output_port=self.workflow.ports[output_port],
+                                command_output=command_output,
+                                connector=connectors.get(output_name),
+                            )
+                        )
+                        for output_name, output_port in self.output_ports.items()
+                    )
+                )
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
@@ -828,10 +791,6 @@ class ExecuteStep(BaseStep):
             await self.workflow.context.scheduler.notify_status(
                 job.name, command_output.status
             )
-        # Retrieve output tokens
-        if not self.terminated:
-            logger.debug(f"Job {job.name} (wf {self.workflow.name}) _retrieve_outputs")
-            await self._retrieve_outputs(job, command_output, connectors)
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
@@ -1767,6 +1726,9 @@ class TransferStep(BaseStep, ABC):
                                             ]
                                         ),
                                     )
+                                    self.get_output_port(port_name).put(
+                                        transferred_token
+                                    )
                                 except WorkflowTransferException as e:
                                     logger.exception(e)
                                     transferred_token = await self.workflow.context.failure_manager.handle_failure_transfer(
@@ -1781,7 +1743,6 @@ class TransferStep(BaseStep, ABC):
                                             f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"
                                         )
                                         raise e
-                                self.get_output_port(port_name).put(transferred_token)
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise

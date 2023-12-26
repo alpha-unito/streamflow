@@ -606,10 +606,12 @@ class RollbackDeterministicWorkflowPolicy:
                 token_info_b.port_row["id"]
             )
 
-    async def get_port_and_step_ids(self):
+    async def get_port_and_step_ids(self, exclude_ports):
         steps = set()
         ports = {
-            min(self.port_name_ids[port_name]) for port_name in self.port_tokens.keys()
+            min(self.port_name_ids[port_name])
+            for port_name in self.port_tokens.keys()
+            if port_name not in exclude_ports
         }
         for row_dependencies in await asyncio.gather(
             *(
@@ -702,48 +704,6 @@ class RollbackDeterministicWorkflowPolicy:
                 )
                 new_workflow.add_port(port)
 
-        # if replace_step := get_failed_loop_conditional_step(new_workflow, wr):
-        #     port_name = list(replace_step.input_ports.values()).pop()
-        #     ll_cond_step = CWLRecoveryLoopConditionalStep(
-        #         replace_step.name
-        #         if isinstance(replace_step, CWLRecoveryLoopConditionalStep)
-        #         else replace_step.name + "-recovery",
-        #         new_workflow,
-        #         get_recovery_loop_expression(
-        #             # len(wr.port_tokens[port_name])
-        #             1
-        #             if len(wr.port_tokens[port_name]) == 1
-        #             else len(wr.port_tokens[port_name]) - 1
-        #         ),
-        #         full_js=True,
-        #     )
-        #     logger.debug(
-        #         f"Step {ll_cond_step.name} (wf {new_workflow.name}) set with expression: {ll_cond_step.expression}"
-        #     )
-        #     for dep_name, port in replace_step.get_input_ports().items():
-        #         logger.debug(
-        #             f"Step {ll_cond_step.name} (wf {new_workflow.name}) add input port {dep_name} {port.name}"
-        #         )
-        #         ll_cond_step.add_input_port(dep_name, port)
-        #     for dep_name, port in replace_step.get_output_ports().items():
-        #         logger.debug(
-        #             f"Step {ll_cond_step.name} (wf {new_workflow.name}) add output port {dep_name} {port.name}"
-        #         )
-        #         ll_cond_step.add_output_port(dep_name, port)
-        #     for dep_name, port in replace_step.get_skip_ports().items():
-        #         logger.debug(
-        #             f"Step {ll_cond_step.name} (wf {new_workflow.name}) add skip port {dep_name} {port.name}"
-        #         )
-        #         ll_cond_step.add_skip_port(dep_name, port)
-        #     new_workflow.steps.pop(replace_step.name)
-        #     new_workflow.add_step(ll_cond_step)
-        #     logger.debug(
-        #         f"populate_workflow: (3) Step {ll_cond_step.name} caricato nel wf {new_workflow.name}"
-        #     )
-        #     logger.debug(
-        #         f"populate_workflow: Rimuovo lo step {replace_step.name} dal wf {new_workflow.name} perché lo rimpiazzo con il nuovo step {ll_cond_step.name}"
-        #     )
-        #
         # fixing skip ports in loop-terminator
         for step in new_workflow.steps.values():
             if isinstance(step, CombinatorStep) and isinstance(

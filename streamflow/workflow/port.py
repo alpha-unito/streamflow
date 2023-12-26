@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from typing import MutableSequence
+
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector
-from streamflow.core.workflow import Job, Port, Token
+from streamflow.core.workflow import Job, Port, Token, Workflow
+from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
 
@@ -24,3 +28,45 @@ class JobPort(Port):
 
     def put_job(self, job: Job):
         self.put(Token(value=job))
+
+
+class FilterTokenPort(Port):
+    def __init__(
+        self,
+        workflow: Workflow,
+        name: str,
+        stop_tags: MutableSequence[str],
+        port: Port | None = None,
+    ):
+        super().__init__(workflow, name)
+        self.port = port
+        self.stop_tags = stop_tags
+
+    def put(self, token: Token):
+        if token.tag in self.stop_tags:
+            logger.info(
+                f"Port {self.name} of wf {self.workflow.name} received token {token.tag} AND token is also putted in the same port of wf {self.port.workflow.name}"
+            )
+            if self.port:
+                self.port.put(token)
+            super().put(TerminationToken())
+        else:
+            super().put(token)
+
+        # super().put(token)
+        # if self.port and not isinstance(token, TerminationToken):
+        #     logger.info(
+        #         f"Port {self.name} of wf {self.workflow.name} received token {token.tag} AND token is also putted in the same port of wf {self.port.workflow.name}"
+        #     )
+        #     if token.tag in self.valid_tags:
+        #         self.port.put(token)
+
+    async def save(self, context: StreamFlowContext) -> None:
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_port(
+                    name=self.name,
+                    workflow_id=self.workflow.persistent_id,
+                    type=Port,
+                    params=await self._save_additional_params(context),
+                )
