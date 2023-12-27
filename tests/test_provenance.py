@@ -45,6 +45,29 @@ def _contains_id(id_: int, token_list: MutableSequence[Token]) -> bool:
     return False
 
 
+async def _general_test(
+    context: StreamFlowContext,
+    workflow: Workflow,
+    in_port: Port,
+    out_port: Port,
+    step_cls: type[Step],
+    kwargs_step: MutableMapping[str, Any],
+    token_list: MutableSequence[Token],
+    port_name: str = "test",
+    save_input_token: bool = True,
+) -> Step:
+    step = workflow.create_step(cls=step_cls, **kwargs_step)
+    step.add_input_port(port_name, in_port)
+    step.add_output_port(port_name, out_port)
+
+    await _put_tokens(token_list, in_port, context, save_input_token)
+
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+    return step
+
+
 async def _load_dependees(
     token_id: int, loading_context: DatabaseLoadingContext, context: StreamFlowContext
 ) -> MutableSequence[Token]:
@@ -79,39 +102,20 @@ async def _load_dependers(
     )
 
 
-async def general_test(
-    context: StreamFlowContext,
-    workflow: Workflow,
-    in_port: Port,
-    out_port: Port,
-    step_cls: type[Step],
-    kwargs_step: MutableMapping[str, Any],
+async def _put_tokens(
     token_list: MutableSequence[Token],
-    port_name: str = "test",
-) -> Step:
-    step = workflow.create_step(cls=step_cls, **kwargs_step)
-    step.add_input_port(port_name, in_port)
-    step.add_output_port(port_name, out_port)
-
-    await put_tokens(token_list, in_port, context)
-
-    await workflow.save(context)
-    executor = StreamFlowExecutor(workflow)
-    await executor.run()
-    return step
-
-
-async def put_tokens(
-    token_list: MutableSequence[Token], in_port: Port, context: StreamFlowContext
+    in_port: Port,
+    context: StreamFlowContext,
+    save_input_token: bool = True,
 ) -> None:
     for t in token_list:
-        if not isinstance(t, TerminationToken):
+        if save_input_token and not isinstance(t, TerminationToken):
             await t.save(context, in_port.persistent_id)
         in_port.put(t)
     in_port.put(TerminationToken())
 
 
-async def verify_dependency_tokens(
+async def _verify_dependency_tokens(
     token: Token,
     port: Port,
     context: StreamFlowContext,
@@ -166,7 +170,7 @@ async def test_scatter_step(context: StreamFlowContext):
     """Test token provenance for ScatterStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     token_list = [ListToken([Token("a"), Token("b"), Token("c")])]
-    await general_test(
+    await _general_test(
         context=context,
         workflow=workflow,
         in_port=in_port,
@@ -177,7 +181,7 @@ async def test_scatter_step(context: StreamFlowContext):
     )
     assert len(out_port.token_list) == 4
     for curr_token in out_port.token_list[:-1]:
-        await verify_dependency_tokens(
+        await _verify_dependency_tokens(
             token=curr_token,
             port=out_port,
             context=context,
@@ -196,7 +200,7 @@ async def test_deploy_step(context: StreamFlowContext):
     await executor.run()
 
     assert len(step.get_output_port().token_list) == 2
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=step.get_output_port().token_list[0],
         port=step.get_output_port(),
         context=context,
@@ -216,13 +220,13 @@ async def test_schedule_step(context: StreamFlowContext):
     job_token = schedule_step.get_output_port("__job__").token_list[0]
     await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
 
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=deploy_step.get_output_port().token_list[0],
         port=deploy_step.get_output_port(),
         context=context,
         expected_depender=[job_token],
     )
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=job_token,
         port=schedule_step.get_output_port("__job__"),
         context=context,
@@ -268,24 +272,24 @@ async def test_execute_step(context: StreamFlowContext):
     token_list = [Token(token_value)]
 
     execute_step.add_input_port(in_port_name, in_port)
-    await put_tokens(token_list, in_port, context)
+    await _put_tokens(token_list, in_port, context)
 
     schedule_step.add_input_port(in_port_name, in_port_schedule)
-    await put_tokens(token_list, in_port_schedule, context)
+    await _put_tokens(token_list, in_port_schedule, context)
 
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
     job_token = execute_step.get_input_port("__job__").token_list[0]
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=job_token,
         port=execute_step.get_input_port("__job__"),
         context=context,
         expected_depender=[execute_step.get_output_port(out_port_name).token_list[0]],
         expected_dependee=[deploy_step.get_output_port().token_list[0], token_list[0]],
     )
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=execute_step.get_output_port(out_port_name).token_list[0],
         port=execute_step.get_output_port(out_port_name),
         context=context,
@@ -298,7 +302,7 @@ async def test_gather_step(context: StreamFlowContext):
     """Test token provenance for GatherStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     token_list = [Token(i) for i in range(3)]
-    await general_test(
+    await _general_test(
         context=context,
         workflow=workflow,
         in_port=in_port,
@@ -308,7 +312,7 @@ async def test_gather_step(context: StreamFlowContext):
         token_list=token_list,
     )
     assert len(out_port.token_list) == 2
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=out_port.token_list[0],
         port=out_port,
         context=context,
@@ -337,11 +341,11 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
 
     await workflow.save(context)
     list_token = ListToken([Token("fst"), Token("snd")])
-    await put_tokens([list_token], in_port, context)
+    await _put_tokens([list_token], in_port, context)
     step.combinator.add_item(port_name)
 
     tt = Token("4")
-    await put_tokens([tt], in_port_2, context)
+    await _put_tokens([tt], in_port_2, context)
     step.combinator.add_item(port_name_2)
 
     await workflow.save(context)
@@ -349,14 +353,14 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
     await executor.run()
 
     assert len(out_port.token_list) == 2
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=out_port.token_list[0],
         port=out_port,
         context=context,
         expected_dependee=[list_token, tt],
     )
     assert len(out_port_2.token_list) == 2
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=out_port_2.token_list[0],
         port=out_port_2,
         context=context,
@@ -387,11 +391,11 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
 
     await workflow.save(context)
     token_list = [ListToken([Token("a"), Token("b")])]
-    await put_tokens(token_list, in_port, context)
+    await _put_tokens(token_list, in_port, context)
     step.combinator.add_item(port_name)
 
     token_list_2 = [Token("4")]
-    await put_tokens(token_list_2, in_port_2, context)
+    await _put_tokens(token_list_2, in_port_2, context)
     step.combinator.add_item(port_name_2)
 
     await workflow.save(context)
@@ -399,7 +403,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
     await executor.run()
 
     assert len(out_port.token_list) == 2
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=out_port.token_list[0],
         port=out_port,
         context=context,
@@ -407,7 +411,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
     )
 
     assert len(out_port_2.token_list) == 2
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=out_port_2.token_list[0],
         port=out_port_2,
         context=context,
@@ -441,11 +445,11 @@ async def test_loop_combinator_step(context: StreamFlowContext):
         ListToken([Token("a"), Token("b")], tag=tag),
         IterationTerminationToken(tag),
     ]
-    await put_tokens(token_list, in_port, context)
+    await _put_tokens(token_list, in_port, context)
     step.combinator.add_item(port_name)
 
     token_list_2 = [Token("4", tag=tag), IterationTerminationToken(tag=tag)]
-    await put_tokens(token_list_2, in_port_2, context)
+    await _put_tokens(token_list_2, in_port_2, context)
     step.combinator.add_item(port_name_2)
 
     await workflow.save(context)
@@ -453,7 +457,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     await executor.run()
 
     assert len(out_port.token_list) == 2
-    await verify_dependency_tokens(
+    await _verify_dependency_tokens(
         token=out_port.token_list[0],
         port=out_port,
         context=context,
@@ -484,7 +488,7 @@ async def test_loop_termination_combinator(context: StreamFlowContext):
         ListToken([Token("a"), Token("b")], tag="0.0"),
         ListToken([Token("c"), Token("d")], tag="0.1"),
     ]
-    await put_tokens(list_token, in_port, context)
+    await _put_tokens(list_token, in_port, context)
 
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
@@ -492,7 +496,7 @@ async def test_loop_termination_combinator(context: StreamFlowContext):
 
     assert len(out_port.token_list) == 3
     for out_token, in_token in zip(out_port.token_list[:-1], list_token):
-        await verify_dependency_tokens(
+        await _verify_dependency_tokens(
             token=out_token,
             port=out_port,
             context=context,
