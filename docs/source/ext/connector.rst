@@ -113,11 +113,11 @@ StreamFlow supports :ref:`stacked locations <Stacked locations>` using the ``wra
 Streaming
 =========
 
-StreamFlow uses `tar` streams as the primary way to transfer data between locations. The main reason is that the `tar` command is so standard nowadays that it can be found OOTB in almost all execution environments, and its API does not vary significantly across implementations.
+StreamFlow uses ``tar`` streams as the primary way to transfer data between locations. The main reason is that the ``tar`` command is so standard nowadays that it can be found OOTB in almost all execution environments, and its API does not vary significantly across implementations.
 
-To ensure compatibility between different `Connector` instances when performing data transfers, StreamFlow implements two interfaces: a `StreamWrapper` API to read and write data streams and a `get_stream_reader` method to obtain a `StreamWrapper` object from a `Connector` instance.
+To ensure compatibility between different ``Connector`` instances when performing data transfers, StreamFlow implements two interfaces: a ``StreamWrapper`` API to read and write data streams and a ``get_stream_reader`` method to obtain a ``StreamWrapper`` object from a ``Connector`` instance.
 
-The `StreamWrapper` interface is straightforward. It is reported below:
+The ``StreamWrapper`` interface is straightforward. It is reported below:
 
 .. code-block:: python
 
@@ -136,11 +136,11 @@ The `StreamWrapper` interface is straightforward. It is reported below:
     async def write(self, data: Any):
         ...
 
-The constructor receives an internal `stream` object, which can be of `Any` type. The `read`, `write`, and `close` methods wrap the APIs of the native `stream` object to provide a unified API to interact with streams. In particular, the `read` method reads up to `size` bytes from the internal `stream`. The `write` method writes the content of the `data` parameter into the internal `stream`. The `close` method closes the inner `stream`.
+The constructor receives an internal ``stream`` object, which can be of ``Any`` type. The ``read``, ``write``, and ``close`` methods wrap the APIs of the native ``stream`` object to provide a unified API to interact with streams. In particular, the ``read`` method reads up to ``size`` bytes from the internal ``stream``. The ``write`` method writes the content of the ``data`` parameter into the internal ``stream``. The ``close`` method closes the inner ``stream``.
 
-Each `Connector` instance can implement its own `StreamWrapper` classes by extending the `BaseStreamWrapper` class. In particular, it can be helpful to specialize further the `StreamWrapper` interface to implement unidirectional streams. This can be achieved by extending the `StreamReaderWrapper` and `StreamWriterWrapper` base classes, which raise a `NotImplementedError` if the stream is used in the wrong direction.
+Each ``Connector`` instance can implement its own ``StreamWrapper`` classes by extending the ``BaseStreamWrapper`` class. In particular, it can be helpful to specialize further the ``StreamWrapper`` interface to implement unidirectional streams. This can be achieved by extending the ``StreamReaderWrapper`` and ``StreamWriterWrapper`` base classes, which raise a ``NotImplementedError`` if the stream is used in the wrong direction.
 
-The `StreamWrapperContextManager` interface provides the `Asynchronous Context Manager <https://docs.python.org/3/reference/datamodel.html#async-context-managers>`_ primitives for the `StreamWrapper` object, allowing it to be used inside `async with` statements.
+The ``StreamWrapperContextManager`` interface provides the `Asynchronous Context Manager <https://docs.python.org/3/reference/datamodel.html#async-context-managers>`_ primitives for the ``StreamWrapper`` object, allowing it to be used inside ``async with`` statements.
 
 
 
