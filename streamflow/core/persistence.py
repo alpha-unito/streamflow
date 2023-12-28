@@ -200,7 +200,7 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_execution(self, command_id: int) -> MutableMapping[str, Any]:
+    async def get_execution(self, execution_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
