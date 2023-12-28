@@ -100,10 +100,6 @@ class Database(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def add_command(self, step_id: int, tag: str, cmd: str) -> int:
-        ...
-
-    @abstractmethod
     async def add_dependency(
         self, step: int, port: int, type: DependencyType, name: str
     ) -> None:
@@ -119,6 +115,10 @@ class Database(SchemaEntity):
         lazy: bool,
         workdir: str | None,
     ) -> int:
+        ...
+
+    @abstractmethod
+    async def add_execution(self, step_id: int, tag: str, cmd: str) -> int:
         ...
 
     @abstractmethod
@@ -196,17 +196,17 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
+    async def get_deployment(self, deployment_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
-    async def get_commands_by_step(
+    async def get_execution(self, execution_id: int) -> MutableMapping[str, Any]:
+        ...
+
+    @abstractmethod
+    async def get_executions_by_step(
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
-        ...
-
-    @abstractmethod
-    async def get_deployment(self, deployment_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
@@ -280,14 +280,14 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def update_command(
-        self, command_id: int, updates: MutableMapping[str, Any]
+    async def update_deployment(
+        self, deployment_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         ...
 
     @abstractmethod
-    async def update_deployment(
-        self, deployment_id: int, updates: MutableMapping[str, Any]
+    async def update_execution(
+        self, execution_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         ...
 

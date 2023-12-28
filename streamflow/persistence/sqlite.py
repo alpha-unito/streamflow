@@ -87,14 +87,6 @@ class SqliteDatabase(CachedDatabase):
             .read_text("utf-8")
         )
 
-    async def add_command(self, step_id: int, tag: str, cmd: str) -> int:
-        async with self.connection as db:
-            async with db.execute(
-                "INSERT INTO command(step, tag, cmd) " "VALUES(:step, :tag, :cmd)",
-                {"step": step_id, "tag": tag, "cmd": cmd},
-            ) as cursor:
-                return cursor.lastrowid
-
     async def add_dependency(
         self, step: int, port: int, type: DependencyType, name: str
     ) -> None:
@@ -126,6 +118,14 @@ class SqliteDatabase(CachedDatabase):
                     "lazy": lazy,
                     "workdir": workdir,
                 },
+            ) as cursor:
+                return cursor.lastrowid
+
+    async def add_execution(self, step_id: int, tag: str, cmd: str) -> int:
+        async with self.connection as db:
+            async with db.execute(
+                "INSERT INTO execution(step, tag, cmd) " "VALUES(:step, :tag, :cmd)",
+                {"step": step_id, "tag": tag, "cmd": cmd},
             ) as cursor:
                 return cursor.lastrowid
 
@@ -281,22 +281,6 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
-        async with self.connection as db:
-            async with db.execute(
-                "SELECT * FROM command WHERE id = :id", {"id": command_id}
-            ) as cursor:
-                return await cursor.fetchone()
-
-    async def get_commands_by_step(
-        self, step_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        async with self.connection as db:
-            async with db.execute(
-                "SELECT * FROM command WHERE step = :id", {"id": step_id}
-            ) as cursor:
-                return await cursor.fetchall()
-
     @cachedmethod(lambda self: self.deployment_cache)
     async def get_deployment(self, deployment_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
@@ -304,6 +288,22 @@ class SqliteDatabase(CachedDatabase):
                 "SELECT * FROM deployment WHERE id = :id", {"id": deployment_id}
             ) as cursor:
                 return await cursor.fetchone()
+
+    async def get_execution(self, execution_id: int) -> MutableMapping[str, Any]:
+        async with self.connection as db:
+            async with db.execute(
+                "SELECT * FROM execution WHERE id = :id", {"id": execution_id}
+            ) as cursor:
+                return await cursor.fetchone()
+
+    async def get_executions_by_step(
+        self, step_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            async with db.execute(
+                "SELECT * FROM execution WHERE step = :id", {"id": step_id}
+            ) as cursor:
+                return await cursor.fetchall()
 
     @cachedmethod(lambda self: self.filter_cache)
     async def get_filter(self, filter_id: int) -> MutableMapping[str, Any]:
@@ -460,18 +460,6 @@ class SqliteDatabase(CachedDatabase):
                 ) as cursor:
                     return await cursor.fetchall()
 
-    async def update_command(
-        self, command_id: int, updates: MutableMapping[str, Any]
-    ) -> int:
-        async with self.connection as db:
-            await db.execute(
-                "UPDATE command SET {} WHERE id = :id".format(  # nosec
-                    ", ".join([f"{k} = :{k}" for k in updates])
-                ),
-                {**updates, **{"id": command_id}},
-            )
-            return command_id
-
     async def update_deployment(
         self, deployment_id: int, updates: MutableMapping[str, Any]
     ) -> int:
@@ -484,6 +472,18 @@ class SqliteDatabase(CachedDatabase):
             )
             self.deployment_cache.pop(deployment_id, None)
             return deployment_id
+
+    async def update_execution(
+        self, execution_id: int, updates: MutableMapping[str, Any]
+    ) -> int:
+        async with self.connection as db:
+            await db.execute(
+                "UPDATE execution SET {} WHERE id = :id".format(  # nosec
+                    ", ".join([f"{k} = :{k}" for k in updates])
+                ),
+                {**updates, **{"id": execution_id}},
+            )
+            return execution_id
 
     async def update_filter(
         self, filter_id: int, updates: MutableMapping[str, Any]
