@@ -1,5 +1,4 @@
 import psutil
-import logging
 from abc import ABC
 from cachetools import Cache, LRUCache
 
