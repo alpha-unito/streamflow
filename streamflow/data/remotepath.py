@@ -15,7 +15,10 @@ import aiohttp
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType, FileType
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.exception import (
+    WorkflowExecutionException,
+    WorkflowTransferException,
+)
 from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:
@@ -192,8 +195,7 @@ async def follow_symlink(
             )
         if not (output := result.strip()):
             # todo: WfTransferException oppure WfExecutionException ?
-            # raise WorkflowTransferException(f"Symbolic Link {path} does not exist")
-            pass
+            raise WorkflowTransferException(f"Symbolic Link {path} does not exist")
         return output
 
 

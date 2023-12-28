@@ -90,13 +90,16 @@ async def get_steps_from_output_port(port_id, context):
 async def get_execute_step_out_token_ids(next_token_ids, context):
     execute_step_out_token_ids = set()
     for t_id in next_token_ids:
-        port_row = await context.database.get_port_from_token(t_id)
-        for step_id_row in await context.database.get_steps_from_output_port(
-            port_row["id"]
-        ):
-            step_row = await context.database.get_step(step_id_row["step"])
-            if step_row["type"] == get_class_fullname(ExecuteStep):
-                execute_step_out_token_ids.add(t_id)
+        if t_id > 0:
+            port_row = await context.database.get_port_from_token(t_id)
+            for step_id_row in await context.database.get_steps_from_output_port(
+                port_row["id"]
+            ):
+                step_row = await context.database.get_step(step_id_row["step"])
+                if step_row["type"] == get_class_fullname(ExecuteStep):
+                    execute_step_out_token_ids.add(t_id)
+        else:
+            execute_step_out_token_ids.add(t_id)
     return execute_step_out_token_ids
 
 
@@ -106,6 +109,15 @@ async def _cleanup_dir(
     await remotepath.rm(
         connector, location, await remotepath.listdir(connector, location, directory)
     )
+
+
+def increase_tag(tag):
+    tag_list = tag.rsplit(".", maxsplit=1)
+    if len(tag_list) == 1:
+        return None
+    elif len(tag_list) == 2:
+        return ".".join((tag_list[0], str(int(tag_list[1]) + 1)))
+    return None
 
 
 def get_prev_vertices(searched_vertex, dag):

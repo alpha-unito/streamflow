@@ -24,8 +24,13 @@ from streamflow.recovery.utils import (
     _is_token_available,
     get_execute_step_out_token_ids,
     get_steps_from_output_port,
+    increase_tag,
 )
-from streamflow.workflow.port import ConnectorPort, JobPort, FilterTokenPort
+from streamflow.workflow.port import (
+    ConnectorPort,
+    JobPort,
+    FilterTokenPort,
+)
 from streamflow.workflow.step import (
     LoopCombinatorStep,
     ScatterStep,
@@ -61,11 +66,16 @@ class RollbackRecoveryPolicy:
         )
 
         for port in failed_step.get_output_ports().values():
+            # stop_tag = increase_tag(utils.get_tag(failed_job.inputs.values()))
+            stop_tag = utils.get_tag(failed_job.inputs.values())
+            logger.info(
+                f"Wf {new_workflow.name} created output port {port.name} of failed job {failed_job.name} (wf {workflow.name}) and stop_tag: {stop_tag}"
+            )
             new_workflow.create_port(
                 FilterTokenPort,
                 port.name,
                 port=port,
-                stop_tags=[utils.get_tag(failed_job.inputs.values())],
+                stop_tags=[stop_tag],
             )
 
         # should be an impossible case
@@ -134,12 +144,26 @@ class RollbackRecoveryPolicy:
 
         return new_workflow, last_iteration
 
-    def add_waiter(self, job_name, port_name, workflow, port_recovery=None):
+    def add_waiter(self, job_name, port_name, workflow, rdwp, port_recovery=None):
         if port_recovery:
             port_recovery.waiting_token += 1
         else:
-            # todo: fix stop tags
-            port_recovery = PortRecovery(FilterTokenPort(workflow, port_name, []))
+            max_tag = get_max_tag(
+                {
+                    rdwp.token_instances[t_id]
+                    for t_id in rdwp.port_tokens.get(port_name, [])
+                    if t_id > 0
+                }
+            )
+            if max_tag is None:
+                max_tag = "0"
+            stop_tag = increase_tag(max_tag)
+            logger.info(
+                f"Wf {workflow.name} added PortRecovery on port {port_name} with stop_tag: {stop_tag}"
+            )
+            port_recovery = PortRecovery(
+                FilterTokenPort(workflow, port_name, [stop_tag])
+            )
             self.context.failure_manager.job_requests[job_name].queue.append(
                 port_recovery
             )
@@ -188,6 +212,7 @@ class RollbackRecoveryPolicy:
                             job_token.value.name,
                             output_port_name,
                             workflow,
+                            rdwp,
                             map_job_port.get(job_token.value.name, None),
                         )
                         logger.debug(
@@ -311,12 +336,13 @@ async def _new_put_tokens(
         if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
             if loop_combinator_input and not is_back_prop_output_port:
                 if port.token_list[-1].tag != "0":
-                    increased_tag = ".".join(
-                        (
-                            *port.token_list[-1].tag.split(".")[:-1],
-                            str(int(port.token_list[-1].tag.split(".")[-1]) + 1),
-                        )
-                    )
+                    increased_tag = increase_tag(port.token_list[-1].tag)
+                    # increased_tag = ".".join(
+                    #     (
+                    #         *port.token_list[-1].tag.split(".")[:-1],
+                    #         str(int(port.token_list[-1].tag.split(".")[-1]) + 1),
+                    #     )
+                    # )
                     port.put(Token(value=None, tag=increased_tag))
                 logger.debug(
                     f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[-1].tag}"
@@ -333,7 +359,7 @@ async def _new_put_tokens(
                 port.put(TerminationToken())
         else:
             logger.debug(
-                f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert TerminationToken"
+                f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert manually TerminationToken. Is there Termination? ({any(isinstance(t, TerminationToken) for t in port.token_list )})"
             )
     return None
 
@@ -420,9 +446,7 @@ async def _new_set_steps_state(new_workflow, rdwp):
                 )
                 if max_tag is None:
                     max_tag = "0"
-                stop_tag = ".".join(
-                    (*max_tag.split(".")[:-1], str(int(max_tag.split(".")[-1]) + 1))
-                )
+                stop_tag = increase_tag(max_tag)
                 new_workflow.ports[port_name] = FilterTokenPort(
                     new_workflow, port_name, [stop_tag]
                 )

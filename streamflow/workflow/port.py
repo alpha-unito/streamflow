@@ -44,9 +44,9 @@ class FilterTokenPort(Port):
 
     def put(self, token: Token):
         if token.tag in self.stop_tags:
-            if self.port:
+            if self.port and not isinstance(token, TerminationToken):
                 logger.info(
-                    f"Port {self.name} of wf {self.workflow.name} received token {token.tag}. Token is also putted in the same port of wf {self.port.workflow.name}"
+                    f"Port {self.name} of wf {self.workflow.name} received token {token.tag} (type: {type(token)}). Token is also putted in the same port of wf {self.port.workflow.name}"
                 )
                 self.port.put(token)
             logger.info(
@@ -55,14 +55,6 @@ class FilterTokenPort(Port):
             super().put(TerminationToken())
         else:
             super().put(token)
-
-        # super().put(token)
-        # if self.port and not isinstance(token, TerminationToken):
-        #     logger.info(
-        #         f"Port {self.name} of wf {self.workflow.name} received token {token.tag} AND token is also putted in the same port of wf {self.port.workflow.name}"
-        #     )
-        #     if token.tag in self.valid_tags:
-        #         self.port.put(token)
 
     async def save(self, context: StreamFlowContext) -> None:
         async with self.persistence_lock:
