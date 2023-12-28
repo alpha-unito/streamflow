@@ -775,7 +775,7 @@ class CWLCommand(CWLBaseCommand):
                 )
             )
         # Persist command
-        command_id = await self.step.workflow.context.database.add_command(
+        execution_id = await self.step.workflow.context.database.add_execution(
             step_id=self.step.persistent_id,
             tag=get_tag(job.inputs.values()),
             cmd=cmd_string,
@@ -851,8 +851,8 @@ class CWLCommand(CWLBaseCommand):
         else:
             status = Status.FAILED
         # Update command persistence
-        await self.step.workflow.context.database.update_command(
-            command_id,
+        await self.step.workflow.context.database.update_execution(
+            execution_id,
             {
                 "status": status.value,
                 "start_time": start_time,
@@ -1240,7 +1240,7 @@ class CWLExpressionCommand(CWLBaseCommand):
                 f"Evaluating expression for step {self.step.name} (job {job.name})"
             )
         # Persist command
-        command_id = await self.step.workflow.context.database.add_command(
+        execution_id = await self.step.workflow.context.database.add_execution(
             step_id=self.step.persistent_id,
             tag=get_tag(job.inputs.values()),
             cmd=self.expression,
@@ -1255,8 +1255,8 @@ class CWLExpressionCommand(CWLBaseCommand):
         )
         end_time = time.time_ns()
         # Update command persistence
-        await self.step.workflow.context.database.update_command(
-            command_id,
+        await self.step.workflow.context.database.update_execution(
+            execution_id,
             {
                 "status": Status.COMPLETED.value,
                 "start_time": start_time,

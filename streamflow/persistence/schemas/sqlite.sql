@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS dependency
 );
 
 
-CREATE TABLE IF NOT EXISTS command
+CREATE TABLE IF NOT EXISTS execution
 (
     id         INTEGER PRIMARY KEY,
     step       INTEGER,

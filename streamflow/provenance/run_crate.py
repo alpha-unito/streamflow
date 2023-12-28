@@ -782,28 +782,28 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                 # Add CreateActions
                 create_actions = []
                 if step := workflow.steps.get(step_name):
-                    for command in await self.context.database.get_commands_by_step(
+                    for execution in await self.context.database.get_executions_by_step(
                         step.persistent_id
                     ):
                         create_action = {
                             "@id": "#" + str(uuid.uuid4()),
                             "@type": "CreateAction",
                             "actionStatus": _get_action_status(
-                                Status(command["status"])
+                                Status(execution["status"])
                             ),
                             "endTime": streamflow.core.utils.get_date_from_ns(
-                                command["end_time"]
+                                execution["end_time"]
                             ),
                             "instrument": {"@id": jsonld_step["workExample"]["@id"]},
                             "name": f"Run of workflow/{jsonld_step['@id']}",
                             "startTime": streamflow.core.utils.get_date_from_ns(
-                                command["start_time"]
+                                execution["start_time"]
                             ),
                         }
                         self.graph[create_action["@id"]] = create_action
                         self.create_action_map.setdefault(wf_id, {}).setdefault(
                             jsonld_step["workExample"]["@id"], {}
-                        ).setdefault(step_name, {})[command["tag"]] = create_action
+                        ).setdefault(step_name, {})[execution["tag"]] = create_action
                         create_actions.append(create_action)
                 # Add ControlAction
                 if create_actions:

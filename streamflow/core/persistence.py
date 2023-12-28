@@ -100,7 +100,7 @@ class Database(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def add_command(self, step_id: int, tag: str, cmd: str) -> int:
+    async def add_execution(self, step_id: int, tag: str, cmd: str) -> int:
         ...
 
     @abstractmethod
@@ -196,11 +196,11 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_command(self, command_id: int) -> MutableMapping[str, Any]:
+    async def get_execution(self, command_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
-    async def get_commands_by_step(
+    async def get_executions_by_step(
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         ...
@@ -280,8 +280,8 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def update_command(
-        self, command_id: int, updates: MutableMapping[str, Any]
+    async def update_execution(
+        self, execution_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         ...
 
