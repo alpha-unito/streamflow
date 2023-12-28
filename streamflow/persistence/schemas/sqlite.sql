@@ -49,7 +49,6 @@ CREATE TABLE IF NOT EXISTS command
     step       INTEGER,
     tag        TEXT,
     cmd        TEXT,
-    output     BLOB,
     status     INTEGER,
     start_time INTEGER,
     end_time   INTEGER,

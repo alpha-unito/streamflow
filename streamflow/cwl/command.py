@@ -855,7 +855,6 @@ class CWLCommand(CWLBaseCommand):
             command_id,
             {
                 "status": status.value,
-                "output": str(result),
                 "start_time": start_time,
                 "end_time": end_time,
             },
@@ -1260,7 +1259,6 @@ class CWLExpressionCommand(CWLBaseCommand):
             command_id,
             {
                 "status": Status.COMPLETED.value,
-                "output": str(result),
                 "start_time": start_time,
                 "end_time": end_time,
             },
