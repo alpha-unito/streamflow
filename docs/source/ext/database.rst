@@ -31,11 +31,6 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
 
 .. code-block:: python
 
-    async def add_command(
-        self, step_id: int, tag: str, cmd: str
-    ) -> int:
-        ...
-
     async def add_dependency(
         self, step: int, port: int, type: DependencyType, name: str
     ) -> None:
@@ -49,6 +44,11 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         external: bool,
         lazy: bool,
         workdir: str | None,
+    ) -> int:
+        ...
+
+    async def add_execution(
+        self, step_id: int, tag: str, cmd: str
     ) -> int:
         ...
 
@@ -110,19 +110,19 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
     ) -> MutableSequence[MutableMapping[str, Any]]:
         ...
 
-    async def get_command(
-        self, command_id: int
-    ) -> MutableMapping[str, Any]:
-        ...
-
-    async def get_commands_by_step(
-        self, step_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        ...
-
     async def get_deployment(
         self, deployment_id: int
     ) -> MutableMapping[str, Any]:
+        ...
+
+    async def get_execution(
+        self, execution_id: int
+    ) -> MutableMapping[str, Any]:
+        ...
+
+    async def get_executions_by_step(
+        self, step_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
         ...
 
     async def get_input_ports(
@@ -190,13 +190,13 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
     ) -> MutableSequence[MutableMapping[str, Any]]:
         ...
 
-    async def update_command(
-        self, command_id: int, updates: MutableMapping[str, Any]
+    async def update_deployment(
+        self, deployment_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         ...
 
-    async def update_deployment(
-        self, deployment_id: int, updates: MutableMapping[str, Any]
+    async def update_execution(
+        self, execution_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         ...
 
