@@ -93,7 +93,7 @@ async def evaluate_token_availability(token, step_rows, context):
             ),
         ):
             logger.debug(
-                f"evaluate_token_availability: Token {token.persistent_id} from Unavailable port. Checking {step_row['name']} step type: {step_row['type']}"
+                f"evaluate_token_availability: Token {token.persistent_id} is available? {is_available}. Checking {step_row['name']} step type: {step_row['type']}"
             )
             return is_available
     return TokenAvailability.Unavailable
@@ -180,7 +180,7 @@ class DirectGraph:
 
     def __str__(self):
         # return f"{json.dumps({k : list(v) for k, v in self.graph.items()}, indent=2)}"
-        tmp = {f'"{k}"': [v for v in values] for k, values in self.graph.items()}
+        tmp = {f'"{k}"': [f'{v}' for v in values] for k, values in self.graph.items()}
         return (
             "{\n"
             + "\n".join([f"{k} : {values}" for k, values in tmp.items()])
@@ -804,11 +804,22 @@ class NewProvenanceGraphNavigation:
         rdwp = RollbackDeterministicWorkflowPolicy(self.context)
         for t_id, next_t_ids in self.dag_tokens.items():
             logger.debug(f"dag[{t_id}] = {next_t_ids}")
-        for t_id, next_t_ids in self.dag_tokens.items():
-            for next_t_id in next_t_ids:
+        # for t_id, next_t_ids in self.dag_tokens.items():
+        #     for next_t_id in next_t_ids:
+        #         rdwp.new_add(
+        #             self.info_tokens.get(t_id, None),
+        #             self.info_tokens.get(next_t_id, None),
+        #         )
+        queue = deque((DirectGraph.LAST_GRAPH_FLAG,))
+        while queue:
+            t_id = queue.popleft()
+            prev_t_ids = self.dag_tokens.prev(t_id)
+            for prev_t_id in prev_t_ids:
+                if prev_t_id not in rdwp.dag_tokens.keys():
+                    queue.append(prev_t_id)
                 rdwp.new_add(
+                    self.info_tokens.get(prev_t_id, None),
                     self.info_tokens.get(t_id, None),
-                    self.info_tokens.get(next_t_id, None),
                 )
 
         for out_port in output_ports:
