@@ -24,7 +24,7 @@ from streamflow.recovery.recovery import (
     PortRecovery,
 )
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.workflow.utils import get_job_token
+from streamflow.workflow.utils import get_job_token, get_job_token_no_excep
 from streamflow.workflow.token import (
     TerminationToken,
     JobToken,
@@ -279,18 +279,24 @@ class DefaultFailureManager(FailureManager):
             new_workflow = await self._recover_jobs(job, step)
 
             # debug
-            if new_workflow.steps.keys():
-                async with self.job_requests[job.name].lock:
-                    new_job_token = get_job_token(
-                        job.name,
-                        new_workflow.steps[step.name]
-                        .get_input_port("__job__")
-                        .token_list,
-                    )
-                    if self.job_requests[job.name].job_token is None:
-                        raise FailureHandlingException(
-                            f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found job_token {new_job_token.persistent_id}."
-                        )
+            # if new_workflow.steps.keys():
+            #     async with self.job_requests[job.name].lock:
+            #         new_job_token = get_job_token(
+            #             job.name,
+            #             new_workflow.steps[step.name]
+            #             .get_input_port("__job__")
+            #             .token_list,
+            #         )
+            #         if self.job_requests[job.name].job_token is None:
+            #             raise FailureHandlingException(
+            #                 f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found job_token {new_job_token.persistent_id}."
+            #             )
+            new_job_token = None
+            if step.name in new_workflow.steps.keys():
+                new_job_token = get_job_token_no_excep(
+                    job.name,
+                    new_workflow.steps[step.name].get_input_port("__job__").token_list,
+                )
 
             command_output = CommandOutput(
                 value=None,

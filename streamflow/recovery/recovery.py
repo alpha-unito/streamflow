@@ -30,6 +30,7 @@ from streamflow.workflow.port import (
     ConnectorPort,
     JobPort,
     FilterTokenPort,
+    InterWorkflowPort,
 )
 from streamflow.workflow.step import (
     LoopCombinatorStep,
@@ -71,12 +72,11 @@ class RollbackRecoveryPolicy:
             logger.info(
                 f"Wf {new_workflow.name} created output port {port.name} of failed job {failed_job.name} (wf {workflow.name}) and stop_tag: {stop_tag}"
             )
-            new_workflow.create_port(
-                FilterTokenPort,
-                port.name,
-                port=port,
-                stop_tags=[stop_tag],
+            new_port = InterWorkflowPort(
+                FilterTokenPort(new_workflow, port.name, [stop_tag])
             )
+            new_port.add_inter_port(port, stop_tag)
+            new_workflow.add_port(new_port)
 
         # should be an impossible case
         if failed_step.persistent_id is None:
@@ -159,11 +159,13 @@ class RollbackRecoveryPolicy:
                 max_tag = "0"
             stop_tag = increase_tag(max_tag)
             logger.info(
-                f"Wf {workflow.name} added PortRecovery on port {port_name} with stop_tag: {stop_tag}"
+                f"Wf {workflow.name} added PortRecovery on port {port_name} with stop_tag: {stop_tag}. is Port created? {port_name not in workflow.ports.keys()}"
             )
-            port_recovery = PortRecovery(
-                FilterTokenPort(workflow, port_name, [stop_tag])
+            port = workflow.ports.get(
+                port_name,
+                InterWorkflowPort(FilterTokenPort(workflow, port_name, [stop_tag])),
             )
+            port_recovery = PortRecovery(port)
             self.context.failure_manager.job_requests[job_name].queue.append(
                 port_recovery
             )
@@ -178,17 +180,16 @@ class RollbackRecoveryPolicy:
             if isinstance(token, JobToken)
         ]
         logger.debug(f"TOKEN_GRAPH: {rdwp.dag_tokens}")
-        # logger.debug(f"PORT_GRAPH: {self.dcg_port}")
-        str_token_tags = "\n".join(
-            [
-                f"{rdwp.token_instances[k].tag if k in rdwp.token_instances.keys() else k}: {[rdwp.token_instances[v].tag if v in rdwp.token_instances.keys() else v for v in values]}"
-                for k, values in rdwp.dag_tokens.items()
-            ]
+        tmp = {
+            f'"{k}"': [f'{v}' for v in values]
+            for k, values in rdwp.port_tokens.items()
+        }
+        tmp = (
+            "{\n"
+            + "\n".join([f"{k} : {values}" for k, values in tmp.items()])
+            + "\n}\n"
         )
-        logger.debug(f"TOKEN_TAGS: {str_token_tags}")
-        logger.debug(
-            f"PORT_TAGS: { {k: [rdwp.token_instances[v].tag for v in values] for k, values in rdwp.port_tokens.items()} }"
-        )
+        logger.debug(f"PORT_TAGS: {tmp}")
 
         for job_token in [
             token
@@ -436,7 +437,9 @@ async def _new_set_steps_state(new_workflow, rdwp):
         #     if curr_tag and compare_tags(curr_tag, max_tag) == 1:
         #         max_tag = curr_tag
         for port_name, port in new_workflow.ports.items():
-            if not isinstance(port, (ConnectorPort, JobPort, FilterTokenPort)):
+            if not isinstance(
+                port, (ConnectorPort, JobPort, FilterTokenPort, InterWorkflowPort)
+            ):
                 max_tag = get_max_tag(
                     {
                         rdwp.token_instances[t_id]
@@ -454,7 +457,6 @@ async def _new_set_steps_state(new_workflow, rdwp):
                 logger.info(
                     f"wf {new_workflow.name}. Port {port.name}. token tag stop {stop_tag}"
                 )
-
     logger.info("end _new_set_steps_state")
 
 
