@@ -243,15 +243,20 @@ async def _execute_recovered_workflow(new_workflow, step_name, output_ports):
         logger.info(
             f"Workflow {new_workflow.name} is empty. Waiting output ports {[p.name for p in new_workflow.ports.values() if not isinstance(p, (JobPort, ConnectorPort))]}"
         )
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    p.get(posixpath.join(step_name, get_value(p.name, output_ports)))
-                )
-                for p in new_workflow.ports.values()
-                if not isinstance(p, (JobPort, ConnectorPort))
-            )
-        )
+
+        # for debug. Versione corretta quella con la gather
+        for p in new_workflow.ports.values():
+            if not isinstance(p, (JobPort, ConnectorPort)):
+                await p.get(posixpath.join(step_name, get_value(p.name, output_ports)))
+        # await asyncio.gather(
+        #     *(
+        #         asyncio.create_task(
+        #             p.get(posixpath.join(step_name, get_value(p.name, output_ports)))
+        #         )
+        #         for p in new_workflow.ports.values()
+        #         if not isinstance(p, (JobPort, ConnectorPort))
+        #     )
+        # )
         logger.info(f"Workflow {new_workflow.name}: Port terminated")
     else:
         await new_workflow.save(new_workflow.context)
