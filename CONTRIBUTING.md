@@ -37,7 +37,11 @@ pip install -r test-requirements.txt
 
 You can execute all the available tests with the command
 ```bash 
-pytest tests/test_*
+make test
+```
+Otherwise, specific tests with the command
+```bash
+pytest tests/test_scheduler.py tests/test_data_manager.py
 ```
 
 StreamFlow has many different connectors, and some tests on these connectors are done. Currently, the tested connectors are local, docker, ssh, Kubernetes, and singularity.
