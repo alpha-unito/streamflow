@@ -28,8 +28,8 @@ You can check if your contribution is still standard compliant with the command
 ./cwl-conformance-test.sh
 ```
 
-### StreamFlow no regression tests
-It is necessary that the contribution not introduce some errors in the correctness of the software.
+### StreamFlow tests
+It is necessary that the contribution not introduce some errors in the current of the software features.
 Some regression tests are supplied using [pytest](https://docs.pytest.org/en/7.3.x/getting-started.html). Before it is necessary to install the required packages for the testing
 ```bash
 pip install -r test-requirements.txt
