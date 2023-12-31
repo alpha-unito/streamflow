@@ -171,30 +171,8 @@ StreamFlow relies on the [Common Workflow Language](https://www.commonwl.org/) (
 
 ## Contribute to StreamFlow
 
-As a first step, get StreamFlow from [GitHub](https://github.com/alpha-unito/streamflow) 
-```bash
-git clone git@github.com:alpha-unito/streamflow.git
-```
+See [contribution](CONTRIBUTING.md).
 
-Then you can install all the required packages using the `pip install` command
-
-```bash
-cd streamflow
-pip install -r requirements.txt
-```
-
-StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for PyPI and Docker Hub distributions. Therefore, in order to publish a
-new version of the software, you only have to augment the version number in `version.py` file.
-
-Moreover, StreamFlow codebase is a [PEP 8](https://peps.python.org/pep-0008/) compliant for the Python code style.
-StreamFlow relies on some automatic style checkers, which can be installed with
-```bash
-pip install -r lint-requirements.txt
-```
-Finally, you can verify that your contribution is compliant using
-```bash
-make format-check flake8 codespell-check
-```
 
 ## StreamFlow Team
 
