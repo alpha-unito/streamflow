@@ -12,12 +12,17 @@ cd streamflow
 pip install -r requirements.txt
 ```
 
+Finally, you can contribute at the codebase and install StreamFlow 
+```
+pip install .
+```
+
 
 StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for Continuous Integration and Continuous Distribution.
 The maintainers take care of the Continuous Distribution (CD). In order to publish a new version of the software on PyPI and Docker Hub distributions, the maintainer only has to augment the version number in the `version.py` file.
 
-Instead, everyone in the community can contribute to the StreamFlow codebase by opening a Pull Request (PR). Some tests are done for the Continuous Integration (CI).
-It is suggested that some tests be done locally before opening the PR.
+Instead, everyone in the community can contribute to the StreamFlow codebase by opening a Pull Request (PR). Many tests are done for the Continuous Integration (CI).
+However, it is suggested that some tests be done locally before opening the PR, below it is explained how to do it.
 
 
 ### CWL conformance
