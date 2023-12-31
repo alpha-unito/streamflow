@@ -13,12 +13,11 @@ pip install -r requirements.txt
 ```
 
 
-StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for PyPI and Docker Hub distributions. Therefore, in order to publish a
-new version of the software, you only have to augment the version number in the `version.py` file.
+StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for Continuous Integration and Continuous Distribution.
+The maintainers take care of the Continuous Distribution (CD). In order to publish a new version of the software on PyPI and Docker Hub distributions, the maintainer only has to augment the version number in the `version.py` file.
 
-
-StreamFlow relies on GitHub Actions, as well as for the Continuous Integration (CI) tests.
-Therefore, it is suggested that some tests be done locally before opening a Pull Request.
+Instead, everyone in the community can contribute to the StreamFlow codebase by opening a Pull Request (PR). Some tests are done for the Continuous Integration (CI).
+It is suggested that some tests be done locally before opening the PR.
 
 
 ### CWL conformance
@@ -61,7 +60,7 @@ However, all the deployments are always checked in the CI tests.
 ### Code style
 StreamFlow supports Python 3.8 to 3.12, so use compatible code features.
 
-The StreamFlow codebase is [PEP 8](https://peps.python.org/pep-0008/) compliant with code style.
+The StreamFlow code style is compliant with [PEP 8](https://peps.python.org/pep-0008/).
 Some automatic style checkers can be installed with
 ```bash
 pip install -r lint-requirements.txt
