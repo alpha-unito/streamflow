@@ -57,7 +57,7 @@ However, all the deployments are always checked in the CI tests.
 ### Code style
 StreamFlow supports Python 3.8 to 3.12, so use compatible code features.
 
-The streamFlow codebase is [PEP 8](https://peps.python.org/pep-0008/) compliant with code style.
+The StreamFlow codebase is [PEP 8](https://peps.python.org/pep-0008/) compliant with code style.
 Some automatic style checkers can be installed with
 ```bash
 pip install -r lint-requirements.txt
