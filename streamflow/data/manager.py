@@ -361,7 +361,7 @@ class RemotePathMapper:
         result = []
         for dep in [deployment] if deployment is not None else node.locations:
             for n in [name] if name is not None else node.locations.setdefault(dep, {}):
-                locations = node.locations[dep].setdefault(n, [])
+                locations = node.locations.setdefault(dep, {}).setdefault(n, [])
                 result.extend(
                     [
                         loc
