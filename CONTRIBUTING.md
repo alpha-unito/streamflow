@@ -12,22 +12,23 @@ cd streamflow
 pip install -r requirements.txt
 ```
 
-Finally, you can contribute at the codebase and install StreamFlow 
+Finally, you can install StreamFlow with the following command 
 ```
 pip install .
 ```
 
+## Continuous Integration
 
-StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for Continuous Integration and Continuous Distribution.
-The maintainers take care of the Continuous Distribution (CD). In order to publish a new version of the software on PyPI and Docker Hub distributions, the maintainer only has to augment the version number in the `version.py` file.
+StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for Continuous Integration (CI) and Continuous Distribution (CD).
+The maintainers take care of the CD pipeline. In order to publish a new version of the software on PyPI and Docker Hub distributions, the maintainer only has to augment the version number in the `version.py` file.
 
-Instead, everyone in the community can contribute to the StreamFlow codebase by opening a Pull Request (PR). Many tests are done for the Continuous Integration (CI).
+Instead, everyone in the community can contribute to the StreamFlow codebase by opening a Pull Request (PR). Running the entire suite of StreamFlow tests is part of the CI pipeline.
 However, it is suggested that some tests be done locally before opening the PR, below it is explained how to do it.
 
 
 ### CWL conformance
-StreamFlow complies with the [Common Workflow Language](https://www.commonwl.org/) (CWL) from the 1.0 to 1.2 version.
-You can check if your contribution is still standard compliant with the command
+StreamFlow complies with all stable versions of the [Common Workflow Language](https://www.commonwl.org/) (CWL) open standard (1.0, 1.1, 1.2). Plus, it implements the `cwltool:Loop` extension (see [here](https://cwltool.readthedocs.io/en/latest/loop.html)).
+You can check if your PR does not compromise CWL compliance by running the CWL conformance tests suite, using the following command
 ```bash
 ./cwl-conformance-test.sh
 ```
@@ -48,7 +49,7 @@ Otherwise, specific tests with the command
 pytest tests/test_scheduler.py tests/test_data_manager.py
 ```
 
-StreamFlow has many different connectors, and some tests on these connectors are done. Currently, the tested connectors are local, docker, ssh, Kubernetes, and singularity.
+StreamFlow has many different connectors, and some tests on these connectors are done. Currently, the tested connectors are local, Docker, SSH, Kubernetes, and Singularity.
 Execute all these tests locally required installed: 
 - [Docker](https://docs.docker.com/engine/install/). It is also required for SSH tests.
 - [Singularity](https://docs.sylabs.io/guides/3.0/user-guide/installation.html)
@@ -71,7 +72,7 @@ Some automatic style checkers can be installed with
 pip install -r lint-requirements.txt
 ```
 
-You can verify that your contribution is compliant with the command
+You can verify that your PR respects the code style with the following command
 ```bash
 make format-check flake8 codespell-check
 ```
@@ -88,7 +89,7 @@ make format codespell
 ## Contribute to the documentation
 
 ### Generate the documentation
-The documentation is written in the reStructuredText markup language, and [Sphinx](https://www.sphinx-doc.org/en/master/) software is used to generate different output formats. The command below installs all the required packages.
+The documentation is written in the reStructuredText markup language, and the [Sphinx](https://www.sphinx-doc.org/en/master/) framework is used to generate different output formats. The command below installs all the required packages.
 ```bash
 cd docs
 pip install -r requirements.txt
