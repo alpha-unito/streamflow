@@ -1,18 +1,18 @@
 # Contribute to StreamFlow
 
-As a first step, get StreamFlow from [GitHub](https://github.com/alpha-unito/streamflow) 
+As a first step, clone StreamFlow from [GitHub](https://github.com/alpha-unito/streamflow)
 ```bash
 git clone git@github.com:alpha-unito/streamflow.git
 ```
 
-Then, you can install all the required packages using the `pip install` command.
+Then, install all the required packages using the `pip install` command
 
 ```bash
 cd streamflow
 pip install -r requirements.txt
 ```
 
-Finally, you can install StreamFlow with the following command
+Finally, install StreamFlow with the following command
 ```
 pip install .
 ```
@@ -20,7 +20,7 @@ pip install .
 ## Continuous Integration
 
 StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for Continuous Integration (CI) and Continuous Distribution (CD).
-The maintainers take care of the CD pipeline. In order to publish a new version of the software on PyPI and Docker Hub distributions, the maintainer only has to augment the version number in the `version.py` file.
+Only maintainers take care of the CD pipeline. In order to publish a new version of the software on PyPI and Docker Hub distributions, a maintainer only has to augment the version number in the `version.py` file.
 
 Instead, everyone in the community can contribute to the StreamFlow codebase by opening a Pull Request (PR). Running the entire suite of StreamFlow tests is part of the CI pipeline.
 However, it is also possible (and advisable) to run tests locally before opening a PR, as explained [below](#streamflow-tests).
@@ -49,13 +49,14 @@ Otherwise, you can execute only a specific test file. For example, to verify com
 pytest tests/test_cwl_loop.py
 ```
 
+### Testing connectors
 StreamFlow comes with many different connectors OOTB, and some of the tests in the suite are used to verify their behaviour. Currently, the tested connectors are : `local`, `docker`, `ssh`, `kubernetes`, and `singularity`. The plan is to add no regression tests for all connectors.
-Execute all these tests locally required installed: 
-- [Docker](https://docs.docker.com/engine/install/). It is also required for SSH tests.
-- [Singularity](https://docs.sylabs.io/guides/3.0/user-guide/installation.html)
-- A local Kubernetes, e.g. [minikube](https://minikube.sigs.k8s.io/docs/start/)
+Executing all these tests requires to install and configure several software packages:
+- [Docker](https://docs.docker.com/engine/install/), which is required to test the `docker` and `ssh` connectors and the CWL `DockerRequirement` implementation with Docker containers;
+- [Singularity](https://docs.sylabs.io/guides/3.0/user-guide/installation.html), which is required to test the `singularity` connector and the CWL `DockerRequirement` conversion to Singularity containers;
+- A Kubernetes distribution, e.g. [minikube](https://minikube.sigs.k8s.io/docs/start/), which is used to test the `kubernetes` connector and the CWL `DockerRequirement` conversion to Kubernetes pods.
 
-For development purposes, it is possible to execute local tests only on a specific subset of connectors using the flag `--deploys`.
+For development purposes, it is possible to execute local tests only on a specific subset of connectors using the `--deploys` option as follows
 ```bash 
 pytest --deploys local,docker,singularity tests/test_remotepath.py
 ```
@@ -89,18 +90,20 @@ make format codespell
 ## Contribute to the documentation
 
 ### Generate the documentation
-The documentation is written in the reStructuredText markup language, and the [Sphinx](https://www.sphinx-doc.org/en/master/) framework is used to generate different output formats. The command below installs all the required packages.
+The documentation is written in the reStructuredText markup language, and the [Sphinx](https://www.sphinx-doc.org/en/master/) framework is used to generate the HTML pages published on the [StreamFlow website](https://streamflow.di.unito.it/documentation/latest/). At the moment there is no CD for documentation: maintainers manually transfer files on the StreamFlow website at every release.
+
+To check your local version of the documentation, first install all the required packages using the following command
 ```bash
 cd docs
 pip install -r requirements.txt
 ```
 
-Generate the documentation in HTML format is done using
+Then generate the documentation in HTML format with the following command
 ```bash
 make html
 ```
 
-For more information to generate different formats, use
+If you want, you can also generate documentation in a different format among the ones supported by Sphinx. However, note that StreamFlow officially maintains only the HTML format. For more information on the available documentation formats, use the following command
 ```bash
 make help
 ```
