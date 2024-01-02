@@ -12,7 +12,7 @@ cd streamflow
 pip install -r requirements.txt
 ```
 
-Finally, you can install StreamFlow with the following command 
+Finally, you can install StreamFlow with the following command
 ```
 pip install .
 ```
@@ -39,12 +39,12 @@ Some regression tests are supplied using [pytest](https://docs.pytest.org/en/7.3
 pip install -r test-requirements.txt
 ```
 
-Then you can execute all the available tests with this command
+Then you can execute all the available tests with this command.
 ```bash 
 make test
 ```
 
-Otherwise, you can execute only a specific test file. For example. to verify compliance with the `cwltool:Loop` CWL extension you can use the following command
+Otherwise, you can execute only a specific test file. For example, to verify compliance with the `cwltool:Loop` CWL extension you can use the following command
 ```bash
 pytest tests/test_cwl_loop.py
 ```
@@ -55,7 +55,7 @@ Execute all these tests locally required installed:
 - [Singularity](https://docs.sylabs.io/guides/3.0/user-guide/installation.html)
 - A local Kubernetes, e.g. [minikube](https://minikube.sigs.k8s.io/docs/start/)
 
-For development purposes, it is possible to execute local tests only on a specific subset of connectors using the flag `--deploys`
+For development purposes, it is possible to execute local tests only on a specific subset of connectors using the flag `--deploys`.
 ```bash 
 pytest --deploys local,docker,singularity tests/test_remotepath.py
 ```
@@ -109,7 +109,7 @@ make help
 For any changes to the documentation, it is necessary to update the CI test.
 In particular, the checksum of the documentation in the HTML format is tested to avoid misleading changes when new Sphinx versions are released.
 
-The command below shows in stdout the checksum
+The command below shows in stdout the checksum.
 ```bash
 cd docs
 make get-checksum
