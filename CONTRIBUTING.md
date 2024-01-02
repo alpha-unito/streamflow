@@ -39,7 +39,7 @@ Some regression tests are supplied using [pytest](https://docs.pytest.org/en/7.3
 pip install -r test-requirements.txt
 ```
 
-Then you can execute all the available tests with this command.
+Then you can execute all the available tests with the following command
 ```bash 
 make test
 ```
