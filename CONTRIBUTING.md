@@ -23,43 +23,43 @@ StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for C
 The maintainers take care of the CD pipeline. In order to publish a new version of the software on PyPI and Docker Hub distributions, the maintainer only has to augment the version number in the `version.py` file.
 
 Instead, everyone in the community can contribute to the StreamFlow codebase by opening a Pull Request (PR). Running the entire suite of StreamFlow tests is part of the CI pipeline.
-However, it is suggested that some tests be done locally before opening the PR, below it is explained how to do it.
+However, it is also possible (and advisable) to run tests locally before opening a PR, as explained [below](#streamflow-tests).
 
 
 ### CWL conformance
-StreamFlow complies with all stable versions of the [Common Workflow Language](https://www.commonwl.org/) (CWL) open standard (1.0, 1.1, 1.2). Plus, it implements the `cwltool:Loop` extension (see [here](https://cwltool.readthedocs.io/en/latest/loop.html)).
+StreamFlow complies with all stable versions of the [Common Workflow Language](https://www.commonwl.org/) (CWL) open standard (v1.0, v1.1, and v1.2). Plus, it implements the `cwltool:Loop` extension (see [here](https://cwltool.readthedocs.io/en/latest/loop.html)).
 You can check if your PR does not compromise CWL compliance by running the CWL conformance tests suite, using the following command
 ```bash
 ./cwl-conformance-test.sh
 ```
 
 ### StreamFlow tests
-It is necessary that the contribution not introduce some errors in the current software features.
-Some regression tests are supplied using [pytest](https://docs.pytest.org/en/7.3.x/getting-started.html). Before it is necessary to install the required packages for the testing
+Some regression tests are supplied using [pytest](https://docs.pytest.org/en/7.3.x/getting-started.html). Install the required packages using the following command
 ```bash
 pip install -r test-requirements.txt
 ```
 
-You can execute all the available tests with the command
+Then you can execute all the available tests with this command
 ```bash 
 make test
 ```
-Otherwise, specific tests with the command
+
+Otherwise, you can execute only a specific test file. For example. to verify compliance with the `cwltool:Loop` CWL extension you can use the following command
 ```bash
-pytest tests/test_scheduler.py tests/test_data_manager.py
+pytest tests/test_cwl_loop.py
 ```
 
-StreamFlow has many different connectors, and some tests on these connectors are done. Currently, the tested connectors are local, Docker, SSH, Kubernetes, and Singularity.
+StreamFlow comes with many different connectors OOTB, and some of the tests in the suite are used to verify their behaviour. Currently, the tested connectors are : `local`, `docker`, `ssh`, `kubernetes`, and `singularity`. The plan is to add no regression tests for all connectors.
 Execute all these tests locally required installed: 
 - [Docker](https://docs.docker.com/engine/install/). It is also required for SSH tests.
 - [Singularity](https://docs.sylabs.io/guides/3.0/user-guide/installation.html)
 - A local Kubernetes, e.g. [minikube](https://minikube.sigs.k8s.io/docs/start/)
 
-For development goals, it is possible to execute local tests only on some specific connectors using the flag `--deploys`
+For development purposes, it is possible to execute local tests only on a specific subset of connectors using the flag `--deploys`
 ```bash 
 pytest --deploys local,docker,singularity tests/test_remotepath.py
 ```
-However, all the deployments are always checked in the CI tests.
+However, all connectors are always tested in the CI pipeline.
 
 
 
