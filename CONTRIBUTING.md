@@ -13,7 +13,7 @@ pip install -r requirements.txt
 ```
 
 Finally, install StreamFlow with the following command
-```
+```bash
 pip install .
 ```
 
@@ -34,7 +34,7 @@ You can check if your PR does not compromise CWL compliance by running the CWL c
 ```
 
 ### StreamFlow tests
-Some regression tests are supplied using [pytest](https://docs.pytest.org/en/7.3.x/getting-started.html). Install the required packages using the following command
+Some non regression tests are supplied using [pytest](https://docs.pytest.org/en/7.3.x/getting-started.html). Install the required packages using the following command
 ```bash
 pip install -r test-requirements.txt
 ```
@@ -50,7 +50,7 @@ pytest tests/test_cwl_loop.py
 ```
 
 ### Testing connectors
-StreamFlow comes with many different connectors OOTB, and some of the tests in the suite are used to verify their behaviour. Currently, the tested connectors are: `local`, `docker`, `ssh`, `kubernetes`, and `singularity`. The plan is to add no regression tests for all connectors.
+StreamFlow comes with many different connectors OOTB, and some of the tests in the suite are used to verify their behaviour. Currently, the tested connectors are: `local`, `docker`, `ssh`, `kubernetes`, and `singularity`. The plan is to add non regression tests for all connectors.
 Executing all these tests requires to install and configure several software packages:
 - [Docker](https://docs.docker.com/engine/install/), which is required to test the `docker` and `ssh` connectors and the CWL `DockerRequirement` implementation with Docker containers;
 - [Singularity](https://docs.sylabs.io/guides/3.0/user-guide/installation.html), which is required to test the `singularity` connector and the CWL `DockerRequirement` conversion to Singularity containers;
@@ -78,13 +78,11 @@ You can verify that your PR respects the code style with the following command
 make format-check flake8 codespell-check
 ```
 
-Otherwise, you can apply automatically the suggested changes. Use them carefully because they will write the file back. 
+You can also apply the suggested changes in bulk with the following command 
 ```bash
 make format codespell
 ```
-
-
-
+Use it carefully as it modifies the target files in place.
 
 
 ## Contribute to the documentation
@@ -109,18 +107,16 @@ make help
 ```
 
 ### Documentation changes
-For any changes to the documentation, it is necessary to update the dedicated test on the CI pipeline.
-In particular, the checksum of the documentation in the HTML format is tested to avoid misleading changes when new Sphinx versions are released.
+The checksum of the documentation in HTML format is tested in the CI pipeline to avoid unwanted changes when Sphinx or other dependencies are updated.
 
 
-The command below displays the new checksum in the shell
+The command below prints the new checksum on the standard output
 ```bash
 cd docs
 make get-checksum
 ```
 
-This new checksum must be copied and pasted into the `.github/workflows/ci-tests.yaml` file.
-It must replace the value of the environment variable `CHECKSUM` of the job `documentation`.
+This new checksum must coincide with the one in the `.github/workflows/ci-tests.yaml` file, i.e., the value of the `CHECKSUM` environment variable in the `documentation` job
 ```yaml
 name: "CI Tests"
 jobs:
