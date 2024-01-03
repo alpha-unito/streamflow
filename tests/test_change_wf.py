@@ -35,21 +35,21 @@ from tests.utils.workflow import (
 )
 
 
-async def base_step_test_process(
+async def _base_step_test_process(
     workflow, step_cls, kwargs_step, context, test_are_eq=True
 ):
     step = workflow.create_step(cls=step_cls, **kwargs_step)
     await workflow.save(context)
-    new_workflow, new_step = await clone_step(step, workflow, context)
-    persistent_id_test(workflow, new_workflow, step, new_step)
+    new_workflow, new_step = await _clone_step(step, workflow, context)
+    _persistent_id_test(workflow, new_workflow, step, new_step)
     if test_are_eq:
-        set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-        set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+        _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
+        _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
         assert are_equals(step, new_step)
     return step, new_workflow, new_step
 
 
-def persistent_id_test(original_workflow, new_workflow, original_elem, new_elem):
+def _persistent_id_test(original_workflow, new_workflow, original_elem, new_elem):
     assert original_workflow.persistent_id
     assert new_workflow.persistent_id
     assert original_workflow.persistent_id != new_workflow.persistent_id
@@ -61,7 +61,7 @@ def persistent_id_test(original_workflow, new_workflow, original_elem, new_elem)
     assert new_elem.workflow.persistent_id == new_workflow.persistent_id
 
 
-async def general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
+async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -79,7 +79,7 @@ async def general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     )
     new_workflow.add_port(new_port)
     await new_workflow.save(context)
-    persistent_id_test(workflow, new_workflow, port, new_port)
+    _persistent_id_test(workflow, new_workflow, port, new_port)
     port.persistent_id = None
     new_port.persistent_id = None
     port.workflow = None
@@ -87,14 +87,14 @@ async def general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     assert are_equals(port, new_port)
 
 
-def set_val_to_attributes(elem, str_attributes: MutableSequence[str], val):
+def _set_val_to_attributes(elem, str_attributes: MutableSequence[str], val):
     attrs = object_to_dict(elem)
     for attr in str_attributes:
         if attr in attrs.keys():
             setattr(elem, attr, val)
 
 
-def workflow_in_combinator_test(original_combinator, new_combinator):
+def _workflow_in_combinator_test(original_combinator, new_combinator):
     assert (
         original_combinator.workflow.persistent_id
         != new_combinator.workflow.persistent_id
@@ -102,16 +102,16 @@ def workflow_in_combinator_test(original_combinator, new_combinator):
     for original_inner, new_inner in zip(
         original_combinator.combinators.values(), new_combinator.combinators.values()
     ):
-        workflow_in_combinator_test(original_inner, new_inner)
+        _workflow_in_combinator_test(original_inner, new_inner)
 
 
-def set_workflow_in_combinator(combinator, workflow):
+def _set_workflow_in_combinator(combinator, workflow):
     combinator.workflow = workflow
     for c in combinator.combinators.values():
-        set_workflow_in_combinator(c, workflow)
+        _set_workflow_in_combinator(c, workflow)
 
 
-async def clone_step(step, workflow, context):
+async def _clone_step(step, workflow, context):
     new_workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -133,19 +133,19 @@ async def clone_step(step, workflow, context):
 @pytest.mark.asyncio
 async def test_port(context: StreamFlowContext):
     """Test saving Port on database and re-load it in a new Workflow"""
-    await general_test_port(context, Port)
+    await _general_test_port(context, Port)
 
 
 @pytest.mark.asyncio
 async def test_job_port(context: StreamFlowContext):
     """Test saving JobPort on database and re-load it in a new Workflow"""
-    await general_test_port(context, JobPort)
+    await _general_test_port(context, JobPort)
 
 
 @pytest.mark.asyncio
 async def test_connection_port(context: StreamFlowContext):
     """Test saving ConnectorPort on database and re-load it in a new Workflow"""
-    await general_test_port(context, ConnectorPort)
+    await _general_test_port(context, ConnectorPort)
 
 
 @pytest.mark.asyncio
@@ -177,8 +177,8 @@ async def test_execute_step(context: StreamFlowContext):
     )
     step.add_input_port(in_port_name, in_port)
     await workflow.save(context)
-    new_workflow, new_step = await clone_step(step, workflow, context)
-    persistent_id_test(workflow, new_workflow, step, new_step)
+    new_workflow, new_step = await _clone_step(step, workflow, context)
+    _persistent_id_test(workflow, new_workflow, step, new_step)
 
     assert step.command.step.persistent_id != new_step.command.step.persistent_id
     step.command.step = None
@@ -190,10 +190,10 @@ async def test_execute_step(context: StreamFlowContext):
             original_processor.workflow.persistent_id
             != new_processor.workflow.persistent_id
         )
-        set_val_to_attributes(original_processor, ["workflow"], None)
-        set_val_to_attributes(new_processor, ["workflow"], None)
-    set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-    set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+        _set_val_to_attributes(original_processor, ["workflow"], None)
+        _set_val_to_attributes(new_processor, ["workflow"], None)
+    _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
+    _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
     assert are_equals(step, new_step)
 
 
@@ -215,18 +215,18 @@ async def test_schedule_step(context: StreamFlowContext):
         ),
     )
     await workflow.save(context)
-    new_workflow, new_step = await clone_step(step, workflow, context)
-    persistent_id_test(workflow, new_workflow, step, new_step)
+    new_workflow, new_step = await _clone_step(step, workflow, context)
+    _persistent_id_test(workflow, new_workflow, step, new_step)
 
     for original_filter, new_filter in zip(
         step.binding_config.filters, new_step.binding_config.filters
     ):
         # Config are read-only so workflows can share the same
         assert original_filter.persistent_id == new_filter.persistent_id
-        set_val_to_attributes(original_filter, ["persistent_id", "workflow"], None)
-        set_val_to_attributes(new_filter, ["persistent_id", "workflow"], None)
-    set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-    set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+        _set_val_to_attributes(original_filter, ["persistent_id", "workflow"], None)
+        _set_val_to_attributes(new_filter, ["persistent_id", "workflow"], None)
+    _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
+    _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
     assert are_equals(step, new_step)
 
 
@@ -251,7 +251,7 @@ async def test_combinator_step(context: StreamFlowContext, combinator: Combinato
     workflow, (in_port, out_port, in_port_2, out_port_2) = await create_workflow(
         context, num_port=4
     )
-    set_workflow_in_combinator(combinator, workflow)
+    _set_workflow_in_combinator(combinator, workflow)
     step = workflow.create_step(
         cls=CombinatorStep,
         name=utils.random_name() + "-combinator",
@@ -266,14 +266,14 @@ async def test_combinator_step(context: StreamFlowContext, combinator: Combinato
     step.add_output_port(port_name_2, out_port_2)
 
     await workflow.save(context)
-    new_workflow, new_step = await clone_step(step, workflow, context)
-    persistent_id_test(workflow, new_workflow, step, new_step)
+    new_workflow, new_step = await _clone_step(step, workflow, context)
+    _persistent_id_test(workflow, new_workflow, step, new_step)
 
-    set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-    set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
-    workflow_in_combinator_test(step.combinator, new_step.combinator)
-    set_workflow_in_combinator(step.combinator, None)
-    set_workflow_in_combinator(new_step.combinator, None)
+    _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
+    _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    _workflow_in_combinator_test(step.combinator, new_step.combinator)
+    _set_workflow_in_combinator(step.combinator, None)
+    _set_workflow_in_combinator(new_step.combinator, None)
     assert are_equals(step, new_step)
 
 
@@ -298,14 +298,14 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     step.add_output_port(port_name_2, out_port_2)
 
     await workflow.save(context)
-    new_workflow, new_step = await clone_step(step, workflow, context)
-    persistent_id_test(workflow, new_workflow, step, new_step)
+    new_workflow, new_step = await _clone_step(step, workflow, context)
+    _persistent_id_test(workflow, new_workflow, step, new_step)
 
-    set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-    set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
-    workflow_in_combinator_test(step.combinator, new_step.combinator)
-    set_workflow_in_combinator(step.combinator, None)
-    set_workflow_in_combinator(new_step.combinator, None)
+    _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
+    _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    _workflow_in_combinator_test(step.combinator, new_step.combinator)
+    _set_workflow_in_combinator(step.combinator, None)
+    _set_workflow_in_combinator(new_step.combinator, None)
     assert are_equals(step, new_step)
 
 
@@ -315,15 +315,15 @@ async def test_deploy_step(context: StreamFlowContext):
     workflow = (await create_workflow(context, num_port=0))[0]
     step = create_deploy_step(workflow)
     await workflow.save(context)
-    new_workflow, new_step = await clone_step(step, workflow, context)
-    persistent_id_test(workflow, new_workflow, step, new_step)
+    new_workflow, new_step = await _clone_step(step, workflow, context)
+    _persistent_id_test(workflow, new_workflow, step, new_step)
 
 
 @pytest.mark.asyncio
 async def test_gather_step(context: StreamFlowContext):
     """Test saving GatherStep on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=0))[0]
-    await base_step_test_process(
+    await _base_step_test_process(
         workflow,
         GatherStep,
         {"name": utils.random_name() + "-gather", "depth": 1},
@@ -335,6 +335,6 @@ async def test_gather_step(context: StreamFlowContext):
 async def test_scatter_step(context: StreamFlowContext):
     """Test saving ScatterStep on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=0))[0]
-    await base_step_test_process(
+    await _base_step_test_process(
         workflow, ScatterStep, {"name": utils.random_name() + "-scatter"}, context
     )
