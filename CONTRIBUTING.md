@@ -107,6 +107,7 @@ make help
 ```
 
 ### Documentation changes
+Whenever a commit changes the documentation, it is necessary to update the dedicated test on the CI pipeline.
 The checksum of the documentation in HTML format is tested in the CI pipeline to avoid unwanted changes when Sphinx or other dependencies are updated.
 
 
