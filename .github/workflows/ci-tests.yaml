@@ -150,7 +150,7 @@ jobs:
           CHECKSUM: "caaa02b3477bf264a667c1684176ecf3f5e03e6c916d3107299c33670506239c"
         run: |
           cd docs/
-          HASH="$(make get-checksum | tail -n1)"
+          HASH="$(make checksum | tail -n1)"
           test "${HASH}" == "${CHECKSUM}"
   test-flux:
     runs-on: ubuntu-22.04

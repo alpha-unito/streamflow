@@ -113,7 +113,7 @@ The checksum of the documentation in HTML format is tested in the CI pipeline to
 The command below prints the new checksum on the standard output
 ```bash
 cd docs
-make get-checksum
+make checksum
 ```
 
 This new checksum must coincide with the one in the `.github/workflows/ci-tests.yaml` file, i.e., the value of the `CHECKSUM` environment variable in the `documentation` job
