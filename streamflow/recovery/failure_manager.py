@@ -85,7 +85,7 @@ class DefaultFailureManager(FailureManager):
                     return True
                 elif self.job_requests[token.value.name].token_output and all(
                     [
-                        await _is_token_available(t, self.context)
+                        await _is_token_available(t, self.context, set())
                         for t in self.job_requests[
                             token.value.name
                         ].token_output.values()

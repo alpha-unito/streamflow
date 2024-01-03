@@ -239,7 +239,7 @@ class RollbackRecoveryPolicy:
 
                 elif job_request.token_output and all(
                     [
-                        await _is_token_available(t, self.context)
+                        await _is_token_available(t, self.context, set())
                         for t in job_request.token_output.values()
                     ]
                 ):

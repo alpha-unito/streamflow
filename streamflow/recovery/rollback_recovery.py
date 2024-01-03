@@ -73,8 +73,8 @@ async def get_execute_step_out_token_ids(next_token_ids, context):
     return execute_step_out_token_ids
 
 
-async def evaluate_token_availability(token, step_rows, context):
-    if await _is_token_available(token, context):
+async def evaluate_token_availability(token, step_rows, context, valid_data):
+    if await _is_token_available(token, context, valid_data):
         is_available = TokenAvailability.Available
     else:
         is_available = TokenAvailability.Unavailable
@@ -716,6 +716,7 @@ class NewProvenanceGraphNavigation:
         )
 
     async def build_unfold_graph(self, init_tokens):
+        valid_data = set()
         token_frontier = deque(init_tokens)
         loading_context = DefaultDatabaseLoadingContext()
         job_token = None
@@ -745,7 +746,7 @@ class NewProvenanceGraphNavigation:
             else:
                 if (
                     is_available := await evaluate_token_availability(
-                        token, step_rows, self.context
+                        token, step_rows, self.context, valid_data
                     )
                 ) == TokenAvailability.Available:
                     self.add(None, token)

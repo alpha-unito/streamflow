@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import posixpath
 from typing import MutableMapping, Tuple, MutableSequence, Collection
 
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import DataType
 from streamflow.core.utils import get_class_fullname, get_class_from_name
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
@@ -13,6 +16,8 @@ from streamflow.core.exception import (
 )
 from streamflow.core.workflow import Token, Port, Step
 
+
+from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.transformer import (
     BackPropagationTransformer,
@@ -149,8 +154,40 @@ def get_token_by_tag(token_tag, token_list):
     return None
 
 
-async def _is_token_available(token, context):
-    return not isinstance(token, JobToken) and await token.is_available(context)
+async def _is_file_available(data_location, context):
+    connector = context.deployment_manager.get_connector(data_location.deployment)
+    if not (
+        res := await remotepath.exists(connector, data_location, data_location.path)
+    ):
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Invalidated location {data_location.deployment} (Lost path {data_location.path})"
+            )
+        context.data_manager.invalidate_location(data_location, "/")
+    return res
+
+
+async def _is_token_available(token: Token, context: StreamFlowContext, valid_data):
+    if isinstance(token, JobToken):
+        return False
+    elif isinstance(token, CWLFileToken):
+        data_locs = []
+        token_path = utils.get_path_from_token(token.value)
+        for data_loc in context.data_manager.get_data_locations(token_path):
+            if data_loc.data_type == DataType.PRIMARY and token_path not in valid_data:
+                data_locs.append(data_loc)
+        for data_loc, is_avai in zip(
+            data_locs,
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(_is_file_available(data_loc, context))
+                    for data_loc in data_locs
+                )
+            ),
+        ):
+            if is_avai:
+                valid_data.add(data_loc.path)
+    return await token.is_available(context)
 
 
 def get_necessary_tokens(

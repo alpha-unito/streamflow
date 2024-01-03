@@ -45,41 +45,18 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
 
 async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
     if path := utils.get_path_from_token(value):
-        # todo: controllare anche i secondaryfiles
-        if not (data_locs := context.data_manager.get_data_locations(path)):
-            return False
-        # exception only for debug
-        if [dl for dl in data_locs if dl.data_type == DataType.INVALID]:
-            raise Exception(
-                f"file {path} è già contrassegnato come non disponibile ma è stato recuperato il data location",
+        data_locations = context.data_manager.get_data_locations(
+            path=path, data_type=DataType.PRIMARY
+        )
+        if len(data_locations) != 0:
+            logger.debug(
+                f"Locations {[data_loc.deployment for data_loc in data_locations]} has valid file {path}"
             )
-        is_available = False
-        for data_loc in data_locs:
-            connector = context.deployment_manager.get_connector(data_loc.deployment)
-            if await remotepath.exists(connector, data_loc, data_loc.path):
-                # todo:
-                #  - opz1: controllare le location finché non si trova un file available
-                #    Problema [loop deadlock] -> possibile esecuzione:
-                #      - file era su loc1 e loc2, ma su loc2 si è perso.
-                #      - Il file viene segnato disponibile perché viene trovato su loc1 (ma non viene controllato loc2).
-                #      - Se il job viene assegnato a loc2 viene creato un link-simbolico con il file perso.
-                #  - opz2: controllare tutte le location, per aggiornare il data manager
-                #    Attuale implementazione
-                #  - opz3: controllare la location fallita, se file non available, controllare le altre location finché non c'è un file available
-
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Location {data_loc.deployment} has valid file {data_loc.path}"
-                    )
-                is_available = True
-            else:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Invalidated location {data_loc.deployment} (Lost path {data_loc.path})"
-                    )
-                context.data_manager.invalidate_location(data_loc, "/")
-        return is_available
-    raise Exception(f"It is not possible to verify the file {value} availability")
+        else:
+            logger.debug(f"Path {path} is not valid in none locations")
+        return len(data_locations) != 0
+    else:
+        return True
 
 
 class CWLFileToken(FileToken):
