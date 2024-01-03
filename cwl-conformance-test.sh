@@ -16,8 +16,8 @@ venv() {
 VERSION=${VERSION:-"v1.2"}
 
 # Which commit of the standard's repo to use
-# Defaults to the last commit of the 1.2.1_proposed branch
-COMMIT=${COMMIT:-"1.2.1_proposed"}
+# Defaults to the last commit of the main branch
+COMMIT=${COMMIT:-"main"}
 
 # Comma-separated list of test names that should be excluded from execution
 # Defaults to "docker_entrypoint, inplace_update_on_file_content"
