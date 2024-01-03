@@ -26,12 +26,12 @@ class CartesianProductCombinator(Combinator):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> CartesianProductCombinator:
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
             depth=row["depth"],
         )
@@ -220,12 +220,12 @@ class LoopTerminationCombinator(DotProductCombinator):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> LoopTerminationCombinator:
         combinator = cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
         )
         for item in row["output_items"]:

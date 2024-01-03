@@ -54,15 +54,15 @@ async def _get_port(
     context: StreamFlowContext,
     port_id: int,
     loading_context: DatabaseLoadingContext,
-    change_wf: Workflow,
+    workflow: Workflow,
 ):
-    if change_wf:
+    if workflow:
         port_row = await context.database.get_port(port_id)
-        if port := change_wf.ports.get(port_row["name"]):
+        if port := workflow.ports.get(port_row["name"]):
             return port
 
         # If the port is not available in the new workflow, a new one must be created
-        return await Port.load(context, port_id, loading_context, change_wf)
+        return await Port.load(context, port_id, loading_context, workflow)
     return await loading_context.load_port(context, port_id)
 
 
@@ -171,12 +171,12 @@ class Combinator(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> Combinator:
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
         )
 
@@ -233,18 +233,16 @@ class Combinator(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow = None,
+        workflow: Workflow = None,
     ) -> Combinator:
         type = cast(Combinator, utils.get_class_from_name(row["type"]))
-        combinator = await type._load(
-            context, row["params"], loading_context, change_wf
-        )
+        combinator = await type._load(context, row["params"], loading_context, workflow)
         combinator.items = row["params"]["items"]
         combinator.combinators_map = row["params"]["combinators_map"]
         combinator.combinators = {}
         for k, c in row["params"]["combinators"].items():
             combinator.combinators[k] = await Combinator.load(
-                context, c, loading_context, change_wf
+                context, c, loading_context, workflow
             )
         return combinator
 
@@ -304,16 +302,16 @@ class CombinatorStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> CombinatorStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
             combinator=await Combinator.load(
-                context, params["combinator"], loading_context, change_wf
+                context, params["combinator"], loading_context, workflow
             ),
         )
 
@@ -475,13 +473,13 @@ class DeployStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> DeployStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
             deployment_config=await loading_context.load_deployment(
                 context, params["deployment_config"]
@@ -489,7 +487,7 @@ class DeployStep(BaseStep):
             connector_port=cast(
                 ConnectorPort,
                 await _get_port(
-                    context, params["connector_port"], loading_context, change_wf
+                    context, params["connector_port"], loading_context, workflow
                 ),
             ),
         )
@@ -591,19 +589,17 @@ class ExecuteStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> ExecuteStep:
         params = json.loads(row["params"])
         step = cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort,
-                await _get_port(
-                    context, params["job_port"], loading_context, change_wf
-                ),
+                await _get_port(context, params["job_port"], loading_context, workflow),
             ),
         )
         step.output_connectors = params["output_connectors"]
@@ -615,7 +611,7 @@ class ExecuteStep(BaseStep):
                     *(
                         asyncio.create_task(
                             CommandOutputProcessor.load(
-                                context, p, loading_context, change_wf
+                                context, p, loading_context, workflow
                             )
                         )
                         for p in params["output_processors"].values()
@@ -875,13 +871,13 @@ class GatherStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> GatherStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
             depth=params["depth"],
         )
@@ -963,19 +959,17 @@ class InputInjectorStep(BaseStep, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> InputInjectorStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort,
-                await _get_port(
-                    context, params["job_port"], loading_context, change_wf
-                ),
+                await _get_port(context, params["job_port"], loading_context, workflow),
             ),
         )
 
@@ -1266,7 +1260,7 @@ class ScheduleStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> ScheduleStep:
         params = json.loads(row["params"])
         if hardware_requirement := params.get("hardware_requirement"):
@@ -1275,8 +1269,8 @@ class ScheduleStep(BaseStep):
             )
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
             binding_config=await BindingConfig.load(
                 context, params["binding_config"], loading_context
@@ -1284,15 +1278,13 @@ class ScheduleStep(BaseStep):
             connector_ports={
                 k: cast(
                     ConnectorPort,
-                    await _get_port(context, v, loading_context, change_wf),
+                    await _get_port(context, v, loading_context, workflow),
                 )
                 for k, v in params["connector_ports"].items()
             },
             job_port=cast(
                 JobPort,
-                await _get_port(
-                    context, params["job_port"], loading_context, change_wf
-                ),
+                await _get_port(context, params["job_port"], loading_context, workflow),
             ),
             job_prefix=params["job_prefix"],
             hardware_requirement=hardware_requirement,
@@ -1562,19 +1554,17 @@ class TransferStep(BaseStep, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
+        workflow: Workflow,
     ) -> TransferStep:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
+            workflow=workflow
+            if workflow
             else await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
                 JobPort,
-                await _get_port(
-                    context, params["job_port"], loading_context, change_wf
-                ),
+                await _get_port(context, params["job_port"], loading_context, workflow),
             ),
         )
 

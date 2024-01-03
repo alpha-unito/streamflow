@@ -286,7 +286,8 @@ async def get_dependencies(
     context: StreamFlowContext,
     loading_context: DatabaseLoadingContext,
 ):
-    # This method is generally called from the step load method. If the change_wf is enabled,
+    # This method is generally called from the step load method.
+    # If the workflow parameter in the load method has a value, the load_ports is False because
     # it is not helpful to get the Port instance in loading_context
     if load_ports:
         ports = await asyncio.gather(
