@@ -181,8 +181,7 @@ class RollbackRecoveryPolicy:
         ]
         logger.debug(f"TOKEN_GRAPH: {rdwp.dag_tokens}")
         tmp = {
-            f'"{k}"': [f'{v}' for v in values]
-            for k, values in rdwp.port_tokens.items()
+            f'"{k}"': [f"{v}" for v in values] for k, values in rdwp.port_tokens.items()
         }
         tmp = (
             "{\n"

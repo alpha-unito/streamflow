@@ -180,7 +180,7 @@ class DirectGraph:
 
     def __str__(self):
         # return f"{json.dumps({k : list(v) for k, v in self.graph.items()}, indent=2)}"
-        tmp = {f'"{k}"': [f'{v}' for v in values] for k, values in self.graph.items()}
+        tmp = {f'"{k}"': [f"{v}" for v in values] for k, values in self.graph.items()}
         return (
             "{\n"
             + "\n".join([f"{k} : {values}" for k, values in tmp.items()])
