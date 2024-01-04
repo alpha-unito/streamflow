@@ -46,7 +46,7 @@ class DefaultTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ):
         params = json.loads(row["params"])
         return cls(
@@ -119,7 +119,7 @@ class CWLTokenTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ):
         params = json.loads(row["params"])
         return cls(
@@ -251,7 +251,7 @@ class ValueFromTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ):
         params = json.loads(row["params"])
         return cls(

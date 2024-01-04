@@ -149,7 +149,7 @@ class CWLTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CWLTokenProcessor:
         format_graph = Graph()
         return cls(
@@ -393,7 +393,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
@@ -734,7 +734,7 @@ class CWLMapTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CWLMapTokenProcessor:
         return cls(
             name=row["name"],
@@ -799,7 +799,7 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
@@ -875,7 +875,7 @@ class CWLObjectTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CWLObjectTokenProcessor:
         return cls(
             name=row["name"],
@@ -980,7 +980,7 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         params = json.loads(row["params"])
         return cls(
@@ -1167,7 +1167,7 @@ class CWLUnionTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CWLUnionTokenProcessor:
         return cls(
             name=row["name"],
@@ -1287,7 +1287,7 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],

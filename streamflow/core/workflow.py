@@ -103,7 +103,7 @@ class CommandOutputProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
@@ -130,7 +130,7 @@ class CommandOutputProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow = None,
+        workflow: Workflow | None = None,
     ) -> CommandOutputProcessor:
         type = cast(
             Type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
@@ -264,7 +264,7 @@ class Port(PersistableEntity):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> Port:
         return cls(
             name=row["name"],
@@ -314,7 +314,7 @@ class Port(PersistableEntity):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow = None,
+        workflow: Workflow | None = None,
     ) -> Port:
         row = await context.database.get_port(persistent_id)
         type = cast(Type[Port], utils.get_class_from_name(row["type"]))
@@ -374,7 +374,7 @@ class Step(PersistableEntity, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ):
         return cls(
             name=row["name"],
@@ -441,7 +441,7 @@ class Step(PersistableEntity, ABC):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow = None,
+        workflow: Workflow | None = None,
     ) -> Step:
         row = await context.database.get_step(persistent_id)
         type = cast(Type[Step], utils.get_class_from_name(row["type"]))
@@ -593,7 +593,7 @@ class TokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> TokenProcessor:
         return cls(
             name=row["name"],
@@ -611,7 +611,7 @@ class TokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow = None,
+        workflow: Workflow | None = None,
     ):
         type = cast(Type[TokenProcessor], utils.get_class_from_name(row["type"]))
         return await type._load(context, row["params"], loading_context, workflow)

@@ -54,7 +54,7 @@ async def _get_port(
     context: StreamFlowContext,
     port_id: int,
     loading_context: DatabaseLoadingContext,
-    workflow: Workflow,
+    workflow: Workflow | None,
 ):
     if workflow:
         port_row = await context.database.get_port(port_id)
@@ -171,7 +171,7 @@ class Combinator(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> Combinator:
         return cls(
             name=row["name"],
@@ -233,7 +233,7 @@ class Combinator(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow = None,
+        workflow: Workflow | None = None,
     ) -> Combinator:
         type = cast(Combinator, utils.get_class_from_name(row["type"]))
         combinator = await type._load(context, row["params"], loading_context, workflow)
@@ -302,7 +302,7 @@ class CombinatorStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> CombinatorStep:
         params = json.loads(row["params"])
         return cls(
@@ -473,7 +473,7 @@ class DeployStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> DeployStep:
         params = json.loads(row["params"])
         return cls(
@@ -589,7 +589,7 @@ class ExecuteStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> ExecuteStep:
         params = json.loads(row["params"])
         step = cls(
@@ -871,7 +871,7 @@ class GatherStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> GatherStep:
         params = json.loads(row["params"])
         return cls(
@@ -959,7 +959,7 @@ class InputInjectorStep(BaseStep, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> InputInjectorStep:
         params = json.loads(row["params"])
         return cls(
@@ -1260,7 +1260,7 @@ class ScheduleStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> ScheduleStep:
         params = json.loads(row["params"])
         if hardware_requirement := params.get("hardware_requirement"):
@@ -1554,7 +1554,7 @@ class TransferStep(BaseStep, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow,
+        workflow: Workflow | None,
     ) -> TransferStep:
         params = json.loads(row["params"])
         return cls(
