@@ -171,20 +171,8 @@ StreamFlow relies on the [Common Workflow Language](https://www.commonwl.org/) (
 
 ## Contribute to StreamFlow
 
-As a first step, get StreamFlow from [GitHub](https://github.com/alpha-unito/streamflow) 
-```bash
-git clone git@github.com:alpha-unito/streamflow.git
-```
+See [contribution](CONTRIBUTING.md).
 
-Then you can install all the required packages using the `pip install` command
-
-```bash
-cd streamflow
-pip install -r requirements.txt
-```
-
-StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for PyPI and Docker Hub distributions. Therefore, in order to publish a
-new version of the software, you only have to augment the version number in `version.py` file.
 
 ## StreamFlow Team
 

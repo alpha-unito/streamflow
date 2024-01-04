@@ -150,17 +150,7 @@ jobs:
           CHECKSUM: "caaa02b3477bf264a667c1684176ecf3f5e03e6c916d3107299c33670506239c"
         run: |
           cd docs/
-          make html
-          HASH="$(find build/html/              \
-                    -not -name 'searchindex.js' \
-                    -not -name '*.woff'         \
-                    -not -name '*.woff2'        \
-                    -type f                     \
-                    -print0           |         \
-                  sort -zd            |         \
-                  xargs -r0 sha256sum |         \
-                  sha256sum           |         \
-                  head -c 64)"
+          HASH="$(make checksum | tail -n1)"
           test "${HASH}" == "${CHECKSUM}"
   test-flux:
     runs-on: ubuntu-22.04

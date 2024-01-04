@@ -18,3 +18,16 @@ help:
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
 %: Makefile
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+
+checksum: html
+	@echo "Documentation checksum: "
+	@find build/html/ 			\
+			-not -name 'searchindex.js'	\
+			-not -name '*.woff' 		\
+			-not -name '*.woff2' 		\
+			-type f -print0 	| 	\
+		sort -zd 			|	\
+		xargs -r0 sha256sum 		|	\
+		sha256sum			|	\
+		head -c 64
+	@echo ""
