@@ -287,8 +287,13 @@ async def get_dependencies(
     loading_context: DatabaseLoadingContext,
 ):
     # This method is generally called from the step load method.
-    # If the workflow parameter in the load method has a value, the load_ports is False because
-    # it is not helpful to get the Port instance in loading_context
+    # If the steps and ports are loaded into their workflow, it is helpful call loading_context.load_port because
+    #   - if port instance is already in the loading_context, it is used that instance
+    #   - otherwise a new port instance is created,
+    #     and it will be helpful because that instance will be added in the workflow
+    # If the ports are loaded into a new workflow, it is not helpful call loading_context.load_port because
+    #   - if the instance is not into the loading_context it is created a new one,
+    #     but this instance will not add into the new workflow because it has already the old workflow reference
     if load_ports:
         ports = await asyncio.gather(
             *(

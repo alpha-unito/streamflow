@@ -50,7 +50,12 @@ class DatabaseLoadingContext(ABC):
         ...
 
     @abstractmethod
-    async def load_port(self, context: StreamFlowContext, persistent_id: int):
+    async def load_port(
+        self,
+        context: StreamFlowContext,
+        persistent_id: int,
+        workflow: Workflow | None = None,
+    ):
         ...
 
     @abstractmethod

@@ -50,22 +50,6 @@ from streamflow.workflow.utils import (
 )
 
 
-async def _get_port(
-    context: StreamFlowContext,
-    port_id: int,
-    loading_context: DatabaseLoadingContext,
-    workflow: Workflow | None,
-):
-    if workflow:
-        port_row = await context.database.get_port(port_id)
-        if port := workflow.ports.get(port_row["name"]):
-            return port
-
-        # If the port is not available in the new workflow, a new one must be created
-        return await Port.load(context, port_id, loading_context, workflow)
-    return await loading_context.load_port(context, port_id)
-
-
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
     return directory or path_processor.join(target.workdir, utils.random_name())
 
@@ -486,8 +470,8 @@ class DeployStep(BaseStep):
             ),
             connector_port=cast(
                 ConnectorPort,
-                await _get_port(
-                    context, params["connector_port"], loading_context, workflow
+                await loading_context.load_port(
+                    context, params["connector_port"], workflow
                 ),
             ),
         )
@@ -599,7 +583,7 @@ class ExecuteStep(BaseStep):
             ),
             job_port=cast(
                 JobPort,
-                await _get_port(context, params["job_port"], loading_context, workflow),
+                await loading_context.load_port(context, params["job_port"], workflow),
             ),
         )
         step.output_connectors = params["output_connectors"]
@@ -969,7 +953,7 @@ class InputInjectorStep(BaseStep, ABC):
             ),
             job_port=cast(
                 JobPort,
-                await _get_port(context, params["job_port"], loading_context, workflow),
+                await loading_context.load_port(context, params["job_port"], workflow),
             ),
         )
 
@@ -1278,13 +1262,13 @@ class ScheduleStep(BaseStep):
             connector_ports={
                 k: cast(
                     ConnectorPort,
-                    await _get_port(context, v, loading_context, workflow),
+                    await loading_context.load_port(context, v, workflow),
                 )
                 for k, v in params["connector_ports"].items()
             },
             job_port=cast(
                 JobPort,
-                await _get_port(context, params["job_port"], loading_context, workflow),
+                await loading_context.load_port(context, params["job_port"], workflow),
             ),
             job_prefix=params["job_prefix"],
             hardware_requirement=hardware_requirement,
@@ -1564,7 +1548,7 @@ class TransferStep(BaseStep, ABC):
             ),
             job_port=cast(
                 JobPort,
-                await _get_port(context, params["job_port"], loading_context, workflow),
+                await loading_context.load_port(context, params["job_port"], workflow),
             ),
         )
 

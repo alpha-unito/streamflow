@@ -29,7 +29,6 @@ from streamflow.workflow.step import (
     LoopOutputStep,
     TransferStep,
     _get_token_ids,
-    _get_port,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
@@ -155,7 +154,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        _get_port(context, value, loading_context, workflow)
+                        loading_context.load_port(context, value, workflow)
                     )
                     for value in params["skip_ports"].values()
                 )
