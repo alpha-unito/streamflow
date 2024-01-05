@@ -15,7 +15,7 @@ from streamflow.core.persistence import (
     DependencyType,
     PersistableEntity,
 )
-from streamflow.core.utils import get_dependencies
+from streamflow.core.utils import load_dependencies
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location, Target
@@ -455,11 +455,11 @@ class Step(PersistableEntity, ABC):
                 Status.SKIPPED,
             ]
         input_deps = await context.database.get_input_ports(persistent_id)
-        step.input_ports = await get_dependencies(
+        step.input_ports = await load_dependencies(
             input_deps, workflow is None, context, loading_context
         )
         output_deps = await context.database.get_output_ports(persistent_id)
-        step.output_ports = await get_dependencies(
+        step.output_ports = await load_dependencies(
             output_deps, workflow is None, context, loading_context
         )
         if not workflow:

@@ -280,7 +280,7 @@ def wrap_command(command: str):
     return ["/bin/sh", "-c", f"{command}"]
 
 
-async def get_dependencies(
+async def load_dependencies(
     dependency_rows: MutableSequence[MutableMapping[str, Any]],
     load_ports: bool,
     context: StreamFlowContext,
