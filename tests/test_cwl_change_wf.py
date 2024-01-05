@@ -97,26 +97,16 @@ async def test_value_from_transformer(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_all_non_null_transformer(context: StreamFlowContext):
-    """Test saving AllNonNullTransformer on database and re-load it in a new Workflow"""
+@pytest.mark.parametrize(
+    "transformer_cls",
+    [AllNonNullTransformer, FirstNonNullTransformer, OnlyNonNullTransformer],
+)
+async def test_non_null_transformer(context: StreamFlowContext, transformer_cls):
+    """Test saving All/First/Only NonNullTransformer on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=1))[0]
     await _base_step_test_process(
         workflow,
-        AllNonNullTransformer,
-        {
-            "name": utils.random_name() + "-transformer",
-        },
-        context,
-    )
-
-
-@pytest.mark.asyncio
-async def test_first_non_null_transformer(context: StreamFlowContext):
-    """Test saving FirstNonNullTransformer on database and re-load it in a new Workflow"""
-    workflow = (await create_workflow(context, num_port=1))[0]
-    await _base_step_test_process(
-        workflow,
-        FirstNonNullTransformer,
+        transformer_cls,
         {
             "name": utils.random_name() + "-transformer",
         },
@@ -145,20 +135,6 @@ async def test_list_to_element_transformer(context: StreamFlowContext):
     await _base_step_test_process(
         workflow,
         ListToElementTransformer,
-        {
-            "name": utils.random_name() + "-transformer",
-        },
-        context,
-    )
-
-
-@pytest.mark.asyncio
-async def test_only_non_null_transformer(context: StreamFlowContext):
-    """Test saving OnlyNonNullTransformer on database and re-load it in a new Workflow"""
-    workflow = (await create_workflow(context, num_port=1))[0]
-    await _base_step_test_process(
-        workflow,
-        OnlyNonNullTransformer,
         {
             "name": utils.random_name() + "-transformer",
         },
