@@ -77,7 +77,7 @@ async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     new_port = await Port.load(
         context, port.persistent_id, loading_context, new_workflow
     )
-    new_workflow.add_port(new_port)
+    new_workflow.ports[new_port.name] = new_port
     await new_workflow.save(context)
     _persistent_id_test(workflow, new_workflow, port, new_port)
     port.persistent_id = None
@@ -119,13 +119,14 @@ async def _clone_step(step, workflow, context):
     new_step = await Step.load(
         context, step.persistent_id, loading_context, new_workflow
     )
-    new_workflow.add_step(new_step)
+    new_workflow.steps[new_step.name] = new_step
 
     # ports are not loaded in new_workflow. It is necessary to do it manually
     for port in workflow.ports.values():
-        new_workflow.add_port(
-            await Port.load(context, port.persistent_id, loading_context, new_workflow)
+        new_port = await Port.load(
+            context, port.persistent_id, loading_context, new_workflow
         )
+        new_workflow.ports[new_port.name] = new_port
     await new_workflow.save(context)
     return new_workflow, new_step
 
