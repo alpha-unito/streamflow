@@ -30,9 +30,9 @@ class CartesianProductCombinator(Combinator):
     ) -> CartesianProductCombinator:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             depth=row["depth"],
         )
 
@@ -224,9 +224,9 @@ class LoopTerminationCombinator(DotProductCombinator):
     ) -> LoopTerminationCombinator:
         combinator = cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
         )
         for item in row["output_items"]:
             combinator.add_output_item(item)

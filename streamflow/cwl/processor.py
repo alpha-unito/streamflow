@@ -154,9 +154,9 @@ class CWLTokenProcessor(TokenProcessor):
         format_graph = Graph()
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             token_type=row["token_type"],
             check_type=row["check_type"],
             enum_symbols=row["enum_symbols"],
@@ -397,9 +397,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             target=(await loading_context.load_target(context, row["workflow"]))
             if row["target"]
             else None,
@@ -738,9 +738,9 @@ class CWLMapTokenProcessor(TokenProcessor):
     ) -> CWLMapTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             processor=await TokenProcessor.load(
                 context, row["processor"], loading_context, workflow
             ),
@@ -803,9 +803,9 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             processor=await CommandOutputProcessor.load(
                 context, row["processor"], loading_context, workflow
             ),
@@ -879,9 +879,9 @@ class CWLObjectTokenProcessor(TokenProcessor):
     ) -> CWLObjectTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             processors={
                 k: v
                 for k, v in zip(
@@ -985,9 +985,9 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             target=(await loading_context.load_target(context, row["workflow"]))
             if row["target"]
             else None,
@@ -1171,9 +1171,9 @@ class CWLUnionTokenProcessor(TokenProcessor):
     ) -> CWLUnionTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             processors=cast(
                 MutableSequence[TokenProcessor],
                 await asyncio.gather(
@@ -1291,9 +1291,9 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             processors=cast(
                 MutableSequence[CommandOutputProcessor],
                 await asyncio.gather(

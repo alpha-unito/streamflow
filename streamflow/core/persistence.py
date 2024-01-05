@@ -66,7 +66,12 @@ class DatabaseLoadingContext(ABC):
         ...
 
     @abstractmethod
-    async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
+    async def load_workflow(
+        self,
+        context: StreamFlowContext,
+        persistent_id: int,
+        workflow: Workflow | None = None,
+    ):
         ...
 
 

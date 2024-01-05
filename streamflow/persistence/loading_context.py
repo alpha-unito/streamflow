@@ -68,7 +68,14 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
             context, persistent_id, self
         )
 
-    async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
-        return self._workflows.get(persistent_id) or await Workflow.load(
-            context, persistent_id, self
+    async def load_workflow(
+        self,
+        context: StreamFlowContext,
+        persistent_id: int,
+        workflow: Workflow | None = None,
+    ):
+        return (
+            workflow
+            or self._workflows.get(persistent_id)
+            or await Workflow.load(context, persistent_id, self)
         )

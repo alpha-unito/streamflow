@@ -175,9 +175,9 @@ class Combinator(ABC):
     ) -> Combinator:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
         )
 
     async def _save_additional_params(self, context: StreamFlowContext):
@@ -307,9 +307,9 @@ class CombinatorStep(BaseStep):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             combinator=await Combinator.load(
                 context, params["combinator"], loading_context, workflow
             ),
@@ -478,9 +478,9 @@ class DeployStep(BaseStep):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             deployment_config=await loading_context.load_deployment(
                 context, params["deployment_config"]
             ),
@@ -594,9 +594,9 @@ class ExecuteStep(BaseStep):
         params = json.loads(row["params"])
         step = cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             job_port=cast(
                 JobPort,
                 await _get_port(context, params["job_port"], loading_context, workflow),
@@ -876,9 +876,9 @@ class GatherStep(BaseStep):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             depth=params["depth"],
         )
 
@@ -964,9 +964,9 @@ class InputInjectorStep(BaseStep, ABC):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             job_port=cast(
                 JobPort,
                 await _get_port(context, params["job_port"], loading_context, workflow),
@@ -1269,9 +1269,9 @@ class ScheduleStep(BaseStep):
             )
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             binding_config=await BindingConfig.load(
                 context, params["binding_config"], loading_context
             ),
@@ -1559,9 +1559,9 @@ class TransferStep(BaseStep, ABC):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             job_port=cast(
                 JobPort,
                 await _get_port(context, params["job_port"], loading_context, workflow),

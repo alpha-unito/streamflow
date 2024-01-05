@@ -143,9 +143,9 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         params = json.loads(row["params"])
         step = cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             expression=params["expression"],
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],
@@ -229,9 +229,9 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             scatter_method=params["scatter_method"],
         )
 

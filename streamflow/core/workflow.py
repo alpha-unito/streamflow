@@ -107,9 +107,9 @@ class CommandOutputProcessor(ABC):
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             target=(await loading_context.load_target(context, row["workflow"]))
             if row["target"]
             else None,
@@ -268,9 +268,9 @@ class Port(PersistableEntity):
     ) -> Port:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
         )
 
     async def _save_additional_params(
@@ -378,9 +378,9 @@ class Step(PersistableEntity, ABC):
     ):
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
         )
 
     async def _save_additional_params(
@@ -597,9 +597,9 @@ class TokenProcessor(ABC):
     ) -> TokenProcessor:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
         )
 
     async def _save_additional_params(self, context: StreamFlowContext):

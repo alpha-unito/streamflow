@@ -45,9 +45,9 @@ class ListMergeCombinator(DotProductCombinator):
     ) -> ListMergeCombinator:
         return cls(
             name=row["name"],
-            workflow=workflow
-            if workflow
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(
+                context, row["workflow"], workflow
+            ),
             input_names=row["input_names"],
             output_name=row["output_name"],
             flatten=row["flatten"],
