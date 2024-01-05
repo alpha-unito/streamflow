@@ -8,22 +8,24 @@ from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.step import (
     CWLConditionalStep,
-    CWLTransferStep,
-    CWLInputInjectorStep,
     CWLEmptyScatterConditionalStep,
+    CWLInputInjectorStep,
+    CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
+    CWLLoopOutputLastStep,
+    CWLTransferStep,
 )
 from streamflow.cwl.transformer import (
-    DefaultTransformer,
-    DefaultRetagTransformer,
-    CWLTokenTransformer,
-    LoopValueFromTransformer,
-    ValueFromTransformer,
     AllNonNullTransformer,
+    CWLTokenTransformer,
+    DefaultRetagTransformer,
+    DefaultTransformer,
     FirstNonNullTransformer,
     ForwardTransformer,
     ListToElementTransformer,
+    LoopValueFromTransformer,
     OnlyNonNullTransformer,
+    ValueFromTransformer,
 )
 from streamflow.workflow.step import CombinatorStep
 from tests.conftest import (
@@ -241,6 +243,22 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
+async def test_cwl_loop_conditional_step(context: StreamFlowContext):
+    """Test saving CWLLoopConditionalStep on database and re-load it in a new Workflow"""
+    workflow, (port,) = await create_workflow(context, num_port=1)
+    await _base_step_test_process(
+        workflow,
+        CWLLoopConditionalStep,
+        {
+            "name": utils.random_name() + "-when",
+            "expression": f"$(inputs.{utils.random_name()}.length == 1)",
+            "full_js": True,
+        },
+        context,
+    )
+
+
+@pytest.mark.asyncio
 async def test_empty_scatter_conditional_step(context: StreamFlowContext):
     """Test saving CWLEmptyScatterConditionalStep on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=1))[0]
@@ -319,12 +337,13 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_loop_output_all_step(context: StreamFlowContext):
+@pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
+async def test_cwl_loop_output(context: StreamFlowContext, step_cls):
     """Test saving CWLLoopOutputAllStep on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=1))[0]
     await _base_step_test_process(
         workflow,
-        CWLLoopOutputAllStep,
+        step_cls,
         {
             "name": utils.random_name() + "-loop-output",
         },
