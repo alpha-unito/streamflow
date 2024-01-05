@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import MutableMapping
 
 from streamflow.core.context import StreamFlowContext
