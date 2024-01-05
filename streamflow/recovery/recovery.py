@@ -88,13 +88,16 @@ class RollbackRecoveryPolicy:
             failed_job.name,
             failed_step.get_input_port("__job__").token_list,
         )
+        valid_data = set()
         npgn = NewProvenanceGraphNavigation(workflow.context)
-        await npgn.build_unfold_graph((*failed_job.inputs.values(), job_token))
+        await npgn.build_unfold_graph(
+            (*failed_job.inputs.values(), job_token), valid_data
+        )
 
         # update class state (attributes) and jobs synchronization
         inner_graph = await npgn.refold_graphs(failed_step.get_output_ports().values())
         logger.debug("Start sync-rollbacks")
-        await self.sync_running_jobs(inner_graph, new_workflow)
+        await self.sync_running_jobs(inner_graph, new_workflow, valid_data)
 
         logger.debug("End sync-rollbacks")
         ports, steps = await inner_graph.get_port_and_step_ids(
@@ -171,7 +174,7 @@ class RollbackRecoveryPolicy:
             )
         return port_recovery
 
-    async def sync_running_jobs(self, rdwp, workflow):
+    async def sync_running_jobs(self, rdwp, workflow, valid_data):
         logger.debug(f"INIZIO sync (wf {workflow.name}) RUNNING JOBS")
         map_job_port = {}
         job_token_names = [
@@ -239,7 +242,7 @@ class RollbackRecoveryPolicy:
 
                 elif job_request.token_output and all(
                     [
-                        await _is_token_available(t, self.context, set())
+                        await _is_token_available(t, self.context, valid_data)
                         for t in job_request.token_output.values()
                     ]
                 ):

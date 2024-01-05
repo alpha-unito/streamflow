@@ -715,8 +715,7 @@ class NewProvenanceGraphNavigation:
             dst_token.persistent_id if dst_token else dst_token,
         )
 
-    async def build_unfold_graph(self, init_tokens):
-        valid_data = set()
+    async def build_unfold_graph(self, init_tokens, valid_data):
         token_frontier = deque(init_tokens)
         loading_context = DefaultDatabaseLoadingContext()
         job_token = None
@@ -737,7 +736,7 @@ class NewProvenanceGraphNavigation:
             )
             step_rows = await get_steps_from_output_port(port_row["id"], self.context)
             # questa condizione si potrebbe mettere come parametro e utilizzarla come taglio. Ovvero, dove l'utente vuole che si fermi la ricerca indietro
-            if await self.context.failure_manager.is_running_token(token):
+            if await self.context.failure_manager.is_running_token(token, valid_data):
                 self.add(None, token)
                 is_available = TokenAvailability.Unavailable
                 logger.debug(

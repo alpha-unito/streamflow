@@ -78,14 +78,14 @@ class DefaultFailureManager(FailureManager):
         # { job.name : RequestJob }
         self.job_requests: MutableMapping[str, JobRequest] = {}
 
-    async def is_running_token(self, token):
+    async def is_running_token(self, token, valid_data):
         if isinstance(token, JobToken) and token.value.name in self.job_requests.keys():
             async with self.job_requests[token.value.name].lock:
                 if self.job_requests[token.value.name].is_running:
                     return True
                 elif self.job_requests[token.value.name].token_output and all(
                     [
-                        await _is_token_available(t, self.context, set())
+                        await _is_token_available(t, self.context, valid_data)
                         for t in self.job_requests[
                             token.value.name
                         ].token_output.values()
