@@ -116,9 +116,5 @@ class WorkflowLoader(DefaultDatabaseLoadingContext):
             self.workflow.ports[port.name] = port
             return port
 
-    async def load_workflow(
-        self,
-        context: StreamFlowContext,
-        persistent_id: int,
-    ):
+    async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
         return self.workflow
