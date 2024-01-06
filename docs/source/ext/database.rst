@@ -234,8 +234,8 @@ Each ``get_data`` method receives in input the identifier (commonly the ``persis
 The ``close`` method receives no input parameter and does not return anything. It frees stateful resources potentially allocated during the object’s lifetime, e.g., network or database connections.
 
 
-Implementations
----------------
+Implementations1
+-----------------
 
 ======     ============================================
 Type       Class
@@ -317,8 +317,8 @@ The ``DatabaseLoadingContext`` interface allows to define classes that manage th
         ...
 
 
-Implementations
----------------
+Implementations2
+-----------------
 
 ====================================================================    =============================================================
 Name                                                                    Class
