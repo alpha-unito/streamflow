@@ -255,8 +255,8 @@ The database schema is structured as follows:
 
 DatabaseLoadingContext
 ======================
-Workflow loading can be costly in term of time and memory but also tricky, with the possibility of deadlock.
-The ``DatabaseLoadingContext`` supplies an interface, which allows to define classes that manage these problems. Good practice is to load the objects from these classes instead of use directly the entity ``load`` methods.
+Workflow loading can be costly in terms of time and memory but also tricky, with the possibility of deadlock.
+The ``DatabaseLoadingContext`` interface allows to define classes that manage these problems. Good practice is to load the objects from these classes instead of using directly the entity ``load`` methods.
 
 .. code-block:: python
     def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
