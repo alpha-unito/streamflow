@@ -259,45 +259,59 @@ Workflow loading can be costly in terms of time and memory but also tricky, with
 The ``DatabaseLoadingContext`` interface allows to define classes that manage these problems. Good practice is to load the objects from these classes instead of using directly the entity ``load`` methods.
 
 .. code-block:: python
+    @abstractmethod
     def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
         ...
 
+    @abstractmethod
     def add_filter(self, persistent_id: int, filter_config: FilterConfig):
         ...
 
+    @abstractmethod
     def add_port(self, persistent_id: int, port: Port):
         ...
 
+    @abstractmethod
     def add_step(self, persistent_id: int, step: Step):
         ...
 
+    @abstractmethod
     def add_target(self, persistent_id: int, target: Target):
         ...
 
+    @abstractmethod
     def add_token(self, persistent_id: int, token: Token):
         ...
 
+    @abstractmethod
     def add_workflow(self, persistent_id: int, workflow: Workflow):
         ...
 
+    @abstractmethod
     async def load_deployment(self, context: StreamFlowContext, persistent_id: int):
         ...
 
+    @abstractmethod
     async def load_filter(self, context: StreamFlowContext, persistent_id: int):
         ...
 
+    @abstractmethod
     async def load_port(self, context: StreamFlowContext, persistent_id: int):
         ...
 
+    @abstractmethod
     async def load_step(self, context: StreamFlowContext, persistent_id: int):
         ...
 
+    @abstractmethod
     async def load_target(self, context: StreamFlowContext, persistent_id: int):
         ...
 
+    @abstractmethod
     async def load_token(self, context: StreamFlowContext, persistent_id: int):
         ...
 
+    @abstractmethod
     async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
         ...
 
@@ -322,8 +336,12 @@ WorkflowLoader
 ^^^^^^^^^^^^^^
 The ``WorkflowLoader`` allows the loading of the steps and ports of a workflow in a new one.
 This feature can be helpful for the Fault Tolerance and the Resume features (see :ref:`Fault Tolerance <Fault tolerance>`).
-Between the workflows, it is possible to have some shared entities, particularly those used only in reading, for example ``deployment```, ``target``. Instead, the entities with an internal state must be different instances, so ``steps``, ``ports`` and ``workflow``.
-This is done by loading the entity, keeping the ``persistent_id``in the case of a shared object, or creating a new ``persistent_id`` otherwise.
+Between the workflows, it is possible to have some shared entities, particularly those used only in reading, for example ``deployment``` and ``target``. Instead, the entities with an internal state must be different instances, so ``steps``, ``ports`` and ``workflow``.
+This is done by loading the entity, keeping the ``persistent_id`` in the case of a shared object, or creating a new ``persistent_id`` otherwise.
 The ``WorkflowLoader`` extends the ``DefaultDatabaseLoadingContext`` class and overrides only the methods involving the ``step``, ``port`` and ``workflow`` entities.
 The class has the ``workflow`` attribute, i.e., the new ``workflow`` instance, and the ``load_workflow`` method returns it.
-Instead, the ``add_step`` and ``add_port`` methods do not set the ``persistent_id`` as their parent methods.
+Instead, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set the ``persistent_id`` as their parent methods.
+.. code-block:: python
+    def __init__(self, workflow: Workflow):
+        super().__init__()
+        self.workflow: Workflow = workflow
