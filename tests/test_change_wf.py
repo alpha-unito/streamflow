@@ -1,4 +1,4 @@
-from typing import Type, cast, MutableSequence
+from typing import Type, cast
 
 import pytest
 
@@ -20,10 +20,7 @@ from streamflow.workflow.step import (
     GatherStep,
     ScatterStep,
 )
-from tests.conftest import (
-    are_equals,
-    object_to_dict,
-)
+from tests.conftest import are_equals
 from tests.utils.workflow import (
     create_workflow,
     create_schedule_step,
@@ -52,8 +49,8 @@ async def _base_step_test_process(
         for p in new_workflow.ports.values():
             p.persistent_id = None
             p.workflow = None
-        _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-        _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+        _set_to_none(step, id_to_none=True, wf_to_none=True)
+        _set_to_none(new_step, id_to_none=True, wf_to_none=True)
         assert are_equals(step, new_step)
         return None, None, None
     else:
@@ -93,8 +90,8 @@ async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     new_workflow.ports[new_port.name] = new_port
     await new_workflow.save(context)
     _persistent_id_test(workflow, new_workflow, port, new_port)
-    _set_val_to_attributes(port, ["persistent_id", "workflow"], None)
-    _set_val_to_attributes(new_port, ["persistent_id", "workflow"], None)
+    _set_to_none(port, id_to_none=True, wf_to_none=True)
+    _set_to_none(new_port, id_to_none=True, wf_to_none=True)
     assert are_equals(port, new_port)
 
 
@@ -110,11 +107,11 @@ def _persistent_id_test(original_workflow, new_workflow, original_elem, new_elem
     assert new_elem.workflow.persistent_id == new_workflow.persistent_id
 
 
-def _set_val_to_attributes(elem, str_attributes: MutableSequence[str], val):
-    attrs = object_to_dict(elem)
-    for attr in str_attributes:
-        if attr in attrs.keys():
-            setattr(elem, attr, val)
+def _set_to_none(elem, id_to_none=False, wf_to_none=False):
+    if id_to_none:
+        elem.persistent_id = None
+    if wf_to_none:
+        elem.workflow = None
 
 
 def _set_workflow_in_combinator(combinator, workflow):
@@ -194,10 +191,10 @@ async def test_execute_step(context: StreamFlowContext):
             original_processor.workflow.persistent_id
             != new_processor.workflow.persistent_id
         )
-        _set_val_to_attributes(original_processor, ["workflow"], None)
-        _set_val_to_attributes(new_processor, ["workflow"], None)
-    _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-    _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+        _set_to_none(original_processor, wf_to_none=True)
+        _set_to_none(new_processor, wf_to_none=True)
+    _set_to_none(step, id_to_none=True, wf_to_none=True)
+    _set_to_none(new_step, id_to_none=True, wf_to_none=True)
     assert are_equals(step, new_step)
 
 
@@ -227,10 +224,10 @@ async def test_schedule_step(context: StreamFlowContext):
     ):
         # Config are read-only so workflows can share the same
         assert original_filter.persistent_id == new_filter.persistent_id
-        _set_val_to_attributes(original_filter, ["persistent_id", "workflow"], None)
-        _set_val_to_attributes(new_filter, ["persistent_id", "workflow"], None)
-    _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-    _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+        _set_to_none(original_filter, id_to_none=True, wf_to_none=True)
+        _set_to_none(new_filter, id_to_none=True, wf_to_none=True)
+    _set_to_none(step, id_to_none=True, wf_to_none=True)
+    _set_to_none(new_step, id_to_none=True, wf_to_none=True)
     assert are_equals(step, new_step)
 
 
@@ -273,8 +270,8 @@ async def test_combinator_step(context: StreamFlowContext, combinator: Combinato
     new_workflow, new_step = await _clone_step(step, workflow, context)
     _persistent_id_test(workflow, new_workflow, step, new_step)
 
-    _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-    _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    _set_to_none(step, id_to_none=True, wf_to_none=True)
+    _set_to_none(new_step, id_to_none=True, wf_to_none=True)
     _workflow_in_combinator_test(step.combinator, new_step.combinator)
     _set_workflow_in_combinator(step.combinator, None)
     _set_workflow_in_combinator(new_step.combinator, None)
@@ -305,8 +302,8 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     new_workflow, new_step = await _clone_step(step, workflow, context)
     _persistent_id_test(workflow, new_workflow, step, new_step)
 
-    _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
-    _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
+    _set_to_none(step, id_to_none=True, wf_to_none=True)
+    _set_to_none(new_step, id_to_none=True, wf_to_none=True)
     _workflow_in_combinator_test(step.combinator, new_step.combinator)
     _set_workflow_in_combinator(step.combinator, None)
     _set_workflow_in_combinator(new_step.combinator, None)
