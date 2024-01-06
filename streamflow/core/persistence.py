@@ -14,6 +14,10 @@ if TYPE_CHECKING:
 
 class DatabaseLoadingContext(ABC):
     @abstractmethod
+    def is_standard_loading(self) -> bool:
+        ...
+
+    @abstractmethod
     def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
         ...
 
@@ -54,7 +58,6 @@ class DatabaseLoadingContext(ABC):
         self,
         context: StreamFlowContext,
         persistent_id: int,
-        workflow: Workflow | None = None,
     ):
         ...
 
@@ -75,7 +78,6 @@ class DatabaseLoadingContext(ABC):
         self,
         context: StreamFlowContext,
         persistent_id: int,
-        workflow: Workflow | None = None,
     ):
         ...
 

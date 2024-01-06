@@ -9,7 +9,7 @@ from streamflow.core.deployment import LocalTarget, FilterConfig
 from streamflow.core.workflow import Workflow, Port, Step
 from streamflow.cwl.command import CWLCommand, CWLCommandToken
 from streamflow.cwl.translator import _create_command_output_processor_base
-from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.persistence.loading_context import WorkflowLoader
 from streamflow.workflow.combinator import LoopCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
@@ -43,10 +43,59 @@ async def _base_step_test_process(
     new_workflow, new_step = await _clone_step(step, workflow, context)
     _persistent_id_test(workflow, new_workflow, step, new_step)
     if test_are_eq:
+        for p1, p2 in zip(workflow.ports.values(), new_workflow.ports.values()):
+            assert p1.persistent_id != p2.persistent_id
+            assert p1.workflow.name != p2.workflow.name
+        for p in workflow.ports.values():
+            p.persistent_id = None
+            p.workflow = None
+        for p in new_workflow.ports.values():
+            p.persistent_id = None
+            p.workflow = None
         _set_val_to_attributes(step, ["persistent_id", "workflow"], None)
         _set_val_to_attributes(new_step, ["persistent_id", "workflow"], None)
         assert are_equals(step, new_step)
-    return step, new_workflow, new_step
+        return None, None, None
+    else:
+        return step, new_workflow, new_step
+
+
+async def _clone_step(step, workflow, context):
+    new_workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    loading_context = WorkflowLoader(workflow=new_workflow)
+    new_step = await loading_context.load_step(context, step.persistent_id)
+    new_workflow.steps[new_step.name] = new_step
+
+    # ports are not loaded in new_workflow. It is necessary to do it manually
+    for port in workflow.ports.values():
+        new_port = await loading_context.load_port(context, port.persistent_id)
+        new_workflow.ports[new_port.name] = new_port
+    await new_workflow.save(context)
+    return new_workflow, new_step
+
+
+async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
+    workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    port = workflow.create_port(cls_port)
+    await workflow.save(context)
+    assert workflow.persistent_id
+    assert port.persistent_id
+
+    new_workflow = Workflow(
+        context=context, type="cwl", name=utils.random_name(), config={}
+    )
+    loading_context = WorkflowLoader(workflow=new_workflow)
+    new_port = await loading_context.load_port(context, port.persistent_id)
+    new_workflow.ports[new_port.name] = new_port
+    await new_workflow.save(context)
+    _persistent_id_test(workflow, new_workflow, port, new_port)
+    _set_val_to_attributes(port, ["persistent_id", "workflow"], None)
+    _set_val_to_attributes(new_port, ["persistent_id", "workflow"], None)
+    assert are_equals(port, new_port)
 
 
 def _persistent_id_test(original_workflow, new_workflow, original_elem, new_elem):
@@ -61,37 +110,17 @@ def _persistent_id_test(original_workflow, new_workflow, original_elem, new_elem
     assert new_elem.workflow.persistent_id == new_workflow.persistent_id
 
 
-async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    port = workflow.create_port(cls_port)
-    await workflow.save(context)
-    assert workflow.persistent_id
-    assert port.persistent_id
-
-    loading_context = DefaultDatabaseLoadingContext()
-    new_workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    new_port = await Port.load(
-        context, port.persistent_id, loading_context, new_workflow
-    )
-    new_workflow.ports[new_port.name] = new_port
-    await new_workflow.save(context)
-    _persistent_id_test(workflow, new_workflow, port, new_port)
-    port.persistent_id = None
-    new_port.persistent_id = None
-    port.workflow = None
-    new_port.workflow = None
-    assert are_equals(port, new_port)
-
-
 def _set_val_to_attributes(elem, str_attributes: MutableSequence[str], val):
     attrs = object_to_dict(elem)
     for attr in str_attributes:
         if attr in attrs.keys():
             setattr(elem, attr, val)
+
+
+def _set_workflow_in_combinator(combinator, workflow):
+    combinator.workflow = workflow
+    for c in combinator.combinators.values():
+        _set_workflow_in_combinator(c, workflow)
 
 
 def _workflow_in_combinator_test(original_combinator, new_combinator):
@@ -103,32 +132,6 @@ def _workflow_in_combinator_test(original_combinator, new_combinator):
         original_combinator.combinators.values(), new_combinator.combinators.values()
     ):
         _workflow_in_combinator_test(original_inner, new_inner)
-
-
-def _set_workflow_in_combinator(combinator, workflow):
-    combinator.workflow = workflow
-    for c in combinator.combinators.values():
-        _set_workflow_in_combinator(c, workflow)
-
-
-async def _clone_step(step, workflow, context):
-    new_workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    loading_context = DefaultDatabaseLoadingContext()
-    new_step = await Step.load(
-        context, step.persistent_id, loading_context, new_workflow
-    )
-    new_workflow.steps[new_step.name] = new_step
-
-    # ports are not loaded in new_workflow. It is necessary to do it manually
-    for port in workflow.ports.values():
-        new_port = await Port.load(
-            context, port.persistent_id, loading_context, new_workflow
-        )
-        new_workflow.ports[new_port.name] = new_port
-    await new_workflow.save(context)
-    return new_workflow, new_step
 
 
 @pytest.mark.asyncio

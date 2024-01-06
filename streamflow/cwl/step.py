@@ -137,14 +137,11 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CWLConditionalStep:
         params = json.loads(row["params"])
         step = cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             expression=params["expression"],
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],
@@ -153,9 +150,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             params["skip_ports"].keys(),
             await asyncio.gather(
                 *(
-                    asyncio.create_task(
-                        loading_context.load_port(context, value, workflow)
-                    )
+                    asyncio.create_task(loading_context.load_port(context, value))
                     for value in params["skip_ports"].values()
                 )
             ),
@@ -223,14 +218,11 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             scatter_method=params["scatter_method"],
         )
 

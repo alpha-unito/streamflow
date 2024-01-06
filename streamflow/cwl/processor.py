@@ -149,14 +149,11 @@ class CWLTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CWLTokenProcessor:
         format_graph = Graph()
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             token_type=row["token_type"],
             check_type=row["check_type"],
             enum_symbols=row["enum_symbols"],
@@ -393,13 +390,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             target=(await loading_context.load_target(context, row["workflow"]))
             if row["target"]
             else None,
@@ -734,15 +728,12 @@ class CWLMapTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CWLMapTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             processor=await TokenProcessor.load(
-                context, row["processor"], loading_context, workflow
+                context, row["processor"], loading_context
             ),
             optional=row["optional"],
         )
@@ -799,15 +790,12 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             processor=await CommandOutputProcessor.load(
-                context, row["processor"], loading_context, workflow
+                context, row["processor"], loading_context
             ),
             target=(await loading_context.load_target(context, row["workflow"]))
             if row["target"]
@@ -875,13 +863,10 @@ class CWLObjectTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CWLObjectTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             processors={
                 k: v
                 for k, v in zip(
@@ -889,9 +874,7 @@ class CWLObjectTokenProcessor(TokenProcessor):
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
-                                TokenProcessor.load(
-                                    context, v, loading_context, workflow
-                                )
+                                TokenProcessor.load(context, v, loading_context)
                             )
                             for v in row["processors"].values()
                         )
@@ -980,14 +963,11 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             target=(await loading_context.load_target(context, row["workflow"]))
             if row["target"]
             else None,
@@ -998,9 +978,7 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
-                                CommandOutputProcessor.load(
-                                    context, v, loading_context, workflow
-                                )
+                                CommandOutputProcessor.load(context, v, loading_context)
                             )
                             for v in row["processors"].values()
                         )
@@ -1167,19 +1145,16 @@ class CWLUnionTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CWLUnionTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             processors=cast(
                 MutableSequence[TokenProcessor],
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            TokenProcessor.load(context, p, loading_context, workflow)
+                            TokenProcessor.load(context, p, loading_context)
                         )
                         for p in row["processors"]
                     )
@@ -1287,21 +1262,16 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        workflow: Workflow | None,
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(
-                context, row["workflow"], workflow
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             processors=cast(
                 MutableSequence[CommandOutputProcessor],
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            CommandOutputProcessor.load(
-                                context, p, loading_context, workflow
-                            )
+                            CommandOutputProcessor.load(context, p, loading_context)
                         )
                         for p in row["processors"]
                     )
