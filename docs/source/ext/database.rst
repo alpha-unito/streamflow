@@ -27,8 +27,8 @@ Each ``PersistableEntity`` is identified by a unique numerical ``persistent_id``
 
 The ``load`` method receives three input parameters: the current execution ``context``, the ``persistent_id`` of the instance that should be loaded, and a ``loading_context`` (see :ref:`DatabaseLoadingContext <DatabaseLoadingContext>`).
 
-Database
-========
+Persistence
+===========
 
 The ``Database`` interface, defined in the ``streamflow.core.persistence`` module, contains all the methods to create, modify, and retrieve this metadata. Data deletion is unnecessary, as StreamFlow never removes existing records. Internally, the ``save`` and ``load`` methods call one or more of these methods to perform the desired operations.
 
@@ -348,3 +348,4 @@ Instead, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set 
     def __init__(self, workflow: Workflow):
         super().__init__()
         self.workflow: Workflow = workflow
+
