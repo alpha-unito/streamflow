@@ -545,7 +545,6 @@ class Token(PersistableEntity):
         row = await context.database.get_token(persistent_id)
         type = cast(Type[Token], utils.get_class_from_name(row["type"]))
         token = await type._load(context, row, loading_context)
-        token.persistent_id = persistent_id
         loading_context.add_token(persistent_id, token)
         return token
 
@@ -672,7 +671,6 @@ class Workflow(PersistableEntity):
         workflow = cls(
             context=context, type=row["type"], config=params["config"], name=row["name"]
         )
-        workflow.persistent_id = row["id"]
         loading_context.add_workflow(persistent_id, workflow)
         rows = await context.database.get_workflow_ports(persistent_id)
         workflow.ports = {
