@@ -20,6 +20,7 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
         self._workflows: MutableMapping[int, Workflow] = {}
 
     def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
+        deployment.persistent_id = persistent_id
         self._deployment_configs[persistent_id] = deployment
 
     def add_port(self, persistent_id: int, port: Port):
@@ -31,12 +32,15 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
         self._steps[persistent_id] = step
 
     def add_target(self, persistent_id: int, target: Target):
+        target.persistent_id = persistent_id
         self._targets[persistent_id] = target
 
     def add_token(self, persistent_id: int, token: Token):
+        token.persistent_id = persistent_id
         self._tokens[persistent_id] = token
 
     def add_workflow(self, persistent_id: int, workflow: Workflow):
+        workflow.persistent_id = persistent_id
         self._workflows[persistent_id] = workflow
 
     async def load_deployment(self, context: StreamFlowContext, persistent_id: int):
@@ -87,15 +91,10 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
             )
         )
 
-
-class WorkflowLoader(DatabaseLoadingContext):
+class WorkflowLoader(DefaultDatabaseLoadingContext):
     def __init__(self, workflow: Workflow):
         super().__init__()
         self.workflow: Workflow = workflow
-        self._tokens: MutableMapping[int, Token] = {}
-
-    def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
-        ...
 
     def add_port(self, persistent_id: int, port: Port):
         ...
@@ -103,46 +102,26 @@ class WorkflowLoader(DatabaseLoadingContext):
     def add_step(self, persistent_id: int, step: Step):
         ...
 
-    def add_target(self, persistent_id: int, target: Target):
-        ...
-
-    def add_token(self, persistent_id: int, token: Token):
-        self._tokens[persistent_id] = token
-
     def add_workflow(self, persistent_id: int, workflow: Workflow):
         ...
 
-    async def load_deployment(self, context: StreamFlowContext, persistent_id: int):
-        return await DeploymentConfig.load(context, persistent_id, self)
+    async def load_step(self, context: StreamFlowContext, persistent_id: int):
+        step_row = await context.database.get_step(persistent_id)
+        step = self.workflow.steps.get(step_row["name"])
+        if step is None:
+            # If the step is not available in the new workflow, a new one must be created
+            step = await Step.load(context, persistent_id, self)
+            self.workflow.steps[step.name] = step
+        return step
 
-    async def load_port(
-        self,
-        context: StreamFlowContext,
-        persistent_id: int,
-    ):
+    async def load_port(self, context: StreamFlowContext, persistent_id: int):
         port_row = await context.database.get_port(persistent_id)
-        if port := self.workflow.ports.get(port_row["name"]):
-            return port
-        else:
+        port = self.workflow.ports.get(port_row["name"])
+        if port is None:
             # If the port is not available in the new workflow, a new one must be created
             port = await Port.load(context, persistent_id, self)
             self.workflow.ports[port.name] = port
-            return port
+        return port
 
-    async def load_step(self, context: StreamFlowContext, persistent_id: int):
-        return await Step.load(context, persistent_id, self)
-
-    async def load_target(self, context: StreamFlowContext, persistent_id: int):
-        return await Target.load(context, persistent_id, self)
-
-    async def load_token(self, context: StreamFlowContext, persistent_id: int):
-        return self._tokens.get(persistent_id) or await Token.load(
-            context, persistent_id, self
-        )
-
-    async def load_workflow(
-        self,
-        context: StreamFlowContext,
-        persistent_id: int,
-    ):
+    async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
         return self.workflow
