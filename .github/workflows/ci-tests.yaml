@@ -158,6 +158,7 @@ jobs:
                 -type f -print0 	| 	\
             sort -zd 			|	\
             xargs -r0 sha256sum
+          cat build/html/ext/plugins.html
           echo "Docs checksum is ${HASH}"
           test "${HASH}" == "${CHECKSUM}"
   test-flux:
