@@ -341,7 +341,9 @@ This is done by loading the entity, keeping the ``persistent_id`` in the case of
 The ``WorkflowLoader`` extends the ``DefaultDatabaseLoadingContext`` class and overrides only the methods involving the ``step``, ``port`` and ``workflow`` entities.
 The class has the ``workflow`` attribute, i.e., the new ``workflow`` instance, and the ``load_workflow`` method returns it.
 Instead, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set the ``persistent_id`` as their parent methods.
+
 .. code-block:: python
+
     def __init__(self, workflow: Workflow):
         super().__init__()
         self.workflow: Workflow = workflow
