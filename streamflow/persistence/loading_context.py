@@ -97,24 +97,22 @@ class WorkflowLoader(DefaultDatabaseLoadingContext):
         ...
 
     async def load_step(self, context: StreamFlowContext, persistent_id: int):
-        port_row = await context.database.get_step(persistent_id)
-        if port := self.workflow.ports.get(port_row["name"]):
-            return port
-        else:
-            # If the port is not available in the new workflow, a new one must be created
-            port = await Port.load(context, persistent_id, self)
-            self.workflow.ports[port.name] = port
-            return port
+        step_row = await context.database.get_step(persistent_id)
+        step = self.workflow.steps.get(step_row["name"])
+        if step is None:
+            # If the step is not available in the new workflow, a new one must be created
+            step = await Step.load(context, persistent_id, self)
+            self.workflow.steps[step.name] = step
+        return step
 
     async def load_port(self, context: StreamFlowContext, persistent_id: int):
         port_row = await context.database.get_port(persistent_id)
-        if port := self.workflow.ports.get(port_row["name"]):
-            return port
-        else:
+        port = self.workflow.ports.get(port_row["name"])
+        if port is None:
             # If the port is not available in the new workflow, a new one must be created
             port = await Port.load(context, persistent_id, self)
             self.workflow.ports[port.name] = port
-            return port
+        return port
 
     async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
         return self.workflow
