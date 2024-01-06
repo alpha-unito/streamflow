@@ -147,18 +147,10 @@ jobs:
           python -m pip install -r docs/requirements.txt
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "f9d19e96da56a0460a248feb9e946f5f28ea4a8de1c32345e4e60e14f25beb96"
+          CHECKSUM: "b6317351be9e647112776f7c462400c2be7991110b4c46eaa7c49d04774cb22e"
         run: |
           cd docs/
           HASH="$(make checksum | tail -n1)"
-          find build/html/ 			\
-                -not -name 'searchindex.js'	\
-                -not -name '*.woff' 		\
-                -not -name '*.woff2' 		\
-                -type f -print0 	| 	\
-            sort -zd 			|	\
-            xargs -r0 sha256sum
-          cat build/html/ext/plugins.html
           echo "Docs checksum is ${HASH}"
           test "${HASH}" == "${CHECKSUM}"
   test-flux:
