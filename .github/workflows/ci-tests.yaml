@@ -151,6 +151,7 @@ jobs:
         run: |
           cd docs/
           HASH="$(make checksum | tail -n1)"
+          echo "Docs checksum is ${HASH}"
           test "${HASH}" == "${CHECKSUM}"
   test-flux:
     runs-on: ubuntu-22.04
