@@ -29,7 +29,7 @@ from streamflow.cwl.transformer import (
 )
 from streamflow.workflow.step import CombinatorStep
 from tests.conftest import are_equals
-from tests.test_change_wf import (
+from tests.test_build_wf import (
     _base_step_test_process,
     _persistent_id_test,
     _set_workflow_in_combinator,
