@@ -306,11 +306,9 @@ async def load_and_add_ports(port_ids, new_workflow, loading_context):
     for port in await asyncio.gather(
         *(
             asyncio.create_task(
-                Port.load(
+                loading_context.load_port(
                     new_workflow.context,
                     port_id,
-                    loading_context,
-                    new_workflow,
                 )
             )
             for port_id in port_ids
@@ -336,12 +334,7 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
         await asyncio.gather(
             *(
                 asyncio.create_task(
-                    Step.load(
-                        new_workflow.context,
-                        step_id,
-                        loading_context,
-                        new_workflow,
-                    )
+                    loading_context.load_step(new_workflow.context, step_id)
                 )
                 for step_id in step_ids
             )
@@ -420,11 +413,9 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
         await asyncio.gather(
             *(
                 asyncio.create_task(
-                    Step.load(
+                    loading_context.load_step(
                         new_workflow.context,
                         step_id,
-                        loading_context,
-                        new_workflow,
                     )
                 )
                 for step_id in new_step_ids
@@ -459,9 +450,7 @@ async def load_missing_ports(new_workflow, step_name_id, loading_context):
                 missing_ports.add(depe_row["port"])
     for port in await asyncio.gather(
         *(
-            asyncio.create_task(
-                Port.load(new_workflow.context, p_id, loading_context, new_workflow)
-            )
+            asyncio.create_task(loading_context.load_port(new_workflow.context, p_id))
             for p_id in missing_ports
         )
     ):
@@ -845,3 +834,19 @@ def get_size_0(obj, seen=None):
     elif hasattr(obj, "__iter__") and not isinstance(obj, (str, bytes, bytearray)):
         size += sum([get_size_0(i, seen) for i in obj])
     return size
+
+
+def another_str_converter(dictionary: MutableMapping[Any : MutableMapping[int]]):
+    return (
+        "{\n"
+        + ",\n".join(
+            (
+                f"{k} : {values}"
+                for k, values in {
+                    f'"{k}"': "[" + ",".join(f'"{v}"' for v in values) + "]"
+                    for k, values in dictionary.items()
+                }.items()
+            )
+        )
+        + "\n}\n"
+    )

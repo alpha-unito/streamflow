@@ -130,9 +130,8 @@ class InterWorkflowPort:
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow = None,
     ) -> Port:
-        return await Port.load(context, persistent_id, loading_context, change_wf)
+        return await loading_context.load_port(context, persistent_id)
 
     def put(self, token: Token):
         if not isinstance(token, TerminationToken):

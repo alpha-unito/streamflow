@@ -3,50 +3,20 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
-from collections.abc import MutableSequence
-from importlib.resources import files
-from typing import cast
+from importlib_resources import files
+
+from jinja2 import Template
 
 import asyncssh
 import asyncssh.public_key
-from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
-    BindingFilter,
     DeploymentConfig,
-    ExecutionLocation,
-    Target,
-    WrapsConfig,
+    LOCAL_LOCATION,
+    Location,
 )
-from streamflow.core.utils import random_name
-from streamflow.core.workflow import Job
-from streamflow.deployment import DefaultDeploymentManager
-from tests.utils.data import get_data_path
-
-
-def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
-    if deployment_t == "local":
-        return "__LOCAL__"
-    elif deployment_t == "docker":
-        return "alpine-docker"
-    elif deployment_t == "docker-wrapper":
-        return "alpine-docker-wrapper"
-    elif deployment_t == "docker-compose":
-        return "alpine-docker-compose"
-    elif deployment_t == "kubernetes":
-        return "alpine-kubernetes"
-    elif deployment_t == "parameterizable_hardware":
-        return "custom-hardware"
-    elif deployment_t == "singularity":
-        return "alpine-singularity"
-    elif deployment_t == "slurm":
-        return "docker-slurm"
-    elif deployment_t == "ssh":
-        return "linuxserver-ssh"
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
 
 
 async def get_deployment_config(
@@ -56,82 +26,23 @@ async def get_deployment_config(
         return get_local_deployment_config()
     elif deployment_t == "docker":
         return get_docker_deployment_config()
-    elif deployment_t == "docker-compose":
-        return get_docker_compose_deployment_config()
-    elif deployment_t == "docker-wrapper":
-        return await get_docker_wrapper_deployment_config(_context)
     elif deployment_t == "kubernetes":
         return get_kubernetes_deployment_config()
-    elif deployment_t == "parameterizable_hardware":
-        return get_parameterizable_hardware_deployment_config()
     elif deployment_t == "singularity":
         return get_singularity_deployment_config()
-    elif deployment_t == "slurm":
-        return await get_slurm_deployment_config(_context)
     elif deployment_t == "ssh":
         return await get_ssh_deployment_config(_context)
     else:
         raise Exception(f"{deployment_t} deployment type not supported")
 
 
-def get_docker_compose_deployment_config():
-    return DeploymentConfig(
-        name="alpine-docker-compose",
-        type="docker-compose",
-        config={
-            "files": [
-                str(get_data_path("deployment", "docker-compose", "docker-compose.yml"))
-            ]
-        },
-        external=False,
-        lazy=False,
-    )
-
-
 def get_docker_deployment_config():
     return DeploymentConfig(
         name="alpine-docker",
         type="docker",
-        config={
-            "image": "alpine:3.16.2",
-            "volume": [
-                f"{get_local_deployment_config().workdir}:/tmp/streamflow",
-                f"{get_local_deployment_config().workdir}:/home/output",
-            ],
-        },
-        external=False,
-        lazy=False,
-        workdir="/tmp/streamflow",
-    )
-
-
-async def get_docker_wrapper_deployment_config(_context: StreamFlowContext):
-    docker_dind_deployment = DeploymentConfig(
-        name="docker-dind",
-        type="docker",
-        config={"image": "docker:27.3.1-dind-alpine3.20", "privileged": True},
-        external=False,
-        lazy=False,
-    )
-    await _context.deployment_manager.deploy(docker_dind_deployment)
-    await asyncio.sleep(5)
-    return DeploymentConfig(
-        name="alpine-docker-wrapper",
-        type="docker",
         config={"image": "alpine:3.16.2"},
         external=False,
         lazy=False,
-        wraps=WrapsConfig(deployment="docker-dind"),
-    )
-
-
-def get_failure_deployment_config():
-    return DeploymentConfig(
-        name="failure-test",
-        type="failure",
-        config={"transferBufferSize": 0},
-        external=False,
-        lazy=True,
     )
 
 
@@ -149,61 +60,56 @@ def get_kubernetes_deployment_config():
 
 
 def get_local_deployment_config():
-    workdir = os.path.join(
-        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
-    )
-    os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
-        name="__LOCAL__",
+        name=LOCAL_LOCATION,
         type="local",
         config={},
         external=True,
         lazy=False,
-        workdir=workdir,
+        workdir=os.path.realpath(tempfile.gettempdir()),
     )
 
 
-async def get_location(
-    _context: StreamFlowContext, deployment_t: str
-) -> ExecutionLocation:
-    deployment = get_deployment(_context, deployment_t)
-    service = get_service(_context, deployment_t)
-    connector = _context.deployment_manager.get_connector(deployment)
-    locations = await connector.get_available_locations(service=service)
-    return next(iter(locations.values())).location
-
-
-def get_parameterizable_hardware_deployment_config():
-    workdir = os.path.join(
-        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
-    )
-    os.makedirs(workdir, exist_ok=True)
-    return DeploymentConfig(
-        name="custom-hardware",
-        type="parameterizable_hardware",
-        config={},
-        external=True,
-        lazy=False,
-        workdir=workdir,
-    )
+async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
+    if deployment_t == "local":
+        return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
+    elif deployment_t == "docker":
+        connector = _context.deployment_manager.get_connector("alpine-docker")
+        locations = await connector.get_available_locations()
+        return Location(deployment="alpine-docker", name=next(iter(locations.keys())))
+    elif deployment_t == "kubernetes":
+        connector = _context.deployment_manager.get_connector("alpine-kubernetes")
+        locations = await connector.get_available_locations(service="sf-test")
+        return Location(
+            deployment="alpine-kubernetes",
+            service="sf-test",
+            name=next(iter(locations.keys())),
+        )
+    elif deployment_t == "singularity":
+        connector = _context.deployment_manager.get_connector("alpine-singularity")
+        locations = await connector.get_available_locations()
+        return Location(
+            deployment="alpine-singularity", name=next(iter(locations.keys()))
+        )
+    elif deployment_t == "ssh":
+        connector = _context.deployment_manager.get_connector("linuxserver-ssh")
+        locations = await connector.get_available_locations()
+        return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
+    else:
+        raise Exception(f"{deployment_t} location type not supported")
 
 
 def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
-    if deployment_t in (
-        "local",
-        "docker",
-        "docker-wrapper",
-        "parameterizable_hardware",
-        "singularity",
-        "ssh",
-    ):
+    if deployment_t == "local":
         return None
-    elif deployment_t == "docker-compose":
-        return "alpine"
+    elif deployment_t == "docker":
+        return None
     elif deployment_t == "kubernetes":
         return "sf-test"
-    elif deployment_t == "slurm":
-        return "test"
+    elif deployment_t == "singularity":
+        return None
+    elif deployment_t == "ssh":
+        return None
     else:
         raise Exception(f"{deployment_t} deployment type not supported")
 
@@ -218,36 +124,7 @@ def get_singularity_deployment_config():
     )
 
 
-async def get_slurm_deployment_config(_context: StreamFlowContext):
-    docker_compose_config = DeploymentConfig(
-        name="docker-compose-slurm",
-        type="docker-compose",
-        config={
-            "files": [str(get_data_path("deployment", "slurm", "docker-compose.yml"))],
-            "projectName": "slurm",
-        },
-        external=False,
-    )
-    await _context.deployment_manager.deploy(docker_compose_config)
-    return DeploymentConfig(
-        name="docker-slurm",
-        type="slurm",
-        config={
-            "services": {
-                "test": {"partition": "docker", "nodes": 2, "ntasksPerNode": 1}
-            }
-        },
-        external=False,
-        lazy=False,
-        wraps=WrapsConfig(deployment="docker-compose-slurm", service="slurmctld"),
-    )
-
-
 async def get_ssh_deployment_config(_context: StreamFlowContext):
-    if config := cast(
-        DefaultDeploymentManager, _context.deployment_manager
-    ).config_map.get("linuxserver-ssh"):
-        return config
     skey = asyncssh.public_key.generate_private_key(
         alg_name="ssh-rsa",
         comment="streamflow-test",
@@ -280,24 +157,10 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
                     "hostname": "127.0.0.1:2222",
                     "sshKey": f.name,
                     "username": "linuxserver.io",
-                    "retries": 2,
-                    "retryDelay": 5,
                 }
             ],
             "maxConcurrentSessions": 10,
         },
-        workdir="/tmp",
         external=False,
         lazy=False,
     )
-
-
-class ReverseTargetsBindingFilter(BindingFilter):
-    async def get_targets(
-        self, job: Job, targets: MutableSequence[Target]
-    ) -> MutableSequence[Target]:
-        return targets[::-1]
-
-    @classmethod
-    def get_schema(cls) -> str:
-        return ""

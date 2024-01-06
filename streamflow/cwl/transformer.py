@@ -46,14 +46,11 @@ class DefaultTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
     ):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             default_port=await loading_context.load_port(
                 context, params["default_port"]
             ),
@@ -119,17 +116,14 @@ class CWLTokenTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
     ):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             port_name=params["port_name"],
             processor=await TokenProcessor.load(
-                context, params["processor"], loading_context, change_wf
+                context, params["processor"], loading_context
             ),
         )
 
@@ -256,17 +250,14 @@ class ValueFromTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-        change_wf: Workflow,
     ):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=change_wf
-            if change_wf
-            else await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             port_name=params["port_name"],
             processor=await TokenProcessor.load(
-                context, params["processor"], loading_context, change_wf
+                context, params["processor"], loading_context
             ),
             value_from=params["value_from"],
             expression_lib=params["expression_lib"],

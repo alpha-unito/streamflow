@@ -497,22 +497,15 @@ class RollbackDeterministicWorkflowPolicy:
             f"populate_workflow: wf {new_workflow.name} add_3.0 step {failed_step.name}"
         )
         new_workflow.add_step(
-            await Step.load(
+            await loading_context.load_step(
                 new_workflow.context,
                 failed_step.persistent_id,
-                loading_context,
-                new_workflow,
             )
         )
         for port in await asyncio.gather(
             *(
                 asyncio.create_task(
-                    Port.load(
-                        new_workflow.context,
-                        p.persistent_id,
-                        loading_context,
-                        new_workflow,
-                    )
+                    loading_context.load_port(new_workflow.context, p.persistent_id)
                 )
                 for p in failed_step.get_output_ports().values()
             )
@@ -596,12 +589,7 @@ class RollbackDeterministicWorkflowPolicy:
             await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        Step.load(
-                            new_workflow.context,
-                            step_id,
-                            loading_context,
-                            new_workflow,
-                        )
+                        loading_context.load_step(new_workflow.context, step_id)
                     )
                     for step_id in step_ids
                 )
@@ -683,12 +671,7 @@ class RollbackDeterministicWorkflowPolicy:
             await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        Step.load(
-                            new_workflow.context,
-                            step_id,
-                            loading_context,
-                            new_workflow,
-                        )
+                        loading_context.load_step(new_workflow.context, step_id)
                     )
                     for step_id in new_step_ids
                 )

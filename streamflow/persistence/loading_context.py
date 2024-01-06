@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 from typing import MutableMapping
 
@@ -21,9 +23,11 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
         self._deployment_configs[persistent_id] = deployment
 
     def add_port(self, persistent_id: int, port: Port):
+        port.persistent_id = persistent_id
         self._ports[persistent_id] = port
 
     def add_step(self, persistent_id: int, step: Step):
+        step.persistent_id = persistent_id
         self._steps[persistent_id] = step
 
     def add_target(self, persistent_id: int, target: Target):
@@ -82,3 +86,63 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
                 for row in rows
             )
         )
+
+
+class WorkflowLoader(DatabaseLoadingContext):
+    def __init__(self, workflow: Workflow):
+        super().__init__()
+        self.workflow: Workflow = workflow
+        self._tokens: MutableMapping[int, Token] = {}
+
+    def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
+        ...
+
+    def add_port(self, persistent_id: int, port: Port):
+        ...
+
+    def add_step(self, persistent_id: int, step: Step):
+        ...
+
+    def add_target(self, persistent_id: int, target: Target):
+        ...
+
+    def add_token(self, persistent_id: int, token: Token):
+        self._tokens[persistent_id] = token
+
+    def add_workflow(self, persistent_id: int, workflow: Workflow):
+        ...
+
+    async def load_deployment(self, context: StreamFlowContext, persistent_id: int):
+        return await DeploymentConfig.load(context, persistent_id, self)
+
+    async def load_port(
+        self,
+        context: StreamFlowContext,
+        persistent_id: int,
+    ):
+        port_row = await context.database.get_port(persistent_id)
+        if port := self.workflow.ports.get(port_row["name"]):
+            return port
+        else:
+            # If the port is not available in the new workflow, a new one must be created
+            port = await Port.load(context, persistent_id, self)
+            self.workflow.ports[port.name] = port
+            return port
+
+    async def load_step(self, context: StreamFlowContext, persistent_id: int):
+        return await Step.load(context, persistent_id, self)
+
+    async def load_target(self, context: StreamFlowContext, persistent_id: int):
+        return await Target.load(context, persistent_id, self)
+
+    async def load_token(self, context: StreamFlowContext, persistent_id: int):
+        return self._tokens.get(persistent_id) or await Token.load(
+            context, persistent_id, self
+        )
+
+    async def load_workflow(
+        self,
+        context: StreamFlowContext,
+        persistent_id: int,
+    ):
+        return self.workflow
