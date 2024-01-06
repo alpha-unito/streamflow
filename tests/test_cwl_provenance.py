@@ -13,10 +13,10 @@ from streamflow.cwl.step import (
     CWLConditionalStep,
     CWLEmptyScatterConditionalStep,
     CWLInputInjectorStep,
-    CWLLoopOutputAllStep,
-    CWLTransferStep,
     CWLLoopConditionalStep,
+    CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
+    CWLTransferStep,
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
