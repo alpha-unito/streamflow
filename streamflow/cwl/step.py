@@ -150,8 +150,8 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             params["skip_ports"].keys(),
             await asyncio.gather(
                 *(
-                    asyncio.create_task(loading_context.load_port(context, value))
-                    for value in params["skip_ports"].values()
+                    asyncio.create_task(loading_context.load_port(context, port_id))
+                    for port_id in params["skip_ports"].values()
                 )
             ),
         ):

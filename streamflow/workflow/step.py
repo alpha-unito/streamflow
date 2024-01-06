@@ -567,8 +567,7 @@ class ExecuteStep(BaseStep):
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
-                JobPort,
-                await loading_context.load_port(context, params["job_port"]),
+                JobPort, await loading_context.load_port(context, params["job_port"])
             ),
         )
         step.output_connectors = params["output_connectors"]
@@ -929,8 +928,7 @@ class InputInjectorStep(BaseStep, ABC):
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
-                JobPort,
-                await loading_context.load_port(context, params["job_port"]),
+                JobPort, await loading_context.load_port(context, params["job_port"])
             ),
         )
 
@@ -1234,15 +1232,11 @@ class ScheduleStep(BaseStep):
                 context, params["binding_config"], loading_context
             ),
             connector_ports={
-                k: cast(
-                    ConnectorPort,
-                    await loading_context.load_port(context, v),
-                )
+                k: cast(ConnectorPort, await loading_context.load_port(context, v))
                 for k, v in params["connector_ports"].items()
             },
             job_port=cast(
-                JobPort,
-                await loading_context.load_port(context, params["job_port"]),
+                JobPort, await loading_context.load_port(context, params["job_port"])
             ),
             job_prefix=params["job_prefix"],
             hardware_requirement=hardware_requirement,
@@ -1518,8 +1512,7 @@ class TransferStep(BaseStep, ABC):
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
-                JobPort,
-                await loading_context.load_port(context, params["job_port"]),
+                JobPort, await loading_context.load_port(context, params["job_port"])
             ),
         )
 

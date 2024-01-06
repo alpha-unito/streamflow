@@ -49,11 +49,7 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
             context, persistent_id, self
         )
 
-    async def load_port(
-        self,
-        context: StreamFlowContext,
-        persistent_id: int,
-    ):
+    async def load_port(self, context: StreamFlowContext, persistent_id: int):
         return self._ports.get(persistent_id) or await Port.load(
             context, persistent_id, self
         )
@@ -73,11 +69,7 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
             context, persistent_id, self
         )
 
-    async def load_workflow(
-        self,
-        context: StreamFlowContext,
-        persistent_id: int,
-    ):
+    async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
         return self._workflows.get(persistent_id) or await Workflow.load(
             context, persistent_id, self
         )
