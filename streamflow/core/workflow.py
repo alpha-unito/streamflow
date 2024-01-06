@@ -311,9 +311,7 @@ class Port(PersistableEntity):
         row = await context.database.get_port(persistent_id)
         type = cast(Type[Port], utils.get_class_from_name(row["type"]))
         port = await type._load(context, row, loading_context)
-        if loading_context.is_standard_loading():
-            port.persistent_id = persistent_id
-            loading_context.add_port(persistent_id, port)
+        loading_context.add_port(persistent_id, port)
         return port
 
     def put(self, token: Token):
@@ -434,29 +432,28 @@ class Step(PersistableEntity, ABC):
         row = await context.database.get_step(persistent_id)
         type = cast(Type[Step], utils.get_class_from_name(row["type"]))
         step = await type._load(context, row, loading_context)
-        if loading_context.is_standard_loading():
-            step.persistent_id = persistent_id
-            step.status = Status(row["status"])
-            step.terminated = step.status in [
-                Status.COMPLETED,
-                Status.FAILED,
-                Status.SKIPPED,
-            ]
         input_deps = await context.database.get_input_ports(persistent_id)
+        loading_context.add_step(persistent_id, step)
         step.input_ports = await load_dependencies(
             input_deps,
-            loading_context.is_standard_loading(),
+            step.persistent_id is None,
             context,
             loading_context,
         )
         output_deps = await context.database.get_output_ports(persistent_id)
         step.output_ports = await load_dependencies(
             output_deps,
-            loading_context.is_standard_loading(),
+            step.persistent_id is None,
             context,
             loading_context,
         )
-        loading_context.add_step(persistent_id, step)
+        if step.persistent_id:
+            step.status = Status(row["status"])
+            step.terminated = step.status in [
+                Status.COMPLETED,
+                Status.FAILED,
+                Status.SKIPPED,
+            ]
         return step
 
     @abstractmethod

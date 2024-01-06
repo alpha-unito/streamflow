@@ -14,10 +14,6 @@ if TYPE_CHECKING:
 
 class DatabaseLoadingContext(ABC):
     @abstractmethod
-    def is_standard_loading(self) -> bool:
-        ...
-
-    @abstractmethod
     def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
         ...
 

@@ -25,9 +25,11 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
         self._filter_configs[persistent_id] = filter_config
 
     def add_port(self, persistent_id: int, port: Port):
+        port.persistent_id = persistent_id
         self._ports[persistent_id] = port
 
     def add_step(self, persistent_id: int, step: Step):
+        step.persistent_id = persistent_id
         self._steps[persistent_id] = step
 
     def add_target(self, persistent_id: int, target: Target):
@@ -74,18 +76,12 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
             context, persistent_id, self
         )
 
-    def is_standard_loading(self) -> bool:
-        return True
-
 
 class WorkflowLoader(DatabaseLoadingContext):
     def __init__(self, workflow: Workflow):
         super().__init__()
         self.workflow: Workflow = workflow
         self._tokens: MutableMapping[int, Token] = {}
-
-    def is_standard_loading(self) -> bool:
-        return False
 
     def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
         ...
