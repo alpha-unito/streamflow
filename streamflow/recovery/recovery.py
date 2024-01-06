@@ -26,6 +26,8 @@ from streamflow.recovery.utils import (
     get_execute_step_out_token_ids,
     get_steps_from_output_port,
     increase_tag,
+    another_str_converter,
+    get_token_by_tag,
 )
 from streamflow.workflow.port import (
     ConnectorPort,
@@ -184,16 +186,8 @@ class RollbackRecoveryPolicy:
             for token in rdwp.token_instances.values()
             if isinstance(token, JobToken)
         ]
-        logger.debug(f"TOKEN_GRAPH: {rdwp.dag_tokens}")
-        tmp = {
-            f'"{k}"': [f"{v}" for v in values] for k, values in rdwp.port_tokens.items()
-        }
-        tmp = (
-            "{\n"
-            + "\n".join([f"{k} : {values}" for k, values in tmp.items()])
-            + "\n}\n"
-        )
-        logger.debug(f"PORT_TAGS: {tmp}")
+        logger.debug(f"TOKEN_GRAPH: {another_str_converter(rdwp.dag_tokens)}")
+        logger.debug(f"PORT_TAGS: {another_str_converter(rdwp.port_tokens)}")
 
         for job_token in [
             token

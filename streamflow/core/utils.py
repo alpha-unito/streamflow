@@ -314,11 +314,11 @@ def compare_tags(tag1, tag2):
     return 0
 
 
-def get_job_base(job_name) -> int:
+def get_job_tag(job_name) -> int:
     return os.path.basename(job_name)
 
 
-def get_job_dir(job_name) -> str:
+def get_job_root_name(job_name) -> str:
     return os.path.dirname(job_name)
 
 

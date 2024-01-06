@@ -17,7 +17,7 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
 )
-from streamflow.core.utils import get_job_dir, compare_tags, get_job_base
+from streamflow.core.utils import get_job_root_name, compare_tags, get_job_tag
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
@@ -186,8 +186,8 @@ class DefaultScheduler(Scheduler):
                 filter(
                     lambda x: (
                         x != job_name
-                        and get_job_dir(x) == get_job_dir(job_name)
-                        and compare_tags(get_job_base(x), get_job_base(job_name)) == -1
+                        and get_job_root_name(x) == get_job_root_name(job_name)
+                        and compare_tags(get_job_tag(x), get_job_tag(job_name)) == -1
                         and self.job_allocations[x].status == Status.ROLLBACK
                     ),
                     self.job_allocations.keys(),
