@@ -9,7 +9,7 @@ from streamflow.core.deployment import LocalTarget, FilterConfig
 from streamflow.core.workflow import Workflow, Port, Step
 from streamflow.cwl.command import CWLCommand, CWLCommandToken
 from streamflow.cwl.translator import _create_command_output_processor_base
-from streamflow.persistence.loading_context import WorkflowLoader
+from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.workflow.combinator import LoopCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
@@ -61,7 +61,7 @@ async def _clone_step(step, workflow, context):
     new_workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    loading_context = WorkflowLoader(workflow=new_workflow)
+    loading_context = WorkflowBuilder(workflow=new_workflow)
     new_step = await loading_context.load_step(context, step.persistent_id)
     new_workflow.steps[new_step.name] = new_step
 
@@ -85,7 +85,7 @@ async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     new_workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    loading_context = WorkflowLoader(workflow=new_workflow)
+    loading_context = WorkflowBuilder(workflow=new_workflow)
     new_port = await loading_context.load_port(context, port.persistent_id)
     new_workflow.ports[new_port.name] = new_port
     await new_workflow.save(context)

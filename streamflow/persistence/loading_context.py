@@ -82,7 +82,7 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
         )
 
 
-class WorkflowLoader(DefaultDatabaseLoadingContext):
+class WorkflowBuilder(DefaultDatabaseLoadingContext):
     def __init__(self, workflow: Workflow):
         super().__init__()
         self.workflow: Workflow = workflow
