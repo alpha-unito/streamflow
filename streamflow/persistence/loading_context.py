@@ -88,13 +88,13 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
         self.workflow: Workflow = workflow
 
     def add_port(self, persistent_id: int, port: Port):
-        ...
+        pass
 
     def add_step(self, persistent_id: int, step: Step):
-        ...
+        pass
 
     def add_workflow(self, persistent_id: int, workflow: Workflow):
-        ...
+        pass
 
     async def load_step(self, context: StreamFlowContext, persistent_id: int):
         step_row = await context.database.get_step(persistent_id)
