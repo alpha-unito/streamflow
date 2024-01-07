@@ -324,22 +324,21 @@ Implementations
 Name                                                                    Class
 ====================================================================    =============================================================
 :ref:`DefaultDatabaseLoadingContext <DefaultDatabaseLoadingContext>`    streamflow.persistent.loading_context.DefaultDatabaseLoadingContext
-:ref:`WorkflowLoader <WorkflowLoader>`                                  streamflow.persistent.loading_context.WorkflowLoader
+:ref:`WorkflowBuilder <WorkflowBuilder>`                                  streamflow.persistent.loading_context.WorkflowBuilder
 ====================================================================    =============================================================
 
 DefaultDatabaseLoadingContext
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 The ``DefaultDatabaseLoadingContext`` keeps track of all the objects already loaded in the current transaction, serving as a cache to efficiently load nested entities and prevent deadlocks when dealing with circular references.
-Furthermore, it is in charge of assign the ``persistent_id`` when an entity is added in the cache with the ``add_deployment``, ``add_filter``, ``add_port``, ``add_step``, ``add_target``, ``add_token``, ``add_workflow`` methods.
+Furthermore, it is in charge of assign the ``persistent_id`` when an entity is added to the cache with the ``add_*`` methods.
 
 
-WorkflowLoader
+WorkflowBuilder
 ^^^^^^^^^^^^^^
-The ``WorkflowLoader`` allows the loading of the steps and ports of a workflow in a new one.
-This feature can be helpful for the Fault Tolerance and the Resume features (see :ref:`Fault Tolerance <Fault tolerance>`).
+The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow from the database and inserts them into a new workflow object, which is passed as argument to the constructor.
 Between the workflows, it is possible to have some shared entities, particularly those used only in reading, for example ``deployment``` and ``target``. Instead, the entities with an internal state must be different instances, so ``steps``, ``ports`` and ``workflow``.
 This is done by loading the entity, keeping the ``persistent_id`` in the case of a shared object, or creating a new ``persistent_id`` otherwise.
-The ``WorkflowLoader`` extends the ``DefaultDatabaseLoadingContext`` class and overrides only the methods involving the ``step``, ``port`` and ``workflow`` entities.
+The ``WorkflowBuilder`` class extends the ``DefaultDatabaseLoadingContext`` class and overwrites only the methods involving the ``step``, ``port``, and ``workflow`` entities.
 The class has the ``workflow`` attribute, i.e., the new ``workflow`` instance, and the ``load_workflow`` method returns it.
 Instead, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set the ``persistent_id`` as their parent methods.
 
