@@ -74,9 +74,7 @@ async def _clone_step(step, workflow, context):
 
 
 async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow, ports = await create_workflow(context)
     port = workflow.create_port(cls_port)
     await workflow.save(context)
     assert workflow.persistent_id
@@ -85,10 +83,11 @@ async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     new_workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
-    loading_context = WorkflowBuilder(workflow=new_workflow)
+    loading_context = WorkflowBuilder(new_workflow)
+
     new_port = await loading_context.load_port(context, port.persistent_id)
-    new_workflow.ports[new_port.name] = new_port
     await new_workflow.save(context)
+    assert len(new_workflow.ports) == 1
     _persistent_id_test(workflow, new_workflow, port, new_port)
     _set_to_none(port, id_to_none=True, wf_to_none=True)
     _set_to_none(new_port, id_to_none=True, wf_to_none=True)

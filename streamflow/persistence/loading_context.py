@@ -83,9 +83,11 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
 
 
 class WorkflowBuilder(DefaultDatabaseLoadingContext):
-    def __init__(self, workflow: Workflow):
+    def __init__(self, workflow: Workflow, load_entire_wf: bool = False):
         super().__init__()
+        self.load_entire_wf: bool = load_entire_wf
         self.workflow: Workflow = workflow
+        self._wf_loaded = False
 
     def add_port(self, persistent_id: int, port: Port):
         pass
@@ -115,8 +117,7 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
         return port
 
     async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
+        if self.load_entire_wf and not self._wf_loaded:
+            self._wf_loaded = True
+            await Workflow.load(context, persistent_id, self)
         return self.workflow
-
-    async def load_full_workflow(self, context: StreamFlowContext, persistent_id: int):
-        await Workflow.load(context, persistent_id, self)
-
