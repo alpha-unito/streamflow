@@ -116,3 +116,7 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
 
     async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
         return self.workflow
+
+    async def load_full_workflow(self, context: StreamFlowContext, persistent_id: int):
+        await Workflow.load(context, persistent_id, self)
+
