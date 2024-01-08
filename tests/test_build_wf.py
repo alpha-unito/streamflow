@@ -130,9 +130,6 @@ def _workflow_in_combinator_test(original_combinator, new_combinator):
         _workflow_in_combinator_test(original_inner, new_inner)
 
 
-# a b c d e f g h i j k l m n o p q r s t u v w x y z
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "combinator",

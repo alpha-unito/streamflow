@@ -339,10 +339,9 @@ The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow 
 Between the workflows, it is possible to have some shared entities, particularly those used only in reading, for example ``deployment``` and ``target``. Instead, the entities with an internal state must be different instances, so ``steps``, ``ports`` and ``workflow``.
 This is done by loading the entity, keeping the ``persistent_id`` in the case of a shared object, or creating a new ``persistent_id`` otherwise.
 The ``WorkflowBuilder`` class extends the ``DefaultDatabaseLoadingContext`` class and overwrites only the methods involving the ``step``, ``port``, and ``workflow`` entities.
+Particularly, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set the ``persistent_id`` as their parent methods.
 The class has the ``workflow``, i.e., the new ``workflow`` instance, and the ``load_entire_wf`` attributes.
-This latter attribute has default value to False, when it is set to True, it will load in the new workflow all the entities involved in the original workflow.
-Instead, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set the ``persistent_id`` as their parent methods.
-
+This latter attribute has a default value of False; when it is initialized to True, it will load all the entities of the original workflow in the new workflow.
 .. code-block:: python
 
     def __init__(self, workflow: Workflow, load_entire_wf: bool = False):
