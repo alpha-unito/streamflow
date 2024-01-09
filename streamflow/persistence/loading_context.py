@@ -4,7 +4,7 @@ from typing import MutableMapping
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import DeploymentConfig, Target, FilterConfig
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.workflow import Port, Step, Token, Workflow
+from streamflow.core.workflow import Port, Step, Token, Workflow, Status
 
 
 class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
@@ -102,6 +102,11 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
             # If the step is not available in the new workflow, a new one must be created
             self.add_workflow(step_row['workflow'], self.workflow)
             step = await Step.load(context, persistent_id, self)
+
+            # restore initial step state
+            step.status = Status.WAITING
+            step.terminated = False
+
             self.workflow.steps[step.name] = step
         return step
 

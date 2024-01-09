@@ -432,6 +432,12 @@ class Step(PersistableEntity, ABC):
         row = await context.database.get_step(persistent_id)
         type = cast(Type[Step], utils.get_class_from_name(row["type"]))
         step = await type._load(context, row, loading_context)
+        step.status = Status(row["status"])
+        step.terminated = step.status in [
+            Status.COMPLETED,
+            Status.FAILED,
+            Status.SKIPPED,
+        ]
         input_deps = await context.database.get_input_ports(persistent_id)
         loading_context.add_step(persistent_id, step)
         step.input_ports = await load_dependencies(
@@ -447,13 +453,6 @@ class Step(PersistableEntity, ABC):
             context,
             loading_context,
         )
-        if step.persistent_id:
-            step.status = Status(row["status"])
-            step.terminated = step.status in [
-                Status.COMPLETED,
-                Status.FAILED,
-                Status.SKIPPED,
-            ]
         return step
 
     @abstractmethod
