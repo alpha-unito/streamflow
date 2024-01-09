@@ -360,7 +360,7 @@ async def test_workflow(context: StreamFlowContext):
     await workflow.save(context)
 
     new_workflow = (await create_workflow(context, num_port=0))[0]
-    loading_context = WorkflowBuilder(new_workflow, load_entire_wf=True)
+    loading_context = WorkflowBuilder(new_workflow)
     new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
 
     assert new_workflow.name != workflow.name

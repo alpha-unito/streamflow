@@ -83,11 +83,9 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
 
 
 class WorkflowBuilder(DefaultDatabaseLoadingContext):
-    def __init__(self, workflow: Workflow, load_entire_wf: bool = False):
+    def __init__(self, workflow: Workflow):
         super().__init__()
-        self.load_entire_wf: bool = load_entire_wf
         self.workflow: Workflow = workflow
-        self._wf_loaded = False
 
     def add_port(self, persistent_id: int, port: Port):
         pass
@@ -96,28 +94,27 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
         pass
 
     def add_workflow(self, persistent_id: int, workflow: Workflow):
-        pass
+        self._workflows[persistent_id] = self.workflow
 
     async def load_step(self, context: StreamFlowContext, persistent_id: int):
         step_row = await context.database.get_step(persistent_id)
-        step = self.workflow.steps.get(step_row["name"])
-        if step is None:
+        if (step := self.workflow.steps.get(step_row["name"])) is None:
             # If the step is not available in the new workflow, a new one must be created
+            self.add_workflow(step_row['workflow'], self.workflow)
             step = await Step.load(context, persistent_id, self)
             self.workflow.steps[step.name] = step
         return step
 
     async def load_port(self, context: StreamFlowContext, persistent_id: int):
         port_row = await context.database.get_port(persistent_id)
-        port = self.workflow.ports.get(port_row["name"])
-        if port is None:
+        if (port := self.workflow.ports.get(port_row["name"])) is None:
             # If the port is not available in the new workflow, a new one must be created
+            self.add_workflow(port_row['workflow'], self.workflow)
             port = await Port.load(context, persistent_id, self)
             self.workflow.ports[port.name] = port
         return port
 
     async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
-        if self.load_entire_wf and not self._wf_loaded:
-            self._wf_loaded = True
+        if persistent_id not in self._workflows.keys():
             await Workflow.load(context, persistent_id, self)
         return self.workflow
