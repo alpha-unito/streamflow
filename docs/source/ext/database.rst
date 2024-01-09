@@ -260,59 +260,45 @@ The ``DatabaseLoadingContext`` interface allows to define classes that manage th
 
 .. code-block:: python
 
-    @abstractmethod
     def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
         ...
 
-    @abstractmethod
     def add_filter(self, persistent_id: int, filter_config: FilterConfig):
         ...
 
-    @abstractmethod
     def add_port(self, persistent_id: int, port: Port):
         ...
 
-    @abstractmethod
     def add_step(self, persistent_id: int, step: Step):
         ...
 
-    @abstractmethod
     def add_target(self, persistent_id: int, target: Target):
         ...
 
-    @abstractmethod
     def add_token(self, persistent_id: int, token: Token):
         ...
 
-    @abstractmethod
     def add_workflow(self, persistent_id: int, workflow: Workflow):
         ...
 
-    @abstractmethod
     async def load_deployment(self, context: StreamFlowContext, persistent_id: int):
         ...
 
-    @abstractmethod
     async def load_filter(self, context: StreamFlowContext, persistent_id: int):
         ...
 
-    @abstractmethod
     async def load_port(self, context: StreamFlowContext, persistent_id: int):
         ...
 
-    @abstractmethod
     async def load_step(self, context: StreamFlowContext, persistent_id: int):
         ...
 
-    @abstractmethod
     async def load_target(self, context: StreamFlowContext, persistent_id: int):
         ...
 
-    @abstractmethod
     async def load_token(self, context: StreamFlowContext, persistent_id: int):
         ...
 
-    @abstractmethod
     async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
         ...
 
@@ -341,7 +327,7 @@ This is done by loading the entity, keeping the ``persistent_id`` in the case of
 The ``WorkflowBuilder`` class extends the ``DefaultDatabaseLoadingContext`` class and overwrites only the methods involving the ``step``, ``port``, and ``workflow`` entities.
 Particularly, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set the ``persistent_id`` as their parent methods.
 The class has the ``workflow``, i.e., the new ``workflow`` instance, and the ``load_entire_wf`` attributes.
-This latter attribute has a default value of False; when it is initialized to True, it will load all the entities of the original workflow in the new workflow.
+This latter attribute has a default value of False; when it is initialized to True, the ``load_workflow`` method will load all the entities of the original workflow in the new workflow.
 .. code-block:: python
 
     def __init__(self, workflow: Workflow, load_entire_wf: bool = False):
