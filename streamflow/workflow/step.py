@@ -42,7 +42,7 @@ from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.token import JobToken, ListToken, TerminationToken, IterationTerminationToken
+from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
     check_termination,
@@ -890,7 +890,9 @@ class GatherStep(BaseStep):
         return self.get_input_port("__size__")
 
     def get_input_port(self, name: str | None = None) -> Port:
-        return super().get_input_port(self._get_input_port_name() if name is None else name)
+        return super().get_input_port(
+            self._get_input_port_name() if name is None else name
+        )
 
     async def run(self):
         if len(self.input_ports) != 2:
@@ -905,8 +907,12 @@ class GatherStep(BaseStep):
         size_port = self.get_size_port()
         port_name = self._get_input_port_name()
         tasks = {
-            asyncio.create_task(size_port.get(posixpath.join(self.name, "__size__")), name ="__size__"),
-            asyncio.create_task(input_port.get(posixpath.join(self.name, port_name)), name=port_name)
+            asyncio.create_task(
+                size_port.get(posixpath.join(self.name, "__size__")), name="__size__"
+            ),
+            asyncio.create_task(
+                input_port.get(posixpath.join(self.name, port_name)), name=port_name
+            ),
         }
         while True:
             finished, unfinished = await asyncio.wait(
@@ -919,7 +925,9 @@ class GatherStep(BaseStep):
                 token = task.result()
                 if check_termination(token):
                     if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(f"Step {self.name} received termination token on port {task_name}")
+                        logger.debug(
+                            f"Step {self.name} received termination token on port {task_name}"
+                        )
                 else:
                     if task_name == "__size__":
                         self.size_map[token.tag] = token.value
@@ -929,12 +937,19 @@ class GatherStep(BaseStep):
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(f"Step {self.name} received input {token.tag}")
-                        key = ".".join(token.tag.split(".")[:-self.depth])
+                        key = ".".join(token.tag.split(".")[: -self.depth])
                         self.token_map.setdefault(key, []).append(token)
                         port = input_port
-                        if len(self.token_map.setdefault(key, [])) == self.size_map.get(key):
+                        if len(self.token_map.setdefault(key, [])) == self.size_map.get(
+                            key
+                        ):
                             await self._gather(key)
-                    unfinished.add(asyncio.create_task(port.get(posixpath.join(self.name, task_name)),name=task_name))
+                    unfinished.add(
+                        asyncio.create_task(
+                            port.get(posixpath.join(self.name, task_name)),
+                            name=task_name,
+                        )
+                    )
             tasks = unfinished
             if len(tasks) == 0:
                 break
@@ -1478,7 +1493,6 @@ class ScatterStep(BaseStep):
     def _get_output_port_name(self):
         return next((n for n in self.output_ports if n != "__size__"))
 
-
     async def _scatter(self, token: Token):
         if isinstance(token.value, Token):
             await self._scatter(token.value)
@@ -1514,7 +1528,9 @@ class ScatterStep(BaseStep):
             )
 
     def get_output_port(self, name: str | None = None) -> Port:
-        return super().get_output_port(self._get_output_port_name() if name is None else name)
+        return super().get_output_port(
+            self._get_output_port_name() if name is None else name
+        )
 
     def get_size_port(self) -> Port:
         return self.get_output_port("__size__")
