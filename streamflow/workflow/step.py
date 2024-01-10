@@ -916,7 +916,7 @@ class GatherStep(BaseStep):
                 input_port.get(posixpath.join(self.name, port_name)), name=port_name
             ),
         }
-        while True:
+        while tasks:
             finished, unfinished = await asyncio.wait(
                 tasks, return_when=asyncio.FIRST_COMPLETED
             )
@@ -953,8 +953,6 @@ class GatherStep(BaseStep):
                         )
                     )
             tasks = unfinished
-            if len(tasks) == 0:
-                break
         # Terminate step
         await self.terminate(
             Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED

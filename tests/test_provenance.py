@@ -323,7 +323,6 @@ async def test_gather_step(context: StreamFlowContext):
         context=context,
         expected_dependee=token_list,
     )
-    pass
 
 
 @pytest.mark.asyncio
