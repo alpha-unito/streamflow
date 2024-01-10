@@ -2112,14 +2112,15 @@ class CWLTranslator:
                     gather_input_port = internal_output_ports[global_name]
                     for scatter_input in scatter_inputs:
                         scatter_port_name = posixpath.relpath(scatter_input, step_name)
-                        gather_steps.append(
-                            workflow.create_step(
-                                cls=GatherStep,
-                                name=global_name + "-gather-" + scatter_port_name,
-                            )
+                        scatter_step = cast(ScatterStep, workflow.steps[scatter_input + "-scatter"])
+                        gather_step = workflow.create_step(
+                            cls=GatherStep,
+                            name=global_name + "-gather-" + scatter_port_name,
+                            size_port=scatter_step.get_size_port()
                         )
-                        gather_steps[-1].add_input_port(port_name, gather_input_port)
-                        gather_steps[-1].add_output_port(
+                        gather_steps.append(gather_step)
+                        gather_step.add_input_port(port_name, gather_input_port)
+                        gather_step.add_output_port(
                             name=port_name,
                             port=(
                                 external_output_ports[global_name]
@@ -2132,6 +2133,7 @@ class CWLTranslator:
                     gather_step = workflow.create_step(
                         cls=GatherStep,
                         name=global_name + "-gather",
+                        size_port=cast(ScatterStep, workflow.steps[scatter_inputs[0] + "-scatter"]).get_size_port(),
                         depth=1
                         if scatter_method == "dotproduct"
                         else len(scatter_inputs),
