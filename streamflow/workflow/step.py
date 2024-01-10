@@ -834,7 +834,7 @@ class GatherStep(BaseStep):
         self.add_input_port("__size__", size_port)
 
     def _get_input_port_name(self):
-        return next((n for n in self.input_ports if n != "__size__"))
+        return next(n for n in self.input_ports if n != "__size__")
 
     async def _gather(self, key: str) -> None:
         output_port = self.get_output_port()
@@ -1488,10 +1488,10 @@ class ScheduleStep(BaseStep):
 class ScatterStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
-        self.add_output_port("__size__", workflow.create_port(name="size_test"))
+        self.add_output_port("__size__", workflow.create_port())
 
     def _get_output_port_name(self):
-        return next((n for n in self.output_ports if n != "__size__"))
+        return next(n for n in self.output_ports if n != "__size__")
 
     async def _scatter(self, token: Token):
         if isinstance(token.value, Token):
