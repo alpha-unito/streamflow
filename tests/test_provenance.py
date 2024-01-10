@@ -300,15 +300,20 @@ async def test_execute_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_gather_step(context: StreamFlowContext):
     """Test token provenance for GatherStep"""
-    workflow, (in_port, out_port) = await create_workflow(context)
-    token_list = [Token(i) for i in range(3)]
+    workflow, (in_port, out_port, size_port) = await create_workflow(
+        context, num_port=3
+    )
+    base_tag = "0"
+    token_list = [Token(i, tag=f"{base_tag}.{i}") for i in range(5)]
+    size_port.put(Token(len(token_list), tag=base_tag))
+    size_port.put(TerminationToken())
     await _general_test(
         context=context,
         workflow=workflow,
         in_port=in_port,
         out_port=out_port,
         step_cls=GatherStep,
-        kwargs_step={"name": utils.random_name() + "-gather"},
+        kwargs_step={"name": utils.random_name() + "-gather", "size_port": size_port},
         token_list=token_list,
     )
     assert len(out_port.token_list) == 2
@@ -318,6 +323,7 @@ async def test_gather_step(context: StreamFlowContext):
         context=context,
         expected_dependee=token_list,
     )
+    pass
 
 
 @pytest.mark.asyncio

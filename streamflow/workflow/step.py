@@ -833,7 +833,7 @@ class GatherStep(BaseStep):
         self.token_map: MutableMapping[str, MutableSequence[Token]] = {}
         self.add_input_port("__size__", size_port)
 
-    def _get_input_port_name(self):
+    def _get_input_port_name(self) -> str:
         return next(n for n in self.input_ports if n != "__size__")
 
     async def _gather(self, key: str) -> None:
@@ -860,14 +860,16 @@ class GatherStep(BaseStep):
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             depth=params["depth"],
+            size_port=await loading_context.load_port(context, params["size_port"]),
         )
 
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
+        await self.get_size_port().save(context)
         return {
             **await super()._save_additional_params(context),
-            **{"depth": self.depth},
+            **{"depth": self.depth, "size_port": self.get_size_port().persistent_id},
         }
 
     def add_input_port(self, name: str, port: Port) -> None:
@@ -1486,12 +1488,35 @@ class ScheduleStep(BaseStep):
 
 
 class ScatterStep(BaseStep):
-    def __init__(self, name: str, workflow: Workflow):
+    def __init__(self, name: str, workflow: Workflow, size_port: Port | None = None):
         super().__init__(name, workflow)
-        self.add_output_port("__size__", workflow.create_port())
+        self.add_output_port("__size__", size_port or workflow.create_port())
 
-    def _get_output_port_name(self):
+    def _get_output_port_name(self) -> str:
         return next(n for n in self.output_ports if n != "__size__")
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> ScatterStep:
+        params = json.loads(row["params"])
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            size_port=await loading_context.load_port(context, params["size_port"]),
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        await self.get_size_port().save(context)
+        return {
+            **await super()._save_additional_params(context),
+            **{"size_port": self.get_size_port().persistent_id},
+        }
 
     async def _scatter(self, token: Token):
         if isinstance(token.value, Token):
