@@ -916,6 +916,7 @@ class GatherStep(BaseStep):
                 input_port.get(posixpath.join(self.name, port_name)), name=port_name
             ),
         }
+        key_completed = set()
         while tasks:
             finished, unfinished = await asyncio.wait(
                 tasks, return_when=asyncio.FIRST_COMPLETED
@@ -936,6 +937,7 @@ class GatherStep(BaseStep):
                         port = size_port
                         if len(self.token_map.setdefault(token.tag, [])) == token.value:
                             await self._gather(token.tag)
+                            key_completed.add(token.tag)
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(f"Step {self.name} received input {token.tag}")
@@ -946,6 +948,7 @@ class GatherStep(BaseStep):
                             key
                         ):
                             await self._gather(key)
+                            key_completed.add(key)
                     unfinished.add(
                         asyncio.create_task(
                             port.get(posixpath.join(self.name, task_name)),
@@ -953,6 +956,9 @@ class GatherStep(BaseStep):
                         )
                     )
             tasks = unfinished
+        # Gather all the token when the size is unknown
+        for key in (k for k in self.token_map.keys() if k not in key_completed):
+            await self._gather(key)
         # Terminate step
         await self.terminate(
             Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED
