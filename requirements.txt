@@ -8,7 +8,7 @@ cwltool==3.1.20231207110929
 cwl-utils==0.32
 importlib_metadata==7.0.1
 importlib_resources==6.1.1
-Jinja2==3.1.2
+Jinja2==3.1.3
 jsonschema==4.20.0
 kubernetes_asyncio==28.2.1
 psutil==5.9.7
