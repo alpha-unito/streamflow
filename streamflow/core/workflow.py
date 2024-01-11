@@ -423,6 +423,7 @@ class Step(PersistableEntity, ABC):
     def get_output_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.output_ports.items()}
 
+
     @classmethod
     async def load(
         cls,
@@ -433,28 +434,31 @@ class Step(PersistableEntity, ABC):
         row = await context.database.get_step(persistent_id)
         type = cast(Type[Step], utils.get_class_from_name(row["type"]))
         step = await type._load(context, row, loading_context)
+        step.status = Status(row["status"])
+        step.terminated = step.status in [
+            Status.COMPLETED,
+            Status.FAILED,
+            Status.SKIPPED,
+        ]
         input_deps = await context.database.get_input_ports(persistent_id)
         loading_context.add_step(persistent_id, step)
-        step.input_ports = await get_dependencies(
-            input_deps,
-            step.persistent_id is None,
-            context,
-            loading_context,
+        input_ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in input_deps
+            )
         )
+        step.input_ports = {d["name"]: p.name for d, p in zip(input_deps, input_ports)}
         output_deps = await context.database.get_output_ports(persistent_id)
-        step.output_ports = await get_dependencies(
-            output_deps,
-            step.persistent_id is None,
-            context,
-            loading_context,
+        output_ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in output_deps
+            )
         )
-        if step.persistent_id:
-            step.status = Status(row["status"])
-            step.terminated = step.status in [
-                Status.COMPLETED,
-                Status.FAILED,
-                Status.SKIPPED,
-            ]
+        step.output_ports = {
+            d["name"]: p.name for d, p in zip(output_deps, output_ports)
+        }
         return step
 
     @abstractmethod

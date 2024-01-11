@@ -13,7 +13,7 @@ from streamflow.core.exception import FailureHandlingException
 from streamflow.core.workflow import Job, Step, Token
 from streamflow.cwl.transformer import BackPropagationTransformer
 from streamflow.log_handler import logger
-from streamflow.persistence.loading_context import WorkflowLoader
+from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.rollback_recovery import (
     NewProvenanceGraphNavigation,
     DirectGraph,
@@ -68,7 +68,7 @@ class RollbackRecoveryPolicy:
             name=random_name(),
             config=workflow.config,
         )
-        loading_context = WorkflowLoader(new_workflow)
+        loading_context = WorkflowBuilder(new_workflow)
 
         for port in failed_step.get_output_ports().values():
             # stop_tag = increase_tag(utils.get_tag(failed_job.inputs.values()))
