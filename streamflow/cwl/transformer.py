@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 from typing import Any, MutableMapping, MutableSequence
 
@@ -350,3 +351,33 @@ class LoopValueFromTransformer(ValueFromTransformer):
                 ),
             )
         }
+
+
+class DotProductSizeTransformer(ManyToOneTransformer):
+    async def transform(
+        self, inputs: MutableMapping[str, Token]
+    ) -> MutableMapping[str, Token]:
+        values = set(t.value for t in inputs.values())
+        if len(values) > 1:
+            raise WorkflowExecutionException(f"Values must be equals. Got {values}")
+        if not isinstance(next(iter(values)), int) or next(iter(values)) < 0:
+            raise WorkflowExecutionException(
+                f"Values must be an positive integer. Got {next(iter(values))}"
+            )
+        return {self.get_output_name(): next(iter(inputs.values()))}
+
+
+class CartesianProductSizeTransformer(ManyToOneTransformer):
+    async def transform(
+        self, inputs: MutableMapping[str, Token]
+    ) -> MutableMapping[str, Token]:
+        for token in inputs.values():
+            if not isinstance(token.value, int) or token.value < 0:
+                raise WorkflowExecutionException(
+                    f"Values must be an positive integer. Got {token.value}"
+                )
+        tag = get_tag(inputs.values())
+        value = functools.reduce(
+            lambda x, y: x * y, (token.value for token in inputs.values())
+        )
+        return {self.get_output_name(): Token(value, tag=tag)}
