@@ -958,6 +958,7 @@ class GatherStep(BaseStep):
             tasks = unfinished
         # Gather all the token when the size is unknown
         for key in (k for k in self.token_map.keys() if k not in key_completed):
+            logger.debug(f"Step {self.name} forces gather on key {key}")
             await self._gather(key)
         # Terminate step
         await self.terminate(

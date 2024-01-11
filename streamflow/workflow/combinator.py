@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from collections import deque
 from typing import Any, AsyncIterable, MutableMapping, MutableSequence, cast
 
@@ -8,6 +9,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Token, Workflow
+from streamflow.log_handler import logger
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import IterationTerminationToken
 
@@ -232,3 +234,89 @@ class LoopTerminationCombinator(DotProductCombinator):
             **await super()._save_additional_params(context),
             **{"output_items": self.output_items},
         }
+
+
+class ProductCombinator(Combinator):
+    def __init__(self, name: str, workflow: Workflow, is_nested: bool = False):
+        super().__init__(name, workflow)
+        self.size_map: MutableMapping[str, int] = {}
+        self.token_values = {}
+        self._is_nested = is_nested
+
+    async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
+        # Check if some complete input sets are available
+        for tag in list(self.token_values):
+            if len(self.token_values[tag]) == len(self.items):
+                num_items = min(len(i) for i in self.token_values[tag].values())
+                for _ in range(num_items):
+                    # Return the relative combination schema
+                    schema = {}
+                    for key, elements in self.token_values[tag].items():
+                        element = elements.pop()
+                        if key in self.combinators:
+                            schema = {**schema, **element}
+                        else:
+                            schema[key] = {
+                                "token": element,
+                                "input_ids": [element.persistent_id],
+                            }
+                    tokens = [t["token"] for t in schema.values()]
+                    tag = utils.get_tag(tokens)
+                    if self._is_nested:
+                        res = {
+                            k: {
+                                "token": Token(
+                                    functools.reduce(
+                                        lambda a, b: a * b, (t.value for t in tokens)
+                                    ),
+                                    tag=tag + f".{i}",
+                                ),
+                                "input_ids": [t.persistent_id for t in tokens],
+                            }
+                            for i, k in enumerate(schema.keys())
+                        }
+                    else:
+                        res = {
+                            "__size__": {
+                                "token": Token(
+                                    functools.reduce(
+                                        lambda a, b: a * b, (t.value for t in tokens)
+                                    ),
+                                    tag=tag,
+                                ),
+                                "input_ids": [t.persistent_id for t in tokens],
+                            }
+                        }
+                    for k, token in res.items():
+                        t = token["token"]
+                        logger.debug(
+                            f"Generated token {t.tag} with value {t.value} on port {k}"
+                        )
+                    yield res
+
+    async def combine(
+        self, port_name: str, token: Token
+    ) -> AsyncIterable[MutableMapping[str, Token]]:
+        # If port is associated to an inner combinator, call it and put schemas in their related list
+        if c := self.get_combinator(port_name):
+            yield cast(
+                AsyncIterable,
+                c.combine(port_name, token),
+            )
+            # async for schema in cast(
+            #         AsyncIterable,
+            #         c.combine(port_name, token),
+            # ):
+            #     self._add_to_list(schema, c.name)
+            #     async for product in self._product():
+            #         yield product
+        # If port is associated directly with the current combinator, put the token in the list
+        elif port_name in self.items:
+            self._add_to_list(token, port_name)
+            async for product in self._product():
+                yield product
+        # Otherwise throw Exception
+        else:
+            raise WorkflowExecutionException(
+                f"No item to combine for token '{port_name}'."
+            )
