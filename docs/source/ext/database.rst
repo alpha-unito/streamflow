@@ -23,7 +23,7 @@ StreamFlow relies on a persistent ``Database`` to store all the metadata regardi
     ) -> None:
         ...
 
-Each ``PersistableEntity`` is identified by a unique numerical ``persistent_id`` related to the corresponding ``Database`` record. Two methods, ``save`` and ``load``, allow persisting the entity in the ``Database`` and retrieving it from the persistent record. Note that ``load`` is a class method, as it must construct a new instance, furthermore it does not assign the ``persistent_id``.
+Each ``PersistableEntity`` is identified by a unique numerical ``persistent_id`` related to the corresponding ``Database`` record. Two methods, ``save`` and ``load``, allow persisting the entity in the ``Database`` and retrieving it from the persistent record. Note that ``load`` is a class method, as it must construct a new instance. Furthermore, the ``load`` method does not assign the ``persistent_id``.
 
 The ``load`` method receives three input parameters: the current execution ``context``, the ``persistent_id`` of the instance that should be loaded, and a ``loading_context`` (see :ref:`DatabaseLoadingContext <DatabaseLoadingContext>`).
 
@@ -316,23 +316,26 @@ Name                                                                    Class
 DefaultDatabaseLoadingContext
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 The ``DefaultDatabaseLoadingContext`` keeps track of all the objects already loaded in the current transaction, serving as a cache to efficiently load nested entities and prevent deadlocks when dealing with circular references.
-Furthermore, it is in charge of assign the ``persistent_id`` when an entity is added to the cache with the ``add_*`` methods.
+Furthermore, it assigns the ``persistent_id`` when an entity is added to the cache with the ``add_entity`` method.
 
 
 WorkflowBuilder
 ^^^^^^^^^^^^^^^
-The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow from the database and inserts them into a new workflow object, which is passed as argument to the constructor.
+The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow from the database and inserts them into a new workflow object, passed as an argument to the constructor.
 Between the workflows, it is possible to have some shared entities, particularly those used only in reading, for example ``deployment``` and ``target``. Instead, the entities with an internal state must be different instances, so ``steps``, ``ports`` and ``workflow``.
 This is done by loading the entity, keeping the ``persistent_id`` in the case of a shared object, or creating a new ``persistent_id`` otherwise.
-The ``WorkflowBuilder`` class extends the ``DefaultDatabaseLoadingContext`` class and overwrites only the methods involving the ``step``, ``port``, and ``workflow`` entities.
+The ``WorkflowBuilder`` class extends the ``DefaultDatabaseLoadingContext`` class; it has the ``workflow``, i.e., the new ``workflow`` instance, moreover, overwrites only the methods involving the ``step``, ``port``, and ``workflow`` entities.
 Particularly, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set the ``persistent_id`` as their parent methods.
-The class has the ``workflow``, i.e., the new ``workflow`` instance, and the ``load_entire_wf`` attributes.
-This latter attribute has a default value of False; when it is initialized to True, the ``load_workflow`` method will load all the entities of the original workflow in the new workflow.
+The class has the ``workflow``, i.e., the new ``workflow`` instance.
+The ``load_workflow`` method has two behaviors based on the calling order.
+When a ``WorkflowBuilder`` instance is created, and the ``load_workflow`` method is called as the first method, it loads all the entities of the original workflow in the new one.
+Instead, if it is called after the ``load_step`` or ``load_port`` methods, it returns the ``self.workflow`` without loading other entities.
+This allows to copy the entire workflow or load only a subset.
+
+
 .. code-block:: python
 
-    def __init__(self, workflow: Workflow, load_entire_wf: bool = False):
+    def __init__(self, workflow: Workflow):
         super().__init__()
-        self.load_entire_wf: bool = load_entire_wf
         self.workflow: Workflow = workflow
-
 
