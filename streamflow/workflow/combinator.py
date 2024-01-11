@@ -299,24 +299,20 @@ class ProductCombinator(Combinator):
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # If port is associated to an inner combinator, call it and put schemas in their related list
         if c := self.get_combinator(port_name):
-            yield cast(
-                AsyncIterable,
-                c.combine(port_name, token),
-            )
-            # async for schema in cast(
-            #         AsyncIterable,
-            #         c.combine(port_name, token),
-            # ):
-            #     self._add_to_list(schema, c.name)
-            #     async for product in self._product():
-            #         yield product
+            async for schema in cast(
+                    AsyncIterable,
+                    c.combine(port_name, token),
+            ):
+                self._add_to_list(schema, c.name)
+                async for product in self._product():
+                    yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
             self._add_to_list(token, port_name)
             async for product in self._product():
                 yield product
-        # Otherwise throw Exception
-        else:
-            raise WorkflowExecutionException(
-                f"No item to combine for token '{port_name}'."
-            )
+        # # Otherwise throw Exception
+        # else:
+        #     raise WorkflowExecutionException(
+        #         f"No item to combine for token '{port_name}'."
+        #     )

@@ -97,7 +97,7 @@ from streamflow.workflow.combinator import (
     DotProductCombinator,
     LoopCombinator,
     LoopTerminationCombinator,
-    ProductCombinator,
+    ProductCombinator
 )
 from streamflow.workflow.step import (
     Combinator,
