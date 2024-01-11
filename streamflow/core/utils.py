@@ -15,10 +15,7 @@ from typing import (
     MutableSequence,
     TYPE_CHECKING,
 )
-
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location
@@ -278,35 +275,3 @@ def random_name() -> str:
 
 def wrap_command(command: str):
     return ["/bin/sh", "-c", f"{command}"]
-
-
-async def load_dependencies(
-    dependency_rows: MutableSequence[MutableMapping[str, Any]],
-    load_ports: bool,
-    context: StreamFlowContext,
-    loading_context: DatabaseLoadingContext,
-):
-    # This method is generally called from the step load method.
-    # If the steps and ports are loaded into their workflow, it is helpful call loading_context.load_port because
-    #   - if port instance is already in the loading_context, it is used that instance
-    #   - otherwise a new port instance is created,
-    #     and it will be helpful because that instance will be added in the workflow
-    # If the ports are loaded into a new workflow, it is not helpful call loading_context.load_port because
-    #   - if the instance is not into the loading_context it is created a new one,
-    #     but this instance will not add into the new workflow because it has already the old workflow reference
-    if load_ports:
-        ports = await asyncio.gather(
-            *(
-                asyncio.create_task(loading_context.load_port(context, d["port"]))
-                for d in dependency_rows
-            )
-        )
-        return {d["name"]: p.name for d, p in zip(dependency_rows, ports)}
-    else:
-        port_rows = await asyncio.gather(
-            *(
-                asyncio.create_task(context.database.get_port(d["port"]))
-                for d in dependency_rows
-            )
-        )
-        return {d["name"]: p["name"] for d, p in zip(dependency_rows, port_rows)}

@@ -15,7 +15,6 @@ from streamflow.core.persistence import (
     DependencyType,
     PersistableEntity,
 )
-from streamflow.core.utils import load_dependencies
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location, Target
@@ -440,19 +439,23 @@ class Step(PersistableEntity, ABC):
         ]
         input_deps = await context.database.get_input_ports(persistent_id)
         loading_context.add_step(persistent_id, step)
-        step.input_ports = await load_dependencies(
-            input_deps,
-            step.persistent_id is None,
-            context,
-            loading_context,
+        input_ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in input_deps
+            )
         )
+        step.input_ports = {d["name"]: p.name for d, p in zip(input_deps, input_ports)}
         output_deps = await context.database.get_output_ports(persistent_id)
-        step.output_ports = await load_dependencies(
-            output_deps,
-            step.persistent_id is None,
-            context,
-            loading_context,
+        output_ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in output_deps
+            )
         )
+        step.output_ports = {
+            d["name"]: p.name for d, p in zip(output_deps, output_ports)
+        }
         return step
 
     @abstractmethod
