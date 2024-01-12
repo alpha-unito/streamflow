@@ -381,3 +381,57 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
             lambda x, y: x * y, (token.value for token in inputs.values())
         )
         return {self.get_output_name(): Token(value, tag=tag)}
+
+
+class DuplicateTransformer(ManyToOneTransformer):
+    def __init__(self, name: str, workflow: Workflow):
+        super().__init__(name, workflow)
+
+    def _get_input_port_name(self) -> str:
+        return next(n for n in self.input_ports if n != "__size__")
+
+    def add_size_port(self, port: Port):
+        self.add_input_port("__size__", port)
+
+    def add_input_port(self, name: str, port: Port) -> None:
+        if len(self.input_ports) < 2 or name in self.input_ports:
+            super().add_input_port(name, port)
+        else:
+            raise WorkflowDefinitionException(
+                f"{self.name} step must contain a single input port."
+            )
+
+    def get_input_port(self, name: str | None = None) -> Port:
+        return super().get_input_port(
+            self._get_input_port_name() if name is None else name
+        )
+
+    def get_size_port(self):
+        return self.get_input_port("__size__")
+
+    async def transform(
+        self, inputs: MutableMapping[str, Token]
+    ) -> MutableMapping[str, Token]:
+        if len(inputs) != 2:
+            raise WorkflowExecutionException(
+                "Impossible duplicate token because there are too many inputs"
+            )
+        if "__size__" not in inputs.keys():
+            raise WorkflowExecutionException(
+                "Impossible duplicate token because there is not the size port"
+            )
+
+        if (
+            not isinstance(inputs["__size__"].value, int)
+            or inputs["__size__"].value < 0
+        ):
+            raise WorkflowExecutionException(
+                f"Values must be an positive integer. Got {inputs['__size__'].value}"
+            )
+        ancestor_token = inputs[next(k for k in inputs.keys() if k != "__size__")]
+        return {
+            f"{self.get_output_name()};{i}": ancestor_token.retag(
+                f"{ancestor_token.tag}.{i}"
+            )
+            for i in range(inputs["__size__"].value)
+        }

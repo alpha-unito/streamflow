@@ -90,6 +90,7 @@ from streamflow.cwl.transformer import (
     ValueFromTransformer,
     DotProductSizeTransformer,
     CartesianProductSizeTransformer,
+    DuplicateTransformer,
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
 from streamflow.deployment.utils import get_binding_config
@@ -2015,7 +2016,7 @@ class CWLTranslator:
                     port_name, input_ports[global_name]
                 )
             # If there are multiple scatter inputs, configure combinator
-            size_ports = []
+            size_port = None
             scatter_combinator = None
             scatter_transformer = None
             if len(scatter_inputs) > 1:
@@ -2131,12 +2132,33 @@ class CWLTranslator:
                     gather_steps = []
                     internal_output_ports[global_name] = workflow.create_port()
                     gather_input_port = internal_output_ports[global_name]
-                    for scatter_input in scatter_inputs:
+                    for i, scatter_input in enumerate(scatter_inputs):
                         scatter_port_name = posixpath.relpath(scatter_input, step_name)
+                        scatter_step = cast(
+                            ScatterStep, workflow.steps[scatter_input + "-scatter"]
+                        )
+                        size_port = scatter_step.get_size_port()
+                        for j in range(i + 1, len(scatter_inputs)):
+                            scatter_transformer = workflow.create_step(
+                                cls=DuplicateTransformer,
+                                name=f"{step_name}-{scatter_port_name}-{posixpath.relpath(scatter_inputs[j], step_name)}-scatter-size-transformer",
+                            )
+                            ext_scatter_step = cast(
+                                ScatterStep,
+                                workflow.steps[scatter_inputs[j] + "-scatter"],
+                            )
+                            scatter_transformer.add_size_port(
+                                ext_scatter_step.get_size_port()
+                            )
+                            scatter_transformer.add_input_port(
+                                scatter_port_name, size_port
+                            )
+                            size_port = workflow.create_port()
+                            scatter_transformer.add_output_port("__size__", size_port)
                         gather_step = workflow.create_step(
                             cls=GatherStep,
                             name=global_name + "-gather-" + scatter_port_name,
-                            size_port=size_ports.pop(0),
+                            size_port=size_port,
                         )
                         gather_steps.append(gather_step)
                         gather_step.add_input_port(port_name, gather_input_port)
