@@ -933,11 +933,16 @@ class GatherStep(BaseStep):
                         )
                 else:
                     if task_name == "__size__":
-                        self.size_map[token.tag] = token.value
-                        port = size_port
-                        if len(self.token_map.setdefault(token.tag, [])) == token.value:
-                            await self._gather(token.tag)
-                            key_completed.add(token.tag)
+                        if isinstance(token, ListToken):
+                            sizes = token.value
+                        else:
+                            sizes = [token]
+                        for token in sizes:
+                            self.size_map[token.tag] = token.value
+                            port = size_port
+                            if len(self.token_map.setdefault(token.tag, [])) == token.value:
+                                await self._gather(token.tag)
+                                key_completed.add(token.tag)
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(f"Step {self.name} received input {token.tag}")

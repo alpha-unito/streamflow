@@ -2135,17 +2135,19 @@ class CWLTranslator:
                     for i, scatter_input in enumerate(scatter_inputs):
                         scatter_port_name = posixpath.relpath(scatter_input, step_name)
                         scatter_step = cast(
-                            ScatterStep, workflow.steps[scatter_input + "-scatter"]
+                            ScatterStep, workflow.steps[scatter_inputs[len(scatter_inputs) - i - 1] + "-scatter"]
                         )
                         size_port = scatter_step.get_size_port()
-                        for j in range(i + 1, len(scatter_inputs)):
+                        for ext_scatter_input in scatter_inputs[::-1]:
+                            if ext_scatter_input == scatter_input:
+                                break
                             scatter_transformer = workflow.create_step(
                                 cls=DuplicateTransformer,
-                                name=f"{step_name}-{scatter_port_name}-{posixpath.relpath(scatter_inputs[j], step_name)}-scatter-size-transformer",
+                                name=f"{step_name}-{scatter_port_name}-{posixpath.relpath(ext_scatter_input, step_name)}-scatter-size-transformer",
                             )
                             ext_scatter_step = cast(
                                 ScatterStep,
-                                workflow.steps[scatter_inputs[j] + "-scatter"],
+                                workflow.steps[ext_scatter_input + "-scatter"],
                             )
                             scatter_transformer.add_size_port(
                                 ext_scatter_step.get_size_port()

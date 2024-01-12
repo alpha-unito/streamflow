@@ -429,9 +429,16 @@ class DuplicateTransformer(ManyToOneTransformer):
                 f"Values must be an positive integer. Got {inputs['__size__'].value}"
             )
         ancestor_token = inputs[next(k for k in inputs.keys() if k != "__size__")]
+        if isinstance(ancestor_token, ListToken):
+            tokens = ancestor_token.value
+        else:
+            tokens = [ancestor_token]
         return {
-            f"{self.get_output_name()};{i}": ancestor_token.retag(
-                f"{ancestor_token.tag}.{i}"
+            self.get_output_name(): ListToken(
+                [
+                    token.retag(f"{token.tag}.{i}")
+                    for token in tokens
+                    for i in range(inputs["__size__"].value)
+                ]
             )
-            for i in range(inputs["__size__"].value)
         }
