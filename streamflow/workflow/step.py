@@ -1589,10 +1589,6 @@ class ScatterStep(BaseStep):
             Status.SKIPPED if output_port.empty() else Status.COMPLETED
         )
 
-    async def terminate(self, status: Status):
-        await super().terminate(status)
-        self.get_size_port().put(TerminationToken())
-
 
 class TransferStep(BaseStep, ABC):
     def __init__(self, name: str, workflow: Workflow, job_port: JobPort):
