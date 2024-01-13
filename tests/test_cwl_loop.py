@@ -198,6 +198,7 @@ def test_loop_inside_scatter(capsys) -> None:
     captured = capsys.readouterr()
     assert json.loads(captured.out) == expected
 
+
 def test_scatter_inside_loop(capsys) -> None:
     """Test a loop workflow with inside a scatter step."""
     cwltool_version = cwltool.utils.versionstring().split(" ")[1]

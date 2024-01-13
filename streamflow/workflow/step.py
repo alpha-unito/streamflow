@@ -916,7 +916,7 @@ class GatherStep(BaseStep):
                 input_port.get(posixpath.join(self.name, port_name)), name=port_name
             ),
         }
-        key_completed = set()
+        keys_completed = set()
         while tasks:
             finished, unfinished = await asyncio.wait(
                 tasks, return_when=asyncio.FIRST_COMPLETED
@@ -940,9 +940,12 @@ class GatherStep(BaseStep):
                         for token in sizes:
                             self.size_map[token.tag] = token.value
                             port = size_port
-                            if len(self.token_map.setdefault(token.tag, [])) == token.value:
+                            if (
+                                len(self.token_map.setdefault(token.tag, []))
+                                == token.value
+                            ):
                                 await self._gather(token.tag)
-                                key_completed.add(token.tag)
+                                keys_completed.add(token.tag)
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(f"Step {self.name} received input {token.tag}")
@@ -953,7 +956,7 @@ class GatherStep(BaseStep):
                             key
                         ):
                             await self._gather(key)
-                            key_completed.add(key)
+                            keys_completed.add(key)
                     unfinished.add(
                         asyncio.create_task(
                             port.get(posixpath.join(self.name, task_name)),
@@ -962,8 +965,9 @@ class GatherStep(BaseStep):
                     )
             tasks = unfinished
         # Gather all the token when the size is unknown
-        for key in (k for k in self.token_map.keys() if k not in key_completed):
-            logger.debug(f"Step {self.name} forces gather on key {key}")
+        for key in (k for k in self.token_map.keys() if k not in keys_completed):
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Step {self.name} forces gather on key {key}")
             await self._gather(key)
         # Terminate step
         await self.terminate(
