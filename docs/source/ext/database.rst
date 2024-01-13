@@ -23,9 +23,9 @@ StreamFlow relies on a persistent ``Database`` to store all the metadata regardi
     ) -> None:
         ...
 
-Each ``PersistableEntity`` is identified by a unique numerical ``persistent_id`` related to the corresponding ``Database`` record. Two methods, ``save`` and ``load``, allow persisting the entity in the ``Database`` and retrieving it from the persistent record. Note that ``load`` is a class method, as it must construct a new instance. Furthermore, the ``load`` method does not assign the ``persistent_id``.
+Each ``PersistableEntity`` is identified by a unique numerical ``persistent_id`` related to the corresponding ``Database`` record. Two methods, ``save`` and ``load``, allow persisting the entity in the ``Database`` and retrieving it from the persistent record. Note that ``load`` is a class method, as it must construct a new instance.
 
-The ``load`` method receives three input parameters: the current execution ``context``, the ``persistent_id`` of the instance that should be loaded, and a ``loading_context`` (see :ref:`DatabaseLoadingContext <DatabaseLoadingContext>`).
+The ``load`` method receives three input parameters: the current execution ``context``, the ``persistent_id`` of the instance that should be loaded, and a ``loading_context`` (see :ref:`DatabaseLoadingContext <DatabaseLoadingContext>`). Note that the ``load`` method should not directly assign the ``persistent_id`` to the new entity, as this operation is in charge to the :ref:`DatabaseLoadingContext <DatabaseLoadingContext>` class.
 
 Persistence
 ===========
@@ -255,8 +255,8 @@ The database schema is structured as follows:
 
 DatabaseLoadingContext
 ======================
-Workflow loading can be costly in terms of time and memory but also tricky, with the possibility of deadlock.
-The ``DatabaseLoadingContext`` interface allows to define classes that manage these problems. Good practice is to load the objects from these classes instead of using directly the entity ``load`` methods.
+Workflow loading is a delicate operation. If not managed properly, it can be costly in terms of time and memory and lead to deadlocks in case of circular references.
+The ``DatabaseLoadingContext`` interface allows to define classes in charge of managing these aspects. Users should always rely on these classes to load entities, instead of directly calling ``load`` methods from ``PersistableEntity`` instances.
 
 .. code-block:: python
 
@@ -316,26 +316,13 @@ Name                                                                    Class
 DefaultDatabaseLoadingContext
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 The ``DefaultDatabaseLoadingContext`` keeps track of all the objects already loaded in the current transaction, serving as a cache to efficiently load nested entities and prevent deadlocks when dealing with circular references.
-Furthermore, it assigns the ``persistent_id`` when an entity is added to the cache with the ``add_entity`` method.
-
+Furthermore, it is in charge of assigning the ``persistent_id`` when an entity is added to the cache through an ``add_*`` method.
 
 WorkflowBuilder
 ^^^^^^^^^^^^^^^
-The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow from the database and inserts them into a new workflow object, passed as an argument to the constructor.
-Between the workflows, it is possible to have some shared entities, particularly those used only in reading, for example ``deployment``` and ``target``. Instead, the entities with an internal state must be different instances, so ``steps``, ``ports`` and ``workflow``.
-This is done by loading the entity, keeping the ``persistent_id`` in the case of a shared object, or creating a new ``persistent_id`` otherwise.
-The ``WorkflowBuilder`` class extends the ``DefaultDatabaseLoadingContext`` class; it has the ``workflow``, i.e., the new ``workflow`` instance, moreover, overwrites only the methods involving the ``step``, ``port``, and ``workflow`` entities.
-Particularly, the ``add_step``, ``add_port`` and ``add_workflow`` methods do not set the ``persistent_id`` as their parent methods.
-The class has the ``workflow``, i.e., the new ``workflow`` instance.
-The ``load_workflow`` method has two behaviors based on the calling order.
-When a ``WorkflowBuilder`` instance is created, and the ``load_workflow`` method is called as the first method, it loads all the entities of the original workflow in the new one.
-Instead, if it is called after the ``load_step`` or ``load_port`` methods, it returns the ``self.workflow`` without loading other entities.
-This allows to copy the entire workflow or load only a subset.
+The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow from a ``Database`` and inserts them into a new workflow object received as a constructor argument. It extends the ``DefaultDatabaseLoadingContext`` class and overrides only the methods involving ``step``, ``port``, and ``workflow`` entities. In particular, the ``add_*`` methods of these entities must not set the ``persistent_id``, as they are dealing with a newly-created workflow, and the ``load_*`` methods should reset the internal state of their entities to the initial value (e.g., reset the status to `Status.WAITING` and clear the `terminated` flag).
 
+The ``load_workflow`` method must behave in two different ways, depending on whether it is called directly from a user or in the internal logic of another entity's ``load`` method. In the first case, it should load all the entities related to the original workflow, identified by the ``persistent_id`` argument, into the new one. In the latter case it should simply return the new workflow entity being built.
 
-.. code-block:: python
-
-    def __init__(self, workflow: Workflow):
-        super().__init__()
-        self.workflow: Workflow = workflow
+Other entities, such as ``deployment`` and ``target`` objects, can be safely shared between the old and the new workflows, as their internal state does not need to be modified. Therefore, they can be loaded following the common path implemented in the ``DefaultDatabaseLoadingContext`` class.
 
