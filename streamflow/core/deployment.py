@@ -206,7 +206,6 @@ class DeploymentConfig(Config, PersistableEntity):
             lazy=row["lazy"],
             workdir=row["workdir"],
         )
-        obj.persistent_id = persistent_id
         loading_context.add_deployment(persistent_id, obj)
         return obj
 
@@ -276,7 +275,6 @@ class Target(PersistableEntity):
         row = await context.database.get_target(persistent_id)
         type = cast(Type[Target], utils.get_class_from_name(row["type"]))
         obj = await type._load(context, row, loading_context)
-        obj.persistent_id = persistent_id
         loading_context.add_target(persistent_id, obj)
         return obj
 
@@ -338,7 +336,6 @@ class FilterConfig(Config, PersistableEntity):
             type=row["type"],
             config=json.loads(row["config"]),
         )
-        obj.persistent_id = persistent_id
         loading_context.add_filter(persistent_id, obj)
         return obj
 

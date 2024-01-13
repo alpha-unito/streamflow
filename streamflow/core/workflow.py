@@ -310,7 +310,6 @@ class Port(PersistableEntity):
         row = await context.database.get_port(persistent_id)
         type = cast(Type[Port], utils.get_class_from_name(row["type"]))
         port = await type._load(context, row, loading_context)
-        port.persistent_id = persistent_id
         loading_context.add_port(persistent_id, port)
         return port
 
@@ -432,7 +431,6 @@ class Step(PersistableEntity, ABC):
         row = await context.database.get_step(persistent_id)
         type = cast(Type[Step], utils.get_class_from_name(row["type"]))
         step = await type._load(context, row, loading_context)
-        step.persistent_id = persistent_id
         step.status = Status(row["status"])
         step.terminated = step.status in [
             Status.COMPLETED,
@@ -440,6 +438,7 @@ class Step(PersistableEntity, ABC):
             Status.SKIPPED,
         ]
         input_deps = await context.database.get_input_ports(persistent_id)
+        loading_context.add_step(persistent_id, step)
         input_ports = await asyncio.gather(
             *(
                 asyncio.create_task(loading_context.load_port(context, d["port"]))
@@ -457,7 +456,6 @@ class Step(PersistableEntity, ABC):
         step.output_ports = {
             d["name"]: p.name for d, p in zip(output_deps, output_ports)
         }
-        loading_context.add_step(persistent_id, step)
         return step
 
     @abstractmethod
@@ -549,7 +547,6 @@ class Token(PersistableEntity):
         row = await context.database.get_token(persistent_id)
         type = cast(Type[Token], utils.get_class_from_name(row["type"]))
         token = await type._load(context, row, loading_context)
-        token.persistent_id = persistent_id
         loading_context.add_token(persistent_id, token)
         return token
 
@@ -676,7 +673,6 @@ class Workflow(PersistableEntity):
         workflow = cls(
             context=context, type=row["type"], config=params["config"], name=row["name"]
         )
-        workflow.persistent_id = row["id"]
         loading_context.add_workflow(persistent_id, workflow)
         rows = await context.database.get_workflow_ports(persistent_id)
         workflow.ports = {

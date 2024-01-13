@@ -147,10 +147,11 @@ jobs:
           python -m pip install -r docs/requirements.txt
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "caaa02b3477bf264a667c1684176ecf3f5e03e6c916d3107299c33670506239c"
+          CHECKSUM: "fc9bdd01ef90f0b24d019da7683aa528af10119ef54d0a13cb16ec7adaa04242"
         run: |
           cd docs/
           HASH="$(make checksum | tail -n1)"
+          echo "Docs checksum is ${HASH}"
           test "${HASH}" == "${CHECKSUM}"
   test-flux:
     runs-on: ubuntu-22.04

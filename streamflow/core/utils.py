@@ -15,7 +15,6 @@ from typing import (
     MutableSequence,
     TYPE_CHECKING,
 )
-
 from streamflow.core.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:

@@ -162,8 +162,8 @@ class CWLTokenProcessor(TokenProcessor):
             format_graph=(
                 format_graph.parse(data=row["format_graph"])
                 if row["format_graph"] is not None
-                else format_graph
-            ),
+                else None
+            ),  # todo: fix multiple instances
             full_js=row["full_js"],
             load_contents=row["load_contents"],
             load_listing=LoadListing(row["load_listing"])
@@ -300,7 +300,9 @@ class CWLTokenProcessor(TokenProcessor):
                 "expression_lib": self.expression_lib,
                 "file_format": self.file_format,
                 "format_graph": (
-                    self.format_graph.serialize() if self.format_graph else None
+                    self.format_graph.serialize()
+                    if self.format_graph is not None
+                    else None
                 ),
                 "full_js": self.full_js,
                 "load_contents": self.load_contents,

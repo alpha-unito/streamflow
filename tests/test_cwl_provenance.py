@@ -37,13 +37,11 @@ from streamflow.workflow.combinator import (
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import CombinatorStep
 from streamflow.workflow.token import IterationTerminationToken, ListToken
-from tests.test_provenance import (
+from tests.test_provenance import _general_test, _verify_dependency_tokens, _put_tokens
+from tests.utils.workflow import (
+    create_workflow,
     create_deploy_step,
     create_schedule_step,
-    create_workflow,
-    _general_test,
-    _put_tokens,
-    _verify_dependency_tokens,
 )
 
 
@@ -380,11 +378,11 @@ async def test_cwl_loop_conditional_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_transfer_step(context: StreamFlowContext):
+async def test_cwl_transfer_step(context: StreamFlowContext):
     """Test token provenance for CWLTransferStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, deploy_step)
+    schedule_step = create_schedule_step(workflow, [deploy_step])
     port_name = "test"
     token_list = [Token("a")]
     transfer_step = await _general_test(
@@ -417,7 +415,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
     """Test token provenance for CWLInputInjectorStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, deploy_step)
+    schedule_step = create_schedule_step(workflow, [deploy_step])
     token_list = [Token("a")]
     injector = await _general_test(
         context=context,
@@ -430,7 +428,6 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
             "job_port": schedule_step.get_output_port(),
         },
         token_list=token_list,
-        save_input_token=True,
     )
     job_token = injector.get_input_port("__job__").token_list[0]
     await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
@@ -572,7 +569,6 @@ async def test_cwl_loop_output(context: StreamFlowContext, step_cls):
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
-
     assert len(out_port.token_list) == 2
     await _verify_dependency_tokens(
         token=out_port.token_list[0],
