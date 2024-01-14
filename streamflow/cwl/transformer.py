@@ -359,10 +359,12 @@ class DotProductSizeTransformer(ManyToOneTransformer):
     ) -> MutableMapping[str, Token]:
         values = {t.value for t in inputs.values()}
         if len(values) > 1:
-            raise WorkflowExecutionException(f"Values must be equals. Got {values}")
+            raise WorkflowExecutionException(
+                f"Step {self.name} got {values}, but they must be equal"
+            )
         if not isinstance(next(iter(values)), int) or next(iter(values)) < 0:
             raise WorkflowExecutionException(
-                f"Values must be an positive integer. Got {next(iter(values))}"
+                f"Step {self.name} got {values}, but they must be positive integers"
             )
         return {self.get_output_name(): next(iter(inputs.values()))}
 
@@ -371,10 +373,10 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
-        for token in inputs.values():
+        for port_name, token in inputs.items():
             if not isinstance(token.value, int) or token.value < 0:
                 raise WorkflowExecutionException(
-                    f"Values must be an positive integer. Got {token.value}"
+                    f"Step {self.name} got {token.value} on port {port_name}, but it must be a positive integer"
                 )
         tag = get_tag(inputs.values())
         value = functools.reduce(
@@ -383,19 +385,20 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
         return {self.get_output_name(): Token(value, tag=tag)}
 
 
-class DuplicateTransformer(ManyToOneTransformer):
+class CloneListTokenTransformer(ManyToOneTransformer):
+    def __init__(self, name: str, workflow: Workflow, size_port: Port):
+        super().__init__(name, workflow)
+        self.add_input_port("__size__", size_port)
+
     def _get_input_port_name(self) -> str:
         return next(n for n in self.input_ports if n != "__size__")
-
-    def add_size_port(self, port: Port):
-        self.add_input_port("__size__", port)
 
     def add_input_port(self, name: str, port: Port) -> None:
         if len(self.input_ports) < 2 or name in self.input_ports:
             super().add_input_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                f"{self.name} step must contain a single input port."
+                f"Step {self.name} must contain a single input port"
             )
 
     def get_input_port(self, name: str | None = None) -> Port:
@@ -409,21 +412,13 @@ class DuplicateTransformer(ManyToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
-        if len(inputs) != 2:
-            raise WorkflowExecutionException(
-                "Impossible duplicate token because there are too many inputs"
-            )
-        if "__size__" not in inputs.keys():
-            raise WorkflowExecutionException(
-                "Impossible duplicate token because there is not the size port"
-            )
-
+        # inputs has only two key: __size__ and a port_name
         if (
             not isinstance(inputs["__size__"].value, int)
             or inputs["__size__"].value < 0
         ):
             raise WorkflowExecutionException(
-                f"Values must be an positive integer. Got {inputs['__size__'].value}"
+                f"Step {self.name} got {inputs['__size__'].value} in the size port, but it must be a positive integer"
             )
         ancestor_token = inputs[next(k for k in inputs.keys() if k != "__size__")]
         if isinstance(ancestor_token, ListToken):
