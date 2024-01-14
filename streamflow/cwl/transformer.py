@@ -412,7 +412,7 @@ class CloneListTokenTransformer(ManyToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
-        # inputs has only two key: __size__ and a port_name
+        # inputs has only two keys: __size__ and a port_name
         if (
             not isinstance(inputs["__size__"].value, int)
             or inputs["__size__"].value < 0
@@ -420,7 +420,7 @@ class CloneListTokenTransformer(ManyToOneTransformer):
             raise WorkflowExecutionException(
                 f"Step {self.name} got {inputs['__size__'].value} in the size port, but it must be a positive integer"
             )
-        list_token = inputs[next(k for k in inputs.keys() if k != "__size__")]
+        list_token = inputs[self._get_input_port_name()]
         if not isinstance(list_token, ListToken):
             raise WorkflowExecutionException(
                 f"Step {self.name} can duplicate only ListToken value, instead got a {type(list_token)}"
