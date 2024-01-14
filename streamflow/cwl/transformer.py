@@ -35,6 +35,119 @@ class AllNonNullTransformer(OneToOneTransformer):
         return {self.get_output_name(): self._transform(*next(iter(inputs.items())))}
 
 
+class CartesianProductSizeTransformer(ManyToOneTransformer):
+    async def transform(
+        self, inputs: MutableMapping[str, Token]
+    ) -> MutableMapping[str, Token]:
+        for port_name, token in inputs.items():
+            if not isinstance(token.value, int) or token.value < 0:
+                raise WorkflowExecutionException(
+                    f"Step {self.name} got {token.value} on port {port_name}, but it must be a positive integer"
+                )
+        tag = get_tag(inputs.values())
+        value = functools.reduce(
+            lambda x, y: x * y, (token.value for token in inputs.values())
+        )
+        return {self.get_output_name(): Token(value, tag=tag)}
+
+
+class CloneListTokenTransformer(ManyToOneTransformer):
+    def __init__(self, name: str, workflow: Workflow, size_port: Port):
+        super().__init__(name, workflow)
+        self.add_input_port("__size__", size_port)
+
+    def _get_input_port_name(self) -> str:
+        return next(n for n in self.input_ports if n != "__size__")
+
+    def add_input_port(self, name: str, port: Port) -> None:
+        if len(self.input_ports) < 2 or name in self.input_ports:
+            super().add_input_port(name, port)
+        else:
+            raise WorkflowDefinitionException(
+                f"Step {self.name} must contain a single input port"
+            )
+
+    def get_input_port(self, name: str | None = None) -> Port:
+        return super().get_input_port(
+            self._get_input_port_name() if name is None else name
+        )
+
+    def get_size_port(self):
+        return self.get_input_port("__size__")
+
+    async def transform(
+        self, inputs: MutableMapping[str, Token]
+    ) -> MutableMapping[str, Token]:
+        # inputs has only two keys: __size__ and a port_name
+        if (
+            not isinstance(inputs["__size__"].value, int)
+            or inputs["__size__"].value < 0
+        ):
+            raise WorkflowExecutionException(
+                f"Step {self.name} got {inputs['__size__'].value} in the size port, but it must be a positive integer"
+            )
+        list_token = inputs[self._get_input_port_name()]
+        if not isinstance(list_token, ListToken):
+            raise WorkflowExecutionException(
+                f"Step {self.name} can clone only ListToken value, instead got a {type(list_token)}"
+            )
+        return {
+            self.get_output_name(): ListToken(
+                [
+                    token.retag(f"{token.tag}.{i}")
+                    for token in list_token.value
+                    for i in range(inputs["__size__"].value)
+                ]
+            )
+        }
+
+
+class CWLTokenTransformer(ManyToOneTransformer):
+    def __init__(
+        self, name: str, workflow: Workflow, port_name: str, processor: TokenProcessor
+    ):
+        super().__init__(name, workflow)
+        self.port_name: str = port_name
+        self.processor: TokenProcessor = processor
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        params = json.loads(row["params"])
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            port_name=params["port_name"],
+            processor=await TokenProcessor.load(
+                context, params["processor"], loading_context
+            ),
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {
+            **await super()._save_additional_params(context),
+            **{
+                "port_name": self.port_name,
+                "processor": await self.processor.save(context),
+            },
+        }
+
+    async def transform(
+        self, inputs: MutableMapping[str, Token]
+    ) -> MutableMapping[str, Token]:
+        return {
+            self.get_output_name(): await self.processor.process(
+                inputs, inputs[self.port_name]
+            )
+        }
+
+
 class DefaultTransformer(ManyToOneTransformer):
     def __init__(self, name: str, workflow: Workflow, default_port: Port):
         super().__init__(name, workflow)
@@ -103,50 +216,20 @@ class DefaultRetagTransformer(DefaultTransformer):
         return {self.get_output_name(): self.default_token.retag(tag)}
 
 
-class CWLTokenTransformer(ManyToOneTransformer):
-    def __init__(
-        self, name: str, workflow: Workflow, port_name: str, processor: TokenProcessor
-    ):
-        super().__init__(name, workflow)
-        self.port_name: str = port_name
-        self.processor: TokenProcessor = processor
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ):
-        params = json.loads(row["params"])
-        return cls(
-            name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            port_name=params["port_name"],
-            processor=await TokenProcessor.load(
-                context, params["processor"], loading_context
-            ),
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "port_name": self.port_name,
-                "processor": await self.processor.save(context),
-            },
-        }
-
+class DotProductSizeTransformer(ManyToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
-        return {
-            self.get_output_name(): await self.processor.process(
-                inputs, inputs[self.port_name]
+        values = {t.value for t in inputs.values()}
+        if len(values) > 1:
+            raise WorkflowExecutionException(
+                f"Step {self.name} got {values}, but they must be equal"
             )
-        }
+        if not isinstance(next(iter(values)), int) or next(iter(values)) < 0:
+            raise WorkflowExecutionException(
+                f"Step {self.name} got {values}, but they must be positive integers"
+            )
+        return {self.get_output_name(): next(iter(inputs.values()))}
 
 
 class FirstNonNullTransformer(OneToOneTransformer):
@@ -193,6 +276,13 @@ class ListToElementTransformer(OneToOneTransformer):
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
         return {self.get_output_name(): self._transform(next(iter(inputs.values())))}
+
+
+class ListTokenWrapTransformer(OneToOneTransformer):
+    async def transform(
+        self, inputs: MutableMapping[str, Token]
+    ) -> MutableMapping[str, Token]:
+        return {self.get_output_name(): ListToken([next(iter(inputs.values()))])}
 
 
 class OnlyNonNullTransformer(OneToOneTransformer):
@@ -351,93 +441,3 @@ class LoopValueFromTransformer(ValueFromTransformer):
                 ),
             )
         }
-
-
-class DotProductSizeTransformer(ManyToOneTransformer):
-    async def transform(
-        self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
-        values = {t.value for t in inputs.values()}
-        if len(values) > 1:
-            raise WorkflowExecutionException(
-                f"Step {self.name} got {values}, but they must be equal"
-            )
-        if not isinstance(next(iter(values)), int) or next(iter(values)) < 0:
-            raise WorkflowExecutionException(
-                f"Step {self.name} got {values}, but they must be positive integers"
-            )
-        return {self.get_output_name(): next(iter(inputs.values()))}
-
-
-class CartesianProductSizeTransformer(ManyToOneTransformer):
-    async def transform(
-        self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
-        for port_name, token in inputs.items():
-            if not isinstance(token.value, int) or token.value < 0:
-                raise WorkflowExecutionException(
-                    f"Step {self.name} got {token.value} on port {port_name}, but it must be a positive integer"
-                )
-        tag = get_tag(inputs.values())
-        value = functools.reduce(
-            lambda x, y: x * y, (token.value for token in inputs.values())
-        )
-        return {self.get_output_name(): Token(value, tag=tag)}
-
-
-class CloneListTokenTransformer(ManyToOneTransformer):
-    def __init__(self, name: str, workflow: Workflow, size_port: Port):
-        super().__init__(name, workflow)
-        self.add_input_port("__size__", size_port)
-
-    def _get_input_port_name(self) -> str:
-        return next(n for n in self.input_ports if n != "__size__")
-
-    def add_input_port(self, name: str, port: Port) -> None:
-        if len(self.input_ports) < 2 or name in self.input_ports:
-            super().add_input_port(name, port)
-        else:
-            raise WorkflowDefinitionException(
-                f"Step {self.name} must contain a single input port"
-            )
-
-    def get_input_port(self, name: str | None = None) -> Port:
-        return super().get_input_port(
-            self._get_input_port_name() if name is None else name
-        )
-
-    def get_size_port(self):
-        return self.get_input_port("__size__")
-
-    async def transform(
-        self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
-        # inputs has only two keys: __size__ and a port_name
-        if (
-            not isinstance(inputs["__size__"].value, int)
-            or inputs["__size__"].value < 0
-        ):
-            raise WorkflowExecutionException(
-                f"Step {self.name} got {inputs['__size__'].value} in the size port, but it must be a positive integer"
-            )
-        list_token = inputs[self._get_input_port_name()]
-        if not isinstance(list_token, ListToken):
-            raise WorkflowExecutionException(
-                f"Step {self.name} can duplicate only ListToken value, instead got a {type(list_token)}"
-            )
-        return {
-            self.get_output_name(): ListToken(
-                [
-                    token.retag(f"{token.tag}.{i}")
-                    for token in list_token.value
-                    for i in range(inputs["__size__"].value)
-                ]
-            )
-        }
-
-
-class ListTokenWrapTransformer(OneToOneTransformer):
-    async def transform(
-        self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
-        return {self.get_output_name(): ListToken([next(iter(inputs.values()))])}
