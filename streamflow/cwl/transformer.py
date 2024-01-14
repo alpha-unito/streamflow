@@ -357,7 +357,7 @@ class DotProductSizeTransformer(ManyToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
-        values = set(t.value for t in inputs.values())
+        values = {t.value for t in inputs.values()}
         if len(values) > 1:
             raise WorkflowExecutionException(f"Values must be equals. Got {values}")
         if not isinstance(next(iter(values)), int) or next(iter(values)) < 0:
@@ -384,9 +384,6 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
 
 
 class DuplicateTransformer(ManyToOneTransformer):
-    def __init__(self, name: str, workflow: Workflow):
-        super().__init__(name, workflow)
-
     def _get_input_port_name(self) -> str:
         return next(n for n in self.input_ports if n != "__size__")
 
