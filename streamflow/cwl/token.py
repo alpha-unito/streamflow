@@ -46,34 +46,12 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
 
 async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
     if path := utils.get_path_from_token(value):
-        if not (data_locs := context.data_manager.get_data_locations(path)):
-            return False
-        is_available = False
-        for data_loc in data_locs:
-            connector = context.deployment_manager.get_connector(data_loc.deployment)
-            if await remotepath.exists(connector, data_loc, data_loc.path):
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Location {data_loc.deployment} has valid data {data_loc.path}"
-                    )
-                # It does not immediately return True, because it is necessary to check
-                # all the locations and invalidate when data is no longer available.
-                is_available = True
-            else:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Invalidated location {data_loc.deployment} (Lost data {data_loc.path})"
-                    )
-                root_data_loc = context.data_manager.get_data_locations(
-                    "/", data_loc.deployment
-                )[0]
-                context.data_manager.invalidate_location(
-                    root_data_loc, root_data_loc.path
-                )
-        return is_available
-    raise WorkflowExecutionException(
-        f"It is not possible to verify the data {value} availability"
-    )
+        data_locations = context.data_manager.get_data_locations(
+            path=path, data_type=DataType.PRIMARY
+        )
+        return len(data_locations) != 0
+    else:
+        return True
 
 
 class CWLFileToken(FileToken):
