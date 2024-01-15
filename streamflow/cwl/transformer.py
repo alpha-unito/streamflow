@@ -51,7 +51,7 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
         return {self.get_output_name(): Token(value, tag=tag)}
 
 
-class CloneListTokenTransformer(ManyToOneTransformer):
+class CloneTransformer(ManyToOneTransformer):
     def __init__(self, name: str, workflow: Workflow, size_port: Port):
         super().__init__(name, workflow)
         self.add_input_port("__size__", size_port)
@@ -77,7 +77,7 @@ class CloneListTokenTransformer(ManyToOneTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, MutableSequence[Token]]:
         # inputs has only two keys: __size__ and a port_name
         if (
             not isinstance(inputs["__size__"].value, int)
@@ -86,19 +86,11 @@ class CloneListTokenTransformer(ManyToOneTransformer):
             raise WorkflowExecutionException(
                 f"Step {self.name} received {inputs['__size__'].value} in the size port, but it must be a positive integer"
             )
-        list_token = inputs[self._get_input_port_name()]
-        if not isinstance(list_token, ListToken):
-            raise WorkflowExecutionException(
-                f"Step {self.name} can clone only ListToken objects, but it received a {type(list_token)}"
-            )
+        token = inputs[self._get_input_port_name()]
         return {
-            self.get_output_name(): ListToken(
-                [
-                    token.retag(f"{token.tag}.{i}")
-                    for token in list_token.value
-                    for i in range(inputs["__size__"].value)
-                ]
-            )
+            self.get_output_name(): [
+                token.retag(f"{token.tag}.{i}") for i in range(inputs["__size__"].value)
+            ]
         }
 
 
@@ -276,13 +268,6 @@ class ListToElementTransformer(OneToOneTransformer):
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token]:
         return {self.get_output_name(): self._transform(next(iter(inputs.values())))}
-
-
-class ListTokenWrapTransformer(OneToOneTransformer):
-    async def transform(
-        self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
-        return {self.get_output_name(): ListToken([next(iter(inputs.values()))])}
 
 
 class OnlyNonNullTransformer(OneToOneTransformer):

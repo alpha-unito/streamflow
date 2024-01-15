@@ -933,19 +933,11 @@ class GatherStep(BaseStep):
                         )
                 else:
                     if task_name == "__size__":
-                        if isinstance(token, ListToken):
-                            sizes = token.value
-                        else:
-                            sizes = [token]
-                        for token in sizes:
-                            self.size_map[token.tag] = token.value
-                            port = size_port
-                            if (
-                                len(self.token_map.setdefault(token.tag, []))
-                                == token.value
-                            ):
-                                await self._gather(token.tag)
-                                keys_completed.add(token.tag)
+                        self.size_map[token.tag] = token.value
+                        port = size_port
+                        if len(self.token_map.setdefault(token.tag, [])) == token.value:
+                            await self._gather(token.tag)
+                            keys_completed.add(token.tag)
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(f"Step {self.name} received input {token.tag}")
@@ -1729,15 +1721,18 @@ class Transformer(BaseStep, ABC):
                                 for port_name, token in (
                                     await self.transform(inputs)
                                 ).items():
-                                    self.get_output_port(port_name).put(
-                                        await self._persist_token(
-                                            token=token,
-                                            port=self.get_output_port(port_name),
-                                            input_token_ids=_get_token_ids(
-                                                inputs.values()
-                                            ),
+                                    if not isinstance(token, MutableSequence):
+                                        token = [token]
+                                    for t in token:
+                                        self.get_output_port(port_name).put(
+                                            await self._persist_token(
+                                                token=t,
+                                                port=self.get_output_port(port_name),
+                                                input_token_ids=_get_token_ids(
+                                                    inputs.values()
+                                                ),
+                                            )
                                         )
-                                    )
             else:
                 for port_name, token in (await self.transform({})).items():
                     self.get_output_port(port_name).put(

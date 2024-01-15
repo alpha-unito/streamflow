@@ -90,8 +90,7 @@ from streamflow.cwl.transformer import (
     ValueFromTransformer,
     DotProductSizeTransformer,
     CartesianProductSizeTransformer,
-    CloneListTokenTransformer,
-    ListTokenWrapTransformer,
+    CloneTransformer,
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
 from streamflow.deployment.utils import get_binding_config
@@ -2141,15 +2140,7 @@ class CWLTranslator:
                                 scatter_inputs[len(scatter_inputs) - i - 1] + "-scatter"
                             ],
                         )
-                        wrap_transformer = workflow.create_step(
-                            ListTokenWrapTransformer,
-                            name=scatter_input + "-wrap-transformer",
-                        )
-                        wrap_transformer.add_input_port(
-                            scatter_port_name, reverse_scatter_step.get_size_port()
-                        )
-                        size_port = workflow.create_port()
-                        wrap_transformer.add_output_port(scatter_port_name, size_port)
+                        size_port = reverse_scatter_step.get_size_port()
                         for ext_scatter_input in scatter_inputs[::-1]:
                             if ext_scatter_input == scatter_input:
                                 break
@@ -2161,7 +2152,7 @@ class CWLTranslator:
                                 ext_scatter_input, step_name
                             )
                             scatter_transformer = workflow.create_step(
-                                cls=CloneListTokenTransformer,
+                                cls=CloneTransformer,
                                 name=f"{step_name}-{scatter_port_name}-{ext_scatter_port_name}-scatter-size-transformer",
                                 size_port=ext_scatter_step.get_size_port(),
                             )
