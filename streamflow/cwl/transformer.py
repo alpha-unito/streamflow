@@ -42,7 +42,7 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
         for port_name, token in inputs.items():
             if not isinstance(token.value, int) or token.value < 0:
                 raise WorkflowExecutionException(
-                    f"Step {self.name} got {token.value} on port {port_name}, but it must be a positive integer"
+                    f"Step {self.name} received {token.value} on port {port_name}, but it must be a positive integer"
                 )
         tag = get_tag(inputs.values())
         value = functools.reduce(
@@ -84,12 +84,12 @@ class CloneListTokenTransformer(ManyToOneTransformer):
             or inputs["__size__"].value < 0
         ):
             raise WorkflowExecutionException(
-                f"Step {self.name} got {inputs['__size__'].value} in the size port, but it must be a positive integer"
+                f"Step {self.name} received {inputs['__size__'].value} in the size port, but it must be a positive integer"
             )
         list_token = inputs[self._get_input_port_name()]
         if not isinstance(list_token, ListToken):
             raise WorkflowExecutionException(
-                f"Step {self.name} can clone only ListToken value, instead got a {type(list_token)}"
+                f"Step {self.name} can clone only ListToken objects, but it received a {type(list_token)}"
             )
         return {
             self.get_output_name(): ListToken(
@@ -223,11 +223,11 @@ class DotProductSizeTransformer(ManyToOneTransformer):
         values = {t.value for t in inputs.values()}
         if len(values) > 1:
             raise WorkflowExecutionException(
-                f"Step {self.name} got {values}, but they must be equal"
+                f"Step {self.name} received {values}, but they must be equal"
             )
         if not isinstance(next(iter(values)), int) or next(iter(values)) < 0:
             raise WorkflowExecutionException(
-                f"Step {self.name} got {values}, but they must be positive integers"
+                f"Step {self.name} received {next(iter(values))}, but it must be a positive integer"
             )
         return {self.get_output_name(): next(iter(inputs.values()))}
 
