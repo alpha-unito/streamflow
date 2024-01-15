@@ -1,14 +1,11 @@
 import asyncio
-import logging
 from typing import Any, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
-from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Token
 from streamflow.cwl import utils
 from streamflow.data import remotepath
-from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken
 
 

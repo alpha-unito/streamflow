@@ -1431,9 +1431,7 @@ class ScheduleStep(BaseStep):
                             inputs = inputs_map.pop(tag)
                             # Create Job
                             job = Job(
-                                name=posixpath.join(
-                                    self.job_prefix, tag.split(".")[-1]
-                                ),
+                                name=posixpath.join(self.job_prefix, tag),
                                 workflow_id=self.workflow.persistent_id,
                                 inputs=inputs,
                                 input_directory=self.input_directory,
