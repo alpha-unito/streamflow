@@ -2132,15 +2132,12 @@ class CWLTranslator:
                     gather_steps = []
                     internal_output_ports[global_name] = workflow.create_port()
                     gather_input_port = internal_output_ports[global_name]
-                    for i, scatter_input in enumerate(scatter_inputs):
+                    for scatter_input in scatter_inputs:
                         scatter_port_name = posixpath.relpath(scatter_input, step_name)
-                        reverse_scatter_step = cast(
-                            ScatterStep,
-                            workflow.steps[
-                                scatter_inputs[len(scatter_inputs) - i - 1] + "-scatter"
-                            ],
+                        scatter_step = cast(
+                            ScatterStep, workflow.steps[scatter_input + "-scatter"]
                         )
-                        size_port = reverse_scatter_step.get_size_port()
+                        size_port = scatter_step.get_size_port()
                         for ext_scatter_input in scatter_inputs[::-1]:
                             if ext_scatter_input == scatter_input:
                                 break
@@ -2154,10 +2151,10 @@ class CWLTranslator:
                             scatter_transformer = workflow.create_step(
                                 cls=CloneTransformer,
                                 name=f"{step_name}-{scatter_port_name}-{ext_scatter_port_name}-scatter-size-transformer",
-                                size_port=ext_scatter_step.get_size_port(),
+                                size_port=scatter_step.get_size_port(),
                             )
                             scatter_transformer.add_input_port(
-                                scatter_port_name, size_port
+                                scatter_port_name, ext_scatter_step.get_size_port()
                             )
                             size_port = workflow.create_port()
                             scatter_transformer.add_output_port("__size__", size_port)
