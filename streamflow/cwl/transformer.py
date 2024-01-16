@@ -87,7 +87,7 @@ class CloneTransformer(ManyToOneTransformer):
             )
         if size_token.tag != input_token.tag:
             raise WorkflowExecutionException(
-                f"Step {self.name} received {inputs['__size__'].tag} on size port and {input_token.tag} on {self.get_input_port_name()} port"
+                f"Step {self.name} received {size_token.tag} on size port and {input_token.tag} on {self.get_input_port_name()} port"
             )
         return {
             self.get_output_name(): [
