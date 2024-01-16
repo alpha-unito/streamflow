@@ -507,9 +507,9 @@ def _create_nested_size_tag(
 ):
     if len(size_ports) == 0:
         return [next(iter(size_port_iterator.values()))]
-
-    new_transformers = []
-    for port_name, port in size_ports.items():
+    new_size_port_iterator = {}
+    new_size_ports = {}
+    for port_name, port in list(size_ports.items()):
         output_port_name = f"{port_name}-{next(iter(size_port_iterator.keys()))}"
         transformer = workflow.create_step(
             cls=CloneTransformer,
@@ -519,13 +519,13 @@ def _create_nested_size_tag(
         transformer.add_input_port(port_name, port)
         output_port = workflow.create_port()
         transformer.add_output_port(output_port_name, output_port)
-        new_transformers.insert(0, {output_port_name: output_port})
+        if not new_size_port_iterator:
+            new_size_port_iterator[output_port_name] = output_port
+        else:
+            new_size_ports[output_port_name] = output_port
     return _create_nested_size_tag(
-        {
-            next(iter(elem.keys())): next(iter(elem.values()))
-            for elem in new_transformers[1:]
-        },
-        new_transformers[0],
+        new_size_ports,
+        new_size_port_iterator,
         step_name,
         workflow,
     ) + [next(iter(size_port_iterator.values()))]
@@ -2169,12 +2169,12 @@ class CWLTranslator:
                     internal_output_ports[global_name] = workflow.create_port()
                     gather_input_port = internal_output_ports[global_name]
 
-                    # build clone size tree structure
+                    # build clone size transformers
                     scatter_step = cast(
                         ScatterStep, workflow.steps[scatter_inputs[0] + "-scatter"]
                     )
                     ext_port_sizes = {}
-                    for ext_scatter_input in scatter_inputs[:0:-1]:
+                    for ext_scatter_input in scatter_inputs[1:]:
                         ext_scatter_step = cast(
                             ScatterStep,
                             workflow.steps[ext_scatter_input + "-scatter"],
