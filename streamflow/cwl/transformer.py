@@ -87,6 +87,10 @@ class CloneTransformer(ManyToOneTransformer):
                 f"Step {self.name} received {inputs['__size__'].value} in the size port, but it must be a positive integer"
             )
         token = inputs[self.get_input_port_name()]
+        if inputs["__size__"].tag != token.tag:
+            raise WorkflowExecutionException(
+                f"Step {self.name} received {inputs['__size__'].tag} on size port and {token.tag} on {self.get_input_port_name()} port"
+            )
         return {
             self.get_output_name(): [
                 token.retag(f"{token.tag}.{i}") for i in range(inputs["__size__"].value)

@@ -1498,6 +1498,9 @@ class ScatterStep(BaseStep):
         super().__init__(name, workflow)
         self.add_output_port("__size__", size_port or workflow.create_port())
 
+    def get_input_port_name(self):
+        return next(n for n in self.input_ports)
+
     def _get_output_port_name(self) -> str:
         return next(n for n in self.output_ports if n != "__size__")
 
