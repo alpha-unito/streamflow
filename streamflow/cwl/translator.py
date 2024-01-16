@@ -499,6 +499,38 @@ def _create_list_merger(
         return combinator
 
 
+def _create_nested_size_tag(
+    size_ports: MutableMapping[str, Port],
+    size_port_iterator: MutableMapping[str, Port],
+    step_name,
+    workflow,
+):
+    if len(size_ports) == 0:
+        return [next(iter(size_port_iterator.values()))]
+
+    new_transformers = []
+    for port_name, port in size_ports.items():
+        output_port_name = f"{port_name}-{next(iter(size_port_iterator.keys()))}"
+        transformer = workflow.create_step(
+            cls=CloneTransformer,
+            name=f"{step_name}-{output_port_name}-scatter-size-transformer",
+            size_port=next(iter(size_port_iterator.values())),
+        )
+        transformer.add_input_port(port_name, port)
+        output_port = workflow.create_port()
+        transformer.add_output_port(output_port_name, output_port)
+        new_transformers.insert(0, {output_port_name: output_port})
+    return _create_nested_size_tag(
+        {
+            next(iter(elem.keys())): next(iter(elem.values()))
+            for elem in new_transformers[1:]
+        },
+        new_transformers[0],
+        step_name,
+        workflow,
+    ) + [next(iter(size_port_iterator.values()))]
+
+
 def _create_residual_combinator(
     workflow: Workflow,
     step_name: str,
@@ -1872,35 +1904,6 @@ class CWLTranslator:
                 cwl_name_prefix=cwl_name_prefix,
             )
 
-    def _generate_nested_tag_size(
-            self,
-            size_ports: MutableMapping[str, Port],
-            size_port_iterator: MutableMapping[str, Port],
-            step_name,
-            workflow
-    ):
-        new_transformers = []
-        for port_name, port in size_ports.items():
-            output_port_name = f"{port_name}-{next(iter(size_port_iterator.keys()))}"
-            transformer = workflow.create_step(
-                cls=CloneTransformer,
-                name=f"{step_name}-{output_port_name}-scatter-size-transformer",
-                size_port=next(iter(size_port_iterator.values()))
-            )
-            transformer.add_input_port(port_name, port)
-            output_port = workflow.create_port()
-            transformer.add_output_port(output_port_name, output_port)
-            new_transformers.insert(0, {output_port_name: output_port})
-        if len(new_transformers) > 0:
-            return self._generate_nested_tag_size(
-                {next(iter(elem.keys())): next(iter(elem.values())) for elem in new_transformers[1:]},
-                new_transformers[0],
-                step_name,
-                workflow
-            )
-        else:
-            return next(iter(size_port_iterator.values()))
-
     def _translate_workflow_step(
         self,
         workflow: Workflow,
@@ -2161,43 +2164,32 @@ class CWLTranslator:
                     gather_steps = []
                     internal_output_ports[global_name] = workflow.create_port()
                     gather_input_port = internal_output_ports[global_name]
-                    for scatter_input in scatter_inputs:
-                        scatter_port_name = posixpath.relpath(scatter_input, step_name)
-                        scatter_step = cast(
-                            ScatterStep, workflow.steps[scatter_input + "-scatter"]
-                        )
-                        size_ports = {}
-                        for ext_scatter_input in scatter_inputs[::-1]:
-                            if ext_scatter_input == scatter_input:
-                                break
-                            ext_scatter_step = cast(
-                                ScatterStep,
-                                workflow.steps[ext_scatter_input + "-scatter"],
-                            )
-                            size_ports[ext_scatter_step.get_input_port_name()] = ext_scatter_step.get_size_port()
-                        size_port = self._generate_nested_tag_size(size_ports, {scatter_port_name: scatter_step.get_size_port()}, step_name, workflow)
 
-                        # size_port = scatter_step.get_size_port()
-                        # for ext_scatter_input in scatter_inputs[::-1]:
-                        #     if ext_scatter_input == scatter_input:
-                        #         break
-                        #     ext_scatter_step = cast(
-                        #         ScatterStep,
-                        #         workflow.steps[ext_scatter_input + "-scatter"],
-                        #     )
-                        #     ext_scatter_port_name = posixpath.relpath(
-                        #         ext_scatter_input, step_name
-                        #     )
-                        #     scatter_transformer = workflow.create_step(
-                        #         cls=CloneTransformer,
-                        #         name=f"{step_name}-{scatter_port_name}-{ext_scatter_port_name}-scatter-size-transformer",
-                        #         size_port=scatter_step.get_size_port(),
-                        #     )
-                        #     scatter_transformer.add_input_port(
-                        #         scatter_port_name, ext_scatter_step.get_size_port()
-                        #     )
-                        #     size_port = workflow.create_port()
-                        #     scatter_transformer.add_output_port("__size__", size_port)
+                    # build clone size tree structure
+                    scatter_step = cast(
+                        ScatterStep, workflow.steps[scatter_inputs[0] + "-scatter"]
+                    )
+                    ext_port_sizes = {}
+                    for ext_scatter_input in scatter_inputs[:0:-1]:
+                        ext_scatter_step = cast(
+                            ScatterStep,
+                            workflow.steps[ext_scatter_input + "-scatter"],
+                        )
+                        port_name = ext_scatter_step.get_input_port_name()
+                        ext_port_sizes[port_name] = ext_scatter_step.get_size_port()
+                    size_ports_list = _create_nested_size_tag(
+                        ext_port_sizes,
+                        {
+                            scatter_step.get_input_port_name(): scatter_step.get_size_port()
+                        },
+                        step_name,
+                        workflow,
+                    )
+
+                    for scatter_input, size_port in zip(
+                        scatter_inputs, size_ports_list
+                    ):
+                        scatter_port_name = posixpath.relpath(scatter_input, step_name)
                         gather_step = workflow.create_step(
                             cls=GatherStep,
                             name=global_name + "-gather-" + scatter_port_name,
