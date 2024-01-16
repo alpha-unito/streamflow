@@ -2175,8 +2175,8 @@ class CWLTranslator:
                             ScatterStep,
                             workflow.steps[ext_scatter_input + "-scatter"],
                         )
-                        port_name = ext_scatter_step.get_input_port_name()
-                        ext_port_sizes[port_name] = ext_scatter_step.get_size_port()
+                        ext_port_name = ext_scatter_step.get_input_port_name()
+                        ext_port_sizes[ext_port_name] = ext_scatter_step.get_size_port()
                     size_ports_list = _create_nested_size_tag(
                         ext_port_sizes,
                         {
