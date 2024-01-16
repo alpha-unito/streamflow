@@ -56,7 +56,7 @@ class CloneTransformer(ManyToOneTransformer):
         super().__init__(name, workflow)
         self.add_input_port("__size__", size_port)
 
-    def _get_input_port_name(self) -> str:
+    def get_input_port_name(self) -> str:
         return next(n for n in self.input_ports if n != "__size__")
 
     def add_input_port(self, name: str, port: Port) -> None:
@@ -69,7 +69,7 @@ class CloneTransformer(ManyToOneTransformer):
 
     def get_input_port(self, name: str | None = None) -> Port:
         return super().get_input_port(
-            self._get_input_port_name() if name is None else name
+            self.get_input_port_name() if name is None else name
         )
 
     def get_size_port(self):
@@ -86,7 +86,7 @@ class CloneTransformer(ManyToOneTransformer):
             raise WorkflowExecutionException(
                 f"Step {self.name} received {inputs['__size__'].value} in the size port, but it must be a positive integer"
             )
-        token = inputs[self._get_input_port_name()]
+        token = inputs[self.get_input_port_name()]
         return {
             self.get_output_name(): [
                 token.retag(f"{token.tag}.{i}") for i in range(inputs["__size__"].value)
