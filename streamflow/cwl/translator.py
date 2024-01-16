@@ -2050,7 +2050,7 @@ class CWLTranslator:
             # If there are multiple scatter inputs, configure combinator
             size_port = None
             scatter_combinator = None
-            scatter_transformer = None
+            scatter_size_transformer = None
             if len(scatter_inputs) > 1:
                 # Build combinator
                 if scatter_method == "dotproduct":
@@ -2061,7 +2061,7 @@ class CWLTranslator:
                         scatter_combinator.add_item(
                             posixpath.relpath(global_name, step_name)
                         )
-                    scatter_transformer = workflow.create_step(
+                    scatter_size_transformer = workflow.create_step(
                         cls=DotProductSizeTransformer,
                         name=step_name + "-scatter-size-transformer",
                     )
@@ -2074,7 +2074,7 @@ class CWLTranslator:
                             posixpath.relpath(global_name, step_name)
                         )
                     if scatter_method == "flat_crossproduct":
-                        scatter_transformer = workflow.create_step(
+                        scatter_size_transformer = workflow.create_step(
                             cls=CartesianProductSizeTransformer,
                             name=step_name + "-scatter-size-transformer",
                         )
@@ -2109,12 +2109,16 @@ class CWLTranslator:
                     combinator_step.add_input_port(port_name, input_ports[global_name])
                     input_ports[global_name] = workflow.create_port()
                     combinator_step.add_output_port(port_name, input_ports[global_name])
-                if scatter_transformer:
+                if scatter_size_transformer:
+                    output_port_names = []
                     for global_name in scatter_inputs:
                         port_name = posixpath.relpath(global_name, step_name)
-                        scatter_transformer.add_input_port(port_name, size_port)
+                        scatter_size_transformer.add_input_port(port_name, size_port)
+                        output_port_names.append(port_name)
                     size_port = workflow.create_port()
-                    scatter_transformer.add_output_port("__size__", size_port)
+                    scatter_size_transformer.add_output_port(
+                        "-".join(output_port_names), size_port
+                    )
 
         # Process inputs again to attach ports to transformers
         input_ports = _process_transformers(

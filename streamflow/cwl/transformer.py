@@ -79,21 +79,20 @@ class CloneTransformer(ManyToOneTransformer):
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, MutableSequence[Token]]:
         # inputs has only two keys: __size__ and a port_name
-        if (
-            not isinstance(inputs["__size__"].value, int)
-            or inputs["__size__"].value < 0
-        ):
+        input_token = inputs[self.get_input_port_name()]
+        size_token = inputs["__size__"]
+        if not isinstance(size_token.value, int) or size_token.value < 0:
             raise WorkflowExecutionException(
-                f"Step {self.name} received {inputs['__size__'].value} in the size port, but it must be a positive integer"
+                f"Step {self.name} received {size_token.value} in the size port, but it must be a positive integer"
             )
-        token = inputs[self.get_input_port_name()]
-        if inputs["__size__"].tag != token.tag:
+        if size_token.tag != input_token.tag:
             raise WorkflowExecutionException(
-                f"Step {self.name} received {inputs['__size__'].tag} on size port and {token.tag} on {self.get_input_port_name()} port"
+                f"Step {self.name} received {inputs['__size__'].tag} on size port and {input_token.tag} on {self.get_input_port_name()} port"
             )
         return {
             self.get_output_name(): [
-                token.retag(f"{token.tag}.{i}") for i in range(inputs["__size__"].value)
+                input_token.retag(f"{input_token.tag}.{i}")
+                for i in range(size_token.value)
             ]
         }
 
@@ -221,11 +220,12 @@ class DotProductSizeTransformer(ManyToOneTransformer):
             raise WorkflowExecutionException(
                 f"Step {self.name} received {values}, but they must be equal"
             )
-        if not isinstance(next(iter(values)), int) or next(iter(values)) < 0:
+        input_token = next(iter(inputs.values()))
+        if not isinstance(input_token.value, int) or input_token.value < 0:
             raise WorkflowExecutionException(
-                f"Step {self.name} received {next(iter(values))}, but it must be a positive integer"
+                f"Step {self.name} received {input_token.value}, but it must be a positive integer"
             )
-        return {self.get_output_name(): next(iter(inputs.values()))}
+        return {self.get_output_name(): input_token.update(input_token.value)}
 
 
 class FirstNonNullTransformer(OneToOneTransformer):
