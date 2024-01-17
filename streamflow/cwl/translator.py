@@ -79,18 +79,18 @@ from streamflow.cwl.step import (
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
+    CartesianProductSizeTransformer,
+    CloneTransformer,
     CWLTokenTransformer,
     DefaultRetagTransformer,
     DefaultTransformer,
+    DotProductSizeTransformer,
     FirstNonNullTransformer,
     ForwardTransformer,
     ListToElementTransformer,
     LoopValueFromTransformer,
     OnlyNonNullTransformer,
     ValueFromTransformer,
-    DotProductSizeTransformer,
-    CartesianProductSizeTransformer,
-    CloneTransformer,
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
 from streamflow.deployment.utils import get_binding_config
@@ -501,34 +501,34 @@ def _create_list_merger(
 
 def _create_nested_size_tag(
     size_ports: MutableMapping[str, Port],
-    size_port_iterator: MutableMapping[str, Port],
+    replicas_port: MutableMapping[str, Port],
     step_name,
     workflow,
 ):
     if len(size_ports) == 0:
-        return [next(iter(size_port_iterator.values()))]
-    new_size_port_iterator = {}
+        return [next(iter(replicas_port.values()))]
+    new_replicas_port = {}
     new_size_ports = {}
-    for port_name, port in list(size_ports.items()):
-        output_port_name = f"{port_name}-{next(iter(size_port_iterator.keys()))}"
+    for port_name, port in size_ports.items():
+        output_port_name = f"{port_name}-{next(iter(replicas_port.keys()))}"
         transformer = workflow.create_step(
             cls=CloneTransformer,
             name=f"{step_name}-{output_port_name}-scatter-size-transformer",
-            size_port=next(iter(size_port_iterator.values())),
+            replicas_port=next(iter(replicas_port.values())),
         )
         transformer.add_input_port(port_name, port)
         output_port = workflow.create_port()
         transformer.add_output_port(output_port_name, output_port)
-        if not new_size_port_iterator:
-            new_size_port_iterator[output_port_name] = output_port
+        if not new_replicas_port:
+            new_replicas_port[output_port_name] = output_port
         else:
             new_size_ports[output_port_name] = output_port
     return _create_nested_size_tag(
         new_size_ports,
-        new_size_port_iterator,
+        new_replicas_port,
         step_name,
         workflow,
-    ) + [next(iter(size_port_iterator.values()))]
+    ) + [next(iter(replicas_port.values()))]
 
 
 def _create_residual_combinator(

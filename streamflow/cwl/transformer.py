@@ -52,12 +52,12 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
 
 
 class CloneTransformer(ManyToOneTransformer):
-    def __init__(self, name: str, workflow: Workflow, size_port: Port):
+    def __init__(self, name: str, workflow: Workflow, replicas_port: Port):
         super().__init__(name, workflow)
-        self.add_input_port("__size__", size_port)
+        self.add_input_port("__replicas__", replicas_port)
 
     def get_input_port_name(self) -> str:
-        return next(n for n in self.input_ports if n != "__size__")
+        return next(n for n in self.input_ports if n != "__replicas__")
 
     def add_input_port(self, name: str, port: Port) -> None:
         if len(self.input_ports) < 2 or name in self.input_ports:
@@ -72,15 +72,15 @@ class CloneTransformer(ManyToOneTransformer):
             self.get_input_port_name() if name is None else name
         )
 
-    def get_size_port(self):
-        return self.get_input_port("__size__")
+    def get_replicas_port(self):
+        return self.get_input_port("__replicas__")
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, MutableSequence[Token]]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         # inputs has only two keys: __size__ and a port_name
         input_token = inputs[self.get_input_port_name()]
-        size_token = inputs["__size__"]
+        size_token = inputs["__replicas__"]
         if not isinstance(size_token.value, int) or size_token.value < 0:
             raise WorkflowExecutionException(
                 f"Step {self.name} received {size_token.value} in the size port, but it must be a positive integer"
