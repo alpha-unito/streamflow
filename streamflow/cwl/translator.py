@@ -502,9 +502,9 @@ def _create_list_merger(
 def _create_nested_size_tag(
     size_ports: MutableMapping[str, Port],
     replicas_port: MutableMapping[str, Port],
-    step_name,
-    workflow,
-):
+    step_name: str,
+    workflow: Workflow,
+) -> MutableSequence[Port]:
     if len(size_ports) == 0:
         return [next(iter(replicas_port.values()))]
     new_replicas_port = {}

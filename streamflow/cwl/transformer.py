@@ -72,13 +72,13 @@ class CloneTransformer(ManyToOneTransformer):
             self.get_input_port_name() if name is None else name
         )
 
-    def get_replicas_port(self):
+    def get_replicas_port(self) -> Port:
         return self.get_input_port("__replicas__")
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
-        # inputs has only two keys: __size__ and a port_name
+        # inputs has only two keys: __replicas__ and a port_name
         input_token = inputs[self.get_input_port_name()]
         size_token = inputs["__replicas__"]
         if not isinstance(size_token.value, int) or size_token.value < 0:
