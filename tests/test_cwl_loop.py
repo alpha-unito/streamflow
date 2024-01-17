@@ -6,8 +6,6 @@ From https://github.com/common-workflow-language/cwltool/blob/6f0e1d941a61063828
 import json
 from typing import MutableMapping, MutableSequence
 
-import cwltool.utils
-import pytest
 from cwltool.tests.util import get_data
 
 from streamflow.cwl.runner import main
@@ -201,9 +199,6 @@ def test_loop_inside_scatter(capsys) -> None:
 
 def test_scatter_inside_loop(capsys) -> None:
     """Test a loop workflow with inside a scatter step."""
-    cwltool_version = cwltool.utils.versionstring().split(" ")[1]
-    if cwltool_version <= "3.1.20231207110929":
-        pytest.skip(f"Missing test in cwltool version used ({cwltool_version})")
     params = [
         get_data("tests/loop/scatter-inside-loop.cwl"),
         get_data("tests/loop/loop-inside-scatter-job.yml"),
