@@ -523,12 +523,14 @@ def _create_nested_size_tag(
             new_replicas_port[output_port_name] = output_port
         else:
             new_size_ports[output_port_name] = output_port
-    return _create_nested_size_tag(
+    size_ports_list = _create_nested_size_tag(
         new_size_ports,
         new_replicas_port,
         step_name,
         workflow,
-    ) + [next(iter(replicas_port.values()))]
+    )
+    size_ports_list.append(next(iter(replicas_port.values())))
+    return size_ports_list
 
 
 def _create_residual_combinator(
