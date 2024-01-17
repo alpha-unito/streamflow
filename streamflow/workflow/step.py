@@ -1764,5 +1764,5 @@ class Transformer(BaseStep, ABC):
     @abstractmethod
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         ...

@@ -31,14 +31,14 @@ class AllNonNullTransformer(OneToOneTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         return {self.get_output_name(): self._transform(*next(iter(inputs.items())))}
 
 
 class CartesianProductSizeTransformer(ManyToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         for port_name, token in inputs.items():
             if not isinstance(token.value, int) or token.value < 0:
                 raise WorkflowExecutionException(
@@ -135,7 +135,7 @@ class CWLTokenTransformer(ManyToOneTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         return {
             self.get_output_name(): await self.processor.process(
                 inputs, inputs[self.port_name]
@@ -175,7 +175,7 @@ class DefaultTransformer(ManyToOneTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         if len(inputs) != 1:
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a single input port."
@@ -198,7 +198,7 @@ class DefaultTransformer(ManyToOneTransformer):
 class DefaultRetagTransformer(DefaultTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         if not self.default_port:
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a default port."
@@ -214,7 +214,7 @@ class DefaultRetagTransformer(DefaultTransformer):
 class DotProductSizeTransformer(ManyToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         values = {t.value for t in inputs.values()}
         if len(values) > 1:
             raise WorkflowExecutionException(
@@ -242,14 +242,14 @@ class FirstNonNullTransformer(OneToOneTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         return {self.get_output_name(): self._transform(*next(iter(inputs.items())))}
 
 
 class ForwardTransformer(OneToOneTransformer):
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         token = next(iter(inputs.values()))
         return {self.get_output_name(): token.update(token.value)}
 
@@ -270,7 +270,7 @@ class ListToElementTransformer(OneToOneTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         return {self.get_output_name(): self._transform(next(iter(inputs.values())))}
 
 
@@ -297,7 +297,7 @@ class OnlyNonNullTransformer(OneToOneTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         return {self.get_output_name(): self._transform(*next(iter(inputs.items())))}
 
 
@@ -355,7 +355,7 @@ class ValueFromTransformer(ManyToOneTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         output_name = self.get_output_name()
         if output_name in inputs:
             inputs = {
@@ -408,7 +408,7 @@ class LoopValueFromTransformer(ValueFromTransformer):
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         loop_inputs = {k: inputs[k + "-in"] for k in self.loop_input_ports}
         self_token = (
             await self.processor.process(
