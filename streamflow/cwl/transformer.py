@@ -83,11 +83,11 @@ class CloneTransformer(ManyToOneTransformer):
         size_token = inputs["__replicas__"]
         if not isinstance(size_token.value, int) or size_token.value < 0:
             raise WorkflowExecutionException(
-                f"Step {self.name} received {size_token.value} in the size port, but it must be a positive integer"
+                f"Step {self.name} received {size_token.value} on replicas port, but it must be a positive integer"
             )
         if size_token.tag != input_token.tag:
             raise WorkflowExecutionException(
-                f"Step {self.name} received {size_token.tag} on size port and {input_token.tag} on {self.get_input_port_name()} port"
+                f"Step {self.name} received {size_token.tag} on replicas port and {input_token.tag} on {self.get_input_port_name()} port"
             )
         return {
             self.get_output_name(): [
@@ -218,7 +218,7 @@ class DotProductSizeTransformer(ManyToOneTransformer):
         values = {t.value for t in inputs.values()}
         if len(values) > 1:
             raise WorkflowExecutionException(
-                f"Step {self.name} received {values}, but they must be equal"
+                f"Step {self.name} received {values}, but all sizes must be equal"
             )
         input_token = next(iter(inputs.values()))
         if not isinstance(input_token.value, int) or input_token.value < 0:
