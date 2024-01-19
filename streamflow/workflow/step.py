@@ -826,10 +826,27 @@ class ExecuteStep(BaseStep):
 
 
 class GatherStep(BaseStep):
-    def __init__(self, name: str, workflow: Workflow, depth: int = 1):
+    def __init__(self, name: str, workflow: Workflow, size_port: Port, depth: int = 1):
         super().__init__(name, workflow)
         self.depth: int = depth
+        self.size_map: MutableMapping[str, int] = {}
         self.token_map: MutableMapping[str, MutableSequence[Token]] = {}
+        self.add_input_port("__size__", size_port)
+
+    def _get_input_port_name(self) -> str:
+        return next(n for n in self.input_ports if n != "__size__")
+
+    async def _gather(self, key: str) -> None:
+        output_port = self.get_output_port()
+        output_port.put(
+            await self._persist_token(
+                token=ListToken(
+                    tag=key, value=sorted(self.token_map[key], key=lambda cur: cur.tag)
+                ),
+                port=output_port,
+                input_token_ids=_get_token_ids(self.token_map[key]),
+            )
+        )
 
     @classmethod
     async def _load(
@@ -843,18 +860,20 @@ class GatherStep(BaseStep):
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             depth=params["depth"],
+            size_port=await loading_context.load_port(context, params["size_port"]),
         )
 
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
+        await self.get_size_port().save(context)
         return {
             **await super()._save_additional_params(context),
-            **{"depth": self.depth},
+            **{"depth": self.depth, "size_port": self.get_size_port().persistent_id},
         }
 
     def add_input_port(self, name: str, port: Port) -> None:
-        if not self.input_ports or name in self.input_ports:
+        if len(self.input_ports) < 2 or name in self.input_ports:
             super().add_input_port(name, port)
         else:
             raise WorkflowDefinitionException(
@@ -869,8 +888,16 @@ class GatherStep(BaseStep):
                 f"{self.name} step must contain a single output port."
             )
 
+    def get_size_port(self) -> Port:
+        return self.get_input_port("__size__")
+
+    def get_input_port(self, name: str | None = None) -> Port:
+        return super().get_input_port(
+            self._get_input_port_name() if name is None else name
+        )
+
     async def run(self):
-        if len(self.input_ports) != 1:
+        if len(self.input_ports) != 2:
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a single input port."
             )
@@ -879,32 +906,61 @@ class GatherStep(BaseStep):
                 f"{self.name} step must contain a single output port."
             )
         input_port = self.get_input_port()
-        while True:
-            token = await input_port.get(
-                posixpath.join(self.name, next(iter(self.input_ports)))
+        size_port = self.get_size_port()
+        port_name = self._get_input_port_name()
+        tasks = {
+            asyncio.create_task(
+                size_port.get(posixpath.join(self.name, "__size__")), name="__size__"
+            ),
+            asyncio.create_task(
+                input_port.get(posixpath.join(self.name, port_name)), name=port_name
+            ),
+        }
+        keys_completed = set()
+        while tasks:
+            finished, unfinished = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
             )
-            if check_termination(token):
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received termination token")
-                output_port = self.get_output_port()
-                for tag, tokens in self.token_map.items():
-                    output_port.put(
-                        await self._persist_token(
-                            token=ListToken(
-                                tag=tag, value=sorted(tokens, key=lambda cur: cur.tag)
-                            ),
-                            port=output_port,
-                            input_token_ids=_get_token_ids(tokens),
+            for task in finished:
+                if task.cancelled():
+                    continue
+                task_name = cast(asyncio.Task, task).get_name()
+                token = task.result()
+                if check_termination(token):
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Step {self.name} received termination token on port {task_name}"
+                        )
+                else:
+                    if task_name == "__size__":
+                        self.size_map[token.tag] = token.value
+                        port = size_port
+                        if len(self.token_map.setdefault(token.tag, [])) == token.value:
+                            await self._gather(token.tag)
+                            keys_completed.add(token.tag)
+                    else:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(f"Step {self.name} received input {token.tag}")
+                        key = ".".join(token.tag.split(".")[: -self.depth])
+                        self.token_map.setdefault(key, []).append(token)
+                        port = input_port
+                        if len(self.token_map.setdefault(key, [])) == self.size_map.get(
+                            key
+                        ):
+                            await self._gather(key)
+                            keys_completed.add(key)
+                    unfinished.add(
+                        asyncio.create_task(
+                            port.get(posixpath.join(self.name, task_name)),
+                            name=task_name,
                         )
                     )
-                break
-            else:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received input {token.tag}")
-                key = ".".join(token.tag.split(".")[: -self.depth])
-                if key not in self.token_map:
-                    self.token_map[key] = []
-                self.token_map[key].append(token)
+            tasks = unfinished
+        # Gather all the token when the size is unknown
+        for key in (k for k in self.token_map.keys() if k not in keys_completed):
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Step {self.name} forces gather on key {key}")
+            await self._gather(key)
         # Terminate step
         await self.terminate(
             Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED
@@ -1438,6 +1494,39 @@ class ScheduleStep(BaseStep):
 
 
 class ScatterStep(BaseStep):
+    def __init__(self, name: str, workflow: Workflow, size_port: Port | None = None):
+        super().__init__(name, workflow)
+        self.add_output_port("__size__", size_port or workflow.create_port())
+
+    def get_input_port_name(self):
+        return next(n for n in self.input_ports)
+
+    def _get_output_port_name(self) -> str:
+        return next(n for n in self.output_ports if n != "__size__")
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> ScatterStep:
+        params = json.loads(row["params"])
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            size_port=await loading_context.load_port(context, params["size_port"]),
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        await self.get_size_port().save(context)
+        return {
+            **await super()._save_additional_params(context),
+            **{"size_port": self.get_size_port().persistent_id},
+        }
+
     async def _scatter(self, token: Token):
         if isinstance(token.value, Token):
             await self._scatter(token.value)
@@ -1451,6 +1540,8 @@ class ScatterStep(BaseStep):
                         input_token_ids=_get_token_ids([token]),
                     )
                 )
+            size_token = Token(len(token.value), tag=token.tag)
+            self.get_size_port().put(size_token)
         else:
             raise WorkflowDefinitionException("Scatter ports require iterable inputs")
 
@@ -1463,19 +1554,27 @@ class ScatterStep(BaseStep):
             )
 
     def add_output_port(self, name: str, port: Port) -> None:
-        if not self.output_ports or port.name in self.output_ports:
+        if len(self.output_ports) < 2 or port.name in self.output_ports:
             super().add_output_port(name, port)
         else:
             raise WorkflowDefinitionException(
                 "Scatter step must contain a single output port."
             )
 
+    def get_output_port(self, name: str | None = None) -> Port:
+        return super().get_output_port(
+            self._get_output_port_name() if name is None else name
+        )
+
+    def get_size_port(self) -> Port:
+        return self.get_output_port("__size__")
+
     async def run(self):
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
                 "Scatter step must contain a single input port."
             )
-        if len(self.output_ports) != 1:
+        if len(self.output_ports) != 2:
             raise WorkflowDefinitionException(
                 "Scatter step must contain a single output port."
             )
@@ -1625,15 +1724,18 @@ class Transformer(BaseStep, ABC):
                                 for port_name, token in (
                                     await self.transform(inputs)
                                 ).items():
-                                    self.get_output_port(port_name).put(
-                                        await self._persist_token(
-                                            token=token,
-                                            port=self.get_output_port(port_name),
-                                            input_token_ids=_get_token_ids(
-                                                inputs.values()
-                                            ),
+                                    if not isinstance(token, MutableSequence):
+                                        token = [token]
+                                    for t in token:
+                                        self.get_output_port(port_name).put(
+                                            await self._persist_token(
+                                                token=t,
+                                                port=self.get_output_port(port_name),
+                                                input_token_ids=_get_token_ids(
+                                                    inputs.values()
+                                                ),
+                                            )
                                         )
-                                    )
             else:
                 for port_name, token in (await self.transform({})).items():
                     self.get_output_port(port_name).put(
@@ -1662,5 +1764,5 @@ class Transformer(BaseStep, ABC):
     @abstractmethod
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token]:
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         ...

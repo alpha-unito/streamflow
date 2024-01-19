@@ -197,6 +197,18 @@ def test_loop_inside_scatter(capsys) -> None:
     assert json.loads(captured.out) == expected
 
 
+def test_scatter_inside_loop(capsys) -> None:
+    """Test a loop workflow with inside a scatter step."""
+    params = [
+        get_data("tests/loop/scatter-inside-loop.cwl"),
+        get_data("tests/loop/loop-inside-scatter-job.yml"),
+    ]
+    main(params)
+    expected = {"o1": [10, 11, 12, 13, 14]}
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == expected
+
+
 def test_nested_loops(capsys) -> None:
     """Test a workflow with two nested loops."""
     params = [
