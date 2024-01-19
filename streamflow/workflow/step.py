@@ -113,7 +113,8 @@ class BaseStep(Step, ABC):
         }
 
         if len({t.tag for t in inputs.values()}) != 1:
-            raise Exception("Input hanno tag diversi")
+            tags = {t.tag for t in inputs.values()}
+            raise Exception(f"Step {self.name} has input tokens with different tags {tags}")
 
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs):
@@ -692,7 +693,7 @@ class ExecuteStep(BaseStep):
             )
             command_output = await self.command.execute(job)
             logger.debug(f"Job {job.name} executed the cmd")
-            _ = self.command.get_work_reuse(job)  # debug
+            # _ = self.command.get_work_reuse(job)  # debug
             if command_output.status == Status.FAILED:
                 jt = self.get_input_port("__job__").token_list
                 logger.error(

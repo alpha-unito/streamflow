@@ -476,8 +476,7 @@ from streamflow.workflow.token import (
 )
 from streamflow.cwl.step import (
     CWLBaseConditionalStep,
-    CWLLoopConditionalStep,
-    CWLRecoveryLoopConditionalStep,
+    CWLLoopConditionalStep
 )
 from streamflow.token_printer import dag_workflow
 from streamflow.core.workflow import Workflow
@@ -539,7 +538,7 @@ def extra_data_print(
     loop_cond = [
         s
         for s in new_workflow.steps.values()
-        if isinstance(s, (CWLLoopConditionalStep, CWLRecoveryLoopConditionalStep))
+        if isinstance(s, CWLLoopConditionalStep)
     ]
     if (a := len(loop_cond)) > 1:
         raise FailureHandlingException(f"Ci sono troppi LoopConditionalStep: {a}")
