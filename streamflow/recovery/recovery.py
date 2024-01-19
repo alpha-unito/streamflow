@@ -14,6 +14,7 @@ from streamflow.core.workflow import Job, Step, Token
 from streamflow.cwl.transformer import BackPropagationTransformer
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
+from streamflow.recovery.dev_utils import extra_data_print, another_str_converter
 from streamflow.recovery.rollback_recovery import (
     NewProvenanceGraphNavigation,
     DirectGraph,
@@ -21,13 +22,10 @@ from streamflow.recovery.rollback_recovery import (
     TokenAvailability,
 )
 from streamflow.recovery.utils import (
-    extra_data_print,
     _is_token_available,
     get_execute_step_out_token_ids,
     get_steps_from_output_port,
     increase_tag,
-    another_str_converter,
-    get_token_by_tag,
 )
 from streamflow.workflow.port import (
     ConnectorPort,
@@ -107,7 +105,7 @@ class RollbackRecoveryPolicy:
         ports, steps = await inner_graph.get_port_and_step_ids(
             failed_step.output_ports.values()
         )
-        await inner_graph._populate_workflow(
+        await inner_graph.populate_workflow(
             ports,
             steps,
             failed_step,

@@ -15,7 +15,6 @@ from streamflow.core.persistence import (
     DependencyType,
     PersistableEntity,
 )
-from streamflow.core.utils import get_dependencies
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location, Target
@@ -422,7 +421,6 @@ class Step(PersistableEntity, ABC):
 
     def get_output_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.output_ports.items()}
-
 
     @classmethod
     async def load(

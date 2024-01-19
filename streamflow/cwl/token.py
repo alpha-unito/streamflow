@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from typing import Any, MutableSequence
 
 from streamflow.core.context import StreamFlowContext

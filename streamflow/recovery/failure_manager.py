@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import json
 import asyncio
 import logging
@@ -10,7 +9,7 @@ import pkg_resources
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.recovery import FailureManager
-from streamflow.core.workflow import CommandOutput, Job, Status, Step, Port, Token
+from streamflow.core.workflow import CommandOutput, Job, Status, Step, Token
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowTransferException,
@@ -24,11 +23,7 @@ from streamflow.recovery.recovery import (
     PortRecovery,
 )
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.workflow.utils import get_job_token, get_job_token_no_excep
-from streamflow.workflow.token import (
-    TerminationToken,
-    JobToken,
-)
+from streamflow.workflow.token import TerminationToken, JobToken
 
 
 async def _execute_transfer_step(failed_step, new_workflow, port_name):
@@ -57,10 +52,6 @@ class JobRequest:
         self.is_running = True
         self.queue: MutableSequence[PortRecovery] = []
         self.workflow = None
-        # todo: togliere direttamente le istanze delle port e usare una lista di port.id.
-        #  Quando necessario le port si recuperano dal DB. Invece usare direttamente le port (ovvero l'attuale
-        #  implementazione) grava in memoria perché ci sono tanti oggetti nella classe DefaultFailureManager
-        #  Stessa cosa con i token_output. togliere l'istanza del token e mettere l'id
 
 
 class DefaultFailureManager(FailureManager):
@@ -102,31 +93,6 @@ class DefaultFailureManager(FailureManager):
                 return self.job_requests.setdefault(job_name, request)
         return self.job_requests[job_name]
 
-    async def update_job_statuses(self, job_token_list):
-        for token in job_token_list:
-            async with self.job_requests[token.value.name].lock:
-                # save jobs recovered
-                if (
-                    self.max_retries is None
-                    or self.job_requests[token.value.name].version < self.max_retries
-                ):
-                    self.job_requests[token.value.name].version += 1
-                    logger.debug(
-                        f"Updated Job {token.value.name} at {self.job_requests[token.value.name].version} times"
-                    )
-                    # free resources scheduler
-                    await self.context.scheduler.notify_status(
-                        token.value.name, Status.ROLLBACK
-                    )
-                    self.context.scheduler.deallocate_job(
-                        token.value.name, keep_job_allocation=True
-                    )
-                else:
-                    logger.error(
-                        f"FAILED Job {token.value.name} {self.job_requests[token.value.name].version} times. Execution aborted"
-                    )
-                    raise FailureHandlingException()
-
     async def update_job_status(self, job_name, lock):
         if (
             self.max_retries is None
@@ -164,39 +130,6 @@ class DefaultFailureManager(FailureManager):
             new_workflow, failed_step.name, failed_step.output_ports
         )
         return new_workflow
-
-    async def get_job_token(self, job_token):
-        if job_token.value.name in self.job_requests.keys():
-            async with self.job_requests[job_token.value.name].lock:
-                return self.job_requests[job_token.value.name].job_token
-        return None
-
-    async def get_token(self, job_name, output_name):
-        if job_name not in self.job_requests.keys():
-            raise WorkflowExecutionException(
-                f"Job {job_name} was not rolled back. Unable to get token on port {output_name}"
-            )
-        async with self.job_requests[job_name].lock:
-            if (
-                self.job_requests[job_name].token_output is None
-                or output_name not in self.job_requests[job_name].token_output.keys()
-            ):
-                raise WorkflowExecutionException(
-                    f"Job rollback {job_name} has no token on port {output_name}"
-                )
-            return self.job_requests[job_name].token_output[output_name]
-
-    async def get_tokens(self, job_name):
-        if job_name not in self.job_requests.keys():
-            raise WorkflowExecutionException(
-                f"Job {job_name} was not rolled back. Unable to get tokens"
-            )
-        async with self.job_requests[job_name].lock:
-            if self.job_requests[job_name].token_output is None:
-                raise WorkflowExecutionException(
-                    f"Job rollback {job_name} has no tokens"
-                )
-            return self.job_requests[job_name].token_output
 
     async def close(self):
         ...
@@ -291,12 +224,12 @@ class DefaultFailureManager(FailureManager):
             #             raise FailureHandlingException(
             #                 f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found job_token {new_job_token.persistent_id}."
             #             )
-            new_job_token = None
-            if step.name in new_workflow.steps.keys():
-                new_job_token = get_job_token_no_excep(
-                    job.name,
-                    new_workflow.steps[step.name].get_input_port("__job__").token_list,
-                )
+            # new_job_token = None
+            # if step.name in new_workflow.steps.keys():
+            #     new_job_token = get_job_token_no_excep(
+            #         job.name,
+            #         new_workflow.steps[step.name].get_input_port("__job__").token_list,
+            #     )
 
             command_output = CommandOutput(
                 value=None,
@@ -399,17 +332,8 @@ class DummyFailureManager(FailureManager):
     ) -> CommandOutput:
         return command_output
 
-    async def get_job_token(self, job_token):
-        return job_token
-
     async def notify_jobs(self, job_name, out_port_name, token):
         ...
 
     async def handle_failure_transfer(self, job: Job, step: Step, port_name: str):
         return None
-
-    async def get_token(self, job_name, output_name):
-        ...
-
-    async def get_tokens(self, job_name):
-        ...

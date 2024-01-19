@@ -114,7 +114,9 @@ class BaseStep(Step, ABC):
 
         if len({t.tag for t in inputs.values()}) != 1:
             tags = {t.tag for t in inputs.values()}
-            raise Exception(f"Step {self.name} has input tokens with different tags {tags}")
+            raise Exception(
+                f"Step {self.name} has input tokens with different tags {tags}"
+            )
 
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs):
@@ -1452,7 +1454,7 @@ class ScheduleStep(BaseStep):
                                 )
                             ) and job_alloc.status != Status.ROLLBACK:
                                 raise WorkflowExecutionException(
-                                    f"Workflow {self.workflow.name}: Job {job_name} cannot be scheduled because it has already finished. Status: {job_alloc.status}"
+                                    f"Step {self.name} (wf {self.workflow.name}) cannot schedule the job {job_name} because it has status finished. Status: {job_alloc.status}"
                                 )
                             # Create Job
                             job = Job(

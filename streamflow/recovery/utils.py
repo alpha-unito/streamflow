@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 import posixpath
-from typing import MutableMapping, Tuple, MutableSequence, Collection
+from typing import MutableMapping, MutableSequence, Collection
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
@@ -14,10 +14,11 @@ from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
 )
-from streamflow.core.workflow import Token, Port, Step
+from streamflow.core.workflow import Token
 
 
 from streamflow.cwl import utils
+from streamflow.cwl.step import CWLLoopConditionalStep
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.transformer import (
     BackPropagationTransformer,
@@ -28,20 +29,22 @@ from streamflow.log_handler import logger
 from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import JobPort, ConnectorPort
-from streamflow.workflow.step import ExecuteStep, InputInjectorStep, LoopOutputStep
+from streamflow.workflow.step import (
+    ExecuteStep,
+    InputInjectorStep,
+    LoopOutputStep,
+    CombinatorStep,
+)
 from streamflow.workflow.token import (
     JobToken,
     ListToken,
     ObjectToken,
+    IterationTerminationToken,
+    TerminationToken,
 )
 
 INIT_DAG_FLAG = "init"
 TOKEN_WAITER = "twaiter"
-
-# todo: spostare alcuni metodi in altri file esempio
-#  - get_token_by_tag forse meglio in utils core?
-#  - get_input_ports in persistence.utils?
-#    oppure cambiare query ritornando le row delle ports
 
 
 async def get_input_ports(step_id, context):
@@ -192,7 +195,7 @@ async def _is_token_available(token: Token, context: StreamFlowContext, valid_da
 
 def get_necessary_tokens(
     port_tokens, all_token_visited
-) -> MutableMapping[int, Tuple[Token, bool]]:
+) -> MutableMapping[int, tuple[Token, bool]]:
     d = {
         t_id: all_token_visited[t_id]
         for token_list in port_tokens.values()
@@ -458,394 +461,3 @@ async def load_missing_ports(new_workflow, step_name_id, loading_context):
             f"populate_workflow: wf {new_workflow.name} add_2 port {port.name}"
         )
         new_workflow.add_port(port)
-
-
-#########################################################################
-############################ debug ######################################
-#########################################################################
-
-
-import sys
-import objsize
-import datetime
-from typing import Iterable, Any, cast
-from streamflow.persistence import SqliteDatabase
-from streamflow.workflow.token import (
-    IterationTerminationToken,
-    TerminationToken,
-)
-from streamflow.cwl.step import (
-    CWLBaseConditionalStep,
-    CWLLoopConditionalStep
-)
-from streamflow.token_printer import dag_workflow
-from streamflow.core.workflow import Workflow
-
-from streamflow.workflow.step import CombinatorStep
-from streamflow.cwl.transformer import CWLTokenTransformer
-
-from streamflow.cwl.processor import CWLTokenProcessor
-
-
-def extra_data_print(
-    workflow,
-    new_workflow,
-    job_executed_in_new_workflow,
-    token_visited,
-    last_iteration,
-):
-    if not workflow:
-        workflow = Workflow(
-            new_workflow.context, new_workflow.type, new_workflow.config, "None"
-        )
-    if not job_executed_in_new_workflow:
-        job_executed_in_new_workflow = []
-        for t, _ in token_visited.values():
-            if isinstance(t, JobToken):
-                job_executed_in_new_workflow.append(t.value.name)
-    dt = str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
-    dir_path = f"graphs/{dt}-{new_workflow.name}"
-
-    print(
-        f"\nNew workflow {new_workflow.name} si occupa di recuperare l'esecuzione del workflow {workflow.name}",
-        file=sys.stderr,
-    )
-    sorted_jobs = list(job_executed_in_new_workflow)
-    sorted_jobs.sort()
-    print(
-        f"\t- Number of {len(new_workflow.steps.keys())} steps and {len(new_workflow.ports.keys())} ports",
-        file=sys.stderr,
-    )
-    print(f"\t- Jobs to re-execute: {sorted_jobs}", file=sys.stderr)
-    print(f"Init ports in last_iteration are: {last_iteration}", file=sys.stderr)
-    dag_workflow(new_workflow, dir_path + "/new-wf")
-    for step in new_workflow.steps.values():
-        try:
-            print(
-                f"\t- Step {step.name} (wf {step.workflow.name})"
-                f"\n\t\t* input tokens: { {k_p: [(str_id(t), t.tag) for t in port.token_list] for k_p, port in step.get_input_ports().items()} }",
-                f"\n\t\t* dependency names: { {k: v.name for k, v in step.get_input_ports().items()} }",
-                f"\n\t\t* skip ports: { {k: v.name for k, v in step.get_skip_ports().items()} }"
-                if isinstance(step, CWLBaseConditionalStep)
-                else "",
-                file=sys.stderr,
-            )
-        except Exception as e:
-            print(f"exception {step.name} -> {e}", file=sys.stderr)
-            raise
-
-    # PROBLEMA: Ci sono troppi when-recovery step
-    loop_cond = [
-        s
-        for s in new_workflow.steps.values()
-        if isinstance(s, CWLLoopConditionalStep)
-    ]
-    if (a := len(loop_cond)) > 1:
-        raise FailureHandlingException(f"Ci sono troppi LoopConditionalStep: {a}")
-
-    # PROBLEMA: c'è uno step che non dovrebbe essere caricato
-    if "/subworkflow/i1-back-propagation-transformer" in new_workflow.steps.keys():
-        raise FailureHandlingException("Caricata i1-back-prop CHE NON SERVE")
-
-    # INFO: ci sarà una iterazione precedente
-    # "/subworkflow-loop-terminator" in new_workflow.steps.keys()
-    if "/subworkflow-loop-terminator" in new_workflow.steps.keys():
-        print("There will be a/some prev iteration/s", file=sys.stderr)
-        pass
-    # print_wr_size(wr)
-    # print_wf_size(new_workflow)
-    # print_context_size(new_workflow.context)
-    # print_cached_db_size(new_workflow)
-    # for s in new_workflow.steps.values():
-    #     if (
-    #         isinstance(s, CWLTokenTransformer)
-    #         and isinstance(s.processor, CWLTokenProcessor)
-    #         and s.processor.format_graph
-    #     ):
-    #         logger.debug(f"Graph: {s.processor.format_graph.serialize()}")
-    #         break
-    logger.debug(f"Running workflow {new_workflow.name}")
-
-
-def str_id(token):
-    if token.persistent_id:
-        return token.persistent_id
-    if isinstance(token, IterationTerminationToken):
-        return "itt"
-    if isinstance(token, TerminationToken):
-        return "t"
-    return "un"
-
-
-def convert_to_json(dictionary: MutableMapping[Any, Iterable[Any]]):
-    return json.dumps(
-        dict(sorted({k: list(v) for k, v in dictionary.items()}.items())),
-        indent=2,
-    )
-
-
-def str_tok(token):
-    if isinstance(token, JobToken):
-        return token.value.name
-    elif isinstance(token, CWLFileToken):
-        return token.value["path"]
-    else:
-        return token.value
-
-
-# debug
-def check_double_reference(dag_ports):
-    for tmpp in dag_ports[INIT_DAG_FLAG]:
-        for tmpport_name, tmpnext_port_names in dag_ports.items():
-            if tmpport_name != INIT_DAG_FLAG and tmpp in tmpnext_port_names:
-                msg = f"Port {tmpp} appartiene sia a INIT che a {tmpport_name}"
-                print("WARN", msg, file=sys.stderr)
-                # print("OOOOOOOOOOOOOOOOOOOOOOOOOOOO" * 100, "\n", msg)
-                # raise FailureHandlingException(msg)
-
-
-def get_size_h(obj):
-    return convert_bytes(objsize.get_deep_size(obj))
-
-
-def convert_bytes(size):
-    for x in ["bytes", "KB", "MB", "GB", "TB"]:
-        if size < 1024.0:
-            return "%3.1f %s" % (size, x)
-        size /= 1024.0
-    return size
-
-
-def print_context_size(context):
-    context_attrs = {
-        attr: getattr(context, attr)
-        for attr in dir(context)
-        if not attr.startswith("__") and not callable(getattr(context, attr))
-    }
-    for k, v in context_attrs.items():
-        if k != "process_executor" and k != "config":
-            v.context = None
-    tmp_deployment = context.deployment_manager.deployments_map.get("__LOCAL__", None)
-    if tmp_deployment:
-        tmp_deployment.config_dir = None
-    print(
-        f"context_size: {get_size_h(context)}\n",
-        "\n".join([f"\t- {k}: {get_size_h(v)}" for k, v in context_attrs.items()]),
-        file=sys.stderr,
-    )
-    for k, v in context_attrs.items():
-        if k != "process_executor" and k != "config":
-            v.context = context
-    tmp_deployment.config_dir = context
-
-
-def print_cached_db_size(new_workflow):
-    db = cast(SqliteDatabase, new_workflow.context.database)
-    dictionary = {
-        "port_cache": db.port_cache,
-        "step_cache": db.step_cache,
-        "token_cache": db.token_cache,
-        "deployment_cache": db.deployment_cache,
-        "target_cache": db.target_cache,
-        "workflow_cache": db.workflow_cache,
-    }
-    curr_size = 0
-    max_size = 0
-    curr_size_0 = 0
-    curr_size_1 = 0
-    curr_objsize = 0
-    # lrucache_maintenance = 0
-    for obj in dictionary.values():
-        curr_size += obj.currsize
-        max_size += obj.maxsize
-        for row in obj.values():
-            for k, v in zip(row.keys(), row):
-                curr_size_0 += get_size_0(k) + get_size_0(v)
-                # curr_size_1 += get_size_1(k) + get_size_1(v)
-                curr_size_1 = -1
-                curr_objsize += objsize.get_deep_size(k) + objsize.get_deep_size(v)
-    print(
-        "Cached database size:\n",
-        "\n".join(
-            [
-                f"\t- {k}: {convert_bytes(v.currsize)}/{convert_bytes(v.maxsize)}"
-                f"\n\t\t* objsize: {convert_bytes(sum(objsize.get_deep_size(vv) for vv in v.values())):<10} | "
-                f"size_0: {convert_bytes(sum(get_size_0(vv) for vv in v.values())):<10} | "
-                # f"size_1: {convert_bytes(sum(get_size_1(vv) for vv in v.values())):<10}"
-                f"\n\t\t* lrucache maintenance cost: {convert_bytes(objsize.get_deep_size(v) - sum(objsize.get_deep_size(vv) for vv in v.values()))}"
-                for k, v in dictionary.items()
-            ]
-        ),
-        f"\n\ttotal curr on total max: {convert_bytes(curr_size)} on "
-        f"{convert_bytes(max_size)}"
-        f"\n\t\t* objsize: {convert_bytes(curr_objsize):<10} | "
-        f"size_0: {convert_bytes(curr_size_0):<10} | "
-        f"size_1: {convert_bytes(curr_size_1):<10}",
-        file=sys.stderr,
-    )
-    # print(
-    #     "Cached database size:\n",
-    #     "\n".join(
-    #         [
-    #             f"\t- {k}: {convert_bytes(v.currsize)}/{convert_bytes(v.maxsize)}"
-    #             f"\n\t\t* objsize: {get_size_h(v):<10} | size_0: {convert_bytes(get_size_0(v)):<10} | size_1: {convert_bytes(get_size_1(v)):<10}"
-    #             for k, v in dictionary.items()
-    #         ]
-    #     ),
-    #     f"\n\ttotal curr on total max: {convert_bytes(sum([v.currsize for v in dictionary.values()]))} on "
-    #     f"{convert_bytes(sum([v.maxsize for v in dictionary.values()]))}"
-    #     f"\n\t\t* objsize: {convert_bytes(sum([sum(objsize.get_deep_size(k) + objsize.get_deep_size(v) for k, v in obj.items()) for obj in dictionary.values()])):<10} | "
-    #     f"size_0: {convert_bytes(sum([sum(get_size_0(k) + get_size_0(v) for k, v in obj.items()) for obj in dictionary.values()])):<10} | "
-    #     f"size_1: {convert_bytes(sum([sum(get_size_1(k) + get_size_1(v) for k, v in obj.items()) for obj in dictionary.values()])):<10}",
-    #     file=sys.stderr,
-    # )
-    pass
-
-
-def print_wr_size(wr):
-    tmp_context = wr.context
-    tmp_step = wr.external_loop_step
-    attrs = {
-        attr: getattr(wr, attr)
-        for attr in dir(wr)
-        if not attr.startswith("__") and not callable(getattr(wr, attr))
-    }
-    wr.context = None
-    wr.external_loop_step = None
-    print(
-        f"ProvenanceGraphNavigation size: {get_size_h(wr)}\n",
-        "\n".join([f"\t- {k}: {get_size_h(v)}" for k, v in attrs.items()]),
-        file=sys.stderr,
-    )
-    wr.context = tmp_context
-    wr.external_loop_step = tmp_step
-
-
-def print_wf_size(
-    wf: Workflow, deeper_print=False, print_graph=False, print_step_attr=False
-):
-    for p in wf.ports.values():
-        p.workflow = None
-    for s in wf.steps.values():
-        s.workflow = None
-        if isinstance(s, CWLTokenTransformer):
-            s.processor.workflow = None
-        elif isinstance(s, CombinatorStep):
-            s.combinator.workflow = None
-        elif isinstance(s, ExecuteStep):
-            for v in s.output_processors.values():
-                v.workflow = None
-    tmp_context = wf.context
-    wf.context = None
-    print(
-        f"Workflow size: {get_size_h(wf)}\n\t- steps size: {get_size_h(wf.steps)}",
-        file=sys.stderr,
-    )
-    wf.context = tmp_context
-    max_len_step_name = max(len(s) for s in wf.steps.keys())
-    max_len_step_type = max(len(get_class_fullname(type(s))) for s in wf.steps.values())
-    for s in wf.steps.values():
-        if deeper_print:
-            size = get_size_h(s)
-            print(
-                f"\t\t* {s.name:<{max_len_step_name}} | {get_class_fullname(type(s)):^{max_len_step_type}} | size: {size:<15}{'| warn. it is a large obj' if 'MB' in size or 'GB' in size else ''}",
-                file=sys.stderr,
-            )
-        if print_graph and isinstance(s, CWLTokenTransformer):
-            print(f"\t\t\t** .processor size: {get_size_h(s.processor)}")
-            if isinstance(s.processor, CWLTokenProcessor):
-                print(
-                    f"\t\t\t\t*** .format_graph size: {get_size_h(s.processor.format_graph)}"
-                )
-        if print_step_attr:
-            attrs = {
-                attr: getattr(s, attr)
-                for attr in dir(s)
-                if not attr.startswith("__") and not callable(getattr(s, attr))
-            }
-            print(
-                "\n".join([f"\t- {k}: {get_size_h(v)}" for k, v in attrs.items()]),
-                file=sys.stderr,
-            )
-    print(f"\t- ports size: {get_size_h(wf.ports)}", file=sys.stderr)
-    max_len_port_type = max(len(get_class_fullname(type(p))) for p in wf.ports.values())
-    for p in wf.ports.values():
-        if deeper_print:
-            print(
-                f"\t\t* {p.name} | {get_class_fullname(type(p)):^{max_len_port_type}} | size: {get_size_h(p)}",
-                file=sys.stderr,
-            )
-    for p in wf.ports.values():
-        p.workflow = wf
-    for s in wf.steps.values():
-        s.workflow = wf
-        if isinstance(s, CWLTokenTransformer):
-            s.processor.workflow = wf
-        elif isinstance(s, CombinatorStep):
-            s.combinator.workflow = wf
-        elif isinstance(s, ExecuteStep):
-            for v in s.output_processors.values():
-                v.workflow = wf
-
-
-def get_size_with_comparisons(obj):
-    size_0 = 0
-    size_1 = 0
-    size_2 = 0
-    for k, v in zip(obj.keys(), obj):
-        if not isinstance(k, (int, str, bool)):
-            print(
-                f"k | type k: {type(k)} | type v: {type(v)}\n\t- {f'val k: {k}, val v: {v}' if k != 'params' else f'val k (params): {k}, val compressed v: {v[:10]}'}\n\t- size k: {sys.getsizeof(k)} size v: {sys.getsizeof(v)}"
-            )
-        if v and not isinstance(v, (int, str, bool)):
-            print(
-                f"v | type k: {type(k)} | type v: {type(v)}\n\t- {f'val k: {k}, val v: {v}' if k != 'params' else f'val k (params): {k}, val compressed v: {v[:10]}'}\n\t- size k: {sys.getsizeof(k)} size v: {sys.getsizeof(v)}"
-            )
-        size_0 += get_size_0(k) + get_size_0(v)
-        # size_1 += get_size_1(k) + get_size_1(v)
-        size_1 = -1
-        size_2 += objsize.get_deep_size(k) + objsize.get_deep_size(v)
-    if max(size_0, size_1, size_2) != size_1:
-        print(
-            f"{'size_0(k+v)':<10} | {'size_1(k+v)':<10}\n"
-            f"\n{size_0:<10} | {size_1:<10} | {size_2:<10}\n"
-        )
-        raise Exception("Size_1 non è il più grande")
-    return size_1
-
-
-def get_size_0(obj, seen=None):
-    """Recursively finds size of objects"""
-    size = sys.getsizeof(obj)
-    if seen is None:
-        seen = set()
-    obj_id = id(obj)
-    if obj_id in seen:
-        return 0
-    # Important mark as seen *before* entering recursion to gracefully handle
-    # self-referential objects
-    seen.add(obj_id)
-    if isinstance(obj, dict):
-        size += sum([get_size_0(v, seen) for v in obj.values()])
-        size += sum([get_size_0(k, seen) for k in obj.keys()])
-    elif hasattr(obj, "__dict__"):
-        size += get_size_0(obj.__dict__, seen)
-    elif hasattr(obj, "__iter__") and not isinstance(obj, (str, bytes, bytearray)):
-        size += sum([get_size_0(i, seen) for i in obj])
-    return size
-
-
-def another_str_converter(dictionary: MutableMapping[Any : MutableMapping[int]]):
-    return (
-        "{\n"
-        + ",\n".join(
-            (
-                f"{k} : {values}"
-                for k, values in {
-                    f'"{k}"': "[" + ",".join(f'"{v}"' for v in values) + "]"
-                    for k, values in dictionary.items()
-                }.items()
-            )
-        )
-        + "\n}\n"
-    )

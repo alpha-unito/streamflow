@@ -3,7 +3,7 @@ from typing import Type, cast
 import pytest
 
 from streamflow.core import utils
-from streamflow.core.config import BindingConfig, Config
+from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import LocalTarget
 from streamflow.core.workflow import Workflow, Port, Step

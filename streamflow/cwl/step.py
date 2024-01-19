@@ -589,7 +589,10 @@ class CWLTransferStep(TransferStep):
             ):
                 raise WorkflowTransferException(
                     "Step {} error creating file {} with path {} in locations {}.".format(
-                        self.name, token_value["path"], new_token_value["path"], [l.name for l in dst_locations]
+                        self.name,
+                        token_value["path"],
+                        new_token_value["path"],
+                        [loc.name for loc in dst_locations],
                     )
                 )
 

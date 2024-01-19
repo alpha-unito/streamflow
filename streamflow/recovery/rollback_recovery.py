@@ -15,7 +15,7 @@ from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.token import CWLFileToken
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.core.workflow import Token, Step, Port
+from streamflow.core.workflow import Token
 from streamflow.cwl.transformer import (
     BackPropagationTransformer,
     CWLTokenTransformer,
@@ -155,10 +155,10 @@ class DirectGraph:
             self.graph[new_vertex] = self.graph.pop(old_vertex)
 
     def succ(self, vertex):
-        return set(t for t in self.graph.get(vertex, []))
+        return {t for t in self.graph.get(vertex, [])}
 
     def prev(self, vertex):
-        return set(v for v, next_vs in self.graph.items() if vertex in next_vs)
+        return {v for v, next_vs in self.graph.items() if vertex in next_vs}
 
     def empty(self):
         return False if self.graph else True
@@ -470,7 +470,7 @@ class RollbackDeterministicWorkflowPolicy:
             steps.remove(s_id)
         return ports, steps
 
-    async def _populate_workflow(
+    async def populate_workflow(
         self,
         port_ids: Iterable[int],
         step_ids: Iterable[int],
@@ -570,7 +570,7 @@ class RollbackDeterministicWorkflowPolicy:
             new_workflow.steps.pop(step_name)
 
         graph = None
-        # todo tmp soluzione per format_graph ripetuti. Risolvere a monte, nel momento in cui si fa la load
+        # todo tmp solution
         for s in new_workflow.steps.values():
             if isinstance(s, CWLTokenTransformer) and isinstance(
                 s.processor, CWLTokenProcessor

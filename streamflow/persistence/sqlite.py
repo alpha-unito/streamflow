@@ -412,30 +412,6 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchone()
 
-    async def get_executestep_outports_from_jobtoken(
-        self, token_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        async with self.connection as db:
-            async with db.execute(
-                "SELECT dep_out.name AS dep_out_name, port.* "
-                "FROM token "
-                "   JOIN dependency AS dep_in ON token.port = dep_in.port "
-                "   JOIN step ON dep_in.step = step.id "
-                "   JOIN dependency AS dep_out ON step.id = dep_out.step "
-                "   JOIN port ON dep_out.port = port.id "
-                "WHERE token.id = :token_id and "
-                "       dep_in.type = :dep_in_type and "
-                "       step.type = :step_type and "
-                "       dep_out.type = :dep_out_type",
-                {
-                    "token_id": token_id,
-                    "dep_in_type": DependencyType.INPUT.value,
-                    "dep_out_type": DependencyType.OUTPUT.value,
-                    "step_type": get_class_fullname(ExecuteStep),
-                },
-            ) as cursor:
-                return await cursor.fetchall()
-
     async def get_reports(
         self, workflow: str, last_only: bool = False
     ) -> MutableSequence[MutableSequence[MutableMapping[str, Any]]]:

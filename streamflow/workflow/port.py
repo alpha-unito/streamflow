@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import MutableSequence, Tuple
+from typing import MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector
@@ -64,7 +64,7 @@ class FilterTokenPort(Port):
 class InterWorkflowPort:
     def __init__(self, intra_port):
         self.intra_port: Port = intra_port
-        self.inter_ports: MutableSequence[Tuple[Port, str]] = []
+        self.inter_ports: MutableSequence[tuple[Port, str]] = []
 
     @property
     def persistent_id(self):
