@@ -150,6 +150,9 @@ class CWLTokenProcessor(TokenProcessor):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLTokenProcessor:
+        # todo: graph obj is quite large. In the workflow, the same instance is shared by all the workflow CWLTokenProcessor
+        #  However, we will have duplicates instances using this loading approach.
+        #  It is not a soundness problem, but it is too much costly keep them (graph + duplicates) in memory
         format_graph = Graph()
         return cls(
             name=row["name"],

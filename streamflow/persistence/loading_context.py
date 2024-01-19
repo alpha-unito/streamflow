@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from typing import MutableMapping
 
 from streamflow.core.context import StreamFlowContext
@@ -79,6 +80,24 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
     async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
         return self._workflows.get(persistent_id) or await Workflow.load(
             context, persistent_id, self
+        )
+
+    async def load_prev_tokens(self, context: StreamFlowContext, persistent_id: int):
+        rows = await context.database.get_dependees(persistent_id)
+        return await asyncio.gather(
+            *(
+                asyncio.create_task(self.load_token(context, row["dependee"]))
+                for row in rows
+            )
+        )
+
+    async def load_next_tokens(self, context: StreamFlowContext, persistent_id: int):
+        rows = await context.database.get_dependers(persistent_id)
+        return await asyncio.gather(
+            *(
+                asyncio.create_task(self.load_token(context, row["depender"]))
+                for row in rows
+            )
         )
 
 

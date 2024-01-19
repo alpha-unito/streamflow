@@ -56,6 +56,9 @@ class JobToken(Token):
             value=await Job.load(context, params["job"], loading_context),
         )
 
+    def __str__(self):
+        return self.value.name
+
 
 class ListToken(Token):
     @classmethod
@@ -91,10 +94,13 @@ class ListToken(Token):
 
     async def is_available(self, context: StreamFlowContext):
         return all(
-            asyncio.gather(
+            await asyncio.gather(
                 *(asyncio.create_task(t.is_available(context)) for t in self.value)
             )
         )
+
+    def __str__(self):
+        return str([str(t) for t in self.value])
 
 
 class ObjectToken(Token):
@@ -140,7 +146,7 @@ class ObjectToken(Token):
 
     async def is_available(self, context: StreamFlowContext):
         return all(
-            asyncio.gather(
+            await asyncio.gather(
                 *(
                     asyncio.create_task(t.is_available(context))
                     for t in self.value.values()

@@ -12,6 +12,7 @@ from streamflow.core.data import DataType
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
+    WorkflowTransferException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag, random_name
@@ -178,7 +179,7 @@ class CWLLoopConditionalStep(CWLConditionalStep):
     async def _on_true(self, inputs: MutableMapping[str, Token]) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"Step {self.name} condition evaluated true "
+                f"Step {self.name} (wf {self.workflow.name}) condition evaluated true "
                 f"on inputs {[t.tag for t in inputs.values()]}"
             )
         # Next iteration: propagate outputs to the loop
@@ -194,11 +195,15 @@ class CWLLoopConditionalStep(CWLConditionalStep):
     async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"Step {self.name} condition evaluated false "
+                f"Step {self.name} (wf {self.workflow.name}) condition evaluated false "
                 f"on inputs {[t.tag for t in inputs.values()]}"
             )
         # Loop termination: propagate outputs outside the loop
+        logger.info(f"Step {self.name} skip ports {self.skip_ports}")
         for port in self.get_skip_ports().values():
+            logger.debug(
+                f"Step {self.name} (wf {self.workflow.name}) add IterationTerminationToken({get_tag(inputs.values())}) in port {[k for k, v in self.skip_ports.items() if v == port.name].pop()} (name {port.name})"
+            )
             port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
 
 
@@ -497,8 +502,9 @@ class CWLTransferStep(TransferStep):
                             )
                         )
                         if checksum != original_checksum:
-                            raise WorkflowExecutionException(
-                                "Error transferring file {} in location {} to {} in location {}".format(
+                            raise WorkflowTransferException(
+                                "Step {} error transferring file {} in location {} to {} in location {}".format(
+                                    self.name,
                                     selected_location.path,
                                     selected_location.name,
                                     filepath,
@@ -581,9 +587,12 @@ class CWLTransferStep(TransferStep):
                 "checksum" in token_value
                 and new_token_value["checksum"] != token_value["checksum"]
             ):
-                raise WorkflowExecutionException(
-                    "Error creating file {} with path {} in locations {}.".format(
-                        token_value["path"], new_token_value["path"], dst_locations
+                raise WorkflowTransferException(
+                    "Step {} error creating file {} with path {} in locations {}.".format(
+                        self.name,
+                        token_value["path"],
+                        new_token_value["path"],
+                        [loc.name for loc in dst_locations],
                     )
                 )
 

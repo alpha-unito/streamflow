@@ -8,16 +8,20 @@ import itertools
 import os
 import posixpath
 import shlex
+import sys
 import uuid
 from typing import (
     Any,
     MutableMapping,
     MutableSequence,
     TYPE_CHECKING,
+    Collection,
 )
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.persistence import PersistableEntity, DatabaseLoadingContext
 
 if TYPE_CHECKING:
+    from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import Connector, Location
     from streamflow.core.workflow import Token
     from typing import Iterable
@@ -275,3 +279,100 @@ def random_name() -> str:
 
 def wrap_command(command: str):
     return ["/bin/sh", "-c", f"{command}"]
+
+
+def contains_id(
+    searched_id: int, persistable_entity_list: MutableSequence[PersistableEntity]
+):
+    return searched_id in (entity.persistent_id for entity in persistable_entity_list)
+
+
+def cmp(a, b):
+    return (a > b) - (a < b)
+
+
+def get_tag_level(tag: str):
+    return len(tag.split("."))
+
+
+# compare_tags( 0,      0.0) 	=>  -1
+# compare_tags( 0.0,    0.0) 	=> 	 0
+# compare_tags( 0.0,    0.1) 	=> 	-1
+# compare_tags( 0.1.0,  0.0)    =>   1
+# compare_tags( 0.3.4,  0.5.1)  =>  -1
+def compare_tags(tag1, tag2):
+    tag1_list = tag1.split(".")
+    tag2_list = tag2.split(".")
+    if (res := cmp(len(tag1_list), len(tag2_list))) != 0:
+        return res
+    for lvl1, lvl2 in zip(tag1_list, tag2_list):
+        if (res := cmp(int(lvl1), int(lvl2))) != 0:
+            return res
+    return 0
+
+
+def get_job_tag(job_name) -> int:
+    return os.path.basename(job_name)
+
+
+def get_job_root_name(job_name) -> str:
+    return os.path.dirname(job_name)
+
+
+async def get_dependencies(
+    dependency_rows: MutableSequence[MutableMapping[str, Any]],
+    load_ports: bool,
+    context: StreamFlowContext,
+    loading_context: DatabaseLoadingContext,
+):
+    if load_ports:
+        ports = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                for d in dependency_rows
+            )
+        )
+        return {d["name"]: p.name for d, p in zip(dependency_rows, ports)}
+    else:
+        # it is not helpful to have an instance in loading_context when it is building a new workflow
+        port_rows = await asyncio.gather(
+            *(
+                asyncio.create_task(context.database.get_port(d["port"]))
+                for d in dependency_rows
+            )
+        )
+        return {d["name"]: p["name"] for d, p in zip(dependency_rows, port_rows)}
+
+
+# The function given in input an object return a dictionary with attribute:value
+def object_to_dict(obj):
+    return {
+        attr: getattr(obj, attr)
+        for attr in dir(obj)
+        if not attr.startswith("__") and not callable(getattr(obj, attr))
+    }
+
+
+def get_size_obj(obj, seen=None):
+    """Recursively finds size of objects"""
+    size = sys.getsizeof(obj)
+    if seen is None:
+        seen = set()
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    # Important mark as seen *before* entering recursion to gracefully handle
+    # self-referential objects
+    seen.add(obj_id)
+    if isinstance(obj, (str, bytes, bytearray)):
+        return size
+    if isinstance(obj, dict):
+        size += sum(get_size_obj(v, seen) for v in obj.values())
+        size += sum(get_size_obj(k, seen) for k in obj.keys())
+    elif hasattr(obj, "__dict__"):
+        size += get_size_obj(obj.__dict__, seen)
+    elif isinstance(obj, Collection):
+        size += sum([get_size_obj(i, seen) for i in obj])
+    else:
+        size += get_size_obj(object_to_dict(obj), seen)
+    return size

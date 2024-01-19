@@ -337,6 +337,7 @@ class Status(Enum):
     COMPLETED = 4
     FAILED = 5
     CANCELLED = 6
+    ROLLBACK = 7
 
 
 class Step(PersistableEntity, ABC):
@@ -437,6 +438,7 @@ class Step(PersistableEntity, ABC):
             Status.FAILED,
             Status.SKIPPED,
         ]
+        loading_context.add_step(persistent_id, step)
         input_deps = await context.database.get_input_ports(persistent_id)
         loading_context.add_step(persistent_id, step)
         input_ports = await asyncio.gather(
@@ -572,6 +574,9 @@ class Token(PersistableEntity):
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value)
 
+    def __str__(self):
+        return str(self.value)
+
 
 class TokenProcessor(ABC):
     def __init__(self, name: str, workflow: Workflow):
@@ -643,17 +648,23 @@ class Workflow(PersistableEntity):
 
     def create_port(self, cls: type[P] = Port, name: str = None, **kwargs) -> P:
         if name is None:
-            name = str(uuid.uuid4())
+            name = utils.random_name()
         port = cls(workflow=self, name=name, **kwargs)
-        self.ports[name] = port
+        self.add_port(port)
         return port
+
+    def add_port(self, port):
+        self.ports[port.name] = port
 
     def create_step(self, cls: type[S], name: str = None, **kwargs) -> S:
         if name is None:
             name = str(uuid.uuid4())
         step = cls(name=name, workflow=self, **kwargs)
-        self.steps[name] = step
+        self.add_step(step)
         return step
+
+    def add_step(self, step):
+        self.steps[step.name] = step
 
     def get_output_port(self, name: str) -> Port:
         return self.ports[self.output_ports[name]]

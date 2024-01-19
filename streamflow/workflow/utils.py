@@ -55,3 +55,10 @@ def get_job_token(job_name: str, token_list: MutableSequence[Token]):
     raise WorkflowExecutionException(
         f"Impossible to find job {job_name} in token_list {token_list}"
     )
+
+
+def get_job_token_no_excep(job_name: str, token_list: MutableSequence[Token]):
+    for token in token_list:
+        if isinstance(token, JobToken) and token.value.name == job_name:
+            return token
+    return None
