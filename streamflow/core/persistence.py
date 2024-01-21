@@ -202,19 +202,11 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
-    async def get_steps_from_input_port(
-        self, port_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        ...
-
-    @abstractmethod
-    async def get_steps_from_output_port(
-        self, port_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        ...
-
-    @abstractmethod
     async def get_port(self, port_id: int) -> MutableMapping[str, Any]:
+        ...
+
+    @abstractmethod
+    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
@@ -229,6 +221,18 @@ class Database(SchemaEntity):
 
     @abstractmethod
     async def get_step(self, step_id: int) -> MutableMapping[str, Any]:
+        ...
+
+    @abstractmethod
+    async def get_steps_from_input_port(
+        self, port_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        ...
+
+    @abstractmethod
+    async def get_steps_from_output_port(
+        self, port_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
         ...
 
     @abstractmethod
@@ -259,9 +263,6 @@ class Database(SchemaEntity):
     async def get_workflow_steps(
         self, workflow_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
-        ...
-
-    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
