@@ -212,7 +212,6 @@ def is_next_of_someone(p_name, dag_ports):
     return False
 
 
-
 def get_port_from_token(token, port_tokens, token_visited):
     for port_name, token_ids in port_tokens.items():
         if token.tag in (token_visited[t_id][0].tag for t_id in token_ids):
@@ -405,7 +404,9 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
     return step_name_id
 
 
-def _missing_dependency_ports(dependencies: MutableMapping[str, str], port_names: MutableSequence[str]):
+def _missing_dependency_ports(
+    dependencies: MutableMapping[str, str], port_names: MutableSequence[str]
+):
     dependency_ports = set()
     for dep_name, port_name in dependencies.items():
         if port_name not in port_names:
@@ -418,7 +419,9 @@ async def load_missing_ports(new_workflow, step_name_id, loading_context):
     for step in new_workflow.steps.values():
         if isinstance(step, InputInjectorStep):
             continue
-        if missing_dependency_ports := _missing_dependency_ports(step.output_ports, new_workflow.ports.keys()):
+        if missing_dependency_ports := _missing_dependency_ports(
+            step.output_ports, new_workflow.ports.keys()
+        ):
             for dependency_row in await new_workflow.context.database.get_output_ports(
                 step_name_id[step.name]
             ):
