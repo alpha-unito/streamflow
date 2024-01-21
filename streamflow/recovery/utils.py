@@ -212,35 +212,6 @@ def is_next_of_someone(p_name, dag_ports):
     return False
 
 
-async def is_output_port_forward(port_id, context):
-    step_rows = await asyncio.gather(
-        *(
-            asyncio.create_task(context.database.get_step(dep_row["step"]))
-            for dep_row in await context.database.get_input_steps(port_id)
-        )
-    )
-    result = False
-    for step_row in step_rows:
-        result = result or issubclass(
-            get_class_from_name(step_row["type"]), BackPropagationTransformer
-        )
-    return result
-
-
-async def is_input_port_forward(port_id, context):
-    step_rows = await asyncio.gather(
-        *(
-            asyncio.create_task(context.database.get_step(dep_row["step"]))
-            for dep_row in await context.database.get_output_steps(port_id)
-        )
-    )
-    result = False
-    for step_row in step_rows:
-        result = result or issubclass(
-            get_class_from_name(step_row["type"]), BackPropagationTransformer
-        )
-    return result
-
 
 def get_port_from_token(token, port_tokens, token_visited):
     for port_name, token_ids in port_tokens.items():
@@ -434,23 +405,28 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
     return step_name_id
 
 
+def _missing_dependency_ports(dependencies: MutableMapping[str, str], port_names: MutableSequence[str]):
+    dependency_ports = set()
+    for dep_name, port_name in dependencies.items():
+        if port_name not in port_names:
+            dependency_ports.add(dep_name)
+    return dependency_ports
+
+
 async def load_missing_ports(new_workflow, step_name_id, loading_context):
     missing_ports = set()
     for step in new_workflow.steps.values():
         if isinstance(step, InputInjectorStep):
             continue
-        for dep_name, p_name in step.output_ports.items():
-            if p_name not in new_workflow.ports.keys():
-                # problema nato dai loop. when-loop ha output tutti i param. Però il grafo è costruito sulla presenza o
-                # meno dei file, invece i param str, int, ..., no. Quindi le port di questi param non vengono esplorate
-                # le aggiungo ma durante l'esecuzione verranno utilizzati come "port pozzo" dei token prodotti
-                logger.debug(
-                    f"populate_workflow: Aggiungo port {p_name} al wf {new_workflow.name} perché è un output port dello step {step.name}"
-                )
-                depe_row = await new_workflow.context.database.get_output_port(
-                    step_name_id[step.name], dep_name
-                )
-                missing_ports.add(depe_row["port"])
+        if missing_dependency_ports := _missing_dependency_ports(step.output_ports, new_workflow.ports.keys()):
+            for dependency_row in await new_workflow.context.database.get_output_ports(
+                step_name_id[step.name]
+            ):
+                if dependency_row["name"] in missing_dependency_ports:
+                    logger.debug(
+                        f"populate_workflow: Aggiungo port {step.output_ports[dependency_row['name']]} al wf {new_workflow.name} perché è un output port dello step {step.name}"
+                    )
+                    missing_ports.add(dependency_row["port"])
     for port in await asyncio.gather(
         *(
             asyncio.create_task(loading_context.load_port(new_workflow.context, p_id))
