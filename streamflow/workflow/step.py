@@ -1087,9 +1087,6 @@ class LoopCombinatorStep(CombinatorStep):
                         port.get(posixpath.join(self.name, port_name)), name=port_name
                     )
                 )
-            termination_token_counter = {
-                port_name: 0 for port_name in self.input_ports.keys()
-            }
             while input_tasks:
                 # Wait for the next token
                 finished, unfinished = await asyncio.wait(
@@ -1101,18 +1098,17 @@ class LoopCombinatorStep(CombinatorStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
-                        termination_token_counter[task_name] += 1
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 f"Step {self.name} (wf {self.workflow.name}) received termination token for port {task_name}"
                             )
-                        terminated.append(task_name)
-                        if termination_token_counter[task_name] == 2:
+                        if task_name in terminated:
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.warning(
                                     f"Step {self.name} (wf {self.workflow.name}) anomalously terminates the iteration on port {task_name}."
                                 )
                             self.iteration_terminaton_checklist[task_name].clear()
+                        terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
                     elif check_iteration_termination(token):
                         if token.tag in self.iteration_terminaton_checklist[task_name]:
