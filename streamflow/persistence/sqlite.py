@@ -62,9 +62,8 @@ class SqliteDatabase(CachedDatabase):
         context: StreamFlowContext,
         connection: str = DEFAULT_SQLITE_CONNECTION,
         timeout: int = 20,
-        cache_size: int = 1000**3,
     ):
-        super().__init__(context, cache_size)
+        super().__init__(context)
         # Open connection to database
         if connection != ":memory:":
             os.makedirs(os.path.dirname(connection), exist_ok=True)

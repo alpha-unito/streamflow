@@ -8,14 +8,12 @@ import itertools
 import os
 import posixpath
 import shlex
-import sys
 import uuid
 from typing import (
     Any,
     MutableMapping,
     MutableSequence,
     TYPE_CHECKING,
-    Collection,
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import PersistableEntity
@@ -316,37 +314,3 @@ def get_job_tag(job_name) -> int:
 
 def get_job_root_name(job_name) -> str:
     return os.path.dirname(job_name)
-
-
-# The function given in input an object return a dictionary with attribute:value
-def object_to_dict(obj):
-    return {
-        attr: getattr(obj, attr)
-        for attr in dir(obj)
-        if not attr.startswith("__") and not callable(getattr(obj, attr))
-    }
-
-
-def get_size_obj(obj, seen=None):
-    """Recursively finds size of objects"""
-    size = sys.getsizeof(obj)
-    if seen is None:
-        seen = set()
-    obj_id = id(obj)
-    if obj_id in seen:
-        return 0
-    # Important mark as seen *before* entering recursion to gracefully handle
-    # self-referential objects
-    seen.add(obj_id)
-    if isinstance(obj, (str, bytes, bytearray)):
-        return size
-    if isinstance(obj, dict):
-        size += sum(get_size_obj(v, seen) for v in obj.values())
-        size += sum(get_size_obj(k, seen) for k in obj.keys())
-    elif hasattr(obj, "__dict__"):
-        size += get_size_obj(obj.__dict__, seen)
-    elif isinstance(obj, Collection):
-        size += sum([get_size_obj(i, seen) for i in obj])
-    else:
-        size += get_size_obj(object_to_dict(obj), seen)
-    return size
