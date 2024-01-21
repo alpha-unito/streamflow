@@ -648,6 +648,7 @@ class ExecuteStep(BaseStep):
                     input_token_ids=_get_token_ids((*job.inputs.values(), job_token)),
                 )
             )
+            self.workflow.context.checkpoint_manager.save_data(job, token)
 
     async def _run_job(
         self,

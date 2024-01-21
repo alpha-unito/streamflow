@@ -285,7 +285,6 @@ class DefaultDataManager(DataManager):
             available=True,
         )
         self.path_mapper.put(path=path, data_location=data_location, recursive=True)
-        self.context.checkpoint_manager.register(data_location)
         # Process wrapped locations if any
         while (path := _get_inner_path(location=location, path=path)) is not None:
             inner_location = DataLocation(

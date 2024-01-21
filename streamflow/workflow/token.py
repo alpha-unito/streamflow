@@ -41,7 +41,7 @@ class FileToken(Token, ABC):
     __slots__ = ()
 
     @abstractmethod
-    async def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]: ...
+    def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]: ...
 
 
 class JobToken(Token):

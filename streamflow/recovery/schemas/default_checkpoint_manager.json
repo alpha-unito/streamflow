@@ -7,6 +7,13 @@
       "type": "string",
       "description": "Directory where checkpoint data must be placed",
       "default": "$TMPDIR/streamflow/checkpoint/$RANDOM_NAME"
+    },
+    "deployment": {
+      "type": "string",
+      "description": "Name of deployment in which to save checkpoint data. Default: local"
+    },
+    "service": {
+      "type": "string"
     }
   },
   "additionalProperties": false

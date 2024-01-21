@@ -10,8 +10,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from streamflow.core.context import StreamFlowContext
-    from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step
+    from streamflow.core.workflow import CommandOutput, Job, Step, Token
 
 
 class CheckpointManager(SchemaEntity):
@@ -22,7 +21,7 @@ class CheckpointManager(SchemaEntity):
     async def close(self): ...
 
     @abstractmethod
-    def register(self, data_location: DataLocation) -> None: ...
+    def save_data(self, job: Job, token: Token) -> None: ...
 
 
 class FailureManager(SchemaEntity):

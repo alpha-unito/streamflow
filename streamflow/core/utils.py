@@ -10,9 +10,11 @@ import posixpath
 import shlex
 import uuid
 from collections.abc import Iterable, MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.workflow.token import FileToken, ListToken, ObjectToken
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, ExecutionLocation
@@ -248,6 +250,18 @@ def get_tag(tokens: Iterable[Token]) -> str:
         if len(tag) > len(output_tag):
             output_tag = tag
     return output_tag
+
+
+def get_token_paths(context: StreamFlowContext, token: Token) -> MutableSequence[str]:
+    if isinstance(token, FileToken):
+        return cast(FileToken, token).get_paths(context)
+    if isinstance(token, ListToken):
+        return flatten_list([get_token_paths(context, t) for t in token.value])
+    if isinstance(token, ObjectToken):
+        return flatten_list([get_token_paths(context, t) for t in token.value.values()])
+    if isinstance(token.value, Token):
+        return get_token_paths(context, token.value)
+    return []
 
 
 def random_name() -> str:

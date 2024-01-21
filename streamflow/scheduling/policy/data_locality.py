@@ -51,7 +51,7 @@ class DataLocalityPolicy(Policy):
             related_locations = set()
             # For FileTokens, retrieve related locations
             if isinstance(token, FileToken):
-                for path in await token.get_paths(context):
+                for path in token.get_paths(context):
                     related_locations.update(
                         [
                             loc.name
