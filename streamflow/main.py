@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import sys
+import uuid
 from typing import Any, MutableMapping
 
 from streamflow import report
@@ -13,7 +14,6 @@ from streamflow.config.validator import SfValidator
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowProvenanceException
 from streamflow.core.provenance import ProvenanceManager
-from streamflow.core.utils import random_name
 from streamflow.core.workflow import Workflow
 from streamflow.cwl.main import main as cwl_main
 from streamflow.data import data_manager_classes
@@ -158,7 +158,7 @@ async def _async_report(args: argparse.Namespace):
 
 
 async def _async_run(args: argparse.Namespace):
-    args.name = args.name or random_name()
+    args.name = args.name or str(uuid.uuid4())
     load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
     streamflow_config["path"] = args.streamflow_file
@@ -264,10 +264,10 @@ def main(args):
             elif args.debug:
                 logger.setLevel(logging.DEBUG)
             if args.color and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
-                colored_stream_handler = logging.StreamHandler()
-                colored_stream_handler.setFormatter(CustomFormatter())
+                coloredStreamHandler = logging.StreamHandler()
+                coloredStreamHandler.setFormatter(CustomFormatter())
                 logger.handlers = []
-                logger.addHandler(colored_stream_handler)
+                logger.addHandler(coloredStreamHandler)
                 logger.addFilter(HighlitingFilter())
             asyncio.run(_async_run(args))
         else:
