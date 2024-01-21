@@ -39,6 +39,9 @@ The ``Scheduler`` interface contains three abstract methods: ``schedule``, ``not
     ) -> None:
         ...
 
+    def deallocate_job(self, job_name: str):
+        ...
+
     async def close(
         self
     ) -> None:
@@ -47,6 +50,8 @@ The ``Scheduler`` interface contains three abstract methods: ``schedule``, ``not
 The ``schedule`` method tries to allocate one or more available locations for a new ``Job`` object. It receives three input parameters:  a new ``Job`` object to be allocated, a ``BindingConfig`` object containing the list of potential allocation targets for the ``Job`` and a list of :ref:`BindingFilter <BindingFilter>` objects, and a ``HardwareRequirement`` object specifying the resource requirements of the ``Job``. Resource requirements are extracted automatically from the workflow specification, e.g., `CWL <https://www.commonwl.org/v1.2/CommandLineTool.html#ResourceRequirement>`_ files. Conversely, the ``BindingFilter`` object derives from the :ref:`StreamFlow file <Put it all together>`.
 
 The ``notify_status`` method is called whenever a ``Job`` object changes its status, e.g., when it starts, completes, or fails. It receives two input parameters, the name of an existing ``Job`` and its new ``Status``, and returns nothing. When a ``Job`` reaches a final status (i.e., ``FAILED``, ``COMPLETED``, or ``CANCELLED``), its related locations are marked as available, and the ``Scheduler`` starts a new scheduling attempt.
+
+The ``deallocate_job`` method is called if a ``Job`` must be rescheduled for any reason, for example some jobs in a group are scheduled but not every one, so it is necessary to deallocate them.
 
 The ``close`` method receives no input parameter and does not return anything. It frees stateful resources potentially allocated during the object's lifetime, e.g., network or database connections.
 

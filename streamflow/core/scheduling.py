@@ -212,6 +212,10 @@ class Scheduler(SchemaEntity):
     async def close(self) -> None:
         ...
 
+    @abstractmethod
+    def deallocate_job(self, job_name: str):
+        ...
+
     def get_allocation(self, job_name: str) -> JobAllocation | None:
         return self.job_allocations.get(job_name)
 

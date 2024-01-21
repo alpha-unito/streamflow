@@ -275,3 +275,31 @@ def random_name() -> str:
 
 def wrap_command(command: str):
     return ["/bin/sh", "-c", f"{command}"]
+
+
+def cmp(a, b):
+    return (a > b) - (a < b)
+
+
+# compare_tags( 0,      0.0) 	=>  -1
+# compare_tags( 0.0,    0.0) 	=> 	 0
+# compare_tags( 0.0,    0.1) 	=> 	-1
+# compare_tags( 0.1.0,  0.0)    =>   1
+# compare_tags( 0.3.4,  0.5.1)  =>  -1
+def compare_tags(tag1, tag2):
+    tag1_list = tag1.split(".")
+    tag2_list = tag2.split(".")
+    if (res := cmp(len(tag1_list), len(tag2_list))) != 0:
+        return res
+    for lvl1, lvl2 in zip(tag1_list, tag2_list):
+        if (res := cmp(int(lvl1), int(lvl2))) != 0:
+            return res
+    return 0
+
+
+def get_job_tag(job_name: str) -> str:
+    return os.path.basename(job_name)
+
+
+def get_job_root_name(job_name: str) -> str:
+    return os.path.dirname(job_name)
