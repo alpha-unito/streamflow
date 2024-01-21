@@ -34,10 +34,12 @@ from streamflow.core.scheduling import Hardware
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver
+from streamflow.cwl.token import CWLFileToken
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
+from streamflow.workflow.token import ListToken, ObjectToken
 from streamflow.workflow.utils import get_token_value
 
 
@@ -535,6 +537,26 @@ async def get_file_token(
                 )
                 break
     return token
+
+
+def get_files_from_token(token: Token) -> MutableSequence[str]:
+    if isinstance(token, CWLFileToken):
+        return [token.value["path"]]
+    if isinstance(token, ListToken):
+        return [
+            file
+            for inner_token in token.value
+            for file in get_files_from_token(inner_token)
+        ]
+    if isinstance(token, ObjectToken):
+        return [
+            file
+            for inner_token in token.value.values()
+            for file in get_files_from_token(inner_token)
+        ]
+    if isinstance(token.value, Token):
+        return get_files_from_token(token.value)
+    return []
 
 
 async def get_listing(
