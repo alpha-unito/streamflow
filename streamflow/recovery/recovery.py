@@ -78,7 +78,7 @@ class RollbackRecoveryPolicy:
                 FilterTokenPort(new_workflow, port.name, [stop_tag])
             )
             new_port.add_inter_port(port, stop_tag)
-            new_workflow.add_port(new_port)
+            new_workflow.ports[new_port.name] = new_port
 
         # should be an impossible case
         if failed_step.persistent_id is None:
@@ -216,7 +216,7 @@ class RollbackRecoveryPolicy:
                             f"Created port {port_recovery.port.name} for wf {workflow.name} with waiting token {port_recovery.waiting_token}"
                         )
                         map_job_port.setdefault(job_token.value.name, port_recovery)
-                        workflow.add_port(port_recovery.port)
+                        workflow.ports[port_recovery.port.name] = port_recovery.port
                     if len(job_token_names) == 1:
                         logger.debug(f"New-workflow {workflow.name} will be empty.")
                         pass

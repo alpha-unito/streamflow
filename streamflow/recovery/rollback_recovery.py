@@ -496,12 +496,11 @@ class RollbackDeterministicWorkflowPolicy:
         logger.debug(
             f"populate_workflow: wf {new_workflow.name} add_3.0 step {failed_step.name}"
         )
-        new_workflow.add_step(
-            await loading_context.load_step(
-                new_workflow.context,
-                failed_step.persistent_id,
-            )
+        new_step = await loading_context.load_step(
+            new_workflow.context,
+            failed_step.persistent_id,
         )
+        new_workflow.steps[new_step.name] = new_step
         for port in await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -514,7 +513,7 @@ class RollbackDeterministicWorkflowPolicy:
                 logger.debug(
                     f"populate_workflow: wf {new_workflow.name} add_3 port {port.name}"
                 )
-                new_workflow.add_port(port)
+                new_workflow.ports[port.name] = port
 
         # fixing skip ports in loop-terminator
         for step in new_workflow.steps.values():
@@ -661,7 +660,7 @@ class RollbackDeterministicWorkflowPolicy:
                 logger.debug(
                     f"populate_workflow: (1) Step {step.name} caricato nel wf {new_workflow.name}"
                 )
-                new_workflow.add_step(step)
+                new_workflow.steps[step.name] = step
             else:
                 logger.debug(
                     f"populate_workflow: Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}. It is present in the workflow: {step.name in new_workflow.steps.keys()}"
@@ -681,7 +680,7 @@ class RollbackDeterministicWorkflowPolicy:
                 f"populate_workflow: (2) Step {other_step.name} (from step id {sid}) caricato nel wf {new_workflow.name}"
             )
             step_name_id[other_step.name] = sid
-            new_workflow.add_step(other_step)
+            new_workflow.steps[other_step.name] = other_step
         logger.debug("populate_workflow: Step caricati")
         return step_name_id
 

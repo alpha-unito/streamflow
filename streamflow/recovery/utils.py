@@ -288,7 +288,7 @@ async def load_and_add_ports(port_ids, new_workflow, loading_context):
         )
     ):
         if port.name not in new_workflow.ports.keys():
-            new_workflow.add_port(port)
+            new_workflow.ports[port.name] = port
             logger.debug(
                 f"populate_workflow: wf {new_workflow.name} add_1 port {port.name}"
             )
@@ -376,7 +376,7 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
             logger.debug(
                 f"populate_workflow: (1) Step {step.name} caricato nel wf {new_workflow.name}"
             )
-            new_workflow.add_step(step)
+            new_workflow.steps[step.name] = step
         else:
             logger.debug(
                 f"populate_workflow: Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}. It is present in the workflow: {step.name in new_workflow.steps.keys()}"
@@ -399,7 +399,7 @@ async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
             f"populate_workflow: (2) Step {other_step.name} (from step id {sid}) caricato nel wf {new_workflow.name}"
         )
         step_name_id[other_step.name] = sid
-        new_workflow.add_step(other_step)
+        new_workflow.steps[other_step.name] = other_step
     logger.debug("populate_workflow: Step caricati")
     return step_name_id
 
@@ -439,4 +439,4 @@ async def load_missing_ports(new_workflow, step_name_id, loading_context):
         logger.debug(
             f"populate_workflow: wf {new_workflow.name} add_2 port {port.name}"
         )
-        new_workflow.add_port(port)
+        new_workflow.ports[port.name] = port
