@@ -143,6 +143,7 @@ class DefaultDataManager(DataManager):
             available=True,
         )
         self.path_mapper.put(path=path, data_location=data_location, recursive=True)
+        self.context.checkpoint_manager.register(data_location)
         return data_location
 
     def register_relation(

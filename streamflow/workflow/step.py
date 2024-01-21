@@ -664,7 +664,6 @@ class ExecuteStep(BaseStep):
             await self.workflow.context.failure_manager.notify_jobs(
                 job_token, output_port.name, token
             )
-            self.workflow.context.checkpoint_manager.save_data(token)
 
     async def _run_job(
         self,
@@ -1053,7 +1052,6 @@ class InputInjectorStep(BaseStep, ABC):
                         in_list.append(token)
                     # Process value and inject token in the output port
                     new_token = await self.process_input(job, token.value)
-                    self.workflow.context.checkpoint_manager.save_data(new_token)
                     self.get_output_port().put(
                         await self._persist_token(
                             token=new_token,
