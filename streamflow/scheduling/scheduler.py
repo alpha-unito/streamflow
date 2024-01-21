@@ -148,13 +148,15 @@ class DefaultScheduler(Scheduler):
                     self.location_allocations[location.deployment][location.name].jobs,
                 )
             )
+            job_root_name = get_job_root_name(job_name)
+            job_tag = get_job_tag(job_name)
             rollback_jobs = list(
                 filter(
                     lambda x: (
-                        x != job_name
-                        and get_job_root_name(x) == get_job_root_name(job_name)
-                        and compare_tags(get_job_tag(x), get_job_tag(job_name)) == -1
-                        and self.job_allocations[x].status == Status.ROLLBACK
+                        self.job_allocations[x].status == Status.ROLLBACK
+                        and x != job_name
+                        and get_job_root_name(x) == job_root_name
+                        and compare_tags(get_job_tag(x), job_tag) == -1
                     ),
                     self.job_allocations.keys(),
                 )
