@@ -214,11 +214,7 @@ class DefaultScheduler(Scheduler):
             return len(running_jobs) < location.slots
 
     async def _process_target(
-        self,
-        target: Target,
-        job_context: JobContext,
-        hardware_requirement: Hardware,
-        workflow,
+        self, target: Target, job_context: JobContext, hardware_requirement: Hardware
     ):
         deployment = target.deployment.name
         if deployment not in self.wait_queues:
@@ -238,7 +234,7 @@ class DefaultScheduler(Scheduler):
                                 posixpath.join(deployment, target.service)
                                 if target.service
                                 else deployment,
-                                workflow.name,
+                                None,  # job_context.job.workflow_id
                             )
                         )
                     available_locations = dict(
@@ -271,7 +267,7 @@ class DefaultScheduler(Scheduler):
                                     if target.service
                                     else deployment,
                                     list(valid_locations.keys()),
-                                    workflow.name,
+                                    None,  # job_context.job.workflow_id
                                 )
                             )
                         if target.scheduling_group is not None:
@@ -349,7 +345,7 @@ class DefaultScheduler(Scheduler):
                                     f" Retry in {self.retry_interval} seconds"
                                     if self.retry_interval
                                     else "",
-                                    workflow.name,
+                                    None,  # job_context.job.workflow_id
                                 )
                             )
                 try:
@@ -365,7 +361,7 @@ class DefaultScheduler(Scheduler):
                         )
                         logger.debug(
                             f"No locations available for job {job_context.job.name} "
-                            f"in target {target_name}. Waiting {self.retry_interval} seconds. (wf {workflow.name})"
+                            f"in target {target_name}. Waiting {self.retry_interval} seconds. (wf None)"
                         )
 
     async def close(self):
@@ -393,11 +389,7 @@ class DefaultScheduler(Scheduler):
                             self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
-        self,
-        job: Job,
-        binding_config: BindingConfig,
-        hardware_requirement: Hardware,
-        workflow,
+        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
     ) -> None:
         job_context = JobContext(job)
         targets = list(binding_config.targets)
@@ -409,7 +401,6 @@ class DefaultScheduler(Scheduler):
                     target=target,
                     job_context=job_context,
                     hardware_requirement=hardware_requirement,
-                    workflow=workflow,
                 )
             )
             for target in targets

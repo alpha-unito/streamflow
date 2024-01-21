@@ -1466,10 +1466,7 @@ class ScheduleStep(BaseStep):
                                 else None
                             )
                             await self.workflow.context.scheduler.schedule(
-                                job,
-                                self.binding_config,
-                                hardware_requirement,
-                                self.workflow,
+                                job, self.binding_config, hardware_requirement
                             )
                             locations = self.workflow.context.scheduler.get_locations(
                                 job.name
@@ -1494,7 +1491,6 @@ class ScheduleStep(BaseStep):
                     self.hardware_requirement.eval({})
                     if self.hardware_requirement
                     else None,
-                    self.workflow,
                 )
                 locations = self.workflow.context.scheduler.get_locations(job.name)
                 await self._propagate_job(

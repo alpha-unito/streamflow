@@ -254,10 +254,6 @@ class Scheduler(SchemaEntity):
 
     @abstractmethod
     async def schedule(
-        self,
-        job: Job,
-        binding_config: BindingConfig,
-        hardware_requirement: Hardware,
-        workflow,
+        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
     ) -> None:
         ...
