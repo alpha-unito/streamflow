@@ -4,7 +4,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
 
 
-async def load_next_tokens(
+async def load_depender_tokens(
     persistent_id: int,
     context: StreamFlowContext,
     loading_context: DatabaseLoadingContext,
@@ -18,7 +18,7 @@ async def load_next_tokens(
     )
 
 
-async def load_prev_tokens(
+async def load_dependee_tokens(
     persistent_id: int,
     context: StreamFlowContext,
     loading_context: DatabaseLoadingContext,

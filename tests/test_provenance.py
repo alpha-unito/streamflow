@@ -10,7 +10,7 @@ from streamflow.core.workflow import Port, Status, Step, Token, Workflow
 from streamflow.cwl.command import CWLCommand, CWLCommandToken
 from streamflow.cwl.translator import _create_command_output_processor_base
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.persistence.utils import load_next_tokens, load_prev_tokens
+from streamflow.persistence.utils import load_depender_tokens, load_dependee_tokens
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
@@ -95,7 +95,7 @@ async def _verify_dependency_tokens(
     token_reloaded = await context.database.get_token(token_id=token.persistent_id)
     assert token_reloaded["port"] == port.persistent_id
 
-    depender_list = await load_next_tokens(
+    depender_list = await load_depender_tokens(
         token.persistent_id, context, loading_context
     )
     print(
@@ -110,7 +110,7 @@ async def _verify_dependency_tokens(
     for t1 in depender_list:
         assert _contains_id(t1.persistent_id, expected_depender)
 
-    dependee_list = await load_prev_tokens(
+    dependee_list = await load_dependee_tokens(
         token.persistent_id, context, loading_context
     )
     print(
