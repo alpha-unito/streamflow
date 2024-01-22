@@ -328,8 +328,11 @@ class DefaultScheduler(Scheduler):
     async def close(self):
         pass
 
-    def deallocate_job(self, job: str):
-        job_allocation = self.job_allocations.pop(job)
+    def deallocate_job(self, job: str, keep_allocation: bool = False):
+        if keep_allocation:
+            job_allocation = self.job_allocations.get(job)
+        else:
+            job_allocation = self.job_allocations.pop(job)
         for loc in job_allocation.locations:
             if job in self.location_allocations[loc.deployment][loc.name].jobs:
                 self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
@@ -356,6 +359,8 @@ class DefaultScheduler(Scheduler):
                     "Job {job} deallocated from locations "
                     ", ".join([str(loc) for loc in job_allocation.locations])
                 )
+        if keep_allocation:
+            job_allocation.locations.clear()
 
     @classmethod
     def get_schema(cls) -> str:

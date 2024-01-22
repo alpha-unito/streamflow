@@ -39,7 +39,7 @@ The ``Scheduler`` interface contains three abstract methods: ``schedule``, ``not
     ) -> None:
         ...
 
-    def deallocate_job(self, job_name: str):
+    def deallocate_job(self, job_name: str, keep_allocation: bool = False):
         ...
 
     async def close(
@@ -51,7 +51,7 @@ The ``schedule`` method tries to allocate one or more available locations for a 
 
 The ``notify_status`` method is called whenever a ``Job`` object changes its status, e.g., when it starts, completes, or fails. It receives two input parameters, the name of an existing ``Job`` and its new ``Status``, and returns nothing. When a ``Job`` reaches a final status (i.e., ``FAILED``, ``COMPLETED``, or ``CANCELLED``), its related locations are marked as available, and the ``Scheduler`` starts a new scheduling attempt.
 
-The ``deallocate_job`` method is called if a ``Job`` must be rescheduled for any reason, for example some jobs in a group are scheduled but not every one, so it is necessary to deallocate them.
+The ``deallocate_job`` method is called if a ``Job`` must be deallocated for any reason, for example there is a group oj jobs, some are scheduled but not every one, so it is necessary to deallocate them. The ``keep_allocation`` parameter has default value to False, it removes every information about the job removed in the ``Scheduler``, otherwise keeps sometime helpful information for the future rescheduling.
 
 The ``close`` method receives no input parameter and does not return anything. It frees stateful resources potentially allocated during the object's lifetime, e.g., network or database connections.
 
