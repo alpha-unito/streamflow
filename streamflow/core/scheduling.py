@@ -213,7 +213,7 @@ class Scheduler(SchemaEntity):
         ...
 
     @abstractmethod
-    def deallocate_job(self, job_name: str):
+    def deallocate_job(self, job_name: str, keep_allocation: bool = False):
         ...
 
     def get_allocation(self, job_name: str) -> JobAllocation | None:

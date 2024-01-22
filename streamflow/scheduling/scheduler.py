@@ -95,8 +95,11 @@ class DefaultScheduler(Scheduler):
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
 
-    def deallocate_job(self, job: str):
-        job_allocation = self.job_allocations.pop(job)
+    def deallocate_job(self, job: str, keep_allocation: bool = False):
+        if keep_allocation:
+            job_allocation = self.job_allocations.get(job)
+        else:
+            job_allocation = self.job_allocations.pop(job)
         for loc in job_allocation.locations:
             if job in self.location_allocations[loc.deployment][loc.name].jobs:
                 self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
@@ -123,6 +126,8 @@ class DefaultScheduler(Scheduler):
                     "Job {job} deallocated from locations "
                     ", ".join([str(loc) for loc in job_allocation.locations])
                 )
+        if keep_allocation:
+            job_allocation.locations.clear()
 
     def _get_binding_filter(self, config: Config):
         if config.name not in self.binding_filter_map:
@@ -189,6 +194,8 @@ class DefaultScheduler(Scheduler):
                     self.job_allocations.keys(),
                 )
             )
+            logger.info(f"Scheduling job_name: {job_name} on {location.deployment}\n\t- running jobs: {running_jobs}"
+                        f"\n\t- rollback jobs: {rollback_jobs}")
             running_jobs.extend(rollback_jobs)
         else:
             running_jobs = []
@@ -225,12 +232,11 @@ class DefaultScheduler(Scheduler):
                     )
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(
-                            "Retrieving available locations for job {} on {} (wf {}).".format(
+                            "Retrieving available locations for job {} on {}".format(
                                 job_context.job.name,
                                 posixpath.join(deployment, target.service)
                                 if target.service
-                                else deployment,
-                                None,  # job_context.job.workflow_id
+                                else deployment
                             )
                         )
                     available_locations = dict(
@@ -257,13 +263,12 @@ class DefaultScheduler(Scheduler):
                     if valid_locations:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                "Available locations for job {} on {} are {}. (wf {})".format(
+                                "Available locations for job {} on {} are {}".format(
                                     job_context.job.name,
                                     posixpath.join(deployment, target.service)
                                     if target.service
                                     else deployment,
-                                    list(valid_locations.keys()),
-                                    None,  # job_context.job.workflow_id
+                                    list(valid_locations.keys())
                                 )
                             )
                         if target.scheduling_group is not None:
@@ -333,15 +338,14 @@ class DefaultScheduler(Scheduler):
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                "No location available for job {} on deployment {}.{} (wf {})".format(
+                                "No location available for job {} on deployment {}.{}".format(
                                     job_context.job.name,
                                     posixpath.join(deployment, target.service)
                                     if target.service
                                     else deployment,
                                     f" Retry in {self.retry_interval} seconds"
                                     if self.retry_interval
-                                    else "",
-                                    None,  # job_context.job.workflow_id
+                                    else ""
                                 )
                             )
                 try:
@@ -357,7 +361,7 @@ class DefaultScheduler(Scheduler):
                         )
                         logger.debug(
                             f"No locations available for job {job_context.job.name} "
-                            f"in target {target_name}. Waiting {self.retry_interval} seconds. (wf None)"
+                            f"in target {target_name}. Waiting {self.retry_interval} seconds"
                         )
 
     async def close(self):

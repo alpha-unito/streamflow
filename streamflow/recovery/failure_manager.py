@@ -104,8 +104,8 @@ class DefaultFailureManager(FailureManager):
                 f"Updated Job {job_name} at {self.job_requests[job_name].version} times"
             )
             # free resources scheduler
+            self.context.scheduler.deallocate_job(job_name, keep_allocation=True)
             await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
-            self.context.scheduler.deallocate_job(job_name)
         else:
             logger.error(
                 f"FAILED Job {job_name} {self.job_requests[job_name].version} times. Execution aborted"
