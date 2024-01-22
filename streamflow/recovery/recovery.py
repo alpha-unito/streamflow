@@ -24,7 +24,7 @@ from streamflow.recovery.rollback_recovery import (
 from streamflow.recovery.utils import (
     _is_token_available,
     get_execute_step_out_token_ids,
-    get_steps_from_output_port,
+    get_step_instances_from_output_port,
     increase_tag,
 )
 from streamflow.workflow.port import (
@@ -72,7 +72,8 @@ class RollbackRecoveryPolicy:
             # stop_tag = increase_tag(utils.get_tag(failed_job.inputs.values()))
             stop_tag = utils.get_tag(failed_job.inputs.values())
             logger.info(
-                f"Wf {new_workflow.name} created output port {port.name} of failed job {failed_job.name} (wf {workflow.name}) and stop_tag: {stop_tag}"
+                f"Wf {new_workflow.name} created output port {port.name} of failed job {failed_job.name} "
+                f"(wf {workflow.name}) and stop_tag: {stop_tag}"
             )
             new_port = InterWorkflowPort(
                 FilterTokenPort(new_workflow, port.name, [stop_tag])
@@ -120,7 +121,8 @@ class RollbackRecoveryPolicy:
         # for port in failed_step.get_input_ports().values():
         #     if port.name not in new_workflow.ports.keys():
         #         raise FailureHandlingException(
-        #             f"La input port {port.name} dello step fallito {failed_step.name} non è presente nel new_workflow {new_workflow.name}"
+        #             f"La input port {port.name} dello step fallito {failed_step.name} "
+        #             f"non è presente nel new_workflow {new_workflow.name}"
         #         )
         logger.debug("end save_for_retag")
 
@@ -164,7 +166,8 @@ class RollbackRecoveryPolicy:
                 max_tag = "0"
             stop_tag = increase_tag(max_tag)
             logger.info(
-                f"Wf {workflow.name} added PortRecovery on port {port_name} with stop_tag: {stop_tag}. is Port created? {port_name not in workflow.ports.keys()}"
+                f"Wf {workflow.name} added PortRecovery on port {port_name} with stop_tag: {stop_tag}. "
+                f"Is Port created? {port_name not in workflow.ports.keys()}"
             )
             port = workflow.ports.get(
                 port_name,
@@ -198,7 +201,8 @@ class RollbackRecoveryPolicy:
             async with job_request.lock:
                 if job_request.is_running:
                     logger.debug(
-                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest is running on wf {job_request.workflow.name}. Other jobs: {job_token_names}"
+                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest is running on "
+                        f"wf {job_request.workflow.name}. Other jobs: {job_token_names}"
                     )
                     output_port_names = await rdwp.get_execute_output_port_names(
                         job_token
@@ -213,7 +217,8 @@ class RollbackRecoveryPolicy:
                             map_job_port.get(job_token.value.name, None),
                         )
                         logger.debug(
-                            f"Created port {port_recovery.port.name} for wf {workflow.name} with waiting token {port_recovery.waiting_token}"
+                            f"Created port {port_recovery.port.name} for wf {workflow.name} with "
+                            f"waiting token {port_recovery.waiting_token}"
                         )
                         map_job_port.setdefault(job_token.value.name, port_recovery)
                         workflow.ports[port_recovery.port.name] = port_recovery.port
@@ -221,7 +226,8 @@ class RollbackRecoveryPolicy:
                         logger.debug(f"New-workflow {workflow.name} will be empty.")
                         pass
                         # raise FailureHandlingException(
-                        #     "There is only job job in this rollback, but it is already running in another workflow. Something is wrong."
+                        #     f"There is only job job in this rollback, but it is already running in another workflow."
+                        #     f"Something is wrong."
                         # )
                     execute_step_out_token_ids = await get_execute_step_out_token_ids(
                         rdwp.dag_tokens.succ(job_token.persistent_id),
@@ -240,9 +246,11 @@ class RollbackRecoveryPolicy:
                         for t in job_request.token_output.values()
                     ]
                 ):
-                    # search execute token after job token, replace this token with job_requ token. then remove all the prev tokens
+                    # search execute token after job token, replace this token with job_requ token.
+                    # Then remove all the prev tokens
                     logger.debug(
-                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest has token_output { {k: v.persistent_id for k, v in job_request.token_output.items()} }"
+                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest has token_output "
+                        f"{ {k: v.persistent_id for k, v in job_request.token_output.items()} }"
                     )
                     for port_name in await rdwp.get_execute_output_port_names(
                         job_token
@@ -251,11 +259,12 @@ class RollbackRecoveryPolicy:
                         port_row = await self.context.database.get_port_from_token(
                             new_token.persistent_id
                         )
-                        step_rows = await get_steps_from_output_port(
+                        step_rows = await get_step_instances_from_output_port(
                             port_row["id"], self.context
                         )
                         logger.debug(
-                            f"Sync Job {job_token.value.name} (wf {workflow.name}): Replace {rdwp.get_equal_token(port_name, new_token)} with {new_token.persistent_id}"
+                            f"Sync Job {job_token.value.name} (wf {workflow.name}): "
+                            f"Replace {rdwp.get_equal_token(port_name, new_token)} with {new_token.persistent_id}"
                         )
                         await rdwp.replace_token_and_remove(
                             port_name,
@@ -268,8 +277,10 @@ class RollbackRecoveryPolicy:
                         )
                 else:
                     logger.debug(
-                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest set to running and job_token and token_output to None."
-                        f"\n\t- Prev value job_token: {job_request.job_token}\n\t- Prev value token_output: {job_request.token_output}"
+                        f"Sync Job {job_token.value.name} (wf {workflow.name}): "
+                        f"JobRequest set to running and job_token and token_output to None."
+                        f"\n\t- Prev value job_token: {job_request.job_token}"
+                        f"\n\t- Prev value token_output: {job_request.token_output}"
                     )
                     job_request.is_running = True
                     job_request.job_token = None
@@ -322,7 +333,8 @@ async def _new_put_tokens(
             port.put(t)
             if is_back_prop_output_port:
                 logger.debug(
-                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, insert termination token (it is output port of a Back-prop)"
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, "
+                    f"insert termination token (it is output port of a Back-prop)"
                 )
                 port.put(TerminationToken())
                 break
@@ -342,11 +354,13 @@ async def _new_put_tokens(
                     # )
                     port.put(Token(value=None, tag=increased_tag))
                 logger.debug(
-                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[-1].tag}"
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, "
+                    f"inserts IterationTerminationToken with tag {port.token_list[-1].tag}"
                 )
                 port.put(IterationTerminationToken(port.token_list[-1].tag))
                 logger.debug(
-                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, inserts IterationTerminationToken with tag {port.token_list[0].tag}"
+                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, "
+                    f"inserts IterationTerminationToken with tag {port.token_list[0].tag}"
                 )
                 port.put(IterationTerminationToken(port.token_list[0].tag))
             if not any(t for t in port.token_list if isinstance(t, TerminationToken)):
@@ -356,7 +370,9 @@ async def _new_put_tokens(
                 port.put(TerminationToken())
         else:
             logger.debug(
-                f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert manually TerminationToken. Is there Termination? ({any(isinstance(t, TerminationToken) for t in port.token_list )})"
+                f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert "
+                f"manually TerminationToken. Is there Termination? "
+                f"{any(isinstance(t, TerminationToken) for t in port.token_list )}"
             )
     return None
 
@@ -378,11 +394,13 @@ async def _new_set_steps_state(new_workflow, rdwp):
                 for t_id in rdwp.port_tokens[port.name]
             ]
             logger.debug(
-                f"_set_scatter_inner_state: wf {new_workflow.name} -> port_tokens[{step.get_output_port().name}]: {str_t}"
+                f"_set_scatter_inner_state: wf {new_workflow.name} -> "
+                f"port_tokens[{step.get_output_port().name}]: {str_t}"
             )
             for t_id in rdwp.port_tokens[port.name]:
                 logger.debug(
-                    f"_set_scatter_inner_state: Token {t_id} is necessary to rollback the scatter on port {port.name} (wf {new_workflow.name}). It is {'' if rdwp.token_available[t_id] else 'NOT '}available"
+                    f"_set_scatter_inner_state: Token {t_id} is necessary to rollback the scatter on port {port.name} "
+                    f"(wf {new_workflow.name}). It is {'' if rdwp.token_available[t_id] else 'NOT '}available"
                 )
                 # a possible control can be if not token_visited[t_id][1]: then add in valid tags
                 if step.valid_tags is None:
@@ -397,7 +415,8 @@ async def _new_set_steps_state(new_workflow, rdwp):
             if prefix != "":
                 step.combinator.iteration_map[prefix] = int(token.tag.split(".")[-1])
                 logger.debug(
-                    f"recover_jobs-last_iteration: Step {step.name} combinator updated map[{prefix}] = {step.combinator.iteration_map[prefix]}"
+                    f"recover_jobs-last_iteration: Step {step.name} combinator updated "
+                    f"map[{prefix}] = {step.combinator.iteration_map[prefix]}"
                 )
         # if not isinstance(
         #     step, (BackPropagationTransformer, CombinatorStep, ConditionalStep)

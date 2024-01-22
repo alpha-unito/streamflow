@@ -30,16 +30,17 @@ async def _execute_transfer_step(failed_step, new_workflow, port_name):
     token_list = (
         new_workflow.steps[failed_step.name].get_output_port(port_name).token_list
     )
-    if len(token_list) != 2:
-        # raise FailureHandlingException(
-        #     f"Step recovery {failed_step.name} did not generate the right number of tokens: {len(token_list)}"
-        # )
-        pass
+    # if len(token_list) != 2:
+    #     raise FailureHandlingException(
+    #         f"Step recovery {failed_step.name} did not generate the right number of tokens: {len(token_list)}"
+    #     )
+    #     pass
     # if not isinstance(token_list[1], TerminationToken):
-    # raise FailureHandlingException(
-    #     f"Step recovery {failed_step.name} did not work well. It moved two tokens instead of one: {[t.persistent_id for t in token_list]}"
-    # )
-    # pass
+    #     raise FailureHandlingException(
+    #         f"Step recovery {failed_step.name} did not work well. "
+    #         f"It moved two tokens instead of one: {[t.persistent_id for t in token_list]}"
+    #     )
+    #     pass
     return token_list[0]
 
 
@@ -151,12 +152,15 @@ class DefaultFailureManager(FailureManager):
                 elems = []
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Job {job_name} is notifing on port {out_port_name}. There are {len(self.job_requests[job_name].queue)} workflows in waiting"
+                        f"Job {job_name} is notifing on port {out_port_name}. "
+                        f"There are {len(self.job_requests[job_name].queue)} workflows in waiting"
                     )
                 if len(self.job_requests[job_name].queue):
                     str_port = "".join(
                         [
-                            f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} workflow {elem.port.workflow.name} token_list {elem.port.token_list} queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del terminationtoken"
+                            f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} "
+                            f"workflow {elem.port.workflow.name} token_list {elem.port.token_list} "
+                            f"queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del TerminationToken"
                             if elem
                             else "\n\t\tElem-None"
                             for elem in self.job_requests[job_name].queue
@@ -222,7 +226,8 @@ class DefaultFailureManager(FailureManager):
             #         )
             #         if self.job_requests[job.name].job_token is None:
             #             raise FailureHandlingException(
-            #                 f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found job_token {new_job_token.persistent_id}."
+            #                 f"Job {job.name} has not a job_token. In the workflow {new_workflow.name} has been found "
+            #                 f"job_token {new_job_token.persistent_id}."
             #             )
             # new_job_token = None
             # if step.name in new_workflow.steps.keys():

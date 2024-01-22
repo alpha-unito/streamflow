@@ -12,7 +12,6 @@ from streamflow.core.utils import (
 )
 from streamflow.core.exception import FailureHandlingException
 from streamflow.cwl.processor import CWLTokenProcessor
-from streamflow.cwl.token import CWLFileToken
 
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.core.workflow import Token
@@ -22,8 +21,9 @@ from streamflow.cwl.transformer import (
     OutputForwardTransformer,
 )
 from streamflow.log_handler import logger
+from streamflow.recovery.dev_utils import print_token_val
 from streamflow.recovery.utils import (
-    get_steps_from_output_port,
+    get_step_instances_from_output_port,
     _is_token_available,
     get_key_by_value,
     load_and_add_ports,
@@ -93,7 +93,8 @@ async def evaluate_token_availability(token, step_rows, context, valid_data):
             ),
         ):
             logger.debug(
-                f"evaluate_token_availability: Token {token.persistent_id} is available? {is_available}. Checking {step_row['name']} step type: {step_row['type']}"
+                f"evaluate_token_availability: Token {token.persistent_id} is available? {is_available}. "
+                f"Checking {step_row['name']} step type: {step_row['type']}"
             )
             return is_available
     return TokenAvailability.Unavailable
@@ -315,9 +316,9 @@ class RollbackDeterministicWorkflowPolicy:
         )
 
         logger.debug(
-            f"replace_token_and_remove: token id: {token.persistent_id} av: {provenance_token.is_available == TokenAvailability.Available}"
+            f"replace_token_and_remove: token id: {token.persistent_id} "
+            f"is_available: {provenance_token.is_available == TokenAvailability.Available}"
         )
-        pass
 
     def remove_token(self, token_id):
         if token_id == DirectGraph.INIT_GRAPH_FLAG:
@@ -354,12 +355,15 @@ class RollbackDeterministicWorkflowPolicy:
                 or self.token_available[equal_token_id]
             ):
                 logger.debug(
-                    f"update_token: port {port_name} ricevuto in input t_id {token.persistent_id} (avai {is_av}). Pero' uso il token id {equal_token_id} (avai {self.token_available[equal_token_id]}) che avevo già. "
+                    f"update_token: port {port_name} receive t_id {token.persistent_id} (available {is_av}). "
+                    f"However token id {equal_token_id} (available {self.token_available[equal_token_id]}) is used"
+                    f"because it is already in the graph"
                 )
                 return equal_token_id
             if is_av:
                 logger.debug(
-                    f"update_token: Sostituisco old_token_id: {equal_token_id} con new_token_id: {token.persistent_id}. Inoltre rimuovo i suoi vecchi legami perché new token è disponibile"
+                    f"update_token: Replace old_token_id: {equal_token_id} with new_token_id: {token.persistent_id}. "
+                    f"Moreover, old_token links are removed because new_token is available"
                 )
                 token_without_successors = self.remove_token_prev_links(equal_token_id)
                 for t_id in token_without_successors:
@@ -405,16 +409,9 @@ class RollbackDeterministicWorkflowPolicy:
             if token_info_b
             else None
         )
-        token_a = self.token_instances.get(token_a_id, None)
-        token_b = self.token_instances.get(token_b_id, None)
 
-        logger.debug(
-            f"new_add: {token_a.persistent_id if token_a else None} -> {token_b.persistent_id if token_b else None}"
-        )
-        self.dag_tokens.add(
-            token_a.persistent_id if token_a else None,
-            token_b.persistent_id if token_b else None,
-        )
+        logger.debug(f"new_add: {token_a_id} -> {token_b_id}")
+        self.dag_tokens.add(token_a_id, token_b_id)
 
         if port_name_a:
             self.port_name_ids.setdefault(port_name_a, set()).add(
@@ -441,8 +438,13 @@ class RollbackDeterministicWorkflowPolicy:
             )
         ):
             for row_dependency in row_dependencies:
+                step_name = (
+                    await self.context.database.get_step(row_dependency["step"])
+                )["name"]
                 logger.debug(
-                    f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} (id {row_dependency['step']}) recuperato dalla port {get_key_by_value(row_dependency['port'], self.port_name_ids)} (id {row_dependency['port']})"
+                    f"get_port_and_step_ids: Step {step_name} (id {row_dependency['step']}) "
+                    f"rescued from the port {get_key_by_value(row_dependency['port'], self.port_name_ids)} "
+                    f"(id {row_dependency['port']})"
                 )
                 steps.add(row_dependency["step"])
         rows_dependencies = await asyncio.gather(
@@ -462,8 +464,11 @@ class RollbackDeterministicWorkflowPolicy:
                 )
             ):
                 if row_port["name"] not in self.port_tokens.keys():
+                    step_name = (await self.context.database.get_step(step_id))["name"]
                     logger.debug(
-                        f"get_port_and_step_ids: Step {(await self.context.database.get_step(row_dependency['step']))['name']} (id {step_id}) rimosso perché port {row_port['name']} non presente nei port_tokens. è presente nelle ports? {row_port['id'] in ports}"
+                        f"get_port_and_step_ids: Step {step_name} (id {step_id}) removed because "
+                        f"port {row_port['name']} is not present in port_tokens. "
+                        f"Is it present in ports to load? {row_port['id'] in ports}"
                     )
                     step_to_remove.add(step_id)
         for s_id in step_to_remove:
@@ -479,7 +484,8 @@ class RollbackDeterministicWorkflowPolicy:
         loading_context,
     ):
         logger.debug(
-            f"populate_workflow: wf {new_workflow.name} dag[INIT] {[ get_key_by_value(t_id, self.port_tokens) for t_id in self.dag_tokens[DirectGraph.INIT_GRAPH_FLAG]]}"
+            f"populate_workflow: wf {new_workflow.name} dag[INIT] "
+            f"{[ get_key_by_value(t_id, self.port_tokens) for t_id in self.dag_tokens[DirectGraph.INIT_GRAPH_FLAG]]}"
         )
         logger.debug(
             f"populate_workflow: wf {new_workflow.name} port {new_workflow.ports.keys()}"
@@ -537,11 +543,13 @@ class RollbackDeterministicWorkflowPolicy:
                 continue
             for p_name in step.input_ports.values():
                 if p_name not in new_workflow.ports.keys():
-                    # problema nato dai loop. Vengono caricati nel new_workflow tutti gli step che hanno come output le port
-                    # nel grafo. Però nei loop, più step hanno stessa porta di output (forward, backprop, loop-term).
-                    # per capire se lo step sia necessario controlliamo che anche le sue port di input siano state caricate
+                    # problema nato dai loop. Vengono caricati nel new_workflow tutti gli step che hanno come output
+                    # le port nel grafo. Però nei loop, più step hanno stessa porta di output
+                    # (forward, backprop, loop-term). per capire se lo step sia necessario controlliamo che anche
+                    # le sue port di input siano state caricate
                     logger.debug(
-                        f"populate_workflow: Rimuovo step {step.name} dal wf {new_workflow.name} perché manca la input port {p_name}"
+                        f"populate_workflow: Remove step {step.name} from wf {new_workflow.name} "
+                        f"because input port {p_name} is missing"
                     )
                     steps_to_remove.add(step.name)
             if step.name not in steps_to_remove and isinstance(
@@ -559,7 +567,8 @@ class RollbackDeterministicWorkflowPolicy:
                         break
                 if not loop_terminator:
                     logger.debug(
-                        f"populate_workflow: Rimuovo step {step.name} dal wf {new_workflow.name} perché manca come prev step un LoopTerminationCombinator"
+                        f"populate_workflow: Remove step {step.name} from wf {new_workflow.name} because "
+                        f"it is missing a prev step like LoopTerminationCombinator"
                     )
                     steps_to_remove.add(step.name)
         for step_name in steps_to_remove:
@@ -658,12 +667,14 @@ class RollbackDeterministicWorkflowPolicy:
                                     )
                                     new_step_ids.add(step_row["id"])
                 logger.debug(
-                    f"populate_workflow: (1) Step {step.name} caricato nel wf {new_workflow.name}"
+                    f"populate_workflow: (1) Step {step.name} loaded in the wf {new_workflow.name}"
                 )
                 new_workflow.steps[step.name] = step
             else:
                 logger.debug(
-                    f"populate_workflow: Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}. It is present in the workflow: {step.name in new_workflow.steps.keys()}"
+                    f"populate_workflow: Step {step.name} is not loaded because in the wf {new_workflow.name}"
+                    f"the ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())} are missing."
+                    f"It is present in the workflow: {step.name in new_workflow.steps.keys()}"
                 )
         for sid, other_step in zip(
             new_step_ids,
@@ -677,7 +688,8 @@ class RollbackDeterministicWorkflowPolicy:
             ),
         ):
             logger.debug(
-                f"populate_workflow: (2) Step {other_step.name} (from step id {sid}) caricato nel wf {new_workflow.name}"
+                f"populate_workflow: (2) Step {other_step.name} (from step id {sid}) loaded "
+                f"in the wf {new_workflow.name}"
             )
             step_name_id[other_step.name] = sid
             new_workflow.steps[other_step.name] = other_step
@@ -716,8 +728,11 @@ class NewProvenanceGraphNavigation:
             port_row = await self.context.database.get_port_from_token(
                 token.persistent_id
             )
-            step_rows = await get_steps_from_output_port(port_row["id"], self.context)
-            # questa condizione si potrebbe mettere come parametro e utilizzarla come taglio. Ovvero, dove l'utente vuole che si fermi la ricerca indietro
+            step_rows = await get_step_instances_from_output_port(
+                port_row["id"], self.context
+            )
+            # questa condizione si potrebbe mettere come parametro e utilizzarla come taglio.
+            # Ovvero, dove l'utente vuole che si fermi la ricerca indietro
             if await self.context.failure_manager.is_running_token(token, valid_data):
                 self.add(None, token)
                 is_available = TokenAvailability.Unavailable
@@ -748,7 +763,8 @@ class NewProvenanceGraphNavigation:
                             ):
                                 token_frontier.append(prev_token)
                         logger.debug(
-                            f"new_build_dag: Token id: {token.persistent_id} is not available, it has {[t.persistent_id for t in prev_tokens]} prev tokens "
+                            f"new_build_dag: Token id: {token.persistent_id} is not available, "
+                            f"it has {[t.persistent_id for t in prev_tokens]} prev tokens "
                         )
                     elif issubclass(
                         get_class_from_name(port_row["type"]), ConnectorPort
@@ -766,21 +782,23 @@ class NewProvenanceGraphNavigation:
             )
         for info in self.info_tokens.values():
             logger.debug(
-                f"token-info\n\tid: {info.instance.persistent_id}\n\ttype: {type(info.instance)}\n\tvalue: {info.instance.value.name if isinstance(info.instance, JobToken) else info.instance.value['basename'] if isinstance(info.instance, CWLFileToken) else info.instance.value}"
-                f"\n\ttag: {info.instance.tag}\n\tis_avai: {info.is_available}\n\tport: {dict(info.port_row)}\n\tsteps: {[ s['name'] for s in info.step_rows] }"
+                f"token-info\n\tid: {info.instance.persistent_id}\n\ttype: {type(info.instance)}"
+                f"\n\tvalue: {print_token_val(info.instance)}\n\ttag: {info.instance.tag}"
+                f"\n\tis_avai: {info.is_available}\n\tport: {dict(info.port_row)}"
+                f"\n\tsteps: {[ s['name'] for s in info.step_rows] }"
             )
         pass
 
-    # todo: check if it is still necessary
-    async def get_execute_token_ids(self, job_token):
-        output_token_ids = set()
-        for next_t_id in self.dag_tokens.succ(job_token.persistent_id):
-            if not isinstance(next_t_id, int):
-                continue
-            step_rows = self.info_tokens[next_t_id].step_rows
-            if is_there_step_type(step_rows, (ExecuteStep,)):
-                output_token_ids.add(next_t_id)
-        return output_token_ids
+    # # todo: check if it is still necessary
+    # async def get_execute_token_ids(self, job_token):
+    #     output_token_ids = set()
+    #     for next_t_id in self.dag_tokens.succ(job_token.persistent_id):
+    #         if not isinstance(next_t_id, int):
+    #             continue
+    #         step_rows = self.info_tokens[next_t_id].step_rows
+    #         if is_there_step_type(step_rows, (ExecuteStep,)):
+    #             output_token_ids.add(next_t_id)
+    #     return output_token_ids
 
     async def _refold_graphs(self, output_ports):
         rdwp = RollbackDeterministicWorkflowPolicy(self.context)
@@ -793,11 +811,13 @@ class NewProvenanceGraphNavigation:
         #             self.info_tokens.get(next_t_id, None),
         #         )
         queue = deque((DirectGraph.LAST_GRAPH_FLAG,))
+        visited = set()
         while queue:
             t_id = queue.popleft()
+            visited.add(t_id)
             prev_t_ids = self.dag_tokens.prev(t_id)
             for prev_t_id in prev_t_ids:
-                if prev_t_id not in rdwp.dag_tokens.keys():
+                if prev_t_id not in visited and prev_t_id not in queue:
                     queue.append(prev_t_id)
                 rdwp.new_add(
                     self.info_tokens.get(prev_t_id, None),
@@ -830,7 +850,5 @@ class NewProvenanceGraphNavigation:
             )
         return rdwp
 
-    async def refold_graphs(
-        self, output_ports, split_last_iteration=True
-    ) -> RollbackDeterministicWorkflowPolicy:
+    async def refold_graphs(self, output_ports) -> RollbackDeterministicWorkflowPolicy:
         return await self._refold_graphs(output_ports)

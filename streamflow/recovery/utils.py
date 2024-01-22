@@ -2,14 +2,13 @@ from __future__ import annotations
 
 
 import asyncio
-import json
 import logging
 import posixpath
 from typing import MutableMapping, MutableSequence, Collection
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
-from streamflow.core.utils import get_class_fullname, get_class_from_name
+from streamflow.core.utils import get_class_fullname
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import (
     FailureHandlingException,
@@ -18,22 +17,15 @@ from streamflow.core.workflow import Token
 
 
 from streamflow.cwl import utils
-from streamflow.cwl.step import CWLLoopConditionalStep
 from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.transformer import (
-    BackPropagationTransformer,
-    OutputForwardTransformer,
-)
+
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
-from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import JobPort, ConnectorPort
 from streamflow.workflow.step import (
     ExecuteStep,
     InputInjectorStep,
-    LoopOutputStep,
-    CombinatorStep,
 )
 from streamflow.workflow.token import (
     JobToken,
@@ -85,7 +77,7 @@ def get_files_from_token(token: Token) -> MutableSequence[str]:
     return []
 
 
-async def get_steps_from_output_port(port_id, context):
+async def get_step_instances_from_output_port(port_id, context):
     step_id_rows = await context.database.get_steps_from_output_port(port_id)
     return await asyncio.gather(
         *(
@@ -251,7 +243,9 @@ def get_value(elem, dictionary):
 async def _execute_recovered_workflow(new_workflow, step_name, output_ports):
     if not new_workflow.steps.keys():
         logger.info(
-            f"Workflow {new_workflow.name} is empty. Waiting output ports {[p.name for p in new_workflow.ports.values() if not isinstance(p, (JobPort, ConnectorPort))]}"
+            f"Workflow {new_workflow.name} is empty. "
+            f"Waiting output ports "
+            f"{[p.name for p in new_workflow.ports.values() if not isinstance(p, (JobPort, ConnectorPort))]}"
         )
 
         # for debug. Versione corretta quella con la gather
@@ -296,112 +290,7 @@ async def load_and_add_ports(port_ids, new_workflow, loading_context):
             logger.debug(
                 f"populate_workflow: La port {port.name} è già presente nel workflow {new_workflow.name}"
             )
-    logger.debug("populate_workflow: Port caricate")
-
-
-async def load_and_add_steps(step_ids, new_workflow, wr, loading_context):
-    new_step_ids = set()
-    step_name_id = {}
-    for sid, step in zip(
-        step_ids,
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    loading_context.load_step(new_workflow.context, step_id)
-                )
-                for step_id in step_ids
-            )
-        ),
-    ):
-        logger.debug(f"Loaded step {step.name} (id {sid})")
-        step_name_id[step.name] = sid
-
-        # if there are not the input ports in the workflow, the step is not added
-        if not (set(step.input_ports.values()) - set(new_workflow.ports.keys())):
-            # removesuffix python 3.9
-            if isinstance(step, CWLLoopConditionalStep) and (
-                wr.external_loop_step_name.removesuffix("-recovery")
-                == step.name.removesuffix("-recovery")
-            ):
-                if not wr.external_loop_step:
-                    wr.external_loop_step = step
-                else:
-                    continue
-            elif isinstance(step, OutputForwardTransformer):
-                port_id = min(wr.port_name_ids[step.get_output_port().name])
-                for (
-                    step_dep_row
-                ) in await new_workflow.context.database.get_steps_from_input_port(
-                    port_id
-                ):
-                    step_row = await new_workflow.context.database.get_step(
-                        step_dep_row["step"]
-                    )
-                    if step_row["name"] not in new_workflow.steps.keys() and issubclass(
-                        get_class_from_name(step_row["type"]), LoopOutputStep
-                    ):
-                        logger.debug(
-                            f"Step {step_row['name']} from id {step_row['id']} will be added soon (2)"
-                        )
-                        new_step_ids.add(step_row["id"])
-            elif isinstance(step, BackPropagationTransformer):
-                # for port_name in step.output_ports.values(): # potrebbe sostituire questo for
-                for (
-                    port_dep_row
-                ) in await new_workflow.context.database.get_output_ports(
-                    step_name_id[step.name]
-                ):
-                    # if there are more iterations
-                    if len(wr.port_tokens[step.output_ports[port_dep_row["name"]]]) > 1:
-                        for (
-                            step_dep_row
-                        ) in await new_workflow.context.database.get_steps_from_output_port(
-                            port_dep_row["port"]
-                        ):
-                            step_row = await new_workflow.context.database.get_step(
-                                step_dep_row["step"]
-                            )
-                            if issubclass(
-                                get_class_from_name(step_row["type"]), CombinatorStep
-                            ) and issubclass(
-                                get_class_from_name(
-                                    json.loads(step_row["params"])["combinator"]["type"]
-                                ),
-                                LoopTerminationCombinator,
-                            ):
-                                logger.debug(
-                                    f"Step {step_row['name']} from id {step_row['id']} will be added soon (1)"
-                                )
-                                new_step_ids.add(step_row["id"])
-            logger.debug(
-                f"populate_workflow: (1) Step {step.name} caricato nel wf {new_workflow.name}"
-            )
-            new_workflow.steps[step.name] = step
-        else:
-            logger.debug(
-                f"populate_workflow: Step {step.name} non viene essere caricato perché nel wf {new_workflow.name} mancano le ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())}. It is present in the workflow: {step.name in new_workflow.steps.keys()}"
-            )
-    for sid, other_step in zip(
-        new_step_ids,
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    loading_context.load_step(
-                        new_workflow.context,
-                        step_id,
-                    )
-                )
-                for step_id in new_step_ids
-            )
-        ),
-    ):
-        logger.debug(
-            f"populate_workflow: (2) Step {other_step.name} (from step id {sid}) caricato nel wf {new_workflow.name}"
-        )
-        step_name_id[other_step.name] = sid
-        new_workflow.steps[other_step.name] = other_step
-    logger.debug("populate_workflow: Step caricati")
-    return step_name_id
+    logger.debug("populate_workflow: Port loaded")
 
 
 def _missing_dependency_ports(
@@ -427,7 +316,8 @@ async def load_missing_ports(new_workflow, step_name_id, loading_context):
             ):
                 if dependency_row["name"] in missing_dependency_ports:
                     logger.debug(
-                        f"populate_workflow: Aggiungo port {step.output_ports[dependency_row['name']]} al wf {new_workflow.name} perché è un output port dello step {step.name}"
+                        f"populate_workflow: Aggiungo port {step.output_ports[dependency_row['name']]} al "
+                        f"wf {new_workflow.name} perché è un output port dello step {step.name}"
                     )
                     missing_ports.add(dependency_row["port"])
     for port in await asyncio.gather(
