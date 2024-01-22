@@ -95,15 +95,11 @@ class DefaultScheduler(Scheduler):
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
 
-    def deallocate_job(self, job: str, keep_job_allocation: bool = False):
-        if not keep_job_allocation:
-            job_allocation = self.job_allocations.pop(job)
-        else:
-            job_allocation = self.job_allocations[job]
+    def deallocate_job(self, job: str):
+        job_allocation = self.job_allocations.pop(job)
         for loc in job_allocation.locations:
             if job in self.location_allocations[loc.deployment][loc.name].jobs:
                 self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
-        job_allocation.locations.clear()
         if logger.isEnabledFor(logging.INFO):
             if len(job_allocation.locations) == 1:
                 is_local = isinstance(
