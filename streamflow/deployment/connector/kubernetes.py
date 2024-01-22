@@ -847,7 +847,7 @@ class KubernetesConnector(BaseKubernetesConnector):
                             )
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(f"COMPLETED deployment of {f}")
-            except BaseException as e:
+            except Exception as e:
                 raise WorkflowExecutionException(
                     f"FAILED Deployment of {self.deployment_name} environment."
                 ) from e
@@ -871,7 +871,7 @@ class KubernetesConnector(BaseKubernetesConnector):
                             for k8s_object in self.k8s_objects[f]
                         )
                     )
-            except BaseException as e:
+            except Exception as e:
                 raise WorkflowExecutionException(
                     f"FAILED Undeployment of {self.deployment_name} environment."
                 ) from e
