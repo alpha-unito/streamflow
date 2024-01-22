@@ -288,10 +288,6 @@ def cmp(a, b):
     return (a > b) - (a < b)
 
 
-def get_tag_level(tag: str):
-    return len(tag.split("."))
-
-
 # compare_tags( 0,      0.0) 	=>  -1
 # compare_tags( 0.0,    0.0) 	=> 	 0
 # compare_tags( 0.0,    0.1) 	=> 	-1
