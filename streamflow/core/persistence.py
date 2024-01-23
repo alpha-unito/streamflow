@@ -220,13 +220,29 @@ class Database(SchemaEntity):
         ...
 
     @abstractmethod
+    async def get_input_steps(
+        self, port_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        ...
+
+    @abstractmethod
     async def get_output_ports(
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         ...
 
     @abstractmethod
+    async def get_output_steps(
+        self, port_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        ...
+
+    @abstractmethod
     async def get_port(self, port_id: int) -> MutableMapping[str, Any]:
+        ...
+
+    @abstractmethod
+    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
         ...
 
     @abstractmethod
