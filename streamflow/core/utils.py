@@ -282,8 +282,8 @@ def cmp(a, b):
 
 
 # compare_tags( 0,      0.0) 	=>  -1
-# compare_tags( 0.0,    0.0) 	=> 	 0
-# compare_tags( 0.0,    0.1) 	=> 	-1
+# compare_tags( 0.0,    0.0) 	=>   0
+# compare_tags( 0.0,    0.1) 	=>  -1
 # compare_tags( 0.1.0,  0.0)    =>   1
 # compare_tags( 0.3.4,  0.5.1)  =>  -1
 def compare_tags(tag1, tag2):
