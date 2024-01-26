@@ -69,6 +69,9 @@ class SSHContext:
                             )
                             self.close()
                             raise
+                    except asyncssh.Error:
+                        self.close()
+                        raise
                     await asyncio.sleep(self._retry_delay)
                 self._connect_event.set()
             else:
