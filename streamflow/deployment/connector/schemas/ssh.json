@@ -115,14 +115,14 @@
       "type": "string",
       "description": "Path to a file containing the password to use for authentication"
     },
-    "retry": {
+    "retries": {
       "type": "integer",
-      "description": "Maximum number of attempts to connect before to fail",
+      "description": "Number of consecutive connection errors to consider the connection failed",
       "default": 3
     },
     "retryDelay": {
       "type": "integer",
-      "description": "Sleep this amount of time before each retry to connect",
+      "description": "Time (in seconds) to wait before retrying to connect",
       "default": 5
     },
     "services": {

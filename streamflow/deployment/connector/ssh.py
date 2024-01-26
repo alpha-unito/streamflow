@@ -10,7 +10,7 @@ from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
-from asyncssh import ChannelOpenError
+from asyncssh import ChannelOpenError, ConnectionLost
 from cachetools import Cache, LRUCache
 from importlib_resources import files
 
@@ -42,7 +42,7 @@ class SSHContext:
         streamflow_config_dir: str,
         config: SSHConfig,
         max_concurrent_sessions: int,
-        retry: int,
+        retries: int,
         retry_delay: int,
     ):
         self._streamflow_config_dir: str = streamflow_config_dir
@@ -50,7 +50,7 @@ class SSHContext:
         self._max_concurrent_sessions: int = max_concurrent_sessions
         self._ssh_connection: asyncssh.SSHClientConnection | None = None
         self._connecting = False
-        self._retry = retry
+        self._retries = retries
         self._retry_delay = retry_delay
         self._connect_event: asyncio.Event = asyncio.Event()
 
@@ -58,12 +58,12 @@ class SSHContext:
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
-                for i in range(self._retry):
+                for i in range(self._retries):
                     try:
                         self._ssh_connection = await self._get_connection(self._config)
                         break
-                    except (ConnectionError, asyncssh.Error) as e:
-                        if i == self._retry - 1:
+                    except (ConnectionError, ConnectionLost) as e:
+                        if i == self._retries - 1:
                             logger.exception(
                                 f"Impossible to connect to {self._config.hostname}: {e}"
                             )
@@ -197,7 +197,7 @@ class SSHContextFactory:
         config: SSHConfig,
         max_concurrent_sessions: int,
         max_connections: int,
-        retry: int,
+        retries: int,
         retry_delay: int,
     ):
         self._condition: asyncio.Condition = asyncio.Condition()
@@ -206,7 +206,7 @@ class SSHContextFactory:
                 streamflow_config_dir=streamflow_config_dir,
                 config=config,
                 max_concurrent_sessions=max_concurrent_sessions,
-                retry=retry,
+                retries=retries,
                 retry_delay=retry_delay,
             )
             for _ in range(max_connections)
@@ -292,7 +292,7 @@ class SSHConnector(BaseConnector):
         file: str | None = None,
         maxConcurrentSessions: int = 10,
         maxConnections: int = 1,
-        retry: int = 3,
+        retries: int = 3,
         retryDelay: int = 5,
         passwordFile: str | None = None,
         services: MutableMapping[str, str] | None = None,
@@ -331,7 +331,7 @@ class SSHConnector(BaseConnector):
         self.passwordFile: str | None = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
         self.maxConnections: int = maxConnections
-        self.retry: int = retry
+        self.retries: int = retries
         self.retryDelay: int = retryDelay
         self.sharedPaths: MutableSequence[str] = sharedPaths or []
         self.sshKey: str | None = sshKey
@@ -550,7 +550,7 @@ class SSHConnector(BaseConnector):
                     config=self.dataTransferConfig,
                     max_concurrent_sessions=self.maxConcurrentSessions,
                     max_connections=self.maxConnections,
-                    retry=self.retry,
+                    retries=self.retries,
                     retry_delay=self.retryDelay,
                 )
             return self.data_transfer_context_factories[location].get(
@@ -650,7 +650,7 @@ class SSHConnector(BaseConnector):
                 config=self.nodes[location],
                 max_concurrent_sessions=self.maxConcurrentSessions,
                 max_connections=self.maxConnections,
-                retry=self.retry,
+                retries=self.retries,
                 retry_delay=self.retryDelay,
             )
         return self.ssh_context_factories[location].get(
@@ -671,7 +671,7 @@ class SSHConnector(BaseConnector):
                     config=self.dataTransferConfig,
                     max_concurrent_sessions=self.maxConcurrentSessions,
                     max_connections=self.maxConnections,
-                    retry=self.retry,
+                    retries=self.retries,
                     retry_delay=self.retryDelay,
                 )
             ssh_context_factory = self.data_transfer_context_factories[location.name]
@@ -682,7 +682,7 @@ class SSHConnector(BaseConnector):
                     config=self.nodes[location.name],
                     max_concurrent_sessions=self.maxConcurrentSessions,
                     max_connections=self.maxConnections,
-                    retry=self.retry,
+                    retries=self.retries,
                     retry_delay=self.retryDelay,
                 )
             ssh_context_factory = self.ssh_context_factories[location.name]
