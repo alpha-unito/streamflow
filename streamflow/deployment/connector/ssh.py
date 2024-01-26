@@ -10,7 +10,7 @@ from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
-from asyncssh import ChannelOpenError
+from asyncssh import ChannelOpenError, ConnectionLost
 from cachetools import Cache, LRUCache
 from importlib_resources import files
 
@@ -56,7 +56,7 @@ class SSHContext:
                 self._connecting = True
                 try:
                     self._ssh_connection = await self._get_connection(self._config)
-                except ConnectionError as e:
+                except (ConnectionError, ConnectionLost) as e:
                     logger.exception(
                         f"Impossible to connect to {self._config.hostname}: {e}"
                     )
