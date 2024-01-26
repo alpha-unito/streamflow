@@ -115,6 +115,16 @@
       "type": "string",
       "description": "Path to a file containing the password to use for authentication"
     },
+    "retry": {
+      "type": "integer",
+      "description": "Maximum number of attempts to connect before to fail",
+      "default": 3
+    },
+    "retryDelay": {
+      "type": "integer",
+      "description": "Sleep this amount of time before each retry to connect",
+      "default": 5
+    },
     "services": {
       "type": "object",
       "patternProperties": {
