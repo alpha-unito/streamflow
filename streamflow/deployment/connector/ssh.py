@@ -58,17 +58,22 @@ class SSHContext:
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
-                for i in range(self._retries):
+                for i in range(1, self._retries + 1):
                     try:
                         self._ssh_connection = await self._get_connection(self._config)
                         break
                     except (ConnectionError, ConnectionLost) as e:
-                        if i == self._retries - 1:
+                        if i == self._retries:
                             logger.exception(
                                 f"Impossible to connect to {self._config.hostname}: {e}"
                             )
                             self.close()
                             raise
+                        if logger.isEnabledFor(logging.WARNING):
+                            logger.warning(
+                                f"Connection to {self._config.hostname} failed: {e}. "
+                                f"Waiting {self._retry_delay} seconds for the next attempt."
+                            )
                     except asyncssh.Error:
                         self.close()
                         raise
