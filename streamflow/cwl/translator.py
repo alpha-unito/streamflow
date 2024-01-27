@@ -758,9 +758,7 @@ def _create_token_processor(
             port_type = (
                 "long"
                 if port_type == "int"
-                else "double"
-                if port_type == "float"
-                else port_type
+                else "double" if port_type == "float" else port_type
             )
             return CWLTokenProcessor(
                 name=port_name,
@@ -825,9 +823,7 @@ def _get_command_token(
     token_type = (
         "long"
         if token_type == "int"  # nosec
-        else "double"
-        if token_type == "float"  # nosec
-        else token_type
+        else "double" if token_type == "float" else token_type  # nosec
     )
     if isinstance(binding, MutableMapping):
         item_separator = binding.get("itemSeparator", None)
@@ -1064,9 +1060,11 @@ def _get_secondary_files(
         return [
             SecondaryFile(
                 pattern=sf["pattern"],
-                required=sf.get("required")
-                if sf.get("required") is not None
-                else default_required,
+                required=(
+                    sf.get("required")
+                    if sf.get("required") is not None
+                    else default_required
+                ),
             )
             for sf in cwl_element
         ]
@@ -1074,9 +1072,11 @@ def _get_secondary_files(
         return [
             SecondaryFile(
                 pattern=cwl_element["pattern"],
-                required=cwl_element.get("required")
-                if cwl_element.get("required") is not None
-                else default_required,
+                required=(
+                    cwl_element.get("required")
+                    if cwl_element.get("required") is not None
+                    else default_required
+                ),
             )
         ]
     else:
@@ -2217,9 +2217,9 @@ class CWLTranslator:
                         cls=GatherStep,
                         name=global_name + "-gather",
                         size_port=size_port,
-                        depth=1
-                        if scatter_method == "dotproduct"
-                        else len(scatter_inputs),
+                        depth=(
+                            1 if scatter_method == "dotproduct" else len(scatter_inputs)
+                        ),
                     )
                     internal_output_ports[global_name] = workflow.create_port()
                     gather_step.add_input_port(
@@ -2280,9 +2280,11 @@ class CWLTranslator:
                 )
                 # Create loop output step
                 loop_output_step = workflow.create_step(
-                    cls=CWLLoopOutputLastStep
-                    if output_method == "last"
-                    else CWLLoopOutputAllStep,
+                    cls=(
+                        CWLLoopOutputLastStep
+                        if output_method == "last"
+                        else CWLLoopOutputAllStep
+                    ),
                     name=global_name + "-loop-output",
                 )
                 loop_output_step.add_input_port(
@@ -2468,9 +2470,11 @@ class CWLTranslator:
                 expression_lib=expression_lib,
             )
             input_dependencies[global_name] = set.union(
-                {global_name}
-                if "source" in element_input or "default" in element_input
-                else set(),
+                (
+                    {global_name}
+                    if "source" in element_input or "default" in element_input
+                    else set()
+                ),
                 {posixpath.join(step_name, d) for d in local_deps},
             ) or {global_name}
         # If `source` entry is present, process output dependencies
@@ -2695,9 +2699,9 @@ class CWLTranslator:
                     )
                     transfer_step.add_output_port(port_name, workflow.create_port())
                     # Add the output port of the TransferStep to the workflow output ports
-                    workflow.output_ports[
-                        port_name
-                    ] = transfer_step.get_output_port().name
+                    workflow.output_ports[port_name] = (
+                        transfer_step.get_output_port().name
+                    )
         # Return the final workflow object
         return workflow
 

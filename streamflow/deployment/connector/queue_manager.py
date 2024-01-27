@@ -422,20 +422,16 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         return list(locations.values())[0]
 
     @abstractmethod
-    async def _get_output(self, job_id: str, location: Location) -> str:
-        ...
+    async def _get_output(self, job_id: str, location: Location) -> str: ...
 
     @abstractmethod
-    async def _get_returncode(self, job_id: str, location: Location) -> int:
-        ...
+    async def _get_returncode(self, job_id: str, location: Location) -> int: ...
 
     @abstractmethod
-    async def _get_running_jobs(self, location: Location) -> bool:
-        ...
+    async def _get_running_jobs(self, location: Location) -> bool: ...
 
     @abstractmethod
-    async def _remove_jobs(self, location: Location) -> None:
-        ...
+    async def _remove_jobs(self, location: Location) -> None: ...
 
     @abstractmethod
     async def _run_batch_command(
@@ -448,13 +444,11 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         stdout: int | str = asyncio.subprocess.STDOUT,
         stderr: int | str = asyncio.subprocess.STDOUT,
         timeout: int | None = None,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @property
     @abstractmethod
-    def _service_class(self) -> type[QueueManagerService]:
-        ...
+    def _service_class(self) -> type[QueueManagerService]: ...
 
     async def get_available_locations(
         self,
@@ -543,9 +537,11 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 await asyncio.sleep(self.pollingInterval)
             self.scheduledJobs.remove(job_id)
             return (
-                await self._get_output(job_id, location)
-                if stdout == asyncio.subprocess.STDOUT
-                else None,
+                (
+                    await self._get_output(job_id, location)
+                    if stdout == asyncio.subprocess.STDOUT
+                    else None
+                ),
                 await self._get_returncode(job_id, location),
             )
         else:

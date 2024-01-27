@@ -35,8 +35,7 @@ class IterationTerminationToken(Token):
 
 class FileToken(Token, ABC):
     @abstractmethod
-    async def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]:
-        ...
+    async def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]: ...
 
 
 class JobToken(Token):

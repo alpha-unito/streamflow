@@ -212,9 +212,11 @@ class DefaultScheduler(Scheduler):
                         logger.debug(
                             "Retrieving available locations for job {} on {}.".format(
                                 job_context.job.name,
-                                posixpath.join(deployment, target.service)
-                                if target.service
-                                else deployment,
+                                (
+                                    posixpath.join(deployment, target.service)
+                                    if target.service
+                                    else deployment
+                                ),
                             )
                         )
                     available_locations = dict(
@@ -240,9 +242,11 @@ class DefaultScheduler(Scheduler):
                             logger.debug(
                                 "Available locations for job {} on {} are {}.".format(
                                     job_context.job.name,
-                                    posixpath.join(deployment, target.service)
-                                    if target.service
-                                    else deployment,
+                                    (
+                                        posixpath.join(deployment, target.service)
+                                        if target.service
+                                        else deployment
+                                    ),
                                     list(valid_locations.keys()),
                                 )
                             )
@@ -315,9 +319,11 @@ class DefaultScheduler(Scheduler):
                             logger.debug(
                                 "No location available for job {} on deployment {}.".format(
                                     job_context.job.name,
-                                    posixpath.join(deployment, target.service)
-                                    if target.service
-                                    else deployment,
+                                    (
+                                        posixpath.join(deployment, target.service)
+                                        if target.service
+                                        else deployment
+                                    ),
                                 )
                             )
                 try:
