@@ -205,8 +205,7 @@ class Combinator(ABC):
     @abstractmethod
     async def combine(
         self, port_name: str, token: Token
-    ) -> AsyncIterable[MutableMapping[str, Token]]:
-        ...
+    ) -> AsyncIterable[MutableMapping[str, Token]]: ...
 
     @classmethod
     async def load(
@@ -367,16 +366,13 @@ class ConditionalStep(BaseStep):
         super().__init__(name, workflow)
 
     @abstractmethod
-    async def _eval(self, inputs: MutableMapping[str, Token]):
-        ...
+    async def _eval(self, inputs: MutableMapping[str, Token]): ...
 
     @abstractmethod
-    async def _on_true(self, inputs: MutableMapping[str, Token]):
-        ...
+    async def _on_true(self, inputs: MutableMapping[str, Token]): ...
 
     @abstractmethod
-    async def _on_false(self, inputs: MutableMapping[str, Token]):
-        ...
+    async def _on_false(self, inputs: MutableMapping[str, Token]): ...
 
     async def run(self):
         try:
@@ -740,9 +736,9 @@ class ExecuteStep(BaseStep):
         self, name: str, port: Port, output_processor: CommandOutputProcessor = None
     ) -> None:
         super().add_output_port(name, port)
-        self.output_processors[
-            name
-        ] = output_processor or DefaultCommandOutputProcessor(name, self.workflow)
+        self.output_processors[name] = (
+            output_processor or DefaultCommandOutputProcessor(name, self.workflow)
+        )
 
     async def run(self) -> None:
         jobs = []
@@ -1005,8 +1001,7 @@ class InputInjectorStep(BaseStep, ABC):
             )
 
     @abstractmethod
-    async def process_input(self, job: Job, token_value: Any) -> Token:
-        ...
+    async def process_input(self, job: Job, token_value: Any) -> Token: ...
 
     async def run(self):
         input_ports = {
@@ -1166,8 +1161,7 @@ class LoopOutputStep(BaseStep, ABC):
         self.termination_map: MutableMapping[str, bool] = {}
 
     @abstractmethod
-    async def _process_output(self, tag: str) -> Token:
-        ...
+    async def _process_output(self, tag: str) -> Token: ...
 
     def add_input_port(self, name: str, port: Port) -> None:
         if not self.input_ports or name in self.input_ports:
@@ -1345,9 +1339,11 @@ class ScheduleStep(BaseStep):
                         location=location,
                         path=directory,
                         relpath=directory,
-                        data_type=DataType.PRIMARY
-                        if realpath == directory
-                        else DataType.SYMBOLIC_LINK,
+                        data_type=(
+                            DataType.PRIMARY
+                            if realpath == directory
+                            else DataType.SYMBOLIC_LINK
+                        ),
                     )
         # Propagate job
         token_inputs = []
@@ -1471,9 +1467,11 @@ class ScheduleStep(BaseStep):
                 await self.workflow.context.scheduler.schedule(
                     job,
                     self.binding_config,
-                    self.hardware_requirement.eval({})
-                    if self.hardware_requirement
-                    else None,
+                    (
+                        self.hardware_requirement.eval({})
+                        if self.hardware_requirement
+                        else None
+                    ),
                 )
                 locations = self.workflow.context.scheduler.get_locations(job.name)
                 await self._propagate_job(
@@ -1683,8 +1681,7 @@ class TransferStep(BaseStep, ABC):
         await self.terminate(status)
 
     @abstractmethod
-    async def transfer(self, job: Job, token: Token) -> Token:
-        ...
+    async def transfer(self, job: Job, token: Token) -> Token: ...
 
 
 class Transformer(BaseStep, ABC):
@@ -1764,5 +1761,4 @@ class Transformer(BaseStep, ABC):
     @abstractmethod
     async def transform(
         self, inputs: MutableMapping[str, Token]
-    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
-        ...
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]: ...

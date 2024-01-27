@@ -345,9 +345,9 @@ class SSHConnector(BaseConnector):
         self.sshKey: str | None = sshKey
         self.sshKeyPassphraseFile: str | None = sshKeyPassphraseFile
         self.ssh_context_factories: MutableMapping[str, SSHContextFactory] = {}
-        self.data_transfer_context_factories: MutableMapping[
-            str, SSHContextFactory
-        ] = {}
+        self.data_transfer_context_factories: MutableMapping[str, SSHContextFactory] = (
+            {}
+        )
         self.username: str = username
         self.tunnel: SSHConfig | None = self._get_config(tunnel)
         self.dataTransferConfig: SSHConfig | None = self._get_config(
@@ -440,8 +440,8 @@ class SSHConnector(BaseConnector):
                 locations[i : i + rounds] for i in range(0, len(locations), rounds)
             ]
             for location_group in location_groups:
-                async with (
-                    await source_connector.get_stream_reader(source_location, src)
+                async with await source_connector.get_stream_reader(
+                    source_location, src
                 ) as reader:
                     async with contextlib.AsyncExitStack() as exit_stack:
                         # Open a target StreamWriter for each location
@@ -511,13 +511,13 @@ class SSHConnector(BaseConnector):
         return SSHConfig(
             hostname=node["hostname"],
             username=node["username"] if "username" in node else self.username,
-            check_host_key=node["checkHostKey"]
-            if "checkHostKey" in node
-            else self.checkHostKey,
+            check_host_key=(
+                node["checkHostKey"] if "checkHostKey" in node else self.checkHostKey
+            ),
             client_keys=[ssh_key] if ssh_key is not None else [],
-            password_file=node["passwordFile"]
-            if "passwordFile" in node
-            else self.passwordFile,
+            password_file=(
+                node["passwordFile"] if "passwordFile" in node else self.passwordFile
+            ),
             ssh_key_passphrase_file=(
                 node["sshKeyPassphraseFile"]
                 if "sshKeyPassphraseFile" in node
@@ -526,9 +526,7 @@ class SSHConnector(BaseConnector):
             tunnel=(
                 self._get_config(node["tunnel"])
                 if "tunnel" in node
-                else self.tunnel
-                if hasattr(self, "tunnel")
-                else None
+                else self.tunnel if hasattr(self, "tunnel") else None
             ),
         )
 

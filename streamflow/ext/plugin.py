@@ -57,8 +57,7 @@ class StreamFlowPlugin(ABC):
         extension_points[extension_point][name] = cls
 
     @abstractmethod
-    def register(self) -> None:
-        ...
+    def register(self) -> None: ...
 
     def register_binding_filter(self, name: str, cls: type[BindingFilter]):
         self._register(name, cls, "binding_filter")

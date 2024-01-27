@@ -664,8 +664,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                     self.graph[dst][k] = v
 
     @abstractmethod
-    async def add_initial_inputs(self, wf_id: int, workflow: Workflow) -> None:
-        ...
+    async def add_initial_inputs(self, wf_id: int, workflow: Workflow) -> None: ...
 
     async def add_property(self, key: str, value: str):
         current_obj = self.graph
@@ -893,14 +892,12 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         print(f"Successfully created run_crate archive at {path}")
 
     @abstractmethod
-    async def get_main_entity(self) -> MutableMapping[str, Any]:
-        ...
+    async def get_main_entity(self) -> MutableMapping[str, Any]: ...
 
     @abstractmethod
     async def get_property_value(
         self, name: str, token: Token
-    ) -> MutableMapping[str, Any] | None:
-        ...
+    ) -> MutableMapping[str, Any] | None: ...
 
     def register_input_port(
         self, streamflow_name: str, run_crate_param: MutableMapping[str, Any]

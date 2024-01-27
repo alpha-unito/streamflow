@@ -272,18 +272,15 @@ class ContainerConnector(BaseConnector, ABC):
     @abstractmethod
     async def _get_bind_mounts(
         self, location: Location
-    ) -> MutableSequence[MutableMapping[str, str]]:
-        ...
+    ) -> MutableSequence[MutableMapping[str, str]]: ...
 
     @abstractmethod
-    async def _get_location(self, location_name: str) -> AvailableLocation | None:
-        ...
+    async def _get_location(self, location_name: str) -> AvailableLocation | None: ...
 
     @abstractmethod
     async def _get_volumes(
         self, location: Location
-    ) -> MutableSequence[MutableMapping[str, str]]:
-        ...
+    ) -> MutableSequence[MutableMapping[str, str]]: ...
 
     async def _is_bind_transfer(
         self, location: Location, host_path: str, instance_path: str
@@ -1079,9 +1076,9 @@ class SingularityConnector(ContainerConnector):
         # Exclude `overlay` and `tmpfs` mounts
         return [
             {
-                "Source": line.split()[2]
-                if line.split()[1] == "/"
-                else line.split()[1],
+                "Source": (
+                    line.split()[2] if line.split()[1] == "/" else line.split()[1]
+                ),
                 "Destination": line.split()[2],
             }
             for line in bind_mounts.splitlines()

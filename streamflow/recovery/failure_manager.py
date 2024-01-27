@@ -257,8 +257,7 @@ class DefaultFailureManager(FailureManager):
 
 
 class DummyFailureManager(FailureManager):
-    async def close(self):
-        ...
+    async def close(self): ...
 
     @classmethod
     def get_schema(cls) -> str:

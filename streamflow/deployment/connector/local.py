@@ -94,15 +94,21 @@ class LocalConnector(BaseConnector):
                 hardware=Hardware(
                     cores=self.cores,
                     memory=self.memory,
-                    input_directory=_get_disk_usage(Path(input_directory))
-                    if input_directory
-                    else float("inf"),
-                    output_directory=_get_disk_usage(Path(output_directory))
-                    if output_directory
-                    else float("inf"),
-                    tmp_directory=_get_disk_usage(Path(tmp_directory))
-                    if tmp_directory
-                    else float("inf"),
+                    input_directory=(
+                        _get_disk_usage(Path(input_directory))
+                        if input_directory
+                        else float("inf")
+                    ),
+                    output_directory=(
+                        _get_disk_usage(Path(output_directory))
+                        if output_directory
+                        else float("inf")
+                    ),
+                    tmp_directory=(
+                        _get_disk_usage(Path(tmp_directory))
+                        if tmp_directory
+                        else float("inf")
+                    ),
                 ),
             )
         }

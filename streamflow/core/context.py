@@ -18,8 +18,7 @@ if TYPE_CHECKING:
 class SchemaEntity(ABC):
     @classmethod
     @abstractmethod
-    def get_schema(cls) -> str:
-        ...
+    def get_schema(cls) -> str: ...
 
 
 class StreamFlowContext:
