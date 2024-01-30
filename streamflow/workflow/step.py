@@ -1066,7 +1066,7 @@ class InputInjectorStep(BaseStep, ABC):
 class LoopCombinatorStep(CombinatorStep):
     def __init__(self, name: str, workflow: Workflow, combinator: Combinator):
         super().__init__(name, workflow, combinator)
-        self.iteration_terminaton_checklist: MutableMapping[str, set[str]] = {}
+        self.iteration_termination_checklist: MutableMapping[str, set[str]] = {}
 
     async def run(self):
         # Set default status to SKIPPED
@@ -1074,7 +1074,7 @@ class LoopCombinatorStep(CombinatorStep):
         if self.input_ports:
             input_tasks, terminated = [], []
             for port_name, port in self.get_input_ports().items():
-                self.iteration_terminaton_checklist[port_name] = set()
+                self.iteration_termination_checklist[port_name] = set()
                 input_tasks.append(
                     asyncio.create_task(
                         port.get(posixpath.join(self.name, port_name)), name=port_name
@@ -1098,13 +1098,13 @@ class LoopCombinatorStep(CombinatorStep):
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
                     elif check_iteration_termination(token):
-                        if token.tag in self.iteration_terminaton_checklist[task_name]:
+                        if token.tag in self.iteration_termination_checklist[task_name]:
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
                                     f"Step {self.name} received iteration termination token {token.tag} "
                                     f"for port {task_name}"
                                 )
-                            self.iteration_terminaton_checklist[task_name].remove(
+                            self.iteration_termination_checklist[task_name].remove(
                                 token.tag
                             )
                     # Otherwise, build combination and set default status to COMPLETED
@@ -1117,9 +1117,9 @@ class LoopCombinatorStep(CombinatorStep):
                         status = Status.COMPLETED
                         if (
                             ".".join(token.tag.split(".")[:-1])
-                            not in self.iteration_terminaton_checklist[task_name]
+                            not in self.iteration_termination_checklist[task_name]
                         ):
-                            self.iteration_terminaton_checklist[task_name].add(
+                            self.iteration_termination_checklist[task_name].add(
                                 token.tag
                             )
 
@@ -1139,7 +1139,7 @@ class LoopCombinatorStep(CombinatorStep):
                     # Create a new task in place of the completed one if the port is not terminated
                     if not (
                         task_name in terminated
-                        and len(self.iteration_terminaton_checklist[task_name]) == 0
+                        and len(self.iteration_termination_checklist[task_name]) == 0
                     ):
                         input_tasks.append(
                             asyncio.create_task(
