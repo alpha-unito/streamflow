@@ -385,7 +385,7 @@ class SqliteDatabase(CachedDatabase):
             if last_only:
                 async with db.execute(
                     "SELECT c.id, s.name, c.start_time, c.end_time "
-                    "FROM step AS s, command AS c "
+                    "FROM step AS s, execution AS c "
                     "WHERE s.id = c.step "
                     "AND s.workflow = (SELECT id FROM workflow WHERE name = :workflow ORDER BY id DESC LIMIT 1)",
                     {"workflow": workflow},
@@ -394,7 +394,7 @@ class SqliteDatabase(CachedDatabase):
             else:
                 async with db.execute(
                     "SELECT s.workflow, c.id, s.name, c.start_time, c.end_time "
-                    "FROM step AS s, command AS c "
+                    "FROM step AS s, execution AS c "
                     "WHERE s.id = c.step "
                     "AND s.workflow IN (SELECT id FROM workflow WHERE name = :workflow) "
                     "ORDER BY s.workflow DESC",
