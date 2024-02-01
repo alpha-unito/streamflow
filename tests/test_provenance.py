@@ -139,18 +139,20 @@ async def test_scatter_step(context: StreamFlowContext):
     """Test token provenance for ScatterStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     token_list = [ListToken([Token("a"), Token("b"), Token("c")])]
-    await _general_test(
-        context=context,
-        workflow=workflow,
-        in_port=in_port,
-        out_port=out_port,
-        step_cls=ScatterStep,
-        kwargs_step={"name": utils.random_name() + "-scatter"},
-        token_list=token_list,
+    step = cast(
+        ScatterStep,
+        await _general_test(
+            context=context,
+            workflow=workflow,
+            in_port=in_port,
+            out_port=out_port,
+            step_cls=ScatterStep,
+            kwargs_step={"name": utils.random_name() + "-scatter"},
+            token_list=token_list,
+        ),
     )
     assert len(out_port.token_list) == 4
 
-    step = cast(ScatterStep, next(iter(workflow.steps.values())))
     size_port = step.get_size_port()
     assert len(size_port.token_list) == 2
     assert isinstance(out_port.token_list[-1], TerminationToken)
