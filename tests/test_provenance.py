@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, MutableMapping, MutableSequence
+from typing import Any, MutableMapping, MutableSequence, cast
 
 import pytest
 
@@ -149,6 +149,13 @@ async def test_scatter_step(context: StreamFlowContext):
         token_list=token_list,
     )
     assert len(out_port.token_list) == 4
+
+    step = cast(ScatterStep, next(iter(workflow.steps.values())))
+    size_port = step.get_size_port()
+    assert len(size_port.token_list) == 2
+    assert isinstance(out_port.token_list[-1], TerminationToken)
+    assert isinstance(size_port.token_list[-1], TerminationToken)
+
     for curr_token in out_port.token_list[:-1]:
         await _verify_dependency_tokens(
             token=curr_token,
@@ -156,6 +163,12 @@ async def test_scatter_step(context: StreamFlowContext):
             context=context,
             expected_dependee=[in_port.token_list[0]],
         )
+    await _verify_dependency_tokens(
+        token=size_port.token_list[0],
+        port=size_port,
+        context=context,
+        expected_dependee=[in_port.token_list[0]],
+    )
 
 
 @pytest.mark.asyncio
@@ -274,7 +287,9 @@ async def test_gather_step(context: StreamFlowContext):
     )
     base_tag = "0"
     token_list = [Token(i, tag=f"{base_tag}.{i}") for i in range(5)]
-    size_port.put(Token(len(token_list), tag=base_tag))
+    size_token = Token(len(token_list), tag=base_tag)
+    await size_token.save(context)
+    size_port.put(size_token)
     size_port.put(TerminationToken())
     await _general_test(
         context=context,
@@ -290,7 +305,7 @@ async def test_gather_step(context: StreamFlowContext):
         token=out_port.token_list[0],
         port=out_port,
         context=context,
-        expected_dependee=token_list,
+        expected_dependee=[*token_list, size_token],
     )
 
 

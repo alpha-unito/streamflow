@@ -825,14 +825,18 @@ class GatherStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow, size_port: Port, depth: int = 1):
         super().__init__(name, workflow)
         self.depth: int = depth
-        self.size_map: MutableMapping[str, int] = {}
+        self.size_map: MutableMapping[str, Token] = {}
         self.token_map: MutableMapping[str, MutableSequence[Token]] = {}
         self.add_input_port("__size__", size_port)
 
     def _get_input_port_name(self) -> str:
         return next(n for n in self.input_ports if n != "__size__")
 
-    async def _gather(self, key: str) -> None:
+    async def _gather(self, key: str, is_forced: bool = False) -> None:
+        input_tokens = []
+        input_tokens.extend(self.token_map[key])
+        if not is_forced:
+            input_tokens.append(self.size_map[key])
         output_port = self.get_output_port()
         output_port.put(
             await self._persist_token(
@@ -840,7 +844,7 @@ class GatherStep(BaseStep):
                     tag=key, value=sorted(self.token_map[key], key=lambda cur: cur.tag)
                 ),
                 port=output_port,
-                input_token_ids=_get_token_ids(self.token_map[key]),
+                input_token_ids=_get_token_ids(input_tokens),
             )
         )
 
@@ -929,7 +933,7 @@ class GatherStep(BaseStep):
                         )
                 else:
                     if task_name == "__size__":
-                        self.size_map[token.tag] = token.value
+                        self.size_map[token.tag] = token
                         port = size_port
                         if len(self.token_map.setdefault(token.tag, [])) == token.value:
                             await self._gather(token.tag)
@@ -940,9 +944,10 @@ class GatherStep(BaseStep):
                         key = ".".join(token.tag.split(".")[: -self.depth])
                         self.token_map.setdefault(key, []).append(token)
                         port = input_port
-                        if len(self.token_map.setdefault(key, [])) == self.size_map.get(
-                            key
-                        ):
+                        size_value = (
+                            self.size_map[key].value if key in self.size_map else None
+                        )
+                        if len(self.token_map.setdefault(key, [])) == size_value:
                             await self._gather(key)
                             keys_completed.add(key)
                     unfinished.add(
@@ -956,7 +961,7 @@ class GatherStep(BaseStep):
         for key in (k for k in self.token_map.keys() if k not in keys_completed):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Step {self.name} forces gather on key {key}")
-            await self._gather(key)
+            await self._gather(key, is_forced=True)
         # Terminate step
         await self.terminate(
             Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED
@@ -1539,7 +1544,14 @@ class ScatterStep(BaseStep):
                     )
                 )
             size_token = Token(len(token.value), tag=token.tag)
-            self.get_size_port().put(size_token)
+            size_port = self.get_size_port()
+            size_port.put(
+                await self._persist_token(
+                    token=size_token,
+                    port=size_port,
+                    input_token_ids=_get_token_ids([token]),
+                )
+            )
         else:
             raise WorkflowDefinitionException("Scatter ports require iterable inputs")
 
