@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import platform
 from asyncio.locks import Lock
 from typing import Collection
@@ -67,7 +68,7 @@ def pytest_generate_tests(metafunc):
 
 
 def all_deployment_types():
-    deployments_ = ["local", "docker", "ssh"]
+    deployments_ = ["local", "docker", "docker-compose", "slurm", "ssh"]
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity"])
     return deployments_
@@ -76,7 +77,10 @@ def all_deployment_types():
 @pytest_asyncio.fixture(scope="module")
 async def context(chosen_deployment_types) -> StreamFlowContext:
     _context = build_context(
-        {"database": {"type": "default", "config": {"connection": ":memory:"}}},
+        {
+            "database": {"type": "default", "config": {"connection": ":memory:"}},
+            "path": os.getcwd(),
+        },
     )
     for deployment_t in chosen_deployment_types:
         config = await get_deployment_config(_context, deployment_t)

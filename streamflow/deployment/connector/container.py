@@ -23,13 +23,6 @@ from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
-def _check_docker_compose_installed():
-    if which("docker-compose") is None:
-        raise WorkflowExecutionException(
-            "Docker Compose must be installed on the system to use the Docker Compose connector."
-        )
-
-
 def _check_docker_installed(connector):
     if which("docker") is None:
         raise WorkflowExecutionException(
@@ -54,9 +47,27 @@ async def _exists_docker_image(image_name: str) -> bool:
     return proc.returncode == 0
 
 
-async def _get_docker_compose_version() -> str:
+async def _get_docker_compose_command() -> str:
     proc = await asyncio.create_subprocess_exec(
-        *shlex.split("docker-compose version --short"),
+        *shlex.split("docker compose"),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.wait()
+    if proc.returncode == 0:
+        return "docker compose"
+    else:
+        if which("docker-compose") is not None:
+            return "docker-compose"
+        else:
+            raise WorkflowExecutionException(
+                "Docker Compose must be installed on the system to use the Docker Compose connector."
+            )
+
+
+async def _get_docker_compose_version(compose_command: str) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split(f"{compose_command} version --short"),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -744,6 +755,7 @@ class DockerComposeConnector(DockerBaseConnector):
         locationsCacheTTL: int = None,
         resourcesCacheSize: int = None,
         resourcesCacheTTL: int = None,
+        wait: bool = True,
     ) -> None:
         super().__init__(
             deployment_name=deployment_name,
@@ -754,55 +766,41 @@ class DockerComposeConnector(DockerBaseConnector):
             resourcesCacheSize=resourcesCacheSize,
             resourcesCacheTTL=resourcesCacheTTL,
         )
-        self.files = [os.path.join(self.config_dir, file) for file in files]
-        self.projectName = projectName
-        self.verbose = verbose
+        self.files = [
+            file if os.path.isabs(file) else os.path.join(self.config_dir, file)
+            for file in files
+        ]
+        self.alwaysRecreateDeps = alwaysRecreateDeps
+        self.build = build
+        self.compatibility = compatibility
+        self.forceRecreate = forceRecreate
+        self.host = host
         self.logLevel = logLevel
         self.noAnsi = noAnsi
-        self.host = host
-        self.noDeps = noDeps
-        self.forceRecreate = forceRecreate
-        self.alwaysRecreateDeps = alwaysRecreateDeps
-        self.noRecreate = noRecreate
         self.noBuild = noBuild
+        self.noDeps = noDeps
+        self.noRecreate = noRecreate
         self.noStart = noStart
-        self.build = build
+        self.projectDirectory = projectDirectory
+        self.projectName = projectName
         self.renewAnonVolumes = renewAnonVolumes
         self.removeOrphans = removeOrphans
         self.removeVolumes = removeVolumes
         self.skipHostnameCheck = skipHostnameCheck
-        self.projectDirectory = projectDirectory
-        self.compatibility = compatibility
         self.timeout = timeout
         self.tls = tls
         self.tlscacert = tlscacert
         self.tlscert = tlscert
         self.tlskey = tlskey
         self.tlsverify = tlsverify
+        self.verbose = verbose
+        self.wait = wait
+        self._command = None
 
-    def _get_base_command(self) -> str:
-        return (
-            f"docker-compose "
-            f"{get_option('file', self.files)}"
-            f"{get_option('project-name', self.projectName)}"
-            f"{get_option('verbose', self.verbose)}"
-            f"{get_option('log-level', self.logLevel)}"
-            f"{get_option('no-ansi', self.noAnsi)}"
-            f"{get_option('host', self.host)}"
-            f"{get_option('tls', self.tls)}"
-            f"{get_option('tlscacert', self.tlscacert)}"
-            f"{get_option('tlscert', self.tlscert)}"
-            f"{get_option('tlskey', self.tlskey)}"
-            f"{get_option('tlsverify', self.tlsverify)}"
-            f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
-            f"{get_option('project-directory', self.projectDirectory)}"
-            f"{get_option('compatibility', self.compatibility)}"
-        )
-
-    async def deploy(self, external: bool) -> None:
-        if not external:
-            _check_docker_installed("Docker Compose")
-            version = await _get_docker_compose_version()
+    async def _get_base_command(self) -> str:
+        if self._command is None:
+            compose_command = await _get_docker_compose_command()
+            version = await _get_docker_compose_version(compose_command)
             if version.startswith("v"):
                 version = version[1:]
             major = int(version.split(".")[0])
@@ -816,14 +814,39 @@ class DockerComposeConnector(DockerBaseConnector):
                     f"Using Docker {await _get_docker_version()} "
                     f"and Docker Compose {version}."
                 )
+            self._command = (
+                f"{compose_command} "
+                f"{get_option('file', self.files)}"
+                f"{get_option('project-name', self.projectName)}"
+                f"{get_option('verbose', self.verbose)}"
+                f"{get_option('log-level', self.logLevel)}"
+                f"{get_option('no-ansi', self.noAnsi)}"
+                f"{get_option('host', self.host)}"
+                f"{get_option('tls', self.tls)}"
+                f"{get_option('tlscacert', self.tlscacert)}"
+                f"{get_option('tlscert', self.tlscert)}"
+                f"{get_option('tlskey', self.tlskey)}"
+                f"{get_option('tlsverify', self.tlsverify)}"
+                f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
+                f"{get_option('project-directory', self.projectDirectory)}"
+                f"{get_option('compatibility', self.compatibility)}"
+            )
+        return self._command
+
+    async def deploy(self, external: bool) -> None:
+        if not external:
+            _check_docker_installed("Docker Compose")
             deploy_command = (
-                f"{self._get_base_command()} up --detach "
-                f"{get_option('no-deps ', self.noDeps)}"
-                f"{get_option('force-recreate', self.forceRecreate)}"
+                f"{await self._get_base_command()} up --detach "
                 f"{get_option('always-recreate-deps', self.alwaysRecreateDeps)}"
-                f"{get_option('no-recreate', self.noRecreate)}"
+                f"{get_option('build', self.build)}"
+                f"{get_option('force-recreate', self.forceRecreate)}"
                 f"{get_option('no-build', self.noBuild)}"
+                f"{get_option('no-deps ', self.noDeps)}"
+                f"{get_option('no-recreate', self.noRecreate)}"
                 f"{get_option('no-start', self.noStart)}"
+                f"{get_option('timeout', self.timeout)}"
+                f"{get_option('wait', self.wait)}"
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING command {deploy_command}")
@@ -846,7 +869,7 @@ class DockerComposeConnector(DockerBaseConnector):
         output_directory: str | None = None,
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
-        ps_command = self._get_base_command() + "".join(
+        ps_command = (await self._get_base_command()) + "".join(
             ["ps ", "--format ", "json ", service or ""]
         )
         if logger.isEnabledFor(logging.DEBUG):
@@ -858,6 +881,8 @@ class DockerComposeConnector(DockerBaseConnector):
         )
         stdout, _ = await proc.communicate()
         locations = json.loads(stdout.decode().strip())
+        if not isinstance(locations, MutableSequence):
+            locations = [locations]
         return {
             loc["Name"]: v
             for loc, v in zip(
@@ -883,9 +908,8 @@ class DockerComposeConnector(DockerBaseConnector):
     async def undeploy(self, external: bool) -> None:
         if not external:
             undeploy_command = (
-                self._get_base_command()
-                + f"down {get_option('volumes', self.removeVolumes)}"
-            )
+                await self._get_base_command()
+            ) + f"down {get_option('volumes', self.removeVolumes)}"
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING command {undeploy_command}")
             proc = await asyncio.create_subprocess_exec(

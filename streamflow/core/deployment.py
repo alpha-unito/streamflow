@@ -167,14 +167,14 @@ class DeploymentConfig(Config, PersistableEntity):
         external: bool = False,
         lazy: bool = True,
         workdir: str | None = None,
-        wraps: str | None = None,
+        wraps: WrapsConfig | None = None,
     ) -> None:
         Config.__init__(self, name, type, config)
         PersistableEntity.__init__(self)
         self.external: bool = external
         self.lazy: bool = lazy
         self.workdir: str | None = workdir
-        self.wraps: str | None = wraps
+        self.wraps: WrapsConfig | None = wraps
 
     @classmethod
     async def load(
@@ -191,6 +191,7 @@ class DeploymentConfig(Config, PersistableEntity):
             external=row["external"],
             lazy=row["lazy"],
             workdir=row["workdir"],
+            wraps=json.loads(row["wraps"]),
         )
         loading_context.add_deployment(persistent_id, obj)
         return obj
@@ -205,6 +206,11 @@ class DeploymentConfig(Config, PersistableEntity):
                     external=self.external,
                     lazy=self.lazy,
                     workdir=self.workdir,
+                    wraps=(
+                        await self.wraps.save(context)
+                        if self.wraps is not None
+                        else None
+                    ),
                 )
 
 
@@ -333,3 +339,24 @@ class FilterConfig(Config, PersistableEntity):
                     type=self.type,
                     config=json.dumps(self.config),
                 )
+
+
+class WrapsConfig:
+    def __init__(self, deployment: str, service: str | None = None):
+        self.deployment: str = deployment
+        self.service: str | None = service
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        return WrapsConfig(deployment=row["deployment"], service=row.get("service"))
+
+    async def save(self, context: StreamFlowContext):
+        row = {"deployment": self.deployment}
+        if self.service is not None:
+            row["service"] = self.service
+        return row
