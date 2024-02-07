@@ -10,7 +10,6 @@ from types import ModuleType
 from typing import (
     Any,
     AsyncIterable,
-    Iterable,
     MutableMapping,
     MutableSequence,
     cast,
@@ -110,7 +109,7 @@ class BaseStep(Step, ABC):
         return inputs
 
     async def _persist_token(
-        self, token: Token, port: Port, input_token_ids: Iterable[int]
+        self, token: Token, port: Port, input_token_ids: MutableSequence[int]
     ) -> Token:
         if token.persistent_id:
             raise WorkflowDefinitionException(
@@ -760,7 +759,9 @@ class ExecuteStep(BaseStep):
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            p.get_connector(posixpath.join(self.name, port_name))
+                            cast(ConnectorPort, p).get_connector(
+                                posixpath.join(self.name, port_name)
+                            )
                         )
                         for port_name, p in connector_ports.items()
                     )
