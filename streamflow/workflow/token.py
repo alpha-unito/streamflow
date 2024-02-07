@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Job, Token, Status
 
@@ -150,6 +151,10 @@ class ObjectToken(Token):
 
 class TerminationToken(Token):
     def __init__(self, value: Any = Status.COMPLETED):
+        if not isinstance(value, Status):
+            raise WorkflowExecutionException(
+                f"Termination token received an invalid value type {type(value)}. Accepted only Status."
+            )
         super().__init__(value)
 
     def get_weight(self, context: StreamFlowContext):
