@@ -295,7 +295,7 @@ async def test_object_token(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 async def test_termination_token(context: StreamFlowContext):
-    """Test saving and loading IterationTerminationToken from database"""
+    """Test saving and loading TerminationToken from database"""
     token = TerminationToken()
     await save_load_and_test(token, context)
 
