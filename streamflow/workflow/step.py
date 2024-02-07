@@ -1155,6 +1155,8 @@ class LoopCombinatorStep(CombinatorStep):
                             logger.debug(
                                 f"Step {self.name} received termination token for port {task_name}"
                             )
+                        if token.value != Status.COMPLETED:
+                            self.iteration_termination_checklist.get(task_name).clear()
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
                     elif check_iteration_termination(token):
