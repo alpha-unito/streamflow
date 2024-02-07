@@ -131,6 +131,11 @@
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",
       "default": "64kiB"
+    },
+    "wait": {
+      "type": "boolean",
+      "description": "Wait for services to be running|healthy",
+      "default": true
     }
   },
   "required": [

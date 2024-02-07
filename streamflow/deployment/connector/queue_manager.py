@@ -323,6 +323,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         deployment_name: str,
         config_dir: str,
         connector: Connector,
+        service: str | None,
         hostname: str | None = None,
         username: str | None = None,
         checkHostKey: bool = True,
@@ -361,7 +362,13 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 transferBufferSize=transferBufferSize,
                 username=username,
             )
-        super().__init__(deployment_name, config_dir, connector, transferBufferSize)
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            connector=connector,
+            service=service,
+            transferBufferSize=transferBufferSize,
+        )
         files_map: MutableMapping[str, Any] = {}
         self.services = (
             {k: self._service_class(**v) for k, v in services.items()}
@@ -397,11 +404,12 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                     "this value to improve performance."
                 )
         self.pollingInterval: int = pollingInterval
-        self.scheduledJobs: MutableSequence[str] = []
-        self.jobsCache: cachetools.Cache = cachetools.TTLCache(
+        self._jobs_cache: cachetools.Cache = cachetools.TTLCache(
             maxsize=1, ttl=self.pollingInterval
         )
-        self.jobsCacheLock: asyncio.Lock = asyncio.Lock()
+        self._jobs_cache_lock: asyncio.Lock = asyncio.Lock()
+        self._locations_map: MutableMapping[str, Location] = {}
+        self._scheduled_jobs: MutableMapping[str, Location] = {}
 
     def _format_stream(self, stream: int | str) -> str:
         if stream == asyncio.subprocess.DEVNULL:
@@ -412,14 +420,10 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             )
         return shlex.quote(stream)
 
-    async def _get_location(self):
-        locations = await self.connector.get_available_locations()
-        if len(locations) != 1:
-            raise WorkflowDefinitionException(
-                f"QueueManager connectors support only nested connectors with a single location. "
-                f"{self.connector.deployment_name} returned {len(locations)} available locations."
-            )
-        return list(locations.values())[0]
+    async def _get_inner_locations(
+        self, locations: MutableSequence[Location]
+    ) -> MutableSequence[Location]:
+        return list({self._locations_map[loc.name] for loc in locations})
 
     @abstractmethod
     async def _get_output(self, job_id: str, location: Location) -> str: ...
@@ -431,7 +435,9 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
     async def _get_running_jobs(self, location: Location) -> bool: ...
 
     @abstractmethod
-    async def _remove_jobs(self, location: Location) -> None: ...
+    async def _remove_jobs(
+        self, location: Location, jobs: MutableSequence[str]
+    ) -> None: ...
 
     @abstractmethod
     async def _run_batch_command(
@@ -461,13 +467,21 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             raise WorkflowDefinitionException(
                 f"Invalid service {service} for deployment {self.deployment_name}."
             )
-        hostname = (await self._get_location()).hostname
+        locations = await self.connector.get_available_locations(service=self.service)
+        if len(locations) != 1:
+            raise WorkflowDefinitionException(
+                f"QueueManager connectors support only nested connectors with a single location. "
+                f"{self.connector.deployment_name} returned {len(locations)} available locations."
+            )
+        location = next(iter(locations.values()))
+        name = f"{location.name}/slurmctld"
+        self._locations_map[name] = location
         return {
-            hostname: AvailableLocation(
-                name=hostname,
+            name: AvailableLocation(
+                name=name,
                 deployment=self.deployment_name,
                 service=service,
-                hostname=hostname,
+                hostname=location.hostname,
                 slots=self.maxConcurrentJobs,
             )
         }
@@ -526,16 +540,16 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             )
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f"Scheduled job {job_name} with job id {job_id}")
-            self.scheduledJobs.append(job_id)
-            async with self.jobsCacheLock:
-                self.jobsCache.clear()
+            self._scheduled_jobs[job_id] = location
+            async with self._jobs_cache_lock:
+                self._jobs_cache.clear()
             while True:
-                async with self.jobsCacheLock:
+                async with self._jobs_cache_lock:
                     running_jobs = await self._get_running_jobs(location)
                 if job_id not in running_jobs:
                     break
                 await asyncio.sleep(self.pollingInterval)
-            self.scheduledJobs.remove(job_id)
+            self._scheduled_jobs.pop(job_id)
             return (
                 (
                     await self._get_output(job_id, location)
@@ -559,8 +573,13 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             )
 
     async def undeploy(self, external: bool) -> None:
-        await self._remove_jobs(await self._get_location())
-        self.scheduledJobs = {}
+        jobs_map = {}
+        for job_id, location in self._scheduled_jobs.items():
+            inner_location = await self._get_inner_location(location)
+            jobs_map.setdefault(inner_location.name, []).append(job_id)
+        for location, jobs in jobs_map.items():
+            await self._remove_jobs(location, jobs)
+        self._scheduled_jobs = {}
         if self._inner_ssh_connector:
             if logger.isEnabledFor(logging.INFO):
                 logger.warning(
@@ -637,7 +656,7 @@ class SlurmConnector(QueueManagerConnector):
             )
 
     @cachedmethod(
-        lambda self: self.jobsCache,
+        lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
     async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
@@ -645,7 +664,7 @@ class SlurmConnector(QueueManagerConnector):
             "squeue",
             "-h",
             "-j",
-            ",".join(self.scheduledJobs),
+            ",".join(self._scheduled_jobs.keys()),
             "-t",
             ",".join(
                 [
@@ -675,9 +694,12 @@ class SlurmConnector(QueueManagerConnector):
     def _service_class(self) -> type[QueueManagerService]:
         return SlurmService
 
-    async def _remove_jobs(self, location: Location) -> None:
+    async def _remove_jobs(
+        self, location: Location, jobs: MutableSequence[str]
+    ) -> None:
         await self.connector.run(
-            location=location, command=["scancel", " ".join(self.scheduledJobs)]
+            location=location,
+            command=["scancel", " ".join(jobs)],
         )
 
     async def _run_batch_command(
@@ -845,13 +867,13 @@ class PBSConnector(QueueManagerConnector):
         return int(result["Jobs"][job_id]["Exit_status"])
 
     @cachedmethod(
-        lambda self: self.jobsCache,
+        lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
     async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
         command = [
             "qstat",
-            " ".join(self.scheduledJobs),
+            " ".join(self._scheduled_jobs.keys()),
             "-xf",
             "-Fjson",
         ]
@@ -865,15 +887,15 @@ class PBSConnector(QueueManagerConnector):
         result = json.loads(stdout.strip())
         return [
             j
-            for j in self.scheduledJobs
+            for j in self._scheduled_jobs.keys()
             if j not in result["Jobs"]  # Job id has not been processed yet
             or result["Jobs"][j]["job_state"] not in ["E", "F"]  # Job finished
         ]
 
-    async def _remove_jobs(self, location: Location) -> None:
-        await self.connector.run(
-            location=location, command=["qdel", " ".join(self.scheduledJobs)]
-        )
+    async def _remove_jobs(
+        self, location: Location, jobs: MutableSequence[str]
+    ) -> None:
+        await self.connector.run(location=location, command=["qdel", " ".join(jobs)])
 
     async def _run_batch_command(
         self,
@@ -1033,7 +1055,7 @@ class FluxConnector(QueueManagerConnector):
             )
 
     @cachedmethod(
-        lambda self: self.jobsCache,
+        lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
     async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
@@ -1056,13 +1078,15 @@ class FluxConnector(QueueManagerConnector):
         return [
             j.strip()
             for j in stdout.strip().splitlines()
-            if j.strip() in self.scheduledJobs
+            if j.strip() in self._scheduled_jobs.keys()
         ]
 
-    async def _remove_jobs(self, location: Location) -> None:
+    async def _remove_jobs(
+        self, location: Location, jobs: MutableSequence[str]
+    ) -> None:
         await self.connector.run(
             location=location,
-            command=["flux", "job", "cancel", " ".join(self.scheduledJobs)],
+            command=["flux", "job", "cancel", " ".join(jobs)],
         )
 
     async def _run_batch_command(

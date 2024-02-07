@@ -17,6 +17,7 @@ from streamflow.core.deployment import (
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.deployment.connector import connector_classes
 from streamflow.deployment.future import FutureConnector
+from streamflow.deployment.utils import get_wraps_config
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
 
@@ -60,7 +61,9 @@ class DefaultDeploymentManager(DeploymentManager):
                     self.events_map[deployment_name].set()
                 else:
                     connector = connector_type(
-                        deployment_name, self.context, **deployment_config.config
+                        deployment_name,
+                        self.context.config["path"],
+                        **deployment_config.config,
                     )
                     self.deployments_map[deployment_name] = connector
                     if logger.isEnabledFor(logging.INFO):
@@ -88,11 +91,13 @@ class DefaultDeploymentManager(DeploymentManager):
             # Retrieve the inner connector's config
             if deployment_config.wraps is None:
                 deployment_name = LOCAL_LOCATION
+                service = None
                 if deployment_name not in self.config_map:
                     local_target = LocalTarget()
                     await self._deploy(local_target.deployment, wrappers_stack)
             else:
-                deployment_name = deployment_config.wraps
+                deployment_name = deployment_config.wraps.deployment
+                service = deployment_config.wraps.service
             # If it has already been processed, there is a recursive definition
             if deployment_name in wrappers_stack:
                 raise WorkflowDefinitionException(
@@ -121,7 +126,7 @@ class DefaultDeploymentManager(DeploymentManager):
                     external=inner_config.get("external", False),
                     lazy=inner_config.get("lazy", True),
                     workdir=inner_config.get("workdir"),
-                    wraps=inner_config.get("wraps"),
+                    wraps=get_wraps_config(inner_config.get("wraps")),
                 )
                 await self._deploy(inner_config, wrappers_stack)
             # Otherwise, the workflow is badly specified
@@ -137,7 +142,10 @@ class DefaultDeploymentManager(DeploymentManager):
                 type=deployment_config.type,
                 config={
                     **deployment_config.config,
-                    **{"connector": self.deployments_map[deployment_name]},
+                    **{
+                        "connector": self.deployments_map[deployment_name],
+                        "service": service,
+                    },
                 },
                 external=deployment_config.external,
                 lazy=deployment_config.lazy,

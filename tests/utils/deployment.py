@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
-from importlib_resources import files
-
-from jinja2 import Template
 
 import asyncssh
 import asyncssh.public_key
+from importlib_resources import files
+from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -16,7 +15,9 @@ from streamflow.core.deployment import (
     DeploymentConfig,
     LOCAL_LOCATION,
     Location,
+    WrapsConfig,
 )
+from tests.utils.data import get_data_path
 
 
 async def get_deployment_config(
@@ -26,10 +27,14 @@ async def get_deployment_config(
         return get_local_deployment_config()
     elif deployment_t == "docker":
         return get_docker_deployment_config()
+    elif deployment_t == "docker-compose":
+        return get_docker_compose_deployment_config()
     elif deployment_t == "kubernetes":
         return get_kubernetes_deployment_config()
     elif deployment_t == "singularity":
         return get_singularity_deployment_config()
+    elif deployment_t == "slurm":
+        return await get_slurm_deployment_config(_context)
     elif deployment_t == "ssh":
         return await get_ssh_deployment_config(_context)
     else:
@@ -41,6 +46,20 @@ def get_docker_deployment_config():
         name="alpine-docker",
         type="docker",
         config={"image": "alpine:3.16.2"},
+        external=False,
+        lazy=False,
+    )
+
+
+def get_docker_compose_deployment_config():
+    return DeploymentConfig(
+        name="alpine-docker-compose",
+        type="docker-compose",
+        config={
+            "files": [
+                str(get_data_path("deployment", "docker-compose", "docker-compose.yml"))
+            ]
+        },
         external=False,
         lazy=False,
     )
@@ -70,33 +89,35 @@ def get_local_deployment_config():
     )
 
 
-async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
+def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
     if deployment_t == "local":
-        return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
+        return LOCAL_LOCATION
     elif deployment_t == "docker":
-        connector = _context.deployment_manager.get_connector("alpine-docker")
-        locations = await connector.get_available_locations()
-        return Location(deployment="alpine-docker", name=next(iter(locations.keys())))
+        return "alpine-docker"
+    elif deployment_t == "docker-compose":
+        return "alpine-docker-compose"
     elif deployment_t == "kubernetes":
-        connector = _context.deployment_manager.get_connector("alpine-kubernetes")
-        locations = await connector.get_available_locations(service="sf-test")
-        return Location(
-            deployment="alpine-kubernetes",
-            service="sf-test",
-            name=next(iter(locations.keys())),
-        )
+        return "alpine-kubernetes"
     elif deployment_t == "singularity":
-        connector = _context.deployment_manager.get_connector("alpine-singularity")
-        locations = await connector.get_available_locations()
-        return Location(
-            deployment="alpine-singularity", name=next(iter(locations.keys()))
-        )
+        return "alpine-singularity"
+    elif deployment_t == "slurm":
+        return "docker-slurm"
     elif deployment_t == "ssh":
-        connector = _context.deployment_manager.get_connector("linuxserver-ssh")
-        locations = await connector.get_available_locations()
-        return Location(deployment="linuxserver-ssh", name=next(iter(locations.keys())))
+        return "linuxserver-ssh"
     else:
-        raise Exception(f"{deployment_t} location type not supported")
+        raise Exception(f"{deployment_t} deployment type not supported")
+
+
+async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
+    deployment = get_deployment(_context, deployment_t)
+    service = get_service(_context, deployment_t)
+    connector = _context.deployment_manager.get_connector(deployment)
+    locations = await connector.get_available_locations(service=service)
+    return Location(
+        deployment=deployment,
+        service=service,
+        name=next(iter(locations.keys())),
+    )
 
 
 def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
@@ -104,10 +125,14 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
         return None
     elif deployment_t == "docker":
         return None
+    elif deployment_t == "docker-compose":
+        return "alpine"
     elif deployment_t == "kubernetes":
         return "sf-test"
     elif deployment_t == "singularity":
         return None
+    elif deployment_t == "slurm":
+        return "test"
     elif deployment_t == "ssh":
         return None
     else:
@@ -121,6 +146,31 @@ def get_singularity_deployment_config():
         config={"image": "docker://alpine:3.16.2"},
         external=False,
         lazy=False,
+    )
+
+
+async def get_slurm_deployment_config(_context: StreamFlowContext):
+    docker_compose_config = DeploymentConfig(
+        name="docker-compose-slurm",
+        type="docker-compose",
+        config={
+            "files": [str(get_data_path("deployment", "slurm", "docker-compose.yml"))],
+            "projectName": "slurm",
+        },
+        external=False,
+    )
+    await _context.deployment_manager.deploy(docker_compose_config)
+    return DeploymentConfig(
+        name="docker-slurm",
+        type="slurm",
+        config={
+            "services": {
+                "test": {"partition": "docker", "nodes": 2, "ntasksPerNode": 1}
+            }
+        },
+        external=False,
+        lazy=False,
+        wraps=WrapsConfig(deployment="docker-compose-slurm", service="slurmctld"),
     )
 
 

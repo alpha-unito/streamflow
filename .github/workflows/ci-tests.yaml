@@ -80,7 +80,7 @@ jobs:
           apptainer-version: 1.1.7
         if: ${{ matrix.docker == 'singularity' }}
       - name: "Install KinD"
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.8.0
         with:
           config: .github/kind/config.yaml
           kubectl_version: v1.26.3
@@ -126,7 +126,7 @@ jobs:
         run: |
           mkdir -p "${TMPDIR:-/tmp}"/project "${TMPDIR:-/tmp}"/results "${TMPDIR:-/tmp}"/streamflow
           docker run --rm \
-            --mount type=bind,source="$(pwd)/tests/cwl-example",target="/streamflow/project" \
+            --mount type=bind,source="$(pwd)/tests/data/cwl/example",target="/streamflow/project" \
             --mount type=bind,source="${TMPDIR:-/tmp}"/results,target="/streamflow/results" \
             --mount type=bind,source="${TMPDIR:-/tmp}"/streamflow,target="/tmp/streamflow" \
             alphaunito/streamflow:latest \
@@ -147,9 +147,9 @@ jobs:
           python -m pip install -r docs/requirements.txt
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "1f5c98f122144af7a7f721831bce13df9ecb25a80dfbc098c76dd99c03dfd287"
+          CHECKSUM: "5967bdac60674474149bf785db832aa97b058acb825c4e495272d4d77ca1689c"
         run: |
-          cd docs/
+          cd docs
           HASH="$(make checksum | tail -n1)"
           echo "Docs checksum is ${HASH}"
           test "${HASH}" == "${CHECKSUM}"
@@ -241,7 +241,7 @@ jobs:
           apptainer-version: 1.1.7
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install KinD"
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.8.0
         with:
           config: .github/kind/config.yaml
           kubectl_version: v1.26.3

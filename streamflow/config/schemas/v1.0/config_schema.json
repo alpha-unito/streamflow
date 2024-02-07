@@ -179,7 +179,25 @@
           "default": "${TMPDIR}/streamflow"
         },
         "wraps": {
-          "type": "string",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "deployment": {
+                  "type": "string"
+                },
+                "service": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "deployment"
+              ]
+            }
+          ],
           "description": "The name of the deployment wrapped by this configuration."
         }
       },

@@ -25,4 +25,21 @@ Users can define stacked locations using the ``wraps`` property in the :ref:`Str
 
 Note that not all deployment types can wrap other locations. Indeed, only connectors extending the :ref:`ConnectorWrapper <ConnectorWrapper>` interface support the ``wraps`` directive. Specifying the ``wraps`` directive on a container type that does not support it will result in an error during StreamFlow initialization. Conversely, if no explicit ``wraps`` directive is specified for a :ref:`ConnectorWrapper <ConnectorWrapper>`, it wraps the :ref:`LocalConnector <LocalConnector>`.
 
-The ``wraps`` directive only supports wrapping a single inner location. However, a single location can be wrapped by multiple deployment definitions. The :ref:`DeploymentManager <DeploymentManager>` component is responsible for guaranteeing the correct order of deployment and undeployment for stacked locations.
+The ``wraps`` directive only supports wrapping a single inner location. However, a single location can be wrapped by multiple deployment definitions. The :ref:`DeploymentManager <DeploymentManager>` component must guarantee the correct deployment and undeployment order for stacked locations.
+
+It is also possible to wrap a single `service` instead of generically wrapping the whole `deployment`. This feature can be helpful when dealing with complex deployments that describe entire microservices architectures. To do that, it is necessary to specify the target `service` name in the StreamFlow file as follows:
+
+.. code-block:: yaml
+
+    deployments:
+     slurm-compose:
+       type: docker-compose
+       config:
+         ...
+     slurm:
+       type: slurm
+       config:
+         ...
+       wraps:
+         deployment: slurm-compose
+         service: controller

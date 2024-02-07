@@ -5,14 +5,15 @@ import os
 import posixpath
 from pathlib import PurePosixPath
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import Any, MutableMapping, TYPE_CHECKING
 
 from streamflow.core.config import BindingConfig
 from streamflow.core.deployment import (
     DeploymentConfig,
+    FilterConfig,
     LocalTarget,
     Target,
-    FilterConfig,
+    WrapsConfig,
 )
 from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
@@ -58,7 +59,7 @@ def get_binding_config(
                 external=target_deployment.get("external", False),
                 lazy=target_deployment.get("lazy", True),
                 workdir=target_deployment.get("workdir"),
-                wraps=target_deployment.get("wraps"),
+                wraps=get_wraps_config(target_deployment.get("wraps")),
             )
             targets.append(
                 Target(
@@ -85,3 +86,16 @@ def get_path_processor(connector: Connector) -> ModuleType:
         if connector is not None and not isinstance(connector, LocalConnector)
         else os.path
     )
+
+
+def get_wraps_config(config: MutableMapping[str, Any] | None) -> WrapsConfig | None:
+    if config is not None:
+        if isinstance(config, str):
+            return WrapsConfig(deployment=config)
+        else:
+            return WrapsConfig(
+                deployment=config["deployment"],
+                service=config.get("service"),
+            )
+    else:
+        return None

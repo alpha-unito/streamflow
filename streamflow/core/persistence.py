@@ -97,6 +97,7 @@ class Database(SchemaEntity):
         external: bool,
         lazy: bool,
         workdir: str | None,
+        wraps: MutableMapping[str, Any] | None,
     ) -> int: ...
 
     @abstractmethod
