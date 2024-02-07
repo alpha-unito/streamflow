@@ -271,9 +271,17 @@ class DummyFailureManager(FailureManager):
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
     ) -> CommandOutput:
+        logger.warning(
+            f"Job {job.name} failure can not be recovered. Fault tolerance manager not enable"
+        )
         raise exception
 
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> CommandOutput:
-        raise FailureHandlingException("Fault tolerance not implemented.")
+        logger.warning(
+            f"Job {job.name} failure can not be recovered. Fault tolerance manager not enable"
+        )
+        raise FailureHandlingException(
+            f"FAILED Job {job.name} with error:\n\t{command_output.value}"
+        )

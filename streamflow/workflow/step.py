@@ -645,18 +645,14 @@ class ExecuteStep(BaseStep):
                 job, command_output, connector
             )
         ) is not None:
+            job_token = get_job_token(
+                job.name, self.get_input_port("__job__").token_list
+            )
             output_port.put(
                 await self._persist_token(
                     token=token,
                     port=output_port,
-                    input_token_ids=_get_token_ids(
-                        list(job.inputs.values())
-                        + [
-                            get_job_token(
-                                job.name, self.get_input_port("__job__").token_list
-                            )
-                        ]
-                    ),
+                    input_token_ids=_get_token_ids((*job.inputs.values(), job_token)),
                 )
             )
 
@@ -723,8 +719,9 @@ class ExecuteStep(BaseStep):
             # await self.terminate(command_output.status)
         # When receiving a FailureHandling exception, mark the step as Failed
         except FailureHandlingException:
-            command_output.status = Status.FAILED
+            # command_output.status = Status.FAILED
             # await self.terminate(command_output.status)
+            pass
         # When receiving a generic exception, try to handle it
         except Exception as e:
             logger.exception(e)

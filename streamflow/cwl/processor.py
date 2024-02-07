@@ -670,44 +670,39 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         command_output: CWLCommandOutput,
         connector: Connector | None = None,
     ) -> Token | None:
-        if command_output.status == Status.SKIPPED:
-            return None
-        else:
-            # Remap output and tmp directories when target is specified
-            output_directory = (
-                self.target.workdir if self.target else job.output_directory
-            )
-            tmp_directory = self.target.workdir if self.target else job.tmp_directory
-            # Retrieve token value
-            context = utils.build_context(
-                inputs=job.inputs,
-                output_directory=output_directory,
-                tmp_directory=tmp_directory,
-                hardware=self.workflow.context.scheduler.get_hardware(job.name),
-            )
-            token_value = await self._process_command_output(
-                job, command_output, connector, context, output_directory
-            )
-            if isinstance(token_value, MutableSequence):
-                for value in token_value:
-                    _check_token_type(
-                        name=self.name,
-                        token_value=value,
-                        token_type=self.token_type,
-                        enum_symbols=self.enum_symbols,
-                        optional=self.optional,
-                        check_file=True,
-                    )
-            else:
+        # Remap output and tmp directories when target is specified
+        output_directory = self.target.workdir if self.target else job.output_directory
+        tmp_directory = self.target.workdir if self.target else job.tmp_directory
+        # Retrieve token value
+        context = utils.build_context(
+            inputs=job.inputs,
+            output_directory=output_directory,
+            tmp_directory=tmp_directory,
+            hardware=self.workflow.context.scheduler.get_hardware(job.name),
+        )
+        token_value = await self._process_command_output(
+            job, command_output, connector, context, output_directory
+        )
+        if isinstance(token_value, MutableSequence):
+            for value in token_value:
                 _check_token_type(
                     name=self.name,
-                    token_value=token_value,
+                    token_value=value,
                     token_type=self.token_type,
                     enum_symbols=self.enum_symbols,
                     optional=self.optional,
                     check_file=True,
                 )
-            return await self._build_token(job, connector, context, token_value)
+        else:
+            _check_token_type(
+                name=self.name,
+                token_value=token_value,
+                token_type=self.token_type,
+                enum_symbols=self.enum_symbols,
+                optional=self.optional,
+                check_file=True,
+            )
+        return await self._build_token(job, connector, context, token_value)
 
 
 class CWLMapTokenProcessor(TokenProcessor):
