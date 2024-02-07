@@ -10,7 +10,6 @@ from types import ModuleType
 from typing import (
     Any,
     AsyncIterable,
-    Iterable,
     MutableMapping,
     MutableSequence,
     cast,
@@ -116,7 +115,7 @@ class BaseStep(Step, ABC):
         return inputs
 
     async def _persist_token(
-        self, token: Token, port: Port, input_token_ids: Iterable[int]
+        self, token: Token, port: Port, input_token_ids: MutableSequence[int]
     ) -> Token:
         if token.persistent_id:
             raise WorkflowDefinitionException(
