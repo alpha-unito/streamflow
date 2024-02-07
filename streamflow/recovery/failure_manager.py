@@ -276,4 +276,4 @@ class DummyFailureManager(FailureManager):
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> CommandOutput:
-        return command_output
+        raise FailureHandlingException("Fault tolerance not implemented.")
