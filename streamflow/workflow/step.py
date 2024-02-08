@@ -731,12 +731,9 @@ class ExecuteStep(BaseStep):
         # When receiving a CancelledError, mark the step as Cancelled
         except asyncio.CancelledError:
             command_output.status = Status.CANCELLED
-            # await self.terminate(command_output.status)
         # When receiving a FailureHandling exception, mark the step as Failed
         except FailureHandlingException:
-            # command_output.status = Status.FAILED
-            # await self.terminate(command_output.status)
-            pass
+            command_output.status = Status.FAILED
         # When receiving a generic exception, try to handle it
         except Exception as e:
             logger.exception(e)
@@ -751,7 +748,6 @@ class ExecuteStep(BaseStep):
                 if ie != e:
                     logger.exception(ie)
                 command_output.status = Status.FAILED
-                # await self.terminate(command_output.status)
         finally:
             # Notify completion to scheduler
             await self.workflow.context.scheduler.notify_status(
