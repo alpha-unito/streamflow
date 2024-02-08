@@ -114,3 +114,6 @@ omit = [
 
 [tool.black]
 exclude = "streamflow/cwl/antlr"
+
+[tool.pytest.ini_options]
+addopts = "--durations=10"
