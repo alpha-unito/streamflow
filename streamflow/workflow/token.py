@@ -6,8 +6,9 @@ from abc import ABC, abstractmethod
 from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.workflow import Job, Token
+from streamflow.core.workflow import Job, Token, Status
 
 
 class IterationTerminationToken(Token):
@@ -149,8 +150,12 @@ class ObjectToken(Token):
 
 
 class TerminationToken(Token):
-    def __init__(self):
-        super().__init__(None)
+    def __init__(self, value: Any = Status.COMPLETED):
+        if not isinstance(value, Status):
+            raise WorkflowExecutionException(
+                f"Termination token received an invalid value type {type(value)}. Accepted only Status."
+            )
+        super().__init__(value)
 
     def get_weight(self, context: StreamFlowContext):
         return 0
@@ -161,11 +166,15 @@ class TerminationToken(Token):
     def retag(self, tag: str) -> Token:
         raise NotImplementedError
 
+    async def _save_value(self, context: StreamFlowContext):
+        return {"status": self.value.value}
+
     @classmethod
     async def _load(
         cls,
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> IterationTerminationToken:
-        return cls()
+    ) -> TerminationToken:
+        value = json.loads(row["value"])
+        return cls(Status(value["status"]))
