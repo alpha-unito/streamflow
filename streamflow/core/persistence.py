@@ -57,6 +57,8 @@ class DatabaseLoadingContext(ABC):
 
 
 class PersistableEntity:
+    __slots__ = ("persistent_id", "persistence_lock")
+
     def __init__(self):
         self.persistent_id: int | None = None
         self.persistence_lock: Lock = Lock()

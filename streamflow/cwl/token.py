@@ -52,6 +52,8 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
 
 
 class CWLFileToken(FileToken):
+    __slots__ = ()
+
     async def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]:
         paths = []
         if isinstance(self.value, MutableSequence):

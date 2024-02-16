@@ -315,8 +315,8 @@ async def test_schedule_step(context: StreamFlowContext):
     ):
         # Config are read-only so workflows can share the same
         assert original_filter.persistent_id == new_filter.persistent_id
-        _set_to_none(original_filter, id_to_none=True, wf_to_none=True)
-        _set_to_none(new_filter, id_to_none=True, wf_to_none=True)
+        _set_to_none(original_filter, id_to_none=True, wf_to_none=False)
+        _set_to_none(new_filter, id_to_none=True, wf_to_none=False)
     _set_to_none(step, id_to_none=True, wf_to_none=True)
     _set_to_none(new_step, id_to_none=True, wf_to_none=True)
     assert are_equals(step, new_step)
