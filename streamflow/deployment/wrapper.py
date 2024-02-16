@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.future import FutureAware
+from streamflow.deployment.utils import get_inner_location, get_inner_locations
 
 
 class ConnectorWrapper(Connector, FutureAware, ABC):
@@ -23,14 +24,6 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self.connector: Connector = connector
         self.service: str | None = service
 
-    async def _get_inner_location(self, location: Location) -> Location:
-        return next(iter(await self._get_inner_locations([location])))
-
-    @abstractmethod
-    async def _get_inner_locations(
-        self, locations: MutableSequence[Location]
-    ) -> MutableSequence[Location]: ...
-
     async def copy_local_to_remote(
         self,
         src: str,
@@ -41,7 +34,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         await self.connector.copy_local_to_remote(
             src=src,
             dst=dst,
-            locations=await self._get_inner_locations(locations),
+            locations=get_inner_locations(locations),
             read_only=read_only,
         )
 
@@ -55,7 +48,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         await self.connector.copy_remote_to_local(
             src=src,
             dst=dst,
-            locations=await self._get_inner_locations(locations),
+            locations=get_inner_locations(locations),
             read_only=read_only,
         )
 
@@ -71,7 +64,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         await self.connector.copy_remote_to_remote(
             src=src,
             dst=dst,
-            locations=await self._get_inner_locations(locations),
+            locations=get_inner_locations(locations),
             source_location=source_location,
             source_connector=source_connector,
             read_only=read_only,
@@ -97,9 +90,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
     async def get_stream_reader(
         self, location: Location, src: str
     ) -> StreamWrapperContextManager:
-        return await self.connector.get_stream_reader(
-            await self._get_inner_location(location), src
-        )
+        return await self.connector.get_stream_reader(get_inner_location(location), src)
 
     async def run(
         self,
@@ -115,7 +106,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         job_name: str | None = None,
     ) -> tuple[Any | None, int] | None:
         return await self.connector.run(
-            location=await self._get_inner_location(location),
+            location=get_inner_location(location),
             command=command,
             environment=environment,
             workdir=workdir,

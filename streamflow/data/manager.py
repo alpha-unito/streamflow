@@ -140,6 +140,7 @@ class DefaultDataManager(DataManager):
             name=location.name,
             data_type=data_type,
             available=True,
+            wraps=location.wraps,
         )
         self.path_mapper.put(path=path, data_location=data_location, recursive=True)
         self.context.checkpoint_manager.register(data_location)
@@ -209,6 +210,7 @@ class DefaultDataManager(DataManager):
                             dst_service=dst_location.service,
                             dst_location=dst_location.name,
                             available=True,
+                            wraps=dst_location.wraps,
                         )
                     # Otherwise, perform a copy operation
                     else:
@@ -238,6 +240,7 @@ class DefaultDataManager(DataManager):
                                     data_type=DataType.PRIMARY,
                                     name=dst_location.name,
                                     available=False,
+                                    wraps=dst_location.wraps,
                                 ),
                             )
                         )
@@ -262,6 +265,7 @@ class DefaultDataManager(DataManager):
                                 service=dst_location.service,
                                 name=dst_location.name,
                                 available=False,
+                                wraps=dst_location.wraps,
                             ),
                         )
                     )
@@ -274,6 +278,7 @@ class DefaultDataManager(DataManager):
                             dst_deployment=dst_connector.deployment_name,
                             dst_service=dst_location.service,
                             dst_location=dst_location.name,
+                            wraps=dst_location.wraps,
                         )
                     )
         # Perform all the copy operations
@@ -327,6 +332,7 @@ class RemotePathMapper:
         dst_service: str | None,
         dst_location: str | None,
         available: bool = False,
+        wraps: Location | None = None,
     ) -> DataLocation:
         data_locations = self.get(src_path)
         dst_data_location = DataLocation(
@@ -337,6 +343,7 @@ class RemotePathMapper:
             data_type=location_type,
             name=dst_location,
             available=available,
+            wraps=wraps,
         )
         for data_location in list(data_locations):
             self.put(data_location.path, dst_data_location)
@@ -419,6 +426,7 @@ class RemotePathMapper:
                     data_type=DataType.PRIMARY,
                     name=data_location.name,
                     available=True,
+                    wraps=data_location.wraps,
                 )
             node_location = node.locations.setdefault(
                 location.deployment, {}

@@ -31,8 +31,9 @@ class DataLocation(Location):
         data_type: DataType,
         service: str | None = None,
         available: bool = False,
+        wraps: Location | None = None,
     ):
-        super().__init__(name, deployment, service)
+        super().__init__(name=name, deployment=deployment, service=service, wraps=wraps)
         self.path: str = path
         self.relpath: str = relpath
         self.data_type: DataType = data_type

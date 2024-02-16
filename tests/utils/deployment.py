@@ -117,6 +117,7 @@ async def get_location(_context: StreamFlowContext, deployment_t: str) -> Locati
         deployment=deployment,
         service=service,
         name=next(iter(locations.keys())),
+        wraps=next(iter(locations.values())).wraps,
     )
 
 

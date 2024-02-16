@@ -148,8 +148,9 @@ class AvailableLocation(Location):
         service: str | None = None,
         slots: int = 1,
         hardware: Hardware | None = None,
+        wraps: Location | None = None,
     ):
-        super().__init__(name, deployment, service)
+        super().__init__(name=name, deployment=deployment, service=service, wraps=wraps)
         self.hostname: str = hostname
         self.slots: int = slots
         self.hardware: Hardware | None = hardware

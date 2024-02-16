@@ -24,6 +24,7 @@ from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
+from streamflow.deployment.utils import get_inner_location
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
 
@@ -408,7 +409,6 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             maxsize=1, ttl=self.pollingInterval
         )
         self._jobs_cache_lock: asyncio.Lock = asyncio.Lock()
-        self._locations_map: MutableMapping[str, Location] = {}
         self._scheduled_jobs: MutableMapping[str, Location] = {}
 
     def _format_stream(self, stream: int | str) -> str:
@@ -419,11 +419,6 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 f"The `{self.__class__.__name__}` does not support stream pipe redirection."
             )
         return shlex.quote(stream)
-
-    async def _get_inner_locations(
-        self, locations: MutableSequence[Location]
-    ) -> MutableSequence[Location]:
-        return list({self._locations_map[loc.name] for loc in locations})
 
     @abstractmethod
     async def _get_output(self, job_id: str, location: Location) -> str: ...
@@ -475,7 +470,6 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             )
         location = next(iter(locations.values()))
         name = f"{location.name}/slurmctld"
-        self._locations_map[name] = location
         return {
             name: AvailableLocation(
                 name=name,
@@ -483,6 +477,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 service=service,
                 hostname=location.hostname,
                 slots=self.maxConcurrentJobs,
+                wraps=location,
             )
         }
 
@@ -575,7 +570,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
     async def undeploy(self, external: bool) -> None:
         jobs_map = {}
         for job_id, location in self._scheduled_jobs.items():
-            inner_location = await self._get_inner_location(location)
+            inner_location = get_inner_location(location)
             jobs_map.setdefault(inner_location.name, []).append(job_id)
         for location, jobs in jobs_map.items():
             await self._remove_jobs(location, jobs)
