@@ -5,16 +5,18 @@ import os
 import posixpath
 from pathlib import PurePosixPath
 from types import ModuleType
-from typing import Any, MutableMapping, TYPE_CHECKING
+from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.config import BindingConfig
 from streamflow.core.deployment import (
     DeploymentConfig,
     FilterConfig,
     LocalTarget,
+    Location,
     Target,
     WrapsConfig,
 )
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
 
@@ -78,6 +80,20 @@ def get_binding_config(
         )
     else:
         return BindingConfig(targets=[LocalTarget()])
+
+
+def get_inner_location(location: Location) -> Location:
+    if location.wraps is None:
+        raise WorkflowExecutionException(
+            f"Location {location.name} does not wrap any inner location"
+        )
+    return location.wraps
+
+
+def get_inner_locations(
+    locations: MutableSequence[Location],
+) -> MutableSequence[Location]:
+    return list({get_inner_location(loc) for loc in locations})
 
 
 def get_path_processor(connector: Connector) -> ModuleType:

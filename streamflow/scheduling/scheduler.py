@@ -155,7 +155,15 @@ class DefaultScheduler(Scheduler):
                 }
             else:
                 return None
-        return selected_locations
+        return [
+            Location(
+                name=loc.name,
+                deployment=loc.deployment,
+                service=loc.service,
+                wraps=loc.wraps,
+            )
+            for loc in selected_locations
+        ]
 
     def _get_policy(self, config: Config):
         if config.name not in self.policy_map:

@@ -31,12 +31,19 @@ def _init_workdir(deployment_name: str) -> str:
 
 
 class Location:
-    __slots__ = ("name", "deployment", "service")
+    __slots__ = ("name", "deployment", "service", "wraps")
 
-    def __init__(self, name: str, deployment: str, service: str | None = None):
+    def __init__(
+        self,
+        name: str,
+        deployment: str,
+        service: str | None = None,
+        wraps: Location | None = None,
+    ):
         self.name: str = name
         self.deployment: str = deployment
         self.service: str | None = service
+        self.wraps: Location | None = wraps
 
     def __eq__(self, other):
         if not isinstance(other, Location):
