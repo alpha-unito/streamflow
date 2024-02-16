@@ -11,6 +11,8 @@ from streamflow.core.workflow import Job, Token
 
 
 class IterationTerminationToken(Token):
+    __slots__ = ()
+
     def __init__(self, tag: str):
         super().__init__(None, tag)
 
@@ -34,11 +36,15 @@ class IterationTerminationToken(Token):
 
 
 class FileToken(Token, ABC):
+    __slots__ = ()
+
     @abstractmethod
     async def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]: ...
 
 
 class JobToken(Token):
+    __slots__ = ()
+
     async def _save_value(self, context: StreamFlowContext):
         return {"job": await self.value.save(context)}
 
@@ -57,6 +63,8 @@ class JobToken(Token):
 
 
 class ListToken(Token):
+    __slots__ = ()
+
     @classmethod
     async def _load(
         cls,
@@ -97,6 +105,8 @@ class ListToken(Token):
 
 
 class ObjectToken(Token):
+    __slots__ = ()
+
     @classmethod
     async def _load(
         cls,
@@ -149,6 +159,8 @@ class ObjectToken(Token):
 
 
 class TerminationToken(Token):
+    __slots__ = ()
+
     def __init__(self):
         super().__init__(None)
 
@@ -167,5 +179,5 @@ class TerminationToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> IterationTerminationToken:
+    ) -> TerminationToken:
         return cls()

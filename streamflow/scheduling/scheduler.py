@@ -8,7 +8,7 @@ from typing import MutableSequence, TYPE_CHECKING
 from importlib_resources import files
 
 from streamflow.core.config import BindingConfig, Config
-from streamflow.core.deployment import BindingFilter, Location, Target
+from streamflow.core.deployment import BindingFilter, FilterConfig, Location, Target
 from streamflow.core.scheduling import (
     Hardware,
     JobAllocation,
@@ -121,7 +121,7 @@ class DefaultScheduler(Scheduler):
                     ", ".join([str(loc) for loc in job_allocation.locations])
                 )
 
-    def _get_binding_filter(self, config: Config):
+    def _get_binding_filter(self, config: FilterConfig):
         if config.name not in self.binding_filter_map:
             self.binding_filter_map[config.name] = binding_filter_classes[config.type](
                 **config.config

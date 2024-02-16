@@ -163,7 +163,7 @@ class DeploymentManager(SchemaEntity):
     async def undeploy_all(self): ...
 
 
-class DeploymentConfig(Config, PersistableEntity):
+class DeploymentConfig(PersistableEntity):
     __slots__ = ("name", "type", "config", "external", "lazy", "workdir", "wraps")
 
     def __init__(
@@ -176,8 +176,10 @@ class DeploymentConfig(Config, PersistableEntity):
         workdir: str | None = None,
         wraps: WrapsConfig | None = None,
     ) -> None:
-        Config.__init__(self, name, type, config)
-        PersistableEntity.__init__(self)
+        super().__init__()
+        self.name: str = name
+        self.type: str = type
+        self.config: MutableMapping[str, Any] = config or {}
         self.external: bool = external
         self.lazy: bool = lazy
         self.workdir: str | None = workdir
@@ -317,10 +319,14 @@ class LocalTarget(Target):
         return cls(workdir=row["workdir"])
 
 
-class FilterConfig(Config, PersistableEntity):
+class FilterConfig(PersistableEntity):
+    __slots__ = ("name", "type", "config")
+
     def __init__(self, name: str, type: str, config: MutableMapping[str, Any]):
-        Config.__init__(self, name, type, config)
-        PersistableEntity.__init__(self)
+        super().__init__()
+        self.name: str = name
+        self.type: str = type
+        self.config: MutableMapping[str, Any] = config or {}
 
     @classmethod
     async def load(
