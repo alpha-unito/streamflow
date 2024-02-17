@@ -832,11 +832,9 @@ class GatherStep(BaseStep):
     def _get_input_port_name(self) -> str:
         return next(n for n in self.input_ports if n != "__size__")
 
-    async def _gather(self, key: str, is_forced: bool = False) -> None:
-        input_tokens = []
+    async def _gather(self, key: str) -> None:
+        input_tokens = [self.size_map[key]]
         input_tokens.extend(self.token_map[key])
-        if not is_forced:
-            input_tokens.append(self.size_map[key])
         output_port = self.get_output_port()
         output_port.put(
             await self._persist_token(
@@ -961,7 +959,11 @@ class GatherStep(BaseStep):
         for key in (k for k in self.token_map.keys() if k not in keys_completed):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Step {self.name} forces gather on key {key}")
-            await self._gather(key, is_forced=True)
+
+            # Update size_map with the current size
+            self.size_map[key] = Token(value=len(self.token_map[key]), tag=key)
+
+            await self._gather(key)
         # Terminate step
         await self.terminate(
             Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED
