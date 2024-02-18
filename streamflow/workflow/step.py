@@ -962,6 +962,9 @@ class GatherStep(BaseStep):
 
             # Update size_map with the current size
             self.size_map[key] = Token(value=len(self.token_map[key]), tag=key)
+            await self.size_map[key].save(
+                self.workflow.context, size_port.persistent_id
+            )
 
             await self._gather(key)
         # Terminate step

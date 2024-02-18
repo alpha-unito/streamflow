@@ -312,6 +312,36 @@ async def test_gather_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
+async def test_gather_step_no_size(context: StreamFlowContext):
+    """Test token provenance for GatherStep without size token"""
+    workflow, (in_port, out_port, size_port) = await create_workflow(
+        context, num_port=3
+    )
+    base_tag = "0"
+    token_list = [Token(i, tag=f"{base_tag}.{i}") for i in range(5)]
+
+    # TerminationToken is necessary
+    size_port.put(TerminationToken())
+    gather_step = await _general_test(
+        context=context,
+        workflow=workflow,
+        in_port=in_port,
+        out_port=out_port,
+        step_cls=GatherStep,
+        kwargs_step={"name": utils.random_name() + "-gather", "size_port": size_port},
+        token_list=token_list,
+    )
+    assert len(out_port.token_list) == 2
+    size_token = cast(GatherStep, gather_step).size_map[base_tag]
+    await _verify_dependency_tokens(
+        token=out_port.token_list[0],
+        port=out_port,
+        context=context,
+        expected_dependee=[*token_list, size_token],
+    )
+
+
+@pytest.mark.asyncio
 async def test_combinator_step_dot_product(context: StreamFlowContext):
     """Test token provenance for DotProductCombinator"""
     workflow, (in_port, out_port, in_port_2, out_port_2) = await create_workflow(
