@@ -41,20 +41,6 @@ class DataLocation(Location):
         if available:
             self.available.set()
 
-    def __eq__(self, other):
-        if not isinstance(other, DataLocation):
-            return False
-        else:
-            return (
-                self.deployment == other.deployment
-                and self.name == other.name
-                and self.service == other.service
-                and self.path == other.path
-            )
-
-    def __hash__(self):
-        return hash((self.deployment, self.service, self.name, self.path))
-
 
 class DataManager(SchemaEntity):
     def __init__(self, context: StreamFlowContext):
