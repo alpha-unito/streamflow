@@ -45,19 +45,6 @@ class Location:
         self.service: str | None = service
         self.wraps: Location | None = wraps
 
-    def __eq__(self, other):
-        if not isinstance(other, Location):
-            return False
-        else:
-            return (
-                self.deployment == other.deployment
-                and self.service == other.service
-                and self.name == other.name
-            )
-
-    def __hash__(self):
-        return hash((self.deployment, self.service, self.name))
-
     def __str__(self) -> str:
         if self.service:
             return posixpath.join(self.deployment, self.service, self.name)

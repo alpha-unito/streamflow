@@ -155,19 +155,6 @@ class AvailableLocation(Location):
         self.slots: int = slots
         self.hardware: Hardware | None = hardware
 
-    def __eq__(self, other):
-        if not isinstance(other, AvailableLocation):
-            return False
-        else:
-            return (
-                self.deployment == other.deployment
-                and self.service == other.service
-                and self.name == other.name
-            )
-
-    def __hash__(self):
-        return hash((self.deployment, self.service, self.name))
-
 
 class LocationAllocation:
     __slots__ = ("name", "deployment", "jobs")

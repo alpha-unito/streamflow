@@ -155,7 +155,9 @@ class BaseConnector(Connector, FutureAware):
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
-        if source_connector == self and source_location in locations:
+        if source_connector == self and source_location.name in (
+            loc.name for loc in locations
+        ):
             if src != dst:
                 command = ["/bin/cp", "-rf", src, dst]
                 await self.run(source_location, command)
