@@ -770,7 +770,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
-async def test_cwl_loop_output(context: StreamFlowContext, step_cls):
+async def test_cwl_loop_output(context: StreamFlowContext, step_cls: type[Step]):
     """Test saving and loading CWLLoopOutput from database"""
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
