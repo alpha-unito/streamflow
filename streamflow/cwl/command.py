@@ -420,7 +420,7 @@ class CWLBaseCommand(Command, ABC):
                         base_path, path_processor.basename(src_path)
                     )
                     await self.step.workflow.context.data_manager.transfer_data(
-                        src_location=selected_location,
+                        src_location=selected_location.location,
                         src_path=src_path,
                         dst_locations=locations,
                         dst_path=dest_path,

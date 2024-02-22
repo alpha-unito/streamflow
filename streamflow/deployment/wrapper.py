@@ -5,7 +5,7 @@ from abc import ABC
 from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.data import StreamWrapperContextManager
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.future import FutureAware
 from streamflow.deployment.utils import get_inner_location, get_inner_locations
@@ -28,7 +28,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         await self.connector.copy_local_to_remote(
@@ -42,7 +42,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         await self.connector.copy_remote_to_local(
@@ -56,8 +56,8 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
@@ -88,13 +88,13 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         )
 
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager:
         return await self.connector.get_stream_reader(get_inner_location(location), src)
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,

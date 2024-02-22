@@ -15,7 +15,7 @@ from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_local_to_remote_destination, get_option
@@ -23,7 +23,7 @@ from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
-def _check_docker_installed(connector):
+def _check_docker_installed(connector: str):
     if which("docker") is None:
         raise WorkflowExecutionException(
             f"Docker must be installed on the system to use the {connector} connector."
@@ -156,11 +156,11 @@ class ContainerConnector(BaseConnector, ABC):
     async def _check_effective_location(
         self,
         common_paths: MutableMapping[str, Any],
-        effective_locations: MutableSequence[Location],
-        location: Location,
+        effective_locations: MutableSequence[ExecutionLocation],
+        location: ExecutionLocation,
         path: str,
-        source_location: Location | None = None,
-    ) -> tuple[MutableMapping[str, Any], MutableSequence[Location]]:
+        source_location: ExecutionLocation | None = None,
+    ) -> tuple[MutableMapping[str, Any], MutableSequence[ExecutionLocation]]:
         # Get all container mounts
         volumes = await self._get_volumes(location)
         for volume in volumes:
@@ -195,7 +195,7 @@ class ContainerConnector(BaseConnector, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         dst = await get_local_to_remote_destination(self, locations[0], src, dst)
@@ -225,8 +225,8 @@ class ContainerConnector(BaseConnector, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
@@ -268,10 +268,10 @@ class ContainerConnector(BaseConnector, ABC):
 
     async def _get_effective_locations(
         self,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         dest_path: str,
-        source_location: Location | None = None,
-    ) -> MutableSequence[Location]:
+        source_location: ExecutionLocation | None = None,
+    ) -> MutableSequence[ExecutionLocation]:
         common_paths = {}
         effective_locations = []
         for location in locations:
@@ -282,7 +282,7 @@ class ContainerConnector(BaseConnector, ABC):
 
     @abstractmethod
     async def _get_bind_mounts(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]: ...
 
     @abstractmethod
@@ -290,11 +290,11 @@ class ContainerConnector(BaseConnector, ABC):
 
     @abstractmethod
     async def _get_volumes(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]: ...
 
     async def _is_bind_transfer(
-        self, location: Location, host_path: str, instance_path: str
+        self, location: ExecutionLocation, host_path: str, instance_path: str
     ) -> bool:
         bind_mounts = await self._get_bind_mounts(location)
         host_binds = [b["Source"] for b in bind_mounts]
@@ -309,7 +309,7 @@ class ContainerConnector(BaseConnector, ABC):
 
 class DockerBaseConnector(ContainerConnector, ABC):
     async def _get_bind_mounts(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]:
         return [v for v in await self._get_volumes(location) if v["Type"] == "bind"]
 
@@ -336,12 +336,12 @@ class DockerBaseConnector(ContainerConnector, ABC):
         )
 
     def _get_run_command(
-        self, command: str, location: Location, interactive: bool = False
+        self, command: str, location: ExecutionLocation, interactive: bool = False
     ):
         return f"docker exec {'-i' if interactive else ''} {location.name} sh -c '{command}'"
 
     async def _get_volumes(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]:
         inspect_command = "".join(
             ["docker ", "inspect ", "--format ", "'{{json .Mounts}}' ", location.name]
@@ -1066,7 +1066,7 @@ class SingularityConnector(ContainerConnector):
         self.writableTmpfs: bool = writableTmpfs
 
     async def _get_bind_mounts(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]:
         return await self._get_volumes(location)
 
@@ -1090,7 +1090,7 @@ class SingularityConnector(ContainerConnector):
         return None
 
     async def _get_volumes(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]:
         bind_mounts, _ = await self.run(
             location=location,
@@ -1110,7 +1110,7 @@ class SingularityConnector(ContainerConnector):
         ]
 
     def _get_run_command(
-        self, command: str, location: Location, interactive: bool = False
+        self, command: str, location: ExecutionLocation, interactive: bool = False
     ):
         return f"singularity exec instance://{location.name} sh -c '{command}'"
 

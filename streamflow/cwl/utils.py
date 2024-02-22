@@ -25,7 +25,7 @@ from cwltool.utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType, FileType
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -44,7 +44,7 @@ from streamflow.workflow.utils import get_token_value
 async def _check_glob_path(
     connector: Connector,
     workflow: Workflow,
-    location: Location | None,
+    location: ExecutionLocation | None,
     input_directory: str,
     output_directory: str,
     tmp_directory: str,
@@ -88,7 +88,7 @@ async def _check_glob_path(
 async def _process_secondary_file(
     context: StreamFlowContext,
     connector: Connector,
-    locations: MutableSequence[Location],
+    locations: MutableSequence[ExecutionLocation],
     secondary_file: Any,
     token_value: MutableMapping[str, Any],
     from_expression: bool,
@@ -173,7 +173,7 @@ def _process_sf_path(
 async def _register_path(
     context: StreamFlowContext,
     connector: Connector,
-    location: Location,
+    location: ExecutionLocation,
     path: str,
     relpath: str,
     data_type: DataType = DataType.PRIMARY,
@@ -247,7 +247,7 @@ async def build_token_value(
     expression_lib: MutableSequence[str] | None,
     secondary_files: MutableSequence[SecondaryFile] | None,
     connector: Connector,
-    locations: MutableSequence[Location],
+    locations: MutableSequence[ExecutionLocation],
     token_value: Any,
     load_contents: bool,
     load_listing: LoadListing,
@@ -429,7 +429,7 @@ def eval_expression(
 async def expand_glob(
     connector: Connector,
     workflow: Workflow,
-    location: Location | None,
+    location: ExecutionLocation | None,
     input_directory: str,
     output_directory: str,
     tmp_directory: str,
@@ -483,7 +483,7 @@ async def get_class_from_path(
 async def get_file_token(
     context: StreamFlowContext,
     connector: Connector,
-    locations: MutableSequence[Location],
+    locations: MutableSequence[ExecutionLocation],
     token_class: str,
     filepath: str,
     file_format: str | None = None,
@@ -542,7 +542,7 @@ async def get_file_token(
 async def get_listing(
     context: StreamFlowContext,
     connector: Connector,
-    locations: MutableSequence[Location],
+    locations: MutableSequence[ExecutionLocation],
     dirpath: str,
     load_contents: bool,
     recursive: bool,
@@ -711,7 +711,7 @@ async def process_secondary_files(
     full_js: bool,
     expression_lib: MutableSequence[str] | None,
     connector: Connector,
-    locations: MutableSequence[Location],
+    locations: MutableSequence[ExecutionLocation],
     token_value: Any,
     load_contents: bool | None = None,
     load_listing: LoadListing | None = None,
@@ -807,7 +807,7 @@ async def process_secondary_files(
 async def register_data(
     context: StreamFlowContext,
     connector: Connector,
-    locations: MutableSequence[Location],
+    locations: MutableSequence[ExecutionLocation],
     base_path: str | None,
     token_value: MutableSequence[MutableMapping[str, Any]] | MutableMapping[str, Any],
 ):
@@ -933,7 +933,7 @@ async def search_in_parent_locations(
                     if current_location := await _register_path(
                         context=context,
                         connector=data_connector,
-                        location=data_location,
+                        location=data_location.location,
                         path=data_path,
                         relpath=relpath,
                         data_type=data_location.data_type,
@@ -983,7 +983,7 @@ class SecondaryFile:
 async def update_file_token(
     context: StreamFlowContext,
     connector: Connector,
-    location: Location,
+    location: ExecutionLocation,
     token_value: MutableMapping[str, Any],
     load_contents: bool | None,
     load_listing: LoadListing | None = None,

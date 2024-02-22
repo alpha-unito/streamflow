@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Job
     from typing import MutableSequence, MutableMapping, Any
 
+
 LOCAL_LOCATION = "__LOCAL__"
 
 
@@ -30,26 +31,24 @@ def _init_workdir(deployment_name: str) -> str:
         return os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow")
 
 
-class Location:
-    __slots__ = ("name", "deployment", "service", "wraps")
+class ExecutionLocation:
+    __slots__ = ("deployment", "environment", "hostname", "name", "service", "wraps")
 
     def __init__(
         self,
         name: str,
         deployment: str,
+        environment: MutableMapping[str, str] | None = None,
+        hostname: str | None = None,
         service: str | None = None,
-        wraps: Location | None = None,
+        wraps: ExecutionLocation | None = None,
     ):
-        self.name: str = name
         self.deployment: str = deployment
+        self.environment: MutableMapping[str, str] = environment or {}
+        self.hostname: str | None = hostname
+        self.name: str = name
         self.service: str | None = service
-        self.wraps: Location | None = wraps
-
-    def __str__(self) -> str:
-        if self.service:
-            return posixpath.join(self.deployment, self.service, self.name)
-        else:
-            return posixpath.join(self.deployment, self.name)
+        self.wraps: ExecutionLocation | None = wraps
 
 
 class BindingFilter(SchemaEntity):
@@ -70,7 +69,7 @@ class Connector(SchemaEntity):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None: ...
 
@@ -79,7 +78,7 @@ class Connector(SchemaEntity):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None: ...
 
@@ -88,8 +87,8 @@ class Connector(SchemaEntity):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None: ...
@@ -109,7 +108,7 @@ class Connector(SchemaEntity):
     @abstractmethod
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
@@ -126,7 +125,7 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager: ...
 
 

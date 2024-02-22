@@ -68,7 +68,7 @@ As discussed above, a scheduling attempt occurs whenever a ``Job`` reaches a fin
 Policy
 ======
 
-The ``Policy`` interface contains a single method ``get_location``, which returns the ``Location`` chosen for placement or ``None`` if there is no available location.
+The ``Policy`` interface contains a single method ``get_location``, which returns the ``AvailableLocation`` chosen for placement or ``None`` if there is no available location.
 
 .. code-block:: python
 
@@ -80,7 +80,7 @@ The ``Policy`` interface contains a single method ``get_location``, which return
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> Location | None:
+    ) -> AvailableLocation | None:
         ...
 
 The ``get_location`` method receives much information about the current execution context, enabling it to cover a broad class of potential scheduling strategies. In particular, the ``context`` parameter can query all the StreamFlow's relevant data structures, such as the :ref:`Database <Database>`, the :ref:`DataManager <DataManager>`, and the :ref:`DeploymentManager <DeploymentManager>`.

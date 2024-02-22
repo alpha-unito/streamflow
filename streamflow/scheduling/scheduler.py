@@ -8,7 +8,12 @@ from typing import MutableSequence, TYPE_CHECKING
 from importlib_resources import files
 
 from streamflow.core.config import BindingConfig, Config
-from streamflow.core.deployment import BindingFilter, FilterConfig, Location, Target
+from streamflow.core.deployment import (
+    BindingFilter,
+    ExecutionLocation,
+    FilterConfig,
+    Target,
+)
 from streamflow.core.scheduling import (
     Hardware,
     JobAllocation,
@@ -53,7 +58,7 @@ class DefaultScheduler(Scheduler):
         self,
         job: Job,
         hardware: Hardware,
-        selected_locations: MutableSequence[Location],
+        selected_locations: MutableSequence[ExecutionLocation],
         target: Target,
     ):
         if logger.isEnabledFor(logging.DEBUG):
@@ -135,7 +140,7 @@ class DefaultScheduler(Scheduler):
         locations: int,
         scheduling_policy: Policy,
         available_locations: MutableMapping[str, AvailableLocation],
-    ) -> MutableSequence[Location] | None:
+    ) -> MutableSequence[ExecutionLocation] | None:
         selected_locations = []
         for _ in range(locations):
             selected_location = await scheduling_policy.get_location(
@@ -155,15 +160,7 @@ class DefaultScheduler(Scheduler):
                 }
             else:
                 return None
-        return [
-            Location(
-                name=loc.name,
-                deployment=loc.deployment,
-                service=loc.service,
-                wraps=loc.wraps,
-            )
-            for loc in selected_locations
-        ]
+        return [loc.location for loc in selected_locations]
 
     def _get_policy(self, config: Config):
         if config.name not in self.policy_map:

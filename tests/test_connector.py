@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector import SSHConnector
 
@@ -30,7 +30,7 @@ def _get_future_connector_methods() -> MutableSequence[Callable]:
 
 
 def _get_connector_method_params(method_name: str) -> MutableSequence[Any]:
-    loc = Location("test-location", "failure-test")
+    loc = ExecutionLocation("test-location", "failure-test")
     if method_name in ("copy_remote_to_local", "copy_local_to_remote"):
         return ["test_src", "test_dst", [loc]]
     elif method_name in ("deploy", "undeploy"):
@@ -48,7 +48,7 @@ def _get_connector_method_params(method_name: str) -> MutableSequence[Any]:
 
 
 @pytest_asyncio.fixture(scope="module")
-async def curr_location(context, deployment_src) -> Location:
+async def curr_location(context, deployment_src) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
 
@@ -59,7 +59,9 @@ def curr_connector(context, curr_location) -> Connector:
 
 @pytest.mark.asyncio
 async def test_connector_run_command(
-    context: StreamFlowContext, curr_connector: Connector, curr_location: Location
+    context: StreamFlowContext,
+    curr_connector: Connector,
+    curr_location: ExecutionLocation,
 ) -> None:
     """Test connector run method"""
     stdout, returncode = await curr_connector.run(

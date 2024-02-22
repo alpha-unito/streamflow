@@ -13,8 +13,8 @@ from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import (
     Connector,
+    ExecutionLocation,
     LOCAL_LOCATION,
-    Location,
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.utils import get_local_to_remote_destination
@@ -71,7 +71,7 @@ class BaseConnector(Connector, FutureAware):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         dst = await get_local_to_remote_destination(self, locations[0], src, dst)
@@ -87,7 +87,7 @@ class BaseConnector(Connector, FutureAware):
         )
 
     async def _copy_local_to_remote_single(
-        self, src: str, dst: str, location: Location, read_only: bool = False
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(
@@ -117,7 +117,7 @@ class BaseConnector(Connector, FutureAware):
             await proc.wait()
 
     async def _copy_remote_to_local(
-        self, src: str, dst: str, location: Location, read_only: bool = False
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
         dirname, basename = posixpath.split(src)
         proc = await asyncio.create_subprocess_exec(
@@ -149,8 +149,8 @@ class BaseConnector(Connector, FutureAware):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: str | None = None,
         read_only: bool = False,
     ) -> None:
@@ -221,14 +221,14 @@ class BaseConnector(Connector, FutureAware):
 
     @abstractmethod
     def _get_run_command(
-        self, command: str, location: Location, interactive: bool = False
+        self, command: str, location: ExecutionLocation, interactive: bool = False
     ) -> str: ...
 
     def _get_shell(self) -> str:
         return "sh"
 
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager:
         dirname, basename = posixpath.split(src)
         return SubprocessStreamReaderWrapperContextManager(
@@ -249,7 +249,7 @@ class BaseConnector(Connector, FutureAware):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         if logger.isEnabledFor(logging.INFO):
@@ -302,7 +302,7 @@ class BaseConnector(Connector, FutureAware):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         if len(locations) > 1:
@@ -323,8 +323,8 @@ class BaseConnector(Connector, FutureAware):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ):
@@ -377,7 +377,7 @@ class BaseConnector(Connector, FutureAware):
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
@@ -409,6 +409,7 @@ class BaseConnector(Connector, FutureAware):
         run_command = self._get_run_command(command, location)
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(run_command),
+            env=({**os.environ, **location.environment}),
             stdin=None,
             stdout=(
                 asyncio.subprocess.PIPE

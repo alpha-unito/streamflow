@@ -20,7 +20,12 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
-from streamflow.core.deployment import Connector, DeploymentConfig, Location, Target
+from streamflow.core.deployment import (
+    Connector,
+    DeploymentConfig,
+    ExecutionLocation,
+    Target,
+)
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
@@ -1306,7 +1311,10 @@ class ScheduleStep(BaseStep):
         )
 
     async def _propagate_job(
-        self, connector: Connector, locations: MutableSequence[Location], job: Job
+        self,
+        connector: Connector,
+        locations: MutableSequence[ExecutionLocation],
+        job: Job,
     ):
         # Set job directories
         allocation = self.workflow.context.scheduler.get_allocation(job.name)

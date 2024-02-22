@@ -12,7 +12,7 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         ...
@@ -21,7 +21,7 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         ...
@@ -30,8 +30,8 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
@@ -52,13 +52,13 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
         ...
 
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager:
         ...
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
