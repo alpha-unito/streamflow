@@ -6,6 +6,7 @@ from abc import ABCMeta
 from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.deployment import Connector, Location
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
 
@@ -102,7 +103,12 @@ class FutureConnector(Connector):
         if logger.isEnabledFor(logging.INFO):
             if not external:
                 logger.info(f"DEPLOYING {self.deployment_name}")
-        await connector.deploy(external)
+        try:
+            await connector.deploy(external)
+        except Exception:
+            # self.connector is None
+            self.deploy_event.set()
+            raise
         if logger.isEnabledFor(logging.INFO):
             if not external:
                 logger.info(f"COMPLETED Deployment of {self.deployment_name}")
@@ -122,6 +128,10 @@ class FutureConnector(Connector):
                 await self.deploy(self.external)
             else:
                 await self.deploy_event.wait()
+                if self.connector is None:
+                    raise WorkflowExecutionException(
+                        f"Deploying of {self.deployment_name} failed"
+                    )
         return await self.connector.get_available_locations(
             service=service,
             input_directory=input_directory,
