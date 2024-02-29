@@ -31,6 +31,13 @@ class FutureConnector(Connector):
         self.deploy_event: asyncio.Event = asyncio.Event()
         self.connector: Connector | None = None
 
+    async def _safe_deploy_event_wait(self):
+        await self.deploy_event.wait()
+        if self.connector is None:
+            raise WorkflowExecutionException(
+                f"Deploying of {self.deployment_name} failed"
+            )
+
     async def copy_local_to_remote(
         self,
         src: str,
@@ -43,7 +50,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         await self.connector.copy_local_to_remote(
             src=src,
             dst=dst,
@@ -63,7 +70,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         await self.connector.copy_remote_to_local(
             src=src,
             dst=dst,
@@ -85,7 +92,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         if isinstance(source_connector, FutureConnector):
             source_connector = source_connector.connector
         await self.connector.copy_remote_to_remote(
@@ -106,7 +113,7 @@ class FutureConnector(Connector):
         try:
             await connector.deploy(external)
         except Exception:
-            # self.connector is None
+            self.connector = None
             self.deploy_event.set()
             raise
         if logger.isEnabledFor(logging.INFO):
@@ -127,11 +134,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
-                if self.connector is None:
-                    raise WorkflowExecutionException(
-                        f"Deploying of {self.deployment_name} failed"
-                    )
+                await self._safe_deploy_event_wait()
         return await self.connector.get_available_locations(
             service=service,
             input_directory=input_directory,
@@ -147,7 +150,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         return await self.connector.get_stream_reader(location, src)
 
     def get_schema(self) -> str:
@@ -171,7 +174,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         return await self.connector.run(
             location=location,
             command=command,
