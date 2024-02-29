@@ -67,6 +67,7 @@ class SSHContext:
                             logger.exception(
                                 f"Impossible to connect to {self._config.hostname}: {e}"
                             )
+                            self._connect_event.set()
                             self.close()
                             raise
                         if logger.isEnabledFor(logging.WARNING):
@@ -75,6 +76,7 @@ class SSHContext:
                                 f"Waiting {self._retry_delay} seconds for the next attempt."
                             )
                     except asyncssh.Error:
+                        self._connect_event.set()
                         self.close()
                         raise
                     await asyncio.sleep(self._retry_delay)
