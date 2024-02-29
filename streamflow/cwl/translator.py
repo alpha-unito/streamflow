@@ -2050,7 +2050,7 @@ class CWLTranslator:
                     port_name, input_ports[global_name]
                 )
             # If there are multiple scatter inputs, configure combinator
-            size_port = None
+            size_ports = {}
             scatter_combinator = None
             scatter_size_transformer = None
             if len(scatter_inputs) > 1:
@@ -2098,7 +2098,11 @@ class CWLTranslator:
                 scatter_step.add_input_port(port_name, input_ports[global_name])
                 input_ports[global_name] = workflow.create_port()
                 scatter_step.add_output_port(port_name, input_ports[global_name])
-                size_port = scatter_step.get_size_port()
+                size_ports[global_name] = scatter_step.get_size_port()
+            if len(scatter_inputs) == 1:
+                # use the size_port of ScatterStep as the size_port of GatherStep
+                size_port = next(iter(size_ports.values()))
+
             # If there is a scatter combinator, create a combinator step and add all inputs to it
             if scatter_combinator:
                 combinator_step = workflow.create_step(
@@ -2115,7 +2119,9 @@ class CWLTranslator:
                     output_port_names = []
                     for global_name in scatter_inputs:
                         port_name = posixpath.relpath(global_name, step_name)
-                        scatter_size_transformer.add_input_port(port_name, size_port)
+                        scatter_size_transformer.add_input_port(
+                            port_name, size_ports[global_name]
+                        )
                         output_port_names.append(port_name)
                     size_port = workflow.create_port()
                     scatter_size_transformer.add_output_port(
