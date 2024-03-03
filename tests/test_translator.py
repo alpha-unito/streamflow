@@ -4,7 +4,6 @@ import json
 import tempfile
 from typing import MutableMapping, Any
 
-import pytest
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.runner import main
@@ -19,7 +18,6 @@ def _create_file(content: MutableMapping[Any, Any]) -> str:
     return temp_config.name
 
 
-@pytest.mark.asyncio
 def test_dot_product_transformer_raises_error(context: StreamFlowContext) -> None:
     """Test DotProductSizeTransformer which must raise an exception because the size tokens have different values"""
     params = [

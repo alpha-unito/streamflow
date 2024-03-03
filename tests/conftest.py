@@ -10,10 +10,13 @@ from typing import Collection
 import pytest
 import pytest_asyncio
 
+import streamflow.deployment.connector
+
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from tests.utils.connector import FailureConnector
 from tests.utils.deployment import get_deployment_config
 
 
@@ -40,6 +43,12 @@ def pytest_addoption(parser):
         type=csvtype(all_deployment_types()),
         default=all_deployment_types(),
         help=f"List of deployments to deploy. Use the comma as delimiter e.g. --deploys local,docker. (default: {all_deployment_types()})",
+    )
+
+
+def pytest_configure(config):
+    streamflow.deployment.connector.connector_classes.update(
+        {"failure": FailureConnector}
     )
 
 

@@ -36,6 +36,7 @@ async def service(context, deployment) -> str | None:
     return get_service(context, deployment)
 
 
+# todo: move CustomConnector into utils/connector.py
 class CustomConnector(LocalConnector):
     def __init__(
         self,

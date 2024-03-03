@@ -65,6 +65,16 @@ def get_docker_compose_deployment_config():
     )
 
 
+def get_failure_deployment_config():
+    return DeploymentConfig(
+        name="failure-test",
+        type="failure",
+        config={"transferBufferSize": 0},
+        external=False,
+        lazy=True,
+    )
+
+
 def get_kubernetes_deployment_config():
     template = Template(files(__package__).joinpath("pod.jinja2").read_text("utf-8"))
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
