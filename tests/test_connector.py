@@ -3,16 +3,22 @@ from __future__ import annotations
 import asyncio
 import os
 
+import asyncssh
 import pytest
 import pytest_asyncio
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, Location
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.deployment.connector import SSHConnector
 
 from streamflow.deployment.future import FutureConnector
 from tests.utils.connector import FailureConnector, FailureConnectorException
-from tests.utils.deployment import get_failure_deployment_config, get_location
+from tests.utils.deployment import (
+    get_failure_deployment_config,
+    get_location,
+    get_ssh_deployment_config,
+)
 
 
 def _get_task(connector: Connector, method: str) -> asyncio.Task:
@@ -64,6 +70,21 @@ async def test_connector_run_command(
 
 
 @pytest.mark.asyncio
+async def test_deployment_manager_deploy_fails(context: StreamFlowContext) -> None:
+    """Test DeploymentManager deploy method with multiple requests but they fail"""
+    deployment_config = get_failure_deployment_config()
+    deployment_config.lazy = False
+    for result in await asyncio.gather(
+        *(context.deployment_manager.deploy(deployment_config) for _ in range(3)),
+        return_exceptions=True,
+    ):
+        assert isinstance(result, FailureConnectorException) or (
+            isinstance(result, WorkflowExecutionException)
+            and result.args[0] == "Deploying of failure-test failed"
+        )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "method",
     [
@@ -100,15 +121,22 @@ async def test_future_connector_multiple_request_fail(
 
 
 @pytest.mark.asyncio
-async def test_deployment_manager_deploy_fails(context: StreamFlowContext) -> None:
-    """Test DeploymentManager deploy method with multiple requests but they fail"""
-    deployment_config = get_failure_deployment_config()
-    deployment_config.lazy = False
+async def test_ssh_connector_multiple_request_fail(context: StreamFlowContext) -> None:
+    """Test SSHConnector with multiple requests but the deployment fails"""
+    deployment_config = await get_ssh_deployment_config(context)
+    # changed username to get an exception for the test
+    deployment_config.config["nodes"][0]["username"] = "test"
+    connector = SSHConnector(
+        deployment_name=deployment_config.name,
+        config_dir=os.path.dirname(context.config["path"]),
+        **deployment_config.config,
+    )
+
     for result in await asyncio.gather(
-        *(context.deployment_manager.deploy(deployment_config) for _ in range(3)),
+        *(connector.get_available_locations() for _ in range(3)),
         return_exceptions=True,
     ):
-        assert isinstance(result, FailureConnectorException) or (
+        assert isinstance(result, (ConnectionError, asyncssh.Error)) or (
             isinstance(result, WorkflowExecutionException)
-            and result.args[0] == "Deploying of failure-test failed"
+            and result.args[0] == "Impossible to connect to 127.0.0.1:2222"
         )

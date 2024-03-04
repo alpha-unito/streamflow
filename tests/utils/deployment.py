@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from typing import cast
 
 import asyncssh
 import asyncssh.public_key
@@ -17,6 +18,7 @@ from streamflow.core.deployment import (
     Location,
     WrapsConfig,
 )
+from streamflow.deployment import DefaultDeploymentManager
 from tests.utils.data import get_data_path
 
 
@@ -186,6 +188,10 @@ async def get_slurm_deployment_config(_context: StreamFlowContext):
 
 
 async def get_ssh_deployment_config(_context: StreamFlowContext):
+    if config := cast(
+        DefaultDeploymentManager, _context.deployment_manager
+    ).config_map.get("linuxserver-ssh"):
+        return config
     skey = asyncssh.public_key.generate_private_key(
         alg_name="ssh-rsa",
         comment="streamflow-test",
