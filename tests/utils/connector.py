@@ -14,36 +14,6 @@ from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
 
 
-class ParameterizableHardwareConnector(LocalConnector):
-    def __init__(
-        self,
-        deployment_name: str,
-        config_dir: str,
-        hardware: Hardware,
-        transferBufferSize: int = 2**16,
-    ):
-        super().__init__(deployment_name, config_dir, transferBufferSize)
-        self.hardware = hardware
-
-    async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
-    ) -> MutableMapping[str, AvailableLocation]:
-        return {
-            LOCAL_LOCATION: AvailableLocation(
-                name=LOCAL_LOCATION,
-                deployment=self.deployment_name,
-                service=service,
-                hostname="localhost",
-                slots=1,
-                hardware=self.hardware,
-            )
-        }
-
-
 class FailureConnectorException(Exception):
     pass
 
@@ -118,3 +88,33 @@ class FailureConnector(Connector):
         self, location: Location, src: str
     ) -> StreamWrapperContextManager:
         raise FailureConnectorException("FailureConnector get_stream_reader")
+
+
+class ParameterizableHardwareConnector(LocalConnector):
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        hardware: Hardware,
+        transferBufferSize: int = 2**16,
+    ):
+        super().__init__(deployment_name, config_dir, transferBufferSize)
+        self.hardware = hardware
+
+    async def get_available_locations(
+        self,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
+    ) -> MutableMapping[str, AvailableLocation]:
+        return {
+            LOCAL_LOCATION: AvailableLocation(
+                name=LOCAL_LOCATION,
+                deployment=self.deployment_name,
+                service=service,
+                hostname="localhost",
+                slots=1,
+                hardware=self.hardware,
+            )
+        }
