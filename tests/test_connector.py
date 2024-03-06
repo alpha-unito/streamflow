@@ -138,5 +138,5 @@ async def test_ssh_connector_multiple_request_fail(context: StreamFlowContext) -
     ):
         assert isinstance(result, (ConnectionError, asyncssh.Error)) or (
             isinstance(result, WorkflowExecutionException)
-            and result.args[0] == "Impossible to connect to 127.0.0.1:2222"
+            and result.args[0] == "Impossible to connect to .*"
         )
