@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from typing import Callable, MutableSequence, Any
 
 import asyncssh
 import pytest
@@ -13,6 +14,7 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector import SSHConnector
 
 from streamflow.deployment.future import FutureConnector
+from tests.conftest import get_class_callables
 from tests.utils.connector import FailureConnector, FailureConnectorException
 from tests.utils.deployment import (
     get_failure_deployment_config,
@@ -21,28 +23,27 @@ from tests.utils.deployment import (
 )
 
 
-def _get_task(connector: Connector, method: str) -> asyncio.Task:
+def _get_failure_connector_methods() -> MutableSequence[Callable]:
+    methods = get_class_callables(FailureConnector)
+    return [method for method in methods if method.__name__ != "get_schema"]
+
+
+def _get_failure_connector_method_params(method_name: str) -> MutableSequence[Any]:
     loc = Location("test-location", "failure-test")
-    if method == "copy_local_to_remote":
-        return asyncio.create_task(
-            connector.copy_local_to_remote("test_src", "test_dst", [loc])
-        )
-    elif method == "copy_remote_to_local":
-        return asyncio.create_task(
-            connector.copy_remote_to_local("test_src", "test_dst", [loc])
-        )
-    elif method == "copy_remote_to_remote":
-        return asyncio.create_task(
-            connector.copy_remote_to_remote("test_src", "test_dst", [loc], loc)
-        )
-    elif method == "get_available_locations":
-        return asyncio.create_task(connector.get_available_locations())
-    elif method == "get_stream_reader":
-        return asyncio.create_task(connector.get_stream_reader(loc, "test_src"))
-    elif method == "run":
-        return asyncio.create_task(connector.run(loc, ["ls"]))
+    if method_name in ("copy_remote_to_local", "copy_local_to_remote"):
+        return ["test_src", "test_dst", [loc]]
+    elif method_name in ("deploy", "undeploy"):
+        return [False]
+    elif method_name == "copy_remote_to_remote":
+        return ["test_src", "test_dst", [loc], loc]
+    elif method_name == "get_available_locations":
+        return []
+    elif method_name == "get_stream_reader":
+        return [loc, "test_src"]
+    elif method_name == "run":
+        return [loc, ["ls"]]
     else:
-        raise pytest.fail(f"Unknown method: {method}")
+        raise pytest.fail(f"Unknown method_name: {method_name}")
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -87,17 +88,10 @@ async def test_deployment_manager_deploy_fails(context: StreamFlowContext) -> No
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "method",
-    [
-        "copy_local_to_remote",
-        "copy_remote_to_local",
-        "copy_remote_to_remote",
-        "get_available_locations",
-        "get_stream_reader",
-        "run",
-    ],
+    _get_failure_connector_methods(),
 )
 async def test_future_connector_multiple_request_fail(
-    context: StreamFlowContext, method: str
+    context: StreamFlowContext, method: Callable
 ) -> None:
     """Test FutureConnector with multiple requests but the deployment fails"""
     deployment_name = "failure-test"
@@ -111,7 +105,14 @@ async def test_future_connector_multiple_request_fail(
     )
 
     for result in await asyncio.gather(
-        *(_get_task(connector, method) for _ in range(3)),
+        *(
+            asyncio.create_task(
+                method(
+                    connector, *_get_failure_connector_method_params(method.__name__)
+                )
+            )
+            for _ in range(3)
+        ),
         return_exceptions=True,
     ):
         assert isinstance(result, FailureConnectorException) or (

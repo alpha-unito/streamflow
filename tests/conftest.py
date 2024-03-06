@@ -5,7 +5,7 @@ import asyncio
 import os
 import platform
 from asyncio.locks import Lock
-from typing import Collection
+from typing import Collection, MutableSequence, Any, Callable
 
 import pytest
 import pytest_asyncio
@@ -16,7 +16,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from tests.utils.connector import FailureConnector
+from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
 from tests.utils.deployment import get_deployment_config
 
 
@@ -48,7 +48,10 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     streamflow.deployment.connector.connector_classes.update(
-        {"failure": FailureConnector}
+        {
+            "failure": FailureConnector,
+            "parameterizable_hardware": ParameterizableHardwareConnector,
+        }
     )
 
 
@@ -108,12 +111,22 @@ def event_loop():
     loop.close()
 
 
-def is_primitive_type(elem):
+def is_primitive_type(elem: Any) -> bool:
+    """The function given in input an object returns True if it has a primitive types (i.e. int, float, str or bool)"""
     return type(elem) in (int, float, str, bool)
 
 
-# The function given in input an object return a dictionary with attribute:value
+def get_class_callables(class_type) -> MutableSequence[Callable]:
+    """The function given in input a class type returns a list of strings with the method names"""
+    return [
+        getattr(class_type, func)
+        for func in dir(class_type)
+        if callable(getattr(class_type, func)) and not func.startswith("__")
+    ]
+
+
 def object_to_dict(obj):
+    """The function given in input an object returns a dictionary with attribute:value"""
     return {
         attr: getattr(obj, attr)
         for attr in dir(obj)
@@ -121,10 +134,12 @@ def object_to_dict(obj):
     }
 
 
-# The function return True if the elems are the same, otherwise False
-# The param obj_compared is useful to break a circul reference inside the objects
-# remembering the objects already encountered
 def are_equals(elem1, elem2, obj_compared=None):
+    """
+    The function return True if the elems are the same, otherwise False
+    The param obj_compared is useful to break a circul reference inside the objects
+    remembering the objects already encountered
+    """
     obj_compared = obj_compared if obj_compared else []
 
     # if the objects are of different types, they are definitely not the same
