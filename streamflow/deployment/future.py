@@ -6,6 +6,7 @@ from abc import ABCMeta
 from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.deployment import Connector, Location
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
 
@@ -30,6 +31,14 @@ class FutureConnector(Connector):
         self.deploy_event: asyncio.Event = asyncio.Event()
         self.connector: Connector | None = None
 
+    async def _safe_deploy_event_wait(self):
+        await self.deploy_event.wait()
+        if self.connector is None:
+            logger.error(f"Deploying of {self.deployment_name} failed")
+            raise WorkflowExecutionException(
+                f"Deploying of {self.deployment_name} failed"
+            )
+
     async def copy_local_to_remote(
         self,
         src: str,
@@ -42,7 +51,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         await self.connector.copy_local_to_remote(
             src=src,
             dst=dst,
@@ -62,7 +71,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         await self.connector.copy_remote_to_local(
             src=src,
             dst=dst,
@@ -84,7 +93,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         if isinstance(source_connector, FutureConnector):
             source_connector = source_connector.connector
         await self.connector.copy_remote_to_remote(
@@ -102,7 +111,12 @@ class FutureConnector(Connector):
         if logger.isEnabledFor(logging.INFO):
             if not external:
                 logger.info(f"DEPLOYING {self.deployment_name}")
-        await connector.deploy(external)
+        try:
+            await connector.deploy(external)
+        except Exception:
+            self.connector = None
+            self.deploy_event.set()
+            raise
         if logger.isEnabledFor(logging.INFO):
             if not external:
                 logger.info(f"COMPLETED Deployment of {self.deployment_name}")
@@ -121,7 +135,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         return await self.connector.get_available_locations(
             service=service,
             input_directory=input_directory,
@@ -137,7 +151,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         return await self.connector.get_stream_reader(location, src)
 
     def get_schema(self) -> str:
@@ -161,7 +175,7 @@ class FutureConnector(Connector):
                 self.deploying = True
                 await self.deploy(self.external)
             else:
-                await self.deploy_event.wait()
+                await self._safe_deploy_event_wait()
         return await self.connector.run(
             location=location,
             command=command,

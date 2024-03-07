@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from typing import cast, MutableSequence
 
 import asyncssh
 import asyncssh.public_key
@@ -16,7 +17,11 @@ from streamflow.core.deployment import (
     LOCAL_LOCATION,
     Location,
     WrapsConfig,
+    BindingFilter,
+    Target,
 )
+from streamflow.core.workflow import Job
+from streamflow.deployment import DefaultDeploymentManager
 from tests.utils.data import get_data_path
 
 
@@ -62,6 +67,16 @@ def get_docker_compose_deployment_config():
         },
         external=False,
         lazy=False,
+    )
+
+
+def get_failure_deployment_config():
+    return DeploymentConfig(
+        name="failure-test",
+        type="failure",
+        config={"transferBufferSize": 0},
+        external=False,
+        lazy=True,
     )
 
 
@@ -176,6 +191,10 @@ async def get_slurm_deployment_config(_context: StreamFlowContext):
 
 
 async def get_ssh_deployment_config(_context: StreamFlowContext):
+    if config := cast(
+        DefaultDeploymentManager, _context.deployment_manager
+    ).config_map.get("linuxserver-ssh"):
+        return config
     skey = asyncssh.public_key.generate_private_key(
         alg_name="ssh-rsa",
         comment="streamflow-test",
@@ -215,3 +234,14 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
         external=False,
         lazy=False,
     )
+
+
+class ReverseTargetsBindingFilter(BindingFilter):
+    async def get_targets(
+        self, job: Job, targets: MutableSequence[Target]
+    ) -> MutableSequence[Target]:
+        return targets[::-1]
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return ""

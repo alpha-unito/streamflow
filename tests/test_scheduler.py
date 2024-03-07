@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import MutableMapping, MutableSequence
 
 import pytest
 import pytest_asyncio
@@ -10,19 +9,19 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
-    BindingFilter,
     DeploymentConfig,
     LOCAL_LOCATION,
     LocalTarget,
     Target,
 )
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.scheduling import Hardware
 from streamflow.core.workflow import Job, Status
-from streamflow.deployment.connector import LocalConnector
+from tests.utils.connector import ParameterizableHardwareConnector
 from tests.utils.deployment import (
     get_docker_deployment_config,
     get_service,
     get_deployment_config,
+    ReverseTargetsBindingFilter,
 )
 
 
@@ -34,47 +33,6 @@ async def deployment_config(context, deployment) -> DeploymentConfig:
 @pytest_asyncio.fixture(scope="module")
 async def service(context, deployment) -> str | None:
     return get_service(context, deployment)
-
-
-class CustomConnector(LocalConnector):
-    def __init__(
-        self,
-        deployment_name: str,
-        config_dir: str,
-        hardware: Hardware,
-        transferBufferSize: int = 2**16,
-    ):
-        super().__init__(deployment_name, config_dir, transferBufferSize)
-        self.hardware = hardware
-
-    async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
-    ) -> MutableMapping[str, AvailableLocation]:
-        return {
-            LOCAL_LOCATION: AvailableLocation(
-                name=LOCAL_LOCATION,
-                deployment=self.deployment_name,
-                service=service,
-                hostname="localhost",
-                slots=1,
-                hardware=self.hardware,
-            )
-        }
-
-
-class CustomBindingFilter(BindingFilter):
-    async def get_targets(
-        self, job: Job, targets: MutableSequence[Target]
-    ) -> MutableSequence[Target]:
-        return targets[::-1]
-
-    @classmethod
-    def get_schema(cls) -> str:
-        return ""
 
 
 @pytest.mark.asyncio
@@ -120,11 +78,13 @@ async def test_single_env_few_resources(context: StreamFlowContext):
 
     # inject custom connector to manipulate available resources
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
+        ParameterizableHardwareConnector(
+            deployment_name=conn.deployment_name,
+            config_dir=conn.config_dir,
+            transferBufferSize=conn.transferBufferSize,
+            hardware=machine_hardware,
+        )
     )
 
     # Create fake jobs and schedule them
@@ -195,11 +155,13 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
 
     # Inject custom connector to manipulate available resources
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
+        ParameterizableHardwareConnector(
+            deployment_name=conn.deployment_name,
+            config_dir=conn.config_dir,
+            transferBufferSize=conn.transferBufferSize,
+            hardware=machine_hardware,
+        )
     )
 
     # Create fake jobs and schedule them
@@ -252,11 +214,13 @@ async def test_multi_env(context: StreamFlowContext):
     # Inject custom connector to manipulate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
+        ParameterizableHardwareConnector(
+            deployment_name=conn.deployment_name,
+            config_dir=conn.config_dir,
+            transferBufferSize=conn.transferBufferSize,
+            hardware=machine_hardware,
+        )
     )
 
     # Create fake jobs with two different env and schedule them
@@ -316,11 +280,13 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     # Inject custom connector to manipulate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
+        ParameterizableHardwareConnector(
+            deployment_name=conn.deployment_name,
+            config_dir=conn.config_dir,
+            transferBufferSize=conn.transferBufferSize,
+            hardware=machine_hardware,
+        )
     )
 
     # Create fake job with two targets and schedule it
@@ -380,11 +346,13 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     # Inject custom connector to manipulate available resources
     machine_hardware = Hardware(cores=1)
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
+        ParameterizableHardwareConnector(
+            deployment_name=conn.deployment_name,
+            config_dir=conn.config_dir,
+            transferBufferSize=conn.transferBufferSize,
+            hardware=machine_hardware,
+        )
     )
 
     # Create fake jobs with two same targets and schedule them
@@ -470,7 +438,9 @@ async def test_binding_filter(context: StreamFlowContext):
     binding_config = BindingConfig(
         targets=[local_target, docker_target], filters=[filter_config]
     )
-    context.scheduler.binding_filter_map[filter_config_name] = CustomBindingFilter()
+    context.scheduler.binding_filter_map[filter_config_name] = (
+        ReverseTargetsBindingFilter()
+    )
 
     # Schedule the job
     task_pending = [

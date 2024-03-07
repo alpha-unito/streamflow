@@ -14,7 +14,10 @@ from streamflow.core.deployment import (
     LOCAL_LOCATION,
     LocalTarget,
 )
-from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.exception import (
+    WorkflowDefinitionException,
+    WorkflowExecutionException,
+)
 from streamflow.deployment.connector import connector_classes
 from streamflow.deployment.future import FutureConnector
 from streamflow.deployment.utils import get_wraps_config
@@ -69,7 +72,12 @@ class DefaultDeploymentManager(DeploymentManager):
                     if logger.isEnabledFor(logging.INFO):
                         if not deployment_config.external:
                             logger.info(f"DEPLOYING {deployment_name}")
-                    await connector.deploy(deployment_config.external)
+                    try:
+                        await connector.deploy(deployment_config.external)
+                    except Exception:
+                        self.deployments_map.pop(deployment_name)
+                        self.events_map[deployment_name].set()
+                        raise
                     if logger.isEnabledFor(logging.INFO):
                         if not deployment_config.external:
                             logger.info(f"COMPLETED Deployment of {deployment_name}")
@@ -77,6 +85,10 @@ class DefaultDeploymentManager(DeploymentManager):
                     break
             else:
                 await self.events_map[deployment_name].wait()
+                if deployment_name not in self.deployments_map:
+                    raise WorkflowExecutionException(
+                        f"Deploying of {deployment_name} failed"
+                    )
                 if deployment_name in self.config_map:
                     break
 
