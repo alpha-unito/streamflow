@@ -23,12 +23,13 @@ from tests.utils.deployment import (
 )
 
 
-def _get_failure_connector_methods() -> MutableSequence[Callable]:
-    methods = get_class_callables(FailureConnector)
-    return [method for method in methods if method.__name__ != "get_schema"]
+def _get_future_connector_methods() -> MutableSequence[Callable]:
+    methods = get_class_callables(FutureConnector)
+    unnecessary_methods = ("_safe_deploy_event_wait", "get_schema", "undeploy")
+    return [method for method in methods if method.__name__ not in unnecessary_methods]
 
 
-def _get_failure_connector_method_params(method_name: str) -> MutableSequence[Any]:
+def _get_connector_method_params(method_name: str) -> MutableSequence[Any]:
     loc = Location("test-location", "failure-test")
     if method_name in ("copy_remote_to_local", "copy_local_to_remote"):
         return ["test_src", "test_dst", [loc]]
@@ -88,7 +89,7 @@ async def test_deployment_manager_deploy_fails(context: StreamFlowContext) -> No
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "method",
-    _get_failure_connector_methods(),
+    _get_future_connector_methods(),
 )
 async def test_future_connector_multiple_request_fail(
     context: StreamFlowContext, method: Callable
@@ -107,9 +108,7 @@ async def test_future_connector_multiple_request_fail(
     for result in await asyncio.gather(
         *(
             asyncio.create_task(
-                method(
-                    connector, *_get_failure_connector_method_params(method.__name__)
-                )
+                method(connector, *_get_connector_method_params(method.__name__))
             )
             for _ in range(3)
         ),
