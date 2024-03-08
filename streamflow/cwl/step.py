@@ -320,17 +320,19 @@ class CWLInputInjectorStep(InputInjectorStep):
     async def process_input(self, job: Job, token_value: Any) -> Token:
         if isinstance(token_value, MutableSequence):
             return ListToken(
+                tag=get_tag(job.inputs.values()),
                 value=await asyncio.gather(
                     *(
                         asyncio.create_task(self.process_input(job, v))
                         for v in token_value
                     )
-                )
+                ),
             )
         elif isinstance(token_value, MutableMapping):
             if utils.get_token_class(token_value) in ["File", "Directory"]:
                 return CWLFileToken(
-                    value=await self._process_file_token(job, token_value)
+                    tag=get_tag(job.inputs.values()),
+                    value=await self._process_file_token(job, token_value),
                 )
             else:
                 token_tasks = {
@@ -338,15 +340,16 @@ class CWLInputInjectorStep(InputInjectorStep):
                     for k, v in token_value.items()
                 }
                 return ObjectToken(
+                    tag=get_tag(job.inputs.values()),
                     value=dict(
                         zip(
                             token_tasks.keys(),
                             await asyncio.gather(*token_tasks.values()),
                         )
-                    )
+                    ),
                 )
         else:
-            return Token(value=token_value)
+            return Token(tag=get_tag(job.inputs.values()), value=token_value)
 
 
 class CWLLoopOutputAllStep(LoopOutputStep):

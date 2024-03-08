@@ -1236,7 +1236,14 @@ def _process_transformers(
                     posixpath.relpath(dep_name, step_name), input_ports[dep_name]
                 )
         # Put transformer output ports in input ports map
-        new_input_ports[input_name] = token_transformer.get_output_port()
+        if isinstance(token_transformer, ValueFromTransformer):
+            port = token_transformer.get_output_port()
+            steps = port.get_output_steps()
+            new_input_ports[input_name] = next(
+                s for s in steps if isinstance(s, CWLInputInjectorStep)
+            ).get_output_port()
+        else:
+            new_input_ports[input_name] = token_transformer.get_output_port()
     return {**input_ports, **new_input_ports}
 
 
@@ -2466,9 +2473,42 @@ class CWLTranslator:
                 full_js=full_js,
                 value_from=element_input["valueFrom"],
             )
+            value_from_output_port = workflow.create_port()
             value_from_transformers[global_name].add_output_port(
-                port_name, workflow.create_port()
+                port_name, value_from_output_port
             )
+
+            # Retrieve the DeployStep for the port target
+            binding_config = get_binding_config(
+                global_name, "port", self.workflow_config
+            )
+            target = binding_config.targets[0]
+            deploy_step = self._get_deploy_step(target.deployment, workflow)
+
+            # Create a schedule step and connect it to the local DeployStep
+            schedule_step = workflow.create_step(
+                cls=ScheduleStep,
+                name=posixpath.join(
+                    global_name + inner_steps_prefix + "-value-from-injector",
+                    "__schedule__",
+                ),
+                job_prefix=f"{global_name}{inner_steps_prefix}-injector",
+                connector_ports={target.deployment.name: deploy_step.get_output_port()},
+                input_directory=target.workdir or self.output_directory,
+                output_directory=target.workdir or self.output_directory,
+                tmp_directory=target.workdir or self.output_directory,
+                binding_config=binding_config,
+            )
+            schedule_step.add_input_port(port_name, value_from_output_port)
+            # Create a CWLInputInjector step to process the token produced by ValueFromTransformer step
+            injector_step = workflow.create_step(
+                cls=CWLInputInjectorStep,
+                name=global_name + inner_steps_prefix + "-value-from-injector",
+                job_port=schedule_step.get_output_port(),
+            )
+            injector_step.add_input_port(port_name, value_from_output_port)
+            injector_step.add_output_port(port_name, workflow.create_port())
+
             # Retrieve dependencies
             local_deps = resolve_dependencies(
                 expression=element_input.get("valueFrom"),
