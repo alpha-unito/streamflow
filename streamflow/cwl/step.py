@@ -17,8 +17,7 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag, random_name
 from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.cwl import utils
-from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.utils import LoadListing
+from streamflow.cwl.utils import LoadListing, build_token
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
@@ -30,7 +29,7 @@ from streamflow.workflow.step import (
     TransferStep,
     _get_token_ids,
 )
-from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
+from streamflow.workflow.token import IterationTerminationToken, ListToken
 
 
 async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
@@ -265,88 +264,13 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
 
 
 class CWLInputInjectorStep(InputInjectorStep):
-    async def _process_file_token(self, job: Job, token_value: Any):
-        filepath = utils.get_path_from_token(token_value)
-        connector = self.workflow.context.scheduler.get_connector(job.name)
-        locations = self.workflow.context.scheduler.get_locations(job.name)
-        path_processor = get_path_processor(connector)
-        new_token_value = token_value
-        if filepath:
-            if not path_processor.isabs(filepath):
-                filepath = path_processor.join(job.output_directory, filepath)
-            new_token_value = await utils.get_file_token(
-                context=self.workflow.context,
-                connector=connector,
-                locations=locations,
-                token_class=utils.get_token_class(token_value),
-                filepath=filepath,
-                file_format=token_value.get("format"),
-                basename=token_value.get("basename"),
-            )
-            await utils.register_data(
-                context=self.workflow.context,
-                connector=connector,
-                locations=locations,
-                base_path=job.output_directory,
-                token_value=new_token_value,
-            )
-            if "secondaryFiles" in token_value:
-                new_token_value["secondaryFiles"] = await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            utils.get_file_token(
-                                context=self.workflow.context,
-                                connector=connector,
-                                locations=locations,
-                                token_class=utils.get_token_class(sf),
-                                filepath=utils.get_path_from_token(sf),
-                                file_format=sf.get("format"),
-                                basename=sf.get("basename"),
-                            )
-                        )
-                        for sf in token_value["secondaryFiles"]
-                    )
-                )
-        if "listing" in token_value:
-            listing = await asyncio.gather(
-                *(
-                    asyncio.create_task(self._process_file_token(job, t))
-                    for t in token_value["listing"]
-                )
-            )
-            new_token_value = {**new_token_value, **{"listing": listing}}
-        return new_token_value
 
     async def process_input(self, job: Job, token_value: Any) -> Token:
-        if isinstance(token_value, MutableSequence):
-            return ListToken(
-                value=await asyncio.gather(
-                    *(
-                        asyncio.create_task(self.process_input(job, v))
-                        for v in token_value
-                    )
-                )
-            )
-        elif isinstance(token_value, MutableMapping):
-            if utils.get_token_class(token_value) in ["File", "Directory"]:
-                return CWLFileToken(
-                    value=await self._process_file_token(job, token_value)
-                )
-            else:
-                token_tasks = {
-                    k: asyncio.create_task(self.process_input(job, v))
-                    for k, v in token_value.items()
-                }
-                return ObjectToken(
-                    value=dict(
-                        zip(
-                            token_tasks.keys(),
-                            await asyncio.gather(*token_tasks.values()),
-                        )
-                    )
-                )
-        else:
-            return Token(value=token_value)
+        return await build_token(
+            job=job,
+            token_value=token_value,
+            streamflow_context=self.workflow.context,
+        )
 
 
 class CWLLoopOutputAllStep(LoopOutputStep):
