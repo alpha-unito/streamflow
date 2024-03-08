@@ -17,7 +17,7 @@ from importlib_resources import files
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapperContextManager
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment import aiotarstream
@@ -153,12 +153,14 @@ class SSHContextManager:
         condition: asyncio.Condition,
         contexts: MutableSequence[SSHContext],
         command: str,
+        environment: MutableMapping[str, str] | None,
         stdin: int = asyncio.subprocess.PIPE,
         stdout: int = asyncio.subprocess.PIPE,
         stderr: int = asyncio.subprocess.PIPE,
         encoding: str | None = "utf-8",
     ):
         self.command: str = command
+        self.environment: MutableMapping[str, str] | None = environment
         self.stdin: int = stdin
         self.stdout: int = stdout
         self.stderr: int = stderr
@@ -178,6 +180,7 @@ class SSHContextManager:
                             self._selected_context = context
                             self._proc = await ssh_connection.create_process(
                                 self.command,
+                                env=self.environment,
                                 stdin=self.stdin,
                                 stdout=self.stdout,
                                 stderr=self.stderr,
@@ -229,6 +232,7 @@ class SSHContextFactory:
     def get(
         self,
         command: str,
+        environment: MutableMapping[str, str] | None,
         stdin: int = asyncio.subprocess.PIPE,
         stdout: int = asyncio.subprocess.PIPE,
         stderr: int = asyncio.subprocess.PIPE,
@@ -238,6 +242,7 @@ class SSHContextFactory:
             condition=self._condition,
             contexts=self._contexts,
             command=command,
+            environment=environment,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
@@ -246,9 +251,15 @@ class SSHContextFactory:
 
 
 class SSHStreamWrapperContextManager(StreamWrapperContextManager):
-    def __init__(self, src: str, ssh_context_factory: SSHContextFactory):
+    def __init__(
+        self,
+        src: str,
+        environment: MutableMapping[str, str],
+        ssh_context_factory: SSHContextFactory,
+    ):
         super().__init__()
         self.src: str = src
+        self.environment: MutableMapping[str, str] = environment
         self.ssh_context_factory: SSHContextFactory = ssh_context_factory
         self.ssh_context: SSHContextManager | None = None
         self.stream: StreamReaderWrapper | None = None
@@ -257,6 +268,7 @@ class SSHStreamWrapperContextManager(StreamWrapperContextManager):
         dirname, basename = posixpath.split(self.src)
         self.ssh_context = self.ssh_context_factory.get(
             command=f"tar chf - -C {dirname} {basename}",
+            environment=self.environment,
             stdin=asyncio.subprocess.DEVNULL,
             encoding=None,
         )
@@ -361,7 +373,7 @@ class SSHConnector(BaseConnector):
         self.hardwareCache: Cache = LRUCache(maxsize=len(self.nodes))
 
     async def _copy_local_to_remote_single(
-        self, src: str, dst: str, location: Location, read_only: bool = False
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ):
         async with self._get_data_transfer_process(
             location=location.name,
@@ -369,6 +381,7 @@ class SSHConnector(BaseConnector):
             stderr=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.DEVNULL,
             encoding=None,
+            environment=location.environment,
         ) as proc:
             try:
                 async with aiotarstream.open(
@@ -385,7 +398,7 @@ class SSHConnector(BaseConnector):
                 ) from e
 
     async def _copy_remote_to_local(
-        self, src: str, dst: str, location: Location, read_only: bool = False
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
         dirname, basename = posixpath.split(src)
         async with self._get_data_transfer_process(
@@ -393,6 +406,7 @@ class SSHConnector(BaseConnector):
             command=f"tar chf - -C {dirname} {basename}",
             stdin=asyncio.subprocess.DEVNULL,
             encoding=None,
+            environment=location.environment,
         ) as proc:
             try:
                 async with aiotarstream.open(
@@ -410,8 +424,8 @@ class SSHConnector(BaseConnector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
@@ -457,6 +471,7 @@ class SSHConnector(BaseConnector):
                                             stderr=asyncio.subprocess.DEVNULL,
                                             stdout=asyncio.subprocess.DEVNULL,
                                             encoding=None,
+                                            environment=location.environment,
                                         )
                                     )
                                 )
@@ -478,7 +493,7 @@ class SSHConnector(BaseConnector):
 
     def _get_command(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
@@ -550,6 +565,7 @@ class SSHConnector(BaseConnector):
         stdout: int = asyncio.subprocess.PIPE,
         stderr: int = asyncio.subprocess.PIPE,
         encoding: str | None = "utf-8",
+        environment: MutableMapping[str, str] | None = None,
     ) -> SSHContextManager:
         if self.dataTransferConfig:
             if location not in self.data_transfer_context_factories:
@@ -563,6 +579,7 @@ class SSHConnector(BaseConnector):
                 )
             return self.data_transfer_context_factories[location].get(
                 command=command,
+                environment=environment,
                 stdin=stdin,
                 stdout=stdout,
                 stderr=stderr,
@@ -576,6 +593,7 @@ class SSHConnector(BaseConnector):
                 stdout=stdout,
                 stderr=stderr,
                 encoding=encoding,
+                environment=environment,
             )
 
     async def _get_disk_usage(self, location: str, directory: str) -> float:
@@ -639,7 +657,7 @@ class SSHConnector(BaseConnector):
                 raise WorkflowExecutionException(result.returncode)
 
     def _get_run_command(
-        self, command: str, location: Location, interactive: bool = False
+        self, command: str, location: ExecutionLocation, interactive: bool = False
     ):
         return f"ssh {location.name} {command}"
 
@@ -651,6 +669,7 @@ class SSHConnector(BaseConnector):
         stdout: int = asyncio.subprocess.PIPE,
         stderr: int = asyncio.subprocess.PIPE,
         encoding: str | None = "utf-8",
+        environment: MutableMapping[str, str] | None = None,
     ) -> SSHContextManager:
         if location not in self.ssh_context_factories:
             self.ssh_context_factories[location] = SSHContextFactory(
@@ -663,6 +682,7 @@ class SSHConnector(BaseConnector):
             )
         return self.ssh_context_factories[location].get(
             command=command,
+            environment=environment,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
@@ -670,7 +690,7 @@ class SSHConnector(BaseConnector):
         )
 
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager:
         if self.dataTransferConfig:
             if location not in self.data_transfer_context_factories:
@@ -695,7 +715,9 @@ class SSHConnector(BaseConnector):
                 )
             ssh_context_factory = self.ssh_context_factories[location.name]
         return SSHStreamWrapperContextManager(
-            src=src, ssh_context_factory=ssh_context_factory
+            src=src,
+            environment=location.environment,
+            ssh_context_factory=ssh_context_factory,
         )
 
     async def deploy(self, external: bool) -> None:
@@ -747,7 +769,7 @@ class SSHConnector(BaseConnector):
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
@@ -787,6 +809,7 @@ class SSHConnector(BaseConnector):
                 location=location.name,
                 command=command,
                 stderr=asyncio.subprocess.STDOUT,
+                environment=environment,
             ) as proc:
                 result = await proc.wait(timeout=timeout)
         else:
@@ -794,6 +817,7 @@ class SSHConnector(BaseConnector):
                 location=location.name,
                 command=command,
                 stderr=asyncio.subprocess.STDOUT,
+                environment=environment,
             ) as proc:
                 result = await proc.wait(timeout=timeout)
         return result.stdout.strip(), result.returncode if capture_output else None

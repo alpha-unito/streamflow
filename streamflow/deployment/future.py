@@ -5,7 +5,7 @@ import logging
 from abc import ABCMeta
 from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
@@ -43,7 +43,7 @@ class FutureConnector(Connector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         if self.connector is None:
@@ -63,7 +63,7 @@ class FutureConnector(Connector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         if self.connector is None:
@@ -83,8 +83,8 @@ class FutureConnector(Connector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
@@ -144,7 +144,7 @@ class FutureConnector(Connector):
         )
 
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager:
         if self.connector is None:
             if not self.deploying:
@@ -159,7 +159,7 @@ class FutureConnector(Connector):
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,

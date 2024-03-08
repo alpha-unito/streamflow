@@ -457,7 +457,7 @@ class CWLTransferStep(TransferStep):
             )
             # Perform and transfer
             await self.workflow.context.data_manager.transfer_data(
-                src_location=selected_location,
+                src_location=selected_location.location,
                 src_path=selected_location.path,
                 dst_locations=dst_locations,
                 dst_path=filepath,

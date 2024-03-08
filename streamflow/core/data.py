@@ -6,10 +6,10 @@ from enum import Enum
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
-from streamflow.core.deployment import Location
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
+    from streamflow.core.deployment import ExecutionLocation
     from typing import Any
 
 
@@ -19,27 +19,46 @@ class DataType(Enum):
     INVALID = 2
 
 
-class DataLocation(Location):
-    __slots__ = ("path", "relpath", "data_type", "available")
+class DataLocation:
+    __slots__ = (
+        "available",
+        "data_type",
+        "location",
+        "path",
+        "relpath",
+    )
 
     def __init__(
         self,
-        name: str,
+        location: ExecutionLocation,
         path: str,
         relpath: str,
-        deployment: str,
         data_type: DataType,
-        service: str | None = None,
         available: bool = False,
-        wraps: Location | None = None,
     ):
-        super().__init__(name=name, deployment=deployment, service=service, wraps=wraps)
+        self.available: asyncio.Event = asyncio.Event()
+        self.data_type: DataType = data_type
+        self.location: ExecutionLocation = location
         self.path: str = path
         self.relpath: str = relpath
-        self.data_type: DataType = data_type
-        self.available: asyncio.Event = asyncio.Event()
         if available:
             self.available.set()
+
+    @property
+    def deployment(self) -> str:
+        return self.location.deployment
+
+    @property
+    def name(self) -> str:
+        return self.location.name
+
+    @property
+    def service(self) -> str | None:
+        return self.location.service
+
+    @property
+    def wraps(self) -> ExecutionLocation | None:
+        return self.location.wraps
 
 
 class DataManager(SchemaEntity):
@@ -64,12 +83,12 @@ class DataManager(SchemaEntity):
     ) -> DataLocation | None: ...
 
     @abstractmethod
-    def invalidate_location(self, location: Location, path: str) -> None: ...
+    def invalidate_location(self, location: ExecutionLocation, path: str) -> None: ...
 
     @abstractmethod
     def register_path(
         self,
-        location: Location,
+        location: ExecutionLocation,
         path: str,
         relpath: str | None = None,
         data_type: DataType = DataType.PRIMARY,
@@ -83,9 +102,9 @@ class DataManager(SchemaEntity):
     @abstractmethod
     async def transfer_data(
         self,
-        src_location: Location,
+        src_location: ExecutionLocation,
         src_path: str,
-        dst_locations: MutableSequence[Location],
+        dst_locations: MutableSequence[ExecutionLocation],
         dst_path: str,
         writable: bool = False,
     ) -> None: ...

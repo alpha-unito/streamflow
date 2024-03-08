@@ -12,7 +12,7 @@ from importlib_resources import files
 from ruamel.yaml import YAML
 
 from streamflow.core import utils
-from streamflow.core.deployment import Location
+from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
@@ -52,10 +52,10 @@ class OccamConnector(SSHConnector):
 
     def _get_effective_locations(
         self,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         dest_path: str,
-        source_location: Location,
-    ) -> MutableSequence[Location]:
+        source_location: ExecutionLocation,
+    ) -> MutableSequence[ExecutionLocation]:
         # If destination path is in a shared location, transfer only on the first location
         for shared_path in self.sharedPaths:
             if dest_path.startswith(shared_path):
@@ -125,8 +125,8 @@ class OccamConnector(SSHConnector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: str | None = None,
         read_only: bool = False,
     ) -> None:
@@ -176,8 +176,8 @@ class OccamConnector(SSHConnector):
         self,
         src: str,
         dst: str,
-        location: Location,
-        source_location: Location,
+        location: ExecutionLocation,
+        source_location: ExecutionLocation,
         temp_dir: str | None,
         read_only: bool = False,
     ) -> None:
@@ -192,7 +192,7 @@ class OccamConnector(SSHConnector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         effective_locations = self._get_effective_locations(locations, dst)
@@ -236,7 +236,7 @@ class OccamConnector(SSHConnector):
         self,
         src: str,
         dst: str,
-        location: Location,
+        location: ExecutionLocation,
         temp_dir: str | None,
         read_only: bool = False,
     ) -> None:
@@ -251,7 +251,7 @@ class OccamConnector(SSHConnector):
             await self.run(location, copy_command)
 
     async def _copy_remote_to_local(
-        self, src: str, dst: str, location: Location, read_only: bool = False
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
         shared_path = self._get_shared_path(location.name, src)
         if shared_path is not None:
@@ -417,7 +417,7 @@ class OccamConnector(SSHConnector):
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,

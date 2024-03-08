@@ -20,11 +20,11 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import Connector, Location
+    from streamflow.core.deployment import Connector, ExecutionLocation
 
 
 def _check_status(
-    command: MutableSequence[str], location: Location, result: str, status: int
+    command: MutableSequence[str], location: ExecutionLocation, result: str, status: int
 ):
     if status != 0:
         raise WorkflowExecutionException(
@@ -69,7 +69,7 @@ def _listdir_local(path: str, file_type: FileType | None) -> MutableSequence[str
 async def checksum(
     context: StreamFlowContext,
     connector: Connector,
-    location: Location | None,
+    location: ExecutionLocation | None,
     path: str,
 ) -> str | None:
     if isinstance(connector, LocalConnector):
@@ -96,7 +96,7 @@ async def checksum(
 
 async def download(
     connector: Connector,
-    locations: MutableSequence[Location] | None,
+    locations: MutableSequence[ExecutionLocation] | None,
     url: str,
     parent_dir: str,
 ) -> str:
@@ -142,7 +142,9 @@ async def download(
     return filepath
 
 
-async def exists(connector: Connector, location: Location | None, path: str) -> bool:
+async def exists(
+    connector: Connector, location: ExecutionLocation | None, path: str
+) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.exists(path)
     else:
@@ -163,7 +165,7 @@ async def exists(connector: Connector, location: Location | None, path: str) -> 
 async def follow_symlink(
     context: StreamFlowContext,
     connector: Connector,
-    location: Location | None,
+    location: ExecutionLocation | None,
     path: str,
 ) -> str:
     if isinstance(connector, LocalConnector):
@@ -200,7 +202,7 @@ async def follow_symlink(
 
 
 async def head(
-    connector: Connector, location: Location | None, path: str, num_bytes: int
+    connector: Connector, location: ExecutionLocation | None, path: str, num_bytes: int
 ) -> str:
     if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
@@ -214,7 +216,9 @@ async def head(
         return result.strip()
 
 
-async def isdir(connector: Connector, location: Location | None, path: str) -> bool:
+async def isdir(
+    connector: Connector, location: ExecutionLocation | None, path: str
+) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.isdir(path)
     else:
@@ -232,7 +236,9 @@ async def isdir(connector: Connector, location: Location | None, path: str) -> b
             return not status
 
 
-async def isfile(connector: Connector, location: Location | None, path: str) -> bool:
+async def isfile(
+    connector: Connector, location: ExecutionLocation | None, path: str
+) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.isfile(path)
     else:
@@ -250,7 +256,9 @@ async def isfile(connector: Connector, location: Location | None, path: str) -> 
             return not status
 
 
-async def islink(connector: Connector, location: Location | None, path: str) -> bool:
+async def islink(
+    connector: Connector, location: ExecutionLocation | None, path: str
+) -> bool:
     if isinstance(connector, LocalConnector):
         return os.path.islink(path)
     else:
@@ -270,7 +278,7 @@ async def islink(connector: Connector, location: Location | None, path: str) -> 
 
 async def listdir(
     connector: Connector,
-    location: Location | None,
+    location: ExecutionLocation | None,
     path: str,
     file_type: FileType | None = None,
 ) -> MutableSequence[str]:
@@ -296,14 +304,16 @@ async def listdir(
 
 
 async def mkdir(
-    connector: Connector, locations: MutableSequence[Location] | None, path: str
+    connector: Connector,
+    locations: MutableSequence[ExecutionLocation] | None,
+    path: str,
 ) -> None:
     return await mkdirs(connector, locations, [path])
 
 
 async def mkdirs(
     connector: Connector,
-    locations: MutableSequence[Location] | None,
+    locations: MutableSequence[ExecutionLocation] | None,
     paths: MutableSequence[str],
 ) -> None:
     if isinstance(connector, LocalConnector):
@@ -320,7 +330,9 @@ async def mkdirs(
         )
 
 
-async def read(connector: Connector, location: Location | None, path: str) -> str:
+async def read(
+    connector: Connector, location: ExecutionLocation | None, path: str
+) -> str:
     if isinstance(connector, LocalConnector):
         with open(path, "rb") as f:
             return f.read().decode("utf-8")
@@ -334,7 +346,7 @@ async def read(connector: Connector, location: Location | None, path: str) -> st
 
 
 async def resolve(
-    connector: Connector, location: Location | None, pattern: str
+    connector: Connector, location: ExecutionLocation | None, pattern: str
 ) -> MutableSequence[str] | None:
     if isinstance(connector, LocalConnector):
         return sorted(glob.glob(pattern))
@@ -362,7 +374,7 @@ async def resolve(
 
 async def rm(
     connector: Connector,
-    location: Location | None,
+    location: ExecutionLocation | None,
     path: str | MutableSequence[str],
 ) -> None:
     if isinstance(connector, LocalConnector):
@@ -393,7 +405,7 @@ async def rm(
 
 async def size(
     connector: Connector,
-    location: Location | None,
+    location: ExecutionLocation | None,
     path: str | MutableSequence[str],
 ) -> int:
     if not path:
@@ -430,7 +442,7 @@ async def size(
 
 
 async def symlink(
-    connector: Connector, location: Location | None, src: str, path: str
+    connector: Connector, location: ExecutionLocation | None, src: str, path: str
 ) -> None:
     if isinstance(connector, LocalConnector):
         src = os.path.abspath(src)
@@ -448,7 +460,7 @@ async def symlink(
 
 
 async def write(
-    connector: Connector, location: Location | None, path: str, content: str
+    connector: Connector, location: ExecutionLocation | None, path: str, content: str
 ) -> None:
     if isinstance(connector, LocalConnector):
         with open(path, "w") as f:

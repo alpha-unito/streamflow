@@ -14,8 +14,8 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     DeploymentConfig,
+    ExecutionLocation,
     LOCAL_LOCATION,
-    Location,
     WrapsConfig,
     BindingFilter,
     Target,
@@ -123,17 +123,14 @@ def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
         raise Exception(f"{deployment_t} deployment type not supported")
 
 
-async def get_location(_context: StreamFlowContext, deployment_t: str) -> Location:
+async def get_location(
+    _context: StreamFlowContext, deployment_t: str
+) -> ExecutionLocation:
     deployment = get_deployment(_context, deployment_t)
     service = get_service(_context, deployment_t)
     connector = _context.deployment_manager.get_connector(deployment)
     locations = await connector.get_available_locations(service=service)
-    return Location(
-        deployment=deployment,
-        service=service,
-        name=next(iter(locations.keys())),
-        wraps=next(iter(locations.values())).wraps,
-    )
+    return next(iter(locations.values())).location
 
 
 def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:

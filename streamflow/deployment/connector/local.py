@@ -10,7 +10,11 @@ from typing import MutableMapping, MutableSequence
 import psutil
 from importlib_resources import files
 
-from streamflow.core.deployment import Connector, LOCAL_LOCATION, Location
+from streamflow.core.deployment import (
+    Connector,
+    ExecutionLocation,
+    LOCAL_LOCATION,
+)
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 
@@ -30,7 +34,7 @@ class LocalConnector(BaseConnector):
         self.memory = float(psutil.virtual_memory().available / 2**20)
 
     def _get_run_command(
-        self, command: str, location: Location, interactive: bool = False
+        self, command: str, location: ExecutionLocation, interactive: bool = False
     ):
         if sys.platform == "win32":
             return f"{self._get_shell()} /C '{command}'"
@@ -49,8 +53,8 @@ class LocalConnector(BaseConnector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:

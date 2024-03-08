@@ -7,7 +7,7 @@ from typing import MutableMapping, cast
 from importlib_resources import files
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     FailureHandlingException,
     UnrecoverableTokenException,
@@ -28,7 +28,7 @@ from streamflow.workflow.step import ExecuteStep
 
 
 async def _cleanup_dir(
-    connector: Connector, location: Location, directory: str
+    connector: Connector, location: ExecutionLocation, directory: str
 ) -> None:
     await remotepath.rm(
         connector, location, await remotepath.listdir(connector, location, directory)

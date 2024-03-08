@@ -28,9 +28,9 @@ from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     DeploymentConfig,
+    ExecutionLocation,
     LOCAL_LOCATION,
     LocalTarget,
-    Location,
     Target,
 )
 from streamflow.core.exception import WorkflowDefinitionException
@@ -2592,14 +2592,16 @@ class CWLTranslator:
         # Register data locations for config files
         path = _get_path(self.cwl_definition.tool["id"])
         self.context.data_manager.register_path(
-            location=Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION),
+            location=ExecutionLocation(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION),
             path=path,
             relpath=os.path.basename(path),
         )
         if self.cwl_inputs:
             path = _get_path(self.cwl_inputs["id"])
             self.context.data_manager.register_path(
-                location=Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION),
+                location=ExecutionLocation(
+                    deployment=LOCAL_LOCATION, name=LOCAL_LOCATION
+                ),
                 path=path,
                 relpath=os.path.basename(path),
             )

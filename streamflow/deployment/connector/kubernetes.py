@@ -38,7 +38,7 @@ from kubernetes_asyncio.utils import create_from_yaml
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapperContextManager
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -226,7 +226,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ):
         effective_locations = await self._get_effective_locations(locations, dst)
@@ -235,7 +235,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         )
 
     async def _copy_local_to_remote_single(
-        self, src: str, dst: str, location: Location, read_only: bool = False
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
         pod, container = location.name.split(":")
         command = ["tar", "xf", "-", "-C", "/"]
@@ -268,7 +268,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
             await response.close()
 
     async def _copy_remote_to_local(
-        self, src: str, dst: str, location: Location, read_only: bool = False
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ):
         async with await self.get_stream_reader(location, src) as reader:
             try:
@@ -287,8 +287,8 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
@@ -354,7 +354,9 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                     *(asyncio.create_task(writer.close()) for writer in writers)
                 )
 
-    async def _get_container(self, location: Location) -> tuple[str, V1Container]:
+    async def _get_container(
+        self, location: ExecutionLocation
+    ) -> tuple[str, V1Container]:
         pod_name, container_name = location.name.split(":")
         pod = await self.client.read_namespaced_pod(
             name=pod_name, namespace=self.namespace or "default"
@@ -382,10 +384,10 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 
     async def _get_effective_locations(
         self,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         dest_path: str,
-        source_location: Location | None = None,
-    ) -> MutableSequence[Location]:
+        source_location: ExecutionLocation | None = None,
+    ) -> MutableSequence[ExecutionLocation]:
         # Get containers
         container_tasks = []
         for location in locations:
@@ -413,7 +415,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         return effective_locations
 
     def _get_run_command(
-        self, command: str, location: Location, interactive: bool = False
+        self, command: str, location: ExecutionLocation, interactive: bool = False
     ):
         pod, container = location.name.split(":")
         return (
@@ -430,7 +432,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     async def _get_running_pods(self) -> V1PodList: ...
 
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager:
         pod, container = location.name.split(":")
         dirname, basename = posixpath.split(src)
@@ -498,7 +500,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
@@ -526,7 +528,11 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        command = utils.encode_command(command)
+        command = (
+            ["sh", "-c"]
+            + [f"{k}={v}" for k, v in location.environment.items()]
+            + [utils.encode_command(command)]
+        )
         pod, container = location.name.split(":")
         # noinspection PyUnresolvedReferences
         response = await asyncio.wait_for(
@@ -536,7 +542,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                     name=pod,
                     namespace=self.namespace or "default",
                     container=container,
-                    command=["sh", "-c", command],
+                    command=command,
                     stderr=True,
                     stdin=False,
                     stdout=True,

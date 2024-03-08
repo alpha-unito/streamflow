@@ -6,8 +6,8 @@ from typing import MutableSequence, MutableMapping, Any
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import (
     Connector,
-    Location,
     LOCAL_LOCATION,
+    ExecutionLocation,
 )
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector import LocalConnector
@@ -27,7 +27,7 @@ class FailureConnector(Connector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         raise FailureConnectorException("FailureConnector copy_local_to_remote")
@@ -36,7 +36,7 @@ class FailureConnector(Connector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         raise FailureConnectorException("FailureConnector copy_remote_to_local")
@@ -45,8 +45,8 @@ class FailureConnector(Connector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
@@ -68,7 +68,7 @@ class FailureConnector(Connector):
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
@@ -85,7 +85,7 @@ class FailureConnector(Connector):
         raise FailureConnectorException("FailureConnector undeploy")
 
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager:
         raise FailureConnectorException("FailureConnector get_stream_reader")
 

@@ -15,7 +15,7 @@ from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -409,7 +409,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             maxsize=1, ttl=self.pollingInterval
         )
         self._jobs_cache_lock: asyncio.Lock = asyncio.Lock()
-        self._scheduled_jobs: MutableMapping[str, Location] = {}
+        self._scheduled_jobs: MutableMapping[str, ExecutionLocation] = {}
 
     def _format_stream(self, stream: int | str) -> str:
         if stream == asyncio.subprocess.DEVNULL:
@@ -421,25 +421,28 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
         return shlex.quote(stream)
 
     @abstractmethod
-    async def _get_output(self, job_id: str, location: Location) -> str: ...
+    async def _get_output(self, job_id: str, location: ExecutionLocation) -> str: ...
 
     @abstractmethod
-    async def _get_returncode(self, job_id: str, location: Location) -> int: ...
+    async def _get_returncode(
+        self, job_id: str, location: ExecutionLocation
+    ) -> int: ...
 
     @abstractmethod
-    async def _get_running_jobs(self, location: Location) -> bool: ...
+    async def _get_running_jobs(self, location: ExecutionLocation) -> bool: ...
 
     @abstractmethod
     async def _remove_jobs(
-        self, location: Location, jobs: MutableSequence[str]
+        self, location: ExecutionLocation, jobs: MutableSequence[str]
     ) -> None: ...
 
     @abstractmethod
     async def _run_batch_command(
         self,
         command: str,
+        environment: MutableMapping[str, str] | None,
         job_name: str,
-        location: Location,
+        location: ExecutionLocation,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -483,7 +486,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
@@ -525,6 +528,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
             )
             job_id = await self._run_batch_command(
                 command=command,
+                environment=location.environment,
                 job_name=job_name,
                 location=location,
                 workdir=workdir,
@@ -597,7 +601,7 @@ class SlurmConnector(QueueManagerConnector):
             .read_text("utf-8")
         )
 
-    async def _get_output(self, job_id: str, location: Location) -> str:
+    async def _get_output(self, job_id: str, location: ExecutionLocation) -> str:
         command = [
             "scontrol",
             "show",
@@ -624,7 +628,7 @@ class SlurmConnector(QueueManagerConnector):
         else:
             return ""
 
-    async def _get_returncode(self, job_id: str, location: Location) -> int:
+    async def _get_returncode(self, job_id: str, location: ExecutionLocation) -> int:
         command = [
             "scontrol",
             "show",
@@ -654,7 +658,9 @@ class SlurmConnector(QueueManagerConnector):
         lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
-    async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
+    async def _get_running_jobs(
+        self, location: ExecutionLocation
+    ) -> MutableSequence[str]:
         command = [
             "squeue",
             "-h",
@@ -690,7 +696,7 @@ class SlurmConnector(QueueManagerConnector):
         return SlurmService
 
     async def _remove_jobs(
-        self, location: Location, jobs: MutableSequence[str]
+        self, location: ExecutionLocation, jobs: MutableSequence[str]
     ) -> None:
         await self.connector.run(
             location=location,
@@ -700,8 +706,9 @@ class SlurmConnector(QueueManagerConnector):
     async def _run_batch_command(
         self,
         command: str,
+        environment: MutableMapping[str, str] | None,
         job_name: str,
-        location: Location,
+        location: ExecutionLocation,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -715,9 +722,15 @@ class SlurmConnector(QueueManagerConnector):
             "base64",
             "-d",
             "|",
-            "sbatch",
-            "--parsable",
         ]
+        if environment:
+            batch_command.extend([f"{k}={v}" for k, v in environment.items()])
+        batch_command.extend(
+            [
+                "sbatch",
+                "--parsable",
+            ]
+        )
         if stdin is not None and stdin != asyncio.subprocess.DEVNULL:
             batch_command.append(get_option("input", shlex.quote(stdin)))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
@@ -844,7 +857,7 @@ class PBSConnector(QueueManagerConnector):
             .read_text("utf-8")
         )
 
-    async def _get_output(self, job_id: str, location: Location) -> str:
+    async def _get_output(self, job_id: str, location: ExecutionLocation) -> str:
         result = json.loads(await self._run_qstat_command(job_id, location))
         output_path = result["Jobs"][job_id]["Output_Path"]
         if ":" in output_path:
@@ -857,7 +870,7 @@ class PBSConnector(QueueManagerConnector):
         else:
             return ""
 
-    async def _get_returncode(self, job_id: str, location: Location) -> int:
+    async def _get_returncode(self, job_id: str, location: ExecutionLocation) -> int:
         result = json.loads(await self._run_qstat_command(job_id, location))
         return int(result["Jobs"][job_id]["Exit_status"])
 
@@ -865,7 +878,9 @@ class PBSConnector(QueueManagerConnector):
         lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
-    async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
+    async def _get_running_jobs(
+        self, location: ExecutionLocation
+    ) -> MutableSequence[str]:
         command = [
             "qstat",
             " ".join(self._scheduled_jobs.keys()),
@@ -888,15 +903,16 @@ class PBSConnector(QueueManagerConnector):
         ]
 
     async def _remove_jobs(
-        self, location: Location, jobs: MutableSequence[str]
+        self, location: ExecutionLocation, jobs: MutableSequence[str]
     ) -> None:
         await self.connector.run(location=location, command=["qdel", " ".join(jobs)])
 
     async def _run_batch_command(
         self,
         command: str,
+        environment: MutableMapping[str, str] | None,
         job_name: str,
-        location: Location,
+        location: ExecutionLocation,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -917,6 +933,12 @@ class PBSConnector(QueueManagerConnector):
                 "base64",
                 "-d",
                 "|",
+            ]
+        )
+        if environment:
+            batch_command.extend([f"{k}={v}" for k, v in environment.items()])
+        batch_command.extend(
+            [
                 "qsub",
                 get_option(
                     "o",
@@ -972,7 +994,7 @@ class PBSConnector(QueueManagerConnector):
                 f"Error submitting job {job_name} to PBS: {stdout.strip()}"
             )
 
-    async def _run_qstat_command(self, job_id: str, location: Location) -> str:
+    async def _run_qstat_command(self, job_id: str, location: ExecutionLocation) -> str:
         command = [
             "qstat",
             job_id,
@@ -1003,7 +1025,7 @@ class FluxConnector(QueueManagerConnector):
             .read_text("utf-8")
         )
 
-    async def _get_output(self, job_id: str, location: Location) -> str:
+    async def _get_output(self, job_id: str, location: ExecutionLocation) -> str:
         # This will hang if the job is not complete
         command = [
             "flux",
@@ -1026,7 +1048,7 @@ class FluxConnector(QueueManagerConnector):
         else:
             return ""
 
-    async def _get_returncode(self, job_id: str, location: Location) -> int:
+    async def _get_returncode(self, job_id: str, location: ExecutionLocation) -> int:
         command = [
             "flux",
             "jobs",
@@ -1053,7 +1075,9 @@ class FluxConnector(QueueManagerConnector):
         lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
-    async def _get_running_jobs(self, location: Location) -> MutableSequence[str]:
+    async def _get_running_jobs(
+        self, location: ExecutionLocation
+    ) -> MutableSequence[str]:
         # If we add the job id, the filter is ignored
         command = [
             "flux",
@@ -1077,7 +1101,7 @@ class FluxConnector(QueueManagerConnector):
         ]
 
     async def _remove_jobs(
-        self, location: Location, jobs: MutableSequence[str]
+        self, location: ExecutionLocation, jobs: MutableSequence[str]
     ) -> None:
         await self.connector.run(
             location=location,
@@ -1087,8 +1111,9 @@ class FluxConnector(QueueManagerConnector):
     async def _run_batch_command(
         self,
         command: str,
+        environment: MutableMapping[str, str] | None,
         job_name: str,
-        location: Location,
+        location: ExecutionLocation,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -1102,9 +1127,15 @@ class FluxConnector(QueueManagerConnector):
             "base64",
             "-d",
             "|",
-            "flux",
-            "batch",
         ]
+        if environment:
+            batch_command.extend([f"{k}={v}" for k, v in environment.items()])
+        batch_command.extend(
+            [
+                "flux",
+                "batch",
+            ]
+        )
         if workdir is not None:
             batch_command.append(get_option("cwd", workdir))
         if stdin is not None and stdin != asyncio.subprocess.DEVNULL:

@@ -10,9 +10,9 @@ from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 from streamflow.core.config import BindingConfig
 from streamflow.core.deployment import (
     DeploymentConfig,
+    ExecutionLocation,
     FilterConfig,
     LocalTarget,
-    Location,
     Target,
     WrapsConfig,
 )
@@ -82,7 +82,7 @@ def get_binding_config(
         return BindingConfig(targets=[LocalTarget()])
 
 
-def get_inner_location(location: Location) -> Location:
+def get_inner_location(location: ExecutionLocation) -> ExecutionLocation:
     if location.wraps is None:
         raise WorkflowExecutionException(
             f"Location {location.name} does not wrap any inner location"
@@ -91,8 +91,8 @@ def get_inner_location(location: Location) -> Location:
 
 
 def get_inner_locations(
-    locations: MutableSequence[Location],
-) -> MutableSequence[Location]:
+    locations: MutableSequence[ExecutionLocation],
+) -> MutableSequence[ExecutionLocation]:
     return list({get_inner_location(loc) for loc in locations})
 
 
