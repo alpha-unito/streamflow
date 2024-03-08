@@ -2496,9 +2496,9 @@ class CWLTranslator:
             schedule_step = workflow.create_step(
                 cls=ScheduleStep,
                 name=posixpath.join(
-                    global_name + inner_steps_prefix + "-injector", "__schedule__"
+                    global_name + inner_steps_prefix + "-value-from", "__schedule__"
                 ),
-                job_prefix=f"{global_name}-injector",
+                job_prefix=f"{global_name}-value-from",
                 connector_ports={target.deployment.name: deploy_step.get_output_port()},
                 input_directory=target.workdir or self.output_directory,
                 output_directory=target.workdir or self.output_directory,

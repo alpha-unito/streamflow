@@ -228,7 +228,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
     schedule_step = create_schedule_step(workflow, [deploy_step])
     port_name = "test"
     token_list = [Token(10)]
-    await _general_test(
+    transformer = await _general_test(
         context=context,
         workflow=workflow,
         in_port=in_port,
@@ -248,6 +248,9 @@ async def test_value_from_transformer(context: StreamFlowContext):
         token_list=token_list,
         port_name=port_name,
     )
+    job_token = transformer.get_input_port("__job__").token_list[0]
+    await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
+
     assert len(out_port.token_list) == 2
     await _verify_dependency_tokens(
         token=out_port.token_list[0],
@@ -630,6 +633,8 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
+    job_token = transformer.get_input_port("__job__").token_list[0]
+    await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
 
     assert len(transformer.get_output_port(port_name).token_list) == 2
     await _verify_dependency_tokens(
