@@ -50,6 +50,12 @@ class ExecutionLocation:
         self.service: str | None = service
         self.wraps: ExecutionLocation | None = wraps
 
+    def __str__(self) -> str:
+        if self.service:
+            return posixpath.join(self.deployment, self.service, self.name)
+        else:
+            return posixpath.join(self.deployment, self.name)
+
 
 class BindingFilter(SchemaEntity):
     @abstractmethod
