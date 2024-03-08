@@ -49,6 +49,7 @@ from streamflow.cwl.transformer import (
     ValueFromTransformer,
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile
+from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import CombinatorStep, ExecuteStep
 from tests.conftest import save_load_and_test
 
@@ -470,6 +471,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
 
     name = utils.random_name()
@@ -481,6 +483,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
         expression_lib=True,
         full_js=False,
         value_from="$(1 + 1)",
+        job_port=job_port,
     )
     await save_load_and_test(transformer, context)
 
@@ -492,6 +495,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         context=context, type="cwl", name=utils.random_name(), config={}
     )
     port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
 
     name = utils.random_name()
@@ -503,6 +507,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         expression_lib=True,
         full_js=False,
         value_from="$(1 + 1 == 0)",
+        job_port=job_port,
     )
     await save_load_and_test(transformer, context)
 

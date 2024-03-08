@@ -29,6 +29,7 @@ from streamflow.cwl.transformer import (
     OnlyNonNullTransformer,
     ValueFromTransformer,
 )
+from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import CombinatorStep
 from tests.conftest import are_equals
 from tests.test_build_wf import (
@@ -142,6 +143,7 @@ async def test_list_to_element_transformer(context: StreamFlowContext):
 async def test_loop_value_from_transformer(context: StreamFlowContext):
     """Test saving LoopValueFromTransformer on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
+    job_port = workflow.create_port(JobPort)
     step, new_workflow, new_step = await _base_step_test_process(
         workflow,
         LoopValueFromTransformer,
@@ -154,6 +156,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
             "port_name": port.name,
             "full_js": True,
             "value_from": f"$(inputs.{port.name} + 1)",
+            "job_port": job_port,
         },
         context,
         test_are_eq=False,
@@ -195,6 +198,7 @@ async def test_non_null_transformer(
 async def test_value_from_transformer(context: StreamFlowContext):
     """Test saving ValueFromTransformer on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
+    job_port = workflow.create_port(JobPort)
     step, new_workflow, new_step = await _base_step_test_process(
         workflow,
         ValueFromTransformer,
@@ -207,6 +211,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
             "port_name": port.name,
             "full_js": True,
             "value_from": f"$(inputs.{port.name} + 1)",
+            "job_port": job_port,
         },
         context,
         test_are_eq=False,
