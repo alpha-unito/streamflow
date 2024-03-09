@@ -615,13 +615,13 @@ class SlurmConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
-        stdout, _ = await self.connector.run(
+        stdout, _ = await super().run(
             location=location,
             command=command,
             capture_output=True,
         )
         if output_path := stdout.strip():
-            stdout, _ = await self.connector.run(
+            stdout, _ = await super().run(
                 location=location, command=["cat", output_path], capture_output=True
             )
             return stdout.strip()
@@ -642,7 +642,7 @@ class SlurmConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
-        stdout, _ = await self.connector.run(
+        stdout, _ = await super().run(
             location=location,
             command=command,
             capture_output=True,
@@ -684,7 +684,7 @@ class SlurmConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
-        stdout, _ = await self.connector.run(
+        stdout, _ = await super().run(
             location=location,
             command=command,
             capture_output=True,
@@ -698,7 +698,7 @@ class SlurmConnector(QueueManagerConnector):
     async def _remove_jobs(
         self, location: ExecutionLocation, jobs: MutableSequence[str]
     ) -> None:
-        await self.connector.run(
+        await super().run(
             location=location,
             command=["scancel", " ".join(jobs)],
         )
@@ -836,7 +836,7 @@ class SlurmConnector(QueueManagerConnector):
                 batch_command.append(get_option("time", service.time))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(batch_command)}")
-        stdout, returncode = await self.connector.run(
+        stdout, returncode = await super().run(
             location=location, command=batch_command, capture_output=True
         )
         if returncode == 0:
@@ -863,7 +863,7 @@ class PBSConnector(QueueManagerConnector):
         if ":" in output_path:
             output_path = "".join(output_path.split(":")[1:])
         if output_path:
-            stdout, _ = await self.connector.run(
+            stdout, _ = await super().run(
                 location=location, command=["cat", output_path], capture_output=True
             )
             return stdout.strip()
@@ -889,7 +889,7 @@ class PBSConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {command}")
-        stdout, _ = await self.connector.run(
+        stdout, _ = await super().run(
             location=location,
             command=command,
             capture_output=True,
@@ -905,7 +905,7 @@ class PBSConnector(QueueManagerConnector):
     async def _remove_jobs(
         self, location: ExecutionLocation, jobs: MutableSequence[str]
     ) -> None:
-        await self.connector.run(location=location, command=["qdel", " ".join(jobs)])
+        await super().run(location=location, command=["qdel", " ".join(jobs)])
 
     async def _run_batch_command(
         self,
@@ -984,7 +984,7 @@ class PBSConnector(QueueManagerConnector):
                 get_option("l", ",".join([f"{k}={v}" for k, v in resources]))
             )
         batch_command.append("-")
-        stdout, returncode = await self.connector.run(
+        stdout, returncode = await super().run(
             location=location, command=batch_command, capture_output=True
         )
         if returncode == 0:
@@ -1003,7 +1003,7 @@ class PBSConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {command}")
-        stdout, _ = await self.connector.run(
+        stdout, _ = await super().run(
             location=location,
             command=command,
             capture_output=True,
@@ -1035,13 +1035,13 @@ class FluxConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
-        stdout, _ = await self.connector.run(
+        stdout, _ = await super().run(
             location=location,
             command=command,
             capture_output=True,
         )
         if output_path := stdout.strip():
-            stdout, _ = await self.connector.run(
+            stdout, _ = await super().run(
                 location=location, command=["cat", output_path], capture_output=True
             )
             return stdout.strip()
@@ -1059,7 +1059,7 @@ class FluxConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
-        stdout, _ = await self.connector.run(
+        stdout, _ = await super().run(
             location=location,
             command=command,
             capture_output=True,
@@ -1088,7 +1088,7 @@ class FluxConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
-        stdout, _ = await self.connector.run(
+        stdout, _ = await super().run(
             location=location,
             command=command,
             capture_output=True,
@@ -1103,7 +1103,7 @@ class FluxConnector(QueueManagerConnector):
     async def _remove_jobs(
         self, location: ExecutionLocation, jobs: MutableSequence[str]
     ) -> None:
-        await self.connector.run(
+        await super().run(
             location=location,
             command=["flux", "job", "cancel", " ".join(jobs)],
         )
@@ -1191,7 +1191,7 @@ class FluxConnector(QueueManagerConnector):
         batch_command.append(get_option("nodes", nodes))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(batch_command)}")
-        stdout, returncode = await self.connector.run(
+        stdout, returncode = await super().run(
             location=location, command=batch_command, capture_output=True
         )
         if returncode == 0:

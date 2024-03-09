@@ -64,13 +64,21 @@ async def test_connector_run_command(
     curr_location: ExecutionLocation,
 ) -> None:
     """Test connector run method"""
-    stdout, returncode = await curr_connector.run(
-        location=curr_location,
-        command=["ls"],
-        capture_output=True,
-        # job_name="job_test" # todo: fix SlurmConnector
+    _, returncode = await curr_connector.run(
+        location=curr_location, command=["ls"], capture_output=True, job_name="job_test"
     )
     assert returncode == 0
+
+
+@pytest.mark.asyncio
+async def test_connector_run_command_fails(
+    curr_connector: Connector, curr_location: ExecutionLocation
+):
+    """Test connector run method on a job with an invalid command"""
+    _, returncode = await curr_connector.run(
+        curr_location, ["ls -2"], capture_output=True, job_name="job_test"
+    )
+    assert returncode != 0
 
 
 @pytest.mark.asyncio
