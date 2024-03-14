@@ -52,7 +52,7 @@ jobs:
             on: "ubuntu-22.04"
             python: "3.12"
             version: "v1.2"
-          - on: "macos-14"
+          - on: "macos-13"
             python: "3.12"
             commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
             exclude: "docker_entrypoint,modify_file_content"
@@ -71,7 +71,7 @@ jobs:
         with:
           node-version: "20"
       - name: "Install Docker (MacOS X)"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.10
+        uses: douglascamata/setup-docker-macos-action@v1-alpha.13
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
       - name: "Install Apptainer"
@@ -214,7 +214,7 @@ jobs:
         on: [ "ubuntu-22.04"]
         python: [ "3.8", "3.9", "3.10", "3.11", "3.12" ]
         include:
-          - on: "macos-14"
+          - on: "macos-13"
             python: "3.12"
     runs-on: ${{ matrix.on }}
     env:
@@ -232,7 +232,7 @@ jobs:
         with:
           node-version: "20"
       - name: "Install Docker (MacOs X)"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.10
+        uses: douglascamata/setup-docker-macos-action@v1-alpha.13
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
       - name: "Install Apptainer"

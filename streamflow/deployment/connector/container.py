@@ -880,6 +880,7 @@ class DockerComposeConnector(DockerBaseConnector):
             stderr=asyncio.subprocess.STDOUT,
         )
         stdout, _ = await proc.communicate()
+        logger.info(f"stdout: {stdout.decode().strip()}")
         locations = json.loads(stdout.decode().strip())
         if not isinstance(locations, MutableSequence):
             locations = [locations]
