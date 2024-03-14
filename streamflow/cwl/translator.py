@@ -439,20 +439,20 @@ def _create_list_merger(
     link_merge: str | None = None,
     pick_value: str | None = None,
 ) -> Step:
-    output_port_name = _standardize_port_name(name)
+    output_port_name = _standardize_dependency_name(name)
     combinator = workflow.create_step(
         cls=CombinatorStep,
         name=name + "-combinator",
         combinator=ListMergeCombinator(
             name=utils.random_name(),
             workflow=workflow,
-            input_names=[_standardize_port_name(p) for p in ports.keys()],
+            input_names=[_standardize_dependency_name(p) for p in ports.keys()],
             output_name=output_port_name,
             flatten=(link_merge == "merge_flattened"),
         ),
     )
     for input_port_name, port in ports.items():
-        input_port_name = _standardize_port_name(input_port_name)
+        input_port_name = _standardize_dependency_name(input_port_name)
         combinator.add_input_port(input_port_name, port)
         combinator.combinator.add_item(input_port_name)
     if pick_value == "first_non_null":
@@ -1283,7 +1283,7 @@ def _remap_path(
         )
 
 
-def _standardize_port_name(port_name):
+def _standardize_dependency_name(port_name):
     return port_name.lstrip(posixpath.sep)
 
 
@@ -2649,7 +2649,7 @@ class CWLTranslator:
         for output_name in self.output_ports:
             if output_name.lstrip(posixpath.sep).count(posixpath.sep) == 0:
                 if port := _percolate_port(output_name, self.output_ports):
-                    port_name = _standardize_port_name(output_name)
+                    port_name = _standardize_dependency_name(output_name)
                     # Retrieve a local DeployStep
                     target = LocalTarget()
                     deploy_step = self._get_deploy_step(target.deployment, workflow)
