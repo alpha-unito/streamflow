@@ -49,25 +49,25 @@ async def _check_glob_path(
     output_directory: str,
     tmp_directory: str,
     path: str,
-    effective_path: str,
+    realpath: str,
 ) -> None:
     # Cannot glob outside the job output folder
     if not (
-        effective_path.startswith(output_directory)
-        or effective_path.startswith(input_directory)
-        or effective_path.startswith(tmp_directory)
+        realpath.startswith(output_directory)
+        or realpath.startswith(input_directory)
+        or realpath.startswith(tmp_directory)
     ):
         path_processor = get_path_processor(connector)
-        relpath = path_processor.relpath(path, output_directory)
+        relative_path = path_processor.relpath(path, output_directory)
         base_path = (
-            path_processor.normpath(effective_path[: -len(relpath)])
-            if effective_path.endswith(relpath)
-            else path_processor.dirname(effective_path)
+            path_processor.normpath(realpath[: -len(relative_path)])
+            if realpath.endswith(relative_path)
+            else path_processor.dirname(realpath)
         )
         if not await search_in_parent_locations(
             context=workflow.context,
             connector=connector,
-            path=effective_path,
+            path=realpath,
             relpath=path_processor.relpath(path, output_directory),
             base_path=base_path,
         ):
@@ -455,7 +455,7 @@ async def expand_glob(
                     output_directory=output_directory,
                     tmp_directory=tmp_directory,
                     path=p,
-                    effective_path=ep or p,
+                    realpath=ep or p,
                 )
             )
             for p, ep in zip(paths, effective_paths)
