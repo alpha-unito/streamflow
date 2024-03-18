@@ -13,12 +13,15 @@ from typing import Any, MutableMapping, MutableSequence
 from cachetools import Cache, TTLCache
 from importlib_resources import files
 
-from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
-from streamflow.core.utils import get_local_to_remote_destination, get_option
+from streamflow.core.utils import (
+    get_local_to_remote_destination,
+    get_option,
+    random_name,
+)
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
@@ -47,7 +50,7 @@ async def _exists_docker_image(image_name: str) -> bool:
     return proc.returncode == 0
 
 
-async def _get_docker_compose_command() -> str:
+async def _get_docker_compose_command(flags="") -> str:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split("docker compose"),
         stdout=asyncio.subprocess.PIPE,
@@ -55,10 +58,10 @@ async def _get_docker_compose_command() -> str:
     )
     await proc.wait()
     if proc.returncode == 0:
-        return "docker compose"
+        return f"docker {flags} compose"
     else:
         if which("docker-compose") is not None:
-            return "docker-compose"
+            return f"docker-compose {flags}"
         else:
             raise WorkflowExecutionException(
                 "Docker Compose must be installed on the system to use the Docker Compose connector."
@@ -728,7 +731,6 @@ class DockerComposeConnector(DockerBaseConnector):
         files: MutableSequence[str],
         projectName: str | None = None,
         verbose: bool | None = False,
-        logLevel: str | None = None,
         noAnsi: bool | None = False,
         host: str | None = None,
         tls: bool | None = False,
@@ -775,7 +777,6 @@ class DockerComposeConnector(DockerBaseConnector):
         self.compatibility = compatibility
         self.forceRecreate = forceRecreate
         self.host = host
-        self.logLevel = logLevel or "ERROR"
         self.noAnsi = noAnsi
         self.noBuild = noBuild
         self.noDeps = noDeps
@@ -799,7 +800,15 @@ class DockerComposeConnector(DockerBaseConnector):
 
     async def _get_base_command(self) -> str:
         if self._command is None:
-            compose_command = await _get_docker_compose_command()
+            compose_command = await _get_docker_compose_command(
+                f"{get_option('log-level', 'ERROR')}"
+                f"{get_option('host', self.host)}"
+                f"{get_option('tls', self.tls)}"
+                f"{get_option('tlscacert', self.tlscacert)}"
+                f"{get_option('tlscert', self.tlscert)}"
+                f"{get_option('tlskey', self.tlskey)}"
+                f"{get_option('tlsverify', self.tlsverify)}"
+            )
             version = await _get_docker_compose_version(compose_command)
             if version.startswith("v"):
                 version = version[1:]
@@ -816,17 +825,10 @@ class DockerComposeConnector(DockerBaseConnector):
                 )
             self._command = (
                 f"{compose_command} "
-                f"{get_option('log-level', self.logLevel)}"
                 f"{get_option('file', self.files)}"
                 f"{get_option('project-name', self.projectName)}"
                 f"{get_option('verbose', self.verbose)}"
                 f"{get_option('no-ansi', self.noAnsi)}"
-                f"{get_option('host', self.host)}"
-                f"{get_option('tls', self.tls)}"
-                f"{get_option('tlscacert', self.tlscacert)}"
-                f"{get_option('tlscert', self.tlscert)}"
-                f"{get_option('tlskey', self.tlskey)}"
-                f"{get_option('tlsverify', self.tlsverify)}"
                 f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
                 f"{get_option('project-directory', self.projectDirectory)}"
                 f"{get_option('compatibility', self.compatibility)}"
@@ -880,8 +882,13 @@ class DockerComposeConnector(DockerBaseConnector):
             stderr=asyncio.subprocess.STDOUT,
         )
         stdout, _ = await proc.communicate()
-        logger.info(f"stdout: {stdout.decode().strip()}")
-        locations = json.loads(stdout.decode().strip())
+        try:
+            locations = json.loads(stdout.decode().strip())
+        except json.decoder.JSONDecodeError:
+            raise WorkflowExecutionException(
+                f"Error retrieving locations for Docker Compose deployment {self.deployment_name}: "
+                f"{stdout.decode().strip()}"
+            )
         if not isinstance(locations, MutableSequence):
             locations = [locations]
         return {
@@ -1122,7 +1129,7 @@ class SingularityConnector(ContainerConnector):
                 logger.debug(f"Using {await _get_singularity_version()}.")
             _prepare_volumes(self.bind, self.mount)
             for _ in range(0, self.replicas):
-                instance_name = utils.random_name()
+                instance_name = random_name()
                 deploy_command = (
                     f"singularity instance start "
                     f"{get_option('add-caps', self.addCaps)}"
