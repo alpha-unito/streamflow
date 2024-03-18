@@ -870,7 +870,7 @@ class DockerComposeConnector(DockerBaseConnector):
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         ps_command = (await self._get_base_command()) + "".join(
-            ["ps ", "--format ", "json ", service or ""]
+            ["ps ", "--log-level ", "ERROR", "--format ", "json ", service or ""]
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"EXECUTING command {ps_command}")
