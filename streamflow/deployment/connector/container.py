@@ -775,7 +775,7 @@ class DockerComposeConnector(DockerBaseConnector):
         self.compatibility = compatibility
         self.forceRecreate = forceRecreate
         self.host = host
-        self.logLevel = logLevel
+        self.logLevel = logLevel or "ERROR"
         self.noAnsi = noAnsi
         self.noBuild = noBuild
         self.noDeps = noDeps
@@ -816,10 +816,10 @@ class DockerComposeConnector(DockerBaseConnector):
                 )
             self._command = (
                 f"{compose_command} "
+                f"{get_option('log-level', self.logLevel)}"
                 f"{get_option('file', self.files)}"
                 f"{get_option('project-name', self.projectName)}"
                 f"{get_option('verbose', self.verbose)}"
-                f"{get_option('log-level', self.logLevel)}"
                 f"{get_option('no-ansi', self.noAnsi)}"
                 f"{get_option('host', self.host)}"
                 f"{get_option('tls', self.tls)}"
@@ -870,7 +870,7 @@ class DockerComposeConnector(DockerBaseConnector):
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         ps_command = (await self._get_base_command()) + "".join(
-            ["ps ", "--log-level ", "ERROR", "--format ", "json ", service or ""]
+            ["ps ", "--format ", "json ", service or ""]
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"EXECUTING command {ps_command}")
