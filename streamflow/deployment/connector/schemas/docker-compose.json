@@ -20,17 +20,6 @@
       "type": "boolean",
       "description": "Show more output"
     },
-    "logLevel": {
-      "type": "string",
-      "enum": [
-        "DEBUG",
-        "INFO",
-        "WARNING",
-        "ERROR",
-        "CRITICAL"
-      ],
-      "description": "Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
-    },
     "noAnsi": {
       "type": "boolean",
       "description": "Do not print ANSI control characters"
