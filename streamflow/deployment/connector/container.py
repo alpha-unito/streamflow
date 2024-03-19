@@ -50,24 +50,6 @@ async def _exists_docker_image(image_name: str) -> bool:
     return proc.returncode == 0
 
 
-async def _get_docker_compose_command(flags="") -> str:
-    proc = await asyncio.create_subprocess_exec(
-        *shlex.split("docker compose"),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    await proc.wait()
-    if proc.returncode == 0:
-        return f"docker {flags} compose"
-    else:
-        if which("docker-compose") is not None:
-            return f"docker-compose {flags}"
-        else:
-            raise WorkflowExecutionException(
-                "Docker Compose must be installed on the system to use the Docker Compose connector."
-            )
-
-
 async def _get_docker_compose_version(compose_command: str) -> str:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(f"{compose_command} version --short"),
@@ -800,15 +782,7 @@ class DockerComposeConnector(DockerBaseConnector):
 
     async def _get_base_command(self) -> str:
         if self._command is None:
-            compose_command = await _get_docker_compose_command(
-                f"{get_option('log-level', 'ERROR')}"
-                f"{get_option('host', self.host)}"
-                f"{get_option('tls', self.tls)}"
-                f"{get_option('tlscacert', self.tlscacert)}"
-                f"{get_option('tlscert', self.tlscert)}"
-                f"{get_option('tlskey', self.tlskey)}"
-                f"{get_option('tlsverify', self.tlsverify)}"
-            )
+            compose_command = await self._get_docker_compose_command()
             version = await _get_docker_compose_version(compose_command)
             if version.startswith("v"):
                 version = version[1:]
@@ -834,6 +808,32 @@ class DockerComposeConnector(DockerBaseConnector):
                 f"{get_option('compatibility', self.compatibility)}"
             )
         return self._command
+
+    async def _get_docker_compose_command(self) -> str:
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split("docker compose"),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.wait()
+        options = (
+            f"{get_option('log-level', 'ERROR')}"
+            f"{get_option('host', self.host)}"
+            f"{get_option('tls', self.tls)}"
+            f"{get_option('tlscacert', self.tlscacert)}"
+            f"{get_option('tlscert', self.tlscert)}"
+            f"{get_option('tlskey', self.tlskey)}"
+            f"{get_option('tlsverify', self.tlsverify)}"
+        )
+        if proc.returncode == 0:
+            return f"docker {options} compose"
+        else:
+            if which("docker-compose") is not None:
+                return f"docker-compose {options}"
+            else:
+                raise WorkflowExecutionException(
+                    "Docker Compose must be installed on the system to use the Docker Compose connector."
+                )
 
     async def deploy(self, external: bool) -> None:
         if not external:
@@ -882,12 +882,13 @@ class DockerComposeConnector(DockerBaseConnector):
             stderr=asyncio.subprocess.STDOUT,
         )
         stdout, _ = await proc.communicate()
+        output = stdout.decode().strip()
         try:
-            locations = json.loads(stdout.decode().strip())
+            locations = json.loads(output)
         except json.decoder.JSONDecodeError:
             raise WorkflowExecutionException(
                 f"Error retrieving locations for Docker Compose deployment {self.deployment_name}: "
-                f"{stdout.decode().strip()}"
+                f"{output}"
             )
         if not isinstance(locations, MutableSequence):
             locations = [locations]
