@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, MutableSequence, Tuple
 
 from importlib_resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Hardware, JobAllocation, Policy
+from streamflow.core.scheduling import Hardware, JobAllocation, Policy, JobContext
 from streamflow.workflow.token import FileToken
 
 if TYPE_CHECKING:
@@ -21,12 +21,16 @@ class DataLocalityPolicy(Policy):
     async def get_location(
         self,
         context: StreamFlowContext,
-        job: Job,
-        hardware_requirement: Hardware,
-        available_locations: MutableMapping[str, AvailableLocation],
-        jobs: MutableMapping[str, JobAllocation],
+        pending_jobs: MutableSequence[JobContext],
+        available_locations: MutableMapping[
+            str, MutableMapping[str, AvailableLocation]
+        ],
+        scheduled_jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> AvailableLocation | None:
+    ) -> Tuple[JobContext | None, AvailableLocation | None]:
+        job_context = pending_jobs[0]
+        job = job_context.job
+        available_locations = available_locations[job.name]
         valid_locations = list(available_locations.keys())
         deployments = {loc.deployment for loc in available_locations.values()}
         if len(deployments) > 1:
@@ -66,12 +70,12 @@ class DataLocalityPolicy(Policy):
             # Check if one of the related locations is free
             for current_location in related_locations:
                 if current_location in valid_locations:
-                    return available_locations[current_location]
+                    return job_context, available_locations[current_location]
         # If a data-related allocation is not possible, assign a location among the remaining free ones
         for location in valid_locations:
-            return available_locations[location]
+            return job_context, available_locations[location]
         # If there are no available locations, return None
-        return None
+        return None, None
 
     @classmethod
     def get_schema(cls) -> str:

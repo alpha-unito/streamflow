@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING, Type, cast
+from typing import Any, TYPE_CHECKING, Type, cast, Tuple
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
@@ -198,17 +199,30 @@ class PolicyConfig(Config):
         return self.config
 
 
+class JobContext:
+    __slots__ = ("job", "event", "targets", "hardware_requirement")
+
+    def __init__(
+        self, job: Job, targets: MutableSequence[Target], hardware_requirement: Hardware
+    ) -> None:
+        self.job: Job = job
+        self.event: asyncio.Event = asyncio.Event()
+        self.targets: MutableSequence[Target] = targets
+        self.hardware_requirement: Hardware = hardware_requirement
+
+
 class Policy(SchemaEntity):
     @abstractmethod
     async def get_location(
         self,
         context: StreamFlowContext,
-        job: Job,
-        hardware_requirement: Hardware,
-        available_locations: MutableMapping[str, AvailableLocation],
-        jobs: MutableMapping[str, JobAllocation],
+        pending_jobs: MutableSequence[JobContext],
+        available_locations: MutableMapping[
+            str, MutableMapping[str, AvailableLocation]
+        ],
+        scheduled_jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> AvailableLocation | None: ...
+    ) -> Tuple[JobContext | None, AvailableLocation | None]: ...
 
 
 class Scheduler(SchemaEntity):

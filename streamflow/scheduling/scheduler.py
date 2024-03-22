@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import posixpath
-from typing import MutableSequence, TYPE_CHECKING
+from typing import MutableSequence, TYPE_CHECKING, Tuple
 
 from importlib_resources import files
 
@@ -14,12 +14,14 @@ from streamflow.core.deployment import (
     FilterConfig,
     Target,
 )
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import (
     Hardware,
     JobAllocation,
     LocationAllocation,
     Policy,
     Scheduler,
+    JobContext,
 )
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
@@ -33,15 +35,6 @@ if TYPE_CHECKING:
     from typing import MutableMapping
 
 
-class JobContext:
-    __slots__ = ("job", "lock", "scheduled")
-
-    def __init__(self, job: Job):
-        self.job: Job = job
-        self.lock: asyncio.Lock = asyncio.Lock()
-        self.scheduled: bool = False
-
-
 class DefaultScheduler(Scheduler):
     def __init__(
         self, context: StreamFlowContext, retry_delay: int | None = None
@@ -52,7 +45,10 @@ class DefaultScheduler(Scheduler):
         self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: int | None = retry_delay if retry_delay != 0 else None
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
-        self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
+        self.pending_jobs: MutableSequence[JobContext] = []
+        self.scheduling_task: asyncio.Task = asyncio.create_task(
+            self._start_scheduling()
+        )
 
     def _allocate_job(
         self,
@@ -133,34 +129,58 @@ class DefaultScheduler(Scheduler):
             )
         return self.binding_filter_map[config.name]
 
+    async def _get_deployments(
+        self,
+    ) -> MutableMapping[str, MutableMapping[str, AvailableLocation]]:
+        """Get all the deployment involved by the jobs and related available locations"""
+        deployments = {}
+        for job_context in self.pending_jobs:
+            for target in job_context.targets:
+                deployment = target.deployment.name
+                connector = self.context.deployment_manager.get_connector(deployment)
+
+                # Some jobs can have the same deployment, but in the available location will have different directories
+                # Moreover, they can have different hardware_requirement, which are used in the valid_locations choice
+                # todo: Maybe it is possible make the get_available_locations just one time for each deployment, and then each job will check its valid_locations
+                available_locations = await connector.get_available_locations(
+                    service=target.service,
+                    input_directory=job_context.job.input_directory or target.workdir,
+                    output_directory=job_context.job.output_directory or target.workdir,
+                    tmp_directory=job_context.job.tmp_directory or target.workdir,
+                )
+                valid_locations = {
+                    k: loc
+                    for k, loc in available_locations.items()
+                    if self._is_valid(
+                        location=loc,
+                        hardware_requirement=job_context.hardware_requirement,
+                    )
+                }
+                deployments.setdefault(job_context.job.name, {})
+                for k, v in valid_locations.items():
+                    # Todo: list of AvailableLocation or one Deployment has just one AvailableLocation?
+                    if k in deployments[job_context.job.name].keys():
+                        raise WorkflowExecutionException(
+                            f"Scheduling failed: The deployment {k} can have just one location. Instead got: {[deployments[job_context.job.name], v]}"
+                        )
+                    deployments[job_context.job.name][k] = v
+        return deployments
+
     async def _get_locations(
         self,
-        job: Job,
-        hardware_requirement: Hardware,
-        locations: int,
         scheduling_policy: Policy,
-        available_locations: MutableMapping[str, AvailableLocation],
-    ) -> MutableSequence[ExecutionLocation] | None:
-        selected_locations = []
-        for _ in range(locations):
-            selected_location = await scheduling_policy.get_location(
-                context=self.context,
-                job=job,
-                hardware_requirement=hardware_requirement,
-                available_locations=available_locations,
-                jobs=self.job_allocations,
-                locations=self.location_allocations,
-            )
-            if selected_location is not None:
-                selected_locations.append(selected_location)
-                available_locations = {
-                    k: v
-                    for k, v in available_locations.items()
-                    if v != selected_location
-                }
-            else:
-                return None
-        return [loc.location for loc in selected_locations]
+        available_locations: MutableMapping[
+            str, MutableMapping[str, AvailableLocation]
+        ],
+    ) -> Tuple[JobContext | None, MutableSequence[ExecutionLocation] | None]:
+        job_context, selected_location = await scheduling_policy.get_location(
+            context=self.context,
+            pending_jobs=self.pending_jobs,
+            available_locations=available_locations,
+            scheduled_jobs=self.job_allocations,
+            locations=self.location_allocations,
+        )
+        return job_context, [selected_location.location] if selected_location else None
 
     def _get_policy(self, config: Config):
         if config.name not in self.policy_map:
@@ -199,156 +219,35 @@ class DefaultScheduler(Scheduler):
         else:
             return len(running_jobs) < location.slots
 
-    async def _process_target(
-        self, target: Target, job_context: JobContext, hardware_requirement: Hardware
-    ):
-        deployment = target.deployment.name
-        if deployment not in self.wait_queues:
-            self.wait_queues[deployment] = asyncio.Condition()
-        async with self.wait_queues[deployment]:
+    async def _start_scheduling(self):
+        try:
             while True:
-                async with job_context.lock:
-                    if job_context.scheduled:
-                        return
-                    connector = self.context.deployment_manager.get_connector(
-                        deployment
+                if self.pending_jobs:
+                    logger.info("Start scheduling")
+                    deployments = await self._get_deployments()
+
+                    # todo: each job can have different target and the targets can have different policy
+                    target = self.pending_jobs[0].targets[0]
+
+                    job_context, selected_locations = await self._get_locations(
+                        self._get_policy(target.scheduling_policy), deployments
                     )
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            "Retrieving available locations for job {} on {}.".format(
-                                job_context.job.name,
-                                (
-                                    posixpath.join(deployment, target.service)
-                                    if target.service
-                                    else deployment
-                                ),
-                            )
-                        )
-                    available_locations = dict(
-                        await connector.get_available_locations(
-                            service=target.service,
-                            input_directory=job_context.job.input_directory
-                            or target.workdir,
-                            output_directory=job_context.job.output_directory
-                            or target.workdir,
-                            tmp_directory=job_context.job.tmp_directory
-                            or target.workdir,
-                        )
+                    self.pending_jobs.remove(job_context)
+                    self._allocate_job(
+                        job_context.job,
+                        job_context.hardware_requirement,
+                        selected_locations,
+                        job_context.targets[0],
                     )
-                    valid_locations = {
-                        k: loc
-                        for k, loc in available_locations.items()
-                        if self._is_valid(
-                            location=loc, hardware_requirement=hardware_requirement
-                        )
-                    }
-                    if valid_locations:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                "Available locations for job {} on {} are {}.".format(
-                                    job_context.job.name,
-                                    (
-                                        posixpath.join(deployment, target.service)
-                                        if target.service
-                                        else deployment
-                                    ),
-                                    list(valid_locations.keys()),
-                                )
-                            )
-                        if target.scheduling_group is not None:
-                            if target.scheduling_group not in self.allocation_groups:
-                                self.allocation_groups[target.scheduling_group] = []
-                            self.allocation_groups[target.scheduling_group].append(
-                                job_context.job
-                            )
-                            group_size = len(
-                                self.scheduling_groups[target.scheduling_group]
-                            )
-                            if (
-                                len(
-                                    self.allocation_groups.get(
-                                        target.scheduling_group, []
-                                    )
-                                )
-                                == group_size
-                            ):
-                                allocated_jobs = []
-                                for j in self.allocation_groups[
-                                    target.scheduling_group
-                                ]:
-                                    selected_locations = await self._get_locations(
-                                        job=job_context.job,
-                                        hardware_requirement=hardware_requirement,
-                                        locations=target.locations,
-                                        scheduling_policy=self._get_policy(
-                                            target.scheduling_policy
-                                        ),
-                                        available_locations=valid_locations,
-                                    )
-                                    if selected_locations is None:
-                                        break
-                                    self._allocate_job(
-                                        job=j,
-                                        hardware=hardware_requirement,
-                                        selected_locations=selected_locations,
-                                        target=target,
-                                    )
-                                    allocated_jobs.append(j)
-                                if len(allocated_jobs) < group_size:
-                                    for j in allocated_jobs:
-                                        self._deallocate_job(j.name)
-                                else:
-                                    job_context.scheduled = True
-                                    return
-                        else:
-                            selected_locations = await self._get_locations(
-                                job=job_context.job,
-                                hardware_requirement=hardware_requirement,
-                                locations=target.locations,
-                                scheduling_policy=self._get_policy(
-                                    target.scheduling_policy
-                                ),
-                                available_locations=valid_locations,
-                            )
-                            if selected_locations is not None:
-                                self._allocate_job(
-                                    job=job_context.job,
-                                    hardware=hardware_requirement,
-                                    selected_locations=selected_locations,
-                                    target=target,
-                                )
-                                job_context.scheduled = True
-                                return
-                    else:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                "No location available for job {} on deployment {}.".format(
-                                    job_context.job.name,
-                                    (
-                                        posixpath.join(deployment, target.service)
-                                        if target.service
-                                        else deployment
-                                    ),
-                                )
-                            )
-                try:
-                    await asyncio.wait_for(
-                        self.wait_queues[deployment].wait(), timeout=self.retry_interval
-                    )
-                except TimeoutError:
-                    if logger.isEnabledFor(logging.DEBUG):
-                        target_name = (
-                            "/".join([target.deployment.name, target.service])
-                            if target.service is not None
-                            else target.deployment.name
-                        )
-                        logger.debug(
-                            f"No locations available for job {job_context.job.name} "
-                            f"in target {target_name}. Waiting {self.retry_interval} seconds."
-                        )
+                    job_context.event.set()
+                logger.info("Sleep")
+                await asyncio.sleep(5)
+        except Exception as e:
+            logger.exception(f"Scheduler failed: {e}")
+            raise
 
     async def close(self):
-        pass
+        self.scheduling_task.cancel()
 
     @classmethod
     def get_schema(cls) -> str:
@@ -360,42 +259,20 @@ class DefaultScheduler(Scheduler):
         )
 
     async def notify_status(self, job_name: str, status: Status) -> None:
-        connector = self.get_connector(job_name)
-        if connector:
-            if connector.deployment_name in self.wait_queues:
-                async with self.wait_queues[connector.deployment_name]:
-                    if job_name in self.job_allocations:
-                        if status != self.job_allocations[job_name].status:
-                            self.job_allocations[job_name].status = status
-                            if logger.isEnabledFor(logging.DEBUG):
-                                logger.debug(
-                                    f"Job {job_name} changed status to {status.name}"
-                                )
-                        if status in [Status.COMPLETED, Status.FAILED]:
-                            self.wait_queues[connector.deployment_name].notify_all()
+        if job_name in self.job_allocations:
+            if status != self.job_allocations[job_name].status:
+                self.job_allocations[job_name].status = status
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Job {job_name} changed status to {status.name}")
+                # todo: awake/notify scheduler loop?
 
     async def schedule(
         self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
     ) -> None:
-        job_context = JobContext(job)
+        logger.info(f"Adding job {job.name} in pending jobs to schedule")
         targets = list(binding_config.targets)
         for f in (self._get_binding_filter(f) for f in binding_config.filters):
             targets = await f.get_targets(job, targets)
-        wait_tasks = [
-            asyncio.create_task(
-                self._process_target(
-                    target=target,
-                    job_context=job_context,
-                    hardware_requirement=hardware_requirement,
-                )
-            )
-            for target in targets
-        ]
-        # Capture finished tasks and call result() to check for exceptions
-        finished, _ = await asyncio.wait(
-            wait_tasks, return_when=asyncio.FIRST_COMPLETED
-        )
-        for task in finished:
-            if task.cancelled():
-                continue
-            task.result()
+        job_context = JobContext(job, targets, hardware_requirement)
+        self.pending_jobs.append(job_context)
+        await job_context.event.wait()
