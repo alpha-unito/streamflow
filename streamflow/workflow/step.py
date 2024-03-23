@@ -1328,12 +1328,23 @@ class ScheduleStep(BaseStep):
         job.tmp_directory = _get_directory(
             path_processor, job.tmp_directory, allocation.target
         )
+
         # Create directories
         await remotepath.mkdirs(
             connector=connector,
             locations=locations,
             paths=[job.input_directory, job.output_directory, job.tmp_directory],
         )
+        job.input_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.input_directory
+        )
+        job.output_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.output_directory
+        )
+        job.tmp_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.tmp_directory
+        )
+
         # Register paths
         for location in locations:
             for directory in (
