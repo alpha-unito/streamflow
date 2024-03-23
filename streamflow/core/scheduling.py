@@ -18,17 +18,13 @@ if TYPE_CHECKING:
 class Hardware:
     def __init__(
         self,
-        cores: float = 0.0,
-        memory: float = 0.0,
-        input_directory: float = 0.0,
-        output_directory: float = 0.0,
-        tmp_directory: float = 0.0,
+        cores: float,
+        memory: float,
+        storage: MutableMapping[str, float],
     ):
         self.cores: float = cores
         self.memory: float = memory
-        self.input_directory: float = input_directory
-        self.output_directory: float = output_directory
-        self.tmp_directory: float = tmp_directory
+        self.storage: MutableMapping[str, float] = storage
 
     def __add__(self, other):
         if not isinstance(other, Hardware):
