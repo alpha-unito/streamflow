@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING, Type, cast, Tuple
+from typing import Any, TYPE_CHECKING, Type, cast
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config

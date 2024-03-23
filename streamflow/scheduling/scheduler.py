@@ -128,7 +128,7 @@ class DefaultScheduler(Scheduler):
             )
         return self.binding_filter_map[config.name]
 
-    # FIXME: merdissima
+    # FIXME:
     async def _get_deployments(
         self,
     ) -> MutableMapping[str, MutableMapping[str, AvailableLocation]]:

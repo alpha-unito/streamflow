@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, MutableSequence, Tuple
+from typing import TYPE_CHECKING, MutableSequence
 
 from importlib_resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Hardware, JobAllocation, Policy, JobContext
+from streamflow.core.scheduling import JobAllocation, Policy, JobContext
 from streamflow.workflow.token import FileToken
 
 if TYPE_CHECKING:
     from streamflow.core.scheduling import AvailableLocation, LocationAllocation
-    from streamflow.core.workflow import Job
     from typing import MutableMapping
 
 
@@ -29,7 +28,7 @@ class DataLocalityPolicy(Policy):
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
     ) -> MutableMapping[str, MutableSequence[AvailableLocation]]:
         job_candidates = {}
-        # FIXME: merda
+        # FIXME:
         # used_hardware = sum(
         #     (j.hardware for j in scheduled_jobs.values()),
         #     start=hardware_requirement.__class__(), # <-

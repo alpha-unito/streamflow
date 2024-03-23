@@ -638,8 +638,8 @@ class SSHConnector(BaseConnector):
             asyncio.create_task(self._get_cores(location)),
             asyncio.create_task(self._get_cores(location)),
             *(
-                asyncio.create_task(self._get_disk_usage(location, path))
-                for path in directories
+                asyncio.create_task(self._get_disk_usage(location, directory))
+                for directory in directories
             ),
         )
         return Hardware(cores, memory, storage)
@@ -731,15 +731,12 @@ class SSHConnector(BaseConnector):
         locations = {}
         for location_obj in self.nodes.values():
             inpdir, outdir, tmpdir = await asyncio.gather(
-                asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, input_directory)
-                ),
-                asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, output_directory)
-                ),
-                asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, tmp_directory)
-                ),
+                *(
+                    asyncio.create_task(
+                        self._get_existing_parent(location_obj.hostname, directory)
+                    )
+                    for directory in directories
+                )
             )
             hardware = await self._get_location_hardware(
                 location=location_obj.hostname,
