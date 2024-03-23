@@ -75,6 +75,8 @@ class CWLHardwareRequirement(HardwareRequirement):
         return Hardware(
             cores=self._process_requirement(self.cores, context),
             memory=self._process_requirement(self.memory, context),
-            tmp_directory=self._process_requirement(self.tmpdir, context),
-            output_directory=self._process_requirement(self.outdir, context),
+            storage={
+                self.tmpdir: self._process_requirement(self.tmpdir, context),
+                self.outdir: self._process_requirement(self.outdir, context),
+            },
         )

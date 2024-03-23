@@ -99,8 +99,7 @@ async def context(chosen_deployment_types) -> StreamFlowContext:
         await _context.deployment_manager.deploy(config)
     yield _context
     await _context.deployment_manager.undeploy_all()
-    # Close the database connection
-    await _context.database.close()
+    await _context.close()
 
 
 @pytest.fixture(scope="session")

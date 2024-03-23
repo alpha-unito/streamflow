@@ -83,7 +83,6 @@ def test_ext_support():
                             "deployment": "example",
                             "service": "example",
                             "locations": 2,
-                            "policy": "data_locality",
                             "workdir": "/path/to/workdir",
                         },
                     }

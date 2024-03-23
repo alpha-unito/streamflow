@@ -51,7 +51,7 @@ async def test_scheduling(
         output_directory=utils.random_name(),
         tmp_directory=utils.random_name(),
     )
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = Hardware(cores=1, memory=100, storage={})
     target = Target(
         deployment=deployment_config,
         service=service,
@@ -71,9 +71,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     machine_hardware = Hardware(
         cores=1,
         memory=100,
-        input_directory=100,
-        output_directory=100,
-        tmp_directory=100,
+        storage={},
     )
 
     # inject custom connector to manipulate available resources
@@ -100,7 +98,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
                 tmp_directory=utils.random_name(),
             )
         )
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = Hardware(cores=1, memory=100, storage={})
     local_target = LocalTarget()
     binding_config = BindingConfig(targets=[local_target])
     task_pending = [
@@ -145,13 +143,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
 async def test_single_env_enough_resources(context: StreamFlowContext):
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
 
-    machine_hardware = Hardware(
-        cores=2,
-        memory=100,
-        input_directory=100,
-        output_directory=100,
-        tmp_directory=100,
-    )
+    machine_hardware = Hardware(cores=2, memory=100, storage={})
 
     # Inject custom connector to manipulate available resources
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
@@ -177,7 +169,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
                 tmp_directory=utils.random_name(),
             )
         )
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = Hardware(cores=1, memory=100, storage={})
     local_target = LocalTarget()
     binding_config = BindingConfig(targets=[local_target])
     task_pending = [
@@ -212,7 +204,7 @@ async def test_multi_env(context: StreamFlowContext):
     """Test scheduling two jobs on two different environments."""
 
     # Inject custom connector to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    machine_hardware = Hardware(cores=1, memory=100, storage={})
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
         ParameterizableHardwareConnector(
@@ -245,7 +237,7 @@ async def test_multi_env(context: StreamFlowContext):
                 BindingConfig(targets=[local_target] if i == 0 else [docker_target]),
             )
         )
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = Hardware(cores=1, memory=100, storage={})
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -278,7 +270,7 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     """Test scheduling one jobs with two targets: Local and Docker Image. The job will be scheduled in the first"""
 
     # Inject custom connector to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    machine_hardware = Hardware(cores=1, memory=100, storage={})
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
         ParameterizableHardwareConnector(
@@ -306,7 +298,7 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     )
     binding_config = BindingConfig(targets=[local_target, docker_target])
 
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = Hardware(cores=1, memory=100, storage={})
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -344,7 +336,7 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     """
 
     # Inject custom connector to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    machine_hardware = Hardware(cores=1, memory=100, storage={})
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
         ParameterizableHardwareConnector(
@@ -376,7 +368,7 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     )
     binding_config = BindingConfig(targets=[local_target, docker_target])
 
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = Hardware(cores=1, memory=100, storage={})
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)

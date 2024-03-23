@@ -156,7 +156,16 @@ class DeploymentManager(SchemaEntity):
 
 
 class DeploymentConfig(PersistableEntity):
-    __slots__ = ("name", "type", "config", "external", "lazy", "workdir", "wraps")
+    __slots__ = (
+        "name",
+        "type",
+        "config",
+        "external",
+        "lazy",
+        "policy",
+        "workdir",
+        "wraps",
+    )
 
     def __init__(
         self,
@@ -165,6 +174,7 @@ class DeploymentConfig(PersistableEntity):
         config: MutableMapping[str, Any],
         external: bool = False,
         lazy: bool = True,
+        policy: Config | None = None,
         workdir: str | None = None,
         wraps: WrapsConfig | None = None,
     ) -> None:
@@ -174,6 +184,10 @@ class DeploymentConfig(PersistableEntity):
         self.config: MutableMapping[str, Any] = config or {}
         self.external: bool = external
         self.lazy: bool = lazy
+        # todo: change Config into PolicyConfig and save it into database
+        self.policy: Config | None = policy or Config(
+            name="__DEFAULT__", type="data_locality", config={}
+        )
         self.workdir: str | None = workdir
         self.wraps: WrapsConfig | None = wraps
 
@@ -185,6 +199,7 @@ class DeploymentConfig(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> DeploymentConfig:
         row = await context.database.get_deployment(persistent_id)
+        # todo: load policy from database
         obj = cls(
             name=row["name"],
             type=row["type"],
@@ -198,6 +213,7 @@ class DeploymentConfig(PersistableEntity):
         return obj
 
     async def save(self, context: StreamFlowContext) -> None:
+        # todo: save policy into database
         async with self.persistence_lock:
             if not self.persistent_id:
                 self.persistent_id = await context.database.add_deployment(
@@ -222,7 +238,6 @@ class Target(PersistableEntity):
         locations: int = 1,
         service: str | None = None,
         scheduling_group: str | None = None,
-        scheduling_policy: Config | None = None,
         workdir: str | None = None,
     ):
         super().__init__()
@@ -230,9 +245,6 @@ class Target(PersistableEntity):
         self.locations: int = locations
         self.service: str | None = service
         self.scheduling_group: str | None = scheduling_group
-        self.scheduling_policy: Config | None = scheduling_policy or Config(
-            name="__DEFAULT__", type="data_locality", config={}
-        )
         self.workdir: str = (
             workdir or self.deployment.workdir or _init_workdir(deployment.name)
         )

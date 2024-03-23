@@ -33,6 +33,7 @@ class Hardware:
     def __add__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
+        # todo: It is necessary to change it for the new attribute self.storage
         return self.__class__(
             **{
                 k: vars(self).get(k, 0.0) + vars(other).get(k, 0.0)
@@ -43,6 +44,7 @@ class Hardware:
     def __sub__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
+        # todo: It is necessary to change it for the new attribute self.storage
         return self.__class__(
             **{
                 k: vars(self).get(k, 0.0) - vars(other).get(k, 0.0)
@@ -53,6 +55,7 @@ class Hardware:
     def __ge__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
+        # todo: It is necessary to change it for the new attribute self.storage
         return all(
             vars(self).get(k, 0.0) >= vars(other).get(k, 0.0)
             for k in set().union(vars(self).keys(), vars(other).keys())
@@ -61,6 +64,7 @@ class Hardware:
     def __gt__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
+        # todo: It is necessary to change it for the new attribute self.storage
         return all(
             vars(self).get(k, 0.0) > vars(other).get(k, 0.0)
             for k in set().union(vars(self).keys(), vars(other).keys())
@@ -69,6 +73,7 @@ class Hardware:
     def __le__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
+        # todo: It is necessary to change it for the new attribute self.storage
         return all(
             vars(self).get(k, 0.0) <= vars(other).get(k, 0.0)
             for k in set().union(vars(self).keys(), vars(other).keys())
@@ -77,6 +82,7 @@ class Hardware:
     def __lt__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
+        # todo: It is necessary to change it for the new attribute self.storage
         return all(
             vars(self).get(k, 0.0) < vars(other).get(k, 0.0)
             for k in set().union(vars(self).keys(), vars(other).keys())
@@ -222,7 +228,7 @@ class Policy(SchemaEntity):
         ],
         scheduled_jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> Tuple[JobContext | None, AvailableLocation | None]: ...
+    ) -> MutableMapping[str, MutableSequence[AvailableLocation]]: ...
 
 
 class Scheduler(SchemaEntity):

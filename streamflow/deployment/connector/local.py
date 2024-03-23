@@ -84,9 +84,7 @@ class LocalConnector(BaseConnector):
     async def get_available_locations(
         self,
         service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         return {
             LOCAL_LOCATION: AvailableLocation(
@@ -98,21 +96,7 @@ class LocalConnector(BaseConnector):
                 hardware=Hardware(
                     cores=self.cores,
                     memory=self.memory,
-                    input_directory=(
-                        _get_disk_usage(Path(input_directory))
-                        if input_directory
-                        else float("inf")
-                    ),
-                    output_directory=(
-                        _get_disk_usage(Path(output_directory))
-                        if output_directory
-                        else float("inf")
-                    ),
-                    tmp_directory=(
-                        _get_disk_usage(Path(tmp_directory))
-                        if tmp_directory
-                        else float("inf")
-                    ),
+                    storage={path: _get_disk_usage(Path(path)) for path in directories},
                 ),
             )
         }
