@@ -439,38 +439,44 @@ def _create_list_merger(
     link_merge: str | None = None,
     pick_value: str | None = None,
 ) -> Step:
+    output_port_name = _get_source_name(name)
     combinator = workflow.create_step(
         cls=CombinatorStep,
-        name=name + "-combinator",
+        name=f"{name}-combinator",
         combinator=ListMergeCombinator(
             name=utils.random_name(),
             workflow=workflow,
-            input_names=list(ports.keys()),
-            output_name=name,
+            input_names=[_get_source_name(p) for p in ports.keys()],
+            output_name=output_port_name,
             flatten=(link_merge == "merge_flattened"),
         ),
     )
-    for port_name, port in ports.items():
-        combinator.add_input_port(port_name, port)
-        combinator.combinator.add_item(port_name)
+    for input_port_name, port in ports.items():
+        input_port_name = _get_source_name(input_port_name)
+        combinator.add_input_port(input_port_name, port)
+        combinator.combinator.add_item(input_port_name)
     if pick_value == "first_non_null":
-        combinator.add_output_port(name, workflow.create_port())
+        combinator.add_output_port(output_port_name, workflow.create_port())
         transformer = workflow.create_step(
             cls=FirstNonNullTransformer, name=name + "-transformer"
         )
-        transformer.add_input_port(name, combinator.get_output_port())
-        transformer.add_output_port(name, output_port or workflow.create_port())
+        transformer.add_input_port(output_port_name, combinator.get_output_port())
+        transformer.add_output_port(
+            output_port_name, output_port or workflow.create_port()
+        )
         return transformer
     elif pick_value == "the_only_non_null":
-        combinator.add_output_port(name, workflow.create_port())
+        combinator.add_output_port(output_port_name, workflow.create_port())
         transformer = workflow.create_step(
             cls=OnlyNonNullTransformer, name=name + "-transformer"
         )
-        transformer.add_input_port(name, combinator.get_output_port())
-        transformer.add_output_port(name, output_port or workflow.create_port())
+        transformer.add_input_port(output_port_name, combinator.get_output_port())
+        transformer.add_output_port(
+            output_port_name, output_port or workflow.create_port()
+        )
         return transformer
     elif pick_value == "all_non_null":
-        combinator.add_output_port(name, workflow.create_port())
+        combinator.add_output_port(output_port_name, workflow.create_port())
         transformer = workflow.create_step(
             cls=AllNonNullTransformer, name=name + "-transformer"
         )
@@ -478,24 +484,36 @@ def _create_list_merger(
             list_to_element = workflow.create_step(
                 cls=ListToElementTransformer, name=name + "-list-to-element"
             )
-            list_to_element.add_input_port(name, combinator.get_output_port())
-            list_to_element.add_output_port(name, workflow.create_port())
-            transformer.add_input_port(name, list_to_element.get_output_port())
-            transformer.add_output_port(name, output_port or workflow.create_port())
+            list_to_element.add_input_port(
+                output_port_name, combinator.get_output_port()
+            )
+            list_to_element.add_output_port(output_port_name, workflow.create_port())
+            transformer.add_input_port(
+                output_port_name, list_to_element.get_output_port()
+            )
+            transformer.add_output_port(
+                output_port_name, output_port or workflow.create_port()
+            )
         else:
-            transformer.add_input_port(name, combinator.get_output_port())
-            transformer.add_output_port(name, output_port or workflow.create_port())
+            transformer.add_input_port(output_port_name, combinator.get_output_port())
+            transformer.add_output_port(
+                output_port_name, output_port or workflow.create_port()
+            )
         return transformer
     elif link_merge is None:
-        combinator.add_output_port(name, workflow.create_port())
+        combinator.add_output_port(output_port_name, workflow.create_port())
         list_to_element = workflow.create_step(
             cls=ListToElementTransformer, name=name + "-list-to-element"
         )
-        list_to_element.add_input_port(name, combinator.get_output_port())
-        list_to_element.add_output_port(name, output_port or workflow.create_port())
+        list_to_element.add_input_port(output_port_name, combinator.get_output_port())
+        list_to_element.add_output_port(
+            output_port_name, output_port or workflow.create_port()
+        )
         return list_to_element
     else:
-        combinator.add_output_port(name, output_port or workflow.create_port())
+        combinator.add_output_port(
+            output_port_name, output_port or workflow.create_port()
+        )
         return combinator
 
 
@@ -1265,6 +1283,10 @@ def _remap_path(
         )
 
 
+def _get_source_name(global_name):
+    return posixpath.relpath(global_name, PurePosixPath(global_name).parent.parent)
+
+
 class CWLTranslator:
     def __init__(
         self,
@@ -1290,16 +1312,14 @@ class CWLTranslator:
         self.scatter: MutableMapping[str, Any] = {}
         self.workflow_config: WorkflowConfig = workflow_config
 
-    def _get_deploy_step(
-        self, deploymenty_config: DeploymentConfig, workflow: Workflow
-    ):
-        if deploymenty_config.name not in self.deployment_map:
-            self.deployment_map[deploymenty_config.name] = workflow.create_step(
+    def _get_deploy_step(self, deployment_config: DeploymentConfig, workflow: Workflow):
+        if deployment_config.name not in self.deployment_map:
+            self.deployment_map[deployment_config.name] = workflow.create_step(
                 cls=DeployStep,
-                name=posixpath.join("__deploy__", deploymenty_config.name),
-                deployment_config=deploymenty_config,
+                name=posixpath.join("__deploy__", deployment_config.name),
+                deployment_config=deployment_config,
             )
-        return self.deployment_map[deploymenty_config.name]
+        return self.deployment_map[deployment_config.name]
 
     def _get_input_port(
         self,
@@ -2646,7 +2666,7 @@ class CWLTranslator:
                     # Build transformer step
                     transformer_step = workflow.create_step(
                         cls=CWLTokenTransformer,
-                        name=posixpath.join(port_name + "-collector-transformer"),
+                        name=f"{output_name}-collector-transformer",
                         port_name=port_name,
                         processor=_create_token_processor(
                             port_name=port_name,
@@ -2683,8 +2703,8 @@ class CWLTranslator:
                     # Create a schedule step and connect it to the local DeployStep
                     schedule_step = workflow.create_step(
                         cls=ScheduleStep,
-                        name=posixpath.join(f"{port_name}-collector", "__schedule__"),
-                        job_prefix=f"{port_name}-collector",
+                        name=posixpath.join(f"{output_name}-collector", "__schedule__"),
+                        job_prefix=f"{output_name}-collector",
                         connector_ports={
                             target.deployment.name: deploy_step.get_output_port()
                         },
@@ -2698,7 +2718,7 @@ class CWLTranslator:
                     # Add TransferStep to transfer the output in the output_dir
                     transfer_step = workflow.create_step(
                         cls=CWLTransferStep,
-                        name=port_name + "-collector",
+                        name=f"{output_name}-collector",
                         job_port=schedule_step.get_output_port(),
                         writable=True,
                     )
