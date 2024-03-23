@@ -439,20 +439,20 @@ def _create_list_merger(
     link_merge: str | None = None,
     pick_value: str | None = None,
 ) -> Step:
-    output_port_name = _standardize_dependency_name(name)
+    output_port_name = _get_source_name(name)
     combinator = workflow.create_step(
         cls=CombinatorStep,
-        name=name + "-combinator",
+        name=f"{name}-combinator",
         combinator=ListMergeCombinator(
             name=utils.random_name(),
             workflow=workflow,
-            input_names=[_standardize_dependency_name(p) for p in ports.keys()],
+            input_names=[_get_source_name(p) for p in ports.keys()],
             output_name=output_port_name,
             flatten=(link_merge == "merge_flattened"),
         ),
     )
     for input_port_name, port in ports.items():
-        input_port_name = _standardize_dependency_name(input_port_name)
+        input_port_name = _get_source_name(input_port_name)
         combinator.add_input_port(input_port_name, port)
         combinator.combinator.add_item(input_port_name)
     if pick_value == "first_non_null":
@@ -1283,8 +1283,8 @@ def _remap_path(
         )
 
 
-def _standardize_dependency_name(port_name):
-    return port_name.lstrip(posixpath.sep)
+def _get_source_name(global_name):
+    return posixpath.relpath(global_name, PurePosixPath(global_name).parent.parent)
 
 
 class CWLTranslator:
@@ -2649,7 +2649,7 @@ class CWLTranslator:
         for output_name in self.output_ports:
             if output_name.lstrip(posixpath.sep).count(posixpath.sep) == 0:
                 if port := _percolate_port(output_name, self.output_ports):
-                    port_name = _standardize_dependency_name(output_name)
+                    port_name = output_name.lstrip(posixpath.sep)
                     # Retrieve a local DeployStep
                     target = LocalTarget()
                     deploy_step = self._get_deploy_step(target.deployment, workflow)
@@ -2666,7 +2666,7 @@ class CWLTranslator:
                     # Build transformer step
                     transformer_step = workflow.create_step(
                         cls=CWLTokenTransformer,
-                        name=output_name + "-collector-transformer",
+                        name=f"{output_name}-collector-transformer",
                         port_name=port_name,
                         processor=_create_token_processor(
                             port_name=port_name,
@@ -2703,8 +2703,8 @@ class CWLTranslator:
                     # Create a schedule step and connect it to the local DeployStep
                     schedule_step = workflow.create_step(
                         cls=ScheduleStep,
-                        name=posixpath.join(output_name + "-collector", "__schedule__"),
-                        job_prefix=f"{port_name}-collector",
+                        name=posixpath.join(f"{output_name}-collector", "__schedule__"),
+                        job_prefix=f"{output_name}-collector",
                         connector_ports={
                             target.deployment.name: deploy_step.get_output_port()
                         },
@@ -2718,7 +2718,7 @@ class CWLTranslator:
                     # Add TransferStep to transfer the output in the output_dir
                     transfer_step = workflow.create_step(
                         cls=CWLTransferStep,
-                        name=output_name + "-collector",
+                        name=f"{output_name}-collector",
                         job_port=schedule_step.get_output_port(),
                         writable=True,
                     )
