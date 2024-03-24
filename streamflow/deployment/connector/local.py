@@ -96,10 +96,14 @@ class LocalConnector(BaseConnector):
                 hardware=Hardware(
                     cores=self.cores,
                     memory=self.memory,
-                    storage={
-                        directory: _get_disk_usage(Path(directory))
-                        for directory in directories
-                    },
+                    storage=(
+                        {
+                            directory: _get_disk_usage(Path(directory))
+                            for directory in directories
+                        }
+                        if directories
+                        else {}
+                    ),
                 ),
             )
         }
