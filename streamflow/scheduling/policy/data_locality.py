@@ -21,19 +21,11 @@ class DataLocalityPolicy(Policy):
         self,
         context: StreamFlowContext,
         pending_jobs: MutableSequence[JobContext],
-        available_locations: MutableMapping[
-            str, MutableMapping[str, MutableSequence[AvailableLocation]]
-        ],
+        available_locations: MutableMapping[str, MutableSequence[AvailableLocation]],
         scheduled_jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> MutableMapping[str, MutableSequence[AvailableLocation]]:
+    ) -> MutableMapping[str, AvailableLocation]:
         job_candidates = {}
-        # FIXME:
-        # used_hardware = sum(
-        #     (j.hardware for j in scheduled_jobs.values()),
-        #     start=hardware_requirement.__class__(), # <-
-        #
-        # )
         for job_context in pending_jobs:
             if job_candidates:
                 # todo: tmp solution.
@@ -41,13 +33,8 @@ class DataLocalityPolicy(Policy):
                 #  the hardware_req to check which other jobs are possible to schedule
                 break
             job = job_context.job
-            available_locations = available_locations[job.name]
             valid_locations = list(available_locations.keys())
-            deployments = {
-                loc.deployment
-                for locations in available_locations.values()
-                for loc in locations
-            }
+            deployments = {loc.deployment for loc in available_locations.values()}
             if len(deployments) > 1:
                 raise WorkflowExecutionException(
                     f"Available locations coming from multiple deployments: {deployments}"
