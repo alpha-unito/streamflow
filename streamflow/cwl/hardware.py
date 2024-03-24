@@ -5,7 +5,7 @@ from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.scheduling import HardwareRequirement, JobHardware
+from streamflow.core.scheduling import HardwareRequirement, Hardware
 from streamflow.core.workflow import Token
 from streamflow.cwl.utils import eval_expression
 from streamflow.workflow.utils import get_token_value
@@ -70,15 +70,13 @@ class CWLHardwareRequirement(HardwareRequirement):
             )
         )
 
-    def eval(self, inputs: MutableMapping[str, Token]) -> JobHardware:
+    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware:
         context = {"inputs": {name: get_token_value(t) for name, t in inputs.items()}}
-        return JobHardware(
+        return Hardware(
             cores=self._process_requirement(self.cores, context),
             memory=self._process_requirement(self.memory, context),
             storage={
-                self.tmpdir: self._process_requirement(self.tmpdir, context),
-                self.outdir: self._process_requirement(self.outdir, context),
+                "tmp_directory": self._process_requirement(self.tmpdir, context),
+                "output_directory": self._process_requirement(self.outdir, context),
             },
-            tmp_directory=self.tmpdir,
-            output_directory=self.outdir,
         )

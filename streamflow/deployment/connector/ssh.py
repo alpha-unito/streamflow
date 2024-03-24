@@ -645,7 +645,11 @@ class SSHConnector(BaseConnector):
         return Hardware(
             cores,
             memory,
-            {dir_path: size for dir_path, size in zip(directories, storage)},
+            (
+                {dir_path: size for dir_path, size in zip(directories, storage)}
+                if directories
+                else {}
+            ),
         )
 
     async def _get_memory(self, location: str) -> float:
@@ -734,13 +738,17 @@ class SSHConnector(BaseConnector):
     ) -> MutableMapping[str, AvailableLocation]:
         locations = {}
         for location_obj in self.nodes.values():
-            dir_values = await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        self._get_existing_parent(location_obj.hostname, directory)
+            dir_values = (
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self._get_existing_parent(location_obj.hostname, directory)
+                        )
+                        for directory in directories
                     )
-                    for directory in directories
                 )
+                if directories
+                else []
             )
             hardware = await self._get_location_hardware(
                 location=location_obj.hostname, directories=list(dir_values)

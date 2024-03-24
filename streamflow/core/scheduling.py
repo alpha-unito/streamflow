@@ -85,20 +85,6 @@ class Hardware:
         )
 
 
-class JobHardware(Hardware):
-    def __init__(
-        self,
-        cores: float,
-        memory: float,
-        storage: MutableMapping[str, float],
-        tmp_directory: str,
-        output_directory: str,
-    ):
-        super().__init__(cores, memory, storage)
-        self.tmp_directory = tmp_directory
-        self.output_directory = output_directory
-
-
 class HardwareRequirement(ABC):
     @classmethod
     @abstractmethod
@@ -115,7 +101,7 @@ class HardwareRequirement(ABC):
     ) -> MutableMapping[str, Any]: ...
 
     @abstractmethod
-    def eval(self, inputs: MutableMapping[str, Token]) -> JobHardware: ...
+    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware: ...
 
     @classmethod
     async def load(
@@ -145,13 +131,13 @@ class JobAllocation:
         target: Target,
         locations: MutableSequence[ExecutionLocation],
         status: Status,
-        hardware: JobHardware,
+        hardware: Hardware,
     ):
         self.job: str = job
         self.target: Target = target
         self.locations: MutableSequence[ExecutionLocation] = locations
         self.status: Status = status
-        self.hardware: JobHardware = hardware
+        self.hardware: Hardware = hardware
 
 
 class AvailableLocation:
@@ -222,12 +208,12 @@ class JobContext:
         self,
         job: Job,
         targets: MutableSequence[Target],
-        hardware_requirement: JobHardware,
+        hardware_requirement: Hardware,
     ) -> None:
         self.job: Job = job
         self.event: asyncio.Event = asyncio.Event()
         self.targets: MutableSequence[Target] = targets
-        self.hardware_requirement: JobHardware = hardware_requirement
+        self.hardware_requirement: Hardware = hardware_requirement
 
 
 class Policy(SchemaEntity):
@@ -256,7 +242,7 @@ class Scheduler(SchemaEntity):
     def get_allocation(self, job_name: str) -> JobAllocation | None:
         return self.job_allocations.get(job_name)
 
-    def get_hardware(self, job_name: str) -> JobHardware | None:
+    def get_hardware(self, job_name: str) -> Hardware | None:
         allocation = self.get_allocation(job_name)
         return allocation.hardware if allocation else None
 

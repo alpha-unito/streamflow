@@ -20,7 +20,6 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
     JobContext,
-    JobHardware,
 )
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
@@ -52,7 +51,7 @@ class DefaultScheduler(Scheduler):
     def _allocate_job(
         self,
         job: Job,
-        hardware: JobHardware,
+        hardware: Hardware,
         selected_locations: MutableSequence[ExecutionLocation],
         target: Target,
     ):
@@ -260,7 +259,7 @@ class DefaultScheduler(Scheduler):
                         )
                         job_context.event.set()
 
-                        # todo: block scheduling while:
+                        # todo: awake scheduling:
                         #   - there is a new job to schedule
                         #   - some resources are released and there are some pending jobs
                         # self.pending_job_event.clear()
@@ -293,7 +292,7 @@ class DefaultScheduler(Scheduler):
                 self.pending_job_event.set()
 
     async def schedule(
-        self, job: Job, binding_config: BindingConfig, hardware_requirement: JobHardware
+        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
     ) -> None:
         logger.info(f"Adding job {job.name} in pending jobs to schedule")
         targets = list(binding_config.targets)
