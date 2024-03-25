@@ -103,6 +103,8 @@ class LocalConnector(BaseConnector):
                         }
                         if directories
                         else {}
+                        # todo: Set float("inf") in the volumes not defined.
+                        #  Probably in the comparison methods of Hardware
                     ),
                 ),
             )

@@ -33,6 +33,35 @@ if TYPE_CHECKING:
     from typing import MutableMapping
 
 
+def _get_job_contexts_hardware_requirement(
+    job_contexts: MutableSequence[JobContext], target: Target
+) -> MutableMapping[str, Hardware]:
+    job_hardware_requirements = {}
+    for job_context in job_contexts:
+        hardware_requirement = None
+        if job_context.hardware_requirement:
+            storage = {}
+            for path, size in job_context.hardware_requirement.storage.items():
+                key = path
+                if key == "tmp_directory":
+                    key = target.workdir
+                elif key == "output_directory":
+                    key = target.workdir
+
+                if key not in storage.keys():
+                    storage[key] = size
+                else:
+                    # `tmp_directory` and `output_directory` are in the same volume
+                    storage[key] += size
+            hardware_requirement = Hardware(
+                cores=job_context.hardware_requirement.cores,
+                memory=job_context.hardware_requirement.memory,
+                storage=storage,
+            )
+        job_hardware_requirements[job_context.job.name] = hardware_requirement
+    return job_hardware_requirements
+
+
 class DefaultScheduler(Scheduler):
     def __init__(
         self, context: StreamFlowContext, retry_delay: int | None = None
@@ -127,41 +156,17 @@ class DefaultScheduler(Scheduler):
             )
         return self.binding_filter_map[config.name]
 
-    async def _get_valid_locations(
-        self, target: Target, job_contexts: MutableSequence[JobContext]
-    ) -> MutableMapping[str, AvailableLocation]:
-        output = {}
-        for job_context in job_contexts:
-            connector = self.context.deployment_manager.get_connector(
-                target.deployment.name
-            )
-
-            directories = {
-                job_context.job.input_directory or target.workdir,
-                job_context.job.tmp_directory or target.workdir,
-                job_context.job.output_directory or target.workdir,
-            }
-
-            available_locations = await connector.get_available_locations(
-                service=target.service, directories=list(directories)
-            )
-            for k, loc in available_locations.items():
-                if self._is_valid(
-                    location=loc,
-                    hardware_requirement=job_context.hardware_requirement,
-                ):
-                    output[k] = loc
-        return output
-
-    async def _get_locations(
+    async def _get_jobs_to_schedule(
         self,
         scheduling_policy: Policy,
         job_contexts: MutableSequence[JobContext],
+        hardware_requirements: MutableMapping[str, Hardware],
         valid_locations: MutableMapping[str, AvailableLocation],
     ) -> MutableMapping[str, MutableSequence[ExecutionLocation]]:
         jobs_to_schedule = await scheduling_policy.get_location(
             context=self.context,
-            pending_jobs=job_contexts,
+            pending_jobs=[j.job for j in job_contexts],
+            hardware_requirements=hardware_requirements,
             available_locations=valid_locations,
             scheduled_jobs=self.job_allocations,
             locations=self.location_allocations,
@@ -176,37 +181,23 @@ class DefaultScheduler(Scheduler):
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
 
-    def _is_valid(
-        self, location: AvailableLocation, hardware_requirement: Hardware | None
-    ) -> bool:
-        if location.name in self.location_allocations.get(location.deployment, {}):
-            running_jobs = list(
-                filter(
-                    lambda x: (
-                        self.job_allocations[x].status == Status.RUNNING
-                        or self.job_allocations[x].status == Status.FIREABLE
-                    ),
-                    self.location_allocations[location.deployment][location.name].jobs,
-                )
+    async def _get_available_locations(
+        self, target: Target, job_contexts: MutableSequence[JobContext]
+    ) -> MutableMapping[str, AvailableLocation]:
+        available_locations = {}
+        for job_context in job_contexts:
+            directories = {
+                job_context.job.input_directory or target.workdir,
+                job_context.job.tmp_directory or target.workdir,
+                job_context.job.output_directory or target.workdir,
+            }
+            connector = self.context.deployment_manager.get_connector(
+                target.deployment.name
             )
-        else:
-            running_jobs = []
-        # If location is segmentable and job provides requirements, compute the used amount of locations
-        if location.hardware is not None and hardware_requirement is not None:
-            used_hardware = sum(
-                (self.job_allocations[j].hardware for j in running_jobs),
-                start=hardware_requirement.__class__(),
+            available_locations = await connector.get_available_locations(
+                service=target.service, directories=list(directories)
             )
-            if (location.hardware - used_hardware) >= hardware_requirement:
-                return True
-            else:
-                return False
-        # If location is segmentable but job does not provide requirements, treat it as null-weighted
-        elif location.hardware is not None:
-            return True
-        # Otherwise, simply compute the number of allocated slots
-        else:
-            return len(running_jobs) < location.slots
+        return available_locations
 
     async def _scheduling_task(self):
         try:
@@ -227,7 +218,7 @@ class DefaultScheduler(Scheduler):
                     #         for target in job_context.targets
                     #         if target.deployment == deployment
                     #     }
-                    #
+
                     if not job_contexts:
                         continue
                     target = next(
@@ -236,13 +227,20 @@ class DefaultScheduler(Scheduler):
                         for target in job_context.targets
                         if target.deployment.name == deployment_name
                     )
-                    valid_locations = await self._get_valid_locations(
+                    valid_locations = await self._get_available_locations(
                         target, job_contexts
                     )
 
+                    hardware_requirements = _get_job_contexts_hardware_requirement(
+                        job_contexts, target
+                    )
+
                     scheduling_policy = self._get_policy(target.deployment.policy)
-                    jobs_to_schedule = await self._get_locations(
-                        scheduling_policy, job_contexts, valid_locations
+                    jobs_to_schedule = await self._get_jobs_to_schedule(
+                        scheduling_policy,
+                        job_contexts,
+                        hardware_requirements,
+                        valid_locations,
                     )
                     for job_name, locs in jobs_to_schedule.items():
                         job_context = next(

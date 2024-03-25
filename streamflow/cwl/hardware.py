@@ -70,13 +70,20 @@ class CWLHardwareRequirement(HardwareRequirement):
             )
         )
 
-    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware:
+    def eval(
+        self,
+        inputs: MutableMapping[str, Token],
+        tmp_directory: str,
+        output_directory: str,
+    ) -> Hardware:
         context = {"inputs": {name: get_token_value(t) for name, t in inputs.items()}}
+        tmp_directory = tmp_directory if tmp_directory else "tmp_directory"
+        output_directory = output_directory if output_directory else "output_directory"
         return Hardware(
             cores=self._process_requirement(self.cores, context),
             memory=self._process_requirement(self.memory, context),
             storage={
-                "tmp_directory": self._process_requirement(self.tmpdir, context),
-                "output_directory": self._process_requirement(self.outdir, context),
+                tmp_directory: self._process_requirement(self.tmpdir, context),
+                output_directory: self._process_requirement(self.outdir, context),
             },
         )

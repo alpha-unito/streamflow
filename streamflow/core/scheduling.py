@@ -29,32 +29,37 @@ class Hardware:
     def __add__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
-        # todo: It is necessary to change it for the new attribute self.storage
         return self.__class__(
-            **{
-                k: vars(self).get(k, 0.0) + vars(other).get(k, 0.0)
-                for k in vars(self).keys()
-            }
+            cores=self.cores + other.cores,
+            memory=self.memory + other.memory,
+            storage={
+                path: size + other.storage.get(path, 0.0)
+                for path, size in self.storage.items()
+            },
         )
 
     def __sub__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
-        # todo: It is necessary to change it for the new attribute self.storage
         return self.__class__(
-            **{
-                k: vars(self).get(k, 0.0) - vars(other).get(k, 0.0)
-                for k in vars(self).keys()
-            }
+            cores=self.cores - other.cores,
+            memory=self.memory - other.memory,
+            storage={
+                path: size - other.storage.get(path, 0.0)
+                for path, size in self.storage.items()
+            },
         )
 
     def __ge__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
-        # todo: It is necessary to change it for the new attribute self.storage
-        return all(
-            vars(self).get(k, 0.0) >= vars(other).get(k, 0.0)
-            for k in set().union(vars(self).keys(), vars(other).keys())
+        return (
+            self.cores >= other.cores
+            and self.memory >= other.memory
+            and all(
+                size >= other.storage.get(path, 0.0)
+                for path, size in self.storage.items()
+            )
         )
 
     def __gt__(self, other):
@@ -101,7 +106,12 @@ class HardwareRequirement(ABC):
     ) -> MutableMapping[str, Any]: ...
 
     @abstractmethod
-    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware: ...
+    def eval(
+        self,
+        inputs: MutableMapping[str, Token],
+        tmp_directory: str,
+        output_directory: str,
+    ) -> Hardware: ...
 
     @classmethod
     async def load(
@@ -221,7 +231,8 @@ class Policy(SchemaEntity):
     async def get_location(
         self,
         context: StreamFlowContext,
-        pending_jobs: MutableSequence[JobContext],
+        pending_jobs: MutableSequence[Job],
+        hardware_requirements: MutableMapping[str, Hardware],
         available_locations: MutableMapping[str, AvailableLocation],
         scheduled_jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],

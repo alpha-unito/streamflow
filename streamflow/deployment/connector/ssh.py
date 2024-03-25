@@ -636,7 +636,7 @@ class SSHConnector(BaseConnector):
     ) -> Hardware:
         cores, memory, *storage = await asyncio.gather(
             asyncio.create_task(self._get_cores(location)),
-            asyncio.create_task(self._get_cores(location)),
+            asyncio.create_task(self._get_memory(location)),
             *(
                 asyncio.create_task(self._get_disk_usage(location, directory))
                 for directory in directories
