@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from typing import MutableSequence, MutableMapping
 
 
-class Hardware:
+class DeploymentHardware:
     def __init__(
         self,
         cores: float,
@@ -26,68 +26,16 @@ class Hardware:
         self.memory: float = memory
         self.storage: MutableMapping[str, float] = storage
 
-    def __add__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplementedError
-        return self.__class__(
-            cores=self.cores + other.cores,
-            memory=self.memory + other.memory,
-            storage={
-                path: size + other.storage.get(path, 0.0)
-                for path, size in self.storage.items()
-            },
-        )
 
-    def __sub__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplementedError
-        return self.__class__(
-            cores=self.cores - other.cores,
-            memory=self.memory - other.memory,
-            storage={
-                path: size - other.storage.get(path, 0.0)
-                for path, size in self.storage.items()
-            },
-        )
-
-    def __ge__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplementedError
-        return (
-            self.cores >= other.cores
-            and self.memory >= other.memory
-            and all(
-                size >= other.storage.get(path, 0.0)
-                for path, size in self.storage.items()
-            )
-        )
-
-    def __gt__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplementedError
-        # todo: It is necessary to change it for the new attribute self.storage
-        return all(
-            vars(self).get(k, 0.0) > vars(other).get(k, 0.0)
-            for k in set().union(vars(self).keys(), vars(other).keys())
-        )
-
-    def __le__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplementedError
-        # todo: It is necessary to change it for the new attribute self.storage
-        return all(
-            vars(self).get(k, 0.0) <= vars(other).get(k, 0.0)
-            for k in set().union(vars(self).keys(), vars(other).keys())
-        )
-
-    def __lt__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplementedError
-        # todo: It is necessary to change it for the new attribute self.storage
-        return all(
-            vars(self).get(k, 0.0) < vars(other).get(k, 0.0)
-            for k in set().union(vars(self).keys(), vars(other).keys())
-        )
+class JobHardwareRequirement:
+    def __init__(
+        self, cores: float, memory: float, tmp_dir_size: float, out_dir_size: float
+    ):
+        self.cores = cores
+        self.memory = memory
+        self.tmp_dir_size = tmp_dir_size
+        self.out_dir_size = out_dir_size
+        # todo: add timeout
 
 
 class HardwareRequirement(ABC):
@@ -106,12 +54,7 @@ class HardwareRequirement(ABC):
     ) -> MutableMapping[str, Any]: ...
 
     @abstractmethod
-    def eval(
-        self,
-        inputs: MutableMapping[str, Token],
-        tmp_directory: str,
-        output_directory: str,
-    ) -> Hardware: ...
+    def eval(self, inputs: MutableMapping[str, Token]) -> JobHardwareRequirement: ...
 
     @classmethod
     async def load(
@@ -141,13 +84,13 @@ class JobAllocation:
         target: Target,
         locations: MutableSequence[ExecutionLocation],
         status: Status,
-        hardware: Hardware,
+        hardware: JobHardwareRequirement,
     ):
         self.job: str = job
         self.target: Target = target
         self.locations: MutableSequence[ExecutionLocation] = locations
         self.status: Status = status
-        self.hardware: Hardware = hardware
+        self.hardware: JobHardwareRequirement = hardware
 
 
 class AvailableLocation:
@@ -165,10 +108,10 @@ class AvailableLocation:
         hostname: str,
         service: str | None = None,
         slots: int = 1,
-        hardware: Hardware | None = None,
+        hardware: DeploymentHardware | None = None,
         wraps: AvailableLocation | None = None,
     ):
-        self.hardware: Hardware | None = hardware
+        self.hardware: DeploymentHardware | None = hardware
         self.location: ExecutionLocation = ExecutionLocation(
             deployment=deployment,
             hostname=hostname,
@@ -218,12 +161,12 @@ class JobContext:
         self,
         job: Job,
         targets: MutableSequence[Target],
-        hardware_requirement: Hardware,
+        hardware_requirement: JobHardwareRequirement,
     ) -> None:
         self.job: Job = job
         self.event: asyncio.Event = asyncio.Event()
         self.targets: MutableSequence[Target] = targets
-        self.hardware_requirement: Hardware = hardware_requirement
+        self.hardware_requirement: JobHardwareRequirement = hardware_requirement
 
 
 class Policy(SchemaEntity):
@@ -231,10 +174,9 @@ class Policy(SchemaEntity):
     async def get_location(
         self,
         context: StreamFlowContext,
-        pending_jobs: MutableSequence[Job],
-        hardware_requirements: MutableMapping[str, Hardware],
+        pending_jobs: MutableSequence[JobContext],
         available_locations: MutableMapping[str, AvailableLocation],
-        scheduled_jobs: MutableMapping[str, JobAllocation],
+        scheduled_jobs: MutableSequence[JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
     ) -> MutableMapping[str, AvailableLocation]: ...
 
@@ -253,7 +195,7 @@ class Scheduler(SchemaEntity):
     def get_allocation(self, job_name: str) -> JobAllocation | None:
         return self.job_allocations.get(job_name)
 
-    def get_hardware(self, job_name: str) -> Hardware | None:
+    def get_hardware(self, job_name: str) -> DeploymentHardware | None:
         allocation = self.get_allocation(job_name)
         return allocation.hardware if allocation else None
 
@@ -287,5 +229,59 @@ class Scheduler(SchemaEntity):
 
     @abstractmethod
     async def schedule(
-        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
+        self,
+        job: Job,
+        binding_config: BindingConfig,
+        hardware_requirement: JobHardwareRequirement,
     ) -> None: ...
+
+
+def diff_hw(
+    deployment_hw: DeploymentHardware, hw_requirement: JobHardwareRequirement
+) -> DeploymentHardware:
+    # job = job_context.job
+    # hw_requirement = job_context.hardware_requirement
+    # storage = {}
+    # for path, size in deployment_hw.storage.items():
+    #     # todo: it is not really correct. They can have the same starts but be in different volumes
+    #     #  e.g. / -> volume1 and /mnt/data -> volume2
+    #     if job.tmp_directory.startswith(path):
+    #         size -= hw_requirement.tmp_dir_size
+    #     elif job.output_directory.startswith(path):
+    #         size -= hw_requirement.out_dir_size
+    #     storage[path] = size
+    return DeploymentHardware(
+        cores=deployment_hw.cores - hw_requirement.cores,
+        memory=deployment_hw.memory - hw_requirement.memory,
+        storage=deployment_hw.storage,
+    )
+
+
+def sum_job_req(
+    job_hw_reqs: MutableSequence[JobHardwareRequirement],
+) -> JobHardwareRequirement:
+    cores = 0
+    memory = 0
+    tmp_dir_size = 0
+    out_dir_size = 0
+    for job_hw_req in job_hw_reqs:
+        cores += job_hw_req.cores
+        memory += job_hw_req.memory
+        tmp_dir_size += job_hw_req.tmp_dir_size
+        out_dir_size += job_hw_req.out_dir_size
+    return JobHardwareRequirement(
+        cores=cores,
+        memory=memory,
+        tmp_dir_size=tmp_dir_size,
+        out_dir_size=out_dir_size,
+    )
+
+
+def greater_eq_hw(
+    deployment_hw: DeploymentHardware, job_hw_req: JobHardwareRequirement
+) -> bool:
+    # todo: dirs comparison
+    return (
+        deployment_hw.cores >= job_hw_req.cores
+        and deployment_hw.memory >= job_hw_req.memory
+    )

@@ -14,12 +14,12 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.scheduling import (
-    Hardware,
     JobAllocation,
     LocationAllocation,
     Policy,
     Scheduler,
     JobContext,
+    JobHardwareRequirement,
 )
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
@@ -31,35 +31,6 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
     from typing import MutableMapping
-
-
-def _get_job_contexts_hardware_requirement(
-    job_contexts: MutableSequence[JobContext], target: Target
-) -> MutableMapping[str, Hardware]:
-    job_hardware_requirements = {}
-    for job_context in job_contexts:
-        hardware_requirement = None
-        if job_context.hardware_requirement:
-            storage = {}
-            for path, size in job_context.hardware_requirement.storage.items():
-                key = path
-                if key == "tmp_directory":
-                    key = target.workdir
-                elif key == "output_directory":
-                    key = target.workdir
-
-                if key not in storage.keys():
-                    storage[key] = size
-                else:
-                    # `tmp_directory` and `output_directory` are in the same volume
-                    storage[key] += size
-            hardware_requirement = Hardware(
-                cores=job_context.hardware_requirement.cores,
-                memory=job_context.hardware_requirement.memory,
-                storage=storage,
-            )
-        job_hardware_requirements[job_context.job.name] = hardware_requirement
-    return job_hardware_requirements
 
 
 class DefaultScheduler(Scheduler):
@@ -80,7 +51,7 @@ class DefaultScheduler(Scheduler):
     def _allocate_job(
         self,
         job: Job,
-        hardware: Hardware,
+        hardware: JobHardwareRequirement,
         selected_locations: MutableSequence[ExecutionLocation],
         target: Target,
     ):
@@ -160,15 +131,23 @@ class DefaultScheduler(Scheduler):
         self,
         scheduling_policy: Policy,
         job_contexts: MutableSequence[JobContext],
-        hardware_requirements: MutableMapping[str, Hardware],
         valid_locations: MutableMapping[str, AvailableLocation],
     ) -> MutableMapping[str, MutableSequence[ExecutionLocation]]:
+        scheduled_jobs = []
+        for valid_location in valid_locations.values():
+            if valid_location.name in self.location_allocations.get(
+                valid_location.deployment, {}
+            ):
+                for job_name in self.location_allocations[valid_location.deployment][
+                    valid_location.name
+                ].jobs:
+                    scheduled_jobs.append(self.job_allocations[job_name])
+
         jobs_to_schedule = await scheduling_policy.get_location(
             context=self.context,
-            pending_jobs=[j.job for j in job_contexts],
-            hardware_requirements=hardware_requirements,
+            pending_jobs=job_contexts,
             available_locations=valid_locations,
-            scheduled_jobs=self.job_allocations,
+            scheduled_jobs=scheduled_jobs,
             locations=self.location_allocations,
         )
         return {
@@ -231,15 +210,10 @@ class DefaultScheduler(Scheduler):
                         target, job_contexts
                     )
 
-                    hardware_requirements = _get_job_contexts_hardware_requirement(
-                        job_contexts, target
-                    )
-
                     scheduling_policy = self._get_policy(target.deployment.policy)
                     jobs_to_schedule = await self._get_jobs_to_schedule(
                         scheduling_policy,
                         job_contexts,
-                        hardware_requirements,
                         valid_locations,
                     )
                     for job_name, locs in jobs_to_schedule.items():
@@ -262,7 +236,7 @@ class DefaultScheduler(Scheduler):
                         #   - some resources are released and there are some pending jobs
                         # self.pending_job_event.clear()
                 logger.info("Sleep")
-                await asyncio.sleep(5)
+                await asyncio.sleep(0.2)
         except Exception as e:
             logger.exception(f"Scheduler failed: {e}")
             raise
@@ -290,7 +264,10 @@ class DefaultScheduler(Scheduler):
                 self.pending_job_event.set()
 
     async def schedule(
-        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
+        self,
+        job: Job,
+        binding_config: BindingConfig,
+        hardware_requirement: JobHardwareRequirement,
     ) -> None:
         logger.info(f"Adding job {job.name} in pending jobs to schedule")
         targets = list(binding_config.targets)

@@ -1469,9 +1469,7 @@ class ScheduleStep(BaseStep):
                             )
                             # Schedule
                             hardware_requirement = (
-                                self.hardware_requirement.eval(
-                                    inputs, self.tmp_directory, self.output_directory
-                                )
+                                self.hardware_requirement.eval(inputs)
                                 if self.hardware_requirement
                                 else None
                             )

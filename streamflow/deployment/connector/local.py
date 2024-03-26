@@ -15,14 +15,24 @@ from streamflow.core.deployment import (
     ExecutionLocation,
     LOCAL_LOCATION,
 )
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.scheduling import AvailableLocation, DeploymentHardware
 from streamflow.deployment.connector.base import BaseConnector
 
 
-def _get_disk_usage(path: Path):
-    while not os.path.exists(path):
-        path = path.parent
-    return float(shutil.disk_usage(path).free / 2**20)
+def _get_disks_usage(directories: MutableSequence[str]) -> MutableMapping[str, float]:
+    volumes = {}
+    for directory in directories:
+        path = Path(directory)
+        while not os.path.exists(path):
+            path = path.parent
+        volume_name = os.sep
+        for partition in psutil.disk_partitions(all=False):
+            if path.name.startswith(partition.mountpoint) and len(
+                partition.mountpoint
+            ) > len(volume_name):
+                volume_name = path.name
+        volumes[volume_name] = float(shutil.disk_usage(path).free / 2**20)
+    return volumes
 
 
 class LocalConnector(BaseConnector):
@@ -93,14 +103,11 @@ class LocalConnector(BaseConnector):
                 service=service,
                 hostname="localhost",
                 slots=1,
-                hardware=Hardware(
+                hardware=DeploymentHardware(
                     cores=self.cores,
                     memory=self.memory,
                     storage=(
-                        {
-                            directory: _get_disk_usage(Path(directory))
-                            for directory in directories
-                        }
+                        _get_disks_usage(directories)
                         if directories
                         else {}
                         # todo: Set float("inf") in the volumes not defined.

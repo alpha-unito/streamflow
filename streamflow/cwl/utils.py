@@ -30,7 +30,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.scheduling import Hardware
+from streamflow.core.scheduling import JobHardwareRequirement
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver
@@ -221,7 +221,7 @@ def build_context(
     inputs: MutableMapping[str, Token],
     output_directory: str | None = None,
     tmp_directory: str | None = None,
-    hardware: Hardware | None = None,
+    hardware: JobHardwareRequirement | None = None,
 ) -> MutableMapping[str, Any]:
     context = {"inputs": {}, "self": None, "runtime": {}}
     for name, token in inputs.items():
@@ -234,9 +234,9 @@ def build_context(
         context["runtime"]["cores"] = hardware.cores
         context["runtime"]["ram"] = hardware.memory
         # noinspection PyUnresolvedReferences
-        context["runtime"]["tmpdirSize"] = hardware.storage["tmp_directory"]
+        context["runtime"]["tmpdirSize"] = hardware.tmp_dir_size
         # noinspection PyUnresolvedReferences
-        context["runtime"]["outdirSize"] = hardware.storage["output_directory"]
+        context["runtime"]["outdirSize"] = hardware.out_dir_size
     return context
 
 

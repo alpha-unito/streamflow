@@ -9,7 +9,7 @@ from streamflow.core.deployment import (
     LOCAL_LOCATION,
     ExecutionLocation,
 )
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.scheduling import AvailableLocation, DeploymentHardware
 from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
 
@@ -93,7 +93,7 @@ class ParameterizableHardwareConnector(LocalConnector):
         self,
         deployment_name: str,
         config_dir: str,
-        hardware: Hardware,
+        hardware: DeploymentHardware,
         transferBufferSize: int = 2**16,
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)

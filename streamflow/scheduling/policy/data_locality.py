@@ -11,9 +11,13 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import (
     JobAllocation,
     Policy,
-    Hardware,
+    JobContext,
+    sum_job_req,
+    diff_hw,
+    greater_eq_hw,
+    JobHardwareRequirement,
 )
-from streamflow.core.workflow import Status, Job
+from streamflow.core.workflow import Status
 from streamflow.workflow.token import FileToken
 
 if TYPE_CHECKING:
@@ -26,56 +30,58 @@ class DataLocalityPolicy(Policy):
     def _is_valid(
         self,
         location: AvailableLocation,
-        hardware_requirement: Hardware | None,
-        scheduled_jobs,
+        job_context: JobContext,
+        used_hardware: JobHardwareRequirement,
+        num_scheduled_jobs: int,
     ) -> bool:
-        if location.name in scheduled_jobs.get(location.deployment, {}):
-            running_jobs = list(
-                filter(
-                    lambda x: (
-                        scheduled_jobs.status == Status.RUNNING
-                        or scheduled_jobs.status == Status.FIREABLE
-                    ),
-                    scheduled_jobs[location.deployment][location.name].jobs,
-                )
-            )
-        else:
-            running_jobs = []
         # If location is segmentable and job provides requirements, compute the used amount of locations
-        if location.hardware is not None and hardware_requirement is not None:
-            used_hardware = sum(
-                (scheduled_jobs.hardware for j in running_jobs),
-                start=hardware_requirement.__class__(0, 0, {}),
-            )
-            available_hardware = location.hardware - used_hardware
-            return available_hardware >= hardware_requirement
-        # If location is segmentable but job does not provide requirements, treat it as null-weighted
+        if (
+            location.hardware is not None
+            and job_context.hardware_requirement is not None
+        ):
+            # used_hardware = sum(
+            #     (scheduled_jobs.hardware for j in running_jobs),
+            #     start=hardware_requirement.__class__(0, 0, {}),
+            # )
+            # available_hardware = location.hardware - used_hardware
+            # return available_hardware >= hardware_requirement
+            available_hardware = diff_hw(location.hardware, used_hardware)
+            return greater_eq_hw(available_hardware, used_hardware)
+            # If location is segmentable but job does not provide requirements, treat it as null-weighted
         elif location.hardware is not None:
             return True
         # Otherwise, simply compute the number of allocated slots
         else:
-            return len(running_jobs) < location.slots
+            return num_scheduled_jobs < location.slots
 
     async def get_location(
         self,
         context: StreamFlowContext,
-        pending_jobs: MutableSequence[Job],
-        hardware_requirements: MutableMapping[str, Hardware],
+        pending_jobs: MutableSequence[JobContext],
         available_locations: MutableMapping[str, AvailableLocation],
-        scheduled_jobs: MutableMapping[str, JobAllocation],
+        scheduled_jobs: MutableSequence[JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
     ) -> MutableMapping[str, AvailableLocation]:
         job_candidates = {}
-        for job in pending_jobs:
-            if job_candidates:
-                # todo: tmp solution.
-                #  It return just one job to schedule. It is necessary to consider
-                #  the hardware_req to check which other jobs are possible to schedule
-                break
+        running_jobs = list(
+            filter(
+                lambda x: (x.status == Status.RUNNING or x.status == Status.FIREABLE),
+                scheduled_jobs,
+            )
+        )
+        used_hardware = sum_job_req(j.hardware for j in running_jobs if j.hardware)
+        num_scheduled_jobs = len(running_jobs)
+        for job_context in pending_jobs:
+            job = job_context.job
             locations = {}
             for k, loc in available_locations.items():
-                if self._is_valid(loc, hardware_requirements[job.name], scheduled_jobs):
+                if self._is_valid(loc, job_context, used_hardware, num_scheduled_jobs):
                     locations[k] = loc
+                    if job_context.hardware_requirement:
+                        used_hardware = sum_job_req(
+                            [used_hardware, job_context.hardware_requirement]
+                        )
+                        num_scheduled_jobs += 1
             valid_locations = list(locations.keys())
             deployments = {loc.deployment for loc in locations.values()}
             if len(deployments) > 1:

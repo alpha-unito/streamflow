@@ -8,8 +8,6 @@ import inspect
 
 __all__ = ["cached", "cachedmethod"]
 
-from typing import MutableSequence
-
 import cachetools
 
 
@@ -88,19 +86,17 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     c = cache(self)
                     if c is None:
                         return await method(self, *args, **kwargs)
-                    for elem, value in kwargs.items():
-                        if isinstance(value, MutableSequence):
-                            # note: it is necessary because get_available_locations of ContainerConnector classes have the `directories` parameter
-                            kwargs[elem] = frozenset(value)
                     k = key(*args, **kwargs)
                     try:
                         return c[k]
-                    except KeyError:
-                        pass  # key not found
+                    except (KeyError, TypeError):
+                        # KeyError: key not found
+                        # TypeError: it is necessary because list inputs are not hashable
+                        pass
                     v = await method(self, *args, **kwargs)
                     try:
                         c[k] = v
-                    except ValueError:
+                    except (ValueError, TypeError):
                         pass  # value too large
                     return v
 
