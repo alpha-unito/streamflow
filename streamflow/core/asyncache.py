@@ -89,12 +89,14 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     k = key(*args, **kwargs)
                     try:
                         return c[k]
-                    except KeyError:
-                        pass  # key not found
+                    except (KeyError, TypeError):
+                        # KeyError: key not found
+                        # TypeError: it is necessary because list inputs are not hashable
+                        pass
                     v = await method(self, *args, **kwargs)
                     try:
                         c[k] = v
-                    except ValueError:
+                    except (ValueError, TypeError):
                         pass  # value too large
                     return v
 

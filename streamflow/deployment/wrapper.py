@@ -76,15 +76,11 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
     async def get_available_locations(
         self,
         service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         return await self.connector.get_available_locations(
             service=service,
-            input_directory=input_directory,
-            output_directory=output_directory,
-            tmp_directory=tmp_directory,
+            directories=directories,
         )
 
     async def get_stream_reader(

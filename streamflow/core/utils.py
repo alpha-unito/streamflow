@@ -200,6 +200,20 @@ def get_option(
         raise TypeError("Unsupported value type")
 
 
+def get_disks_usage(directories: MutableSequence[str]):
+    return [
+        "df",
+        *directories,
+        "|",
+        "tail",
+        "-n",
+        str(len(directories)),
+        "|",
+        "awk",
+        "'{{print $6, $2}}'",
+    ]
+
+
 async def get_remote_to_remote_write_command(
     src_connector: Connector,
     src_location: ExecutionLocation,
