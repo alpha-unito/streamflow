@@ -39,12 +39,6 @@ class DataLocalityPolicy(Policy):
             location.hardware is not None
             and job_context.hardware_requirement is not None
         ):
-            # used_hardware = sum(
-            #     (scheduled_jobs.hardware for j in running_jobs),
-            #     start=hardware_requirement.__class__(0, 0, {}),
-            # )
-            # available_hardware = location.hardware - used_hardware
-            # return available_hardware >= hardware_requirement
             available_hardware = diff_hw(location.hardware, used_hardware)
             return greater_eq_hw(available_hardware, used_hardware)
             # If location is segmentable but job does not provide requirements, treat it as null-weighted
@@ -77,11 +71,11 @@ class DataLocalityPolicy(Policy):
             for k, loc in available_locations.items():
                 if self._is_valid(loc, job_context, used_hardware, num_scheduled_jobs):
                     locations[k] = loc
+                    num_scheduled_jobs += 1
                     if job_context.hardware_requirement:
                         used_hardware = sum_job_req(
                             [used_hardware, job_context.hardware_requirement]
                         )
-                        num_scheduled_jobs += 1
             valid_locations = list(locations.keys())
             deployments = {loc.deployment for loc in locations.values()}
             if len(deployments) > 1:

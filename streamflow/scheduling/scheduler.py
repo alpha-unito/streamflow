@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import posixpath
 from typing import MutableSequence, TYPE_CHECKING
 
 from importlib_resources import files
@@ -40,6 +41,7 @@ class DefaultScheduler(Scheduler):
         super().__init__(context)
         self.binding_filter_map: MutableMapping[str, BindingFilter] = {}
         self.pending_jobs: MutableMapping[str, MutableSequence[JobContext]] = {}
+        self.pending_jobs_conditional = asyncio.Condition()
         self.pending_job_event = asyncio.Event()
         self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: int | None = retry_delay if retry_delay != 0 else None
@@ -181,9 +183,17 @@ class DefaultScheduler(Scheduler):
     async def _scheduling_task(self):
         try:
             while True:
+                # Events that awake the scheduling task:
+                #   - there is a new job to schedule
+                #   - some resources are released
                 await self.pending_job_event.wait()
+                async with self.pending_jobs_conditional:
+                    self.pending_job_event.clear()
                 for deployment_name, job_contexts in self.pending_jobs.items():
-                    logger.info("Start scheduling")
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Checking jobs scheduling on deployment {deployment_name}"
+                        )
 
                     # deployments = {
                     #     target.deployment
@@ -216,6 +226,37 @@ class DefaultScheduler(Scheduler):
                         job_contexts,
                         valid_locations,
                     )
+                    if logger.isEnabledFor(logging.DEBUG):
+                        if jobs_to_schedule:
+                            for job_name, locs in jobs_to_schedule.items():
+                                logger.debug(
+                                    "Available locations for job {} on {} are {}.".format(
+                                        job_name,
+                                        (
+                                            posixpath.join(
+                                                deployment_name, target.service
+                                            )
+                                            if target.service
+                                            else deployment_name
+                                        ),
+                                        {str(loc) for loc in locs},
+                                    )
+                                )
+                        else:
+                            logger.debug(
+                                "No location available for job {} on deployment {}.".format(
+                                    [
+                                        job_context.job.name
+                                        for job_context in job_contexts
+                                    ],
+                                    (
+                                        posixpath.join(deployment_name, target.service)
+                                        if target.service
+                                        else deployment_name
+                                    ),
+                                )
+                            )
+
                     for job_name, locs in jobs_to_schedule.items():
                         job_context = next(
                             job_context
@@ -230,15 +271,11 @@ class DefaultScheduler(Scheduler):
                             job_context.targets[0],
                         )
                         job_context.event.set()
-
-                        # todo: awake scheduling:
-                        #   - there is a new job to schedule
-                        #   - some resources are released and there are some pending jobs
-                        # self.pending_job_event.clear()
-                logger.info("Sleep")
-                await asyncio.sleep(0.2)
+                        # todo: fix job with multi-targets case
         except Exception as e:
+            # todo: propagate error to context (?)
             logger.exception(f"Scheduler failed: {e}")
+            await self.context.close()
             raise
 
     async def close(self):
@@ -260,8 +297,9 @@ class DefaultScheduler(Scheduler):
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(f"Job {job_name} changed status to {status.name}")
 
-                # Notify scheduling loop: there are free resources
-                self.pending_job_event.set()
+                # Notify scheduling task: there are free resources
+                async with self.pending_jobs_conditional:
+                    self.pending_job_event.set()
 
     async def schedule(
         self,
@@ -278,8 +316,9 @@ class DefaultScheduler(Scheduler):
             deployment = target.deployment
             self.pending_jobs.setdefault(deployment.name, []).append(job_context)
 
-        # Notify scheduling loop: there is a job to schedule
-        self.pending_job_event.set()
+        # Notify scheduling task: there is a job to schedule
+        async with self.pending_jobs_conditional:
+            self.pending_job_event.set()
 
         # Wait the job is scheduled
         await job_context.event.wait()
