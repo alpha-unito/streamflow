@@ -633,9 +633,7 @@ class SSHConnector(BaseConnector):
     async def get_available_locations(
         self,
         service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         locations = {}
         hardware_locations = await asyncio.gather(
@@ -643,9 +641,7 @@ class SSHConnector(BaseConnector):
                 asyncio.create_task(
                     self._get_available_location(
                         location=location_obj.hostname,
-                        input_directory=input_directory,
-                        output_directory=output_directory,
-                        tmp_directory=tmp_directory,
+                        directories=directories,
                     )
                 )
                 for location_obj in self.nodes.values()

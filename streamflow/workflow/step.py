@@ -684,9 +684,7 @@ class ExecuteStep(BaseStep):
             # Execute job
             if not self.terminated:
                 self.status = Status.RUNNING
-            await self.workflow.context.scheduler.notify_status(
-                job.name, Status.RUNNING
-            )
+            await self.workflow.context.scheduler.notify_status(job, Status.RUNNING)
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
                 logger.error(
@@ -740,7 +738,7 @@ class ExecuteStep(BaseStep):
         finally:
             # Notify completion to scheduler
             await self.workflow.context.scheduler.notify_status(
-                job.name, command_output.status
+                job, command_output.status
             )
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
@@ -1095,7 +1093,7 @@ class InputInjectorStep(BaseStep, ABC):
                     break
                 try:
                     await self.workflow.context.scheduler.notify_status(
-                        job.name, Status.RUNNING
+                        job, Status.RUNNING
                     )
                     in_list = [
                         get_job_token(
@@ -1114,7 +1112,7 @@ class InputInjectorStep(BaseStep, ABC):
                 finally:
                     # Notify completion to scheduler
                     await self.workflow.context.scheduler.notify_status(
-                        job.name, Status.COMPLETED
+                        job, Status.COMPLETED
                     )
         # Terminate step
         await self.terminate(self._get_status(status))
@@ -1512,13 +1510,8 @@ class ScheduleStep(BaseStep):
                                 tmp_directory=self.tmp_directory,
                             )
                             # Schedule
-                            hardware_requirement = (
-                                self.hardware_requirement.eval(inputs)
-                                if self.hardware_requirement
-                                else None
-                            )
                             await self.workflow.context.scheduler.schedule(
-                                job, self.binding_config, hardware_requirement
+                                job, self.binding_config, self.hardware_requirement
                             )
                             locations = self.workflow.context.scheduler.get_locations(
                                 job.name
@@ -1540,11 +1533,7 @@ class ScheduleStep(BaseStep):
                 await self.workflow.context.scheduler.schedule(
                     job,
                     self.binding_config,
-                    (
-                        self.hardware_requirement.eval({})
-                        if self.hardware_requirement
-                        else None
-                    ),
+                    self.hardware_requirement,
                 )
                 locations = self.workflow.context.scheduler.get_locations(job.name)
                 await self._propagate_job(
