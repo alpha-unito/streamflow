@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import posixpath
 
 import pytest
 import pytest_asyncio
@@ -14,15 +15,19 @@ from streamflow.core.deployment import (
     LocalTarget,
     Target,
 )
-from streamflow.core.scheduling import Hardware
+from streamflow.core.scheduling import Hardware, Storage
 from streamflow.core.workflow import Job, Status
+from streamflow.cwl.hardware import CWLHardwareRequirement
 from tests.utils.connector import ParameterizableHardwareConnector
+from tests.utils.data import random_abs_path
 from tests.utils.deployment import (
     get_docker_deployment_config,
     get_service,
     get_deployment_config,
     ReverseTargetsBindingFilter,
 )
+
+_CWL_VERSION = "v1.2"
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -47,11 +52,13 @@ async def test_scheduling(
         name=utils.random_name(),
         workflow_id=0,
         inputs={},
-        input_directory=utils.random_name(),
-        output_directory=utils.random_name(),
-        tmp_directory=utils.random_name(),
+        input_directory=random_abs_path(),
+        output_directory=random_abs_path(),
+        tmp_directory=random_abs_path(),
     )
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(
+        cwl_version=_CWL_VERSION, cores=1, memory=100, outdir=0, tmpdir=0
+    )
     target = Target(
         deployment=deployment_config,
         service=service,
@@ -60,7 +67,11 @@ async def test_scheduling(
     binding_config = BindingConfig(targets=[target])
     await context.scheduler.schedule(job, binding_config, hardware_requirement)
     assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
-    await context.scheduler.notify_status(job.name, Status.COMPLETED)
+    assert all(
+        loc.deployment == deployment_config.name
+        for loc in context.scheduler.job_allocations[job.name].locations
+    )
+    await context.scheduler.notify_status(job, Status.COMPLETED)
     assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
 
 
@@ -69,11 +80,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
 
     machine_hardware = Hardware(
-        cores=1,
-        memory=100,
-        input_directory=100,
-        output_directory=100,
-        tmp_directory=100,
+        cores=1, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
     )
 
     # inject custom connector to manipulate available resources
@@ -95,12 +102,14 @@ async def test_single_env_few_resources(context: StreamFlowContext):
                 name=utils.random_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=utils.random_name(),
-                output_directory=utils.random_name(),
-                tmp_directory=utils.random_name(),
+                input_directory=random_abs_path(),
+                output_directory=random_abs_path(),
+                tmp_directory=random_abs_path(),
             )
         )
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(
+        cwl_version=_CWL_VERSION, cores=1, memory=0, outdir=0, tmpdir=0
+    )
     local_target = LocalTarget()
     binding_config = BindingConfig(targets=[local_target])
     task_pending = [
@@ -120,13 +129,13 @@ async def test_single_env_few_resources(context: StreamFlowContext):
 
     # First job changes status to RUNNING and continue to keep all resources
     # Testing that second job is not scheduled (timeout parameter necessary)
-    await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
+    await context.scheduler.notify_status(jobs[0], Status.RUNNING)
     _, task_pending = await asyncio.wait(task_pending, timeout=2)
     assert len(task_pending) == 1
     assert context.scheduler.job_allocations[jobs[0].name].status == Status.RUNNING
 
     # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
-    await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
+    await context.scheduler.notify_status(jobs[0], Status.COMPLETED)
     _, task_pending = await asyncio.wait(
         task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
     )
@@ -135,9 +144,9 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     assert context.scheduler.job_allocations[jobs[1].name].status == Status.FIREABLE
 
     # Second job completed
-    await context.scheduler.notify_status(jobs[1].name, Status.RUNNING)
+    await context.scheduler.notify_status(jobs[1], Status.RUNNING)
     assert context.scheduler.job_allocations[jobs[1].name].status == Status.RUNNING
-    await context.scheduler.notify_status(jobs[1].name, Status.COMPLETED)
+    await context.scheduler.notify_status(jobs[1], Status.COMPLETED)
     assert context.scheduler.job_allocations[jobs[1].name].status == Status.COMPLETED
 
 
@@ -146,11 +155,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
 
     machine_hardware = Hardware(
-        cores=2,
-        memory=100,
-        input_directory=100,
-        output_directory=100,
-        tmp_directory=100,
+        cores=2, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
     )
 
     # Inject custom connector to manipulate available resources
@@ -172,12 +177,14 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
                 name=utils.random_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=utils.random_name(),
-                output_directory=utils.random_name(),
-                tmp_directory=utils.random_name(),
+                input_directory=random_abs_path(),
+                output_directory=random_abs_path(),
+                tmp_directory=random_abs_path(),
             )
         )
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(
+        cwl_version=_CWL_VERSION, cores=1, memory=0, outdir=0, tmpdir=0
+    )
     local_target = LocalTarget()
     binding_config = BindingConfig(targets=[local_target])
     task_pending = [
@@ -198,12 +205,12 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
 
     # Jobs change status to RUNNING
     for j in jobs:
-        await context.scheduler.notify_status(j.name, Status.RUNNING)
+        await context.scheduler.notify_status(j, Status.RUNNING)
         assert context.scheduler.job_allocations[j.name].status == Status.RUNNING
 
     # Jobs change status to COMPLETED
     for j in jobs:
-        await context.scheduler.notify_status(j.name, Status.COMPLETED)
+        await context.scheduler.notify_status(j, Status.COMPLETED)
         assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
 
 
@@ -212,7 +219,9 @@ async def test_multi_env(context: StreamFlowContext):
     """Test scheduling two jobs on two different environments."""
 
     # Inject custom connector to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    machine_hardware = Hardware(
+        cores=1, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
+    )
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
         ParameterizableHardwareConnector(
@@ -238,14 +247,16 @@ async def test_multi_env(context: StreamFlowContext):
                     name=utils.random_name(),
                     workflow_id=0,
                     inputs={},
-                    input_directory=utils.random_name(),
-                    output_directory=utils.random_name(),
-                    tmp_directory=utils.random_name(),
+                    input_directory=random_abs_path(),
+                    output_directory=random_abs_path(),
+                    tmp_directory=random_abs_path(),
                 ),
                 BindingConfig(targets=[local_target] if i == 0 else [docker_target]),
             )
         )
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(
+        cwl_version=_CWL_VERSION, cores=1, memory=0, outdir=0, tmpdir=0
+    )
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -264,12 +275,12 @@ async def test_multi_env(context: StreamFlowContext):
 
     # Jobs change status to RUNNING
     for j, _ in jobs:
-        await context.scheduler.notify_status(j.name, Status.RUNNING)
+        await context.scheduler.notify_status(j, Status.RUNNING)
         assert context.scheduler.job_allocations[j.name].status == Status.RUNNING
 
     # Jobs change status to COMPLETED
     for j, _ in jobs:
-        await context.scheduler.notify_status(j.name, Status.COMPLETED)
+        await context.scheduler.notify_status(j, Status.COMPLETED)
         assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
 
 
@@ -278,7 +289,9 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     """Test scheduling one jobs with two targets: Local and Docker Image. The job will be scheduled in the first"""
 
     # Inject custom connector to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    machine_hardware = Hardware(
+        cores=1, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
+    )
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
         ParameterizableHardwareConnector(
@@ -294,9 +307,9 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
         name=utils.random_name(),
         workflow_id=0,
         inputs={},
-        input_directory=utils.random_name(),
-        output_directory=utils.random_name(),
-        tmp_directory=utils.random_name(),
+        input_directory=random_abs_path(),
+        output_directory=random_abs_path(),
+        tmp_directory=random_abs_path(),
     )
     local_target = LocalTarget()
     docker_target = Target(
@@ -306,7 +319,9 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     )
     binding_config = BindingConfig(targets=[local_target, docker_target])
 
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(
+        cwl_version=_CWL_VERSION, cores=1, memory=0, outdir=0, tmpdir=0
+    )
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -328,11 +343,11 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     )
 
     # Job changes status to RUNNING
-    await context.scheduler.notify_status(job.name, Status.RUNNING)
+    await context.scheduler.notify_status(job, Status.RUNNING)
     assert context.scheduler.job_allocations[job.name].status == Status.RUNNING
 
     # Job changes status to COMPLETED
-    await context.scheduler.notify_status(job.name, Status.COMPLETED)
+    await context.scheduler.notify_status(job, Status.COMPLETED)
     assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
 
 
@@ -344,7 +359,9 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     """
 
     # Inject custom connector to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    machine_hardware = Hardware(
+        cores=1, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
+    )
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
         ParameterizableHardwareConnector(
@@ -363,9 +380,9 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
                 name=utils.random_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=utils.random_name(),
-                output_directory=utils.random_name(),
-                tmp_directory=utils.random_name(),
+                input_directory=random_abs_path(),
+                output_directory=random_abs_path(),
+                tmp_directory=random_abs_path(),
             )
         )
     local_target = LocalTarget()
@@ -376,7 +393,9 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     )
     binding_config = BindingConfig(targets=[local_target, docker_target])
 
-    hardware_requirement = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(
+        cwl_version=_CWL_VERSION, cores=1, memory=0, outdir=0, tmpdir=0
+    )
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -405,12 +424,12 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
 
     # Jobs change status to RUNNING
     for j in jobs:
-        await context.scheduler.notify_status(j.name, Status.RUNNING)
+        await context.scheduler.notify_status(j, Status.RUNNING)
         assert context.scheduler.job_allocations[j.name].status == Status.RUNNING
 
     # Jobs change status to COMPLETED
     for j in jobs:
-        await context.scheduler.notify_status(j.name, Status.COMPLETED)
+        await context.scheduler.notify_status(j, Status.COMPLETED)
         assert context.scheduler.job_allocations[j.name].status == Status.COMPLETED
 
 
@@ -421,9 +440,9 @@ async def test_binding_filter(context: StreamFlowContext):
         name=utils.random_name(),
         workflow_id=0,
         inputs={},
-        input_directory=utils.random_name(),
-        output_directory=utils.random_name(),
-        tmp_directory=utils.random_name(),
+        input_directory=random_abs_path(),
+        output_directory=random_abs_path(),
+        tmp_directory=random_abs_path(),
     )
     local_target = LocalTarget()
     docker_target = Target(
@@ -462,9 +481,9 @@ async def test_binding_filter(context: StreamFlowContext):
     )
 
     # Job changes status to RUNNING
-    await context.scheduler.notify_status(job.name, Status.RUNNING)
+    await context.scheduler.notify_status(job, Status.RUNNING)
     assert context.scheduler.job_allocations[job.name].status == Status.RUNNING
 
     # Job changes status to COMPLETED
-    await context.scheduler.notify_status(job.name, Status.COMPLETED)
+    await context.scheduler.notify_status(job, Status.COMPLETED)
     assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED

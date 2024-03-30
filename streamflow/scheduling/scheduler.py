@@ -57,7 +57,8 @@ class DefaultScheduler(Scheduler):
     def _allocate_job(
         self,
         job: Job,
-        hardware: HardwareRequirement | None,
+        hardware: Hardware | None,
+        hardware_requirement: HardwareRequirement | None,
         selected_locations: MutableSequence[ExecutionLocation],
         target: Target,
     ):
@@ -89,7 +90,7 @@ class DefaultScheduler(Scheduler):
             target=target,
             locations=selected_locations,
             status=Status.FIREABLE,
-            hardware=hardware or None,
+            hardware=hardware_requirement or None,
         )
         for loc in selected_locations:
             if loc not in self.location_allocations:
@@ -99,9 +100,9 @@ class DefaultScheduler(Scheduler):
                 ).jobs.append(job.name)
                 if hardware:
                     if loc.name in self.hardware_locations.keys():
-                        self.hardware_locations[loc.name] += hardware.eval(job)
+                        self.hardware_locations[loc.name] += hardware
                     else:
-                        self.hardware_locations[loc.name] = hardware.eval(job)
+                        self.hardware_locations[loc.name] = hardware
 
     def _deallocate_job(self, job: str):
         job_allocation = self.job_allocations.pop(job)
