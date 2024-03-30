@@ -672,9 +672,7 @@ class DockerConnector(DockerBaseConnector):
     async def get_available_locations(
         self,
         service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         return {
             container_id: await self._get_location(container_id)
@@ -867,9 +865,7 @@ class DockerComposeConnector(DockerBaseConnector):
     async def get_available_locations(
         self,
         service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         ps_command = (await self._get_base_command()) + "".join(
             ["ps ", "--format ", "json ", service or ""]
@@ -1209,9 +1205,7 @@ class SingularityConnector(ContainerConnector):
     async def get_available_locations(
         self,
         service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         location_tasks = {}
         for instance_name in self.instanceNames:

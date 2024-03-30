@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import shutil
 import sys
 import tempfile
@@ -15,14 +16,26 @@ from streamflow.core.deployment import (
     ExecutionLocation,
     LOCAL_LOCATION,
 )
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import BaseConnector
 
 
-def _get_disk_usage(path: Path):
-    while not os.path.exists(path):
-        path = path.parent
-    return float(shutil.disk_usage(path).free / 2**20)
+def _get_disks_usage(directories: MutableSequence[str]) -> MutableMapping[str, Storage]:
+    storage = {}
+    for directory in directories:
+        path = Path(directory)
+        while not os.path.exists(path):
+            path = path.parent
+        volume_name = os.sep
+        for partition in psutil.disk_partitions(all=False):
+            if path.name.startswith(partition.mountpoint) and len(
+                partition.mountpoint
+            ) > len(volume_name):
+                volume_name = path.name
+        storage[directory] = Storage(
+            mount_point=volume_name, size=float(shutil.disk_usage(path).free / 2**20)
+        )
+    return storage
 
 
 class LocalConnector(BaseConnector):
@@ -84,9 +97,7 @@ class LocalConnector(BaseConnector):
     async def get_available_locations(
         self,
         service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         return {
             LOCAL_LOCATION: AvailableLocation(
@@ -98,20 +109,14 @@ class LocalConnector(BaseConnector):
                 hardware=Hardware(
                     cores=self.cores,
                     memory=self.memory,
-                    input_directory=(
-                        _get_disk_usage(Path(input_directory))
-                        if input_directory
-                        else float("inf")
-                    ),
-                    output_directory=(
-                        _get_disk_usage(Path(output_directory))
-                        if output_directory
-                        else float("inf")
-                    ),
-                    tmp_directory=(
-                        _get_disk_usage(Path(tmp_directory))
-                        if tmp_directory
-                        else float("inf")
+                    storage=(
+                        _get_disks_usage(directories)
+                        if directories
+                        else {
+                            posixpath.sep: Storage(
+                                mount_point=posixpath.sep, size=float("inf")
+                            )
+                        }
                     ),
                 ),
             )

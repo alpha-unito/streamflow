@@ -20,6 +20,7 @@ from streamflow.core.scheduling import (
     LocationAllocation,
     Policy,
     Scheduler,
+    HardwareRequirement,
 )
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
@@ -48,6 +49,7 @@ class DefaultScheduler(Scheduler):
     ) -> None:
         super().__init__(context)
         self.binding_filter_map: MutableMapping[str, BindingFilter] = {}
+        self.hardware_locations: MutableMapping[str, Hardware] = {}
         self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: int | None = retry_delay if retry_delay != 0 else None
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
@@ -55,7 +57,7 @@ class DefaultScheduler(Scheduler):
     def _allocate_job(
         self,
         job: Job,
-        hardware: Hardware,
+        hardware: HardwareRequirement | None,
         selected_locations: MutableSequence[ExecutionLocation],
         target: Target,
     ):
@@ -87,7 +89,7 @@ class DefaultScheduler(Scheduler):
             target=target,
             locations=selected_locations,
             status=Status.FIREABLE,
-            hardware=hardware or Hardware(),
+            hardware=hardware or None,
         )
         for loc in selected_locations:
             if loc not in self.location_allocations:
@@ -95,6 +97,11 @@ class DefaultScheduler(Scheduler):
                     loc.name,
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
+                if hardware:
+                    if loc.name in self.hardware_locations.keys():
+                        self.hardware_locations[loc.name] += hardware.eval(job)
+                    else:
+                        self.hardware_locations[loc.name] = hardware.eval(job)
 
     def _deallocate_job(self, job: str):
         job_allocation = self.job_allocations.pop(job)
@@ -182,11 +189,10 @@ class DefaultScheduler(Scheduler):
             running_jobs = []
         # If location is segmentable and job provides requirements, compute the used amount of locations
         if location.hardware is not None and hardware_requirement is not None:
-            used_hardware = sum(
-                (self.job_allocations[j].hardware for j in running_jobs),
-                start=hardware_requirement.__class__(),
-            )
-            if (location.hardware - used_hardware) >= hardware_requirement:
+            available_hardware = location.hardware
+            if location.name in self.hardware_locations.keys():
+                available_hardware -= self.hardware_locations[location.name]
+            if available_hardware >= hardware_requirement:
                 return True
             else:
                 return False
@@ -198,7 +204,10 @@ class DefaultScheduler(Scheduler):
             return len(running_jobs) < location.slots
 
     async def _process_target(
-        self, target: Target, job_context: JobContext, hardware_requirement: Hardware
+        self,
+        target: Target,
+        job_context: JobContext,
+        hardware_requirement: HardwareRequirement | None,
     ):
         deployment = target.deployment.name
         if deployment not in self.wait_queues:
@@ -222,23 +231,33 @@ class DefaultScheduler(Scheduler):
                                 ),
                             )
                         )
+                    directories = {
+                        job_context.job.input_directory or target.workdir,
+                        job_context.job.output_directory or target.workdir,
+                        job_context.job.tmp_directory or target.workdir,
+                    }
                     available_locations = dict(
                         await connector.get_available_locations(
-                            service=target.service,
-                            input_directory=job_context.job.input_directory
-                            or target.workdir,
-                            output_directory=job_context.job.output_directory
-                            or target.workdir,
-                            tmp_directory=job_context.job.tmp_directory
-                            or target.workdir,
+                            service=target.service, directories=directories
                         )
+                    )
+                    job = Job(
+                        name=job_context.job.name,
+                        workflow_id=job_context.job.workflow_id,
+                        inputs=job_context.job.inputs,
+                        input_directory=job_context.job.input_directory
+                        or target.workdir,
+                        output_directory=job_context.job.output_directory
+                        or target.workdir,
+                        tmp_directory=job_context.job.tmp_directory or target.workdir,
+                    )
+                    hardware = (
+                        hardware_requirement.eval(job) if hardware_requirement else None
                     )
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
-                        if self._is_valid(
-                            location=loc, hardware_requirement=hardware_requirement
-                        )
+                        if self._is_valid(location=loc, hardware_requirement=hardware)
                     }
                     if valid_locations:
                         if logger.isEnabledFor(logging.DEBUG):
@@ -311,23 +330,32 @@ class DefaultScheduler(Scheduler):
             .read_text("utf-8")
         )
 
-    async def notify_status(self, job_name: str, status: Status) -> None:
-        connector = self.get_connector(job_name)
+    async def notify_status(self, job: Job, status: Status) -> None:
+        connector = self.get_connector(job.name)
         if connector:
             if connector.deployment_name in self.wait_queues:
                 async with self.wait_queues[connector.deployment_name]:
-                    if job_name in self.job_allocations:
-                        if status != self.job_allocations[job_name].status:
-                            self.job_allocations[job_name].status = status
+                    if job.name in self.job_allocations:
+                        job_allocation = self.job_allocations[job.name]
+                        if status != job_allocation.status:
+                            job_allocation.status = status
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
-                                    f"Job {job_name} changed status to {status.name}"
+                                    f"Job {job.name} changed status to {status.name}"
                                 )
                         if status in [Status.COMPLETED, Status.FAILED]:
+                            if job_allocation.hardware:
+                                for loc in job_allocation.locations:
+                                    self.hardware_locations[
+                                        loc.name
+                                    ] -= job_allocation.hardware.eval(job)
                             self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
-        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
+        self,
+        job: Job,
+        binding_config: BindingConfig,
+        hardware_requirement: HardwareRequirement | None,
     ) -> None:
         job_context = JobContext(job)
         targets = list(binding_config.targets)

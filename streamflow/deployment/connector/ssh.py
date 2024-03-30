@@ -19,7 +19,7 @@ from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment import aiotarstream
 from streamflow.deployment.connector.base import BaseConnector, extract_tar_stream
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
@@ -596,20 +596,32 @@ class SSHConnector(BaseConnector):
                 environment=environment,
             )
 
-    async def _get_disk_usage(self, location: str, directory: str) -> float:
+    async def _get_disks_usage(
+        self, location: str, directories: MutableSequence[str]
+    ) -> MutableMapping[str, Storage]:
         async with self._get_ssh_client_process(
             location=location,
-            command=f"df {directory} | tail -n 1 | awk '{{print $2}}'",
+            command=f"df {' '.join(directories)} | tail -n {len(directories)} | awk '{{print $6, $2}}'",
             stderr=asyncio.subprocess.STDOUT,
         ) as proc:
-            if directory:
+            if directories:
                 result = await proc.wait()
                 if result.returncode == 0:
-                    return float(result.stdout.strip()) / 2**10
+                    storage = {}
+                    for dir, line in zip(
+                        directories, str(result.stdout.strip()).split("\n")
+                    ):
+                        mount_point, size = line.split(" ")
+                        storage[dir] = Storage(
+                            mount_point=mount_point, size=float(size) / 2**10
+                        )
+                    return storage
                 else:
                     raise WorkflowExecutionException(result.returncode)
             else:
-                return float("inf")
+                return {
+                    posixpath.sep: Storage(mount_point=posixpath.sep, size=float("inf"))
+                }
 
     async def _get_existing_parent(self, location: str, directory: str):
         if directory is None:
@@ -630,18 +642,12 @@ class SSHConnector(BaseConnector):
 
     @cachedmethod(lambda self: self.hardwareCache)
     async def _get_location_hardware(
-        self,
-        location: str,
-        input_directory: str,
-        output_directory: str,
-        tmp_directory: str,
+        self, location: str, directories: MutableSequence[str]
     ) -> Hardware:
         return Hardware(
             await self._get_cores(location),
             await self._get_memory(location),
-            await self._get_disk_usage(location, input_directory),
-            await self._get_disk_usage(location, output_directory),
-            await self._get_disk_usage(location, tmp_directory),
+            await self._get_disks_usage(location, directories),
         )
 
     async def _get_memory(self, location: str) -> float:
@@ -726,28 +732,25 @@ class SSHConnector(BaseConnector):
     async def get_available_locations(
         self,
         service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         locations = {}
         for location_obj in self.nodes.values():
-            inpdir, outdir, tmpdir = await asyncio.gather(
-                asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, input_directory)
-                ),
-                asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, output_directory)
-                ),
-                asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, tmp_directory)
-                ),
+            posix_directories = await asyncio.gather(
+                *(
+                    (
+                        asyncio.create_task(
+                            self._get_existing_parent(location_obj.hostname, dir)
+                        )
+                        for dir in directories
+                    )
+                    if directories
+                    else []
+                )
             )
             hardware = await self._get_location_hardware(
                 location=location_obj.hostname,
-                input_directory=inpdir,
-                output_directory=outdir,
-                tmp_directory=tmpdir,
+                directories=[str(posix_dir) for posix_dir in posix_directories],
             )
             locations[location_obj.hostname] = AvailableLocation(
                 name=location_obj.hostname,
