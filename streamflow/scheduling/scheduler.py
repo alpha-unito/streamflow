@@ -54,9 +54,10 @@ class DefaultScheduler(Scheduler):
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
     def _allocate_job(
-            self,
-            job: Job,
-            hardware: HardwareRequirement | None,
+        self,
+        job: Job,
+        hardware: Hardware | None,
+        hardware_requirement: HardwareRequirement | None,
         selected_locations: MutableSequence[AvailableLocation],
         target: Target,
     ):
@@ -88,7 +89,7 @@ class DefaultScheduler(Scheduler):
             target=target,
             locations=[loc.location for loc in selected_locations],
             status=Status.FIREABLE,
-            hardware=hardware or None,
+            hardware=hardware_requirement or None,
         )
         for loc in selected_locations:
             while loc is not None:

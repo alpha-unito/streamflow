@@ -66,7 +66,9 @@ class Hardware:
         if self.cores > other.cores and self.memory > other.memory:
             for path, disk in other.storage.items():
                 if path not in self.storage.keys() or self.storage[path] <= disk:
-                    return False
+                    for curr_disk in self.storage.values():
+                        if curr_disk.mount_point == disk.mount_point and curr_disk.size <= disk.size:
+                            return False
             return True
         return False
 
