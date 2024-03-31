@@ -46,6 +46,11 @@ class WorkflowConfig(Config):
                         "The `models` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
                         "Use `deployments` instead."
                     )
+        for deployment_config in self.deployments.values():
+            policy = deployment_config.get("policy", "__DEFAULT__")
+            if policy not in self.policies:
+                raise WorkflowDefinitionException(f"Policy {policy} is not defined")
+            deployment_config["policy"] = self.policies[policy]
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         for name, deployment in self.deployments.items():
             deployment["name"] = name
@@ -65,16 +70,6 @@ class WorkflowConfig(Config):
             if isinstance(binding["target"], MutableSequence)
             else [binding["target"]]
         )
-        for target in targets:
-            policy = target.get(
-                "policy",
-                self.deployments[target.get("deployment", target.get("model", {}))].get(
-                    "policy", "__DEFAULT__"
-                ),
-            )
-            if policy not in self.policies:
-                raise WorkflowDefinitionException(f"Policy {policy} is not defined")
-            target["policy"] = self.policies[policy]
         target_type = "step" if "step" in binding else "port"
         if target_type == "port" and "workdir" not in binding["target"]:
             raise WorkflowDefinitionException(

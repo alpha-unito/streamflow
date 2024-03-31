@@ -137,6 +137,7 @@ class DefaultDeploymentManager(DeploymentManager):
                     config=inner_config["config"],
                     external=inner_config.get("external", False),
                     lazy=inner_config.get("lazy", True),
+                    scheduling_policy=inner_config["policy"],
                     workdir=inner_config.get("workdir"),
                     wraps=get_wraps_config(inner_config.get("wraps")),
                 )
@@ -161,6 +162,7 @@ class DefaultDeploymentManager(DeploymentManager):
                 },
                 external=deployment_config.external,
                 lazy=deployment_config.lazy,
+                scheduling_policy=deployment_config.scheduling_policy,
                 wraps=deployment_config.wraps,
             )
         # If it is not a ConnectorWrapper, do nothing

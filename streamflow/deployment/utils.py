@@ -60,6 +60,7 @@ def get_binding_config(
                 config=target_deployment["config"],
                 external=target_deployment.get("external", False),
                 lazy=target_deployment.get("lazy", True),
+                scheduling_policy=target_deployment["policy"],
                 workdir=target_deployment.get("workdir"),
                 wraps=get_wraps_config(target_deployment.get("wraps")),
             )
