@@ -281,7 +281,7 @@ class DefaultScheduler(Scheduler):
                                         hardware_requirement=hardware_requirement,
                                         locations=target.locations,
                                         scheduling_policy=self._get_policy(
-                                            target.scheduling_policy
+                                            target.deployment.scheduling_policy
                                         ),
                                         available_locations=valid_locations,
                                     )
@@ -306,7 +306,7 @@ class DefaultScheduler(Scheduler):
                                 hardware_requirement=hardware_requirement,
                                 locations=target.locations,
                                 scheduling_policy=self._get_policy(
-                                    target.scheduling_policy
+                                    target.deployment.scheduling_policy
                                 ),
                                 available_locations=valid_locations,
                             )

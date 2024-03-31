@@ -165,7 +165,7 @@
           "description": "If true, a model is deployed only when it becomes necessary for transfers or executions. If false, a DeployStep will deploy its related model as soon as it becomes fireable",
           "default": true
         },
-        "policy": {
+        "scheduling_policy": {
           "type": "string",
           "description": "The scheduling policy to be used with this deployment.",
           "default": "data_locality"
@@ -295,11 +295,6 @@
           "type": "integer",
           "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
           "default": 1
-        },
-        "policy": {
-          "type": "string",
-          "description": "The scheduling policy to be used with this target. Overrides the deployment policy when present.",
-          "default": "data_locality"
         },
         "service": {
           "type": "string"
