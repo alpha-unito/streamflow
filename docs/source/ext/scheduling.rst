@@ -59,7 +59,7 @@ Type        Class
 default     streamflow.scheduling.scheduler.DefaultScheduler
 =======     ================================================
 
-In the ``DefaultScheduler`` implementation, scheduling attempts follow a simple First Come, First Served (FCFS) approach. The ``schedule`` method demands the allocation strategy to a ``Policy`` object specified in the StreamFlow file's ``bindings`` section through a ``target`` object's ``policy`` directive.  If no available allocation configuration can be found for a given ``Job``, it is queued until the next scheduling attempt.
+In the ``DefaultScheduler`` implementation, scheduling attempts follow a simple First Come, First Served (FCFS) approach. The ``schedule`` method demands the allocation strategy to a ``Policy`` object specified in the StreamFlow file's ``deployments`` section through the ``deployment`` object's ``policy`` directive.  If no available allocation configuration can be found for a given ``Job``, it is queued until the next scheduling attempt.
 
 As discussed above, a scheduling attempt occurs whenever a ``Job`` reaches a final state. Plus, to account for dynamic resource creation and deletion in remote execution environments (e.g., through the Kubernetes `HorizontalPodAutoscaler <https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/>`_) the ``DefaultScheduler`` can automatically perform a scheduling attempt for each queued ``Job`` at regular intervals. The duration of such intervals can be configured through the ``retry_delay`` parameter. A value of ``0`` (the default) turns off this behaviour.
 
