@@ -47,10 +47,10 @@ class WorkflowConfig(Config):
                         "Use `deployments` instead."
                     )
         for deployment_config in self.deployments.values():
-            policy = deployment_config.get("policy", "__DEFAULT__")
+            policy = deployment_config.get("scheduling_policy", "__DEFAULT__")
             if policy not in self.policies:
                 raise WorkflowDefinitionException(f"Policy {policy} is not defined")
-            deployment_config["policy"] = self.policies[policy]
+            deployment_config["scheduling_policy"] = self.policies[policy]
         self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         for name, deployment in self.deployments.items():
             deployment["name"] = name

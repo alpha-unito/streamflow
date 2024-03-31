@@ -137,7 +137,7 @@ class DefaultDeploymentManager(DeploymentManager):
                     config=inner_config["config"],
                     external=inner_config.get("external", False),
                     lazy=inner_config.get("lazy", True),
-                    scheduling_policy=inner_config["policy"],
+                    scheduling_policy=inner_config["scheduling_policy"],
                     workdir=inner_config.get("workdir"),
                     wraps=get_wraps_config(inner_config.get("wraps")),
                 )

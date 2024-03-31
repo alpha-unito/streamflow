@@ -102,7 +102,7 @@ def test_ext_support():
             "example": {
                 "type": "slurm",
                 "config": {"maxConcurrentJobs": 10},
-                "policy": "data_locality",
+                "scheduling_policy": "data_locality",
             }
         },
         "deploymentManager": {"type": "default", "config": {}},

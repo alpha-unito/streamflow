@@ -165,7 +165,7 @@
           "description": "If true, a model is deployed only when it becomes necessary for transfers or executions. If false, a DeployStep will deploy its related model as soon as it becomes fireable",
           "default": true
         },
-        "policy": {
+        "scheduling_policy": {
           "type": "string",
           "description": "The scheduling policy to be used with this deployment.",
           "default": "data_locality"
