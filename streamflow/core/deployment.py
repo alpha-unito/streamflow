@@ -234,14 +234,12 @@ class Target(PersistableEntity):
         deployment: DeploymentConfig,
         locations: int = 1,
         service: str | None = None,
-        scheduling_group: str | None = None,
         workdir: str | None = None,
     ):
         super().__init__()
         self.deployment: DeploymentConfig = deployment
         self.locations: int = locations
         self.service: str | None = service
-        self.scheduling_group: str | None = scheduling_group
         self.workdir: str = (
             workdir or self.deployment.workdir or _init_workdir(deployment.name)
         )

@@ -47,11 +47,9 @@ class DefaultScheduler(Scheduler):
         self, context: StreamFlowContext, retry_delay: int | None = None
     ) -> None:
         super().__init__(context)
-        self.allocation_groups: MutableMapping[str, MutableSequence[Job]] = {}
         self.binding_filter_map: MutableMapping[str, BindingFilter] = {}
         self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: int | None = retry_delay if retry_delay != 0 else None
-        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
     def _allocate_job(
@@ -255,70 +253,24 @@ class DefaultScheduler(Scheduler):
                                     list(valid_locations.keys()),
                                 )
                             )
-                        if target.scheduling_group is not None:
-                            if target.scheduling_group not in self.allocation_groups:
-                                self.allocation_groups[target.scheduling_group] = []
-                            self.allocation_groups[target.scheduling_group].append(
-                                job_context.job
-                            )
-                            group_size = len(
-                                self.scheduling_groups[target.scheduling_group]
-                            )
-                            if (
-                                len(
-                                    self.allocation_groups.get(
-                                        target.scheduling_group, []
-                                    )
-                                )
-                                == group_size
-                            ):
-                                allocated_jobs = []
-                                for j in self.allocation_groups[
-                                    target.scheduling_group
-                                ]:
-                                    selected_locations = await self._get_locations(
-                                        job=job_context.job,
-                                        hardware_requirement=hardware_requirement,
-                                        locations=target.locations,
-                                        scheduling_policy=self._get_policy(
-                                            target.deployment.scheduling_policy
-                                        ),
-                                        available_locations=valid_locations,
-                                    )
-                                    if selected_locations is None:
-                                        break
-                                    self._allocate_job(
-                                        job=j,
-                                        hardware=hardware_requirement,
-                                        selected_locations=selected_locations,
-                                        target=target,
-                                    )
-                                    allocated_jobs.append(j)
-                                if len(allocated_jobs) < group_size:
-                                    for j in allocated_jobs:
-                                        self._deallocate_job(j.name)
-                                else:
-                                    job_context.scheduled = True
-                                    return
-                        else:
-                            selected_locations = await self._get_locations(
+                        selected_locations = await self._get_locations(
+                            job=job_context.job,
+                            hardware_requirement=hardware_requirement,
+                            locations=target.locations,
+                            scheduling_policy=self._get_policy(
+                                target.deployment.scheduling_policy
+                            ),
+                            available_locations=valid_locations,
+                        )
+                        if selected_locations is not None:
+                            self._allocate_job(
                                 job=job_context.job,
-                                hardware_requirement=hardware_requirement,
-                                locations=target.locations,
-                                scheduling_policy=self._get_policy(
-                                    target.deployment.scheduling_policy
-                                ),
-                                available_locations=valid_locations,
+                                hardware=hardware_requirement,
+                                selected_locations=selected_locations,
+                                target=target,
                             )
-                            if selected_locations is not None:
-                                self._allocate_job(
-                                    job=job_context.job,
-                                    hardware=hardware_requirement,
-                                    selected_locations=selected_locations,
-                                    target=target,
-                                )
-                                job_context.scheduled = True
-                                return
+                            job_context.scheduled = True
+                            return
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(

@@ -4,7 +4,6 @@ import logging
 from pathlib import PurePosixPath
 from typing import MutableSequence, TYPE_CHECKING
 
-from streamflow.core import utils
 from streamflow.core.config import Config
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.log_handler import logger
@@ -51,17 +50,11 @@ class WorkflowConfig(Config):
             if policy not in self.policies:
                 raise WorkflowDefinitionException(f"Policy {policy} is not defined")
             deployment_config["scheduling_policy"] = self.policies[policy]
-        self.scheduling_groups: MutableMapping[str, MutableSequence[str]] = {}
         for name, deployment in self.deployments.items():
             deployment["name"] = name
         self.filesystem = {"children": {}}
         for binding in workflow_config.get("bindings", []):
-            if isinstance(binding, MutableSequence):
-                for b in binding:
-                    self._process_binding(b)
-                self.scheduling_groups[utils.random_name()] = binding
-            else:
-                self._process_binding(binding)
+            self._process_binding(binding)
         set_targets(self.filesystem, None)
 
     def _process_binding(self, binding: MutableMapping[str, Any]):
