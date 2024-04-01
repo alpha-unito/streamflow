@@ -58,7 +58,7 @@ class DefaultScheduler(Scheduler):
         self,
         job: Job,
         hardware: MutableMapping[str, Hardware],
-        hardware_requirement: HardwareRequirement | None,
+        hardware_requirement: Hardware,
         selected_locations: MutableSequence[AvailableLocation],
         target: Target,
     ):
@@ -90,7 +90,7 @@ class DefaultScheduler(Scheduler):
             target=target,
             locations=[loc.location for loc in selected_locations],
             status=Status.FIREABLE,
-            hardware=hardware_requirement or None,
+            hardware=hardware[next(loc.name for loc in selected_locations)],
         )
         for loc in selected_locations:
             while loc is not None:
@@ -105,12 +105,13 @@ class DefaultScheduler(Scheduler):
                     ).jobs.append(
                         job.name
                     )
-                    loc = loc.wraps if loc.stacked else None
+                    # fixme: wraps not considered
                     if loc.name in hardware.keys() and hardware[loc.name]:
                         if loc.name in self.hardware_locations.keys():
-                            self.hardware_locations[loc.name] += hardware.eval(job)
+                            self.hardware_locations[loc.name] += hardware[loc.name]
                         else:
-                            self.hardware_locations[loc.name] = hardware.eval(job)
+                            self.hardware_locations[loc.name] = hardware[loc.name]
+                    loc = loc.wraps if loc.stacked else None
 
     def _deallocate_job(self, job: str):
         job_allocation = self.job_allocations.pop(job)
@@ -216,14 +217,11 @@ class DefaultScheduler(Scheduler):
         if hardware is not None:
             # If job provides requirements
             if hardware_requirement is not None:
-                # Retrieve the jobs running on that location
-                running_jobs = self._get_running_jobs(loc)
                 # Compute the used amount of locations
-                used_hardware = sum(
-                    (self.job_allocations[j].hardware for j in running_jobs),
-                    start=hardware_requirement.__class__(),
-                )
-                return (loc.hardware - used_hardware) >= hardware_requirement
+                available_hardware = location.hardware
+                if location.name in self.hardware_locations.keys():
+                    available_hardware -= self.hardware_locations[location.name]
+                return available_hardware >= hardware_requirement
             # Otherwise, treat it as null-weighted
             else:
                 return True
@@ -263,16 +261,7 @@ class DefaultScheduler(Scheduler):
                                 ),
                             )
                         )
-                    directories = {
-                        job_context.job.input_directory or target.workdir,
-                        job_context.job.output_directory or target.workdir,
-                        job_context.job.tmp_directory or target.workdir,
-                    }
-                    available_locations = dict(
-                        await connector.get_available_locations(
-                            service=target.service, directories=list(directories)
-                        )
-                    )
+
                     job = Job(
                         name=job_context.job.name,
                         workflow_id=job_context.job.workflow_id,
@@ -283,17 +272,34 @@ class DefaultScheduler(Scheduler):
                         or target.workdir,
                         tmp_directory=job_context.job.tmp_directory or target.workdir,
                     )
-                    job_hardware = (
-                        hardware_requirement.eval(job) if hardware_requirement else None
+                    available_locations = dict(
+                        await connector.get_available_locations(
+                            service=target.service,
+                            directories=list(
+                                {
+                                    job.input_directory,
+                                    job.output_directory,
+                                    job.tmp_directory,
+                                }
+                            ),
+                        )
                     )
-                    hardware = get_mapping_hardware(
-                        job_hardware, list(available_locations.values())
+                    job_hardware = (
+                        hardware_requirement.eval(job)
+                        if hardware_requirement
+                        else Hardware()
+                    )
+                    hardware_mapping = get_mapping_hardware(
+                        job_hardware, available_locations.values()
                     )
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
                         if self._is_valid(
-                            location=loc, hardware_requirement=hardware[loc.name]
+                            location=loc,
+                            hardware_requirement=hardware_mapping.get(
+                                loc.name, Hardware()
+                            ),
                         )
                     }
                     if len(valid_locations) >= target.locations:
@@ -311,7 +317,7 @@ class DefaultScheduler(Scheduler):
                             )
                         if selected_locations := await self._get_locations(
                             job=job_context.job,
-                            hardware_requirement=hardware_requirement,
+                            hardware_requirement=job_hardware,
                             locations=target.locations,
                             scheduling_policy=self._get_policy(
                                 target.deployment.scheduling_policy
@@ -320,7 +326,8 @@ class DefaultScheduler(Scheduler):
                         ):
                             self._allocate_job(
                                 job=job_context.job,
-                                hardware=hardware_requirement,
+                                hardware=hardware_mapping,
+                                hardware_requirement=job_hardware,
                                 selected_locations=selected_locations,
                                 target=target,
                             )
@@ -367,18 +374,18 @@ class DefaultScheduler(Scheduler):
             .read_text("utf-8")
         )
 
-    async def notify_status(self, job: Job, status: Status) -> None:
-        connector = self.get_connector(job.name)
+    async def notify_status(self, job_name: str, status: Status) -> None:
+        connector = self.get_connector(job_name)
         if connector:
             if connector.deployment_name in self.wait_queues:
                 async with self.wait_queues[connector.deployment_name]:
-                    if job.name in self.job_allocations:
-                        job_allocation = self.job_allocations[job.name]
+                    if job_name in self.job_allocations:
+                        job_allocation = self.job_allocations[job_name]
                         if status != job_allocation.status:
                             job_allocation.status = status
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
-                                    f"Job {job.name} changed status to {status.name}"
+                                    f"Job {job_name} changed status to {status.name}"
                                 )
                         if status in [Status.COMPLETED, Status.FAILED]:
                             if job_allocation.hardware:
@@ -386,7 +393,7 @@ class DefaultScheduler(Scheduler):
                                     if loc.name in self.hardware_locations.keys():
                                         self.hardware_locations[
                                             loc.name
-                                        ] -= job_allocation.hardware.eval(job)
+                                        ] -= job_allocation.hardware
                             self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(

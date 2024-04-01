@@ -4,7 +4,7 @@ import os
 import shutil
 import sys
 import tempfile
-from pathlib import PurePath, Path
+from pathlib import Path
 from typing import MutableMapping, MutableSequence
 
 import psutil
@@ -18,34 +18,7 @@ from streamflow.core.deployment import (
 from streamflow.core.utils import local_copy
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import BaseConnector
-
-
-def _get_disks_usage(directories: MutableSequence[str]) -> MutableMapping[str, Storage]:
-    storage = {}
-    for directory in directories:
-        # Get existing path
-        path = Path(directory)
-        while not path.exists():
-            path = path.parent
-
-        # Get mount point of the path
-        mount_point = path
-        while not os.path.ismount(mount_point):
-            mount_point = mount_point.parent
-
-        if mount_point.as_posix() in storage.keys():
-            storage[mount_point.as_posix()] += Storage(
-                mount_point=mount_point.as_posix(),
-                size=float(shutil.disk_usage(path).free / 2**20),
-                paths={directory},
-            )
-        else:
-            storage[mount_point.as_posix()] = Storage(
-                mount_point=mount_point.as_posix(),
-                size=float(shutil.disk_usage(path).free / 2**20),
-                paths={directory},
-            )
-    return storage
+from streamflow.log_handler import logger
 
 
 class LocalConnector(BaseConnector):
@@ -53,8 +26,16 @@ class LocalConnector(BaseConnector):
         self, deployment_name: str, config_dir: str, transferBufferSize: int = 2**16
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
-        self.cores = float(psutil.cpu_count())
-        self.memory = float(psutil.virtual_memory().available / 2**20)
+        self.hardware: Hardware = Hardware(
+            cores=float(psutil.cpu_count()),
+            memory=float(psutil.virtual_memory().total / 2**20),
+            storage={
+                disk.mountpoint: Storage(
+                    disk.mountpoint, shutil.disk_usage(disk.mountpoint).free / 2**20
+                )
+                for disk in psutil.disk_partitions()
+            },
+        )
 
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
@@ -119,6 +100,20 @@ class LocalConnector(BaseConnector):
         service: str | None = None,
         directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
+        for directory in directories or []:
+            try:
+                self.hardware.get_mount_point(directory)
+            except KeyError:
+                path = Path(directory)
+                while not path.exists():
+                    path = path.parent
+
+                # Get mount point of the path
+                mount_point = Path(os.path.realpath(path))
+                while not os.path.ismount(mount_point):
+                    mount_point = mount_point.parent
+                logger.info(self.hardware.storage.keys())
+                self.hardware.storage[str(mount_point)].add_path(directory)
         return {
             LOCAL_LOCATION: AvailableLocation(
                 name=LOCAL_LOCATION,
@@ -126,19 +121,7 @@ class LocalConnector(BaseConnector):
                 service=service,
                 hostname="localhost",
                 slots=1,
-                hardware=Hardware(
-                    cores=self.cores,
-                    memory=self.memory,
-                    storage=(
-                        _get_disks_usage(directories)
-                        if directories
-                        else {
-                            os.sep: Storage(
-                                mount_point=posixpath.sep, size=float("inf")
-                            )
-                        }
-                    ),
-                ),
+                hardware=self.hardware,
             )
         }
 

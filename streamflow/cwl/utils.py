@@ -8,13 +8,7 @@ import urllib.parse
 from enum import Enum
 from pathlib import PurePath
 from types import ModuleType
-from typing import (
-    Any,
-    MutableMapping,
-    MutableSequence,
-    cast,
-    TYPE_CHECKING,
-)
+from typing import Any, MutableMapping, MutableSequence, cast
 
 import cwl_utils.expression
 import cwltool.context
@@ -32,6 +26,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
+from streamflow.core.scheduling import Hardware
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver
@@ -40,9 +35,6 @@ from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.utils import get_token_value
-
-if TYPE_CHECKING:
-    from streamflow.cwl.hardware import CWLHardwareRequirement
 
 
 async def _check_glob_path(
@@ -242,7 +234,7 @@ def build_context(
     inputs: MutableMapping[str, Token],
     output_directory: str | None = None,
     tmp_directory: str | None = None,
-    hardware: CWLHardwareRequirement | None = None,
+    hardware: Hardware | None = None,
 ) -> MutableMapping[str, Any]:
     context = {"inputs": {}, "self": None, "runtime": {}}
     for name, token in inputs.items():
@@ -252,12 +244,12 @@ def build_context(
     if tmp_directory:
         context["runtime"]["tmpdir"] = tmp_directory
     if hardware:
-        context["runtime"]["cores"] = hardware.get_cores(context)
-        context["runtime"]["ram"] = hardware.get_memory(context)
+        context["runtime"]["cores"] = hardware.cores
+        context["runtime"]["ram"] = hardware.memory
         # noinspection PyUnresolvedReferences
-        context["runtime"]["tmpdirSize"] = hardware.get_tmpdir_size(context)
+        context["runtime"]["tmpdirSize"] = hardware.get_size(tmp_directory)
         # noinspection PyUnresolvedReferences
-        context["runtime"]["outdirSize"] = hardware.get_outdir_size(context)
+        context["runtime"]["outdirSize"] = hardware.get_size(output_directory)
     return context
 
 

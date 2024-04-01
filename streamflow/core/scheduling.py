@@ -16,20 +16,19 @@ if TYPE_CHECKING:
 
 
 def get_mapping_hardware(
-    job_hardware: Hardware, available_locations: MutableSequence[AvailableLocation]
+    job_hardware: Hardware, available_locations: Iterable[AvailableLocation]
 ) -> MutableMapping[str, Hardware]:
     hardware = {}
     for location in available_locations:
         if location.hardware and job_hardware:
             storage = {}
             for path, disk in job_hardware.storage.items():
-                # Set the mount_point in the job storage requirement using the current location storage information
-                mount_point = get_mount_point(
-                    path, list(location.hardware.storage.values())
-                )
-                if mount_point is None:
+                # Get the mount_point of the job storage requirement in the current location storage
+                try:
+                    mount_point = location.hardware.get_mount_point(path)
+                except KeyError:
                     raise WorkflowExecutionException(
-                        f"Impossible find the mount point of path {path}"
+                        f"Path {path} not found in {location.name} location"
                     )
                 storage[mount_point] = Storage(mount_point, disk.size, {path})
             hardware[location.name] = Hardware(
@@ -40,33 +39,25 @@ def get_mapping_hardware(
     return hardware
 
 
-def get_mount_point(path: str, disks: MutableSequence[Storage]) -> str | None:
-    for disk in disks:
-        if path in disk.paths:
-            return disk.mount_point
-    return None
-
-
 class Hardware:
     def __init__(
-        self, cores: float, memory: float, storage: MutableMapping[str, Storage]
+        self,
+        cores: float = 0.0,
+        memory: float = 0.0,
+        storage: MutableMapping[str, Storage] | None = None,
     ):
         self.cores: float = cores
         self.memory: float = memory
-        self.storage: MutableMapping[str, Storage] = storage
+        self.storage: MutableMapping[str, Storage] = storage or {}
 
-    def __ge__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplementedError
-        if self.cores >= other.cores and self.memory >= other.memory:
-            for disk in other.storage.values():
-                if (
-                    disk.mount_point not in self.storage.keys()
-                    or self.storage[disk.mount_point] < disk
-                ):
-                    return False
-            return True
-        return False
+    def get_mount_point(self, path: str) -> str | None:
+        for disk in self.storage.values():
+            if path in disk.paths:
+                return disk.mount_point
+        raise KeyError
+
+    def get_size(self, path: str) -> float:
+        return self.storage[self.get_mount_point(path)].size
 
     def __add__(self, other):
         if not isinstance(other, Hardware):
@@ -86,8 +77,24 @@ class Hardware:
         for path, disk in other.storage.items():
             if path in storage.keys():
                 storage[path] -= disk
-            # else do nothing
+            else:
+                for self_path, self_disk in storage.items():
+                    if path in self_disk.paths:
+                        storage[self_path] -= disk
         return Hardware(self.cores - other.cores, self.memory - other.memory, storage)
+
+    def __ge__(self, other):
+        if not isinstance(other, Hardware):
+            return NotImplementedError
+        if self.cores >= other.cores and self.memory >= other.memory:
+            for disk in other.storage.values():
+                if (
+                    disk.mount_point not in self.storage.keys()
+                    or self.storage[disk.mount_point] < disk
+                ):
+                    return False
+            return True
+        return False
 
     def __gt__(self, other):
         if not isinstance(other, Hardware):
@@ -175,13 +182,13 @@ class JobAllocation:
         target: Target,
         locations: MutableSequence[ExecutionLocation],
         status: Status,
-        hardware: HardwareRequirement | None,
+        hardware: Hardware,
     ):
         self.job: str = job
         self.target: Target = target
         self.locations: MutableSequence[ExecutionLocation] = locations
         self.status: Status = status
-        self.hardware: HardwareRequirement | None = hardware
+        self.hardware: Hardware = hardware
 
 
 class AvailableLocation:
@@ -275,9 +282,10 @@ class Scheduler(SchemaEntity):
     def get_allocation(self, job_name: str) -> JobAllocation | None:
         return self.job_allocations.get(job_name)
 
-    def get_hardware(self, job_name: str) -> HardwareRequirement | None:
+    def get_hardware(self, job_name: str) -> Hardware | None:
         allocation = self.get_allocation(job_name)
-        return allocation.hardware if allocation else None
+        # todo: change API get_hardware?
+        return allocation.hardware if allocation else Hardware()
 
     def get_connector(self, job_name: str) -> Connector | None:
         allocation = self.get_allocation(job_name)
@@ -305,7 +313,7 @@ class Scheduler(SchemaEntity):
         return allocation.target.service if allocation else None
 
     @abstractmethod
-    async def notify_status(self, job: Job, status: Status) -> None: ...
+    async def notify_status(self, job_name: str, status: Status) -> None: ...
 
     @abstractmethod
     async def schedule(
@@ -324,24 +332,23 @@ class Storage:
         self.paths: MutableSet[str] = paths or set()
         self.size: float = size
 
-    def add_paths(self, paths: Iterable[str]):
-        for path in paths:
-            self.paths.add(path)
+    def add_path(self, path: str):
+        self.paths.add(path)
 
     def __add__(self, other: Storage):
         if not isinstance(other, Storage):
             return NotImplementedError
         storage = Storage(self.mount_point or other.mount_point, self.size + other.size)
-        self.add_paths(self.paths)
-        self.add_paths(other.paths)
+        for path in (*self.paths, *other.paths):
+            storage.add_path(path)
         return storage
 
     def __sub__(self, other: Storage):
         if not isinstance(other, Storage):
             return NotImplementedError
         storage = Storage(self.mount_point or other.mount_point, self.size - other.size)
-        self.add_paths(self.paths)
-        self.add_paths(other.paths)
+        for path in (*self.paths, *other.paths):
+            storage.add_path(path)
         return storage
 
     def __ge__(self, other: Storage):

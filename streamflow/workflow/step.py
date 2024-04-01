@@ -25,7 +25,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.scheduling import HardwareRequirement
+from streamflow.core.scheduling import HardwareRequirement, Hardware
 from streamflow.core.workflow import (
     Job,
     Port,
@@ -35,7 +35,7 @@ from streamflow.core.workflow import (
     Workflow,
 )
 from streamflow.data import remotepath
-from streamflow.deployment.utils import get_path_processor
+from streamflow.deployment.utils import get_path_processor, get_pure_path
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
@@ -44,6 +44,14 @@ from streamflow.workflow.utils import (
     check_termination,
     get_job_token,
 )
+
+
+def _add_storage_path(connector: Connector, directory: str, hardware: Hardware):
+    path = get_pure_path(connector, directory)
+    while str(path) != posixpath.sep and path not in hardware.storage.keys():
+        path = path.parent
+    if str(path) in hardware.storage.keys():
+        hardware.storage[str(path)].add_path(directory)
 
 
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
@@ -684,7 +692,9 @@ class ExecuteStep(BaseStep):
             # Execute job
             if not self.terminated:
                 self.status = Status.RUNNING
-            await self.workflow.context.scheduler.notify_status(job, Status.RUNNING)
+            await self.workflow.context.scheduler.notify_status(
+                job.name, Status.RUNNING
+            )
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
                 logger.error(
@@ -738,7 +748,7 @@ class ExecuteStep(BaseStep):
         finally:
             # Notify completion to scheduler
             await self.workflow.context.scheduler.notify_status(
-                job, command_output.status
+                job.name, command_output.status
             )
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
@@ -1093,7 +1103,7 @@ class InputInjectorStep(BaseStep, ABC):
                     break
                 try:
                     await self.workflow.context.scheduler.notify_status(
-                        job, Status.RUNNING
+                        job.name, Status.RUNNING
                     )
                     in_list = [
                         get_job_token(
@@ -1112,7 +1122,7 @@ class InputInjectorStep(BaseStep, ABC):
                 finally:
                     # Notify completion to scheduler
                     await self.workflow.context.scheduler.notify_status(
-                        job, Status.COMPLETED
+                        job.name, Status.COMPLETED
                     )
         # Terminate step
         await self.terminate(self._get_status(status))
@@ -1385,6 +1395,10 @@ class ScheduleStep(BaseStep):
         job.tmp_directory = await remotepath.follow_symlink(
             self.workflow.context, connector, locations[0], job.tmp_directory
         )
+        # todo: change API get_hardware?
+        hardware = self.workflow.context.scheduler.get_hardware(job.name) or Hardware()
+        for directory in (job.input_directory, job.output_directory, job.tmp_directory):
+            _add_storage_path(connector, directory, hardware)
 
         # Register paths
         for location in locations:

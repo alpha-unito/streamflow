@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import posixpath
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PurePath
 from types import ModuleType
 from typing import Any, MutableMapping, TYPE_CHECKING
 
@@ -93,6 +93,14 @@ def get_path_processor(connector: Connector) -> ModuleType:
         posixpath
         if connector is not None and not isinstance(connector, LocalConnector)
         else os.path
+    )
+
+
+def get_pure_path(connector: Connector, path: str) -> PurePath:
+    return (
+        PurePosixPath(path)
+        if connector is not None and not isinstance(connector, LocalConnector)
+        else PurePath(path)
     )
 
 

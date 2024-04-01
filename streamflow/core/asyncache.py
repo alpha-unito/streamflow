@@ -89,17 +89,13 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     k = key(*args, **kwargs)
                     try:
                         return c[k]
-                    except (KeyError, TypeError):
-                        # KeyError: key not found
-                        # TypeError: unhashable type list()/set()
-                        pass
+                    except KeyError:
+                        pass  # key not found
                     v = await method(self, *args, **kwargs)
                     try:
                         c[k] = v
-                    except (ValueError, TypeError):
-                        # ValueError: value too large
-                        # TypeError: unhashable type list()/set()
-                        pass
+                    except ValueError:
+                        pass  # value too large
                     return v
 
             else:
