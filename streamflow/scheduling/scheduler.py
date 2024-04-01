@@ -235,16 +235,7 @@ class DefaultScheduler(Scheduler):
                                 ),
                             )
                         )
-                    directories = {
-                        job_context.job.input_directory or target.workdir,
-                        job_context.job.output_directory or target.workdir,
-                        job_context.job.tmp_directory or target.workdir,
-                    }
-                    available_locations = dict(
-                        await connector.get_available_locations(
-                            service=target.service, directories=list(directories)
-                        )
-                    )
+
                     job = Job(
                         name=job_context.job.name,
                         workflow_id=job_context.job.workflow_id,
@@ -255,11 +246,21 @@ class DefaultScheduler(Scheduler):
                         or target.workdir,
                         tmp_directory=job_context.job.tmp_directory or target.workdir,
                     )
+                    available_locations = dict(
+                        await connector.get_available_locations(
+                            service=target.service,
+                            directories={
+                                job.input_directory,
+                                job.output_directory,
+                                job.tmp_directory,
+                            },
+                        )
+                    )
                     job_hardware = (
                         hardware_requirement.eval(job) if hardware_requirement else None
                     )
                     hardware = get_mapping_hardware(
-                        job_hardware, list(available_locations.values())
+                        job_hardware, available_locations.values()
                     )
                     valid_locations = {
                         k: loc
@@ -283,7 +284,7 @@ class DefaultScheduler(Scheduler):
                             )
                         selected_locations = await self._get_locations(
                             job=job_context.job,
-                            hardware_requirement=hardware_requirement,
+                            hardware_requirement=job_hardware,
                             locations=target.locations,
                             scheduling_policy=self._get_policy(
                                 target.deployment.scheduling_policy
@@ -293,7 +294,8 @@ class DefaultScheduler(Scheduler):
                         if selected_locations is not None:
                             self._allocate_job(
                                 job=job_context.job,
-                                hardware=hardware_requirement,
+                                hardware=hardware,
+                                hardware_requirement=hardware_requirement,
                                 selected_locations=selected_locations,
                                 target=target,
                             )

@@ -19,11 +19,11 @@ from streamflow.core.scheduling import Hardware, Storage
 from streamflow.core.workflow import Job, Status
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from tests.utils.connector import ParameterizableHardwareConnector
-from tests.utils.data import random_abs_path
 from tests.utils.deployment import (
-    get_docker_deployment_config,
-    get_service,
     get_deployment_config,
+    get_docker_deployment_config,
+    get_local_deployment_config,
+    get_service,
     ReverseTargetsBindingFilter,
 )
 
@@ -76,7 +76,7 @@ async def test_scheduling(
 @pytest.mark.asyncio
 async def test_single_env_few_resources(context: StreamFlowContext):
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
-    workdir = random_abs_path()
+    workdir = get_local_deployment_config().workdir
     machine_hardware = Hardware(
         cores=1,
         memory=100,
@@ -153,7 +153,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_single_env_enough_resources(context: StreamFlowContext):
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
-    workdir = random_abs_path()
+    workdir = get_local_deployment_config().workdir
     machine_hardware = Hardware(
         cores=2,
         memory=100,
@@ -221,7 +221,7 @@ async def test_multi_env(context: StreamFlowContext):
     """Test scheduling two jobs on two different environments."""
 
     # Inject custom connector to manipulate available resources
-    workdir = random_abs_path()
+    workdir = get_local_deployment_config().workdir
     machine_hardware = Hardware(
         cores=1,
         memory=100,
@@ -294,7 +294,7 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     """Test scheduling one jobs with two targets: Local and Docker Image. The job will be scheduled in the first"""
 
     # Inject custom connector to manipulate available resources
-    workdir = random_abs_path()
+    workdir = get_local_deployment_config().workdir
     machine_hardware = Hardware(
         cores=1,
         memory=100,
@@ -367,7 +367,7 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     """
 
     # Inject custom connector to manipulate available resources
-    workdir = random_abs_path()
+    workdir = get_local_deployment_config().workdir
     machine_hardware = Hardware(
         cores=1,
         memory=100,
@@ -451,9 +451,9 @@ async def test_binding_filter(context: StreamFlowContext):
         name=utils.random_name(),
         workflow_id=0,
         inputs={},
-        input_directory=random_abs_path(),
-        output_directory=random_abs_path(),
-        tmp_directory=random_abs_path(),
+        input_directory=None,
+        output_directory=None,
+        tmp_directory=None,
     )
     local_target = LocalTarget()
     docker_target = Target(

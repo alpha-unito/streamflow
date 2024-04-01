@@ -15,18 +15,23 @@ if TYPE_CHECKING:
     from typing import MutableSequence, MutableMapping
 
 
+def _get_mount_point(path: str, disks: Iterable[Storage]) -> str | None:
+    for disk in disks:
+        if path in disk.paths:
+            return disk.mount_point
+    return None
+
+
 def get_mapping_hardware(
-    job_hardware: Hardware, available_locations: MutableSequence[AvailableLocation]
+    job_hardware: Hardware, available_locations: Iterable[AvailableLocation]
 ) -> MutableMapping[str, Hardware]:
     hardware = {}
     for location in available_locations:
         if location.hardware and job_hardware:
             storage = {}
             for path, disk in job_hardware.storage.items():
-                # Set the mount_point in the job storage requirement using the current location storage information
-                mount_point = get_mount_point(
-                    path, list(location.hardware.storage.values())
-                )
+                # Get the mount_point of the job storage requirement in the current location storage
+                mount_point = _get_mount_point(path, location.hardware.storage.values())
                 if mount_point is None:
                     raise WorkflowExecutionException(
                         f"Impossible find the mount point of path {path}"
@@ -40,13 +45,6 @@ def get_mapping_hardware(
     return hardware
 
 
-def get_mount_point(path: str, disks: MutableSequence[Storage]) -> str | None:
-    for disk in disks:
-        if path in disk.paths:
-            return disk.mount_point
-    return None
-
-
 class Hardware:
     def __init__(
         self, cores: float, memory: float, storage: MutableMapping[str, Storage]
@@ -54,19 +52,6 @@ class Hardware:
         self.cores: float = cores
         self.memory: float = memory
         self.storage: MutableMapping[str, Storage] = storage
-
-    def __ge__(self, other):
-        if not isinstance(other, Hardware):
-            return NotImplementedError
-        if self.cores >= other.cores and self.memory >= other.memory:
-            for disk in other.storage.values():
-                if (
-                    disk.mount_point not in self.storage.keys()
-                    or self.storage[disk.mount_point] < disk
-                ):
-                    return False
-            return True
-        return False
 
     def __add__(self, other):
         if not isinstance(other, Hardware):
@@ -88,6 +73,19 @@ class Hardware:
                 storage[path] -= disk
             # else do nothing
         return Hardware(self.cores - other.cores, self.memory - other.memory, storage)
+
+    def __ge__(self, other):
+        if not isinstance(other, Hardware):
+            return NotImplementedError
+        if self.cores >= other.cores and self.memory >= other.memory:
+            for disk in other.storage.values():
+                if (
+                    disk.mount_point not in self.storage.keys()
+                    or self.storage[disk.mount_point] < disk
+                ):
+                    return False
+            return True
+        return False
 
     def __gt__(self, other):
         if not isinstance(other, Hardware):
