@@ -495,17 +495,16 @@ class SSHConnector(BaseConnector):
         output_directory: str | None,
         tmp_directory: str | None,
     ) -> Hardware:
-        inpdir, outdir, tmpdir = await asyncio.gather(
-            asyncio.create_task(self._get_existing_parent(location, input_directory)),
-            asyncio.create_task(self._get_existing_parent(location, output_directory)),
-            asyncio.create_task(self._get_existing_parent(location, tmp_directory)),
+        existing_directories = await self._get_existing_parents(
+            location,
+            {
+                directory
+                for directory in [input_directory, output_directory, tmp_directory]
+                if directory is not None
+            },
         )
         directories = " ".join(
-            [
-                directory.as_posix()
-                for directory in [inpdir, outdir, tmpdir]
-                if directory is not None
-            ]
+            [directory.as_posix() for directory in existing_directories.values()]
         )
         async with self._get_ssh_client_process(
             location=location,
@@ -636,20 +635,60 @@ class SSHConnector(BaseConnector):
                 environment=environment,
             )
 
-    async def _get_existing_parent(self, location: str, directory: str):
-        if directory is None:
-            return None
+    async def _get_existing_parents(
+        self, location: str, directories: set[str]
+    ) -> MutableMapping[str, PurePosixPath]:
+        """
+        This method return a mapping between the input directories and their existing parents
+        """
+        if not directories:
+            return {}
+        existing_directories = {}
+        missing_directories = {
+            directory: PurePosixPath(directory) for directory in directories
+        }
         while True:
             async with self._get_ssh_client_process(
                 location=location,
-                command=f'test -e "{directory}"',
+                command=" && ".join(
+                    [
+                        f'test -e "{directory}" ; echo $?'
+                        for directory in missing_directories.values()
+                    ]
+                ),
                 stderr=asyncio.subprocess.STDOUT,
             ) as proc:
                 result = await proc.wait()
                 if result.returncode == 0:
-                    return directory
-                elif result.returncode == 1:
-                    directory = PurePosixPath(directory).parent
+                    for (input_dir, checked_dir), response in zip(
+                        missing_directories.items(),
+                        str(result.stdout.strip()).split("\n"),
+                    ):
+                        if int(response) == 0:
+                            existing_directories[input_dir] = checked_dir
+                        elif int(response) == 1:
+                            # Tested directory does not exist, the parent dir will be verified in next iteration
+                            missing_directories[input_dir] = PurePosixPath(
+                                checked_dir
+                            ).parent
+                            # This check is necessary to exit from the while True in case of error
+                            if missing_directories[input_dir] == checked_dir:
+                                # If parent and `checked_dir` are the same,
+                                # the dir it is the root and it does not exist
+                                raise WorkflowExecutionException(
+                                    f"Directory {checked_dir} does not exist in location {location}"
+                                )
+                        else:
+                            raise WorkflowExecutionException(
+                                f"Directory {checked_dir} does not exist in location {location}. Test exit code: {response}"
+                            )
+                    # Remove found directories in `missing_directories`
+                    for found_dir in existing_directories.keys():
+                        if found_dir in missing_directories.keys():
+                            missing_directories.pop(found_dir)
+                    # If missing_directories is empty, return
+                    if not missing_directories:
+                        return existing_directories
                 else:
                     raise WorkflowExecutionException(result.stdout.strip())
 
