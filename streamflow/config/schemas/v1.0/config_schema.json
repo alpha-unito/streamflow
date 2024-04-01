@@ -368,19 +368,8 @@
         "bindings": {
           "type": "array",
           "items": {
-            "oneOf": [
-              {
-                "type": "object",
-                "$ref": "#/$defs/binding"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "$ref": "#/$defs/binding"
-                }
-              }
-            ]
+            "type": "object",
+            "$ref": "#/$defs/binding"
           },
           "uniqueItems": true
         }
