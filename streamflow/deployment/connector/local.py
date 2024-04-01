@@ -23,18 +23,28 @@ from streamflow.deployment.connector.base import BaseConnector
 def _get_disks_usage(directories: MutableSequence[str]) -> MutableMapping[str, Storage]:
     storage = {}
     for directory in directories:
+        # Get existing path
         path = Path(directory)
         while not path.exists():
             path = path.parent
-        volume_name = os.sep
-        for partition in psutil.disk_partitions(all=False):
-            if path.name.startswith(partition.mountpoint) and len(
-                partition.mountpoint
-            ) > len(volume_name):
-                volume_name = path.name
-        storage[directory] = Storage(
-            mount_point=volume_name, size=float(shutil.disk_usage(path).free / 2**20)
-        )
+
+        # Get mount point of the path
+        mount_point = path
+        while not os.path.ismount(mount_point):
+            mount_point = mount_point.parent
+
+        if mount_point.as_posix() in storage.keys():
+            storage[mount_point.as_posix()] += Storage(
+                mount_point=mount_point.as_posix(),
+                size=float(shutil.disk_usage(path).free / 2**20),
+                paths={directory},
+            )
+        else:
+            storage[mount_point.as_posix()] = Storage(
+                mount_point=mount_point.as_posix(),
+                size=float(shutil.disk_usage(path).free / 2**20),
+                paths={directory},
+            )
     return storage
 
 

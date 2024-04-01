@@ -20,6 +20,7 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
     HardwareRequirement,
+    get_mapping_hardware,
 )
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
@@ -56,7 +57,7 @@ class DefaultScheduler(Scheduler):
     def _allocate_job(
         self,
         job: Job,
-        hardware: Hardware | None,
+        hardware: MutableMapping[str, Hardware],
         hardware_requirement: HardwareRequirement | None,
         selected_locations: MutableSequence[AvailableLocation],
         target: Target,
@@ -105,7 +106,7 @@ class DefaultScheduler(Scheduler):
                         job.name
                     )
                     loc = loc.wraps if loc.stacked else None
-                    if hardware:
+                    if loc.name in hardware.keys() and hardware[loc.name]:
                         if loc.name in self.hardware_locations.keys():
                             self.hardware_locations[loc.name] += hardware.eval(job)
                         else:
@@ -269,7 +270,7 @@ class DefaultScheduler(Scheduler):
                     }
                     available_locations = dict(
                         await connector.get_available_locations(
-                            service=target.service, directories=directories
+                            service=target.service, directories=list(directories)
                         )
                     )
                     job = Job(
@@ -282,13 +283,18 @@ class DefaultScheduler(Scheduler):
                         or target.workdir,
                         tmp_directory=job_context.job.tmp_directory or target.workdir,
                     )
-                    hardware = (
+                    job_hardware = (
                         hardware_requirement.eval(job) if hardware_requirement else None
+                    )
+                    hardware = get_mapping_hardware(
+                        job_hardware, list(available_locations.values())
                     )
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
-                        if self._is_valid(location=loc, hardware_requirement=hardware)
+                        if self._is_valid(
+                            location=loc, hardware_requirement=hardware[loc.name]
+                        )
                     }
                     if len(valid_locations) >= target.locations:
                         if logger.isEnabledFor(logging.DEBUG):
@@ -377,9 +383,10 @@ class DefaultScheduler(Scheduler):
                         if status in [Status.COMPLETED, Status.FAILED]:
                             if job_allocation.hardware:
                                 for loc in job_allocation.locations:
-                                    self.hardware_locations[
-                                        loc.name
-                                    ] -= job_allocation.hardware.eval(job)
+                                    if loc.name in self.hardware_locations.keys():
+                                        self.hardware_locations[
+                                            loc.name
+                                        ] -= job_allocation.hardware.eval(job)
                             self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
