@@ -612,9 +612,18 @@ class SSHConnector(BaseConnector):
                         directories, str(result.stdout.strip()).split("\n")
                     ):
                         mount_point, size = line.split(" ")
-                        storage[dir] = Storage(
-                            mount_point=mount_point, size=float(size) / 2**10
-                        )
+                        if mount_point in storage.keys():
+                            storage[mount_point] += Storage(
+                                mount_point=mount_point,
+                                size=float(size) / 2**10,
+                                paths={dir},
+                            )
+                        else:
+                            storage[mount_point] = Storage(
+                                mount_point=mount_point,
+                                size=float(size) / 2**10,
+                                paths={dir},
+                            )
                     return storage
                 else:
                     raise WorkflowExecutionException(result.returncode)

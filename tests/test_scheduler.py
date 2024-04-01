@@ -47,14 +47,13 @@ async def test_scheduling(
     service: str | None,
 ):
     """Test scheduling a job on a remote environment."""
-
     job = Job(
         name=utils.random_name(),
         workflow_id=0,
         inputs={},
-        input_directory=random_abs_path(),
-        output_directory=random_abs_path(),
-        tmp_directory=random_abs_path(),
+        input_directory=deployment_config.workdir,
+        output_directory=deployment_config.workdir,
+        tmp_directory=deployment_config.workdir,
     )
     hardware_requirement = CWLHardwareRequirement(
         cwl_version=_CWL_VERSION, cores=1, memory=100, outdir=0, tmpdir=0
@@ -62,7 +61,6 @@ async def test_scheduling(
     target = Target(
         deployment=deployment_config,
         service=service,
-        workdir="/tmp/streamflow",
     )
     binding_config = BindingConfig(targets=[target])
     await context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -78,9 +76,11 @@ async def test_scheduling(
 @pytest.mark.asyncio
 async def test_single_env_few_resources(context: StreamFlowContext):
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
-
+    workdir = random_abs_path()
     machine_hardware = Hardware(
-        cores=1, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
+        cores=1,
+        memory=100,
+        storage={posixpath.sep: Storage(posixpath.sep, 300, paths={workdir})},
     )
 
     # inject custom connector to manipulate available resources
@@ -102,9 +102,9 @@ async def test_single_env_few_resources(context: StreamFlowContext):
                 name=utils.random_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=random_abs_path(),
-                output_directory=random_abs_path(),
-                tmp_directory=random_abs_path(),
+                input_directory=workdir,
+                output_directory=workdir,
+                tmp_directory=workdir,
             )
         )
     hardware_requirement = CWLHardwareRequirement(
@@ -153,9 +153,11 @@ async def test_single_env_few_resources(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_single_env_enough_resources(context: StreamFlowContext):
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
-
+    workdir = random_abs_path()
     machine_hardware = Hardware(
-        cores=2, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
+        cores=2,
+        memory=100,
+        storage={posixpath.sep: Storage(posixpath.sep, 300, paths={workdir})},
     )
 
     # Inject custom connector to manipulate available resources
@@ -177,9 +179,9 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
                 name=utils.random_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=random_abs_path(),
-                output_directory=random_abs_path(),
-                tmp_directory=random_abs_path(),
+                input_directory=workdir,
+                output_directory=workdir,
+                tmp_directory=workdir,
             )
         )
     hardware_requirement = CWLHardwareRequirement(
@@ -219,8 +221,11 @@ async def test_multi_env(context: StreamFlowContext):
     """Test scheduling two jobs on two different environments."""
 
     # Inject custom connector to manipulate available resources
+    workdir = random_abs_path()
     machine_hardware = Hardware(
-        cores=1, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
+        cores=1,
+        memory=100,
+        storage={posixpath.sep: Storage(posixpath.sep, 300, paths={workdir})},
     )
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
@@ -247,9 +252,9 @@ async def test_multi_env(context: StreamFlowContext):
                     name=utils.random_name(),
                     workflow_id=0,
                     inputs={},
-                    input_directory=random_abs_path(),
-                    output_directory=random_abs_path(),
-                    tmp_directory=random_abs_path(),
+                    input_directory=workdir,
+                    output_directory=workdir,
+                    tmp_directory=workdir,
                 ),
                 BindingConfig(targets=[local_target] if i == 0 else [docker_target]),
             )
@@ -289,8 +294,11 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     """Test scheduling one jobs with two targets: Local and Docker Image. The job will be scheduled in the first"""
 
     # Inject custom connector to manipulate available resources
+    workdir = random_abs_path()
     machine_hardware = Hardware(
-        cores=1, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
+        cores=1,
+        memory=100,
+        storage={posixpath.sep: Storage(posixpath.sep, 300, paths={workdir})},
     )
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
@@ -307,9 +315,9 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
         name=utils.random_name(),
         workflow_id=0,
         inputs={},
-        input_directory=random_abs_path(),
-        output_directory=random_abs_path(),
-        tmp_directory=random_abs_path(),
+        input_directory=workdir,
+        output_directory=workdir,
+        tmp_directory=workdir,
     )
     local_target = LocalTarget()
     docker_target = Target(
@@ -359,8 +367,11 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     """
 
     # Inject custom connector to manipulate available resources
+    workdir = random_abs_path()
     machine_hardware = Hardware(
-        cores=1, memory=100, storage={posixpath.sep: Storage(posixpath.sep, 300)}
+        cores=1,
+        memory=100,
+        storage={posixpath.sep: Storage(posixpath.sep, 300, paths={workdir})},
     )
     conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
     context.deployment_manager.deployments_map[LOCAL_LOCATION] = (
@@ -380,9 +391,9 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
                 name=utils.random_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=random_abs_path(),
-                output_directory=random_abs_path(),
-                tmp_directory=random_abs_path(),
+                input_directory=workdir,
+                output_directory=workdir,
+                tmp_directory=workdir,
             )
         )
     local_target = LocalTarget()

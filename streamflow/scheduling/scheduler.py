@@ -21,6 +21,7 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
     HardwareRequirement,
+    get_mapping_hardware,
 )
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
@@ -57,7 +58,7 @@ class DefaultScheduler(Scheduler):
     def _allocate_job(
         self,
         job: Job,
-        hardware: Hardware | None,
+        hardware: MutableMapping[str, Hardware],
         hardware_requirement: HardwareRequirement | None,
         selected_locations: MutableSequence[ExecutionLocation],
         target: Target,
@@ -98,11 +99,11 @@ class DefaultScheduler(Scheduler):
                     loc.name,
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
-                if hardware:
+                if loc.name in hardware.keys() and hardware[loc.name]:
                     if loc.name in self.hardware_locations.keys():
-                        self.hardware_locations[loc.name] += hardware
+                        self.hardware_locations[loc.name] += hardware[loc.name]
                     else:
-                        self.hardware_locations[loc.name] = hardware
+                        self.hardware_locations[loc.name] = hardware[loc.name]
 
     def _deallocate_job(self, job: str):
         job_allocation = self.job_allocations.pop(job)
@@ -176,18 +177,6 @@ class DefaultScheduler(Scheduler):
     def _is_valid(
         self, location: AvailableLocation, hardware_requirement: Hardware
     ) -> bool:
-        if location.name in self.location_allocations.get(location.deployment, {}):
-            running_jobs = list(
-                filter(
-                    lambda x: (
-                        self.job_allocations[x].status == Status.RUNNING
-                        or self.job_allocations[x].status == Status.FIREABLE
-                    ),
-                    self.location_allocations[location.deployment][location.name].jobs,
-                )
-            )
-        else:
-            running_jobs = []
         # If location is segmentable and job provides requirements, compute the used amount of locations
         if location.hardware is not None and hardware_requirement is not None:
             available_hardware = location.hardware
@@ -202,6 +191,20 @@ class DefaultScheduler(Scheduler):
             return True
         # Otherwise, simply compute the number of allocated slots
         else:
+            if location.name in self.location_allocations.get(location.deployment, {}):
+                running_jobs = list(
+                    filter(
+                        lambda x: (
+                            self.job_allocations[x].status == Status.RUNNING
+                            or self.job_allocations[x].status == Status.FIREABLE
+                        ),
+                        self.location_allocations[location.deployment][
+                            location.name
+                        ].jobs,
+                    )
+                )
+            else:
+                running_jobs = []
             return len(running_jobs) < location.slots
 
     async def _process_target(
@@ -239,7 +242,7 @@ class DefaultScheduler(Scheduler):
                     }
                     available_locations = dict(
                         await connector.get_available_locations(
-                            service=target.service, directories=directories
+                            service=target.service, directories=list(directories)
                         )
                     )
                     job = Job(
@@ -252,13 +255,18 @@ class DefaultScheduler(Scheduler):
                         or target.workdir,
                         tmp_directory=job_context.job.tmp_directory or target.workdir,
                     )
-                    hardware = (
+                    job_hardware = (
                         hardware_requirement.eval(job) if hardware_requirement else None
+                    )
+                    hardware = get_mapping_hardware(
+                        job_hardware, list(available_locations.values())
                     )
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
-                        if self._is_valid(location=loc, hardware_requirement=hardware)
+                        if self._is_valid(
+                            location=loc, hardware_requirement=hardware[loc.name]
+                        )
                     }
                     if valid_locations:
                         if logger.isEnabledFor(logging.DEBUG):
@@ -347,9 +355,10 @@ class DefaultScheduler(Scheduler):
                         if status in [Status.COMPLETED, Status.FAILED]:
                             if job_allocation.hardware:
                                 for loc in job_allocation.locations:
-                                    self.hardware_locations[
-                                        loc.name
-                                    ] -= job_allocation.hardware.eval(job)
+                                    if loc.name in self.hardware_locations.keys():
+                                        self.hardware_locations[
+                                            loc.name
+                                        ] -= job_allocation.hardware.eval(job)
                             self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
