@@ -503,9 +503,7 @@ class SSHConnector(BaseConnector):
                 if directory is not None
             },
         )
-        directories = " ".join(
-            [directory.as_posix() for directory in existing_directories.values()]
-        )
+        directories = " ".join(existing_directories.values())
         async with self._get_ssh_client_process(
             location=location,
             command="nproc && "
@@ -515,25 +513,30 @@ class SSHConnector(BaseConnector):
         ) as proc:
             result = await proc.wait()
             if result.returncode == 0:
-                cores, memory, *dir_sizes = str(result.stdout.strip()).split("\n")
+                cores, memory, *dir_size_list = str(result.stdout.strip()).split("\n")
                 hardware = Hardware(
                     cores=float(cores),
                     memory=float(memory) / 2**10,
                 )
-                dir_count = 0
+
+                dir_sizes = dict(zip(existing_directories.values(), dir_size_list))
                 if input_directory is not None:
-                    hardware.input_directory = float(dir_sizes[dir_count]) / 2**10
-                    dir_count += 1
+                    indir_size = dir_sizes[existing_directories[input_directory]]
+                    hardware.input_directory = float(indir_size) / 2**10
                 else:
                     hardware.input_directory = float("inf")
+
                 if output_directory is not None:
-                    hardware.output_directory = float(dir_sizes[dir_count]) / 2**10
-                    dir_count += 1
+                    outdir_size = dir_sizes[existing_directories[output_directory]]
+                    hardware.output_directory = float(outdir_size) / 2**10
                 else:
                     hardware.output_directory = float("inf")
+
                 if tmp_directory is not None:
-                    hardware.tmp_directory = float(dir_sizes[dir_count]) / 2**10
-                    dir_count += 1
+                    tmpdir_size = dir_sizes[existing_directories[tmp_directory]]
+                    hardware.tmp_directory = (
+                        float(tmpdir_size) / 2**10 if tmp_directory else float("inf")
+                    )
                 else:
                     hardware.tmp_directory = float("inf")
                 return hardware
@@ -637,7 +640,7 @@ class SSHConnector(BaseConnector):
 
     async def _get_existing_parents(
         self, location: str, directories: set[str]
-    ) -> MutableMapping[str, PurePosixPath]:
+    ) -> MutableMapping[str, str]:
         """
         This method returns a mapping between input directories and their existing parents
         """
@@ -665,7 +668,7 @@ class SSHConnector(BaseConnector):
                         str(result.stdout.strip()).split("\n"),
                     ):
                         if int(response) == 0:
-                            existing_directories[input_dir] = checked_dir
+                            existing_directories[input_dir] = checked_dir.as_posix()
                         elif int(response) == 1:
                             # Tested directory does not exist: the parent dir will be verified in next iteration
                             missing_directories[input_dir] = checked_dir.parent

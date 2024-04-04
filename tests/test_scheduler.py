@@ -47,9 +47,9 @@ async def test_scheduling(
         name=utils.random_name(),
         workflow_id=0,
         inputs={},
-        input_directory=utils.random_name(),
-        output_directory=utils.random_name(),
-        tmp_directory=utils.random_name(),
+        input_directory=deployment_config.workdir,
+        output_directory=deployment_config.workdir,
+        tmp_directory=deployment_config.workdir,
     )
     hardware_requirement = Hardware(cores=1)
     target = Target(
