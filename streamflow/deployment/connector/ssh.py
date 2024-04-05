@@ -11,11 +11,9 @@ from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
 from asyncssh import ChannelOpenError, ConnectionLost
-from cachetools import Cache, LRUCache
 from importlib_resources import files
 
 from streamflow.core import utils
-from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
@@ -370,7 +368,6 @@ class SSHConnector(BaseConnector):
         self.nodes: MutableMapping[str, SSHConfig] = {
             n.hostname: n for n in [self._get_config(n) for n in nodes]
         }
-        self.hardwareCache: Cache = LRUCache(maxsize=len(self.nodes))
 
     async def _copy_local_to_remote_single(
         self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
@@ -491,6 +488,61 @@ class SSHConnector(BaseConnector):
                                 )
                             )
 
+    async def _get_available_location(
+        self,
+        location: str,
+        input_directory: str | None,
+        output_directory: str | None,
+        tmp_directory: str | None,
+    ) -> Hardware:
+        existing_directories = await self._get_existing_parents(
+            location,
+            {
+                directory
+                for directory in [input_directory, output_directory, tmp_directory]
+                if directory is not None
+            },
+        )
+        directories = " ".join(existing_directories.values())
+        async with self._get_ssh_client_process(
+            location=location,
+            command="nproc && "
+            "free | grep Mem | awk '{print $2}' && "
+            f"df {directories} | tail -n +2 | awk '{{print $2}}'",
+            stderr=asyncio.subprocess.STDOUT,
+        ) as proc:
+            result = await proc.wait()
+            if result.returncode == 0:
+                cores, memory, *dir_size_list = str(result.stdout.strip()).split("\n")
+                hardware = Hardware(
+                    cores=float(cores),
+                    memory=float(memory) / 2**10,
+                )
+
+                dir_sizes = dict(zip(existing_directories.values(), dir_size_list))
+                if input_directory is not None:
+                    indir_size = dir_sizes[existing_directories[input_directory]]
+                    hardware.input_directory = float(indir_size) / 2**10
+                else:
+                    hardware.input_directory = float("inf")
+
+                if output_directory is not None:
+                    outdir_size = dir_sizes[existing_directories[output_directory]]
+                    hardware.output_directory = float(outdir_size) / 2**10
+                else:
+                    hardware.output_directory = float("inf")
+
+                if tmp_directory is not None:
+                    tmpdir_size = dir_sizes[existing_directories[tmp_directory]]
+                    hardware.tmp_directory = (
+                        float(tmpdir_size) / 2**10 if tmp_directory else float("inf")
+                    )
+                else:
+                    hardware.tmp_directory = float("inf")
+                return hardware
+            else:
+                raise WorkflowExecutionException(result.returncode)
+
     def _get_command(
         self,
         location: ExecutionLocation,
@@ -547,16 +599,6 @@ class SSHConnector(BaseConnector):
             ),
         )
 
-    async def _get_cores(self, location: str) -> float:
-        async with self._get_ssh_client_process(
-            location=location, command="nproc", stderr=asyncio.subprocess.STDOUT
-        ) as proc:
-            result = await proc.wait()
-            if result.returncode == 0:
-                return float(result.stdout.strip())
-            else:
-                raise WorkflowExecutionException(result.returncode)
-
     def _get_data_transfer_process(
         self,
         location: str,
@@ -596,65 +638,53 @@ class SSHConnector(BaseConnector):
                 environment=environment,
             )
 
-    async def _get_disk_usage(self, location: str, directory: str) -> float:
-        async with self._get_ssh_client_process(
-            location=location,
-            command=f"df {directory} | tail -n 1 | awk '{{print $2}}'",
-            stderr=asyncio.subprocess.STDOUT,
-        ) as proc:
-            if directory:
-                result = await proc.wait()
-                if result.returncode == 0:
-                    return float(result.stdout.strip()) / 2**10
-                else:
-                    raise WorkflowExecutionException(result.returncode)
-            else:
-                return float("inf")
-
-    async def _get_existing_parent(self, location: str, directory: str):
-        if directory is None:
-            return None
-        while True:
+    async def _get_existing_parents(
+        self, location: str, directories: set[str]
+    ) -> MutableMapping[str, str]:
+        """
+        This method returns a mapping between input directories and their existing parents
+        """
+        if not directories:
+            return {}
+        existing_directories = {}
+        missing_directories = {
+            directory: PurePosixPath(directory) for directory in directories
+        }
+        while missing_directories:
             async with self._get_ssh_client_process(
                 location=location,
-                command=f'test -e "{directory}"',
+                command=" && ".join(
+                    [
+                        f'test -e "{directory}" ; echo $?'
+                        for directory in missing_directories.values()
+                    ]
+                ),
                 stderr=asyncio.subprocess.STDOUT,
             ) as proc:
                 result = await proc.wait()
                 if result.returncode == 0:
-                    return directory
-                elif result.returncode == 1:
-                    directory = PurePosixPath(directory).parent
+                    for (input_dir, checked_dir), response in zip(
+                        missing_directories.items(),
+                        str(result.stdout.strip()).split("\n"),
+                    ):
+                        if int(response) == 0:
+                            existing_directories[input_dir] = checked_dir.as_posix()
+                        elif int(response) == 1:
+                            # Tested directory does not exist: the parent dir will be verified in next iteration
+                            missing_directories[input_dir] = checked_dir.parent
+                        else:
+                            raise WorkflowExecutionException(
+                                f"An error occurred while trying to check existence of directory {checked_dir} "
+                                f"on location {location} (error code: {response})"
+                            )
                 else:
                     raise WorkflowExecutionException(result.stdout.strip())
-
-    @cachedmethod(lambda self: self.hardwareCache)
-    async def _get_location_hardware(
-        self,
-        location: str,
-        input_directory: str,
-        output_directory: str,
-        tmp_directory: str,
-    ) -> Hardware:
-        return Hardware(
-            await self._get_cores(location),
-            await self._get_memory(location),
-            await self._get_disk_usage(location, input_directory),
-            await self._get_disk_usage(location, output_directory),
-            await self._get_disk_usage(location, tmp_directory),
-        )
-
-    async def _get_memory(self, location: str) -> float:
-        async with self._get_ssh_client_process(
-            location=location,
-            command="free | grep Mem | awk '{print $2}'",
-            stderr=asyncio.subprocess.STDOUT,
-        ) as proc:
-            result = await proc.wait()
-            if result.returncode == 0:
-                return float(result.stdout.strip()) / 2**10
-            else:
-                raise WorkflowExecutionException(result.returncode)
+            missing_directories = {
+                k: v
+                for k, v in missing_directories.items()
+                if k not in existing_directories.keys()
+            }
+        return existing_directories
 
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
@@ -731,24 +761,20 @@ class SSHConnector(BaseConnector):
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         locations = {}
-        for location_obj in self.nodes.values():
-            inpdir, outdir, tmpdir = await asyncio.gather(
+        hardware_locations = await asyncio.gather(
+            *(
                 asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, input_directory)
-                ),
-                asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, output_directory)
-                ),
-                asyncio.create_task(
-                    self._get_existing_parent(location_obj.hostname, tmp_directory)
-                ),
+                    self._get_available_location(
+                        location=location_obj.hostname,
+                        input_directory=input_directory,
+                        output_directory=output_directory,
+                        tmp_directory=tmp_directory,
+                    )
+                )
+                for location_obj in self.nodes.values()
             )
-            hardware = await self._get_location_hardware(
-                location=location_obj.hostname,
-                input_directory=inpdir,
-                output_directory=outdir,
-                tmp_directory=tmpdir,
-            )
+        )
+        for location_obj, hardware in zip(self.nodes.values(), hardware_locations):
             locations[location_obj.hostname] = AvailableLocation(
                 name=location_obj.hostname,
                 deployment=self.deployment_name,
