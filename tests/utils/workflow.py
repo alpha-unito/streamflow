@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import posixpath
 from typing import MutableSequence, TYPE_CHECKING
 
@@ -96,3 +97,8 @@ def get_nested_crossproduct():
     items = c1.get_items(False)
     combinator.add_combinator(c1, items)
     return combinator
+
+
+def random_job_name(step_name: str | None = None):
+    step_name = step_name or utils.random_name()
+    return os.path.join(posixpath.sep, step_name, "0.0")
