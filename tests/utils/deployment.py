@@ -25,6 +25,27 @@ from streamflow.deployment import DefaultDeploymentManager
 from tests.utils.data import get_data_path
 
 
+def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
+    if deployment_t == "local":
+        return LOCAL_LOCATION
+    elif deployment_t == "docker":
+        return "alpine-docker"
+    elif deployment_t == "docker-compose":
+        return "alpine-docker-compose"
+    elif deployment_t == "kubernetes":
+        return "alpine-kubernetes"
+    elif deployment_t == "parameterizable_hardware":
+        return "custom-hardware"
+    elif deployment_t == "singularity":
+        return "alpine-singularity"
+    elif deployment_t == "slurm":
+        return "docker-slurm"
+    elif deployment_t == "ssh":
+        return "linuxserver-ssh"
+    else:
+        raise Exception(f"{deployment_t} deployment type not supported")
+
+
 async def get_deployment_config(
     _context: StreamFlowContext, deployment_t: str
 ) -> DeploymentConfig:
@@ -36,6 +57,8 @@ async def get_deployment_config(
         return get_docker_compose_deployment_config()
     elif deployment_t == "kubernetes":
         return get_kubernetes_deployment_config()
+    elif deployment_t == "parameterizable_hardware":
+        return get_parameterizable_hardware_deployment_config()
     elif deployment_t == "singularity":
         return get_singularity_deployment_config()
     elif deployment_t == "slurm":
@@ -44,16 +67,6 @@ async def get_deployment_config(
         return await get_ssh_deployment_config(_context)
     else:
         raise Exception(f"{deployment_t} deployment type not supported")
-
-
-def get_docker_deployment_config():
-    return DeploymentConfig(
-        name="alpine-docker",
-        type="docker",
-        config={"image": "alpine:3.16.2"},
-        external=False,
-        lazy=False,
-    )
 
 
 def get_docker_compose_deployment_config():
@@ -65,6 +78,16 @@ def get_docker_compose_deployment_config():
                 str(get_data_path("deployment", "docker-compose", "docker-compose.yml"))
             ]
         },
+        external=False,
+        lazy=False,
+    )
+
+
+def get_docker_deployment_config():
+    return DeploymentConfig(
+        name="alpine-docker",
+        type="docker",
+        config={"image": "alpine:3.16.2"},
         external=False,
         lazy=False,
     )
@@ -104,25 +127,6 @@ def get_local_deployment_config():
     )
 
 
-def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
-    if deployment_t == "local":
-        return LOCAL_LOCATION
-    elif deployment_t == "docker":
-        return "alpine-docker"
-    elif deployment_t == "docker-compose":
-        return "alpine-docker-compose"
-    elif deployment_t == "kubernetes":
-        return "alpine-kubernetes"
-    elif deployment_t == "singularity":
-        return "alpine-singularity"
-    elif deployment_t == "slurm":
-        return "docker-slurm"
-    elif deployment_t == "ssh":
-        return "linuxserver-ssh"
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
-
-
 async def get_location(
     _context: StreamFlowContext, deployment_t: str
 ) -> ExecutionLocation:
@@ -133,21 +137,32 @@ async def get_location(
     return next(iter(locations.values())).location
 
 
+def get_parameterizable_hardware_deployment_config():
+    return DeploymentConfig(
+        name="custom-hardware",
+        type="parameterizable_hardware",
+        config={},
+        external=True,
+        lazy=False,
+        workdir=os.path.realpath(tempfile.gettempdir()),
+    )
+
+
 def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
-    if deployment_t == "local":
-        return None
-    elif deployment_t == "docker":
+    if deployment_t in (
+        "local",
+        "docker",
+        "parameterizable_hardware",
+        "singularity",
+        "ssh",
+    ):
         return None
     elif deployment_t == "docker-compose":
         return "alpine"
     elif deployment_t == "kubernetes":
         return "sf-test"
-    elif deployment_t == "singularity":
-        return None
     elif deployment_t == "slurm":
         return "test"
-    elif deployment_t == "ssh":
-        return None
     else:
         raise Exception(f"{deployment_t} deployment type not supported")
 

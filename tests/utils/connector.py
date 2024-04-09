@@ -92,13 +92,12 @@ class FailureConnector(Connector):
 
 class ParameterizableHardwareConnector(LocalConnector):
     def __init__(
-        self,
-        deployment_name: str,
-        config_dir: str,
-        hardware: Hardware,
-        transferBufferSize: int = 2**16,
+        self, deployment_name: str, config_dir: str, transferBufferSize: int = 2**16
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
+        self.hardware = None
+
+    def set_hardware(self, hardware: Hardware):
         self.hardware = hardware
 
     async def get_available_locations(
