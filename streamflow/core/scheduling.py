@@ -7,6 +7,7 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation, Target
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
@@ -19,15 +20,11 @@ class Hardware:
         self,
         cores: float = 0.0,
         memory: float = 0.0,
-        input_directory: float = 0.0,
-        output_directory: float = 0.0,
-        tmp_directory: float = 0.0,
+        filesystem: FileSystem | None = None,
     ):
         self.cores: float = cores
         self.memory: float = memory
-        self.input_directory: float = input_directory
-        self.output_directory: float = output_directory
-        self.tmp_directory: float = tmp_directory
+        self.filesystem: FileSystem = filesystem or FileSystem()
 
     def __add__(self, other):
         if not isinstance(other, Hardware):
@@ -261,3 +258,132 @@ class Scheduler(SchemaEntity):
     async def schedule(
         self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
     ) -> None: ...
+
+
+class FileSystem:
+    def __init__(self):
+        self.volumes: MutableMapping[str, Volume] = {}
+
+    def get_volume(self, mount_point: str) -> Volume | None:
+        for volume in self.volumes.values():
+            if volume.mount_point == mount_point:
+                return volume
+        return None
+
+    def update_volume(self, new_volume: Volume):
+        for path, volume in self.volumes.items():
+            if volume.mount_point == new_volume.mount_point:
+                self.volumes[path] = new_volume
+
+    def __add__(self, other):
+        if not isinstance(other, FileSystem):
+            return NotImplementedError
+        filesystem = FileSystem()
+        volumes = {path: volume for path, volume in self.volumes.items()}
+        filesystem.volumes = volumes
+        for path, volume in other.volumes.items():
+            if (curr_volume := filesystem.get_volume(volume.mount_point)) is not None:
+                new_volume = curr_volume + volume
+                filesystem.update_volume(new_volume)
+                volumes[path] = new_volume
+            else:
+                volumes[path] = volume
+        return filesystem
+
+    def __sub__(self, other):
+        if not isinstance(other, FileSystem):
+            return NotImplementedError
+        filesystem = FileSystem()
+        volumes = {path: volume for path, volume in self.volumes.items()}
+        filesystem.volumes = volumes
+        for path, volume in other.volumes.items():
+            if (curr_volume := filesystem.get_volume(volume.mount_point)) is None:
+                new_volume = curr_volume - volume
+                filesystem.update_volume(new_volume)
+                volumes[path] = new_volume
+            # else do nothing
+        return filesystem
+
+    def __ge__(self, other):
+        if not isinstance(other, FileSystem):
+            return NotImplementedError
+        for volume in set(self.volumes.values()):
+            if (
+                other_volume := other.get_volume(volume.mount_point)
+            ) and other_volume < volume:
+                return False
+        return True
+
+    def __gt__(self, other):
+        if not isinstance(other, FileSystem):
+            return NotImplementedError
+        for volume in set(self.volumes.values()):
+            if (
+                other_volume := other.get_volume(volume.mount_point)
+            ) and other_volume <= volume:
+                return False
+        return True
+
+    def __le__(self, other):
+        if not isinstance(other, FileSystem):
+            return NotImplementedError
+        for volume in set(self.volumes.values()):
+            if (
+                other_volume := other.get_volume(volume.mount_point)
+            ) and other_volume >= volume:
+                return False
+        return True
+
+    def __lt__(self, other):
+        if not isinstance(other, FileSystem):
+            return NotImplementedError
+        for volume in set(self.volumes.values()):
+            if (
+                other_volume := other.get_volume(volume.mount_point)
+            ) and other_volume > volume:
+                return False
+        return True
+
+
+class Volume:
+    def __init__(self, mount_point: str, size: float) -> None:
+        self.mount_point: str = mount_point
+        self.size: float = size
+
+    def __add__(self, other):
+        if not isinstance(other, Volume):
+            return NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Impossible sum two volumes with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return self.__class__(self.mount_point, self.size + other.size)
+
+    def __sub__(self, other):
+        if not isinstance(other, Volume):
+            return NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Impossible subtract two volumes with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return self.__class__(self.mount_point, self.size - other.size)
+
+    def __ge__(self, other):
+        if not isinstance(other, Volume):
+            return NotImplementedError
+        return self.size >= other.size
+
+    def __gt__(self, other):
+        if not isinstance(other, Volume):
+            return NotImplementedError
+        return self.size > other.size
+
+    def __le__(self, other):
+        if not isinstance(other, Volume):
+            return NotImplementedError
+        return self.size <= other.size
+
+    def __lt__(self, other):
+        if not isinstance(other, Volume):
+            return NotImplementedError
+        return self.size < other.size
