@@ -24,7 +24,7 @@ from streamflow.log_handler import logger
 
 
 def _check_docker_compose_installed():
-    if which("docker-compose") is None:
+    if which("docker compose") is None:
         raise WorkflowExecutionException(
             "Docker Compose must be installed on the system to use the Docker Compose connector."
         )
@@ -56,7 +56,7 @@ async def _exists_docker_image(image_name: str) -> bool:
 
 async def _get_docker_compose_version() -> str:
     proc = await asyncio.create_subprocess_exec(
-        *shlex.split("docker-compose version --short"),
+        *shlex.split("docker compose version --short"),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -784,23 +784,26 @@ class DockerComposeConnector(DockerBaseConnector):
         self.tlsverify = tlsverify
 
     def _get_base_command(self) -> str:
-        return (
-            f"docker-compose "
-            f"{get_option('file', self.files)}"
-            f"{get_option('project-name', self.projectName)}"
-            f"{get_option('verbose', self.verbose)}"
-            f"{get_option('log-level', self.logLevel)}"
-            f"{get_option('no-ansi', self.noAnsi)}"
+        options = (
+            f"{get_option('log-level', 'ERROR')}"
             f"{get_option('host', self.host)}"
             f"{get_option('tls', self.tls)}"
             f"{get_option('tlscacert', self.tlscacert)}"
             f"{get_option('tlscert', self.tlscert)}"
             f"{get_option('tlskey', self.tlskey)}"
             f"{get_option('tlsverify', self.tlsverify)}"
-            f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
-            f"{get_option('project-directory', self.projectDirectory)}"
-            f"{get_option('compatibility', self.compatibility)}"
         )
+        command = f"docker {options} compose"
+        return (
+                f"{command} "
+                f"{get_option('file', self.files)}"
+                f"{get_option('project-name', self.projectName)}"
+                f"{get_option('verbose', self.verbose)}"
+                f"{get_option('no-ansi', self.noAnsi)}"
+                f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
+                f"{get_option('project-directory', self.projectDirectory)}"
+                f"{get_option('compatibility', self.compatibility)}"
+            )
 
     async def deploy(self, external: bool) -> None:
         if not external:
@@ -860,7 +863,15 @@ class DockerComposeConnector(DockerBaseConnector):
             stderr=asyncio.subprocess.STDOUT,
         )
         stdout, _ = await proc.communicate()
-        locations = json.loads(stdout.decode().strip())
+        stdout = stdout.decode().strip()
+        if ((json_start := stdout.find("{")) != -1) and (
+                (json_end := stdout.rfind("}")) != -1
+        ):
+            locations = json.loads(stdout[json_start : json_end + 1])
+        else:
+            raise WorkflowExecutionException(f"impossible parse to json: {stdout.decode().strip()}")
+        if not isinstance(locations, MutableSequence):
+            locations = [locations]
         return {
             loc["Name"]: v
             for loc, v in zip(
