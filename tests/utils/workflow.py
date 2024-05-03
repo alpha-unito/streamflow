@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import os
 import posixpath
-from typing import MutableSequence, cast, TYPE_CHECKING
+from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
 from streamflow.core.deployment import Target
@@ -62,7 +63,7 @@ def create_schedule_step(
 
 async def create_workflow(
     context: StreamFlowContext, num_port: int = 2
-) -> tuple[Workflow, tuple[Port]]:
+) -> tuple[Workflow, tuple[Port, ...]]:
     workflow = Workflow(
         context=context, type="cwl", name=utils.random_name(), config={}
     )
@@ -70,7 +71,7 @@ async def create_workflow(
     for _ in range(num_port):
         ports.append(workflow.create_port())
     await workflow.save(context)
-    return workflow, tuple(cast(MutableSequence[Port], ports))
+    return workflow, tuple(ports)
 
 
 def get_dot_combinator():
@@ -96,3 +97,8 @@ def get_nested_crossproduct():
     items = c1.get_items(False)
     combinator.add_combinator(c1, items)
     return combinator
+
+
+def random_job_name(step_name: str | None = None):
+    step_name = step_name or utils.random_name()
+    return os.path.join(posixpath.sep, step_name, "0.0")

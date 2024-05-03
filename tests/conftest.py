@@ -2,18 +2,23 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import platform
 from asyncio.locks import Lock
-from typing import Collection
+from typing import Collection, MutableSequence, Any, Callable
 
 import pytest
 import pytest_asyncio
+
+import streamflow.deployment.connector
+import streamflow.deployment.filter
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from tests.utils.deployment import get_deployment_config
+from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
+from tests.utils.deployment import get_deployment_config, ReverseTargetsBindingFilter
 
 
 def csvtype(choices):
@@ -42,6 +47,18 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_configure(config):
+    streamflow.deployment.connector.connector_classes.update(
+        {
+            "failure": FailureConnector,
+            "parameterizable_hardware": ParameterizableHardwareConnector,
+        }
+    )
+    streamflow.deployment.filter.binding_filter_classes.update(
+        {"reverse": ReverseTargetsBindingFilter}
+    )
+
+
 @pytest.fixture(scope="module")
 def chosen_deployment_types(request):
     return request.config.getoption("--deploys")
@@ -67,24 +84,26 @@ def pytest_generate_tests(metafunc):
 
 
 def all_deployment_types():
-    deployments_ = ["local", "docker", "ssh"]
+    deployments_ = ["local", "docker", "docker-compose", "slurm"]
     if platform.system() == "Linux":
-        deployments_.extend(["kubernetes", "singularity"])
+        deployments_.extend(["kubernetes", "singularity", "ssh"])
     return deployments_
 
 
 @pytest_asyncio.fixture(scope="module")
 async def context(chosen_deployment_types) -> StreamFlowContext:
     _context = build_context(
-        {"database": {"type": "default", "config": {"connection": ":memory:"}}},
+        {
+            "database": {"type": "default", "config": {"connection": ":memory:"}},
+            "path": os.getcwd(),
+        },
     )
-    for deployment_t in chosen_deployment_types:
+    for deployment_t in (*chosen_deployment_types, "parameterizable_hardware"):
         config = await get_deployment_config(_context, deployment_t)
         await _context.deployment_manager.deploy(config)
     yield _context
     await _context.deployment_manager.undeploy_all()
-    # Close the database connection
-    await _context.database.close()
+    await _context.close()
 
 
 @pytest.fixture(scope="session")
@@ -95,12 +114,22 @@ def event_loop():
     loop.close()
 
 
-def is_primitive_type(elem):
+def is_primitive_type(elem: Any) -> bool:
+    """The function given in input an object returns True if it has a primitive types (i.e. int, float, str or bool)"""
     return type(elem) in (int, float, str, bool)
 
 
-# The function given in input an object return a dictionary with attribute:value
+def get_class_callables(class_type) -> MutableSequence[Callable]:
+    """The function given in input a class type returns a list of strings with the method names"""
+    return [
+        getattr(class_type, func)
+        for func in dir(class_type)
+        if callable(getattr(class_type, func)) and not func.startswith("__")
+    ]
+
+
 def object_to_dict(obj):
+    """The function given in input an object returns a dictionary with attribute:value"""
     return {
         attr: getattr(obj, attr)
         for attr in dir(obj)
@@ -108,10 +137,12 @@ def object_to_dict(obj):
     }
 
 
-# The function return True if the elems are the same, otherwise False
-# The param obj_compared is useful to break a circul reference inside the objects
-# remembering the objects already encountered
 def are_equals(elem1, elem2, obj_compared=None):
+    """
+    The function return True if the elems are the same, otherwise False
+    The param obj_compared is useful to break a circul reference inside the objects
+    remembering the objects already encountered
+    """
     obj_compared = obj_compared if obj_compared else []
 
     # if the objects are of different types, they are definitely not the same

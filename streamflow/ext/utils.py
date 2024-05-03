@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from importlib_metadata import entry_points
 from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence
 
+from importlib_metadata import entry_points
 from referencing._core import Resolver, Resource
 
 from streamflow.config.schema import SfSchema

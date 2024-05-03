@@ -83,7 +83,6 @@ def test_ext_support():
                             "deployment": "example",
                             "service": "example",
                             "locations": 2,
-                            "policy": "data_locality",
                             "workdir": "/path/to/workdir",
                         },
                     }
@@ -103,6 +102,7 @@ def test_ext_support():
             "example": {
                 "type": "slurm",
                 "config": {"maxConcurrentJobs": 10},
+                "scheduling_policy": "data_locality",
             }
         },
         "deploymentManager": {"type": "default", "config": {}},

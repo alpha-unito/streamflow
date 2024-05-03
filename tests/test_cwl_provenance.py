@@ -6,7 +6,7 @@ import pytest
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.workflow import Status, Token
+from streamflow.core.workflow import Status, Token, Step
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.step import (
@@ -29,6 +29,9 @@ from streamflow.cwl.transformer import (
     LoopValueFromTransformer,
     OnlyNonNullTransformer,
     ValueFromTransformer,
+    CloneTransformer,
+    CartesianProductSizeTransformer,
+    DotProductSizeTransformer,
 )
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
@@ -36,7 +39,11 @@ from streamflow.workflow.combinator import (
 )
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import CombinatorStep
-from streamflow.workflow.token import IterationTerminationToken, ListToken
+from streamflow.workflow.token import (
+    IterationTerminationToken,
+    ListToken,
+    TerminationToken,
+)
 from tests.test_provenance import _general_test, _verify_dependency_tokens, _put_tokens
 from tests.utils.workflow import (
     create_workflow,
@@ -46,8 +53,79 @@ from tests.utils.workflow import (
 
 
 @pytest.mark.asyncio
-async def test_default_transformer(context: StreamFlowContext):
-    """Test token provenance for DefaultTransformer"""
+async def test_cartesian_product_size_transformer(context: StreamFlowContext):
+    """Test token provenance for CartesianProductSizeTransformer"""
+    workflow, (in_port_1, in_port_2, out_port) = await create_workflow(
+        context, num_port=3
+    )
+    val_1, val_2 = 5, 4
+    token_list_1 = [Token(val_1)]
+    token_list_2 = [Token(val_2)]
+
+    await _put_tokens(token_list_1, in_port_1, context)
+    await _put_tokens(token_list_2, in_port_2, context)
+
+    step = workflow.create_step(
+        cls=CartesianProductSizeTransformer,
+        name=f"{utils.random_name()}-scatter-size-transformer",
+    )
+    step.add_output_port("test", out_port)
+    step.add_input_port("param1", in_port_1)
+    step.add_input_port("param2", in_port_2)
+
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+
+    assert len(out_port.token_list) == 2
+    assert isinstance(out_port.token_list[-1], TerminationToken)
+    assert out_port.token_list[0].value == (val_1 * val_2)
+    await _verify_dependency_tokens(
+        token=out_port.token_list[0],
+        port=out_port,
+        context=context,
+        expected_dependee=[token_list_1[0], token_list_2[0]],
+    )
+
+
+@pytest.mark.asyncio
+async def test_clone_transformer(context: StreamFlowContext):
+    """Test token provenance for CloneTransformer"""
+    workflow, (in_port, replicas_port, out_port) = await create_workflow(
+        context, num_port=3
+    )
+    token_list = [Token("a")]
+    size_token = Token(3)
+    await size_token.save(context)
+    replicas_port.put(size_token)
+    replicas_port.put(TerminationToken())
+    await _general_test(
+        context=context,
+        workflow=workflow,
+        in_port=in_port,
+        out_port=out_port,
+        step_cls=CloneTransformer,
+        kwargs_step={
+            "name": f"{utils.random_name()}-scatter-size-transformer",
+            "replicas_port": replicas_port,
+        },
+        token_list=token_list,
+    )
+
+    # len(token_list) = N output tokens + 1 termination token
+    assert len(out_port.token_list) == 4
+    await _verify_dependency_tokens(
+        token=out_port.token_list[0],
+        port=out_port,
+        context=context,
+        expected_dependee=[token_list[0], size_token],
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("step_cls", [DefaultTransformer, DefaultRetagTransformer])
+async def test_default_transformer(context: StreamFlowContext, step_cls: type[Step]):
+    """Test token provenance for DefaultTransformer and DefaultRetagTransformer"""
     workflow, (in_port, out_port) = await create_workflow(context)
     token_list = [Token("a")]
     await _general_test(
@@ -55,7 +133,7 @@ async def test_default_transformer(context: StreamFlowContext):
         workflow=workflow,
         in_port=in_port,
         out_port=out_port,
-        step_cls=DefaultTransformer,
+        step_cls=step_cls,
         kwargs_step={
             "name": utils.random_name() + "-transformer",
             "default_port": in_port,
@@ -74,28 +152,38 @@ async def test_default_transformer(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_default_retag_transformer(context: StreamFlowContext):
-    """Test token provenance for DefaultRetagTransformer"""
-    workflow, (in_port, out_port) = await create_workflow(context)
-    token_list = [Token("a")]
-    await _general_test(
-        context=context,
-        workflow=workflow,
-        in_port=in_port,
-        out_port=out_port,
-        step_cls=DefaultRetagTransformer,
-        kwargs_step={
-            "name": utils.random_name() + "-transformer",
-            "default_port": in_port,
-        },
-        token_list=token_list,
+async def test_dot_product_size_transformer(context: StreamFlowContext):
+    """Test token provenance for DotProductSizeTransformer"""
+    workflow, (in_port_1, in_port_2, out_port) = await create_workflow(
+        context, num_port=3
     )
+    val = 5
+    token_list_1 = [Token(val)]
+    token_list_2 = [Token(val)]
+
+    await _put_tokens(token_list_1, in_port_1, context)
+    await _put_tokens(token_list_2, in_port_2, context)
+
+    step = workflow.create_step(
+        cls=DotProductSizeTransformer,
+        name=f"{utils.random_name()}-scatter-size-transformer",
+    )
+    step.add_output_port("test", out_port)
+    step.add_input_port("param1", in_port_1)
+    step.add_input_port("param2", in_port_2)
+
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+
     assert len(out_port.token_list) == 2
+    assert isinstance(out_port.token_list[-1], TerminationToken)
+    assert out_port.token_list[0].value == val
     await _verify_dependency_tokens(
         token=out_port.token_list[0],
         port=out_port,
         context=context,
-        expected_dependee=token_list,
+        expected_dependee=[token_list_1[0], token_list_2[0]],
     )
 
 
@@ -549,7 +637,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
-async def test_cwl_loop_output(context: StreamFlowContext, step_cls):
+async def test_cwl_loop_output(context: StreamFlowContext, step_cls: type[Step]):
     """Test token provenance for CWLLoopOutput"""
     workflow, (in_port, out_port) = await create_workflow(context)
 

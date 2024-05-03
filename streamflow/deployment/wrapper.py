@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 import asyncio
 from abc import ABC
-from typing import Any, MutableMapping, MutableSequence, Optional, Tuple, Union
+from typing import Any, MutableMapping, MutableSequence
 
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.data import StreamWrapperContextManager
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.future import FutureAware
-from streamflow.core.data import StreamWrapperContextManager
+from streamflow.deployment.utils import get_inner_location, get_inner_locations
 
 
 class ConnectorWrapper(Connector, FutureAware, ABC):
@@ -14,22 +17,24 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         deployment_name: str,
         config_dir: str,
         connector: Connector,
+        service: str | None,
         transferBufferSize: int,
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
         self.connector: Connector = connector
+        self.service: str | None = service
 
     async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         await self.connector.copy_local_to_remote(
             src=src,
             dst=dst,
-            locations=locations,
+            locations=get_inner_locations(locations),
             read_only=read_only,
         )
 
@@ -37,13 +42,13 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         await self.connector.copy_remote_to_local(
             src=src,
             dst=dst,
-            locations=locations,
+            locations=get_inner_locations(locations),
             read_only=read_only,
         )
 
@@ -51,15 +56,15 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
-        source_connector: Optional[Connector] = None,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
+        source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
         await self.connector.copy_remote_to_remote(
             src=src,
             dst=dst,
-            locations=locations,
+            locations=get_inner_locations(locations),
             source_location=source_location,
             source_connector=source_connector,
             read_only=read_only,
@@ -70,10 +75,10 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
 
     async def get_available_locations(
         self,
-        service: Optional[str] = None,
-        input_directory: Optional[str] = None,
-        output_directory: Optional[str] = None,
-        tmp_directory: Optional[str] = None,
+        service: str | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
         return await self.connector.get_available_locations(
             service=service,
@@ -83,25 +88,25 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         )
 
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager:
-        return await self.connector.get_stream_reader(location, src)
+        return await self.connector.get_stream_reader(get_inner_location(location), src)
 
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
-        workdir: Optional[str] = None,
-        stdin: Optional[Union[int, str]] = None,
-        stdout: Union[int, str] = asyncio.subprocess.STDOUT,
-        stderr: Union[int, str] = asyncio.subprocess.STDOUT,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
         capture_output: bool = False,
-        timeout: Optional[int] = None,
-        job_name: Optional[str] = None,
-    ) -> Optional[Tuple[Optional[Any], int]]:
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
         return await self.connector.run(
-            location=location,
+            location=get_inner_location(location),
             command=command,
             environment=environment,
             workdir=workdir,

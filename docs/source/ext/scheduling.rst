@@ -59,7 +59,7 @@ Type        Class
 default     streamflow.scheduling.scheduler.DefaultScheduler
 =======     ================================================
 
-In the ``DefaultScheduler`` implementation, scheduling attempts follow a simple First Come, First Served (FCFS) approach. The ``schedule`` method demands the allocation strategy to a ``Policy`` object specified in the StreamFlow file's ``bindings`` section through a ``target`` object's ``policy`` directive.  If no available allocation configuration can be found for a given ``Job``, it is queued until the next scheduling attempt.
+In the ``DefaultScheduler`` implementation, scheduling attempts follow a simple First Come, First Served (FCFS) approach. The ``schedule`` method demands the allocation strategy to a ``Policy`` object specified in the StreamFlow file's ``deployments`` section through the ``deployment`` object's ``scheduling_policy`` directive.  If no available allocation configuration can be found for a given ``Job``, it is queued until the next scheduling attempt.
 
 As discussed above, a scheduling attempt occurs whenever a ``Job`` reaches a final state. Plus, to account for dynamic resource creation and deletion in remote execution environments (e.g., through the Kubernetes `HorizontalPodAutoscaler <https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/>`_) the ``DefaultScheduler`` can automatically perform a scheduling attempt for each queued ``Job`` at regular intervals. The duration of such intervals can be configured through the ``retry_delay`` parameter. A value of ``0`` (the default) turns off this behaviour.
 
@@ -68,7 +68,7 @@ As discussed above, a scheduling attempt occurs whenever a ``Job`` reaches a fin
 Policy
 ======
 
-The ``Policy`` interface contains a single method ``get_location``, which returns the ``Location`` chosen for placement or ``None`` if there is no available location.
+The ``Policy`` interface contains a single method ``get_location``, which returns the ``AvailableLocation`` chosen for placement or ``None`` if there is no available location.
 
 .. code-block:: python
 
@@ -80,7 +80,7 @@ The ``Policy`` interface contains a single method ``get_location``, which return
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> Location | None:
+    ) -> AvailableLocation | None:
         ...
 
 The ``get_location`` method receives much information about the current execution context, enabling it to cover a broad class of potential scheduling strategies. In particular, the ``context`` parameter can query all the StreamFlow's relevant data structures, such as the :ref:`Database <Database>`, the :ref:`DataManager <DataManager>`, and the :ref:`DeploymentManager <DeploymentManager>`.

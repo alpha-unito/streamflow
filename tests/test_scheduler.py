@@ -1,29 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-from typing import MutableMapping, MutableSequence
+from typing import cast
 
 import pytest
 import pytest_asyncio
 
-from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
-    BindingFilter,
     DeploymentConfig,
-    LOCAL_LOCATION,
     LocalTarget,
     Target,
 )
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.scheduling import Hardware
 from streamflow.core.workflow import Job, Status
-from streamflow.deployment.connector import LocalConnector
+from tests.utils.connector import ParameterizableHardwareConnector
 from tests.utils.deployment import (
     get_docker_deployment_config,
     get_service,
     get_deployment_config,
+    get_parameterizable_hardware_deployment_config,
 )
+from tests.utils.workflow import random_job_name
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -36,47 +35,6 @@ async def service(context, deployment) -> str | None:
     return get_service(context, deployment)
 
 
-class CustomConnector(LocalConnector):
-    def __init__(
-        self,
-        deployment_name: str,
-        config_dir: str,
-        hardware: Hardware,
-        transferBufferSize: int = 2**16,
-    ):
-        super().__init__(deployment_name, config_dir, transferBufferSize)
-        self.hardware = hardware
-
-    async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
-    ) -> MutableMapping[str, AvailableLocation]:
-        return {
-            LOCAL_LOCATION: AvailableLocation(
-                name=LOCAL_LOCATION,
-                deployment=self.deployment_name,
-                service=service,
-                hostname="localhost",
-                slots=1,
-                hardware=self.hardware,
-            )
-        }
-
-
-class CustomBindingFilter(BindingFilter):
-    async def get_targets(
-        self, job: Job, targets: MutableSequence[Target]
-    ) -> MutableSequence[Target]:
-        return targets[::-1]
-
-    @classmethod
-    def get_schema(cls) -> str:
-        return ""
-
-
 @pytest.mark.asyncio
 async def test_scheduling(
     context: StreamFlowContext,
@@ -86,18 +44,17 @@ async def test_scheduling(
     """Test scheduling a job on a remote environment."""
 
     job = Job(
-        name=utils.random_name(),
+        name=random_job_name(),
         workflow_id=0,
         inputs={},
-        input_directory=utils.random_name(),
-        output_directory=utils.random_name(),
-        tmp_directory=utils.random_name(),
+        input_directory=deployment_config.workdir,
+        output_directory=deployment_config.workdir,
+        tmp_directory=deployment_config.workdir,
     )
     hardware_requirement = Hardware(cores=1)
     target = Target(
         deployment=deployment_config,
         service=service,
-        workdir="/tmp/streamflow",
     )
     binding_config = BindingConfig(targets=[target])
     await context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -110,6 +67,7 @@ async def test_scheduling(
 async def test_single_env_few_resources(context: StreamFlowContext):
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
 
+    # Inject custom hardware to manipulate available resources
     machine_hardware = Hardware(
         cores=1,
         memory=100,
@@ -117,32 +75,33 @@ async def test_single_env_few_resources(context: StreamFlowContext):
         output_directory=100,
         tmp_directory=100,
     )
-
-    # inject custom connector to manipulate available resources
-    conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    deployment_config = get_parameterizable_hardware_deployment_config()
+    conn = cast(
+        ParameterizableHardwareConnector,
+        context.deployment_manager.get_connector("custom-hardware"),
     )
+    conn.set_hardware(machine_hardware)
 
     # Create fake jobs and schedule them
     jobs = []
     for _ in range(2):
         jobs.append(
             Job(
-                name=utils.random_name(),
+                name=random_job_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=utils.random_name(),
-                output_directory=utils.random_name(),
-                tmp_directory=utils.random_name(),
+                input_directory=None,
+                output_directory=None,
+                tmp_directory=None,
             )
         )
     hardware_requirement = Hardware(cores=1)
-    local_target = LocalTarget()
-    binding_config = BindingConfig(targets=[local_target])
+    target = Target(
+        deployment=deployment_config,
+        service=get_service(context, deployment_config.type),
+        workdir=deployment_config.workdir,
+    )
+    binding_config = BindingConfig(targets=[target])
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -185,6 +144,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
 async def test_single_env_enough_resources(context: StreamFlowContext):
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
 
+    # Inject custom hardware to manipulate available resources
     machine_hardware = Hardware(
         cores=2,
         memory=100,
@@ -193,31 +153,33 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
         tmp_directory=100,
     )
 
-    # Inject custom connector to manipulate available resources
-    conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    deployment_config = get_parameterizable_hardware_deployment_config()
+    conn = cast(
+        ParameterizableHardwareConnector,
+        context.deployment_manager.get_connector("custom-hardware"),
     )
+    conn.set_hardware(machine_hardware)
 
     # Create fake jobs and schedule them
     jobs = []
     for _ in range(2):
         jobs.append(
             Job(
-                name=utils.random_name(),
+                name=random_job_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=utils.random_name(),
-                output_directory=utils.random_name(),
-                tmp_directory=utils.random_name(),
+                input_directory=None,
+                output_directory=None,
+                tmp_directory=None,
             )
         )
     hardware_requirement = Hardware(cores=1)
-    local_target = LocalTarget()
-    binding_config = BindingConfig(targets=[local_target])
+    target = Target(
+        deployment=deployment_config,
+        service=get_service(context, deployment_config.type),
+        workdir=deployment_config.workdir,
+    )
+    binding_config = BindingConfig(targets=[target])
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -249,36 +211,40 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
 async def test_multi_env(context: StreamFlowContext):
     """Test scheduling two jobs on two different environments."""
 
-    # Inject custom connector to manipulate available resources
+    # Inject custom hardware to manipulate available resources
     machine_hardware = Hardware(cores=1)
-    conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    param_config = get_parameterizable_hardware_deployment_config()
+    conn = cast(
+        ParameterizableHardwareConnector,
+        context.deployment_manager.get_connector("custom-hardware"),
     )
+    conn.set_hardware(machine_hardware)
 
     # Create fake jobs with two different env and schedule them
     jobs = []
-    local_target = LocalTarget()
+    target = Target(
+        deployment=param_config,
+        service=get_service(context, param_config.type),
+        workdir=param_config.workdir,
+    )
+    docker_config = get_docker_deployment_config()
     docker_target = Target(
-        deployment=get_docker_deployment_config(),
-        service="test-multi-env",
-        workdir=utils.random_name(),
+        deployment=docker_config,
+        service=get_service(context, docker_config.type),
+        workdir=docker_config.workdir,
     )
     for i in range(2):
         jobs.append(
             (
                 Job(
-                    name=utils.random_name(),
+                    name=random_job_name(),
                     workflow_id=0,
                     inputs={},
-                    input_directory=utils.random_name(),
-                    output_directory=utils.random_name(),
-                    tmp_directory=utils.random_name(),
+                    input_directory=None,
+                    output_directory=None,
+                    tmp_directory=None,
                 ),
-                BindingConfig(targets=[local_target] if i == 0 else [docker_target]),
+                BindingConfig(targets=[target] if i == 0 else [docker_target]),
             )
         )
     hardware_requirement = Hardware(cores=1)
@@ -313,32 +279,37 @@ async def test_multi_env(context: StreamFlowContext):
 async def test_multi_targets_one_job(context: StreamFlowContext):
     """Test scheduling one jobs with two targets: Local and Docker Image. The job will be scheduled in the first"""
 
-    # Inject custom connector to manipulate available resources
+    # Inject custom hardware to manipulate available resources
     machine_hardware = Hardware(cores=1)
-    conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    param_config = get_parameterizable_hardware_deployment_config()
+    conn = cast(
+        ParameterizableHardwareConnector,
+        context.deployment_manager.get_connector("custom-hardware"),
     )
+    conn.set_hardware(machine_hardware)
 
     # Create fake job with two targets and schedule it
     job = Job(
-        name=utils.random_name(),
+        name=random_job_name(),
         workflow_id=0,
         inputs={},
-        input_directory=utils.random_name(),
-        output_directory=utils.random_name(),
-        tmp_directory=utils.random_name(),
+        input_directory=None,
+        output_directory=None,
+        tmp_directory=None,
     )
-    local_target = LocalTarget()
+
+    target = Target(
+        deployment=param_config,
+        service=get_service(context, param_config.type),
+        workdir=param_config.workdir,
+    )
+    docker_config = get_docker_deployment_config()
     docker_target = Target(
-        deployment=get_docker_deployment_config(),
-        service="test-multi-targ-1",
-        workdir=utils.random_name(),
+        deployment=docker_config,
+        service=get_service(context, docker_config.type),
+        workdir=docker_config.workdir,
     )
-    binding_config = BindingConfig(targets=[local_target, docker_target])
+    binding_config = BindingConfig(targets=[target, docker_target])
 
     hardware_requirement = Hardware(cores=1)
     task_pending = [
@@ -358,7 +329,7 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     # Check if it has been scheduled into the first target
     assert (
         context.scheduler.job_allocations[job.name].target.deployment.name
-        == LOCAL_LOCATION
+        == param_config.name
     )
 
     # Job changes status to RUNNING
@@ -379,34 +350,38 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
 
     # Inject custom connector to manipulate available resources
     machine_hardware = Hardware(cores=1)
-    conn = context.deployment_manager.get_connector(LOCAL_LOCATION)
-    context.deployment_manager.deployments_map[LOCAL_LOCATION] = CustomConnector(
-        deployment_name=conn.deployment_name,
-        config_dir=conn.config_dir,
-        transferBufferSize=conn.transferBufferSize,
-        hardware=machine_hardware,
+    param_config = get_parameterizable_hardware_deployment_config()
+    conn = cast(
+        ParameterizableHardwareConnector,
+        context.deployment_manager.get_connector("custom-hardware"),
     )
+    conn.set_hardware(machine_hardware)
 
     # Create fake jobs with two same targets and schedule them
     jobs = []
     for _ in range(2):
         jobs.append(
             Job(
-                name=utils.random_name(),
+                name=random_job_name(),
                 workflow_id=0,
                 inputs={},
-                input_directory=utils.random_name(),
-                output_directory=utils.random_name(),
-                tmp_directory=utils.random_name(),
+                input_directory=None,
+                output_directory=None,
+                tmp_directory=None,
             )
         )
-    local_target = LocalTarget()
-    docker_target = Target(
-        deployment=get_docker_deployment_config(),
-        service="test-multi-targ-2",
-        workdir=utils.random_name(),
+    target = Target(
+        deployment=param_config,
+        service=get_service(context, param_config.type),
+        workdir=param_config.workdir,
     )
-    binding_config = BindingConfig(targets=[local_target, docker_target])
+    docker_config = get_docker_deployment_config()
+    docker_target = Target(
+        deployment=docker_config,
+        service=get_service(context, docker_config.type),
+        workdir=docker_config.workdir,
+    )
+    binding_config = BindingConfig(targets=[target, docker_target])
 
     hardware_requirement = Hardware(cores=1)
     task_pending = [
@@ -428,11 +403,11 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     # Check if they have been scheduled into the right targets
     assert (
         context.scheduler.job_allocations[jobs[0].name].target.deployment.name
-        == LOCAL_LOCATION
+        == param_config.name
     )
     assert (
         context.scheduler.job_allocations[jobs[1].name].target.deployment.name
-        == get_docker_deployment_config().name
+        == docker_config.name
     )
 
     # Jobs change status to RUNNING
@@ -450,27 +425,25 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
 async def test_binding_filter(context: StreamFlowContext):
     """Test Binding Filter using a job with two targets both free. With the CustomBindingFilter the scheduling will choose the second target"""
     job = Job(
-        name=utils.random_name(),
+        name=random_job_name(),
         workflow_id=0,
         inputs={},
-        input_directory=utils.random_name(),
-        output_directory=utils.random_name(),
-        tmp_directory=utils.random_name(),
+        input_directory=None,
+        output_directory=None,
+        tmp_directory=None,
     )
     local_target = LocalTarget()
+    docker_config = get_docker_deployment_config()
     docker_target = Target(
-        deployment=get_docker_deployment_config(),
-        service="test-binding-target",
-        workdir=utils.random_name(),
+        deployment=docker_config,
+        service=get_service(context, docker_config.type),
+        workdir=docker_config.workdir,
     )
 
-    # Inject custom filter that returns the targets list backwards
-    filter_config_name = "custom"
-    filter_config = Config(name=filter_config_name, type="shuffle", config={})
+    filter_config = Config(name="reverse-filter", type="reverse", config={})
     binding_config = BindingConfig(
         targets=[local_target, docker_target], filters=[filter_config]
     )
-    context.scheduler.binding_filter_map[filter_config_name] = CustomBindingFilter()
 
     # Schedule the job
     task_pending = [
@@ -488,7 +461,7 @@ async def test_binding_filter(context: StreamFlowContext):
     # Check if the job has been scheduled into the second target
     assert (
         context.scheduler.job_allocations[job.name].target.deployment.name
-        == get_docker_deployment_config().name
+        == docker_config.name
     )
 
     # Job changes status to RUNNING

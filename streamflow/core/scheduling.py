@@ -6,7 +6,7 @@ from typing import Any, TYPE_CHECKING, Type, cast
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
-from streamflow.core.deployment import Connector, Location, Target
+from streamflow.core.deployment import Connector, ExecutionLocation, Target
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
@@ -126,19 +126,24 @@ class JobAllocation:
         self,
         job: str,
         target: Target,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         status: Status,
         hardware: Hardware,
     ):
         self.job: str = job
         self.target: Target = target
-        self.locations: MutableSequence[Location] = locations
+        self.locations: MutableSequence[ExecutionLocation] = locations
         self.status: Status = status
         self.hardware: Hardware = hardware
 
 
-class AvailableLocation(Location):
-    __slots__ = ("hostname", "hardware", "slots")
+class AvailableLocation:
+    __slots__ = (
+        "hardware",
+        "location",
+        "slots",
+        "wraps",
+    )
 
     def __init__(
         self,
@@ -148,24 +153,34 @@ class AvailableLocation(Location):
         service: str | None = None,
         slots: int = 1,
         hardware: Hardware | None = None,
+        wraps: AvailableLocation | None = None,
     ):
-        super().__init__(name, deployment, service)
-        self.hostname: str = hostname
-        self.slots: int = slots
         self.hardware: Hardware | None = hardware
+        self.location: ExecutionLocation = ExecutionLocation(
+            deployment=deployment,
+            hostname=hostname,
+            name=name,
+            service=service,
+            wraps=wraps.location if wraps else None,
+        )
+        self.slots: int = slots
+        self.wraps: AvailableLocation | None = wraps
 
-    def __eq__(self, other):
-        if not isinstance(other, AvailableLocation):
-            return False
-        else:
-            return (
-                self.deployment == other.deployment
-                and self.service == other.service
-                and self.name == other.name
-            )
+    @property
+    def deployment(self) -> str:
+        return self.location.deployment
 
-    def __hash__(self):
-        return hash((self.deployment, self.service, self.name))
+    @property
+    def hostname(self) -> str:
+        return self.location.hostname
+
+    @property
+    def name(self) -> str:
+        return self.location.name
+
+    @property
+    def service(self) -> str | None:
+        return self.location.service
 
 
 class LocationAllocation:
@@ -193,7 +208,7 @@ class Policy(SchemaEntity):
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> Location | None: ...
+    ) -> AvailableLocation | None: ...
 
 
 class Scheduler(SchemaEntity):
@@ -230,7 +245,7 @@ class Scheduler(SchemaEntity):
 
     def get_locations(
         self, job_name: str, statuses: MutableSequence[Status] | None = None
-    ) -> MutableSequence[AvailableLocation]:
+    ) -> MutableSequence[ExecutionLocation]:
         allocation = self.get_allocation(job_name)
         return (
             allocation.locations

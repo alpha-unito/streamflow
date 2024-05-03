@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Job
     from typing import MutableSequence, MutableMapping, Any
 
+
 LOCAL_LOCATION = "__LOCAL__"
 
 
@@ -30,26 +31,24 @@ def _init_workdir(deployment_name: str) -> str:
         return os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow")
 
 
-class Location:
-    __slots__ = ("name", "deployment", "service")
+class ExecutionLocation:
+    __slots__ = ("deployment", "environment", "hostname", "name", "service", "wraps")
 
-    def __init__(self, name: str, deployment: str, service: str | None = None):
-        self.name: str = name
+    def __init__(
+        self,
+        name: str,
+        deployment: str,
+        environment: MutableMapping[str, str] | None = None,
+        hostname: str | None = None,
+        service: str | None = None,
+        wraps: ExecutionLocation | None = None,
+    ):
         self.deployment: str = deployment
+        self.environment: MutableMapping[str, str] = environment or {}
+        self.hostname: str | None = hostname
+        self.name: str = name
         self.service: str | None = service
-
-    def __eq__(self, other):
-        if not isinstance(other, Location):
-            return False
-        else:
-            return (
-                self.deployment == other.deployment
-                and self.service == other.service
-                and self.name == other.name
-            )
-
-    def __hash__(self):
-        return hash((self.deployment, self.service, self.name))
+        self.wraps: ExecutionLocation | None = wraps
 
     def __str__(self) -> str:
         if self.service:
@@ -76,7 +75,7 @@ class Connector(SchemaEntity):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None: ...
 
@@ -85,7 +84,7 @@ class Connector(SchemaEntity):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None: ...
 
@@ -94,8 +93,8 @@ class Connector(SchemaEntity):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None: ...
@@ -115,7 +114,7 @@ class Connector(SchemaEntity):
     @abstractmethod
     async def run(
         self,
-        location: Location,
+        location: ExecutionLocation,
         command: MutableSequence[str],
         environment: MutableMapping[str, str] = None,
         workdir: str | None = None,
@@ -132,7 +131,7 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def get_stream_reader(
-        self, location: Location, src: str
+        self, location: ExecutionLocation, src: str
     ) -> StreamWrapperContextManager: ...
 
 
@@ -156,8 +155,17 @@ class DeploymentManager(SchemaEntity):
     async def undeploy_all(self): ...
 
 
-class DeploymentConfig(Config, PersistableEntity):
-    __slots__ = ("name", "type", "config", "external", "lazy", "workdir", "wraps")
+class DeploymentConfig(PersistableEntity):
+    __slots__ = (
+        "name",
+        "type",
+        "config",
+        "external",
+        "lazy",
+        "scheduling_policy",
+        "workdir",
+        "wraps",
+    )
 
     def __init__(
         self,
@@ -166,15 +174,21 @@ class DeploymentConfig(Config, PersistableEntity):
         config: MutableMapping[str, Any],
         external: bool = False,
         lazy: bool = True,
+        scheduling_policy: Config | None = None,
         workdir: str | None = None,
-        wraps: str | None = None,
+        wraps: WrapsConfig | None = None,
     ) -> None:
-        Config.__init__(self, name, type, config)
-        PersistableEntity.__init__(self)
+        super().__init__()
+        self.name: str = name
+        self.type: str = type
+        self.config: MutableMapping[str, Any] = config or {}
         self.external: bool = external
         self.lazy: bool = lazy
+        self.scheduling_policy: Config | None = scheduling_policy or Config(
+            name="__DEFAULT__", type="data_locality", config={}
+        )
         self.workdir: str | None = workdir
-        self.wraps: str | None = wraps
+        self.wraps: WrapsConfig | None = wraps
 
     @classmethod
     async def load(
@@ -191,6 +205,7 @@ class DeploymentConfig(Config, PersistableEntity):
             external=row["external"],
             lazy=row["lazy"],
             workdir=row["workdir"],
+            wraps=json.loads(row["wraps"]),
         )
         loading_context.add_deployment(persistent_id, obj)
         return obj
@@ -205,6 +220,11 @@ class DeploymentConfig(Config, PersistableEntity):
                     external=self.external,
                     lazy=self.lazy,
                     workdir=self.workdir,
+                    wraps=(
+                        await self.wraps.save(context)
+                        if self.wraps is not None
+                        else None
+                    ),
                 )
 
 
@@ -214,18 +234,12 @@ class Target(PersistableEntity):
         deployment: DeploymentConfig,
         locations: int = 1,
         service: str | None = None,
-        scheduling_group: str | None = None,
-        scheduling_policy: Config | None = None,
         workdir: str | None = None,
     ):
         super().__init__()
         self.deployment: DeploymentConfig = deployment
         self.locations: int = locations
         self.service: str | None = service
-        self.scheduling_group: str | None = scheduling_group
-        self.scheduling_policy: Config | None = scheduling_policy or Config(
-            name="__DEFAULT__", type="data_locality", config={}
-        )
         self.workdir: str = (
             workdir or self.deployment.workdir or _init_workdir(deployment.name)
         )
@@ -304,10 +318,14 @@ class LocalTarget(Target):
         return cls(workdir=row["workdir"])
 
 
-class FilterConfig(Config, PersistableEntity):
+class FilterConfig(PersistableEntity):
+    __slots__ = ("name", "type", "config")
+
     def __init__(self, name: str, type: str, config: MutableMapping[str, Any]):
-        Config.__init__(self, name, type, config)
-        PersistableEntity.__init__(self)
+        super().__init__()
+        self.name: str = name
+        self.type: str = type
+        self.config: MutableMapping[str, Any] = config or {}
 
     @classmethod
     async def load(
@@ -333,3 +351,24 @@ class FilterConfig(Config, PersistableEntity):
                     type=self.type,
                     config=json.dumps(self.config),
                 )
+
+
+class WrapsConfig:
+    def __init__(self, deployment: str, service: str | None = None):
+        self.deployment: str = deployment
+        self.service: str | None = service
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        return WrapsConfig(deployment=row["deployment"], service=row.get("service"))
+
+    async def save(self, context: StreamFlowContext):
+        row = {"deployment": self.deployment}
+        if self.service is not None:
+            row["service"] = self.service
+        return row

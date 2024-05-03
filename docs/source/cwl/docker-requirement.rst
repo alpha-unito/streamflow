@@ -58,9 +58,9 @@ As an example, the following ``streamflow.yml`` file runs the above ``CommandLin
           file: processfile
           settings: jobfile
           docker:
-            step: /
-            deployment:
-              type: singularity
-              config: {}
+            - step: /
+              deployment:
+                type: singularity
+                config: {}
 
 In detail, StreamFlow instantiates a :ref:`SingularityCWLDockerTranslator <SingularityCWLDockerTranslator>` passing the content of the ``config`` field directly to the constructor. The translator is then in charge of generating a :ref:`SingularityConnector <SingularityConnector>` instance with the specified configuration for each CWL ``DockerRequirement`` configuration in the target subworkflow.

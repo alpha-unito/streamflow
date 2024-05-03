@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS deployment
     config   TEXT,
     external INTEGER,
     lazy     INTEGER,
-    workdir  TEXT
+    workdir  TEXT,
+    wraps    TEXT
 );
 
 

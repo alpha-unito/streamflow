@@ -1,9 +1,11 @@
 import posixpath
+from typing import Type
 
 import pytest
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.workflow import Step
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.step import (
@@ -41,7 +43,7 @@ from tests.utils.workflow import create_workflow
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
-async def test_cwl_loop_output(context: StreamFlowContext, step_cls):
+async def test_cwl_loop_output(context: StreamFlowContext, step_cls: Type[Step]):
     """Test saving CWLLoopOutputAllStep on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=1))[0]
     await _base_step_test_process(
@@ -174,7 +176,9 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     "transformer_cls",
     [AllNonNullTransformer, FirstNonNullTransformer, OnlyNonNullTransformer],
 )
-async def test_non_null_transformer(context: StreamFlowContext, transformer_cls):
+async def test_non_null_transformer(
+    context: StreamFlowContext, transformer_cls: Type[Step]
+):
     """Test saving All/First/Only NonNullTransformer on database and re-load it in a new Workflow"""
     workflow = (await create_workflow(context, num_port=1))[0]
     await _base_step_test_process(

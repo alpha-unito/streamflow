@@ -65,6 +65,8 @@ class DatabaseLoadingContext(ABC):
 
 
 class PersistableEntity:
+    __slots__ = ("persistent_id", "persistence_lock")
+
     def __init__(self):
         self.persistent_id: int | None = None
         self.persistence_lock: Lock = Lock()
@@ -105,6 +107,7 @@ class Database(SchemaEntity):
         external: bool,
         lazy: bool,
         workdir: str | None,
+        wraps: MutableMapping[str, Any] | None,
     ) -> int: ...
 
     @abstractmethod

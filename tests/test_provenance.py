@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, MutableMapping, MutableSequence
+from typing import Any, MutableMapping, MutableSequence, cast
 
 import pytest
 
@@ -139,16 +139,25 @@ async def test_scatter_step(context: StreamFlowContext):
     """Test token provenance for ScatterStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     token_list = [ListToken([Token("a"), Token("b"), Token("c")])]
-    await _general_test(
-        context=context,
-        workflow=workflow,
-        in_port=in_port,
-        out_port=out_port,
-        step_cls=ScatterStep,
-        kwargs_step={"name": utils.random_name() + "-scatter"},
-        token_list=token_list,
+    step = cast(
+        ScatterStep,
+        await _general_test(
+            context=context,
+            workflow=workflow,
+            in_port=in_port,
+            out_port=out_port,
+            step_cls=ScatterStep,
+            kwargs_step={"name": utils.random_name() + "-scatter"},
+            token_list=token_list,
+        ),
     )
     assert len(out_port.token_list) == 4
+
+    size_port = step.get_size_port()
+    assert len(size_port.token_list) == 2
+    assert isinstance(out_port.token_list[-1], TerminationToken)
+    assert isinstance(size_port.token_list[-1], TerminationToken)
+
     for curr_token in out_port.token_list[:-1]:
         await _verify_dependency_tokens(
             token=curr_token,
@@ -156,6 +165,12 @@ async def test_scatter_step(context: StreamFlowContext):
             context=context,
             expected_dependee=[in_port.token_list[0]],
         )
+    await _verify_dependency_tokens(
+        token=size_port.token_list[0],
+        port=size_port,
+        context=context,
+        expected_dependee=[in_port.token_list[0]],
+    )
 
 
 @pytest.mark.asyncio
@@ -274,7 +289,9 @@ async def test_gather_step(context: StreamFlowContext):
     )
     base_tag = "0"
     token_list = [Token(i, tag=f"{base_tag}.{i}") for i in range(5)]
-    size_port.put(Token(len(token_list), tag=base_tag))
+    size_token = Token(len(token_list), tag=base_tag)
+    await size_token.save(context)
+    size_port.put(size_token)
     size_port.put(TerminationToken())
     await _general_test(
         context=context,
@@ -290,7 +307,37 @@ async def test_gather_step(context: StreamFlowContext):
         token=out_port.token_list[0],
         port=out_port,
         context=context,
-        expected_dependee=token_list,
+        expected_dependee=[*token_list, size_token],
+    )
+
+
+@pytest.mark.asyncio
+async def test_gather_step_no_size(context: StreamFlowContext):
+    """Test token provenance for GatherStep without size token"""
+    workflow, (in_port, out_port, size_port) = await create_workflow(
+        context, num_port=3
+    )
+    base_tag = "0"
+    token_list = [Token(i, tag=f"{base_tag}.{i}") for i in range(5)]
+
+    # TerminationToken is necessary
+    size_port.put(TerminationToken())
+    gather_step = await _general_test(
+        context=context,
+        workflow=workflow,
+        in_port=in_port,
+        out_port=out_port,
+        step_cls=GatherStep,
+        kwargs_step={"name": utils.random_name() + "-gather", "size_port": size_port},
+        token_list=token_list,
+    )
+    assert len(out_port.token_list) == 2
+    size_token = cast(GatherStep, gather_step).size_map[base_tag]
+    await _verify_dependency_tokens(
+        token=out_port.token_list[0],
+        port=out_port,
+        context=context,
+        expected_dependee=[*token_list, size_token],
     )
 
 

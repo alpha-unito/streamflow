@@ -17,7 +17,7 @@ from streamflow.core.persistence import (
 )
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import Connector, Location, Target
+    from streamflow.core.deployment import Connector, ExecutionLocation, Target
     from streamflow.core.context import StreamFlowContext
     from typing import Any
 
@@ -85,13 +85,12 @@ class CommandOutputProcessor(ABC):
 
     async def _get_locations(
         self, connector: Connector | None, job: Job
-    ) -> MutableSequence[Location]:
+    ) -> MutableSequence[ExecutionLocation]:
         if self.target:
-            return list(
-                (
-                    await connector.get_available_locations(service=self.target.service)
-                ).values()
+            available_locations = await connector.get_available_locations(
+                service=self.target.service
             )
+            return [loc.location for loc in available_locations.values()]
         else:
             return self.workflow.context.scheduler.get_locations(job.name)
 

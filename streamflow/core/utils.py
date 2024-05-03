@@ -15,11 +15,12 @@ from typing import (
     MutableSequence,
     TYPE_CHECKING,
 )
+
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import Connector, Location
+    from streamflow.core.deployment import Connector, ExecutionLocation
     from streamflow.core.workflow import Token
     from typing import Iterable
 
@@ -163,7 +164,7 @@ def get_date_from_ns(timestamp: int) -> str:
 
 
 async def get_local_to_remote_destination(
-    dst_connector: Connector, dst_location: Location, src: str, dst: str
+    dst_connector: Connector, dst_location: ExecutionLocation, src: str, dst: str
 ):
     is_dst_dir, status = await dst_connector.run(
         location=dst_location,
@@ -202,10 +203,10 @@ def get_option(
 
 async def get_remote_to_remote_write_command(
     src_connector: Connector,
-    src_location: Location,
+    src_location: ExecutionLocation,
     src: str,
     dst_connector: Connector,
-    dst_locations: MutableSequence[Location],
+    dst_locations: MutableSequence[ExecutionLocation],
     dst: str,
 ) -> MutableSequence[str]:
     is_dst_dir, status = await dst_connector.run(

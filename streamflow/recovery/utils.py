@@ -9,7 +9,7 @@ from typing import MutableMapping, MutableSequence, Collection
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.utils import get_class_fullname
-from streamflow.core.deployment import Connector, Location
+# from streamflow.core.deployment import Connector
 from streamflow.core.exception import (
     FailureHandlingException,
 )
@@ -103,12 +103,12 @@ async def get_execute_step_out_token_ids(next_token_ids, context):
     return execute_step_out_token_ids
 
 
-async def _cleanup_dir(
-    connector: Connector, location: Location, directory: str
-) -> None:
-    await remotepath.rm(
-        connector, location, await remotepath.listdir(connector, location, directory)
-    )
+# async def _cleanup_dir(
+#     connector: Connector, location: Location, directory: str
+# ) -> None:
+#     await remotepath.rm(
+#         connector, location, await remotepath.listdir(connector, location, directory)
+#     )
 
 
 def increase_tag(tag):
@@ -152,7 +152,7 @@ def get_token_by_tag(token_tag, token_list):
 async def _is_file_available(data_location, context):
     connector = context.deployment_manager.get_connector(data_location.deployment)
     if not (
-        res := await remotepath.exists(connector, data_location, data_location.path)
+        res := await remotepath.exists(connector, data_location.location, data_location.path)
     ):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(

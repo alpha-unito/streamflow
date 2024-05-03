@@ -7,7 +7,6 @@ from importlib_resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
-from streamflow.core.deployment import Location
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, JobAllocation, Policy
 from streamflow.workflow.token import FileToken
@@ -27,7 +26,7 @@ class DataLocalityPolicy(Policy):
         available_locations: MutableMapping[str, AvailableLocation],
         jobs: MutableMapping[str, JobAllocation],
         locations: MutableMapping[str, MutableMapping[str, LocationAllocation]],
-    ) -> Location | None:
+    ) -> AvailableLocation | None:
         valid_locations = list(available_locations.keys())
         deployments = {loc.deployment for loc in available_locations.values()}
         if len(deployments) > 1:

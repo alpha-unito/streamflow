@@ -24,13 +24,13 @@ The ``DataManager`` interface performs data transfers to and from remote executi
         ...
 
     def invalidate_location(
-        self, location: Location, path: str
+        self, location: ExecutionLocation, path: str
     ) -> None:
         ...
 
     def register_path(
         self,
-        location: Location,
+        location: ExecutionLocation,
         path: str,
         relpath: str,
         data_type: DataType = DataType.PRIMARY,
@@ -44,9 +44,9 @@ The ``DataManager`` interface performs data transfers to and from remote executi
 
     async def transfer_data(
         self,
-        src_location: Location,
+        src_location: ExecutionLocation,
         src_path: str,
-        dst_locations: MutableSequence[Location],
+        dst_locations: MutableSequence[ExecutionLocation],
         dst_path: str,
         writable: bool = False,
     ) -> None:

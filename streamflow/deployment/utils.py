@@ -5,15 +5,18 @@ import os
 import posixpath
 from pathlib import PurePosixPath
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.config import BindingConfig
 from streamflow.core.deployment import (
     DeploymentConfig,
+    ExecutionLocation,
+    FilterConfig,
     LocalTarget,
     Target,
-    FilterConfig,
+    WrapsConfig,
 )
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
 
@@ -57,8 +60,9 @@ def get_binding_config(
                 config=target_deployment["config"],
                 external=target_deployment.get("external", False),
                 lazy=target_deployment.get("lazy", True),
+                scheduling_policy=target_deployment["scheduling_policy"],
                 workdir=target_deployment.get("workdir"),
-                wraps=target_deployment.get("wraps"),
+                wraps=get_wraps_config(target_deployment.get("wraps")),
             )
             targets.append(
                 Target(
@@ -79,9 +83,36 @@ def get_binding_config(
         return BindingConfig(targets=[LocalTarget()])
 
 
+def get_inner_location(location: ExecutionLocation) -> ExecutionLocation:
+    if location.wraps is None:
+        raise WorkflowExecutionException(
+            f"Location {location.name} does not wrap any inner location"
+        )
+    return location.wraps
+
+
+def get_inner_locations(
+    locations: MutableSequence[ExecutionLocation],
+) -> MutableSequence[ExecutionLocation]:
+    return list({get_inner_location(loc) for loc in locations})
+
+
 def get_path_processor(connector: Connector) -> ModuleType:
     return (
         posixpath
         if connector is not None and not isinstance(connector, LocalConnector)
         else os.path
     )
+
+
+def get_wraps_config(config: MutableMapping[str, Any] | None) -> WrapsConfig | None:
+    if config is not None:
+        if isinstance(config, str):
+            return WrapsConfig(deployment=config)
+        else:
+            return WrapsConfig(
+                deployment=config["deployment"],
+                service=config.get("service"),
+            )
+    else:
+        return None

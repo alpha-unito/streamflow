@@ -105,11 +105,12 @@ class SqliteDatabase(CachedDatabase):
         external: bool,
         lazy: bool,
         workdir: str | None,
+        wraps: MutableMapping[str, Any] | None,
     ) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO deployment(name, type, config, external, lazy, workdir) "
-                "VALUES (:name, :type, :config, :external, :lazy, :workdir)",
+                "INSERT INTO deployment(name, type, config, external, lazy, workdir, wraps) "
+                "VALUES (:name, :type, :config, :external, :lazy, :workdir, :wraps)",
                 {
                     "name": name,
                     "type": type,
@@ -117,6 +118,7 @@ class SqliteDatabase(CachedDatabase):
                     "external": external,
                     "lazy": lazy,
                     "workdir": workdir,
+                    "wraps": json.dumps(wraps),
                 },
             ) as cursor:
                 return cursor.lastrowid
@@ -385,7 +387,7 @@ class SqliteDatabase(CachedDatabase):
             if last_only:
                 async with db.execute(
                     "SELECT c.id, s.name, c.start_time, c.end_time "
-                    "FROM step AS s, command AS c "
+                    "FROM step AS s, execution AS c "
                     "WHERE s.id = c.step "
                     "AND s.workflow = (SELECT id FROM workflow WHERE name = :workflow ORDER BY id DESC LIMIT 1)",
                     {"workflow": workflow},
@@ -394,7 +396,7 @@ class SqliteDatabase(CachedDatabase):
             else:
                 async with db.execute(
                     "SELECT s.workflow, c.id, s.name, c.start_time, c.end_time "
-                    "FROM step AS s, command AS c "
+                    "FROM step AS s, execution AS c "
                     "WHERE s.id = c.step "
                     "AND s.workflow IN (SELECT id FROM workflow WHERE name = :workflow) "
                     "ORDER BY s.workflow DESC",

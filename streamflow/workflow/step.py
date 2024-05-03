@@ -20,7 +20,12 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
-from streamflow.core.deployment import Connector, DeploymentConfig, Location, Target
+from streamflow.core.deployment import (
+    Connector,
+    DeploymentConfig,
+    ExecutionLocation,
+    Target,
+)
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
@@ -870,7 +875,7 @@ class GatherStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow, size_port: Port, depth: int = 1):
         super().__init__(name, workflow)
         self.depth: int = depth
-        self.size_map: MutableMapping[str, int] = {}
+        self.size_map: MutableMapping[str, Token] = {}
         self.token_map: MutableMapping[str, MutableSequence[Token]] = {}
         self.add_input_port("__size__", size_port)
 
@@ -878,6 +883,8 @@ class GatherStep(BaseStep):
         return next(n for n in self.input_ports if n != "__size__")
 
     async def _gather(self, key: str) -> None:
+        input_tokens = [self.size_map[key]]
+        input_tokens.extend(self.token_map[key])
         output_port = self.get_output_port()
         output_port.put(
             await self._persist_token(
@@ -885,7 +892,7 @@ class GatherStep(BaseStep):
                     tag=key, value=sorted(self.token_map[key], key=lambda cur: cur.tag)
                 ),
                 port=output_port,
-                input_token_ids=_get_token_ids(self.token_map[key]),
+                input_token_ids=_get_token_ids(input_tokens),
             )
         )
 
@@ -974,7 +981,7 @@ class GatherStep(BaseStep):
                         )
                 else:
                     if task_name == "__size__":
-                        self.size_map[token.tag] = token.value
+                        self.size_map[token.tag] = token
                         port = size_port
                         if len(self.token_map.setdefault(token.tag, [])) == token.value:
                             await self._gather(token.tag)
@@ -985,9 +992,10 @@ class GatherStep(BaseStep):
                         key = ".".join(token.tag.split(".")[: -self.depth])
                         self.token_map.setdefault(key, []).append(token)
                         port = input_port
-                        if len(self.token_map.setdefault(key, [])) == self.size_map.get(
-                            key
-                        ):
+                        size_value = (
+                            self.size_map[key].value if key in self.size_map else None
+                        )
+                        if len(self.token_map.setdefault(key, [])) == size_value:
                             await self._gather(key)
                             keys_completed.add(key)
                     unfinished.add(
@@ -1001,6 +1009,13 @@ class GatherStep(BaseStep):
         for key in (k for k in self.token_map.keys() if k not in keys_completed):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Step {self.name} forces gather on key {key}")
+
+            # Update size_map with the current size
+            self.size_map[key] = Token(value=len(self.token_map[key]), tag=key)
+            await self.size_map[key].save(
+                self.workflow.context, size_port.persistent_id
+            )
+
             await self._gather(key)
         # Terminate step
         await self.terminate(
@@ -1113,7 +1128,7 @@ class InputInjectorStep(BaseStep, ABC):
 class LoopCombinatorStep(CombinatorStep):
     def __init__(self, name: str, workflow: Workflow, combinator: Combinator):
         super().__init__(name, workflow, combinator)
-        self.iteration_terminaton_checklist: MutableMapping[str, set[str]] = {}
+        self.iteration_termination_checklist: MutableMapping[str, set[str]] = {}
 
     async def run(self):
         # Set default status to SKIPPED
@@ -1121,7 +1136,7 @@ class LoopCombinatorStep(CombinatorStep):
         if self.input_ports:
             input_tasks, terminated = [], []
             for port_name, port in self.get_input_ports().items():
-                self.iteration_terminaton_checklist[port_name] = set()
+                self.iteration_termination_checklist[port_name] = set()
                 input_tasks.append(
                     asyncio.create_task(
                         port.get(posixpath.join(self.name, port_name)), name=port_name
@@ -1151,13 +1166,13 @@ class LoopCombinatorStep(CombinatorStep):
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
                     elif check_iteration_termination(token):
-                        if token.tag in self.iteration_terminaton_checklist[task_name]:
+                        if token.tag in self.iteration_termination_checklist[task_name]:
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
                                     f"Step {self.name} (wf {self.workflow.name}) received iteration termination token {token.tag} "
                                     f"for port {task_name}"
                                 )
-                            self.iteration_terminaton_checklist[task_name].remove(
+                            self.iteration_termination_checklist[task_name].remove(
                                 token.tag
                             )
                     # Otherwise, build combination and set default status to COMPLETED
@@ -1169,12 +1184,12 @@ class LoopCombinatorStep(CombinatorStep):
                         status = Status.COMPLETED
                         if (
                             ".".join(token.tag.split(".")[:-1])
-                            not in self.iteration_terminaton_checklist[task_name]
+                            not in self.iteration_termination_checklist[task_name]
                         ):
                             logger.debug(
                                 f"Step {self.name} (wf {self.workflow.name}) add token tag {token.tag} on iteration_terminaton_checklist {task_name}. {'.'.join(token.tag.split('.')[:-1])} not in {self.iteration_terminaton_checklist[task_name]}"
                             )
-                            self.iteration_terminaton_checklist[task_name].add(
+                            self.iteration_termination_checklist[task_name].add(
                                 token.tag
                             )
                         async for schema in cast(
@@ -1196,7 +1211,7 @@ class LoopCombinatorStep(CombinatorStep):
                     # Create a new task in place of the completed one if the port is not terminated
                     if not (
                         task_name in terminated
-                        and len(self.iteration_terminaton_checklist[task_name]) == 0
+                        and len(self.iteration_termination_checklist[task_name]) == 0
                     ):
                         input_tasks.append(
                             asyncio.create_task(
@@ -1360,7 +1375,10 @@ class ScheduleStep(BaseStep):
         )
 
     async def _propagate_job(
-        self, connector: Connector, locations: MutableSequence[Location], job: Job
+        self,
+        connector: Connector,
+        locations: MutableSequence[ExecutionLocation],
+        job: Job,
     ):
         # Set job directories
         allocation = self.workflow.context.scheduler.get_allocation(job.name)
@@ -1374,12 +1392,23 @@ class ScheduleStep(BaseStep):
         job.tmp_directory = _get_directory(
             path_processor, job.tmp_directory, allocation.target
         )
+
         # Create directories
         await remotepath.mkdirs(
             connector=connector,
             locations=locations,
             paths=[job.input_directory, job.output_directory, job.tmp_directory],
         )
+        job.input_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.input_directory
+        )
+        job.output_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.output_directory
+        )
+        job.tmp_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.tmp_directory
+        )
+
         # Register paths
         for location in locations:
             for directory in (
@@ -1626,7 +1655,14 @@ class ScatterStep(BaseStep):
                         f"Step {self.name} (wf {self.workflow.name}) skipped token retag {token.tag + '.' + str(i)}"
                     )
             size_token = Token(len(token.value), tag=token.tag)
-            self.get_size_port().put(size_token)
+            size_port = self.get_size_port()
+            size_port.put(
+                await self._persist_token(
+                    token=size_token,
+                    port=size_port,
+                    input_token_ids=_get_token_ids([token]),
+                )
+            )
         else:
             raise WorkflowDefinitionException("Scatter ports require iterable inputs")
 

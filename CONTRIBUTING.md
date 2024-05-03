@@ -50,9 +50,9 @@ pytest tests/test_cwl_loop.py
 ```
 
 ### Testing connectors
-StreamFlow comes with many different connectors OOTB, and some of the tests in the suite are used to verify their behaviour. Currently, the tested connectors are: `local`, `docker`, `ssh`, `kubernetes`, and `singularity`. The plan is to add non regression tests for all connectors.
+StreamFlow comes with many different connectors OOTB, and some of the tests in the suite are used to verify their behaviour. Currently, the tested connectors are: `local`, `docker`, `docker-compose`, `ssh`, `slurm`, `kubernetes`, and `singularity`. The plan is to add non regression tests for all connectors.
 Executing all these tests requires to install and configure several software packages:
-- [Docker](https://docs.docker.com/engine/install/), which is required to test the `docker` and `ssh` connectors and the CWL `DockerRequirement` implementation with Docker containers;
+- [Docker](https://docs.docker.com/engine/install/), which is required to test the `docker`, `docker-compose`, `slurm`, and `ssh` connectors and the CWL `DockerRequirement` implementation with Docker containers;
 - [Singularity](https://docs.sylabs.io/guides/3.0/user-guide/installation.html), which is required to test the `singularity` connector and the CWL `DockerRequirement` conversion to Singularity containers;
 - A Kubernetes distribution, e.g., [minikube](https://minikube.sigs.k8s.io/docs/start/), which is used to test the `kubernetes` connector and the CWL `DockerRequirement` conversion to Kubernetes pods.
 
