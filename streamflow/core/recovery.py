@@ -18,12 +18,10 @@ class CheckpointManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self):
-        ...
+    async def close(self): ...
 
     @abstractmethod
-    def register(self, data_location: DataLocation) -> None:
-        ...
+    def register(self, data_location: DataLocation) -> None: ...
 
 
 class FailureManager(SchemaEntity):
@@ -31,20 +29,17 @@ class FailureManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self):
-        ...
+    async def close(self): ...
 
     @abstractmethod
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
-    ) -> CommandOutput:
-        ...
+    ) -> CommandOutput: ...
 
     @abstractmethod
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
-    ) -> CommandOutput:
-        ...
+    ) -> CommandOutput: ...
 
     @abstractmethod
     async def notify_jobs(self, job_token: JobToken, out_port_name: str, token: Token):

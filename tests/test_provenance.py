@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import asyncio
-from typing import Any, MutableMapping, MutableSequence, cast
+from typing import Any, MutableMapping, MutableSequence
 
 import pytest
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Port, Status, Step, Token, Workflow
 from streamflow.cwl.command import CWLCommand, CWLCommandToken
 from streamflow.cwl.translator import _create_command_output_processor_base
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.persistence.utils import load_depender_tokens, load_dependee_tokens
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
@@ -68,40 +67,6 @@ async def _general_test(
     return step
 
 
-async def _load_dependees(
-    token_id: int, loading_context: DatabaseLoadingContext, context: StreamFlowContext
-) -> MutableSequence[Token]:
-    rows = await context.database.get_dependees(token_id)
-    return cast(
-        MutableSequence[Token],
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    loading_context.load_token(context, row["dependee"])
-                )
-                for row in rows
-            )
-        ),
-    )
-
-
-async def _load_dependers(
-    token_id: int, loading_context: DatabaseLoadingContext, context: StreamFlowContext
-) -> MutableSequence[Token]:
-    rows = await context.database.get_dependers(token_id)
-    return cast(
-        MutableSequence[Token],
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    loading_context.load_token(context, row["depender"])
-                )
-                for row in rows
-            )
-        ),
-    )
-
-
 async def _put_tokens(
     token_list: MutableSequence[Token],
     in_port: Port,
@@ -130,7 +95,9 @@ async def _verify_dependency_tokens(
     token_reloaded = await context.database.get_token(token_id=token.persistent_id)
     assert token_reloaded["port"] == port.persistent_id
 
-    depender_list = await _load_dependers(token.persistent_id, loading_context, context)
+    depender_list = await load_depender_tokens(
+        token.persistent_id, context, loading_context
+    )
     print(
         "depender:",
         {token.persistent_id: [t.persistent_id for t in depender_list]},
@@ -143,7 +110,9 @@ async def _verify_dependency_tokens(
     for t1 in depender_list:
         assert _contains_id(t1.persistent_id, expected_depender)
 
-    dependee_list = await _load_dependees(token.persistent_id, loading_context, context)
+    dependee_list = await load_dependee_tokens(
+        token.persistent_id, context, loading_context
+    )
     print(
         "dependee:",
         {token.persistent_id: [t.persistent_id for t in dependee_list]},
@@ -300,15 +269,20 @@ async def test_execute_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_gather_step(context: StreamFlowContext):
     """Test token provenance for GatherStep"""
-    workflow, (in_port, out_port) = await create_workflow(context)
-    token_list = [Token(i) for i in range(3)]
+    workflow, (in_port, out_port, size_port) = await create_workflow(
+        context, num_port=3
+    )
+    base_tag = "0"
+    token_list = [Token(i, tag=f"{base_tag}.{i}") for i in range(5)]
+    size_port.put(Token(len(token_list), tag=base_tag))
+    size_port.put(TerminationToken())
     await _general_test(
         context=context,
         workflow=workflow,
         in_port=in_port,
         out_port=out_port,
         step_cls=GatherStep,
-        kwargs_step={"name": utils.random_name() + "-gather"},
+        kwargs_step={"name": utils.random_name() + "-gather", "size_port": size_port},
         token_list=token_list,
     )
     assert len(out_port.token_list) == 2

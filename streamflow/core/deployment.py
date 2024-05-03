@@ -62,8 +62,7 @@ class BindingFilter(SchemaEntity):
     @abstractmethod
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
-    ) -> MutableSequence[Target]:
-        ...
+    ) -> MutableSequence[Target]: ...
 
 
 class Connector(SchemaEntity):
@@ -79,8 +78,7 @@ class Connector(SchemaEntity):
         dst: str,
         locations: MutableSequence[Location],
         read_only: bool = False,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @abstractmethod
     async def copy_remote_to_local(
@@ -89,8 +87,7 @@ class Connector(SchemaEntity):
         dst: str,
         locations: MutableSequence[Location],
         read_only: bool = False,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @abstractmethod
     async def copy_remote_to_remote(
@@ -101,12 +98,10 @@ class Connector(SchemaEntity):
         source_location: Location,
         source_connector: Connector | None = None,
         read_only: bool = False,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @abstractmethod
-    async def deploy(self, external: bool) -> None:
-        ...
+    async def deploy(self, external: bool) -> None: ...
 
     @abstractmethod
     async def get_available_locations(
@@ -115,8 +110,7 @@ class Connector(SchemaEntity):
         input_directory: str | None = None,
         output_directory: str | None = None,
         tmp_directory: str | None = None,
-    ) -> MutableMapping[str, AvailableLocation]:
-        ...
+    ) -> MutableMapping[str, AvailableLocation]: ...
 
     @abstractmethod
     async def run(
@@ -131,18 +125,15 @@ class Connector(SchemaEntity):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
-        ...
+    ) -> tuple[Any | None, int] | None: ...
 
     @abstractmethod
-    async def undeploy(self, external: bool) -> None:
-        ...
+    async def undeploy(self, external: bool) -> None: ...
 
     @abstractmethod
     async def get_stream_reader(
         self, location: Location, src: str
-    ) -> StreamWrapperContextManager:
-        ...
+    ) -> StreamWrapperContextManager: ...
 
 
 class DeploymentManager(SchemaEntity):
@@ -150,24 +141,19 @@ class DeploymentManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self) -> None:
-        ...
+    async def close(self) -> None: ...
 
     @abstractmethod
-    async def deploy(self, deployment_config: DeploymentConfig) -> None:
-        ...
+    async def deploy(self, deployment_config: DeploymentConfig) -> None: ...
 
     @abstractmethod
-    def get_connector(self, deployment_name: str) -> Connector | None:
-        ...
+    def get_connector(self, deployment_name: str) -> Connector | None: ...
 
     @abstractmethod
-    async def undeploy(self, deployment_name: str) -> None:
-        ...
+    async def undeploy(self, deployment_name: str) -> None: ...
 
     @abstractmethod
-    async def undeploy_all(self):
-        ...
+    async def undeploy_all(self): ...
 
 
 class DeploymentConfig(Config, PersistableEntity):

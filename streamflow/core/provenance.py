@@ -29,5 +29,4 @@ class ProvenanceManager:
         config: str | None,
         additional_files: MutableSequence[MutableMapping[str, str]] | None,
         additional_properties: MutableSequence[MutableMapping[str, str]] | None,
-    ):
-        ...
+    ): ...

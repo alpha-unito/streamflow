@@ -60,7 +60,7 @@ async def get_execute_step_out_token_ids(next_token_ids, context):
     for t_id in next_token_ids:
         if t_id > 0:
             port_row = await context.database.get_port_from_token(t_id)
-            for step_id_row in await context.database.get_steps_from_output_port(
+            for step_id_row in await context.database.get_input_steps(
                 port_row["id"]
             ):
                 step_row = await context.database.get_step(step_id_row["step"])
@@ -86,10 +86,10 @@ async def evaluate_token_availability(token, step_rows, context, valid_data):
         if issubclass(
             get_class_from_name(step_row["type"]),
             (
-                ExecuteStep,
-                InputInjectorStep,
                 BackPropagationTransformer,
                 DeployStep,
+                ExecuteStep,
+                InputInjectorStep,
             ),
         ):
             logger.debug(
@@ -247,7 +247,7 @@ class RollbackDeterministicWorkflowPolicy:
             port_name = get_key_by_value(t_id, self.port_tokens)
             port_id = max(self.port_name_ids[port_name])
 
-            step_rows = await self.context.database.get_steps_from_output_port(port_id)
+            step_rows = await self.context.database.get_input_steps(port_id)
             for step_row in await asyncio.gather(
                 *(
                     asyncio.create_task(self.context.database.get_step(sr["step"]))
@@ -432,7 +432,7 @@ class RollbackDeterministicWorkflowPolicy:
         for row_dependencies in await asyncio.gather(
             *(
                 asyncio.create_task(
-                    self.context.database.get_steps_from_output_port(port_id)
+                    self.context.database.get_input_steps(port_id)
                 )
                 for port_id in ports
             )
@@ -612,7 +612,7 @@ class RollbackDeterministicWorkflowPolicy:
                     port_id = min(self.port_name_ids[step.get_output_port().name])
                     for (
                         step_dep_row
-                    ) in await new_workflow.context.database.get_steps_from_input_port(
+                    ) in await new_workflow.context.database.get_output_steps(
                         port_id
                     ):
                         step_row = await new_workflow.context.database.get_step(
@@ -645,7 +645,7 @@ class RollbackDeterministicWorkflowPolicy:
                         ):
                             for (
                                 step_dep_row
-                            ) in await new_workflow.context.database.get_steps_from_output_port(
+                            ) in await new_workflow.context.database.get_input_steps(
                                 port_dep_row["port"]
                             ):
                                 step_row = await new_workflow.context.database.get_step(

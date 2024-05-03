@@ -10,7 +10,7 @@ from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
-from asyncssh import ChannelOpenError
+from asyncssh import ChannelOpenError, ConnectionLost
 from cachetools import Cache, LRUCache
 from importlib_resources import files
 
@@ -42,26 +42,42 @@ class SSHContext:
         streamflow_config_dir: str,
         config: SSHConfig,
         max_concurrent_sessions: int,
+        retries: int,
+        retry_delay: int,
     ):
         self._streamflow_config_dir: str = streamflow_config_dir
         self._config: SSHConfig = config
         self._max_concurrent_sessions: int = max_concurrent_sessions
         self._ssh_connection: asyncssh.SSHClientConnection | None = None
         self._connecting = False
+        self._retries = retries
+        self._retry_delay = retry_delay
         self._connect_event: asyncio.Event = asyncio.Event()
 
     async def get_connection(self) -> asyncssh.SSHClientConnection:
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
-                try:
-                    self._ssh_connection = await self._get_connection(self._config)
-                except ConnectionError as e:
-                    logger.exception(
-                        f"Impossible to connect to {self._config.hostname}: {e}"
-                    )
-                    self.close()
-                    raise
+                for i in range(1, self._retries + 1):
+                    try:
+                        self._ssh_connection = await self._get_connection(self._config)
+                        break
+                    except (ConnectionError, ConnectionLost) as e:
+                        if i == self._retries:
+                            logger.exception(
+                                f"Impossible to connect to {self._config.hostname}: {e}"
+                            )
+                            self.close()
+                            raise
+                        if logger.isEnabledFor(logging.WARNING):
+                            logger.warning(
+                                f"Connection to {self._config.hostname} failed: {e}. "
+                                f"Waiting {self._retry_delay} seconds for the next attempt."
+                            )
+                    except asyncssh.Error:
+                        self.close()
+                        raise
+                    await asyncio.sleep(self._retry_delay)
                 self._connect_event.set()
             else:
                 await self._connect_event.wait()
@@ -189,6 +205,8 @@ class SSHContextFactory:
         config: SSHConfig,
         max_concurrent_sessions: int,
         max_connections: int,
+        retries: int,
+        retry_delay: int,
     ):
         self._condition: asyncio.Condition = asyncio.Condition()
         self._contexts: MutableSequence[SSHContext] = [
@@ -196,6 +214,8 @@ class SSHContextFactory:
                 streamflow_config_dir=streamflow_config_dir,
                 config=config,
                 max_concurrent_sessions=max_concurrent_sessions,
+                retries=retries,
+                retry_delay=retry_delay,
             )
             for _ in range(max_connections)
         ]
@@ -280,6 +300,8 @@ class SSHConnector(BaseConnector):
         file: str | None = None,
         maxConcurrentSessions: int = 10,
         maxConnections: int = 1,
+        retries: int = 3,
+        retryDelay: int = 5,
         passwordFile: str | None = None,
         services: MutableMapping[str, str] | None = None,
         sharedPaths: MutableSequence[str] | None = None,
@@ -317,13 +339,15 @@ class SSHConnector(BaseConnector):
         self.passwordFile: str | None = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
         self.maxConnections: int = maxConnections
+        self.retries: int = retries
+        self.retryDelay: int = retryDelay
         self.sharedPaths: MutableSequence[str] = sharedPaths or []
         self.sshKey: str | None = sshKey
         self.sshKeyPassphraseFile: str | None = sshKeyPassphraseFile
         self.ssh_context_factories: MutableMapping[str, SSHContextFactory] = {}
-        self.data_transfer_context_factories: MutableMapping[
-            str, SSHContextFactory
-        ] = {}
+        self.data_transfer_context_factories: MutableMapping[str, SSHContextFactory] = (
+            {}
+        )
         self.username: str = username
         self.tunnel: SSHConfig | None = self._get_config(tunnel)
         self.dataTransferConfig: SSHConfig | None = self._get_config(
@@ -416,8 +440,8 @@ class SSHConnector(BaseConnector):
                 locations[i : i + rounds] for i in range(0, len(locations), rounds)
             ]
             for location_group in location_groups:
-                async with (
-                    await source_connector.get_stream_reader(source_location, src)
+                async with await source_connector.get_stream_reader(
+                    source_location, src
                 ) as reader:
                     async with contextlib.AsyncExitStack() as exit_stack:
                         # Open a target StreamWriter for each location
@@ -487,13 +511,13 @@ class SSHConnector(BaseConnector):
         return SSHConfig(
             hostname=node["hostname"],
             username=node["username"] if "username" in node else self.username,
-            check_host_key=node["checkHostKey"]
-            if "checkHostKey" in node
-            else self.checkHostKey,
+            check_host_key=(
+                node["checkHostKey"] if "checkHostKey" in node else self.checkHostKey
+            ),
             client_keys=[ssh_key] if ssh_key is not None else [],
-            password_file=node["passwordFile"]
-            if "passwordFile" in node
-            else self.passwordFile,
+            password_file=(
+                node["passwordFile"] if "passwordFile" in node else self.passwordFile
+            ),
             ssh_key_passphrase_file=(
                 node["sshKeyPassphraseFile"]
                 if "sshKeyPassphraseFile" in node
@@ -502,9 +526,7 @@ class SSHConnector(BaseConnector):
             tunnel=(
                 self._get_config(node["tunnel"])
                 if "tunnel" in node
-                else self.tunnel
-                if hasattr(self, "tunnel")
-                else None
+                else self.tunnel if hasattr(self, "tunnel") else None
             ),
         )
 
@@ -534,6 +556,8 @@ class SSHConnector(BaseConnector):
                     config=self.dataTransferConfig,
                     max_concurrent_sessions=self.maxConcurrentSessions,
                     max_connections=self.maxConnections,
+                    retries=self.retries,
+                    retry_delay=self.retryDelay,
                 )
             return self.data_transfer_context_factories[location].get(
                 command=command,
@@ -632,6 +656,8 @@ class SSHConnector(BaseConnector):
                 config=self.nodes[location],
                 max_concurrent_sessions=self.maxConcurrentSessions,
                 max_connections=self.maxConnections,
+                retries=self.retries,
+                retry_delay=self.retryDelay,
             )
         return self.ssh_context_factories[location].get(
             command=command,
@@ -651,6 +677,8 @@ class SSHConnector(BaseConnector):
                     config=self.dataTransferConfig,
                     max_concurrent_sessions=self.maxConcurrentSessions,
                     max_connections=self.maxConnections,
+                    retries=self.retries,
+                    retry_delay=self.retryDelay,
                 )
             ssh_context_factory = self.data_transfer_context_factories[location.name]
         else:
@@ -660,6 +688,8 @@ class SSHConnector(BaseConnector):
                     config=self.nodes[location.name],
                     max_concurrent_sessions=self.maxConcurrentSessions,
                     max_connections=self.maxConnections,
+                    retries=self.retries,
+                    retry_delay=self.retryDelay,
                 )
             ssh_context_factory = self.ssh_context_factories[location.name]
         return SSHStreamWrapperContextManager(

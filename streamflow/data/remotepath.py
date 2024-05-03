@@ -283,11 +283,13 @@ async def listdir(
     else:
         command = 'find -L "{path}" -mindepth 1 -maxdepth 1 {type}'.format(
             path=path,
-            type="-type {type}".format(
-                type="d" if file_type == FileType.DIRECTORY else "f"
-            )
-            if file_type is not None
-            else "",
+            type=(
+                "-type {type}".format(
+                    type="d" if file_type == FileType.DIRECTORY else "f"
+                )
+                if file_type is not None
+                else ""
+            ),
         ).split()
         content, status = await connector.run(
             location=location, command=command, capture_output=True

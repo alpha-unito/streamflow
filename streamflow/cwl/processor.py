@@ -169,9 +169,11 @@ class CWLTokenProcessor(TokenProcessor):
             ),  # todo: fix multiple instances
             full_js=row["full_js"],
             load_contents=row["load_contents"],
-            load_listing=LoadListing(row["load_listing"])
-            if row["load_listing"] is not None
-            else None,
+            load_listing=(
+                LoadListing(row["load_listing"])
+                if row["load_listing"] is not None
+                else None
+            ),
             only_propagate_secondary_files=row["only_propagate_secondary_files"],
             optional=row["optional"],
             secondary_files=[
@@ -397,9 +399,11 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
-            target=(await loading_context.load_target(context, row["workflow"]))
-            if row["target"]
-            else None,
+            target=(
+                (await loading_context.load_target(context, row["workflow"]))
+                if row["target"]
+                else None
+            ),
             token_type=row["token_type"],
             enum_symbols=row["enum_symbols"],
             expression_lib=row["expression_lib"],
@@ -407,9 +411,11 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             full_js=row["full_js"],
             glob=row["glob"],
             load_contents=row["load_contents"],
-            load_listing=LoadListing(row["load_listing"])
-            if row["load_listing"] is not None
-            else None,
+            load_listing=(
+                LoadListing(row["load_listing"])
+                if row["load_listing"] is not None
+                else None
+            ),
             optional=row["optional"],
             output_eval=row["output_eval"],
             secondary_files=[
@@ -588,9 +594,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 return (
                     token_list
                     if len(token_list) > 1
-                    else token_list[0]
-                    if len(token_list) == 1
-                    else None
+                    else token_list[0] if len(token_list) == 1 else None
                 )
             # Otherwise, fill context['self'] with glob data and proceed
             else:
@@ -800,9 +804,11 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
             processor=await CommandOutputProcessor.load(
                 context, row["processor"], loading_context
             ),
-            target=(await loading_context.load_target(context, row["workflow"]))
-            if row["target"]
-            else None,
+            target=(
+                (await loading_context.load_target(context, row["workflow"]))
+                if row["target"]
+                else None
+            ),
         )
 
     async def process(
@@ -971,9 +977,11 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
-            target=(await loading_context.load_target(context, row["workflow"]))
-            if row["target"]
-            else None,
+            target=(
+                (await loading_context.load_target(context, row["workflow"]))
+                if row["target"]
+                else None
+            ),
             processors={
                 k: v
                 for k, v in zip(

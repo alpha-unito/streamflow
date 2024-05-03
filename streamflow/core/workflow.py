@@ -28,8 +28,7 @@ class Command(ABC):
         self.step: Step = step
 
     @abstractmethod
-    async def execute(self, job: Job) -> CommandOutput:
-        ...
+    async def execute(self, job: Job) -> CommandOutput: ...
 
     @classmethod
     async def load(
@@ -106,9 +105,11 @@ class CommandOutputProcessor(ABC):
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
-            target=(await loading_context.load_target(context, row["workflow"]))
-            if row["target"]
-            else None,
+            target=(
+                (await loading_context.load_target(context, row["workflow"]))
+                if row["target"]
+                else None
+            ),
         )
 
     async def _save_additional_params(self, context: StreamFlowContext):
@@ -138,8 +139,7 @@ class CommandOutputProcessor(ABC):
         job: Job,
         command_output: CommandOutput,
         connector: Connector | None = None,
-    ) -> Token | None:
-        ...
+    ) -> Token | None: ...
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -153,8 +153,7 @@ class Executor(ABC):
         self.workflow: Workflow = workflow
 
     @abstractmethod
-    async def run(self) -> MutableMapping[str, Any]:
-        ...
+    async def run(self) -> MutableMapping[str, Any]: ...
 
 
 class Job:
@@ -460,8 +459,7 @@ class Step(PersistableEntity, ABC):
         return step
 
     @abstractmethod
-    async def run(self):
-        ...
+    async def run(self): ...
 
     async def save(self, context: StreamFlowContext) -> None:
         async with self.persistence_lock:
@@ -499,8 +497,7 @@ class Step(PersistableEntity, ABC):
         await asyncio.gather(*save_tasks)
 
     @abstractmethod
-    async def terminate(self, status: Status):
-        ...
+    async def terminate(self, status: Status): ...
 
 
 class Token(PersistableEntity):
@@ -605,8 +602,9 @@ class TokenProcessor(ABC):
         return await type._load(context, row["params"], loading_context)
 
     @abstractmethod
-    async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
-        ...
+    async def process(
+        self, inputs: MutableMapping[str, Token], token: Token
+    ) -> Token: ...
 
     async def save(self, context: StreamFlowContext):
         return {

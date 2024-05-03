@@ -447,9 +447,9 @@ class CWLBaseCommand(Command, ABC):
                         await utils.write_remote_file(
                             context=self.step.workflow.context,
                             job=job,
-                            content=listing["contents"]
-                            if "contents" in listing
-                            else "",
+                            content=(
+                                listing["contents"] if "contents" in listing else ""
+                            ),
                             path=dest_path,
                         )
                 # If `listing` is present, recursively process folder contents

@@ -60,8 +60,7 @@ class DataManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self) -> None:
-        ...
+    async def close(self) -> None: ...
 
     @abstractmethod
     def get_data_locations(
@@ -70,18 +69,15 @@ class DataManager(SchemaEntity):
         deployment: str | None = None,
         location_name: str | None = None,
         data_type: DataType | None = None,
-    ) -> MutableSequence[DataLocation]:
-        ...
+    ) -> MutableSequence[DataLocation]: ...
 
     @abstractmethod
     def get_source_location(
         self, path: str, dst_deployment: str
-    ) -> DataLocation | None:
-        ...
+    ) -> DataLocation | None: ...
 
     @abstractmethod
-    def invalidate_location(self, location: Location, path: str) -> None:
-        ...
+    def invalidate_location(self, location: Location, path: str) -> None: ...
 
     @abstractmethod
     def register_path(
@@ -90,14 +86,12 @@ class DataManager(SchemaEntity):
         path: str,
         relpath: str | None = None,
         data_type: DataType = DataType.PRIMARY,
-    ) -> DataLocation:
-        ...
+    ) -> DataLocation: ...
 
     @abstractmethod
     def register_relation(
         self, src_location: DataLocation, dst_location: DataLocation
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @abstractmethod
     async def transfer_data(
@@ -107,8 +101,7 @@ class DataManager(SchemaEntity):
         dst_locations: MutableSequence[Location],
         dst_path: str,
         writable: bool = False,
-    ) -> None:
-        ...
+    ) -> None: ...
 
 
 class FileType(Enum):
@@ -121,23 +114,18 @@ class StreamWrapper(ABC):
         self.stream: Any = stream
 
     @abstractmethod
-    async def close(self):
-        ...
+    async def close(self): ...
 
     @abstractmethod
-    async def read(self, size: int | None = None):
-        ...
+    async def read(self, size: int | None = None): ...
 
     @abstractmethod
-    async def write(self, data: Any):
-        ...
+    async def write(self, data: Any): ...
 
 
 class StreamWrapperContextManager(ABC):
     @abstractmethod
-    async def __aenter__(self) -> StreamWrapper:
-        ...
+    async def __aenter__(self) -> StreamWrapper: ...
 
     @abstractmethod
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        ...
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None: ...

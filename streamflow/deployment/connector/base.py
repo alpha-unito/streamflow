@@ -173,8 +173,8 @@ class BaseConnector(Connector, FutureAware):
                 )
             )
             # Open source StreamReader
-            async with (
-                await source_connector.get_stream_reader(source_location, src)
+            async with await source_connector.get_stream_reader(
+                source_location, src
             ) as reader:
                 # Open a target StreamWriter for each location
                 writers = await asyncio.gather(
@@ -220,8 +220,7 @@ class BaseConnector(Connector, FutureAware):
     @abstractmethod
     def _get_run_command(
         self, command: str, location: Location, interactive: bool = False
-    ) -> str:
-        ...
+    ) -> str: ...
 
     def _get_shell(self) -> str:
         return "sh"

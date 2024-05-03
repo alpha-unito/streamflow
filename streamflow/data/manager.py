@@ -416,9 +416,11 @@ class RemotePathMapper:
             else:
                 location = DataLocation(
                     path=node_path,
-                    relpath=relpath
-                    if relpath and node_path.endswith(relpath)
-                    else path_processor.basename(node_path),
+                    relpath=(
+                        relpath
+                        if relpath and node_path.endswith(relpath)
+                        else path_processor.basename(node_path)
+                    ),
                     deployment=data_location.deployment,
                     service=data_location.service,
                     data_type=DataType.PRIMARY,

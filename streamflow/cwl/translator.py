@@ -79,9 +79,12 @@ from streamflow.cwl.step import (
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
+    CartesianProductSizeTransformer,
+    CloneTransformer,
     CWLTokenTransformer,
     DefaultRetagTransformer,
     DefaultTransformer,
+    DotProductSizeTransformer,
     FirstNonNullTransformer,
     ForwardTransformer,
     ListToElementTransformer,
@@ -498,6 +501,40 @@ def _create_list_merger(
         return combinator
 
 
+def _create_nested_size_tag(
+    size_ports: MutableMapping[str, Port],
+    replicas_port: MutableMapping[str, Port],
+    step_name: str,
+    workflow: Workflow,
+) -> MutableSequence[Port]:
+    if len(size_ports) == 0:
+        return [next(iter(replicas_port.values()))]
+    new_replicas_port = {}
+    new_size_ports = {}
+    for port_name, port in size_ports.items():
+        output_port_name = f"{port_name}-{next(iter(replicas_port.keys()))}"
+        transformer = workflow.create_step(
+            cls=CloneTransformer,
+            name=f"{step_name}-{output_port_name}-scatter-size-transformer",
+            replicas_port=next(iter(replicas_port.values())),
+        )
+        transformer.add_input_port(port_name, port)
+        output_port = workflow.create_port()
+        transformer.add_output_port(output_port_name, output_port)
+        if not new_replicas_port:
+            new_replicas_port[output_port_name] = output_port
+        else:
+            new_size_ports[output_port_name] = output_port
+    size_ports_list = _create_nested_size_tag(
+        new_size_ports,
+        new_replicas_port,
+        step_name,
+        workflow,
+    )
+    size_ports_list.append(next(iter(replicas_port.values())))
+    return size_ports_list
+
+
 def _create_residual_combinator(
     workflow: Workflow,
     step_name: str,
@@ -723,9 +760,7 @@ def _create_token_processor(
             port_type = (
                 "long"
                 if port_type == "int"
-                else "double"
-                if port_type == "float"
-                else port_type
+                else "double" if port_type == "float" else port_type
             )
             return CWLTokenProcessor(
                 name=port_name,
@@ -790,9 +825,7 @@ def _get_command_token(
     token_type = (
         "long"
         if token_type == "int"  # nosec
-        else "double"
-        if token_type == "float"  # nosec
-        else token_type
+        else "double" if token_type == "float" else token_type  # nosec
     )
     if isinstance(binding, MutableMapping):
         item_separator = binding.get("itemSeparator", None)
@@ -1029,9 +1062,11 @@ def _get_secondary_files(
         return [
             SecondaryFile(
                 pattern=sf["pattern"],
-                required=sf.get("required")
-                if sf.get("required") is not None
-                else default_required,
+                required=(
+                    sf.get("required")
+                    if sf.get("required") is not None
+                    else default_required
+                ),
             )
             for sf in cwl_element
         ]
@@ -1039,9 +1074,11 @@ def _get_secondary_files(
         return [
             SecondaryFile(
                 pattern=cwl_element["pattern"],
-                required=cwl_element.get("required")
-                if cwl_element.get("required") is not None
-                else default_required,
+                required=(
+                    cwl_element.get("required")
+                    if cwl_element.get("required") is not None
+                    else default_required
+                ),
             )
         ]
     else:
@@ -2017,7 +2054,9 @@ class CWLTranslator:
                     port_name, input_ports[global_name]
                 )
             # If there are multiple scatter inputs, configure combinator
+            size_port = None
             scatter_combinator = None
+            scatter_size_transformer = None
             if len(scatter_inputs) > 1:
                 # Build combinator
                 if scatter_method == "dotproduct":
@@ -2028,6 +2067,10 @@ class CWLTranslator:
                         scatter_combinator.add_item(
                             posixpath.relpath(global_name, step_name)
                         )
+                    scatter_size_transformer = workflow.create_step(
+                        cls=DotProductSizeTransformer,
+                        name=step_name + "-scatter-size-transformer",
+                    )
                 else:
                     scatter_combinator = CartesianProductCombinator(
                         workflow=workflow, name=step_name + "-scatter-combinator"
@@ -2035,6 +2078,11 @@ class CWLTranslator:
                     for global_name in scatter_inputs:
                         scatter_combinator.add_item(
                             posixpath.relpath(global_name, step_name)
+                        )
+                    if scatter_method == "flat_crossproduct":
+                        scatter_size_transformer = workflow.create_step(
+                            cls=CartesianProductSizeTransformer,
+                            name=step_name + "-scatter-size-transformer",
                         )
             # If there are both scatter and non-scatter inputs
             if len(scatter_inputs) < len(input_ports):
@@ -2054,6 +2102,7 @@ class CWLTranslator:
                 scatter_step.add_input_port(port_name, input_ports[global_name])
                 input_ports[global_name] = workflow.create_port()
                 scatter_step.add_output_port(port_name, input_ports[global_name])
+                size_port = scatter_step.get_size_port()
             # If there is a scatter combinator, create a combinator step and add all inputs to it
             if scatter_combinator:
                 combinator_step = workflow.create_step(
@@ -2066,6 +2115,17 @@ class CWLTranslator:
                     combinator_step.add_input_port(port_name, input_ports[global_name])
                     input_ports[global_name] = workflow.create_port()
                     combinator_step.add_output_port(port_name, input_ports[global_name])
+                if scatter_size_transformer:
+                    output_port_names = []
+                    for global_name in scatter_inputs:
+                        port_name = posixpath.relpath(global_name, step_name)
+                        scatter_size_transformer.add_input_port(port_name, size_port)
+                        output_port_names.append(port_name)
+                    size_port = workflow.create_port()
+                    scatter_size_transformer.add_output_port(
+                        "-".join(output_port_names), size_port
+                    )
+
         # Process inputs again to attach ports to transformers
         input_ports = _process_transformers(
             step_name=step_name,
@@ -2114,16 +2174,40 @@ class CWLTranslator:
                     gather_steps = []
                     internal_output_ports[global_name] = workflow.create_port()
                     gather_input_port = internal_output_ports[global_name]
-                    for scatter_input in scatter_inputs:
-                        scatter_port_name = posixpath.relpath(scatter_input, step_name)
-                        gather_steps.append(
-                            workflow.create_step(
-                                cls=GatherStep,
-                                name=global_name + "-gather-" + scatter_port_name,
-                            )
+
+                    # build clone size transformers
+                    scatter_step = cast(
+                        ScatterStep, workflow.steps[scatter_inputs[0] + "-scatter"]
+                    )
+                    ext_port_sizes = {}
+                    for ext_scatter_input in scatter_inputs[1:]:
+                        ext_scatter_step = cast(
+                            ScatterStep,
+                            workflow.steps[ext_scatter_input + "-scatter"],
                         )
-                        gather_steps[-1].add_input_port(port_name, gather_input_port)
-                        gather_steps[-1].add_output_port(
+                        ext_port_name = ext_scatter_step.get_input_port_name()
+                        ext_port_sizes[ext_port_name] = ext_scatter_step.get_size_port()
+                    size_ports_list = _create_nested_size_tag(
+                        ext_port_sizes,
+                        {
+                            scatter_step.get_input_port_name(): scatter_step.get_size_port()
+                        },
+                        step_name,
+                        workflow,
+                    )
+
+                    for scatter_input, size_port in zip(
+                        scatter_inputs, size_ports_list
+                    ):
+                        scatter_port_name = posixpath.relpath(scatter_input, step_name)
+                        gather_step = workflow.create_step(
+                            cls=GatherStep,
+                            name=global_name + "-gather-" + scatter_port_name,
+                            size_port=size_port,
+                        )
+                        gather_steps.append(gather_step)
+                        gather_step.add_input_port(port_name, gather_input_port)
+                        gather_step.add_output_port(
                             name=port_name,
                             port=(
                                 external_output_ports[global_name]
@@ -2136,9 +2220,10 @@ class CWLTranslator:
                     gather_step = workflow.create_step(
                         cls=GatherStep,
                         name=global_name + "-gather",
-                        depth=1
-                        if scatter_method == "dotproduct"
-                        else len(scatter_inputs),
+                        size_port=size_port,
+                        depth=(
+                            1 if scatter_method == "dotproduct" else len(scatter_inputs)
+                        ),
                     )
                     internal_output_ports[global_name] = workflow.create_port()
                     gather_step.add_input_port(
@@ -2199,9 +2284,11 @@ class CWLTranslator:
                 )
                 # Create loop output step
                 loop_output_step = workflow.create_step(
-                    cls=CWLLoopOutputLastStep
-                    if output_method == "last"
-                    else CWLLoopOutputAllStep,
+                    cls=(
+                        CWLLoopOutputLastStep
+                        if output_method == "last"
+                        else CWLLoopOutputAllStep
+                    ),
                     name=global_name + "-loop-output",
                 )
                 loop_output_step.add_input_port(
@@ -2387,9 +2474,11 @@ class CWLTranslator:
                 expression_lib=expression_lib,
             )
             input_dependencies[global_name] = set.union(
-                {global_name}
-                if "source" in element_input or "default" in element_input
-                else set(),
+                (
+                    {global_name}
+                    if "source" in element_input or "default" in element_input
+                    else set()
+                ),
                 {posixpath.join(step_name, d) for d in local_deps},
             ) or {global_name}
         # If `source` entry is present, process output dependencies
@@ -2614,9 +2703,9 @@ class CWLTranslator:
                     )
                     transfer_step.add_output_port(port_name, workflow.create_port())
                     # Add the output port of the TransferStep to the workflow output ports
-                    workflow.output_ports[
-                        port_name
-                    ] = transfer_step.get_output_port().name
+                    workflow.output_ports[port_name] = (
+                        transfer_step.get_output_port().name
+                    )
         # Return the final workflow object
         return workflow
 

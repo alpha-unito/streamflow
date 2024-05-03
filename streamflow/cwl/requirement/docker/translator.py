@@ -32,5 +32,4 @@ class CWLDockerTranslator(SchemaEntity, ABC):
         output_directory: str | None,
         network_access: bool,
         target: Target,
-    ) -> Target:
-        ...
+    ) -> Target: ...

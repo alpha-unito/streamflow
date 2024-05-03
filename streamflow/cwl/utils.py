@@ -413,9 +413,11 @@ def eval_expression(
         return cwl_utils.expression.interpolate(
             expression,
             context,
-            jslib=cwl_utils.expression.jshead(expression_lib or [], context)
-            if full_js
-            else "",
+            jslib=(
+                cwl_utils.expression.jshead(expression_lib or [], context)
+                if full_js
+                else ""
+            ),
             fullJS=full_js,
             strip_whitespace=strip_whitespace,
             timeout=timeout,
@@ -786,9 +788,9 @@ async def process_secondary_files(
             sf_specs.append(secondary_file)
     for sf_value, sf_spec in zip(await asyncio.gather(*sf_tasks), sf_specs):
         if sf_value is not None:
-            sf_map[
-                get_path_from_token(cast(MutableMapping[str, Any], sf_value))
-            ] = sf_value
+            sf_map[get_path_from_token(cast(MutableMapping[str, Any], sf_value))] = (
+                sf_value
+            )
         else:
             required = eval_expression(
                 expression=sf_spec.required,
@@ -807,7 +809,7 @@ async def register_data(
     connector: Connector,
     locations: MutableSequence[Location],
     base_path: str | None,
-    token_value: (MutableSequence[MutableMapping[str, Any]] | MutableMapping[str, Any]),
+    token_value: MutableSequence[MutableMapping[str, Any]] | MutableMapping[str, Any],
 ):
     # If `token_value` is a list, process every item independently
     if isinstance(token_value, MutableSequence):
@@ -878,9 +880,11 @@ def resolve_dependencies(
         cwl_utils.expression.interpolate(
             expression,
             context,
-            jslib=cwl_utils.expression.jshead(expression_lib or [], context)
-            if full_js
-            else "",
+            jslib=(
+                cwl_utils.expression.jshead(expression_lib or [], context)
+                if full_js
+                else ""
+            ),
             fullJS=full_js,
             strip_whitespace=strip_whitespace,
             timeout=timeout,

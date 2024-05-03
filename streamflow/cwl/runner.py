@@ -79,9 +79,9 @@ async def _async_main(args: argparse.Namespace):
         {"file": os.path.abspath(args.processfile)}
     )
     if args.jobfile:
-        streamflow_config["workflows"][workflow_name]["config"][
-            "settings"
-        ] = os.path.abspath(args.jobfile)
+        streamflow_config["workflows"][workflow_name]["config"]["settings"] = (
+            os.path.abspath(args.jobfile)
+        )
     validator.validate(streamflow_config)
     streamflow_config["path"] = (
         args.streamflow_file if args.streamflow_file is not None else os.getcwd()

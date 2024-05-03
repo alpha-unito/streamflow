@@ -239,11 +239,11 @@ async def test_execute_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_gather_step(context: StreamFlowContext):
     """Test saving GatherStep on database and re-load it in a new Workflow"""
-    workflow = (await create_workflow(context, num_port=0))[0]
+    workflow, ports = await create_workflow(context, num_port=1)
     await _base_step_test_process(
         workflow,
         GatherStep,
-        {"name": utils.random_name() + "-gather", "depth": 1},
+        {"name": utils.random_name() + "-gather", "depth": 1, "size_port": ports[0]},
         context,
     )
 

@@ -323,6 +323,16 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
+    async def get_input_steps(
+        self, port_id: int
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        async with self.connection as db:
+            async with db.execute(
+                "SELECT * FROM dependency WHERE port = :port AND type = :type",
+                {"port": port_id, "type": DependencyType.OUTPUT.value},
+            ) as cursor:
+                return await cursor.fetchall()
+
     async def get_output_ports(
         self, step_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
@@ -333,23 +343,13 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    async def get_steps_from_input_port(
+    async def get_output_steps(
         self, port_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]:
         async with self.connection as db:
             async with db.execute(
                 "SELECT * FROM dependency WHERE port = :port AND type = :type",
                 {"port": port_id, "type": DependencyType.INPUT.value},
-            ) as cursor:
-                return await cursor.fetchall()
-
-    async def get_steps_from_output_port(
-        self, port_id: int
-    ) -> MutableSequence[MutableMapping[str, Any]]:
-        async with self.connection as db:
-            async with db.execute(
-                "SELECT * FROM dependency WHERE port = :port AND type = :type",
-                {"port": port_id, "type": DependencyType.OUTPUT.value},
             ) as cursor:
                 return await cursor.fetchall()
 
@@ -361,20 +361,22 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchone()
 
+    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
+        async with self.connection as db:
+            async with db.execute(
+                "SELECT port.* "
+                "FROM token JOIN port ON token.port = port.id "
+                "WHERE token.id = :token_id",
+                {"token_id": token_id},
+            ) as cursor:
+                return await cursor.fetchone()
+
     async def get_port_tokens(self, port_id: int) -> MutableSequence[int]:
         async with self.connection as db:
             async with db.execute(
                 "SELECT id FROM token WHERE port = :port", {"port": port_id}
             ) as cursor:
                 return [row["id"] for row in await cursor.fetchall()]
-
-    async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
-        async with self.connection as db:
-            async with db.execute(
-                "SELECT port.* FROM token JOIN port ON token.port = port.id WHERE token.id = :token_id",
-                {"token_id": token_id},
-            ) as cursor:
-                return await cursor.fetchone()
 
     async def get_reports(
         self, workflow: str, last_only: bool = False

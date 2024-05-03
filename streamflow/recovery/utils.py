@@ -78,7 +78,7 @@ def get_files_from_token(token: Token) -> MutableSequence[str]:
 
 
 async def get_step_instances_from_output_port(port_id, context):
-    step_id_rows = await context.database.get_steps_from_output_port(port_id)
+    step_id_rows = await context.database.get_input_steps(port_id)
     return await asyncio.gather(
         *(
             asyncio.create_task(context.database.get_step(step_id_row["step"]))
@@ -92,7 +92,7 @@ async def get_execute_step_out_token_ids(next_token_ids, context):
     for t_id in next_token_ids:
         if t_id > 0:
             port_row = await context.database.get_port_from_token(t_id)
-            for step_id_row in await context.database.get_steps_from_output_port(
+            for step_id_row in await context.database.get_input_steps(
                 port_row["id"]
             ):
                 step_row = await context.database.get_step(step_id_row["step"])
