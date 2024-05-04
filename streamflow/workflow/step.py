@@ -1107,7 +1107,7 @@ class LoopCombinatorStep(CombinatorStep):
                                 logger.warning(
                                     f"Step {self.name} (wf {self.workflow.name}) anomalously terminates the iteration on port {task_name}."
                                 )
-                            self.iteration_terminaton_checklist[task_name].clear()
+                            self.iteration_termination_checklist[task_name].clear()
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
                     elif check_iteration_termination(token):
@@ -1132,7 +1132,10 @@ class LoopCombinatorStep(CombinatorStep):
                             not in self.iteration_terminaton_checklist[task_name]
                         ):
                             logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) add token tag {token.tag} on iteration_terminaton_checklist {task_name}. {'.'.join(token.tag.split('.')[:-1])} not in {self.iteration_terminaton_checklist[task_name]}"
+                                f"Step {self.name} (wf {self.workflow.name}) add token tag {token.tag} on "
+                                f"iteration_termination_checklist {task_name}. "
+                                f"{'.'.join(token.tag.split('.')[:-1])} not in "
+                                f"{self.iteration_termination_checklist[task_name]}"
                             )
                             self.iteration_terminaton_checklist[task_name].add(
                                 token.tag
