@@ -13,24 +13,20 @@ from typing import Any, MutableMapping, MutableSequence
 from cachetools import Cache, TTLCache
 from importlib_resources import files
 
-from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.deployment import Connector, Location
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
-from streamflow.core.utils import get_local_to_remote_destination, get_option
+from streamflow.core.utils import (
+    get_local_to_remote_destination,
+    get_option,
+    random_name,
+)
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 
-def _check_docker_compose_installed():
-    if which("docker compose") is None:
-        raise WorkflowExecutionException(
-            "Docker Compose must be installed on the system to use the Docker Compose connector."
-        )
-
-
-def _check_docker_installed(connector):
+def _check_docker_installed(connector: str):
     if which("docker") is None:
         raise WorkflowExecutionException(
             f"Docker must be installed on the system to use the {connector} connector."
@@ -54,9 +50,9 @@ async def _exists_docker_image(image_name: str) -> bool:
     return proc.returncode == 0
 
 
-async def _get_docker_compose_version() -> str:
+async def _get_docker_compose_version(compose_command: str) -> str:
     proc = await asyncio.create_subprocess_exec(
-        *shlex.split("docker compose version --short"),
+        *shlex.split(f"{compose_command} version --short"),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -145,11 +141,11 @@ class ContainerConnector(BaseConnector, ABC):
     async def _check_effective_location(
         self,
         common_paths: MutableMapping[str, Any],
-        effective_locations: MutableSequence[Location],
-        location: Location,
+        effective_locations: MutableSequence[ExecutionLocation],
+        location: ExecutionLocation,
         path: str,
-        source_location: Location | None = None,
-    ) -> tuple[MutableMapping[str, Any], MutableSequence[Location]]:
+        source_location: ExecutionLocation | None = None,
+    ) -> tuple[MutableMapping[str, Any], MutableSequence[ExecutionLocation]]:
         # Get all container mounts
         volumes = await self._get_volumes(location)
         for volume in volumes:
@@ -184,7 +180,7 @@ class ContainerConnector(BaseConnector, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
         dst = await get_local_to_remote_destination(self, locations[0], src, dst)
@@ -214,8 +210,8 @@ class ContainerConnector(BaseConnector, ABC):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[Location],
-        source_location: Location,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
@@ -257,10 +253,10 @@ class ContainerConnector(BaseConnector, ABC):
 
     async def _get_effective_locations(
         self,
-        locations: MutableSequence[Location],
+        locations: MutableSequence[ExecutionLocation],
         dest_path: str,
-        source_location: Location | None = None,
-    ) -> MutableSequence[Location]:
+        source_location: ExecutionLocation | None = None,
+    ) -> MutableSequence[ExecutionLocation]:
         common_paths = {}
         effective_locations = []
         for location in locations:
@@ -271,22 +267,19 @@ class ContainerConnector(BaseConnector, ABC):
 
     @abstractmethod
     async def _get_bind_mounts(
-        self, location: Location
-    ) -> MutableSequence[MutableMapping[str, str]]:
-        ...
+        self, location: ExecutionLocation
+    ) -> MutableSequence[MutableMapping[str, str]]: ...
 
     @abstractmethod
-    async def _get_location(self, location_name: str) -> AvailableLocation | None:
-        ...
+    async def _get_location(self, location_name: str) -> AvailableLocation | None: ...
 
     @abstractmethod
     async def _get_volumes(
-        self, location: Location
-    ) -> MutableSequence[MutableMapping[str, str]]:
-        ...
+        self, location: ExecutionLocation
+    ) -> MutableSequence[MutableMapping[str, str]]: ...
 
     async def _is_bind_transfer(
-        self, location: Location, host_path: str, instance_path: str
+        self, location: ExecutionLocation, host_path: str, instance_path: str
     ) -> bool:
         bind_mounts = await self._get_bind_mounts(location)
         host_binds = [b["Source"] for b in bind_mounts]
@@ -301,7 +294,7 @@ class ContainerConnector(BaseConnector, ABC):
 
 class DockerBaseConnector(ContainerConnector, ABC):
     async def _get_bind_mounts(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]:
         return [v for v in await self._get_volumes(location) if v["Type"] == "bind"]
 
@@ -328,12 +321,12 @@ class DockerBaseConnector(ContainerConnector, ABC):
         )
 
     def _get_run_command(
-        self, command: str, location: Location, interactive: bool = False
+        self, command: str, location: ExecutionLocation, interactive: bool = False
     ):
         return f"docker exec {'-i' if interactive else ''} {location.name} sh -c '{command}'"
 
     async def _get_volumes(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]:
         inspect_command = "".join(
             ["docker ", "inspect ", "--format ", "'{{json .Mounts}}' ", location.name]
@@ -720,7 +713,6 @@ class DockerComposeConnector(DockerBaseConnector):
         files: MutableSequence[str],
         projectName: str | None = None,
         verbose: bool | None = False,
-        logLevel: str | None = None,
         noAnsi: bool | None = False,
         host: str | None = None,
         tls: bool | None = False,
@@ -747,6 +739,7 @@ class DockerComposeConnector(DockerBaseConnector):
         locationsCacheTTL: int = None,
         resourcesCacheSize: int = None,
         resourcesCacheTTL: int = None,
+        wait: bool = True,
     ) -> None:
         super().__init__(
             deployment_name=deployment_name,
@@ -757,58 +750,40 @@ class DockerComposeConnector(DockerBaseConnector):
             resourcesCacheSize=resourcesCacheSize,
             resourcesCacheTTL=resourcesCacheTTL,
         )
-        self.files = [os.path.join(self.config_dir, file) for file in files]
-        self.projectName = projectName
-        self.verbose = verbose
-        self.logLevel = logLevel
-        self.noAnsi = noAnsi
-        self.host = host
-        self.noDeps = noDeps
-        self.forceRecreate = forceRecreate
+        self.files = [
+            file if os.path.isabs(file) else os.path.join(self.config_dir, file)
+            for file in files
+        ]
         self.alwaysRecreateDeps = alwaysRecreateDeps
-        self.noRecreate = noRecreate
-        self.noBuild = noBuild
-        self.noStart = noStart
         self.build = build
+        self.compatibility = compatibility
+        self.forceRecreate = forceRecreate
+        self.host = host
+        self.noAnsi = noAnsi
+        self.noBuild = noBuild
+        self.noDeps = noDeps
+        self.noRecreate = noRecreate
+        self.noStart = noStart
+        self.projectDirectory = projectDirectory
+        self.projectName = projectName
         self.renewAnonVolumes = renewAnonVolumes
         self.removeOrphans = removeOrphans
         self.removeVolumes = removeVolumes
         self.skipHostnameCheck = skipHostnameCheck
-        self.projectDirectory = projectDirectory
-        self.compatibility = compatibility
         self.timeout = timeout
         self.tls = tls
         self.tlscacert = tlscacert
         self.tlscert = tlscert
         self.tlskey = tlskey
         self.tlsverify = tlsverify
+        self.verbose = verbose
+        self.wait = wait
+        self._command = None
 
-    def _get_base_command(self) -> str:
-        options = (
-            f"{get_option('log-level', 'ERROR')}"
-            f"{get_option('host', self.host)}"
-            f"{get_option('tls', self.tls)}"
-            f"{get_option('tlscacert', self.tlscacert)}"
-            f"{get_option('tlscert', self.tlscert)}"
-            f"{get_option('tlskey', self.tlskey)}"
-            f"{get_option('tlsverify', self.tlsverify)}"
-        )
-        command = f"docker {options} compose"
-        return (
-                f"{command} "
-                f"{get_option('file', self.files)}"
-                f"{get_option('project-name', self.projectName)}"
-                f"{get_option('verbose', self.verbose)}"
-                f"{get_option('no-ansi', self.noAnsi)}"
-                f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
-                f"{get_option('project-directory', self.projectDirectory)}"
-                f"{get_option('compatibility', self.compatibility)}"
-            )
-
-    async def deploy(self, external: bool) -> None:
-        if not external:
-            _check_docker_installed("Docker Compose")
-            version = await _get_docker_compose_version()
+    async def _get_base_command(self) -> str:
+        if self._command is None:
+            compose_command = await self._get_docker_compose_command()
+            version = await _get_docker_compose_version(compose_command)
             if version.startswith("v"):
                 version = version[1:]
             major = int(version.split(".")[0])
@@ -822,14 +797,58 @@ class DockerComposeConnector(DockerBaseConnector):
                     f"Using Docker {await _get_docker_version()} "
                     f"and Docker Compose {version}."
                 )
+            self._command = (
+                f"{compose_command} "
+                f"{get_option('file', self.files)}"
+                f"{get_option('project-name', self.projectName)}"
+                f"{get_option('verbose', self.verbose)}"
+                f"{get_option('no-ansi', self.noAnsi)}"
+                f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
+                f"{get_option('project-directory', self.projectDirectory)}"
+                f"{get_option('compatibility', self.compatibility)}"
+            )
+        return self._command
+
+    async def _get_docker_compose_command(self) -> str:
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split("docker compose"),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.wait()
+        options = (
+            f"{get_option('log-level', 'ERROR')}"
+            f"{get_option('host', self.host)}"
+            f"{get_option('tls', self.tls)}"
+            f"{get_option('tlscacert', self.tlscacert)}"
+            f"{get_option('tlscert', self.tlscert)}"
+            f"{get_option('tlskey', self.tlskey)}"
+            f"{get_option('tlsverify', self.tlsverify)}"
+        )
+        if proc.returncode == 0:
+            return f"docker {options} compose"
+        else:
+            if which("docker-compose") is not None:
+                return f"docker-compose {options}"
+            else:
+                raise WorkflowExecutionException(
+                    "Docker Compose must be installed on the system to use the Docker Compose connector."
+                )
+
+    async def deploy(self, external: bool) -> None:
+        if not external:
+            _check_docker_installed("Docker Compose")
             deploy_command = (
-                f"{self._get_base_command()} up --detach "
-                f"{get_option('no-deps ', self.noDeps)}"
-                f"{get_option('force-recreate', self.forceRecreate)}"
+                f"{await self._get_base_command()} up --detach "
                 f"{get_option('always-recreate-deps', self.alwaysRecreateDeps)}"
-                f"{get_option('no-recreate', self.noRecreate)}"
+                f"{get_option('build', self.build)}"
+                f"{get_option('force-recreate', self.forceRecreate)}"
                 f"{get_option('no-build', self.noBuild)}"
+                f"{get_option('no-deps ', self.noDeps)}"
+                f"{get_option('no-recreate', self.noRecreate)}"
                 f"{get_option('no-start', self.noStart)}"
+                f"{get_option('timeout', self.timeout)}"
+                f"{get_option('wait', self.wait)}"
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING command {deploy_command}")
@@ -852,7 +871,7 @@ class DockerComposeConnector(DockerBaseConnector):
         output_directory: str | None = None,
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
-        ps_command = self._get_base_command() + "".join(
+        ps_command = (await self._get_base_command()) + "".join(
             ["ps ", "--format ", "json ", service or ""]
         )
         if logger.isEnabledFor(logging.DEBUG):
@@ -863,13 +882,17 @@ class DockerComposeConnector(DockerBaseConnector):
             stderr=asyncio.subprocess.STDOUT,
         )
         stdout, _ = await proc.communicate()
-        stdout = stdout.decode().strip()
-        if ((json_start := stdout.find("{")) != -1) and (
-                (json_end := stdout.rfind("}")) != -1
+        output = stdout.decode().strip()
+        if ((json_start := output.find("{")) != -1) and (
+                (json_end := output.rfind("}")) != -1
         ):
-            locations = json.loads(stdout[json_start : json_end + 1])
+            output = output[json_start : json_end + 1]
         else:
-            raise WorkflowExecutionException(f"impossible parse to json: {stdout.decode().strip()}")
+            raise WorkflowExecutionException(
+                f"Error retrieving locations for Docker Compose deployment {self.deployment_name}: "
+                f"{output}"
+            )
+        locations = json.loads(output)
         if not isinstance(locations, MutableSequence):
             locations = [locations]
         return {
@@ -897,9 +920,8 @@ class DockerComposeConnector(DockerBaseConnector):
     async def undeploy(self, external: bool) -> None:
         if not external:
             undeploy_command = (
-                self._get_base_command()
-                + f"down {get_option('volumes', self.removeVolumes)}"
-            )
+                await self._get_base_command()
+            ) + f"down {get_option('volumes', self.removeVolumes)}"
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"EXECUTING command {undeploy_command}")
             proc = await asyncio.create_subprocess_exec(
@@ -1056,7 +1078,7 @@ class SingularityConnector(ContainerConnector):
         self.writableTmpfs: bool = writableTmpfs
 
     async def _get_bind_mounts(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]:
         return await self._get_volumes(location)
 
@@ -1080,7 +1102,7 @@ class SingularityConnector(ContainerConnector):
         return None
 
     async def _get_volumes(
-        self, location: Location
+        self, location: ExecutionLocation
     ) -> MutableSequence[MutableMapping[str, str]]:
         bind_mounts, _ = await self.run(
             location=location,
@@ -1090,9 +1112,9 @@ class SingularityConnector(ContainerConnector):
         # Exclude `overlay` and `tmpfs` mounts
         return [
             {
-                "Source": line.split()[2]
-                if line.split()[1] == "/"
-                else line.split()[1],
+                "Source": (
+                    line.split()[2] if line.split()[1] == "/" else line.split()[1]
+                ),
                 "Destination": line.split()[2],
             }
             for line in bind_mounts.splitlines()
@@ -1100,7 +1122,7 @@ class SingularityConnector(ContainerConnector):
         ]
 
     def _get_run_command(
-        self, command: str, location: Location, interactive: bool = False
+        self, command: str, location: ExecutionLocation, interactive: bool = False
     ):
         return f"singularity exec instance://{location.name} sh -c '{command}'"
 
@@ -1111,7 +1133,7 @@ class SingularityConnector(ContainerConnector):
                 logger.debug(f"Using {await _get_singularity_version()}.")
             _prepare_volumes(self.bind, self.mount)
             for _ in range(0, self.replicas):
-                instance_name = utils.random_name()
+                instance_name = random_name()
                 deploy_command = (
                     f"singularity instance start "
                     f"{get_option('add-caps', self.addCaps)}"
