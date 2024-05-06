@@ -1728,9 +1728,12 @@ class Transformer(BaseStep, ABC):
         try:
             if self.input_ports:
                 inputs_map = {}
+                input_ports = {
+                    k: v for k, v in self.get_input_ports().items() if k != "__job__"
+                }
                 while True:
                     # Retrieve input tokens
-                    inputs = await self._get_inputs(self.get_input_ports())
+                    inputs = await self._get_inputs(input_ports)
                     # Check for termination
                     if check_termination(inputs.values()):
                         break
@@ -1738,7 +1741,7 @@ class Transformer(BaseStep, ABC):
                     _group_by_tag(inputs, inputs_map)
                     # Process tags
                     for tag in list(inputs_map.keys()):
-                        if len(inputs_map[tag]) == len(self.input_ports):
+                        if len(inputs_map[tag]) == len(input_ports):
                             inputs = inputs_map.pop(tag)
                             # Check for iteration termination and propagate
                             if check_iteration_termination(inputs.values()):

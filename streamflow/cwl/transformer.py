@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 import json
-from typing import Any, MutableMapping, MutableSequence
+from typing import Any, MutableMapping, MutableSequence, cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import (
@@ -13,6 +13,8 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Port, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
+from streamflow.cwl.step import build_token
+from streamflow.workflow.port import JobPort
 from streamflow.workflow.token import ListToken
 from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
 from streamflow.workflow.utils import get_token_value
@@ -309,6 +311,7 @@ class ValueFromTransformer(ManyToOneTransformer):
         port_name: str,
         processor: TokenProcessor,
         value_from: str,
+        job_port: JobPort,
         expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
     ):
@@ -318,6 +321,7 @@ class ValueFromTransformer(ManyToOneTransformer):
         self.value_from: str = value_from
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
+        self.add_input_port("__job__", job_port)
 
     @classmethod
     async def _load(
@@ -327,6 +331,9 @@ class ValueFromTransformer(ManyToOneTransformer):
         loading_context: DatabaseLoadingContext,
     ):
         params = json.loads(row["params"])
+        job_port = cast(
+            JobPort, await loading_context.load_port(context, params["job_port"])
+        )
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -337,11 +344,14 @@ class ValueFromTransformer(ManyToOneTransformer):
             value_from=params["value_from"],
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],
+            job_port=job_port,
         )
 
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
+        job_port = self.get_input_port("__job__")
+        await job_port.save(context)
         return {
             **await super()._save_additional_params(context),
             **{
@@ -350,6 +360,7 @@ class ValueFromTransformer(ManyToOneTransformer):
                 "value_from": self.value_from,
                 "expression_lib": self.expression_lib,
                 "full_js": self.full_js,
+                "job_port": job_port.persistent_id,
             },
         }
 
@@ -368,17 +379,18 @@ class ValueFromTransformer(ManyToOneTransformer):
             }
         context = utils.build_context(inputs)
         context = {**context, **{"self": context["inputs"].get(output_name)}}
-        return {
-            output_name: Token(
-                tag=get_tag(inputs.values()),
-                value=utils.eval_expression(
-                    expression=self.value_from,
-                    context=context,
-                    full_js=self.full_js,
-                    expression_lib=self.expression_lib,
-                ),
-            )
-        }
+        token_value = utils.eval_expression(
+            expression=self.value_from,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib,
+        )
+        token = await build_token(
+            job=await cast(JobPort, self.get_input_port("__job__")).get_job(self.name),
+            token_value=token_value,
+            streamflow_context=self.workflow.context,
+        )
+        return {output_name: token}
 
 
 class LoopValueFromTransformer(ValueFromTransformer):
@@ -389,11 +401,19 @@ class LoopValueFromTransformer(ValueFromTransformer):
         port_name: str,
         processor: TokenProcessor,
         value_from: str,
+        job_port: JobPort,
         expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
     ):
         super().__init__(
-            name, workflow, port_name, processor, value_from, expression_lib, full_js
+            name,
+            workflow,
+            port_name,
+            processor,
+            value_from,
+            job_port,
+            expression_lib,
+            full_js,
         )
         self.loop_input_ports: MutableSequence[str] = []
         self.loop_source_port: str | None = None
