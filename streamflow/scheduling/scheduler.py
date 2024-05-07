@@ -352,7 +352,7 @@ class DefaultScheduler(Scheduler):
                     await asyncio.wait_for(
                         self.wait_queues[deployment].wait(), timeout=self.retry_interval
                     )
-                except TimeoutError:
+                except (TimeoutError, asyncio.exceptions.TimeoutError):
                     if logger.isEnabledFor(logging.DEBUG):
                         target_name = (
                             "/".join([target.deployment.name, target.service])
