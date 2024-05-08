@@ -55,14 +55,6 @@ class DatabaseLoadingContext(ABC):
     @abstractmethod
     async def load_workflow(self, context: StreamFlowContext, persistent_id: int): ...
 
-    @abstractmethod
-    async def load_prev_tokens(self, context: StreamFlowContext, persistent_id: int):
-        ...
-
-    @abstractmethod
-    async def load_next_tokens(self, context: StreamFlowContext, persistent_id: int):
-        ...
-
 
 class PersistableEntity:
     __slots__ = ("persistent_id", "persistence_lock")
@@ -212,7 +204,6 @@ class Database(SchemaEntity):
     async def get_output_steps(
         self, port_id: int
     ) -> MutableSequence[MutableMapping[str, Any]]: ...
-
 
     @abstractmethod
     async def get_port(self, port_id: int) -> MutableMapping[str, Any]: ...
