@@ -1621,9 +1621,7 @@ class TransferStep(BaseStep, ABC):
         try:
             job_token = get_job_token(
                 job.name,
-                self.get_input_port(
-                    "__job__"
-                ).token_list,
+                self.get_input_port("__job__").token_list,
             )
             for port_name, token in inputs.items():
                 try:
@@ -1631,15 +1629,10 @@ class TransferStep(BaseStep, ABC):
                         token=await self.transfer(job, token),
                         port=self.get_output_port(port_name),
                         input_token_ids=_get_token_ids(
-                            list(inputs.values())
-                            + [
-                                job_token
-                            ]
+                            list(inputs.values()) + [job_token]
                         ),
                     )
-                    self.get_output_port(port_name).put(
-                        transferred_token
-                    )
+                    self.get_output_port(port_name).put(transferred_token)
                 except WorkflowTransferException as e:
                     logger.exception(e)
                     transferred_token = await self.workflow.context.failure_manager.handle_failure_transfer(
@@ -1696,16 +1689,11 @@ class TransferStep(BaseStep, ABC):
                     if len(inputs_map[tag]) == len(input_ports):
                         inputs = inputs_map.pop(tag)
                         # Transfer token
-                        jobs.append(
-                            asyncio.create_task(
-                                self._transfer(job, inputs)
-                            )
-                        )
+                        jobs.append(asyncio.create_task(self._transfer(job, inputs)))
         # Wait for jobs termination
         statuses = cast(MutableSequence[Status], await asyncio.gather(*jobs))
         # Terminate step
         await self.terminate(_get_step_status(statuses))
-
 
     @abstractmethod
     async def transfer(self, job: Job, token: Token) -> Token:

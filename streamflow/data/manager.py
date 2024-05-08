@@ -330,12 +330,12 @@ class RemotePathMapper:
         available: bool = False,
     ) -> DataLocation:
         data_locations = self.get(src_path)
-        if not data_locations:
-            # it is possible that src='' following a symbolic link
-            # edit. tenere solo per debug. Ho aggiunto un controllo a monte dentro remotepath.py
-            raise WorkflowTransferException(
-                f"No data locations available {src_path if src_path else 'None'}"
-            )
+        # if not data_locations:
+        #     # it is possible that src='' following a symbolic link
+        #     # edit. tenere solo per debug. Ho aggiunto un controllo a monte dentro remotepath.py
+        #     raise WorkflowTransferException(
+        #         f"No data locations available {src_path if src_path else 'None'}"
+        #     )
         dst_data_location = DataLocation(
             path=dst_path,
             relpath=list(data_locations)[0].relpath,
