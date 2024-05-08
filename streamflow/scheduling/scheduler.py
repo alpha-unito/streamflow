@@ -95,7 +95,8 @@ class DefaultScheduler(Scheduler):
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
 
-    def deallocate_job(self, job: str, keep_allocation: bool = False):
+    def _deallocate_job(self, job: str, keep_allocation: bool = False):
+        # fixme: changing transferStep maybe it is not necessary the keep_allocation param
         if keep_allocation:
             job_allocation = self.job_allocations.get(job)
         else:
@@ -380,6 +381,8 @@ class DefaultScheduler(Scheduler):
             if connector.deployment_name in self.wait_queues:
                 async with self.wait_queues[connector.deployment_name]:
                     if job_name in self.job_allocations:
+                        if status == Status.ROLLBACK:
+                            self._deallocate_job(job_name, keep_allocation=True)
                         if status != self.job_allocations[job_name].status:
                             self.job_allocations[job_name].status = status
                             if logger.isEnabledFor(logging.DEBUG):
