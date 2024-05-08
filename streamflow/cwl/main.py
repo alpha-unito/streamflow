@@ -63,7 +63,7 @@ async def main(
     # Configure log level
     if args.quiet:
         # noinspection PyProtectedMember
-        cwltool.loghandler._logger.setLevel(logging.WARN)
+        cwltool.loghandler._logger.setLevel(logging.WARNING)
     # Load CWL workflow definition
     cwl_definition, loading_context = load_cwl_workflow(cwl_args[0])
     if len(cwl_args) == 2:
@@ -90,6 +90,9 @@ async def main(
     await workflow.save(context)
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED Building of workflow execution plan")
+    from streamflow.token_printer import dag_workflow
+
+    dag_workflow(workflow)
     executor = StreamFlowExecutor(workflow)
     if logger.isEnabledFor(logging.INFO):
         logger.info(f"Running workflow {args.name}")

@@ -194,8 +194,10 @@ class DefaultScheduler(Scheduler):
                     self.job_allocations.keys(),
                 )
             )
-            logger.info(f"Scheduling job_name: {job_name} on {location.deployment}\n\t- running jobs: {running_jobs}"
-                        f"\n\t- rollback jobs: {rollback_jobs}")
+            logger.info(
+                f"Scheduling job_name: {job_name} on {location.deployment}\n\t- running jobs: {running_jobs}"
+                f"\n\t- rollback jobs: {rollback_jobs}"
+            )
             running_jobs.extend(rollback_jobs)
         else:
             running_jobs = []

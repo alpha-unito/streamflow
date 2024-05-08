@@ -47,12 +47,12 @@ class FailureManager(SchemaEntity):
         ...
 
     @abstractmethod
-    async def notify_jobs(self, job_token: JobToken, out_port_name: str, token: Token):
-        ...
+    async def notify_jobs(
+        self, job_token: JobToken, out_port_name: str, token: Token
+    ): ...
 
     @abstractmethod
-    async def handle_failure_transfer(self, job: Job, step: Step, port_name: str):
-        ...
+    async def handle_failure_transfer(self, job: Job, step: Step, port_name: str): ...
 
 
 class ReplayRequest:

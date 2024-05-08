@@ -884,7 +884,7 @@ class DockerComposeConnector(DockerBaseConnector):
         stdout, _ = await proc.communicate()
         output = stdout.decode().strip()
         if ((json_start := output.find("{")) != -1) and (
-                (json_end := output.rfind("}")) != -1
+            (json_end := output.rfind("}")) != -1
         ):
             output = output[json_start : json_end + 1]
         else:

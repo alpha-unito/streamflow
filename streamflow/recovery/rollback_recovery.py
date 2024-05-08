@@ -430,9 +430,7 @@ class RollbackDeterministicWorkflowPolicy:
         }
         for row_dependencies in await asyncio.gather(
             *(
-                asyncio.create_task(
-                    self.context.database.get_input_steps(port_id)
-                )
+                asyncio.create_task(self.context.database.get_input_steps(port_id))
                 for port_id in ports
             )
         ):
@@ -611,9 +609,7 @@ class RollbackDeterministicWorkflowPolicy:
                     port_id = min(self.port_name_ids[step.get_output_port().name])
                     for (
                         step_dep_row
-                    ) in await new_workflow.context.database.get_output_steps(
-                        port_id
-                    ):
+                    ) in await new_workflow.context.database.get_output_steps(port_id):
                         step_row = await new_workflow.context.database.get_step(
                             step_dep_row["step"]
                         )
