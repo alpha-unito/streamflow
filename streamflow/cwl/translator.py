@@ -91,6 +91,8 @@ from streamflow.cwl.transformer import (
     LoopValueFromTransformer,
     OnlyNonNullTransformer,
     ValueFromTransformer,
+    BackPropagationTransformer,
+    OutputForwardTransformer,
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
 from streamflow.deployment.utils import get_binding_config
@@ -1761,6 +1763,8 @@ class CWLTranslator:
             # Process ToolTimeLimit
             if "ToolTimeLimit" in requirements:
                 step.command.time_limit = requirements["ToolTimeLimit"]["timelimit"]
+            if "WorkReuse" in requirements:
+                step.command.work_reuse = requirements["WorkReuse"]["enableReuse"]
         elif isinstance(cwl_element, cwltool.command_line_tool.ExpressionTool):
             if "expression" in cwl_element.tool:
                 step.command = CWLExpressionCommand(
@@ -2311,7 +2315,7 @@ class CWLTranslator:
                 port_name = posixpath.relpath(global_name, step_name)
                 # Create loop forwarder
                 loop_forwarder = workflow.create_step(
-                    cls=ForwardTransformer,
+                    cls=OutputForwardTransformer,
                     name=global_name + "-output-forward-transformer",
                 )
                 internal_output_ports[global_name] = workflow.create_port()
@@ -2400,7 +2404,7 @@ class CWLTranslator:
                 # Create loop output step
                 port_name = posixpath.relpath(global_name, step_name)
                 loop_forwarder = workflow.create_step(
-                    cls=ForwardTransformer,
+                    cls=BackPropagationTransformer,
                     name=global_name + "-back-propagation-transformer",
                 )
                 loop_forwarder.add_input_port(

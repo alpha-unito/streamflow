@@ -198,7 +198,11 @@ async def follow_symlink(
                     status, command, location, result
                 )
             )
-        return result.strip()
+        if not (output := result.strip()):
+            # todo: WfTransferException oppure WfExecutionException ?
+            # raise WorkflowTransferException(f"Symbolic Link {path} does not exist")
+            pass
+        return output
 
 
 async def head(

@@ -883,13 +883,16 @@ class DockerComposeConnector(DockerBaseConnector):
         )
         stdout, _ = await proc.communicate()
         output = stdout.decode().strip()
-        try:
-            locations = json.loads(output)
-        except json.decoder.JSONDecodeError:
+        if ((json_start := output.find("{")) != -1) and (
+            (json_end := output.rfind("}")) != -1
+        ):
+            output = output[json_start : json_end + 1]
+        else:
             raise WorkflowExecutionException(
                 f"Error retrieving locations for Docker Compose deployment {self.deployment_name}: "
                 f"{output}"
             )
+        locations = json.loads(output)
         if not isinstance(locations, MutableSequence):
             locations = [locations]
         return {

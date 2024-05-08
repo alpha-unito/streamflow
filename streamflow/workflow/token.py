@@ -61,6 +61,9 @@ class JobToken(Token):
             value=await Job.load(context, params["job"], loading_context),
         )
 
+    def __str__(self):
+        return self.value.name
+
 
 class ListToken(Token):
     __slots__ = ()
@@ -102,6 +105,9 @@ class ListToken(Token):
                 *(asyncio.create_task(t.is_available(context)) for t in self.value)
             )
         )
+
+    def __str__(self):
+        return str([str(t) for t in self.value])
 
 
 class ObjectToken(Token):

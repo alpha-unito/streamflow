@@ -21,6 +21,7 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
 )
+from streamflow.core.utils import get_job_root_name, compare_tags, get_job_tag
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
@@ -96,10 +97,15 @@ class DefaultScheduler(Scheduler):
                     LocationAllocation(name=loc.name, deployment=loc.deployment),
                 ).jobs.append(job.name)
 
-    def _deallocate_job(self, job: str):
-        job_allocation = self.job_allocations.pop(job)
+    def _deallocate_job(self, job: str, keep_allocation: bool = False):
+        # fixme: changing transferStep maybe it is not necessary the keep_allocation param
+        if keep_allocation:
+            job_allocation = self.job_allocations.get(job)
+        else:
+            job_allocation = self.job_allocations.pop(job)
         for loc in job_allocation.locations:
-            self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
+            if job in self.location_allocations[loc.deployment][loc.name].jobs:
+                self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
         if logger.isEnabledFor(logging.INFO):
             if len(job_allocation.locations) == 1:
                 is_local = isinstance(
@@ -123,6 +129,8 @@ class DefaultScheduler(Scheduler):
                     "Job {job} deallocated from locations "
                     ", ".join([str(loc) for loc in job_allocation.locations])
                 )
+        if keep_allocation:
+            job_allocation.locations.clear()
 
     def _get_binding_filter(self, config: FilterConfig):
         if config.name not in self.binding_filter_map:
@@ -166,7 +174,7 @@ class DefaultScheduler(Scheduler):
         return self.policy_map[config.name]
 
     def _is_valid(
-        self, location: AvailableLocation, hardware_requirement: Hardware
+        self, location: AvailableLocation, hardware_requirement: Hardware, job_name: str
     ) -> bool:
         if location.name in self.location_allocations.get(location.deployment, {}):
             running_jobs = list(
@@ -178,6 +186,22 @@ class DefaultScheduler(Scheduler):
                     self.location_allocations[location.deployment][location.name].jobs,
                 )
             )
+            rollback_jobs = list(
+                filter(
+                    lambda x: (
+                        x != job_name
+                        and get_job_root_name(x) == get_job_root_name(job_name)
+                        and compare_tags(get_job_tag(x), get_job_tag(job_name)) == -1
+                        and self.job_allocations[x].status == Status.ROLLBACK
+                    ),
+                    self.job_allocations.keys(),
+                )
+            )
+            logger.info(
+                f"Scheduling job_name: {job_name} on {location.deployment}\n\t- running jobs: {running_jobs}"
+                f"\n\t- rollback jobs: {rollback_jobs}"
+            )
+            running_jobs.extend(rollback_jobs)
         else:
             running_jobs = []
         # If location is segmentable and job provides requirements, compute the used amount of locations
@@ -213,7 +237,7 @@ class DefaultScheduler(Scheduler):
                     )
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(
-                            "Retrieving available locations for job {} on {}.".format(
+                            "Retrieving available locations for job {} on {}".format(
                                 job_context.job.name,
                                 (
                                     posixpath.join(deployment, target.service)
@@ -237,7 +261,9 @@ class DefaultScheduler(Scheduler):
                         k: loc
                         for k, loc in available_locations.items()
                         if self._is_valid(
-                            location=loc, hardware_requirement=hardware_requirement
+                            location=loc,
+                            hardware_requirement=hardware_requirement,
+                            job_name=job_context.job.name,
                         )
                     }
                     if valid_locations:
@@ -317,6 +343,8 @@ class DefaultScheduler(Scheduler):
             if connector.deployment_name in self.wait_queues:
                 async with self.wait_queues[connector.deployment_name]:
                     if job_name in self.job_allocations:
+                        if status == Status.ROLLBACK:
+                            self._deallocate_job(job_name, keep_allocation=True)
                         if status != self.job_allocations[job_name].status:
                             self.job_allocations[job_name].status = status
                             if logger.isEnabledFor(logging.DEBUG):

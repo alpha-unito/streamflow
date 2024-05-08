@@ -256,6 +256,14 @@ class ForwardTransformer(OneToOneTransformer):
         return {self.get_output_name(): token.update(token.value)}
 
 
+class BackPropagationTransformer(ForwardTransformer):
+    pass
+
+
+class OutputForwardTransformer(ForwardTransformer):
+    pass
+
+
 class ListToElementTransformer(OneToOneTransformer):
     def _transform(self, token: Token) -> Token:
         if isinstance(token, ListToken):

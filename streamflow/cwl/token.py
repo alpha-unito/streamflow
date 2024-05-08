@@ -6,6 +6,7 @@ from streamflow.core.data import DataType
 from streamflow.core.workflow import Token
 from streamflow.cwl import utils
 from streamflow.data import remotepath
+from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken
 
 
@@ -48,6 +49,12 @@ async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bo
         data_locations = context.data_manager.get_data_locations(
             path=path, data_type=DataType.PRIMARY
         )
+        if len(data_locations) != 0:
+            logger.debug(
+                f"Locations {[data_loc.deployment for data_loc in data_locations]} has valid file {path}"
+            )
+        else:
+            logger.debug(f"Path {path} is not valid in none locations")
         return len(data_locations) != 0
     else:
         return True
@@ -83,3 +90,6 @@ class CWLFileToken(FileToken):
             return await self.value.is_available(context)
         else:
             return await _is_file_token_available(context, self.value)
+
+    def __str__(self):
+        return self.value["path"]

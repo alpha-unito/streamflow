@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from importlib_resources import files
 
 from streamflow.core.data import DataLocation, DataManager, DataType
+from streamflow.core.deployment import Connector
+from streamflow.core.exception import WorkflowTransferException
 from streamflow.data import remotepath
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.utils import get_path_processor
@@ -317,6 +319,12 @@ class RemotePathMapper:
         available: bool = False,
     ) -> DataLocation:
         data_locations = self.get(src_path)
+        # if not data_locations:
+        #     # it is possible that src='' following a symbolic link
+        #     # edit. tenere solo per debug. Ho aggiunto un controllo a monte dentro remotepath.py
+        #     raise WorkflowTransferException(
+        #         f"No data locations available {src_path if src_path else 'None'}"
+        #     )
         dst_data_location = DataLocation(
             location=dst_location,
             path=dst_path,
