@@ -657,6 +657,23 @@ class ExecuteStep(BaseStep):
                         job, self, command_output
                     )
                 )
+            else:
+                # Retrieve output tokens
+                if not self.terminated:
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                self._retrieve_output(
+                                    job=job,
+                                    output_name=output_name,
+                                    output_port=self.workflow.ports[output_port],
+                                    command_output=command_output,
+                                    connector=connectors.get(output_name),
+                                )
+                            )
+                            for output_name, output_port in self.output_ports.items()
+                        )
+                    )
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
@@ -688,26 +705,6 @@ class ExecuteStep(BaseStep):
             await self.workflow.context.scheduler.notify_status(
                 job.name, command_output.status
             )
-        # Retrieve output tokens
-        if not self.terminated:
-            try:
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._retrieve_output(
-                                job=job,
-                                output_name=output_name,
-                                output_port=self.workflow.ports[output_port],
-                                command_output=command_output,
-                                connector=connectors.get(output_name),
-                            )
-                        )
-                        for output_name, output_port in self.output_ports.items()
-                    )
-                )
-            except Exception as e:
-                logger.exception(e)
-                command_output.status = Status.FAILED
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"{command_output.status.name} Job {job.name} terminated")
