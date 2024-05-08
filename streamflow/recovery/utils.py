@@ -9,6 +9,7 @@ from typing import MutableMapping, MutableSequence, Collection
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.utils import get_class_fullname
+
 # from streamflow.core.deployment import Connector
 from streamflow.core.exception import (
     FailureHandlingException,
@@ -92,9 +93,7 @@ async def get_execute_step_out_token_ids(next_token_ids, context):
     for t_id in next_token_ids:
         if t_id > 0:
             port_row = await context.database.get_port_from_token(t_id)
-            for step_id_row in await context.database.get_input_steps(
-                port_row["id"]
-            ):
+            for step_id_row in await context.database.get_input_steps(port_row["id"]):
                 step_row = await context.database.get_step(step_id_row["step"])
                 if step_row["type"] == get_class_fullname(ExecuteStep):
                     execute_step_out_token_ids.add(t_id)
@@ -152,7 +151,9 @@ def get_token_by_tag(token_tag, token_list):
 async def _is_file_available(data_location, context):
     connector = context.deployment_manager.get_connector(data_location.deployment)
     if not (
-        res := await remotepath.exists(connector, data_location.location, data_location.path)
+        res := await remotepath.exists(
+            connector, data_location.location, data_location.path
+        )
     ):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
