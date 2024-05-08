@@ -63,6 +63,11 @@ jobs:
   pypi:
     name: "Publish on PyPI"
     runs-on: ubuntu-22.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/streamflow
+    permissions:
+      id-token: write
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +86,3 @@ jobs:
       - name: "Publish package to PyPI"
         uses: pypa/gh-action-pypi-publish@release/v1
         if: ${{ env.STREAMFLOW_VERSION != env.PYPI_VERSION }}
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_TOKEN }}
