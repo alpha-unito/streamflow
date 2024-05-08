@@ -91,6 +91,7 @@ async def main(
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED Building of workflow execution plan")
     from streamflow.token_printer import dag_workflow
+
     dag_workflow(workflow)
     executor = StreamFlowExecutor(workflow)
     if logger.isEnabledFor(logging.INFO):
