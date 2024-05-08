@@ -646,18 +646,12 @@ class Workflow(PersistableEntity):
         self.ports[name] = port
         return port
 
-    def add_port(self, port):
-        self.ports[port.name] = port
-
     def create_step(self, cls: type[S], name: str = None, **kwargs) -> S:
         if name is None:
             name = str(uuid.uuid4())
         step = cls(name=name, workflow=self, **kwargs)
         self.steps[name] = step
         return step
-
-    def add_step(self, step):
-        self.steps[step.name] = step
 
     def get_output_port(self, name: str) -> Port:
         return self.ports[self.output_ports[name]]
