@@ -713,6 +713,7 @@ class DockerComposeConnector(DockerBaseConnector):
         files: MutableSequence[str],
         projectName: str | None = None,
         verbose: bool | None = False,
+        logLevel: str | None = None,
         noAnsi: bool | None = False,
         host: str | None = None,
         tls: bool | None = False,
@@ -759,6 +760,7 @@ class DockerComposeConnector(DockerBaseConnector):
         self.compatibility = compatibility
         self.forceRecreate = forceRecreate
         self.host = host
+        self.logLevel = logLevel
         self.noAnsi = noAnsi
         self.noBuild = noBuild
         self.noDeps = noDeps
@@ -817,7 +819,7 @@ class DockerComposeConnector(DockerBaseConnector):
         )
         await proc.wait()
         options = (
-            f"{get_option('log-level', 'ERROR')}"
+            f"{get_option('log-level', self.logLevel)}"
             f"{get_option('host', self.host)}"
             f"{get_option('tls', self.tls)}"
             f"{get_option('tlscacert', self.tlscacert)}"
@@ -883,9 +885,13 @@ class DockerComposeConnector(DockerBaseConnector):
         )
         stdout, _ = await proc.communicate()
         output = stdout.decode().strip()
-        try:
-            locations = json.loads(output)
-        except json.decoder.JSONDecodeError:
+        if ((json_start := output.find("{")) != -1) and (
+            (json_end := output.rfind("}")) != -1
+        ):
+            if json_start != 0 and logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"DockerCompose log: {output[:json_start]}")
+            locations = json.loads(output[json_start : json_end + 1])
+        else:
             raise WorkflowExecutionException(
                 f"Error retrieving locations for Docker Compose deployment {self.deployment_name}: "
                 f"{output}"
