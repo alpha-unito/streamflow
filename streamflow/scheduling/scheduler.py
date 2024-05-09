@@ -17,7 +17,7 @@ from streamflow.core.scheduling import (
     Policy,
     Scheduler,
 )
-from streamflow.core.utils import get_job_root_name, compare_tags, get_job_tag
+from streamflow.core.utils import get_job_root_name, get_job_tag, compare_tags
 from streamflow.core.workflow import Job, Status
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes

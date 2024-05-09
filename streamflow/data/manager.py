@@ -7,23 +7,22 @@ from typing import TYPE_CHECKING
 from importlib_resources import files
 
 from streamflow.core.data import DataLocation, DataManager, DataType
-from streamflow.core.deployment import Connector, Location
-from streamflow.core.exception import WorkflowTransferException
 from streamflow.data import remotepath
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
+    from streamflow.core.deployment import Connector, ExecutionLocation
     from typing import MutableMapping, MutableSequence
 
 
 async def _copy(
     src_connector: Connector | None,
-    src_location: Location | None,
+    src_location: ExecutionLocation | None,
     src: str,
     dst_connector: Connector | None,
-    dst_locations: MutableSequence[Location] | None,
+    dst_locations: MutableSequence[ExecutionLocation] | None,
     dst: str,
     writable: False,
 ) -> None:
@@ -123,22 +122,20 @@ class DefaultDataManager(DataManager):
         else:
             return None
 
-    def invalidate_location(self, location: Location, path: str) -> None:
+    def invalidate_location(self, location: ExecutionLocation, path: str) -> None:
         self.path_mapper.invalidate_location(location, path)
 
     def register_path(
         self,
-        location: Location,
+        location: ExecutionLocation,
         path: str,
         relpath: str | None = None,
         data_type: DataType = DataType.PRIMARY,
     ) -> DataLocation:
         data_location = DataLocation(
+            location=location,
             path=path,
             relpath=relpath or path,
-            deployment=location.deployment,
-            service=location.service,
-            name=location.name,
             data_type=data_type,
             available=True,
         )
@@ -156,9 +153,9 @@ class DefaultDataManager(DataManager):
 
     async def transfer_data(
         self,
-        src_location: Location,
+        src_location: ExecutionLocation,
         src_path: str,
-        dst_locations: MutableSequence[Location],
+        dst_locations: MutableSequence[ExecutionLocation],
         dst_path: str,
         writable: bool = False,
     ) -> None:
@@ -206,9 +203,7 @@ class DefaultDataManager(DataManager):
                             location_type=DataType.SYMBOLIC_LINK,
                             src_path=src_path,
                             dst_path=dst_path,
-                            dst_deployment=dst_connector.deployment_name,
-                            dst_service=dst_location.service,
-                            dst_location=dst_location.name,
+                            dst_location=dst_location,
                             available=True,
                         )
                     # Otherwise, perform a copy operation
@@ -230,14 +225,12 @@ class DefaultDataManager(DataManager):
                             self.path_mapper.put(
                                 path=dst_path,
                                 data_location=DataLocation(
+                                    location=dst_location,
                                     path=dst_path,
                                     relpath=list(self.path_mapper.get(src_path))[
                                         0
                                     ].relpath,
-                                    deployment=dst_connector.deployment_name,
-                                    service=dst_location.service,
                                     data_type=DataType.PRIMARY,
-                                    name=dst_location.name,
                                     available=False,
                                 ),
                             )
@@ -256,12 +249,10 @@ class DefaultDataManager(DataManager):
                         self.path_mapper.put(
                             path=dst_path,
                             data_location=DataLocation(
+                                location=dst_location,
                                 path=dst_path,
                                 relpath=list(self.path_mapper.get(src_path))[0].relpath,
-                                deployment=dst_connector.deployment_name,
                                 data_type=DataType.PRIMARY,
-                                service=dst_location.service,
-                                name=dst_location.name,
                                 available=False,
                             ),
                         )
@@ -272,9 +263,7 @@ class DefaultDataManager(DataManager):
                             location_type=DataType.PRIMARY,
                             src_path=src_path,
                             dst_path=dst_path,
-                            dst_deployment=dst_connector.deployment_name,
-                            dst_service=dst_location.service,
-                            dst_location=dst_location.name,
+                            dst_location=dst_location,
                         )
                     )
         # Perform all the copy operations
@@ -324,9 +313,7 @@ class RemotePathMapper:
         location_type: DataType,
         src_path: str,
         dst_path: str,
-        dst_deployment: str,
-        dst_service: str | None,
-        dst_location: str | None,
+        dst_location: ExecutionLocation,
         available: bool = False,
     ) -> DataLocation:
         data_locations = self.get(src_path)
@@ -337,12 +324,10 @@ class RemotePathMapper:
         #         f"No data locations available {src_path if src_path else 'None'}"
         #     )
         dst_data_location = DataLocation(
+            location=dst_location,
             path=dst_path,
             relpath=list(data_locations)[0].relpath,
-            deployment=dst_deployment,
-            service=dst_service,
             data_type=location_type,
-            name=dst_location,
             available=available,
         )
         for data_location in list(data_locations):
@@ -378,7 +363,7 @@ class RemotePathMapper:
                 )
         return result
 
-    def invalidate_location(self, location: Location, path: str) -> None:
+    def invalidate_location(self, location: ExecutionLocation, path: str) -> None:
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
         for token in path.parts:
@@ -415,14 +400,14 @@ class RemotePathMapper:
                 location = data_location
             else:
                 location = DataLocation(
+                    location=data_location.location,
                     path=node_path,
-                    relpath=relpath
-                    if relpath and node_path.endswith(relpath)
-                    else path_processor.basename(node_path),
-                    deployment=data_location.deployment,
-                    service=data_location.service,
+                    relpath=(
+                        relpath
+                        if relpath and node_path.endswith(relpath)
+                        else path_processor.basename(node_path)
+                    ),
                     data_type=DataType.PRIMARY,
-                    name=data_location.name,
                     available=True,
                 )
             node_location = node.locations.setdefault(
@@ -439,7 +424,7 @@ class RemotePathMapper:
         # Return location
         return data_location
 
-    def remove_location(self, location: Location):
+    def remove_location(self, location: DataLocation):
         data_locations = self._filesystem.locations.setdefault(
             location.deployment, {}
         ).get(location.name)

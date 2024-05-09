@@ -27,6 +27,7 @@ from streamflow.recovery.utils import (
     get_step_instances_from_output_port,
     increase_tag,
 )
+from streamflow.token_printer import dag_workflow
 from streamflow.workflow.port import (
     ConnectorPort,
     JobPort,
@@ -56,9 +57,7 @@ class RollbackRecoveryPolicy:
     def __init__(self, context):
         self.context = context
 
-    async def recover_workflow(
-        self, failed_job: Job, failed_step: Step, loading_context
-    ):
+    async def recover_workflow(self, failed_job: Job, failed_step: Step):
         workflow = failed_step.workflow
         new_workflow = Workflow(
             context=workflow.context,
@@ -124,7 +123,7 @@ class RollbackRecoveryPolicy:
         #             f"La input port {port.name} dello step fallito {failed_step.name} "
         #             f"non è presente nel new_workflow {new_workflow.name}"
         #         )
-        logger.debug("end save_for_retag")
+        # logger.debug("end save_for_retag")
 
         last_iteration = await _new_put_tokens(
             new_workflow,
@@ -132,7 +131,6 @@ class RollbackRecoveryPolicy:
             inner_graph.port_tokens,
             inner_graph.token_instances,
             inner_graph.token_available,
-            inner_graph.port_name_ids,
         )
         logger.debug("end _put_tokens")
 
@@ -287,7 +285,7 @@ class RollbackRecoveryPolicy:
                     job_request.token_output = None
                     job_request.workflow = workflow
                     await self.context.failure_manager.update_job_status(
-                        job_token.value.name, job_request.lock
+                        job_token.value.name
                     )
             # end lock
         # end for job token
@@ -300,7 +298,6 @@ async def _new_put_tokens(
     port_tokens: MutableMapping[str, MutableSet[int]],
     token_instances: MutableMapping[int, Token],
     token_available: MutableMapping[int, bool],
-    port_name_ids: MutableSet[str, MutableSet[int]],
 ):
     for port_name in init_ports:
         token_list = [
@@ -375,14 +372,6 @@ async def _new_put_tokens(
                 f"{any(isinstance(t, TerminationToken) for t in port.token_list )}"
             )
     return None
-
-
-def get_max_tag_list(tag_list):
-    max_tag = "0"
-    for curr_tag in tag_list:
-        if compare_tags(curr_tag, max_tag) == 1:
-            max_tag = curr_tag
-    return max_tag
 
 
 async def _new_set_steps_state(new_workflow, rdwp):
