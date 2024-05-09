@@ -10,7 +10,6 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.utils import get_class_fullname
 
-# from streamflow.core.deployment import Connector
 from streamflow.core.exception import (
     FailureHandlingException,
 )
@@ -32,8 +31,6 @@ from streamflow.workflow.token import (
     JobToken,
     ListToken,
     ObjectToken,
-    IterationTerminationToken,
-    TerminationToken,
 )
 
 INIT_DAG_FLAG = "init"
@@ -119,35 +116,6 @@ def increase_tag(tag):
     return None
 
 
-def get_prev_vertices(searched_vertex, dag):
-    prev_vertices = set()
-    for vertex, next_vertices in dag.items():
-        if searched_vertex in next_vertices and vertex != INIT_DAG_FLAG:
-            prev_vertices.add(vertex)
-    return prev_vertices
-
-
-def contains_class(class_t, object_instances):
-    for instance in object_instances:
-        if issubclass(class_t, type(instance)):
-            return True
-    return False
-
-
-def search_from_values(value, dictionary):
-    for k, v in dictionary.items():
-        if value == v:
-            return k
-    return None
-
-
-def get_token_by_tag(token_tag, token_list):
-    for token in token_list:
-        if token_tag == token.tag:
-            return token
-    return None
-
-
 async def _is_file_available(data_location, context):
     connector = context.deployment_manager.get_connector(data_location.deployment)
     if not (
@@ -186,25 +154,6 @@ async def _is_token_available(token: Token, context: StreamFlowContext, valid_da
     return await token.is_available(context)
 
 
-def get_necessary_tokens(
-    port_tokens, all_token_visited
-) -> MutableMapping[int, tuple[Token, bool]]:
-    d = {
-        t_id: all_token_visited[t_id]
-        for token_list in port_tokens.values()
-        for t_id in token_list
-        if t_id != TOKEN_WAITER
-    }
-    return dict(sorted(d.items()))
-
-
-def is_next_of_someone(p_name, dag_ports):
-    for port_name, next_port_names in dag_ports.items():
-        if port_name != INIT_DAG_FLAG and p_name in next_port_names:
-            return True
-    return False
-
-
 def get_port_from_token(token, port_tokens, token_visited):
     for port_name, token_ids in port_tokens.items():
         if token.tag in (token_visited[t_id][0].tag for t_id in token_ids):
@@ -221,17 +170,6 @@ def get_key_by_value(
     raise FailureHandlingException(
         f"Searched value {searched_value} not found in {dictionary}"
     )
-
-
-def get_recovery_loop_expression(upper_limit):
-    return f"$(inputs.index < {upper_limit})"
-
-
-def get_last_token(token_list):
-    for token in token_list[::-1]:
-        if not isinstance(token, (IterationTerminationToken, TerminationToken)):
-            return token
-    return None
 
 
 def get_value(elem, dictionary):

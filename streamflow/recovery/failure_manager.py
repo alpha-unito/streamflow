@@ -22,7 +22,6 @@ from streamflow.recovery.recovery import (
     RollbackRecoveryPolicy,
     PortRecovery,
 )
-from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.workflow.token import TerminationToken, JobToken
 
 
@@ -94,7 +93,7 @@ class DefaultFailureManager(FailureManager):
                 return self.job_requests.setdefault(job_name, request)
         return self.job_requests[job_name]
 
-    async def update_job_status(self, job_name, lock):
+    async def update_job_status(self, job_name):
         if (
             self.max_retries is None
             or self.job_requests[job_name].version < self.max_retries
@@ -119,11 +118,10 @@ class DefaultFailureManager(FailureManager):
     # quello vecchio? quello vecchio e quello nuovo? In teoria solo quello vecchio, da gestire comunque?
     # oppure lasciamo che fallisce e poi il failure manager prende l'output nuovo di A?
     async def _recover_jobs(self, failed_job: Job, failed_step: Step):
-        loading_context = DefaultDatabaseLoadingContext()
         rrp = RollbackRecoveryPolicy(self.context)
         # Generate new workflow
         new_workflow, last_iteration = await rrp.recover_workflow(
-            failed_job, failed_step, loading_context
+            failed_job, failed_step
         )
         # Execute new workflow
         await _execute_recovered_workflow(
@@ -150,20 +148,22 @@ class DefaultFailureManager(FailureManager):
                 elems = []
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Job {job_name} is notifing on port {out_port_name}. "
+                        f"Job {job_name} is notifying on port {out_port_name}. "
                         f"There are {len(self.job_requests[job_name].queue)} workflows in waiting"
                     )
                 if len(self.job_requests[job_name].queue):
                     str_port = "".join(
                         [
                             (
-                                f"\n\tHa trovato port_name {elem.port.name} port_id {elem.port.persistent_id} "
-                                f"workflow {elem.port.workflow.name} token_list {elem.port.token_list} "
-                                f"queues {elem.port.queues}. Waiting per {elem.waiting_token} prima del TerminationToken"
+                                f"\n\tQueue[{i}]:"
+                                f" port {elem.port.name} (id {elem.port.persistent_id})"
+                                f" the token_list {elem.port.token_list} "
+                                f" of workflow {elem.port.workflow.name}."
+                                f" This port waits other {elem.waiting_token} before to add TerminationToken"
                                 if elem
-                                else "\n\t\tElem-None"
+                                else f"\n\t\tQueue[{i}]: Elem-None"
                             )
-                            for elem in self.job_requests[job_name].queue
+                            for i, elem in enumerate(self.job_requests[job_name].queue)
                         ]
                     )
                     logger.debug(f"port in coda: {str_port}")

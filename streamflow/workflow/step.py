@@ -50,12 +50,7 @@ from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.token import (
-    JobToken,
-    ListToken,
-    TerminationToken,
-    IterationTerminationToken,
-)
+from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
     check_termination,
@@ -367,14 +362,8 @@ class CombinatorStep(BaseStep):
                             AsyncIterable,
                             self.combinator.combine(task_name, token),
                         ):
-                            logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) combine on port {task_name}"
-                            )
                             ins = [id for t in schema.values() for id in t["input_ids"]]
                             for port_name, token in schema.items():
-                                logger.debug(
-                                    f"Step {self.name} (wf {self.workflow.name}) generated token {token['token'].tag} ({'itt' if isinstance(token['token'], IterationTerminationToken) else 'tt' if isinstance(token['token'], TerminationToken) else 't'}) on port {port_name}",
-                                )
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
                                         token=token["token"],
@@ -382,12 +371,6 @@ class CombinatorStep(BaseStep):
                                         input_token_ids=ins,
                                     )
                                 )
-                            logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) goes to next combine"
-                            )
-                        logger.debug(
-                            f"Step {self.name} (wf {self.workflow.name}) terminates schema on port {task_name}"
-                        )
 
                     # Create a new task in place of the completed one if the port is not terminated
                     if task_name not in terminated:
@@ -402,9 +385,6 @@ class CombinatorStep(BaseStep):
                                 name=task_name,
                             )
                         )
-                    logger.debug(
-                        f"Step {self.name} (wf {self.workflow.name}) checks next port"
-                    )
         # Terminate step
         await self.terminate(status)
 
@@ -1819,9 +1799,9 @@ class TransferStep(BaseStep, ABC):
                     if len(inputs_map[tag]) == len(input_ports):
                         inputs = inputs_map.pop(tag)
                         # Transfer token
-                        jobs.append(asyncio.create_task(self._transfer(job, inputs)))
+                        jobs.append(await self._transfer(job, inputs))
         # Wait for jobs termination
-        statuses = cast(MutableSequence[Status], await asyncio.gather(*jobs))
+        statuses = cast(MutableSequence[Status], jobs)
         # Terminate step
         await self.terminate(_get_step_status(statuses))
 
