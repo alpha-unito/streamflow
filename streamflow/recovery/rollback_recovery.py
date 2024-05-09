@@ -72,16 +72,24 @@ async def get_execute_step_out_token_ids(next_token_ids, context):
     return execute_step_out_token_ids
 
 
-async def evaluate_token_availability(token, step_rows, context, valid_data):
+async def evaluate_token_availability(token, step_rows, port_row, context, valid_data):
     if await _is_token_available(token, context, valid_data):
         is_available = TokenAvailability.Available
     else:
         is_available = TokenAvailability.Unavailable
+    dependency_rows = await context.database.get_input_steps(port_row["id"])
     for step_row in step_rows:
-        port_row = await context.database.get_port_from_token(token.persistent_id)
         if issubclass(get_class_from_name(port_row["type"]), ConnectorPort):
             return TokenAvailability.Unavailable
-
+        dependency_name = next(
+            iter(
+                dep_row["name"]
+                for dep_row in dependency_rows
+                if dep_row["step"] == step_row["id"]
+            )
+        )
+        if dependency_name == "__size__":
+            return TokenAvailability.Available
         if issubclass(
             get_class_from_name(step_row["type"]),
             (
@@ -737,7 +745,7 @@ class NewProvenanceGraphNavigation:
             else:
                 if (
                     is_available := await evaluate_token_availability(
-                        token, step_rows, self.context, valid_data
+                        token, step_rows, port_row, self.context, valid_data
                     )
                 ) == TokenAvailability.Available:
                     self.add(None, token)
