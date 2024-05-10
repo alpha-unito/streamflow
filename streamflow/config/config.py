@@ -1,13 +1,35 @@
 from __future__ import annotations
 
 import logging
+import posixpath
 from collections.abc import MutableMapping, MutableSequence
 from pathlib import PurePosixPath
 from typing import Any
 
 from streamflow.core.config import Config
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.workflow import Workflow
 from streamflow.log_handler import logger
+
+
+def _check_bindings(
+    current_node: MutableMapping[str, Any], workflow: Workflow, path: str
+) -> None:
+    if logger.isEnabledFor(logging.WARNING):
+        if not any(step.startswith(path) for step in workflow.steps.keys()):
+            # Binding:
+            # - on the `step` bind check if there is a step named /parent/step_name
+            #   (it includes also sub-workflow bindings)
+            # - on the `port` bind check if there is a step called /port_name-injector
+            logger.warning(
+                f"Binding {path}, defined in the StreamFlow file, does not match any steps or ports in the workflow"
+            )
+        for key, node in current_node["children"].items():
+            _check_bindings(node, workflow, posixpath.join(path, key))
+
+
+def check_bindings(workflow_config: WorkflowConfig, workflow: Workflow) -> None:
+    _check_bindings(workflow_config.filesystem, workflow, posixpath.sep)
 
 
 def set_targets(current_node, target):
@@ -88,6 +110,11 @@ class WorkflowConfig(Config):
             else:
                 raise WorkflowDefinitionException(f"Binding filter {f} is not defined")
         path = PurePosixPath(binding["step"] if "step" in binding else binding["port"])
+        if not path.is_absolute():
+            raise WorkflowDefinitionException(
+                f"Binding {path.as_posix()} is not well-defined in the StreamFlow file. "
+                f"It must be an absolute POSIX path"
+            )
         self.put(path, target_type, config)
 
     def get(
