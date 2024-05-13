@@ -22,7 +22,7 @@ The CWL standard supports a ``DockerRequirement`` feature to execute one or more
         type: stdout
     stdout: output.txt
 
-By default, StreamFlow autmoatically maps a step with the ``DockerRequirement`` option onto a :ref:`Docker <DockerConnector>` deployment with the specified image. This mapping is pretty much equivalent to the following ``streamflow.yml`` file:
+By default, StreamFlow automatically maps a step with the ``DockerRequirement`` option onto a :ref:`Docker <DockerConnector>` deployment with the specified image. This mapping is pretty much equivalent to the following ``streamflow.yml`` file:
 
 .. code-block:: yaml
 
@@ -44,7 +44,7 @@ By default, StreamFlow autmoatically maps a step with the ``DockerRequirement`` 
         config:
           image: node:slim
 
-StreamFlow also supports the possibility to map a CWL ``DockerRequirement`` onto different types of connectors through the :ref:`CWLDockerTranslator <CWLDockerTranslator>` extension point. In particular, the ``docker`` section of a workflow configuration can bind each step or subworkflow to a specific translator type, making it possible to convert a pure CWL workflow with ``DockerRequirement`` features into a hybrid workflow.
+StreamFlow also supports the possibility to map a CWL ``DockerRequirement`` onto different types of connectors through the :ref:`CWLDockerTranslator <CWLDockerTranslator>` extension point. In particular, the ``docker`` section of a workflow configuration can bind each step or subworkflow to a specific translator type, making it possible to convert a pure CWL workflow with ``DockerRequirement`` features into a hybrid workflow. The available translator types are: ``docker``, ``kubernetes``, ``none`` and ``singularity``.
 
 As an example, the following ``streamflow.yml`` file runs the above ``CommandLineTool`` using a :ref:`SingularityConnector <SingularityConnector>` instead of a :ref:`DockerConnector <DockerConnector>` to spawn the container:
 
