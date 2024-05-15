@@ -53,6 +53,7 @@ class StreamFlowExecutor(Executor):
             self.output_tasks.values(), return_when=asyncio.FIRST_COMPLETED
         )
         self.output_tasks = {t.get_name(): t for t in unfinished}
+        workflow_failed = False
         for task in finished:
             if task.cancelled():
                 continue
@@ -62,10 +63,16 @@ class StreamFlowExecutor(Executor):
             token = task.result()
             # If a TerminationToken is received, the corresponding port terminated its outputs
             if isinstance(token, TerminationToken):
-                self.received.append(task_name)
-                # When the last port terminates, the entire executor terminates
-                if len(self.received) == len(self.workflow.output_ports):
+                if token.value in (Status.CANCELLED, Status.FAILED):
                     self.closed = True
+                    for t in unfinished:
+                        t.cancel()
+                    workflow_failed = True
+                else:
+                    self.received.append(task_name)
+                    # When the last port terminates, the entire executor terminates
+                    if len(self.received) == len(self.workflow.output_ports):
+                        self.closed = True
             else:
                 # Collect result
                 output_tokens[task_name] = get_token_value(token)
@@ -91,6 +98,8 @@ class StreamFlowExecutor(Executor):
                     name=port_name,
                 )
                 self.closed = False
+        if workflow_failed:
+            raise WorkflowExecutionException("Workflow failed")
         # Return output tokens
         return output_tokens
 
@@ -123,9 +132,12 @@ class StreamFlowExecutor(Executor):
                         name=port_name,
                     )
                 while not self.closed:
-                    output_tokens = await self._wait_outputs(
-                        output_consumer, output_tokens
+                    output_tokens = await self._handle_exception(
+                        asyncio.create_task(
+                            self._wait_outputs(output_consumer, output_tokens)
+                        )
                     )
+
             # Otherwise simply wait for all tasks to finish
             else:
                 await asyncio.gather(*self.executions)
