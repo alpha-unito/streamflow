@@ -911,7 +911,9 @@ class CWLCommandToken:
                         value = [self.prefix] + list(value)
                     else:
                         value = [self.prefix, value]
-                elif not isinstance(value, MutableSequence):
+                elif isinstance(value, MutableSequence):
+                    value = [self.prefix, *value]
+                else:
                     value = [self.prefix + _get_value_repr(value)]
             # If value is a boolean with no prefix, skip it
             if isinstance(value, bool):
