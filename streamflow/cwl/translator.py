@@ -640,7 +640,7 @@ def _create_token_processor(
             # Record type: -> ObjectTokenProcessor
             elif port_type["type"] == "record":
                 record_name_prefix = utils.get_name(
-                    posixpath.sep, posixpath.sep, port_type.get("name", port_name)
+                    posixpath.sep, posixpath.sep, port_type.get("name", cwl_name_prefix)
                 )
                 return CWLObjectTokenProcessor(
                     name=port_name,
