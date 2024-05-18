@@ -60,16 +60,6 @@ jobs:
     runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            test-requirements.txt
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
       - name: "Install Docker (MacOS X)"
         uses: douglascamata/setup-docker-macos-action@v1-alpha.13
         if: ${{ startsWith(matrix.on, 'macos-') }}
@@ -91,6 +81,16 @@ jobs:
           kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ matrix.docker == 'kubernetes' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            test-requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: "Install Streamflow"
         run: |
           python -m pip install . --user
@@ -221,16 +221,6 @@ jobs:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            tox.ini
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
       - name: "Install Docker (MacOs X)"
         uses: douglascamata/setup-docker-macos-action@v1-alpha.13
         if: ${{ startsWith(matrix.on, 'macos-') }}
@@ -252,6 +242,16 @@ jobs:
           kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            tox.ini
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: "Install Python Dependencies and Streamflow"
         run: |
           python -m pip install tox --user
