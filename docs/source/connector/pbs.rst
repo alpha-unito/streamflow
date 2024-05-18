@@ -53,7 +53,7 @@ Being passed directly to the ``qsub`` command line, the YAML options have higher
 
 .. warning::
 
-    Note that the ``file`` property in the upper configuration level, i.e., outside a ``service`` definition, is still supported in Streamflow ``v0.2``, but it is deprecated and will be removed in StreamFlow ``v0.3``.
+    Note that the ``file`` property in the upper configuration level, i.e., outside a ``service`` definition, is still supported in StreamFlow ``v0.2``, but it is deprecated and will be removed in StreamFlow ``v0.3``.
 
 The unit of binding is the entire HPC facility. In contrast, the scheduling unit is a single job placement in the PBS queue. Users can limit the maximum number of concurrently placed jobs by setting the ``maxConcurrentJobs`` parameter.
 
