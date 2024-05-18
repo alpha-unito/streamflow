@@ -731,6 +731,8 @@ class SlurmConnector(QueueManagerConnector):
                 "--parsable",
             ]
         )
+        if workdir is not None:
+            batch_command.append(get_option("chdir", workdir))
         if stdin is not None and stdin != asyncio.subprocess.DEVNULL:
             batch_command.append(get_option("input", shlex.quote(stdin)))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
@@ -751,7 +753,6 @@ class SlurmConnector(QueueManagerConnector):
                     get_option("bb", service.bb),
                     get_option("bbf", service.bbf),
                     get_option("begin", service.begin),
-                    get_option("chdir", workdir),
                     get_option("cluster-constraint", service.clusterConstraint),
                     get_option("clusters", service.clusters),
                     get_option("constraint", service.constraint),
