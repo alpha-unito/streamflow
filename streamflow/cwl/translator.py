@@ -957,7 +957,7 @@ def _get_command_token_from_input(
                 if token is not None:
                     command_tokens.append(token)
             if command_tokens:
-                token = CWLUnionCommandToken(
+                return CWLUnionCommandToken(
                     name=input_name,
                     value=command_tokens,
                     is_shell_command=True,
