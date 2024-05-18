@@ -91,7 +91,7 @@ jobs:
           kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ matrix.docker == 'kubernetes' }}
-      - name: "Install Streamflow"
+      - name: "Install StreamFlow"
         run: |
           python -m pip install . --user
       - name: "Test CWL ${{ matrix.version }} conformance"
@@ -147,7 +147,7 @@ jobs:
           python -m pip install -r docs/requirements.txt
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "b1583a89a95cc4516e4fb8cce606fb5796d35e476e03235dbeabf7cd51f8be7d"
+          CHECKSUM: "1ec60f9c4b89bfa0892207c6f909f44c147a6575783e094646e97fdb15a43c88"
         run: |
           cd docs
           HASH="$(make checksum | tail -n1)"
@@ -172,7 +172,7 @@ jobs:
           rm -rf /opt/ghc
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install Streamflow
+      - name: Install StreamFlow
         run: |
          pip install . 
          pip install --upgrade --force-reinstall attrs lockfile
@@ -201,7 +201,7 @@ jobs:
             requirements.txt
             test-requirements.txt
             tox.ini
-      - name: "Install Python Dependencies and Streamflow"
+      - name: "Install Python Dependencies and StreamFlow"
         run: |
           python -m pip install tox --user
           python -m pip install . --user
@@ -252,7 +252,7 @@ jobs:
           kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
-      - name: "Install Python Dependencies and Streamflow"
+      - name: "Install Python Dependencies and StreamFlow"
         run: |
           python -m pip install tox --user
           python -m pip install . --user

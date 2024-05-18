@@ -1,4 +1,4 @@
-# Flux in Streamflow
+# Flux in StreamFlow
 
 From the root of the repository, build the container:
 
