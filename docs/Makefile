@@ -19,7 +19,10 @@ help:
 %: Makefile
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-checksum: html
+clean:
+	@rm -fr build/
+
+checksum: clean html
 	@echo "Documentation checksum: "
 	@find build/html/ 						\
 			-not -name 'searchindex.js'		\
