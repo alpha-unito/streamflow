@@ -163,6 +163,7 @@ class DefaultDeploymentManager(DeploymentManager):
                 external=deployment_config.external,
                 lazy=deployment_config.lazy,
                 scheduling_policy=deployment_config.scheduling_policy,
+                workdir=deployment_config.workdir,
                 wraps=deployment_config.wraps,
             )
         # If it is not a ConnectorWrapper, do nothing
