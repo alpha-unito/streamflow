@@ -61,7 +61,14 @@ def get_binding_config(
                 external=target_deployment.get("external", False),
                 lazy=target_deployment.get("lazy", True),
                 scheduling_policy=target_deployment["scheduling_policy"],
-                workdir=target_deployment.get("workdir"),
+                workdir=target_deployment.get("workdir")
+                or (
+                    workflow_config.deployments[target_deployment["wraps"]].get(
+                        "workdir"
+                    )
+                    if "wraps" in target_deployment
+                    else None
+                ),
                 wraps=get_wraps_config(target_deployment.get("wraps")),
             )
             targets.append(
