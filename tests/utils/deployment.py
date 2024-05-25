@@ -280,6 +280,8 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
                     "hostname": "127.0.0.1:2222",
                     "sshKey": f.name,
                     "username": "linuxserver.io",
+                    "retries": 0,
+                    "retryDelay": 1,
                 }
             ],
             "maxConcurrentSessions": 10,
