@@ -86,7 +86,7 @@ report = {file = "report-requirements.txt"}
 test = {file = "test-requirements.txt"}
 
 [tool.codespell]
-ignore-words-list = "Crate,crate"
+ignore-words-list = "Crate,crate,NotIn,notin"
 
 [tool.coverage.run]
 branch = true
