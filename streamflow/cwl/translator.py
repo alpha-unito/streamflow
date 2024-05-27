@@ -1405,6 +1405,47 @@ class CWLTranslator:
         else:
             return default_port
 
+    def _handle_optional_input_variables(
+        self,
+        cwl_element,
+        cwl_name_prefix,
+        default_ports,
+        name_prefix,
+        step_name,
+        workflow,
+    ):
+        inner_input_ports, outer_input_ports = set(), set()
+        # Get CommandLineTool/ExpressionTool input names
+        for element_input in cwl_element.embedded_tool.tool["inputs"]:
+            inner_cwl_name_prefix = utils.get_inner_cwl_prefix(
+                cwl_name_prefix, name_prefix, cwl_element
+            )
+            global_name = utils.get_name(
+                step_name, inner_cwl_name_prefix, element_input["id"]
+            )
+            port_name = posixpath.relpath(global_name, step_name)
+            inner_input_ports.add(port_name)
+        # Get WorkflowStep input names
+        for element_input in cwl_element.tool["inputs"]:
+            step_name = utils.get_name(name_prefix, cwl_name_prefix, cwl_element.id)
+            cwl_step_name = utils.get_name(
+                name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
+            )
+            global_name = utils.get_name(step_name, cwl_step_name, element_input["id"])
+            port_name = posixpath.relpath(global_name, step_name)
+            outer_input_ports.add(port_name)
+        # Create a `DefaultTransformer` for each optional input
+        for port_name in inner_input_ports - outer_input_ports:
+            global_name = os.path.join(step_name, port_name)
+            default_ports[global_name] = self._handle_default_port(
+                global_name=global_name,
+                port_name=port_name,
+                transformer_suffix="-step-default-transformer",
+                port=None,
+                workflow=workflow,
+                value=None,
+            )
+
     def _inject_input(
         self,
         workflow: Workflow,
@@ -1918,25 +1959,6 @@ class CWLTranslator:
                 cwl_name_prefix=cwl_name_prefix,
             )
 
-    def _ab(self, inner_input_ports, outer_input_ports, step_name, cwl_element, name_prefix, cwl_name_prefix):
-        for element_input in cwl_element.embedded_tool.tool["inputs"]:
-            inner_cwl_name_prefix = utils.get_inner_cwl_prefix(
-                cwl_name_prefix, name_prefix, cwl_element
-            )
-            global_name = utils.get_name(
-                step_name, inner_cwl_name_prefix, element_input["id"]
-            )
-            port_name = posixpath.relpath(global_name, step_name)
-            inner_input_ports.append(port_name)
-        for element_input in cwl_element.tool["inputs"]:
-            step_name = utils.get_name(name_prefix, cwl_name_prefix, cwl_element.id)
-            cwl_step_name = utils.get_name(
-                name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
-            )
-            global_name = utils.get_name(step_name, cwl_step_name, element_input["id"])
-            port_name = posixpath.relpath(global_name, step_name)
-            outer_input_ports.append(port_name)
-
     def _translate_workflow_step(
         self,
         workflow: CWLWorkflow,
@@ -1977,22 +1999,14 @@ class CWLTranslator:
         default_ports = {}
         value_from_transformers = {}
         input_dependencies = {}
-
-        inner_input_ports, outer_input_ports = [], []
-        self._ab(inner_input_ports, outer_input_ports,step_name, cwl_element, name_prefix, cwl_name_prefix)
-        logger.info(f"Step {step_name} diff in.out {set(inner_input_ports) - set(outer_input_ports)}")
-        # todo: check port types? Are they optional?
-        #  Or is it enough the different between inner and outer to infer that the port is a optional parameter?
-        for port_name in set(inner_input_ports) - set(outer_input_ports):
-            global_name = os.path.join(step_name, port_name)
-            default_ports[global_name] = self._handle_default_port(
-                global_name=global_name,
-                port_name=port_name,
-                transformer_suffix="-step-default-transformer",
-                port=None,
-                workflow=workflow,
-                value=None,
-            )
+        self._handle_optional_input_variables(
+            cwl_element,
+            cwl_name_prefix,
+            default_ports,
+            name_prefix,
+            step_name,
+            workflow,
+        )
         for element_input in cwl_element.tool["inputs"]:
             self._translate_workflow_step_input(
                 workflow=workflow,
@@ -2453,7 +2467,6 @@ class CWLTranslator:
             name_prefix=step_name,
             cwl_name_prefix=inner_cwl_name_prefix,
         )
-
         # Update output ports with the external ones
         self.output_ports = {**self.output_ports, **external_output_ports}
 
