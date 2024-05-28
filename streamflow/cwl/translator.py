@@ -862,7 +862,12 @@ def _get_command_token(
             shell_quote=shell_quote,
         )
     else:
-        return CWLCommandToken(name=input_name, value=binding, token_type=token_type)
+        return CWLCommandToken(
+            name=input_name,
+            value=binding,
+            token_type=token_type,
+            is_shell_command=is_shell_command,
+        )
 
 
 def _get_command_token_from_input(

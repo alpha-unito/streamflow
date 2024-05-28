@@ -922,8 +922,19 @@ class CWLCommandToken:
             if not isinstance(value, MutableSequence):
                 value = [value]
             # Process shell escape only on the single command token
-            if not self.is_shell_command or self.shell_quote:
-                value = [_escape_value(v) for v in value]
+            needs_shell_quoting_re = re.compile(r"""(^$|[\s|&;()<>\'"$@])""")
+            value = [
+                (
+                    _escape_value(v)
+                    if (self.is_shell_command and self.shell_quote)
+                    or (
+                        not self.is_shell_command
+                        and needs_shell_quoting_re.search(str(v))
+                    )
+                    else v
+                )
+                for v in value
+            ]
             # Obtain token position
             if isinstance(self.position, str) and not self.position.isnumeric():
                 context["self"] = processed_token
