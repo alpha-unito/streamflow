@@ -369,6 +369,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         file_format: str | None = None,
         full_js: bool = False,
         glob: str | None = None,
+        inplace_update: bool = False,
         load_contents: bool = False,
         load_listing: LoadListing = LoadListing.no_listing,
         optional: bool = False,
@@ -382,6 +383,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
         self.full_js: bool = full_js
+        self.inplace_update: bool = inplace_update
         self.glob: str | None = glob
         self.load_contents: bool = load_contents
         self.load_listing: LoadListing = load_listing
@@ -446,6 +448,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     base_path=(
                         self.target.workdir if self.target else job.output_directory
                     ),
+                    inplace_update=self.inplace_update,
                 )
                 # Process file format
                 if self.file_format:

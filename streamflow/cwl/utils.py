@@ -177,9 +177,14 @@ async def _register_path(
     path: str,
     relpath: str,
     data_type: DataType = DataType.PRIMARY,
+    inplace_update: bool = False,
 ) -> DataLocation | None:
     if real_path := await remotepath.follow_symlink(context, connector, location, path):
         if real_path != path:
+            if inplace_update:
+                for data_loc in context.data_manager.get_data_locations(path=real_path):
+                    if data_loc.deployment != connector.deployment_name:
+                        data_loc.data_type = DataType.INVALID
             if data_locations := context.data_manager.get_data_locations(
                 path=real_path, deployment=connector.deployment_name
             ):
@@ -810,6 +815,7 @@ async def register_data(
     locations: MutableSequence[ExecutionLocation],
     base_path: str | None,
     token_value: MutableSequence[MutableMapping[str, Any]] | MutableMapping[str, Any],
+    inplace_update: bool = False,
 ):
     # If `token_value` is a list, process every item independently
     if isinstance(token_value, MutableSequence):
@@ -860,6 +866,7 @@ async def register_data(
                             location=location,
                             path=path,
                             relpath=relpath,
+                            inplace_update=inplace_update,
                         )
                     )
                     for location in locations
