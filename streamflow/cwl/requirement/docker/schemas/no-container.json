@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "https://streamflow.di.unito.it/schemas/cwl/requirement/docker/no-container.json",
+  "type": "object",
+  "properties": {
+  },
+  "additionalProperties": false
+}

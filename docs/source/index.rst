@@ -98,4 +98,5 @@ For LaTeX users, the following BibTeX entry can be used:
 
    cwl/docker/docker.rst
    cwl/docker/kubernetes.rst
+   cwl/docker/no-container.rst
    cwl/docker/singularity.rst
