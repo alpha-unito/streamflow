@@ -53,7 +53,6 @@ class StreamFlowExecutor(Executor):
             self.output_tasks.values(), return_when=asyncio.FIRST_COMPLETED
         )
         self.output_tasks = {t.get_name(): t for t in unfinished}
-        workflow_failed = False
         for task in finished:
             if task.cancelled():
                 continue
@@ -67,7 +66,7 @@ class StreamFlowExecutor(Executor):
                     self.closed = True
                     for t in unfinished:
                         t.cancel()
-                    workflow_failed = True
+                    return output_tokens
                 else:
                     self.received.append(task_name)
                     # When the last port terminates, the entire executor terminates
@@ -98,8 +97,6 @@ class StreamFlowExecutor(Executor):
                     name=port_name,
                 )
                 self.closed = False
-        if workflow_failed:
-            raise WorkflowExecutionException("Workflow failed")
         # Return output tokens
         return output_tokens
 
