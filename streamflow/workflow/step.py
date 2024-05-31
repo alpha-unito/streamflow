@@ -107,11 +107,14 @@ class BaseStep(Step, ABC):
             )
         }
         if logger.isEnabledFor(logging.DEBUG):
-            if check_termination(inputs):
-                logger.debug(f"Step {self.name} received termination token")
-            logger.debug(
-                f"Step {self.name} received inputs {[t.tag for t in inputs.values()]}"
-            )
+            if check_termination(inputs.values()):
+                logger.debug(
+                    f"Step {self.name} received termination token with {_reduce_statuses([t.value for t in inputs.values()]).name.lower()} status"
+                )
+            else:
+                logger.debug(
+                    f"Step {self.name} received inputs {[t.tag for t in inputs.values()]}"
+                )
         return inputs
 
     async def _persist_token(
@@ -572,7 +575,6 @@ class ExecuteStep(BaseStep):
 
     async def _check_inputs(
         self,
-        task_name: str,
         inputs: MutableMapping[str, Token],
         input_ports: MutableMapping[str, Port],
         inputs_map: MutableMapping[str, MutableMapping[str, Token]],
@@ -586,10 +588,6 @@ class ExecuteStep(BaseStep):
             if statuses[-1] in (Status.CANCELLED, Status.FAILED):
                 for t in unfinished:
                     t.cancel()
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Step {self.name} received termination token with status {statuses[-1]} on port {task_name}"
-                )
         elif (
             job := await cast(JobPort, self.get_input_port("__job__")).get_job(
                 self.name
@@ -838,11 +836,8 @@ class ExecuteStep(BaseStep):
                 for task in finished:
                     if task.cancelled():
                         continue
-                    if (
-                        task_name := cast(asyncio.Task, task).get_name()
-                    ) == "retrieve_inputs":
+                    if cast(asyncio.Task, task).get_name() == "retrieve_inputs":
                         await self._check_inputs(
-                            task_name,
                             task.result(),
                             input_ports,
                             inputs_map,
@@ -876,7 +871,11 @@ class ExecuteStep(BaseStep):
             )
         )
         # Terminate step
-        await self.terminate(_get_step_status(_reduce_statuses(statuses), list(self.get_output_ports().values())))
+        await self.terminate(
+            _get_step_status(
+                _reduce_statuses(statuses), list(self.get_output_ports().values())
+            )
+        )
 
 
 class GatherStep(BaseStep):
