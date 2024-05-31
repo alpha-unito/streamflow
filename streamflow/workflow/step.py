@@ -808,28 +808,28 @@ class ExecuteStep(BaseStep):
             )
         }
         # If there are input ports create jobs until termination token are received
-        input_ports = {
+        if input_ports := {
             k: v
             for k, v in self.get_input_ports().items()
             if k != "__job__" and not isinstance(v, ConnectorPort)
-        }
-        if input_ports:
+        }:
             statuses = []
             inputs_map = {}
-            tasks = {
+            unfinished = {
                 asyncio.create_task(
                     self._get_inputs(input_ports), name="retrieve_inputs"
                 )
             }
-            while tasks:
+            while unfinished:
                 finished, unfinished = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
+                    unfinished, return_when=asyncio.FIRST_COMPLETED
                 )
                 for task in finished:
                     if task.cancelled():
                         continue
-                    task_name = cast(asyncio.Task, task).get_name()
-                    if task_name == "retrieve_inputs":
+                    if (
+                        task_name := cast(asyncio.Task, task).get_name()
+                    ) == "retrieve_inputs":
                         await self._check_inputs(
                             task_name,
                             task.result(),
@@ -845,7 +845,6 @@ class ExecuteStep(BaseStep):
                             for t in unfinished:
                                 t.cancel()
                         statuses.append(job_status)
-                tasks = unfinished
         # Otherwise simply run job
         else:
             # Retrieve job
