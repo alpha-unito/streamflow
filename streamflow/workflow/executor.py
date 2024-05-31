@@ -129,12 +129,9 @@ class StreamFlowExecutor(Executor):
                         name=port_name,
                     )
                 while not self.closed:
-                    output_tokens = await self._handle_exception(
-                        asyncio.create_task(
-                            self._wait_outputs(output_consumer, output_tokens)
-                        )
+                    output_tokens = await self._wait_outputs(
+                        output_consumer, output_tokens
                     )
-
             # Otherwise simply wait for all tasks to finish
             else:
                 await asyncio.gather(*self.executions)
