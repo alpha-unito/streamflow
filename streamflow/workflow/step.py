@@ -576,14 +576,19 @@ class ExecuteStep(BaseStep):
         inputs: MutableMapping[str, Token],
         input_ports: MutableMapping[str, Port],
         inputs_map: MutableMapping[str, MutableMapping[str, Token]],
+        statuses: MutableSequence[Status],
         connectors: MutableMapping[str, Connector],
         unfinished: MutableSet[asyncio.Task],
     ) -> None:
         # Check for termination
         if check_termination(inputs.values()):
+            statuses.append(_reduce_statuses([t.value for t in inputs.values()]))
+            if statuses[-1] in (Status.CANCELLED, Status.FAILED):
+                for t in unfinished:
+                    t.cancel()
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
-                    f"Step {self.name} received termination token on port {task_name}"
+                    f"Step {self.name} received termination token with status {statuses[-1]} on port {task_name}"
                 )
         elif (
             job := await cast(JobPort, self.get_input_port("__job__")).get_job(
@@ -708,7 +713,7 @@ class ExecuteStep(BaseStep):
                         job, self, command_output
                     )
                 )
-            else:
+            elif command_output.status != Status.CANCELLED:
                 # Retrieve output tokens
                 if not self.terminated:
                     await asyncio.gather(
@@ -841,6 +846,7 @@ class ExecuteStep(BaseStep):
                             task.result(),
                             input_ports,
                             inputs_map,
+                            statuses,
                             connectors,
                             unfinished,
                         )
@@ -870,7 +876,7 @@ class ExecuteStep(BaseStep):
             )
         )
         # Terminate step
-        await self.terminate(_get_step_status(statuses))
+        await self.terminate(_get_step_status(_reduce_statuses(statuses), list(self.get_output_ports().values())))
 
 
 class GatherStep(BaseStep):
