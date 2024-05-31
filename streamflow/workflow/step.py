@@ -14,6 +14,7 @@ from typing import (
     MutableMapping,
     MutableSequence,
     cast,
+    MutableSet,
 )
 
 from streamflow.core import utils
@@ -556,6 +557,47 @@ class ExecuteStep(BaseStep):
         self.output_processors: MutableMapping[str, CommandOutputProcessor] = {}
         self.add_input_port("__job__", job_port)
 
+    async def _check_inputs(
+        self,
+        task_name: str,
+        inputs: MutableMapping[str, Token],
+        input_ports: MutableMapping[str, Port],
+        inputs_map: MutableMapping[str, MutableMapping[str, Token]],
+        connectors: MutableMapping[str, Connector],
+        unfinished: MutableSet[asyncio.Task],
+    ) -> None:
+        # Check for termination
+        if check_termination(inputs.values()):
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Step {self.name} received termination token on port {task_name}"
+                )
+        elif (
+            job := await cast(JobPort, self.get_input_port("__job__")).get_job(
+                self.name
+            )
+        ) is not None:
+            # Group inputs by tag
+            _group_by_tag(inputs, inputs_map)
+            # Process tags
+            for tag in list(inputs_map.keys()):
+                if len(inputs_map[tag]) == len(input_ports):
+                    inputs = inputs_map.pop(tag)
+                    # Set status to fireable
+                    await self._set_status(Status.FIREABLE)
+                    # Run job
+                    unfinished.add(
+                        asyncio.create_task(
+                            self._run_job(job, inputs, connectors),
+                            name=job.name,
+                        )
+                    )
+            unfinished.add(
+                asyncio.create_task(
+                    self._get_inputs(input_ports), name="retrieve_inputs"
+                )
+            )
+
     @classmethod
     async def _load(
         cls,
@@ -743,7 +785,6 @@ class ExecuteStep(BaseStep):
         )
 
     async def run(self) -> None:
-        jobs = []
         # If there are input connector ports, retrieve connectors
         connector_ports = {
             k: self.get_input_port(v)
@@ -757,7 +798,9 @@ class ExecuteStep(BaseStep):
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            p.get_connector(posixpath.join(self.name, port_name))
+                            cast(ConnectorPort, p).get_connector(
+                                posixpath.join(self.name, port_name)
+                            )
                         )
                         for port_name, p in connector_ports.items()
                     )
@@ -765,38 +808,43 @@ class ExecuteStep(BaseStep):
             )
         }
         # If there are input ports create jobs until termination token are received
-        input_ports = {
+        if input_ports := {
             k: v
             for k, v in self.get_input_ports().items()
             if k != "__job__" and not isinstance(v, ConnectorPort)
-        }
-        if input_ports:
+        }:
+            statuses = []
             inputs_map = {}
-            while True:
-                # Retrieve input tokens
-                inputs = await self._get_inputs(input_ports)
-                # Retrieve job
-                job = await cast(JobPort, self.get_input_port("__job__")).get_job(
-                    self.name
+            unfinished = {
+                asyncio.create_task(
+                    self._get_inputs(input_ports), name="retrieve_inputs"
                 )
-                # Check for termination
-                if check_termination(inputs.values()) or job is None:
-                    break
-                # Group inputs by tag
-                _group_by_tag(inputs, inputs_map)
-                # Process tags
-                for tag in list(inputs_map.keys()):
-                    if len(inputs_map[tag]) == len(input_ports):
-                        inputs = inputs_map.pop(tag)
-                        # Set status to fireable
-                        await self._set_status(Status.FIREABLE)
-                        # Run job
-                        jobs.append(
-                            asyncio.create_task(
-                                self._run_job(job, inputs, connectors),
-                                name=utils.random_name(),
-                            )
+            }
+            while unfinished:
+                finished, unfinished = await asyncio.wait(
+                    unfinished, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in finished:
+                    if task.cancelled():
+                        continue
+                    if (
+                        task_name := cast(asyncio.Task, task).get_name()
+                    ) == "retrieve_inputs":
+                        await self._check_inputs(
+                            task_name,
+                            task.result(),
+                            input_ports,
+                            inputs_map,
+                            connectors,
+                            unfinished,
                         )
+                    else:
+                        # check job exit status
+                        job_status = task.result()
+                        if job_status in (Status.CANCELLED, Status.FAILED):
+                            for t in unfinished:
+                                t.cancel()
+                        statuses.append(job_status)
         # Otherwise simply run job
         else:
             # Retrieve job
@@ -805,13 +853,9 @@ class ExecuteStep(BaseStep):
                     self.name
                 )
             ) is not None:
-                jobs.append(
-                    asyncio.create_task(
-                        self._run_job(job, {}, connectors), name=utils.random_name()
-                    )
-                )
-        # Wait for jobs termination
-        statuses = cast(MutableSequence[Status], await asyncio.gather(*jobs))
+                statuses = [await self._run_job(job, {}, connectors)]
+            else:
+                statuses = [Status.SKIPPED]
         # If there are connector ports, retrieve termination tokens from them
         await asyncio.gather(
             *(
