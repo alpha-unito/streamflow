@@ -33,7 +33,6 @@ class ListMergeCombinator(DotProductCombinator):
         self.flatten: bool = flatten
         self.input_names: MutableSequence[str] = input_names
         self.output_name: str = output_name
-        self.token_values: MutableMapping[str, MutableMapping[str, Any]] = {}
 
     @classmethod
     async def _load(

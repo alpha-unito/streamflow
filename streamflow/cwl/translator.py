@@ -24,6 +24,11 @@ from rdflib import Graph
 from ruamel.yaml.comments import CommentedSeq
 
 from streamflow.config.config import WorkflowConfig
+from streamflow.core.command import (
+    CommandOutputProcessor,
+    CommandTokenProcessor,
+    UnionCommandTokenProcessor,
+)
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
@@ -35,7 +40,6 @@ from streamflow.core.deployment import (
 )
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.workflow import (
-    CommandOutputProcessor,
     Port,
     Step,
     Token,
@@ -46,11 +50,11 @@ from streamflow.cwl import utils
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
     CWLCommand,
-    CWLCommandToken,
+    CWLCommandTokenProcessor,
     CWLExpressionCommand,
-    CWLMapCommandToken,
-    CWLObjectCommandToken,
-    CWLUnionCommandToken,
+    CWLForwardCommandTokenProcessor,
+    CWLMapCommandTokenProcessor,
+    CWLObjectCommandTokenProcessor,
 )
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
@@ -79,9 +83,9 @@ from streamflow.cwl.step import (
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
+    CWLTokenTransformer,
     CartesianProductSizeTransformer,
     CloneTransformer,
-    CWLTokenTransformer,
     DefaultRetagTransformer,
     DefaultTransformer,
     DotProductSizeTransformer,
@@ -158,22 +162,22 @@ def _create_command(
     # Process arguments
     if "arguments" in cwl_element.tool:
         for argument in cwl_element.tool["arguments"]:
-            command.command_tokens.append(
-                _get_command_token(
+            command.processors.append(
+                _get_command_token_processor(
                     binding=argument, is_shell_command=command.is_shell_command
                 )
             )
     # Process inputs
     for input_port in cwl_element.tool["inputs"]:
-        command_token = _get_command_token_from_input(
-            cwl_element=input_port,
-            port_type=input_port["type"],
-            input_name=utils.get_name("", cwl_name_prefix, input_port["id"]),
-            is_shell_command=command.is_shell_command,
-            schema_def_types=schema_def_types,
+        command.processors.append(
+            _get_command_token_processor_from_input(
+                cwl_element=input_port,
+                port_type=input_port["type"],
+                input_name=utils.get_name("", cwl_name_prefix, input_port["id"]),
+                is_shell_command=command.is_shell_command,
+                schema_def_types=schema_def_types,
+            )
         )
-        if command_token is not None:
-            command.command_tokens.append(command_token)
     return command
 
 
@@ -831,12 +835,13 @@ def _create_token_transformer(
     return token_transformer
 
 
-def _get_command_token(
-    binding: Any,
+def _get_command_token_processor(
+    binding: Any | None = None,
+    processor: CommandTokenProcessor | None = None,
     is_shell_command: bool = False,
     input_name: str | None = None,
     token_type: str | None = None,
-) -> CWLCommandToken:
+) -> CWLCommandTokenProcessor:
     # Normalize type (Python does not distinguish among all CWL number types)
     token_type = (
         "long"
@@ -844,54 +849,52 @@ def _get_command_token(
         else "double" if token_type == "float" else token_type  # nosec
     )
     if isinstance(binding, MutableMapping):
-        item_separator = binding.get("itemSeparator", None)
-        position = binding.get("position", 0)
-        prefix = binding.get("prefix", None)
-        separate = binding.get("separate", True)
-        shell_quote = binding.get("shellQuote", True)
-        value = binding["valueFrom"] if "valueFrom" in binding else None
-        return CWLCommandToken(
+        return CWLCommandTokenProcessor(
             name=input_name,
-            value=value,
+            processor=processor,
+            expression=binding["valueFrom"] if "valueFrom" in binding else None,
             token_type=token_type,
             is_shell_command=is_shell_command,
-            item_separator=item_separator,
-            position=position,
-            prefix=prefix,
-            separate=separate,
-            shell_quote=shell_quote,
+            item_separator=binding.get("itemSeparator", None),
+            position=binding.get("position", 0),
+            prefix=binding.get("prefix", None),
+            separate=binding.get("separate", True),
+            shell_quote=binding.get("shellQuote", True),
         )
     else:
-        return CWLCommandToken(name=input_name, value=binding, token_type=token_type)
+        return CWLCommandTokenProcessor(
+            name=input_name,
+            processor=processor,
+            expression=binding,
+            token_type=token_type,
+        )
 
 
-def _get_command_token_from_input(
+def _get_command_token_processor_from_input(
     cwl_element: Any,
     port_type: Any,
     input_name: str,
     is_shell_command: bool = False,
     schema_def_types: MutableMapping[str, Any] | None = None,
-):
+) -> CommandTokenProcessor | None:
     token = None
-    command_line_binding = cwl_element.get("inputBinding", None)
     if isinstance(port_type, MutableMapping):
         if "type" in port_type:
             # Array type: -> CWLMapCommandToken
             if port_type["type"] == "array":
-                token = _get_command_token_from_input(
-                    cwl_element=port_type,
-                    port_type=port_type["items"],
-                    input_name=input_name,
-                    is_shell_command=is_shell_command,
-                    schema_def_types=schema_def_types,
+                token = CWLMapCommandTokenProcessor(
+                    name=input_name,
+                    processor=_get_command_token_processor_from_input(
+                        cwl_element=port_type,
+                        port_type=port_type["items"],
+                        input_name=input_name,
+                        is_shell_command=is_shell_command,
+                        schema_def_types=schema_def_types,
+                    ),
                 )
-                if token is not None:
-                    token = CWLMapCommandToken(
-                        name=input_name, value=token, is_shell_command=is_shell_command
-                    )
             # Enum type: -> substitute the type with string and reprocess
             elif port_type["type"] == "enum":
-                return _get_command_token_from_input(
+                return _get_command_token_processor_from_input(
                     cwl_element=cwl_element,
                     port_type="string",
                     input_name=input_name,
@@ -903,25 +906,20 @@ def _get_command_token_from_input(
                 record_name_prefix = utils.get_name(
                     posixpath.sep, posixpath.sep, port_type.get("name", input_name)
                 )
-                command_tokens = {}
+                processors = {}
                 for el in port_type["fields"]:
                     key = utils.get_name("", record_name_prefix, el["name"])
-                    el_token = _get_command_token_from_input(
+                    processors[key] = _get_command_token_processor_from_input(
                         cwl_element=el,
                         port_type=el["type"],
                         input_name=key,
                         is_shell_command=is_shell_command,
                         schema_def_types=schema_def_types,
                     )
-                    if el_token is not None:
-                        command_tokens[key] = el_token
-                if command_tokens:
-                    token = CWLObjectCommandToken(
-                        name=input_name,
-                        value=command_tokens,
-                        is_shell_command=True,
-                        shell_quote=False,
-                    )
+                token = CWLObjectCommandTokenProcessor(
+                    name=input_name,
+                    processors=processors,
+                )
             # Unknown type -> raise Exception
             else:
                 raise WorkflowDefinitionException(
@@ -936,37 +934,30 @@ def _get_command_token_from_input(
         types = [t for t in filter(lambda x: x != "null", port_type)]
         # Optional type (e.g. ['null', Type] -> propagate
         if len(types) == 1:
-            return _get_command_token_from_input(
+            return _get_command_token_processor_from_input(
                 cwl_element=cwl_element,
                 port_type=types[0],
                 input_name=input_name,
                 is_shell_command=is_shell_command,
                 schema_def_types=schema_def_types,
             )
-        # List of types: -> CWLUnionCommandToken
+        # List of types: -> UnionCommandToken
         else:
-            command_tokens = []
-            for port_type in types:
-                token = _get_command_token_from_input(
+            processors = [
+                _get_command_token_processor_from_input(
                     cwl_element=cwl_element,
                     port_type=port_type,
                     input_name=input_name,
                     is_shell_command=is_shell_command,
                     schema_def_types=schema_def_types,
                 )
-                if token is not None:
-                    command_tokens.append(token)
-            if command_tokens:
-                return CWLUnionCommandToken(
-                    name=input_name,
-                    value=command_tokens,
-                    is_shell_command=True,
-                    shell_quote=False,
-                )
+                for port_type in types
+            ]
+            return UnionCommandTokenProcessor(name=input_name, processors=processors)
     elif isinstance(port_type, str):
         # Complex type -> Extract from schema definitions and propagate
         if "#" in port_type:
-            return _get_command_token_from_input(
+            return _get_command_token_processor_from_input(
                 cwl_element=cwl_element,
                 port_type=schema_def_types[port_type],
                 input_name=input_name,
@@ -974,32 +965,32 @@ def _get_command_token_from_input(
                 schema_def_types=schema_def_types,
             )
     # Simple type with `inputBinding` specified -> CWLCommandToken
-    if command_line_binding is not None:
+    if (command_line_binding := cwl_element.get("inputBinding", None)) is not None:
         if token is not None:
             # By default, do not escape composite command tokens
             if "shellQuote" not in command_line_binding:
                 command_line_binding["shellQuote"] = False
-                return _get_command_token(
-                    binding={**command_line_binding, **{"valueFrom": token}},
-                    is_shell_command=True,
-                    input_name=input_name,
-                )
-            else:
-                return _get_command_token(
-                    binding={**command_line_binding, **{"valueFrom": token}},
-                    is_shell_command=is_shell_command,
-                    input_name=input_name,
-                )
+                is_shell_command = True
+            token = _get_command_token_processor(
+                binding=command_line_binding,
+                processor=token,
+                is_shell_command=is_shell_command,
+                input_name=input_name,
+            )
         else:
-            return _get_command_token(
+            token = _get_command_token_processor(
                 binding=command_line_binding,
                 is_shell_command=is_shell_command,
                 input_name=input_name,
                 token_type=port_type,
             )
-    # Simple type without `inputBinding` specified -> token
-    else:
-        return token
+    # Simple type without `inputBinding` specified -> CWLForwardCommandToken
+    elif token is None:
+        token = CWLForwardCommandTokenProcessor(
+            name=input_name,
+            token_type=port_type,
+        )
+    return token
 
 
 def _get_hardware_requirement(

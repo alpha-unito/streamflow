@@ -7,7 +7,7 @@ import pytest
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Port, Status, Step, Token, Workflow
-from streamflow.cwl.command import CWLCommand, CWLCommandToken
+from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.translator import _create_command_output_processor_base
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_depender_tokens, load_dependee_tokens
@@ -239,7 +239,7 @@ async def test_execute_step(context: StreamFlowContext):
     execute_step.command = CWLCommand(
         step=execute_step,
         base_command=["echo"],
-        command_tokens=[CWLCommandToken(name=in_port_name, value=None)],
+        processors=[CWLCommandTokenProcessor(name=in_port_name, expression=None)],
     )
     execute_step.add_output_port(
         out_port_name,
