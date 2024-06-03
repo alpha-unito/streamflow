@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import errno
 import glob
 import hashlib
@@ -466,7 +467,13 @@ async def write(
         with open(path, "w") as f:
             f.write(content)
     else:
-        command = ["printf", '"{content}"'.format(content=content.replace('"', '\\"'))]
+        command = [
+            "echo",
+            base64.b64encode(content.encode("utf-8")).decode("utf-8"),
+            "|",
+            "base64",
+            "-d",
+        ]
         result, status = await connector.run(
             location=location, command=command, stdout=path, capture_output=True
         )
