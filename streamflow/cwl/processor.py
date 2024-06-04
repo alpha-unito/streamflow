@@ -844,7 +844,9 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
         else:
             token = await self.processor.process(job, command_output, connector)
         if not isinstance(token, ListToken):
-            token = ListToken(value=[token], tag=token.tag)
+            token = ListToken(
+                value=[token] if token.value is not None else [], tag=token.tag
+            )
         return token.update(token.value)
 
     async def _save_additional_params(self, context: StreamFlowContext):

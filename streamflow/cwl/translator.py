@@ -272,7 +272,7 @@ def _create_command_output_processor(
                         cwl_name_prefix=cwl_name_prefix,
                         schema_def_types=schema_def_types,
                         context=context,
-                        optional=optional,
+                        optional=True,
                     ),
                 )
             # Enum type: -> create command output processor
