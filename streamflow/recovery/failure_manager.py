@@ -6,6 +6,7 @@ from typing import MutableMapping, cast
 
 from importlib_resources import files
 
+from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
@@ -14,7 +15,6 @@ from streamflow.core.exception import (
 )
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
 from streamflow.core.workflow import (
-    CommandOutput,
     Job,
     Status,
     Step,

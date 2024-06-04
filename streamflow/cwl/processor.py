@@ -8,6 +8,7 @@ import cwl_utils.file_formats
 from rdflib import Graph
 from schema_salad.exceptions import ValidationException
 
+from streamflow.core.command import CommandOutput, CommandOutputProcessor
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     Connector,
@@ -21,8 +22,6 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import flatten_list, get_tag
 from streamflow.core.workflow import (
-    CommandOutput,
-    CommandOutputProcessor,
     Job,
     Status,
     Token,

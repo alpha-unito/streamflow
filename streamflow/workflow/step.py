@@ -7,17 +7,10 @@ import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
 from types import ModuleType
-from typing import (
-    Any,
-    AsyncIterable,
-    Iterable,
-    MutableMapping,
-    MutableSequence,
-    cast,
-    MutableSet,
-)
+from typing import Any, AsyncIterable, MutableMapping, MutableSequence, MutableSet, cast
 
 from streamflow.core import utils
+from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
@@ -34,9 +27,6 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.workflow import (
-    Command,
-    CommandOutput,
-    CommandOutputProcessor,
     Job,
     Port,
     Status,
@@ -116,7 +106,7 @@ class BaseStep(Step, ABC):
         return inputs
 
     async def _persist_token(
-        self, token: Token, port: Port, input_token_ids: Iterable[int]
+        self, token: Token, port: Port, input_token_ids: MutableSequence[int]
     ) -> Token:
         if token.persistent_id:
             raise WorkflowDefinitionException(
@@ -154,6 +144,9 @@ class Combinator(ABC):
         self.items: MutableSequence[str] = []
         self.combinators: MutableMapping[str, Combinator] = {}
         self.combinators_map: MutableMapping[str, str] = {}
+        self._token_values: MutableMapping[
+            str, MutableMapping[str, MutableSequence[Any]]
+        ] = {}
 
     @classmethod
     async def _load(
@@ -250,20 +243,20 @@ class Combinator(ABC):
         )
         if depth:
             tag = ".".join(tag.split(".")[:-depth])
-        for key in list(self.token_values.keys()):
+        for key in list(self._token_values.keys()):
             if tag == key:
                 continue
             elif key.startswith(tag):
-                self._add_to_port(token, self.token_values[key], port_name)
+                self._add_to_port(token, self._token_values[key], port_name)
             elif tag.startswith(key):
-                if tag not in self.token_values:
-                    self.token_values[tag] = {}
-                for p in self.token_values[key]:
-                    for t in self.token_values[key][p]:
-                        self._add_to_port(t, self.token_values[tag], p)
-        if tag not in self.token_values:
-            self.token_values[tag] = {}
-        self._add_to_port(token, self.token_values[tag], port_name)
+                if tag not in self._token_values:
+                    self._token_values[tag] = {}
+                for p in self._token_values[key]:
+                    for t in self._token_values[key][p]:
+                        self._add_to_port(t, self._token_values[tag], p)
+        if tag not in self._token_values:
+            self._token_values[tag] = {}
+        self._add_to_port(token, self._token_values[tag], port_name)
 
     def _add_to_port(
         self,
