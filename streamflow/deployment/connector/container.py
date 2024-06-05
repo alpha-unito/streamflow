@@ -1127,7 +1127,11 @@ class SingularityConnector(ContainerConnector):
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
     ):
-        return f"singularity exec instance://{location.name} sh -c '{command}'"
+        return (
+            f"singularity exec "
+            f"{get_option('cleanenv', self.cleanenv)}"
+            f"instance://{location.name} sh -c '{command}'"
+        )
 
     async def deploy(self, external: bool) -> None:
         if not external:
