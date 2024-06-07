@@ -6,6 +6,7 @@ import logging
 import posixpath
 import urllib.parse
 from enum import Enum
+from pathlib import PurePath
 from types import ModuleType
 from typing import (
     Any,
@@ -608,7 +609,11 @@ def get_path_from_token(token_value: MutableMapping[str, Any]) -> str | None:
     location = token_value.get("location", token_value.get("path"))
     if location and "://" in location:
         scheme = urllib.parse.urlsplit(location).scheme
-        return urllib.parse.unquote(location[7:]) if scheme == "file" else None
+        return (
+            str(PurePath(urllib.parse.unquote(location[7:])))
+            if scheme == "file"
+            else None
+        )
     return location
 
 
