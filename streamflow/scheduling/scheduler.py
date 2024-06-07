@@ -138,27 +138,26 @@ class DefaultScheduler(Scheduler):
         locations: int,
         scheduling_policy: Policy,
         available_locations: MutableMapping[str, AvailableLocation],
-    ) -> MutableSequence[ExecutionLocation] | None:
+    ) -> MutableSequence[ExecutionLocation]:
         selected_locations = []
         for _ in range(locations):
-            selected_location = await scheduling_policy.get_location(
+            if selected_location := await scheduling_policy.get_location(
                 context=self.context,
                 job=job,
                 hardware_requirement=hardware_requirement,
                 available_locations=available_locations,
                 jobs=self.job_allocations,
                 locations=self.location_allocations,
-            )
-            if selected_location is not None:
-                selected_locations.append(selected_location)
+            ):
+                selected_locations.append(selected_location.location)
                 available_locations = {
                     k: v
                     for k, v in available_locations.items()
                     if v != selected_location
                 }
             else:
-                return None
-        return [loc.location for loc in selected_locations]
+                return []
+        return selected_locations
 
     def _get_policy(self, config: Config):
         if config.name not in self.policy_map:
@@ -240,7 +239,7 @@ class DefaultScheduler(Scheduler):
                             location=loc, hardware_requirement=hardware_requirement
                         )
                     }
-                    if valid_locations:
+                    if len(valid_locations) >= target.locations:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 "Available locations for job {} on {} are {}.".format(
@@ -253,16 +252,21 @@ class DefaultScheduler(Scheduler):
                                     list(valid_locations.keys()),
                                 )
                             )
-                        selected_locations = await self._get_locations(
-                            job=job_context.job,
-                            hardware_requirement=hardware_requirement,
-                            locations=target.locations,
-                            scheduling_policy=self._get_policy(
-                                target.deployment.scheduling_policy
-                            ),
-                            available_locations=valid_locations,
-                        )
-                        if selected_locations is not None:
+                        # If available locations are exactly the amount of required locations, simply use them
+                        # Otherwise, use the `Policy` to select the best set of locations to allocate
+                        if selected_locations := (
+                            [loc.location for loc in valid_locations.values()]
+                            if len(valid_locations) == target.locations
+                            else await self._get_locations(
+                                job=job_context.job,
+                                hardware_requirement=hardware_requirement,
+                                locations=target.locations,
+                                scheduling_policy=self._get_policy(
+                                    target.deployment.scheduling_policy
+                                ),
+                                available_locations=valid_locations,
+                            )
+                        ):
                             self._allocate_job(
                                 job=job_context.job,
                                 hardware=hardware_requirement,
@@ -273,15 +277,16 @@ class DefaultScheduler(Scheduler):
                             return
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
+                            deployment_name = (
+                                posixpath.join(deployment, target.service)
+                                if target.service
+                                else deployment
+                            )
                             logger.debug(
-                                "No location available for job {} on deployment {}.".format(
-                                    job_context.job.name,
-                                    (
-                                        posixpath.join(deployment, target.service)
-                                        if target.service
-                                        else deployment
-                                    ),
-                                )
+                                f"Not enough available locations: job {job_context.job.name} "
+                                f"requires {target.locations} locations "
+                                f"on deployment {deployment_name}, "
+                                f"but only {len(valid_locations)} are available."
                             )
                 try:
                     await asyncio.wait_for(
