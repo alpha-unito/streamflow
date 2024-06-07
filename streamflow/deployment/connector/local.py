@@ -4,7 +4,7 @@ import os
 import shutil
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import PurePath
 from typing import MutableMapping, MutableSequence
 
 import psutil
@@ -19,7 +19,7 @@ from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 
 
-def _get_disk_usage(path: Path):
+def _get_disk_usage(path: PurePath):
     while not os.path.exists(path):
         path = path.parent
     return float(shutil.disk_usage(path).free / 2**20)
@@ -99,17 +99,17 @@ class LocalConnector(BaseConnector):
                     cores=self.cores,
                     memory=self.memory,
                     input_directory=(
-                        _get_disk_usage(Path(input_directory))
+                        _get_disk_usage(PurePath(input_directory))
                         if input_directory
                         else float("inf")
                     ),
                     output_directory=(
-                        _get_disk_usage(Path(output_directory))
+                        _get_disk_usage(PurePath(output_directory))
                         if output_directory
                         else float("inf")
                     ),
                     tmp_directory=(
-                        _get_disk_usage(Path(tmp_directory))
+                        _get_disk_usage(PurePath(tmp_directory))
                         if tmp_directory
                         else float("inf")
                     ),
