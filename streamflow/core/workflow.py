@@ -101,11 +101,25 @@ class Job:
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Job:
+        """
+        Load a `Job` object from a Database instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :param row: the `Database` row describing the `Job` object as a Python dictionary.
+        :param loading_context: the `DatabaseLoadingContext` object of the current transaction.
+        :return: the `Job` object loaded from the `Database`.
+        """
         type = cast(Type[Job], utils.get_class_from_name(row["type"]))
         return await type._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
+        """
+        Store a `Job` object into a `Database` instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :return: the `Job` object representation as a Python dictionary.
+        """
         return {
             "type": utils.get_class_fullname(type(self)),
             "params": await self._save_additional_params(context),

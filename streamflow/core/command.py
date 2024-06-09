@@ -1,3 +1,5 @@
+"""Base classes to handle shell commands in workflow steps."""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,12 +18,26 @@ from streamflow.workflow.utils import get_token_value
 
 
 class Command(ABC):
+    """Abstract class that represents a shell command."""
+
     def __init__(self, step: Step):
+        """
+        Construct a `Command` object.
+
+        :param step: the Step object that executes the `Command`.
+        """
         super().__init__()
         self.step: Step = step
 
     @abstractmethod
-    async def execute(self, job: Job) -> CommandOutput: ...
+    async def execute(self, job: Job) -> CommandOutput:
+        """
+        Execute the `Command` object using the execution context provided by the job object.
+
+        :param job: the `Job` object that contains the execution context for the `Command`.
+        :return: the `CommandOutput` object with the `Command` output and termination status.
+        """
+        ...
 
     @classmethod
     async def load(
@@ -31,10 +47,25 @@ class Command(ABC):
         loading_context: DatabaseLoadingContext,
         step: Step,
     ) -> Command:
+        """
+        Load a `Command` object from a Database instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :param row: the `Database` row describing the `Command` object as a Python dictionary.
+        :param loading_context: the `DatabaseLoadingContext` object of the current transaction.
+        :param step: the `Step` object that executes the `Command`.
+        :return: the `Command` object loaded from the `Database`.
+        """
         type = cast(Type[Command], utils.get_class_from_name(row["type"]))
         return await type._load(context, row["params"], loading_context, step)
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        """
+        Store a `Command` object into a `Database` instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :return: the `Command` object representation as a Python dictionary.
+        """
         return {
             "type": utils.get_class_fullname(type(self)),
             "params": await self._save_additional_params(context),
@@ -124,6 +155,14 @@ class CommandOutputProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CommandOutputProcessor:
+        """
+        Load a `CommandOutputProcessor` object from a Database instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :param row: the `Database` row describing the `CommandOutputProcessor` object as a Python dictionary.
+        :param loading_context: the `DatabaseLoadingContext` object of the current transaction.
+        :return: the `CommandOutputProcessor` object loaded from the `Database`.
+        """
         type = cast(
             Type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
         )
@@ -137,7 +176,13 @@ class CommandOutputProcessor(ABC):
         connector: Connector | None = None,
     ) -> Token | None: ...
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        """
+        Store a `CommandOutputProcessor` object into a `Database` instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :return: the `CommandOutputProcessor` object representation as a Python dictionary.
+        """
         return {
             "type": utils.get_class_fullname(type(self)),
             "params": await self._save_additional_params(context),
@@ -190,10 +235,24 @@ class CommandTokenProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CommandTokenProcessor:
+        """
+        Load a `CommandTokenProcessor` object from a Database instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :param row: the `Database` row describing the `CommandTokenProcessor` object as a Python dictionary.
+        :param loading_context: the `DatabaseLoadingContext` object of the current transaction.
+        :return: the `CommandTokenProcessor` object loaded from the `Database`.
+        """
         type_t = cast(Type[CommandTokenProcessor], get_class_from_name(row["type"]))
         return await type_t._load(context, row["params"], loading_context)
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        """
+        Store a `CommandTokenProcessor` object into a `Database` instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :return: the `CommandTokenProcessor` object representation as a Python dictionary.
+        """
         return {
             "type": get_class_fullname(type(self)),
             "params": await self._save_additional_params(context),

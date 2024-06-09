@@ -213,6 +213,14 @@ class Combinator(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Combinator:
+        """
+        Load a `Combinator` object from a Database instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :param row: the `Database` row describing the `Combinator` object as a Python dictionary.
+        :param loading_context: the `DatabaseLoadingContext` object of the current transaction.
+        :return: the `Combinator` object loaded from the `Database`.
+        """
         type = cast(Combinator, utils.get_class_from_name(row["type"]))
         combinator = await type._load(context, row["params"], loading_context)
         combinator.items = row["params"]["items"]
@@ -224,7 +232,13 @@ class Combinator(ABC):
             )
         return combinator
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+        """
+        Store a `Combinator` object into a `Database` instance.
+
+        :param context: the `StreamFlowContext` object with global application status.
+        :return: the `Combinator` object representation as a Python dictionary.
+        """
         return {
             "type": utils.get_class_fullname(type(self)),
             "params": await self._save_additional_params(context),

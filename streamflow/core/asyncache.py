@@ -1,7 +1,4 @@
-"""
-Helpers to use [cachetools](https://github.com/tkem/cachetools) with
-asyncio.
-"""
+"""Helpers to use [cachetools](https://github.com/tkem/cachetools) with asyncio."""
 
 import functools
 import inspect
@@ -14,8 +11,8 @@ import cachetools
 # noinspection PyUnresolvedReferences
 def cached(cache, key=cachetools.keys.hashkey, lock=None):
     """
-    Decorator to wrap a function or a coroutine with a memoizing callable
-    that saves results in a cache.
+    Decorate a function or a coroutine with a memoizing callable that saves results in a cache.
+
     When ``lock`` is provided for a standard function, it's expected to
     implement ``__enter__`` and ``__exit__`` that will be used to lock
     the cache when gets updated. If it wraps a coroutine, ``lock``
@@ -70,8 +67,8 @@ def cached(cache, key=cachetools.keys.hashkey, lock=None):
 
 # noinspection PyUnresolvedReferences
 def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
-    """Decorator to wrap a class or instance method with a memoizing
-    callable that saves results in a cache.
+    """Decorate a class or instance method with a memoizing callable that saves results in a cache.
+
     When ``lock`` is provided for a standard function, it's expected to
     implement ``__enter__`` and ``__exit__`` that will be used to lock
     the cache when gets updated. If it wraps a coroutine, ``lock``
