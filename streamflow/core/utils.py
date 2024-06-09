@@ -8,6 +8,7 @@ import itertools
 import os
 import posixpath
 import shlex
+import shutil
 import uuid
 from typing import (
     Any,
@@ -268,6 +269,14 @@ def get_tag(tokens: Iterable[Token]) -> str:
         if len(tag) > len(output_tag):
             output_tag = tag
     return output_tag
+
+
+def local_copy(src: str, dst: str):
+    if os.path.isdir(src):
+        os.makedirs(dst, exist_ok=True)
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+    else:
+        shutil.copy(src, dst)
 
 
 def random_name() -> str:
