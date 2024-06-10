@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import posixpath
@@ -21,9 +22,8 @@ from streamflow.core.utils import get_local_to_remote_destination
 from streamflow.deployment import aiotarstream
 from streamflow.deployment.future import FutureAware
 from streamflow.deployment.stream import (
-    StreamReaderWrapper,
-    StreamWriterWrapper,
     SubprocessStreamReaderWrapperContextManager,
+    SubprocessStreamWriterWrapperContextManager,
 )
 from streamflow.log_handler import logger
 
@@ -65,7 +65,11 @@ async def extract_tar_stream(
 
 class BaseConnector(Connector, FutureAware):
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
-        super().__init__(deployment_name, config_dir, transferBufferSize)
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            transferBufferSize=transferBufferSize,
+        )
 
     async def _copy_local_to_remote(
         self,
@@ -89,61 +93,40 @@ class BaseConnector(Connector, FutureAware):
     async def _copy_local_to_remote_single(
         self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(
-                self._get_run_command(
-                    command="tar xf - -C /", location=location, interactive=True
-                )
-            ),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        try:
-            async with aiotarstream.open(
-                stream=StreamWriterWrapper(proc.stdin),
-                format=tarfile.GNU_FORMAT,
-                mode="w",
-                dereference=True,
-                copybufsize=self.transferBufferSize,
-            ) as tar:
-                await tar.add(src, arcname=dst)
-        except tarfile.TarError as e:
-            raise WorkflowExecutionException(
-                f"Error copying {src} to {dst} on location {location}: {e}"
-            ) from e
-        finally:
-            proc.stdin.close()
-            await proc.wait()
+        async with await self.get_stream_writer(
+            command=["tar", "xf", "-", "-C", "/"], location=location
+        ) as writer:
+            try:
+                async with aiotarstream.open(
+                    stream=writer,
+                    format=tarfile.GNU_FORMAT,
+                    mode="w",
+                    dereference=True,
+                    copybufsize=self.transferBufferSize,
+                ) as tar:
+                    await tar.add(src, arcname=dst)
+            except tarfile.TarError as e:
+                raise WorkflowExecutionException(
+                    f"Error copying {src} to {dst} on location {location}: {e}"
+                ) from e
 
     async def _copy_remote_to_local(
         self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
-        dirname, basename = posixpath.split(src)
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(
-                self._get_run_command(
-                    command=f"tar chf - -C {dirname} {basename}",
-                    location=location,
-                )
-            ),
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            async with aiotarstream.open(
-                stream=StreamReaderWrapper(proc.stdout),
-                mode="r",
-                copybufsize=self.transferBufferSize,
-            ) as tar:
-                await extract_tar_stream(tar, src, dst, self.transferBufferSize)
-        except tarfile.TarError as e:
-            raise WorkflowExecutionException(
-                f"Error copying {src} from location {location} to {dst}: {e}"
-            ) from e
-        finally:
-            await proc.wait()
+        async with await self.get_stream_reader(
+            command=["tar", "chf", "-", "-C", *posixpath.split(src)], location=location
+        ) as reader:
+            try:
+                async with aiotarstream.open(
+                    stream=reader,
+                    mode="r",
+                    copybufsize=self.transferBufferSize,
+                ) as tar:
+                    await extract_tar_stream(tar, src, dst, self.transferBufferSize)
+            except tarfile.TarError as e:
+                raise WorkflowExecutionException(
+                    f"Error copying {src} from location {location} to {dst}: {e}"
+                ) from e
 
     async def _copy_remote_to_remote(
         self,
@@ -164,60 +147,45 @@ class BaseConnector(Connector, FutureAware):
                 locations.remove(source_location)
         if locations:
             # Get write command
-            write_command = " ".join(
-                await utils.get_remote_to_remote_write_command(
-                    src_connector=source_connector,
-                    src_location=source_location,
-                    src=src,
-                    dst_connector=self,
-                    dst_locations=locations,
-                    dst=dst,
-                )
+            write_command = await utils.get_remote_to_remote_write_command(
+                src_connector=source_connector,
+                src_location=source_location,
+                src=src,
+                dst_connector=self,
+                dst_locations=locations,
+                dst=dst,
             )
             # Open source StreamReader
             async with await source_connector.get_stream_reader(
-                source_location, src
+                command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+                location=source_location,
             ) as reader:
                 # Open a target StreamWriter for each location
-                writers = await asyncio.gather(
+                write_contexts = await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            asyncio.create_subprocess_exec(
-                                *shlex.split(
-                                    self._get_run_command(
-                                        command=write_command,
-                                        location=location,
-                                        interactive=True,
-                                    )
-                                ),
-                                stdin=asyncio.subprocess.PIPE,
-                                stdout=asyncio.subprocess.DEVNULL,
-                                stderr=asyncio.subprocess.DEVNULL,
-                            )
+                            self.get_stream_writer(write_command, location)
                         )
                         for location in locations
                     )
                 )
-                try:
+                async with contextlib.AsyncExitStack() as exit_stack:
+                    writers = await asyncio.gather(
+                        *(
+                            asyncio.create_task(exit_stack.enter_async_context(context))
+                            for context in write_contexts
+                        )
+                    )
                     # Multiplex the reader output to all the writers
                     while content := await reader.read(
                         source_connector.transferBufferSize
                     ):
-                        for writer in writers:
-                            writer.stdin.write(content)
                         await asyncio.gather(
                             *(
-                                asyncio.create_task(writer.stdin.drain())
+                                asyncio.create_task(writer.write(content))
                                 for writer in writers
                             )
                         )
-                finally:
-                    # Close all writers
-                    for writer in writers:
-                        writer.stdin.close()
-                    await asyncio.gather(
-                        *(asyncio.create_task(writer.wait()) for writer in writers)
-                    )
 
     @abstractmethod
     def _get_run_command(
@@ -226,24 +194,6 @@ class BaseConnector(Connector, FutureAware):
 
     def _get_shell(self) -> str:
         return "sh"
-
-    async def get_stream_reader(
-        self, location: ExecutionLocation, src: str
-    ) -> StreamWrapperContextManager:
-        dirname, basename = posixpath.split(src)
-        return SubprocessStreamReaderWrapperContextManager(
-            coro=asyncio.create_subprocess_exec(
-                *shlex.split(
-                    self._get_run_command(
-                        command=f"tar chf - -C {dirname} {basename}",
-                        location=location,
-                    )
-                ),
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        )
 
     async def copy_local_to_remote(
         self,
@@ -374,6 +324,43 @@ class BaseConnector(Connector, FutureAware):
                         location=locations[0],
                     )
                 )
+
+    async def get_stream_reader(
+        self,
+        command: MutableSequence[str],
+        location: ExecutionLocation,
+    ) -> StreamWrapperContextManager:
+        return SubprocessStreamReaderWrapperContextManager(
+            coro=asyncio.create_subprocess_exec(
+                *shlex.split(
+                    self._get_run_command(
+                        command=" ".join(command),
+                        location=location,
+                    )
+                ),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        )
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        return SubprocessStreamWriterWrapperContextManager(
+            coro=asyncio.create_subprocess_exec(
+                *shlex.split(
+                    self._get_run_command(
+                        command=" ".join(command),
+                        location=location,
+                        interactive=True,
+                    )
+                ),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        )
 
     async def run(
         self,

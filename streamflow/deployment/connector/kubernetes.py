@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import logging
 import os
 import posixpath
 import re
 import shlex
-import tarfile
 import uuid
 from abc import ABC, abstractmethod
 from math import ceil, floor
@@ -38,16 +38,15 @@ from kubernetes_asyncio.utils import create_from_yaml
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapperContextManager
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
-from streamflow.deployment import aiotarstream
 from streamflow.deployment.aiotarstream import BaseStreamWrapper
-from streamflow.deployment.connector.base import BaseConnector, extract_tar_stream
+from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -153,7 +152,7 @@ class KubernetesResponseWrapperContextManager(StreamWrapperContextManager):
             await self.response.close()
 
 
-class BaseKubernetesConnector(BaseConnector, ABC):
+class KubernetesBaseConnector(BaseConnector, ABC):
     def __init__(
         self,
         deployment_name: str,
@@ -229,59 +228,12 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ):
-        effective_locations = await self._get_effective_locations(locations, dst)
         await super()._copy_local_to_remote(
-            src=src, dst=dst, locations=effective_locations, read_only=read_only
+            src=src,
+            dst=dst,
+            locations=await self._get_effective_locations(locations, dst),
+            read_only=read_only,
         )
-
-    async def _copy_local_to_remote_single(
-        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
-    ) -> None:
-        pod, container = location.name.split(":")
-        command = ["tar", "xf", "-", "-C", "/"]
-        # noinspection PyUnresolvedReferences
-        response = await self.client_ws.connect_get_namespaced_pod_exec(
-            name=pod,
-            namespace=self.namespace or "default",
-            container=container,
-            command=command,
-            stderr=False,
-            stdin=True,
-            stdout=False,
-            tty=False,
-            _preload_content=False,
-        )
-        try:
-            async with aiotarstream.open(
-                stream=KubernetesResponseWrapper(response),
-                format=tarfile.GNU_FORMAT,
-                mode="w",
-                dereference=True,
-                copybufsize=self.transferBufferSize,
-            ) as tar:
-                await tar.add(src, arcname=dst)
-        except tarfile.TarError as e:
-            raise WorkflowExecutionException(
-                f"Error copying {src} to {dst} on location {location}: {e}"
-            ) from e
-        finally:
-            await response.close()
-
-    async def _copy_remote_to_local(
-        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
-    ):
-        async with await self.get_stream_reader(location, src) as reader:
-            try:
-                async with aiotarstream.open(
-                    stream=reader,
-                    mode="r",
-                    copybufsize=self.transferBufferSize,
-                ) as tar:
-                    await extract_tar_stream(tar, src, dst, self.transferBufferSize)
-            except tarfile.TarError as e:
-                raise WorkflowExecutionException(
-                    f"Error copying {src} from location {location} to {dst}: {e}"
-                ) from e
 
     async def _copy_remote_to_remote(
         self,
@@ -289,7 +241,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         dst: str,
         locations: MutableSequence[ExecutionLocation],
         source_location: ExecutionLocation,
-        source_connector: Connector | None = None,
+        source_connector: str | None = None,
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
@@ -303,56 +255,48 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                 locations.remove(source_location)
         if locations:
             # Get write command
-            write_command = " ".join(
-                await utils.get_remote_to_remote_write_command(
-                    src_connector=source_connector,
-                    src_location=source_location,
-                    src=src,
-                    dst_connector=self,
-                    dst_locations=locations,
-                    dst=dst,
-                )
+            write_command = await utils.get_remote_to_remote_write_command(
+                src_connector=source_connector,
+                src_location=source_location,
+                src=src,
+                dst_connector=self,
+                dst_locations=locations,
+                dst=dst,
             )
+            # Open source StreamReader
             async with await source_connector.get_stream_reader(
-                source_location, src
+                command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+                location=source_location,
             ) as reader:
-                # Open a target response for each location
-                writers = [
-                    KubernetesResponseWrapper(w)
-                    for w in await asyncio.gather(
-                        *(
-                            asyncio.create_task(
-                                cast(
-                                    Coroutine,
-                                    self.client_ws.connect_get_namespaced_pod_exec(
-                                        name=location.name.split(":")[0],
-                                        namespace=self.namespace or "default",
-                                        container=location.name.split(":")[1],
-                                        command=["sh", "-c", write_command],
-                                        stderr=False,
-                                        stdin=True,
-                                        stdout=False,
-                                        tty=False,
-                                        _preload_content=False,
-                                    ),
-                                )
+                # Open a target StreamWriter for each location
+                write_contexts = await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self.get_stream_writer(
+                                command=["sh", "-c", " ".join(write_command)],
+                                location=location,
                             )
-                            for location in locations
                         )
+                        for location in locations
                     )
-                ]
-                # Multiplex the reader output to all the writers
-                while content := await reader.read(source_connector.transferBufferSize):
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(writer.write(content))
-                            for writer in writers
-                        )
-                    )
-                # Close writers
-                await asyncio.gather(
-                    *(asyncio.create_task(writer.close()) for writer in writers)
                 )
+                async with contextlib.AsyncExitStack() as exit_stack:
+                    writers = await asyncio.gather(
+                        *(
+                            asyncio.create_task(exit_stack.enter_async_context(context))
+                            for context in write_contexts
+                        )
+                    )
+                    # Multiplex the reader output to all the writers
+                    while content := await reader.read(
+                        source_connector.transferBufferSize
+                    ):
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(writer.write(content))
+                                for writer in writers
+                            )
+                        )
 
     async def _get_container(
         self, location: ExecutionLocation
@@ -431,28 +375,6 @@ class BaseKubernetesConnector(BaseConnector, ABC):
     @abstractmethod
     async def _get_running_pods(self) -> V1PodList: ...
 
-    async def get_stream_reader(
-        self, location: ExecutionLocation, src: str
-    ) -> StreamWrapperContextManager:
-        pod, container = location.name.split(":")
-        dirname, basename = posixpath.split(src)
-        return KubernetesResponseWrapperContextManager(
-            coro=cast(
-                Coroutine,
-                self.client_ws.connect_get_namespaced_pod_exec(
-                    name=pod,
-                    namespace=self.namespace or "default",
-                    container=container,
-                    command=["tar", "chf", "-", "-C", dirname, basename],
-                    stderr=True,
-                    stdin=False,
-                    stdout=True,
-                    tty=False,
-                    _preload_content=False,
-                ),
-            )
-        )
-
     async def deploy(self, external: bool):
         # Init standard client
         configuration = await self._get_configuration()
@@ -497,6 +419,48 @@ class BaseKubernetesConnector(BaseConnector, ABC):
                         )
                         break
         return valid_targets
+
+    async def get_stream_reader(
+        self, command: MutableSequence[int], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        pod, container = location.name.split(":")
+        return KubernetesResponseWrapperContextManager(
+            coro=cast(
+                Coroutine,
+                self.client_ws.connect_get_namespaced_pod_exec(
+                    name=pod,
+                    namespace=self.namespace or "default",
+                    container=container,
+                    command=command,
+                    stderr=True,
+                    stdin=False,
+                    stdout=True,
+                    tty=False,
+                    _preload_content=False,
+                ),
+            )
+        )
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        pod, container = location.name.split(":")
+        return KubernetesResponseWrapperContextManager(
+            coro=cast(
+                Coroutine,
+                self.client_ws.connect_get_namespaced_pod_exec(
+                    name=pod,
+                    namespace=self.namespace or "default",
+                    container=container,
+                    command=command,
+                    stderr=False,
+                    stdin=True,
+                    stdout=False,
+                    tty=False,
+                    _preload_content=False,
+                ),
+            )
+        )
 
     async def run(
         self,
@@ -590,7 +554,7 @@ class BaseKubernetesConnector(BaseConnector, ABC):
         self.configuration = None
 
 
-class KubernetesConnector(BaseKubernetesConnector):
+class KubernetesConnector(KubernetesBaseConnector):
     def __init__(
         self,
         deployment_name: str,
@@ -887,7 +851,7 @@ class KubernetesConnector(BaseKubernetesConnector):
         await super().undeploy(external)
 
 
-class Helm3Connector(BaseKubernetesConnector):
+class Helm3Connector(KubernetesBaseConnector):
     def __init__(
         self,
         deployment_name: str,

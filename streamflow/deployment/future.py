@@ -23,7 +23,11 @@ class FutureConnector(Connector):
         external: bool,
         **kwargs,
     ):
-        super().__init__(name, config_dir, kwargs.get("transferBufferSize", 2**16))
+        super().__init__(
+            deployment_name=name,
+            config_dir=config_dir,
+            transferBufferSize=kwargs.get("transferBufferSize", 2**16),
+        )
         self.type: type[Connector] = connector_type
         self.external: bool = external
         self.parameters: MutableMapping[str, Any] = kwargs
@@ -144,7 +148,7 @@ class FutureConnector(Connector):
         )
 
     async def get_stream_reader(
-        self, location: ExecutionLocation, src: str
+        self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager:
         if self.connector is None:
             if not self.deploying:
@@ -152,7 +156,18 @@ class FutureConnector(Connector):
                 await self.deploy(self.external)
             else:
                 await self._safe_deploy_event_wait()
-        return await self.connector.get_stream_reader(location, src)
+        return await self.connector.get_stream_reader(command, location)
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        if self.connector is None:
+            if not self.deploying:
+                self.deploying = True
+                await self.deploy(self.external)
+            else:
+                await self._safe_deploy_event_wait()
+        return await self.connector.get_stream_writer(command, location)
 
     def get_schema(self) -> str:
         return self.type.get_schema()

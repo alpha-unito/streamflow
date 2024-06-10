@@ -131,7 +131,12 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def get_stream_reader(
-        self, location: ExecutionLocation, src: str
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager: ...
+
+    @abstractmethod
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager: ...
 
 
