@@ -85,9 +85,14 @@ class FailureConnector(Connector):
         raise FailureConnectorException("FailureConnector undeploy")
 
     async def get_stream_reader(
-        self, location: ExecutionLocation, src: str
+        self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager:
         raise FailureConnectorException("FailureConnector get_stream_reader")
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        raise FailureConnectorException("FailureConnector get_stream_writer")
 
 
 class ParameterizableHardwareConnector(LocalConnector):

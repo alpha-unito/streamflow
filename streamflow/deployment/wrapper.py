@@ -20,7 +20,11 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         service: str | None,
         transferBufferSize: int,
     ):
-        super().__init__(deployment_name, config_dir, transferBufferSize)
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            transferBufferSize=transferBufferSize,
+        )
         self.connector: Connector = connector
         self.service: str | None = service
 
@@ -88,9 +92,18 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         )
 
     async def get_stream_reader(
-        self, location: ExecutionLocation, src: str
+        self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager:
-        return await self.connector.get_stream_reader(get_inner_location(location), src)
+        return await self.connector.get_stream_reader(
+            command, get_inner_location(location)
+        )
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        return await self.connector.get_stream_writer(
+            command, get_inner_location(location)
+        )
 
     async def run(
         self,

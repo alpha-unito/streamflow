@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio.subprocess
+from abc import ABC
 from typing import Any, Coroutine
 
 from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
@@ -48,12 +49,16 @@ class StreamWriterWrapper(StreamWrapper):
         await self.stream.drain()
 
 
-class SubprocessStreamReaderWrapperContextManager(StreamWrapperContextManager):
+class SubprocessStreamWrapperContextManager(StreamWrapperContextManager, ABC):
     def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
         self.proc: asyncio.subprocess.Process | None = None
-        self.stream: StreamReaderWrapper | None = None
+        self.stream: StreamWrapper | None = None
 
+
+class SubprocessStreamReaderWrapperContextManager(
+    SubprocessStreamWrapperContextManager
+):
     async def __aenter__(self):
         self.proc = await self.coro
         self.stream = StreamReaderWrapper(self.proc.stdout)
@@ -65,17 +70,15 @@ class SubprocessStreamReaderWrapperContextManager(StreamWrapperContextManager):
             await self.stream.close()
 
 
-class SubprocessStreamWriterWrapperContextManager(StreamWrapperContextManager):
-    def __init__(self, coro: Coroutine):
-        self.coro: Coroutine = coro
-        self.proc: asyncio.subprocess.Process | None = None
-        self.stream: StreamReaderWrapper | None = None
-
+class SubprocessStreamWriterWrapperContextManager(
+    SubprocessStreamWrapperContextManager
+):
     async def __aenter__(self):
-        proc = await self.coro
-        self.stream = StreamReaderWrapper(proc.stdout)
+        self.proc = await self.coro
+        self.stream = StreamWriterWrapper(self.proc.stdin)
         return self.stream
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.stream:
             await self.stream.close()
+        await self.proc.wait()
