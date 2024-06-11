@@ -7,7 +7,7 @@ from typing import MutableSequence
 from importlib_resources import files
 
 from streamflow.core import utils
-from streamflow.core.deployment import DeploymentConfig, Target
+from streamflow.core.deployment import DeploymentConfig, Target, WrapsConfig
 from streamflow.cwl.requirement.docker.translator import CWLDockerTranslator
 
 
@@ -67,7 +67,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         labelFile: MutableSequence[str] | None = None,
         link: MutableSequence[str] | None = None,
         linkLocalIP: MutableSequence[str] | None = None,
-        locationsCacheSize: int | None = None,
         locationsCacheTTL: int | None = None,
         logDriver: str = "none",
         logOpts: MutableSequence[str] | None = None,
@@ -88,7 +87,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         publish: MutableSequence[str] | None = None,
         publishAll: bool = False,
         readOnly: bool = False,
-        replicas: int = 1,
         restart: str | None = None,
         rm: bool = True,
         runtime: str | None = None,
@@ -162,7 +160,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         self.labelFile: MutableSequence[str] | None = labelFile
         self.link: MutableSequence[str] | None = link
         self.linkLocalIP: MutableSequence[str] | None = linkLocalIP
-        self.locationsCacheSize: int | None = locationsCacheSize
         self.locationsCacheTTL: int | None = locationsCacheTTL
         self.logDriver: str = logDriver
         self.logOpts: MutableSequence[str] | None = logOpts
@@ -183,7 +180,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         self.publish: MutableSequence[str] | None = publish
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
-        self.replicas: int = replicas
         self.restart: str | None = restart
         self.rm: bool = rm
         self.runtime: str | None = runtime
@@ -289,7 +285,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
                     "labelFile": self.labelFile,
                     "link": self.link,
                     "linkLocalIP": self.linkLocalIP,
-                    "locationsCacheSize": self.locationsCacheSize,
                     "locationsCacheTTL": self.locationsCacheTTL,
                     "logDriver": self.logDriver,
                     "logOpts": self.logOpts,
@@ -310,7 +305,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
                     "publish": self.publish,
                     "publishAll": self.publishAll,
                     "readOnly": self.readOnly,
-                    "replicas": self.replicas,
                     "restart": self.restart,
                     "rm": self.rm,
                     "runtime": self.runtime,
@@ -332,7 +326,13 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
                     "volumesFrom": self.volumesFrom,
                 },
                 workdir="/tmp/streamflow",  # nosec
-                wraps=target if self.wrapper else None,
+                wraps=(
+                    WrapsConfig(
+                        deployment=target.deployment.name, service=target.service
+                    )
+                    if self.wrapper
+                    else None
+                ),
             ),
             service=image,
         )

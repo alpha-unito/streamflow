@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import MutableMapping
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import DeploymentConfig, Target, FilterConfig
+from streamflow.core.deployment import DeploymentConfig, FilterConfig, Target
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.workflow import Port, Step, Token, Workflow, Status
+from streamflow.core.workflow import Port, Status, Step, Token, Workflow
 
 
 class DefaultDatabaseLoadingContext(DatabaseLoadingContext):

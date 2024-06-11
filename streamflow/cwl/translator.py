@@ -1145,7 +1145,13 @@ def _process_docker_requirement(
     translator_type = cwl_docker_translator_classes[config.type]
     translator = cast(
         CWLDockerTranslator,
-        translator_type(config_dir=config_dir, wrapper=config.wrapper, **config.config),
+        translator_type(
+            config_dir=config_dir,
+            wrapper=(
+                config.wrapper if target.deployment.name != LOCAL_LOCATION else None
+            ),
+            **config.config,
+        ),
     )
     return translator.get_target(
         image=_process_docker_image(docker_requirement=docker_requirement),
@@ -1573,35 +1579,23 @@ class CWLTranslator:
                 if "NetworkAccess" in requirements
                 else False
             )
-            targets = []
-            for target in binding_config.targets:
-                # If original target is local, use a container
-                if target.deployment.type == "local":
-                    targets.append(
-                        _process_docker_requirement(
-                            config_dir=os.path.dirname(self.context.config["path"]),
-                            config=self.workflow_config.propagate(
-                                path=PurePosixPath(name_prefix),
-                                name="docker",
-                                default=CWLDockerTranslatorConfig(
-                                    name="default", type="default", config={}
-                                ),
-                            ),
-                            context=context,
-                            docker_requirement=requirements["DockerRequirement"],
-                            network_access=network_access,
-                            target=target,
-                        )
-                    )
-                # Otherwise, throw a warning and skip the DockerRequirement conversion
-                else:
-                    if logger.isEnabledFor(logging.WARNING):
-                        logger.warning(
-                            f"Skipping DockerRequirement conversion for step `{name_prefix}` "
-                            f"when executing on `{target.deployment.name}` deployment."
-                        )
-                    targets.append(target)
-            binding_config.targets = targets
+            binding_config.targets = [
+                _process_docker_requirement(
+                    config_dir=os.path.dirname(self.context.config["path"]),
+                    config=self.workflow_config.propagate(
+                        path=PurePosixPath(name_prefix),
+                        name="docker",
+                        default=CWLDockerTranslatorConfig(
+                            name="default", type="default", config={}
+                        ),
+                    ),
+                    context=context,
+                    docker_requirement=requirements["DockerRequirement"],
+                    network_access=network_access,
+                    target=t,
+                )
+                for t in binding_config.targets
+            ]
         # Create DeploySteps to initialise the execution environment
         deployments = {t.deployment.name: t.deployment for t in binding_config.targets}
         deploy_steps = {

@@ -20,9 +20,9 @@ from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import (
     LoadListing,
-    get_token_class,
-    get_path_from_token,
     get_file_token,
+    get_path_from_token,
+    get_token_class,
     register_data,
 )
 from streamflow.data import remotepath

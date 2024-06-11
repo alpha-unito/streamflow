@@ -36,11 +36,11 @@ class LocalConnector(BaseConnector):
 
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
-    ):
+    ) -> MutableSequence[str]:
         if sys.platform == "win32":
-            return f"{self._get_shell()} /C '{command}'"
+            return [self._get_shell(), "/C", f"'{command}'"]
         else:
-            return f"{self._get_shell()} -c '{command}'"
+            return [self._get_shell(), "-c", f"'{command}'"]
 
     def _get_shell(self) -> str:
         if sys.platform == "win32":
@@ -57,12 +57,12 @@ class LocalConnector(BaseConnector):
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
-        local_copy(src, dst)
+        local_copy(src, dst, read_only)
 
     async def _copy_remote_to_local(
         self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
-        local_copy(src, dst)
+        local_copy(src, dst, read_only)
 
     async def _copy_remote_to_remote(
         self,
@@ -75,7 +75,7 @@ class LocalConnector(BaseConnector):
     ) -> None:
         source_connector = source_connector or self
         if source_connector == self:
-            local_copy(src, dst)
+            local_copy(src, dst, read_only)
         else:
             await super()._copy_remote_to_remote(
                 src=src,

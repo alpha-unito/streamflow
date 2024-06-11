@@ -575,11 +575,6 @@ class SSHConnector(BaseConnector):
             }
         return existing_directories
 
-    def _get_run_command(
-        self, command: str, location: ExecutionLocation, interactive: bool = False
-    ):
-        return f"ssh {location.name} {command}"
-
     def _get_ssh_client_process(
         self,
         location: str,

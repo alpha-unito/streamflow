@@ -7,7 +7,7 @@ import os
 import posixpath
 import shlex
 import tarfile
-from abc import abstractmethod
+from abc import ABC
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
@@ -187,10 +187,10 @@ class BaseConnector(Connector, FutureAware):
                             )
                         )
 
-    @abstractmethod
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
-    ) -> str: ...
+    ) -> MutableSequence[str]:
+        return [command]
 
     def _get_shell(self) -> str:
         return "sh"
@@ -332,12 +332,7 @@ class BaseConnector(Connector, FutureAware):
     ) -> StreamWrapperContextManager:
         return SubprocessStreamReaderWrapperContextManager(
             coro=asyncio.create_subprocess_exec(
-                *shlex.split(
-                    self._get_run_command(
-                        command=" ".join(command),
-                        location=location,
-                    )
-                ),
+                *shlex.split(" ".join(command)),
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -349,13 +344,7 @@ class BaseConnector(Connector, FutureAware):
     ) -> StreamWrapperContextManager:
         return SubprocessStreamWriterWrapperContextManager(
             coro=asyncio.create_subprocess_exec(
-                *shlex.split(
-                    self._get_run_command(
-                        command=" ".join(command),
-                        location=location,
-                        interactive=True,
-                    )
-                ),
+                *shlex.split(" ".join(command)),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
@@ -395,7 +384,7 @@ class BaseConnector(Connector, FutureAware):
         command = utils.encode_command(command, self._get_shell())
         run_command = self._get_run_command(command, location)
         proc = await asyncio.create_subprocess_exec(
-            *shlex.split(run_command),
+            *shlex.split(" ".join(run_command)),
             env=({**os.environ, **location.environment}),
             stdin=None,
             stdout=(
@@ -415,3 +404,7 @@ class BaseConnector(Connector, FutureAware):
         else:
             await asyncio.wait_for(proc.wait(), timeout=timeout)
             return None
+
+
+class BatchConnector(Connector, ABC):
+    pass

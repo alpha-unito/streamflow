@@ -5,8 +5,8 @@ import json
 import logging
 import os
 import posixpath
-import shlex
 from abc import ABC, abstractmethod
+from asyncio import Lock
 from shutil import which
 from typing import Any, MutableMapping, MutableSequence
 
@@ -14,129 +14,74 @@ from cachetools import Cache, TTLCache
 from importlib_resources import files
 
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.deployment import Connector, ExecutionLocation
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.data import StreamWrapperContextManager
+from streamflow.core.deployment import Connector, ExecutionLocation, LOCAL_LOCATION
+from streamflow.core.exception import (
+    WorkflowDefinitionException,
+    WorkflowExecutionException,
+)
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import (
     get_local_to_remote_destination,
     get_option,
     random_name,
 )
-from streamflow.deployment.connector.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector, BatchConnector
+from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
 
 
-def _check_docker_installed(connector: str):
-    if which("docker") is None:
-        raise WorkflowExecutionException(
-            f"Docker must be installed on the system to use the {connector} connector."
-        )
-
-
-def _check_singularity_installed():
-    if which("singularity") is None:
-        raise WorkflowExecutionException(
-            "Singularity must be installed on the system to use the Singularity connector."
-        )
-
-
-async def _exists_docker_image(image_name: str) -> bool:
-    proc = await asyncio.create_subprocess_exec(
-        *shlex.split(f"docker image inspect {image_name}"),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+def _parse_mount(mount: str) -> tuple[str, str]:
+    source = next(
+        part[4:]
+        for part in mount.split(",")
+        if part.startswith("src=") or part.startswith("source=")
     )
-    await proc.wait()
-    return proc.returncode == 0
-
-
-async def _get_docker_compose_version(compose_command: str) -> str:
-    proc = await asyncio.create_subprocess_exec(
-        *shlex.split(f"{compose_command} version --short"),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+    destination = next(
+        part[4:]
+        for part in mount.split(",")
+        if part.startswith("dst=")
+        or part.startswith("dest=")
+        or part.startswith("destination=")
+        or part.startswith("target=")
     )
-    stdout, _ = await proc.communicate()
-    return stdout.decode().strip()
+    return source, destination
 
 
-async def _get_docker_version() -> str:
-    proc = await asyncio.create_subprocess_exec(
-        *shlex.split("docker version --format '{{.Client.Version}}'"),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    stdout, _ = await proc.communicate()
-    return stdout.decode().strip()
+class ContainerInstance:
+    __slots__ = ("current_user", "volumes")
+
+    def __init__(
+        self, current_user: bool, volumes: MutableSequence[MutableMapping[str, str]]
+    ):
+        self.current_user: bool = current_user
+        self.volumes: MutableSequence[MutableMapping[str, str]] = volumes
 
 
-async def _get_singularity_version() -> str:
-    proc = await asyncio.create_subprocess_exec(
-        *shlex.split("singularity --version"),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    stdout, _ = await proc.communicate()
-    return stdout.decode().strip()
-
-
-def _prepare_volumes(binds: MutableSequence[str], mounts: MutableSequence[str]):
-    for b in binds or []:
-        src, dst = b.split(":", 2)
-        if not os.path.exists(src):
-            os.makedirs(src)
-    for m in mounts or []:
-        mount_type = next(part[5:] for part in m.split(",") if part.startswith("type="))
-        if mount_type == "bind":
-            src = next(part[4:] for part in m.split(",") if part.startswith("src="))
-            if not os.path.exists(src):
-                os.makedirs(src)
-
-
-async def _pull_docker_image(image_name: str) -> None:
-    proc = await asyncio.create_subprocess_exec(
-        *shlex.split(f"docker pull --quiet {image_name}"),
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    await proc.wait()
-
-
-class ContainerConnector(BaseConnector, ABC):
+class ContainerConnector(ConnectorWrapper, ABC):
     def __init__(
         self,
         deployment_name: str,
         config_dir: str,
+        connector: Connector,
+        service: str | None,
         transferBufferSize: int,
-        locationsCacheSize: int = None,
-        locationsCacheTTL: int = None,
-        resourcesCacheSize: int = None,
-        resourcesCacheTTL: int = None,
     ):
-        super().__init__(deployment_name, config_dir, transferBufferSize)
-        cacheSize = locationsCacheSize
-        if cacheSize is None:
-            cacheSize = resourcesCacheSize
-            if cacheSize is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheSize` instead."
-                    )
-            else:
-                cacheSize = 10
-        cacheTTL = locationsCacheTTL
-        if cacheTTL is None:
-            cacheTTL = resourcesCacheTTL
-            if cacheTTL is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheTTL` instead."
-                    )
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
+        if isinstance(connector, BatchConnector):
+            raise WorkflowDefinitionException(
+                f"Deployment {self.deployment_name} of type {self.__class__.__name__} "
+                f"cannot wrap deployment {connector.deployment_name} "
+                f"of type {connector.__class__.__name__}, which extends the BatchConnector type."
+            )
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            connector=connector,
+            service=service,
+            transferBufferSize=transferBufferSize,
+        )
+        self._inner_location: AvailableLocation | None = None
+        self._instances: MutableMapping[str, ContainerInstance] = {}
 
     async def _check_effective_location(
         self,
@@ -147,8 +92,7 @@ class ContainerConnector(BaseConnector, ABC):
         source_location: ExecutionLocation | None = None,
     ) -> tuple[MutableMapping[str, Any], MutableSequence[ExecutionLocation]]:
         # Get all container mounts
-        volumes = await self._get_volumes(location)
-        for volume in volumes:
+        for volume in (await self._get_instance(location)).volumes:
             # If path is in a persistent volume
             if path.startswith(volume["Destination"]):
                 if path not in common_paths:
@@ -183,28 +127,177 @@ class ContainerConnector(BaseConnector, ABC):
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
-        dst = await get_local_to_remote_destination(self, locations[0], src, dst)
-        effective_locations = await self._get_effective_locations(locations, dst)
+        bind_locations = {}
         copy_tasks = []
-        for location in effective_locations:
-            if read_only and await self._is_bind_transfer(location, src, dst):
+        dst = await get_local_to_remote_destination(self, locations[0], src, dst)
+        for location in await self._get_effective_locations(locations, dst):
+            instance = await self._get_instance(location)
+            # Check if the container user is the current host user
+            # and if the destination path is on a mounted volume
+            if (
+                instance.current_user
+                and (adjusted_dst := self._get_host_path(instance, dst)) is not None
+            ):
+                # If data is read_only, check if the source path is bound to a mounted volume, too
+                if (
+                    read_only
+                    and (adjusted_src := self._get_container_path(instance, src))
+                    is not None
+                ):
+                    # If yes, then create a symbolic link
+                    if self._wraps_local() and not os.path.exists(adjusted_dst):
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Creating symbolic link {adjusted_dst} "
+                                f"that points to {adjusted_src} on local file-system"
+                            )
+                        os.symlink(adjusted_src, adjusted_dst)
+                    else:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Creating symbolic link {dst} "
+                                f"that points to {adjusted_src} on location {location.name} "
+                                f"through the `ln -snf` remote command"
+                            )
+                        copy_tasks.append(
+                            asyncio.create_task(
+                                self.run(
+                                    location=location,
+                                    command=["ln", "-snf", adjusted_src, dst],
+                                )
+                            )
+                        )
+                # Otherwise, delegate transfer to the inner connector
+                else:
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Delegating the transfer of {src} "
+                            f"to {adjusted_dst} from local file-system "
+                            f"to location {location.name} to the inner "
+                            f"{self.connector.__class__.__name__} connector."
+                        )
+                    bind_locations.setdefault(adjusted_dst, []).append(location)
+            # Otherwise, check if the source path is bound to a mounted volume
+            elif (adjusted_src := self._get_container_path(instance, src)) is not None:
+                # If yes, perform a copy command through the container connector
+                command = ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Copying {adjusted_src} to {dst} on location {location.name} "
+                        f"through the `{command}` remote command"
+                    )
                 copy_tasks.append(
                     asyncio.create_task(
                         self.run(
                             location=location,
-                            command=["ln", "-snf", posixpath.abspath(src), dst],
+                            command=command + [adjusted_src, dst],
                         )
                     )
                 )
-                continue
+            else:
+                # If not, perform a transfer through the container connector
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Copying {src} to {dst} from local file-system to "
+                        f"location {location.name} through the "
+                        f"{self.__class__.__name__} copy strategy."
+                    )
+                copy_tasks.append(
+                    asyncio.create_task(
+                        self._copy_local_to_remote_single(
+                            src=src, dst=dst, location=location, read_only=read_only
+                        )
+                    )
+                )
+        # Delegate bind transfers to the inner connector, preventing symbolic links
+        for dst, locations in bind_locations.items():
             copy_tasks.append(
                 asyncio.create_task(
-                    self._copy_local_to_remote_single(
-                        src=src, dst=dst, location=location, read_only=read_only
+                    self.connector.copy_local_to_remote(
+                        src=src, dst=dst, locations=locations, read_only=False
                     )
                 )
             )
         await asyncio.gather(*copy_tasks)
+
+    async def _copy_remote_to_local(
+        self,
+        src: str,
+        dst: str,
+        location: ExecutionLocation,
+        read_only: bool = False,
+    ) -> None:
+        instance = await self._get_instance(location)
+        # Check if the container user is the current host user
+        # and the source path is on a mounted volume in the source location
+        if (
+            instance.current_user
+            and (adjusted_src := self._get_host_path(instance, src)) is not None
+        ):
+            # If data is read_only, check if the destination path is bound to a mounted volume, too
+            if (
+                read_only
+                and (adjusted_dst := self._get_container_path(instance, dst))
+                is not None
+            ):
+                # If yes, then create a symbolic link
+                if self._wraps_local() and not os.path.exists(dst):
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Creating symbolic link {dst} "
+                            f"that points to {adjusted_src} on local file-system"
+                        )
+                    os.symlink(adjusted_src, dst)
+                else:
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Creating symbolic link {adjusted_dst} "
+                            f"that points to {src} on location {location.name} "
+                            f"through the `ln -snf` remote command"
+                        )
+                    await self.run(
+                        location=location,
+                        command=["ln", "-snf", src, adjusted_dst],
+                    )
+            # Otherwise, delegate transfer to the inner connector
+            else:
+                logger.debug(
+                    f"Delegating the transfer of {adjusted_src} "
+                    f"to {dst} from location {location.name} "
+                    f"to the local file-system {location.name} to the inner "
+                    f"{self.connector.__class__.__name__} connector."
+                )
+                await self.connector.copy_remote_to_local(
+                    src=adjusted_src, dst=dst, locations=[location], read_only=read_only
+                )
+        # Otherwise, check if the destination path is bound to a mounted volume
+        elif (adjusted_dst := self._get_container_path(instance, dst)) is not None:
+            # If yes, perform a copy command through the container connector
+            command = ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Copying {src} to {adjusted_dst} on location {location.name} "
+                    f"through the `{command}` remote command"
+                )
+            await self.run(
+                location=location,
+                command=command + [src, adjusted_dst],
+            )
+        else:
+            # If not, perform a transfer through the container connector
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Copying {src} to {dst} from location {location.name} to "
+                    "the local file-system through the "
+                    f"{self.__class__.__name__} copy strategy."
+                )
+            await BaseConnector._copy_remote_to_local(
+                self,
+                src=src,
+                dst=dst,
+                location=location,
+                read_only=read_only,
+            )
 
     async def _copy_remote_to_remote(
         self,
@@ -216,36 +309,110 @@ class ContainerConnector(BaseConnector, ABC):
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
-        effective_locations = await self._get_effective_locations(
-            locations, dst, source_location
-        )
-        non_bind_locations = []
+        # Check if the source path is on a mounted volume on the source location
         if (
-            read_only
-            and source_connector == self
-            and await self._is_bind_transfer(source_location, src, src)
+            source_connector == self
+            and (
+                host_src := self._get_host_path(
+                    await self._get_instance(source_location), src
+                )
+            )
+            is not None
         ):
-            for location in effective_locations:
-                if await self._is_bind_transfer(location, dst, dst):
-                    await self.run(
-                        location=location,
-                        command=["ln", "-snf", posixpath.abspath(src), dst],
+            # If performing a transfer between two containers that wrap a LocalConnector,
+            # then perform a local-to-remote copy
+            if self._wraps_local():
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Performing a local-to-remote copy of {host_src} "
+                        f"to {dst} from location {source_location.name} to "
+                        f"to locations {', '.join(loc.name for loc in locations)} "
+                        f"through the {self.__class__.__name__} copy strategy."
                     )
-                    continue
-                non_bind_locations.append(location)
-            await super()._copy_remote_to_remote(
+                return await self._copy_local_to_remote(
+                    src=host_src, dst=dst, locations=locations, read_only=read_only
+                )
+            # Otherwise, check for optimizations
+            effective_locations = await self._get_effective_locations(locations, dst)
+            bind_locations = {}
+            unbound_locations = []
+            copy_tasks = []
+            for location in effective_locations:
+                instance = await self._get_instance(location)
+                # Check if the source path is on a mounted volume
+                if (
+                    adjusted_src := self._get_container_path(instance, host_src)
+                ) is not None:
+                    # If yes, perform a copy command through the container connector
+                    command = ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Copying {adjusted_src} to {dst} on location {location.name} "
+                            f"through the `{command}` remote command"
+                        )
+                    copy_tasks.append(
+                        asyncio.create_task(
+                            self.run(
+                                location=location,
+                                command=command + [adjusted_src, dst],
+                            )
+                        )
+                    )
+                # Otherwise, check if the container user is the current host user
+                # and the destination path is on a mounted volume
+                elif (
+                    instance.current_user
+                    and (adjusted_dst := self._get_host_path(instance, dst)) is not None
+                ):
+                    # If yes, then delegate transfer to the inner connector
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Delegating the transfer of {src} "
+                            f"to {adjusted_dst} from location {source_location.name} "
+                            f"to location {location.name} to the inner "
+                            f"{self.connector.__class__.__name__} connector."
+                        )
+                    bind_locations.setdefault(adjusted_dst, []).append(location)
+                # Otherwise, mask the location as not bound
+                else:
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Copying {src} to {dst} from location {source_location.name} to "
+                            f"location {location.name} through the "
+                            f"{self.__class__.__name__} copy strategy."
+                        )
+                    unbound_locations.append(location)
+            # Delegate bind transfers to the inner connector, preventing symbolic links
+            for host_dst, locations in bind_locations.items():
+                copy_tasks.append(
+                    asyncio.create_task(
+                        self.connector.copy_local_to_remote(
+                            src=host_src,
+                            dst=host_dst,
+                            locations=locations,
+                            read_only=False,
+                        )
+                    )
+                )
+            # Perform a standard remote-to-remote copy for unbound locations
+            await BaseConnector._copy_remote_to_remote(
+                self,
                 src=src,
                 dst=dst,
-                locations=non_bind_locations,
+                locations=unbound_locations,
                 source_connector=source_connector,
                 source_location=source_location,
                 read_only=read_only,
             )
+        # Otherwise, perform a standard remote-to-remote copy
         else:
-            await super()._copy_remote_to_remote(
+            await BaseConnector._copy_remote_to_remote(
+                self,
                 src=src,
                 dst=dst,
-                locations=effective_locations,
+                locations=await self._get_effective_locations(
+                    locations, dst, source_location
+                ),
                 source_connector=source_connector,
                 source_location=source_location,
                 read_only=read_only,
@@ -263,87 +430,295 @@ class ContainerConnector(BaseConnector, ABC):
             common_paths, effective_locations = await self._check_effective_location(
                 common_paths, effective_locations, location, dest_path, source_location
             )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Extracted effective locations {','.join(loc.name for loc in effective_locations)} "
+                f"from initial locations {','.join(loc.name for loc in locations)}"
+            )
         return effective_locations
 
     @abstractmethod
-    async def _get_bind_mounts(
-        self, location: ExecutionLocation
+    def _get_bind_mounts(
+        self, instance: ContainerInstance
     ) -> MutableSequence[MutableMapping[str, str]]: ...
 
-    @abstractmethod
-    async def _get_location(self, location_name: str) -> AvailableLocation | None: ...
+    def _get_container_path(self, instance: ContainerInstance, path: str) -> str | None:
+        for bind_mount in self._get_bind_mounts(instance):
+            if path.startswith(bind_mount["Source"]):
+                path_processor = os.path if self._wraps_local() else posixpath
+                return posixpath.join(
+                    bind_mount["Destination"],
+                    *path_processor.split(
+                        path_processor.relpath(path, bind_mount["Source"])
+                    ),
+                )
+        return None
+
+    def _get_host_path(self, instance: ContainerInstance, path: str) -> str | None:
+        for bind_mount in self._get_bind_mounts(instance):
+            if path.startswith(bind_mount["Destination"]):
+                path_processor = os.path if self._wraps_local() else posixpath
+                return path_processor.join(
+                    bind_mount["Source"],
+                    *posixpath.split(
+                        posixpath.relpath(path, bind_mount["Destination"])
+                    ),
+                )
+        return None
 
     @abstractmethod
-    async def _get_volumes(
-        self, location: ExecutionLocation
-    ) -> MutableSequence[MutableMapping[str, str]]: ...
+    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance: ...
 
-    async def _is_bind_transfer(
-        self, location: ExecutionLocation, host_path: str, instance_path: str
-    ) -> bool:
-        bind_mounts = await self._get_bind_mounts(location)
-        host_binds = [b["Source"] for b in bind_mounts]
-        instance_binds = [b["Destination"] for b in bind_mounts]
-        for host_bind in host_binds:
-            if host_path.startswith(host_bind):
-                for instance_bind in instance_binds:
-                    if instance_path.startswith(instance_bind):
-                        return True
-        return False
+    @abstractmethod
+    async def _get_location(self, location_name: str) -> AvailableLocation: ...
+
+    @abstractmethod
+    def _get_run_command(
+        self, command: str, location: ExecutionLocation, interactive: bool = False
+    ) -> MutableSequence[str]: ...
+
+    async def _prepare_volumes(
+        self, binds: MutableSequence[str], mounts: MutableSequence[str]
+    ):
+        sources = [b.split(":", 2)[0] for b in binds] if binds is not None else []
+        for m in mounts or []:
+            mount_type = next(
+                part[5:] for part in m.split(",") if part.startswith("type=")
+            )
+            if mount_type == "bind":
+                sources.append(
+                    next(
+                        part[4:]
+                        for part in m.split(",")
+                        if part.startswith("src=") or part.startswith("source=")
+                    )
+                )
+        if self._wraps_local():
+            for src in sources:
+                os.makedirs(src, exist_ok=True)
+        else:
+            await self.connector.run(
+                location=self._inner_location.location,
+                command=["mkdir", "-p"] + sources,
+            )
+
+    def _wraps_local(self) -> bool:
+        return self._inner_location.name == LOCAL_LOCATION
+
+    async def deploy(self, external: bool) -> None:
+        # Retrieve the underlying location
+        locations = await self.connector.get_available_locations(service=self.service)
+        if len(locations) != 1:
+            raise WorkflowDefinitionException(
+                f"{self.__class__.__name__} connectors support only nested connectors with a single location. "
+                f"{self.connector.deployment_name} returned {len(locations)} available locations."
+            )
+        else:
+            self._inner_location = next(iter(locations.values()))
+
+    async def get_stream_reader(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        return await self.connector.get_stream_reader(
+            command=self._get_run_command(
+                command=" ".join(command), location=location, interactive=False
+            ),
+            location=get_inner_location(location),
+        )
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        return await self.connector.get_stream_writer(
+            command=self._get_run_command(
+                command=" ".join(command), location=location, interactive=True
+            ),
+            location=get_inner_location(location),
+        )
+
+    async def run(
+        self,
+        location: ExecutionLocation,
+        command: MutableSequence[str],
+        environment: MutableMapping[str, str] = None,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        capture_output: bool = False,
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[Any | None, int] | None:
+        return await BaseConnector.run(
+            self,
+            location=location,
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            capture_output=capture_output,
+            timeout=timeout,
+            job_name=job_name,
+        )
 
 
 class DockerBaseConnector(ContainerConnector, ABC):
-    async def _get_bind_mounts(
-        self, location: ExecutionLocation
+
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        connector: Connector,
+        service: str | None,
+        transferBufferSize: int,
+    ):
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            connector=connector,
+            service=service,
+            transferBufferSize=transferBufferSize,
+        )
+        self._instance_lock: Lock = Lock()
+
+    async def _check_docker_installed(self):
+        if self._wraps_local():
+            returncode = 0 if which("docker") is not None else 1
+        else:
+            _, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=["which", "docker"],
+                capture_output=True,
+            )
+        if returncode != 0:
+            raise WorkflowExecutionException(
+                "Docker must be installed on the system to use the "
+                f"{self.__class__.__name__} connector."
+            )
+
+    def _get_bind_mounts(
+        self, instance: ContainerInstance
     ) -> MutableSequence[MutableMapping[str, str]]:
-        return [v for v in await self._get_volumes(location) if v["Type"] == "bind"]
+        return [v for v in instance.volumes if v["Type"] == "bind"]
+
+    async def _get_docker_version(self) -> str:
+        stdout, _ = await self.connector.run(
+            location=self._inner_location.location,
+            command=["docker", "version", "--format", "'{{.Client.Version}}'"],
+            capture_output=True,
+        )
+        return stdout
 
     async def _get_location(self, location_name: str) -> AvailableLocation:
-        inspect_command = "".join(
-            [
-                "docker ",
-                "inspect ",
-                "--format ",
-                "'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ",
+        stdout, returncode = await self.connector.run(
+            location=self._inner_location.location,
+            command=[
+                "docker",
+                "inspect",
+                "--format",
+                "'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'",
                 location_name,
-            ]
+            ],
+            capture_output=True,
         )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(inspect_command),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await proc.communicate()
-        return AvailableLocation(
-            name=location_name,
-            deployment=self.deployment_name,
-            hostname=stdout.decode().strip(),
-        )
+        if returncode == 0:
+            return AvailableLocation(
+                name=location_name,
+                deployment=self.deployment_name,
+                hostname=stdout,
+                wraps=self._inner_location,
+            )
+        else:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving available locations for deployment {self.deployment_name}"
+            )
 
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
-    ):
-        return f"docker exec {'-i' if interactive else ''} {location.name} sh -c '{command}'"
+    ) -> MutableSequence[str]:
+        return [
+            "docker",
+            "exec",
+            "-i" if interactive else "",
+            location.name,
+            "sh",
+            "-c",
+            f"'{command}'",
+        ]
 
-    async def _get_volumes(
-        self, location: ExecutionLocation
-    ) -> MutableSequence[MutableMapping[str, str]]:
-        inspect_command = "".join(
-            ["docker ", "inspect ", "--format ", "'{{json .Mounts}}' ", location.name]
-        )
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(inspect_command),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        try:
-            return json.loads(stdout.decode().strip()) if stdout else []
-        except json.decoder.JSONDecodeError:
-            raise WorkflowExecutionException(
-                f"Error retrieving volumes for Docker container {location.name}: "
-                f"{stderr.decode().strip()}"
-            )
+    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
+        if location.name not in self._instances:
+            await self._populate_instance(location)
+        return self._instances[location.name]
+
+    async def _populate_instance(self, location: ExecutionLocation):
+        async with self._instance_lock:
+            if location.name not in self._instances:
+                # Get volumes
+                stdout, returncode = await self.connector.run(
+                    location=get_inner_location(location),
+                    command=[
+                        "docker",
+                        "inspect",
+                        "--format",
+                        "'{{json .Mounts}}'",
+                        location.name,
+                    ],
+                    capture_output=True,
+                )
+                if returncode == 0:
+                    try:
+                        volumes = json.loads(stdout) if stdout else []
+                    except json.decoder.JSONDecodeError:
+                        raise WorkflowExecutionException(
+                            f"Error retrieving volumes for Docker container {location.name}: {stdout}"
+                        )
+                else:
+                    raise WorkflowExecutionException(
+                        f"Error retrieving volumes for Docker container {location.name}: [{returncode}] {stdout}"
+                    )
+                # Check if the container user is the current host user
+                if self._wraps_local():
+                    host_user = os.getuid()
+                else:
+                    stdout, returncode = self.connector.run(
+                        location=get_inner_location(location),
+                        command=["id", "-u"],
+                        capture_output=True,
+                    )
+                    if returncode == 0:
+                        try:
+                            host_user = int(stdout)
+                        except json.decoder.JSONDecodeError:
+                            raise WorkflowExecutionException(
+                                f"Error retrieving volumes for Docker container {location.name}: {stdout}"
+                            )
+                    else:
+                        raise WorkflowExecutionException(
+                            f"Error retrieving volumes for Docker container {location.name}: [{returncode}] {stdout}"
+                        )
+                stdout, returncode = await self.run(
+                    location=location,
+                    command=["id", "-u"],
+                    capture_output=True,
+                )
+                if returncode == 0:
+                    try:
+                        container_user = int(stdout)
+                    except json.decoder.JSONDecodeError:
+                        raise WorkflowExecutionException(
+                            f"Error retrieving volumes for Docker container {location.name}: {stdout}"
+                        )
+                else:
+                    raise WorkflowExecutionException(
+                        f"Error retrieving volumes for Docker container {location.name}: [{returncode}] {stdout}"
+                    )
+                # Create instance
+                self._instances[location.name] = ContainerInstance(
+                    current_user=host_user == container_user, volumes=volumes
+                )
 
 
 class DockerConnector(DockerBaseConnector):
@@ -351,6 +726,8 @@ class DockerConnector(DockerBaseConnector):
         self,
         deployment_name: str,
         config_dir: str,
+        connector: Connector,
+        service: str | None,
         image: str,
         addHost: MutableSequence[str] | None = None,
         blkioWeight: int | None = None,
@@ -361,7 +738,7 @@ class DockerConnector(DockerBaseConnector):
         cgroupns: str | None = None,
         cidfile: str | None = None,
         command: MutableSequence[str] | None = None,
-        containerIds: MutableSequence | None = None,
+        containerId: str | None = None,
         cpuPeriod: int | None = None,
         cpuQuota: int | None = None,
         cpuRTPeriod: int | None = None,
@@ -404,7 +781,6 @@ class DockerConnector(DockerBaseConnector):
         labelFile: MutableSequence[str] | None = None,
         link: MutableSequence[str] | None = None,
         linkLocalIP: MutableSequence[str] | None = None,
-        locationsCacheSize: int | None = None,
         locationsCacheTTL: int | None = None,
         logDriver: str | None = None,
         logOpts: MutableSequence[str] | None = None,
@@ -425,8 +801,6 @@ class DockerConnector(DockerBaseConnector):
         publish: MutableSequence[str] | None = None,
         publishAll: bool = False,
         readOnly: bool = False,
-        replicas: int = 1,
-        resourcesCacheSize: int | None = None,
         resourcesCacheTTL: int | None = None,
         restart: str | None = None,
         rm: bool = True,
@@ -452,12 +826,20 @@ class DockerConnector(DockerBaseConnector):
         super().__init__(
             deployment_name=deployment_name,
             config_dir=config_dir,
+            connector=connector,
+            service=service,
             transferBufferSize=transferBufferSize,
-            locationsCacheSize=locationsCacheSize,
-            locationsCacheTTL=locationsCacheTTL,
-            resourcesCacheSize=resourcesCacheSize,
-            resourcesCacheTTL=resourcesCacheTTL,
         )
+        if (cacheTTL := locationsCacheTTL) is None:
+            if (cacheTTL := resourcesCacheTTL) is not None:
+                if logger.isEnabledFor(logging.WARNING):
+                    logger.warning(
+                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                        "Use `locationsCacheTTL` instead."
+                    )
+            else:
+                cacheTTL = 10
+        self.locationsCache: Cache = TTLCache(maxsize=1, ttl=cacheTTL)
         self.image: str = image
         self.addHost: MutableSequence[str] | None = addHost
         self.blkioWeight: int | None = blkioWeight
@@ -467,7 +849,7 @@ class DockerConnector(DockerBaseConnector):
         self.cgroupParent: str | None = cgroupParent
         self.cgroupns: str | None = cgroupns
         self.cidfile: str | None = cidfile
-        self.containerIds: MutableSequence[str] = containerIds or []
+        self.containerId: str | None = containerId
         self.command: MutableSequence[str] = command
         self.cpuPeriod: int | None = cpuPeriod
         self.cpuQuota: int | None = cpuQuota
@@ -530,7 +912,6 @@ class DockerConnector(DockerBaseConnector):
         self.publish: MutableSequence[str] | None = publish
         self.publishAll: bool = publishAll
         self.readOnly: bool = readOnly
-        self.replicas: int = replicas
         self.restart: str | None = restart
         self.rm: bool = rm
         self.runtime: str | None = runtime
@@ -552,123 +933,140 @@ class DockerConnector(DockerBaseConnector):
         self.workdir: str | None = workdir
 
     async def deploy(self, external: bool) -> None:
+        await super().deploy(external)
+        # Check if Docker is installed in the wrapped connector
+        await self._check_docker_installed()
+        # If the deployment is not external, deploy the container
         if not external:
-            _prepare_volumes(self.volume, self.mount)
-            _check_docker_installed("Docker")
+            await self._prepare_volumes(self.volume, self.mount)
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Using Docker {await _get_docker_version()}.")
+                logger.debug(f"Using Docker {await self._get_docker_version()}.")
             # Pull image if it doesn't exist
-            if not await _exists_docker_image(self.image):
-                await _pull_docker_image(self.image)
+            _, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=["docker", "image", "inspect", self.image],
+                capture_output=True,
+            )
+            if returncode != 0:
+                await self.connector.run(
+                    location=self._inner_location.location,
+                    command=["docker", "pull", "--quiet", self.image],
+                )
             # Deploy the Docker container
-            for _ in range(0, self.replicas):
-                deploy_command = (
-                    f"docker run --detach --interactive "
-                    f"{get_option('add-host', self.addHost)}"
-                    f"{get_option('blkio-weight', self.addHost)}"
-                    f"{get_option('blkio-weight-device', self.blkioWeightDevice)}"
-                    f"{get_option('cap-add', self.capAdd)}"
-                    f"{get_option('cap-drop', self.capDrop)}"
-                    f"{get_option('cgroup-parent', self.cgroupParent)}"
-                    f"{get_option('cgroupns', self.cgroupns)}"
-                    f"{get_option('cidfile', self.cidfile)}"
-                    f"{get_option('cpu-period', self.cpuPeriod)}"
-                    f"{get_option('cpu-quota', self.cpuQuota)}"
-                    f"{get_option('cpu-rt-period', self.cpuRTPeriod)}"
-                    f"{get_option('cpu-rt-runtime', self.cpuRTRuntime)}"
-                    f"{get_option('cpu-shares', self.cpuShares)}"
-                    f"{get_option('cpus', self.cpus)}"
-                    f"{get_option('cpuset-cpus', self.cpusetCpus)}"
-                    f"{get_option('cpuset-mems', self.cpusetMems)}"
-                    f"{get_option('detach-keys', self.detachKeys)}"
-                    f"{get_option('device', self.device)}"
-                    f"{get_option('device-cgroup-rule', self.deviceCgroupRule)}"
-                    f"{get_option('device-read-bps', self.deviceReadBps)}"
-                    f"{get_option('device-read-iops', self.deviceReadIops)}"
-                    f"{get_option('device-write-bps', self.deviceWriteBps)}"
-                    f"{get_option('device-write-iops', self.deviceWriteIops)}"
-                    f"--disable-content-trust={'true' if self.disableContentTrust else 'false'} "
-                    f"{get_option('dns', self.dns)}"
-                    f"{get_option('dns-option', self.dnsOptions)}"
-                    f"{get_option('dns-search', self.dnsSearch)}"
-                    f"{get_option('domainname', self.domainname)}"
-                    f"{get_option('entrypoint', self.entrypoint)}"
-                    f"{get_option('env', self.env)}"
-                    f"{get_option('env-file', self.envFile)}"
-                    f"{get_option('expose', self.expose)}"
-                    f"{get_option('gpus', self.gpus)}"
-                    f"{get_option('group-add', self.groupAdd)}"
-                    f"{get_option('health-cmd', self.healthCmd)}"
-                    f"{get_option('health-interval', self.healthInterval)}"
-                    f"{get_option('health-retries', self.healthRetries)}"
-                    f"{get_option('health-start-period', self.healthStartPeriod)}"
-                    f"{get_option('health-timeout', self.healthTimeout)}"
-                    f"{get_option('hostname', self.hostname)}"
-                    f"{get_option('init', self.init)}"
-                    f"{get_option('ip', self.ip)}"
-                    f"{get_option('ip6', self.ip6)}"
-                    f"{get_option('ipc', self.ipc)}"
-                    f"{get_option('isolation', self.isolation)}"
-                    f"{get_option('kernel-memory', self.kernelMemory)}"
-                    f"{get_option('label', self.label)}"
-                    f"{get_option('label-file', self.labelFile)}"
-                    f"{get_option('link', self.link)}"
-                    f"{get_option('link-local-ip', self.linkLocalIP)}"
-                    f"{get_option('log-driver', self.logDriver)}"
-                    f"{get_option('log-opt', self.logOpts)}"
-                    f"{get_option('mac-address', self.macAddress)}"
-                    f"{get_option('memory', self.memory)}"
-                    f"{get_option('memory-reservation', self.memoryReservation)}"
-                    f"{get_option('memory-swap', self.memorySwap)}"
-                    f"{get_option('memory-swappiness', self.memorySwappiness)}"
-                    f"{get_option('mount', self.mount)}"
-                    f"{get_option('network', self.network)}"
-                    f"{get_option('network-alias', self.networkAlias)}"
-                    f"{get_option('no-healthcheck', self.noHealthcheck)}"
-                    f"{get_option('oom-kill-disable', self.oomKillDisable)}"
-                    f"{get_option('oom-score-adj', self.oomScoreAdj)}"
-                    f"{get_option('pid', self.pid)}"
-                    f"{get_option('pids-limit', self.pidsLimit)}"
-                    f"{get_option('privileged', self.privileged)}"
-                    f"{get_option('publish', self.publish)}"
-                    f"{get_option('publish-all', self.publishAll)}"
-                    f"{get_option('read-only', self.readOnly)}"
-                    f"{get_option('restart', self.restart)}"
-                    f"{get_option('rm', self.rm)}"
-                    f"{get_option('runtime', self.runtime)}"
-                    f"{get_option('security-opt', self.securityOpts)}"
-                    f"{get_option('shm-size', self.shmSize)}"
-                    f"--sig-proxy={'true' if self.sigProxy else 'false'} "
-                    f"{get_option('stop-signal', self.stopSignal)}"
-                    f"{get_option('stop-timeout', self.stopTimeout)}"
-                    f"{get_option('storage-opt', self.storageOpts)}"
-                    f"{get_option('sysctl', self.sysctl)}"
-                    f"{get_option('tmpfs', self.tmpfs)}"
-                    f"{get_option('ulimit', self.ulimit)}"
-                    f"{get_option('user', self.user)}"
-                    f"{get_option('userns', self.userns)}"
-                    f"{get_option('uts', self.uts)}"
-                    f"{get_option('volume', self.volume)}"
-                    f"{get_option('volume-driver', self.volumeDriver)}"
-                    f"{get_option('volumes-from', self.volumesFrom)}"
-                    f"{get_option('workdir', self.workdir)}"
-                    f"{self.image} "
-                    f"{' '.join(self.command) if self.command else ''}"
+            deploy_command = [
+                "docker",
+                "run",
+                "--detach",
+                "--interactive",
+                get_option("add-host", self.addHost),
+                get_option("blkio-weight", self.addHost),
+                get_option("blkio-weight-device", self.blkioWeightDevice),
+                get_option("cap-add", self.capAdd),
+                get_option("cap-drop", self.capDrop),
+                get_option("cgroup-parent", self.cgroupParent),
+                get_option("cgroupns", self.cgroupns),
+                get_option("cidfile", self.cidfile),
+                get_option("cpu-period", self.cpuPeriod),
+                get_option("cpu-quota", self.cpuQuota),
+                get_option("cpu-rt-period", self.cpuRTPeriod),
+                get_option("cpu-rt-runtime", self.cpuRTRuntime),
+                get_option("cpu-shares", self.cpuShares),
+                get_option("cpus", self.cpus),
+                get_option("cpuset-cpus", self.cpusetCpus),
+                get_option("cpuset-mems", self.cpusetMems),
+                get_option("detach-keys", self.detachKeys),
+                get_option("device", self.device),
+                get_option("device-cgroup-rule", self.deviceCgroupRule),
+                get_option("device-read-bps", self.deviceReadBps),
+                get_option("device-read-iops", self.deviceReadIops),
+                get_option("device-write-bps", self.deviceWriteBps),
+                get_option("device-write-iops", self.deviceWriteIops),
+                f"--disable-content-trust={'true' if self.disableContentTrust else 'false'}",
+                get_option("dns", self.dns),
+                get_option("dns-option", self.dnsOptions),
+                get_option("dns-search", self.dnsSearch),
+                get_option("domainname", self.domainname),
+                get_option("entrypoint", self.entrypoint),
+                get_option("env", self.env),
+                get_option("env-file", self.envFile),
+                get_option("expose", self.expose),
+                get_option("gpus", self.gpus),
+                get_option("group-add", self.groupAdd),
+                get_option("health-cmd", self.healthCmd),
+                get_option("health-interval", self.healthInterval),
+                get_option("health-retries", self.healthRetries),
+                get_option("health-start-period", self.healthStartPeriod),
+                get_option("health-timeout", self.healthTimeout),
+                get_option("hostname", self.hostname),
+                get_option("init", self.init),
+                get_option("ip", self.ip),
+                get_option("ip6", self.ip6),
+                get_option("ipc", self.ipc),
+                get_option("isolation", self.isolation),
+                get_option("kernel-memory", self.kernelMemory),
+                get_option("label", self.label),
+                get_option("label-file", self.labelFile),
+                get_option("link", self.link),
+                get_option("link-local-ip", self.linkLocalIP),
+                get_option("log-driver", self.logDriver),
+                get_option("log-opt", self.logOpts),
+                get_option("mac-address", self.macAddress),
+                get_option("memory", self.memory),
+                get_option("memory-reservation", self.memoryReservation),
+                get_option("memory-swap", self.memorySwap),
+                get_option("memory-swappiness", self.memorySwappiness),
+                get_option("mount", self.mount),
+                get_option("network", self.network),
+                get_option("network-alias", self.networkAlias),
+                get_option("no-healthcheck", self.noHealthcheck),
+                get_option("oom-kill-disable", self.oomKillDisable),
+                get_option("oom-score-adj", self.oomScoreAdj),
+                get_option("pid", self.pid),
+                get_option("pids-limit", self.pidsLimit),
+                get_option("privileged", self.privileged),
+                get_option("publish", self.publish),
+                get_option("publish-all", self.publishAll),
+                get_option("read-only", self.readOnly),
+                get_option("restart", self.restart),
+                get_option("rm", self.rm),
+                get_option("runtime", self.runtime),
+                get_option("security-opt", self.securityOpts),
+                get_option("shm-size", self.shmSize),
+                f"--sig-proxy={'true' if self.sigProxy else 'false'}",
+                get_option("stop-signal", self.stopSignal),
+                get_option("stop-timeout", self.stopTimeout),
+                get_option("storage-opt", self.storageOpts),
+                get_option("sysctl", self.sysctl),
+                get_option("tmpfs", self.tmpfs),
+                get_option("ulimit", self.ulimit),
+                get_option("user", self.user),
+                get_option("userns", self.userns),
+                get_option("uts", self.uts),
+                get_option("volume", self.volume),
+                get_option("volume-driver", self.volumeDriver),
+                get_option("volumes-from", self.volumesFrom),
+                get_option("workdir", self.workdir),
+                self.image,
+                f"{' '.join(self.command) if self.command else ''}",
+            ]
+            stdout, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=deploy_command,
+                capture_output=True,
+            )
+            if returncode == 0:
+                self.containerId = stdout
+            else:
+                raise WorkflowExecutionException(
+                    f"FAILED Deployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
                 )
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"EXECUTING command {deploy_command}")
-                proc = await asyncio.create_subprocess_exec(
-                    *shlex.split(deploy_command),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await proc.communicate()
-                if proc.returncode == 0:
-                    self.containerIds.append(stdout.decode().strip())
-                else:
-                    raise WorkflowExecutionException(stderr.decode().strip())
+        # Otherwise, check if a containerId has been explicitly specified
+        elif self.containerId is None:
+            raise WorkflowDefinitionException(
+                f"FAILED Deployment of {self.deployment_name} environment:\n\t"
+                "external Docker deployments must specify the containerId of an existing Docker container"
+            )
 
-    @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
         self,
         service: str | None = None,
@@ -676,10 +1074,7 @@ class DockerConnector(DockerBaseConnector):
         output_directory: str | None = None,
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
-        return {
-            container_id: await self._get_location(container_id)
-            for container_id in self.containerIds
-        }
+        return {self.containerId: await self._get_location(self.containerId)}
 
     @classmethod
     def get_schema(cls) -> str:
@@ -691,18 +1086,16 @@ class DockerConnector(DockerBaseConnector):
         )
 
     async def undeploy(self, external: bool) -> None:
-        if not external and self.containerIds:
-            for container_id in self.containerIds:
-                undeploy_command = "".join(["docker ", "stop ", container_id])
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"EXECUTING command {undeploy_command}")
-                proc = await asyncio.create_subprocess_exec(
-                    *shlex.split(undeploy_command),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+        if not external:
+            stdout, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=["docker", "stop", self.containerId],
+                capture_output=True,
+            )
+            if returncode != 0:
+                raise WorkflowExecutionException(
+                    f"FAILED Undeployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
                 )
-                await proc.wait()
-            self.containerIds = []
 
 
 class DockerComposeConnector(DockerBaseConnector):
@@ -710,6 +1103,8 @@ class DockerComposeConnector(DockerBaseConnector):
         self,
         deployment_name: str,
         config_dir: str,
+        connector: Connector,
+        service: str | None,
         files: MutableSequence[str],
         projectName: str | None = None,
         verbose: bool | None = False,
@@ -745,49 +1140,87 @@ class DockerComposeConnector(DockerBaseConnector):
         super().__init__(
             deployment_name=deployment_name,
             config_dir=config_dir,
+            connector=connector,
+            service=service,
             transferBufferSize=transferBufferSize,
-            locationsCacheSize=locationsCacheSize,
-            locationsCacheTTL=locationsCacheTTL,
-            resourcesCacheSize=resourcesCacheSize,
-            resourcesCacheTTL=resourcesCacheTTL,
         )
+        if (cacheSize := locationsCacheSize) is None:
+            if (cacheSize := resourcesCacheSize) is not None:
+                if logger.isEnabledFor(logging.WARNING):
+                    logger.warning(
+                        "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                        "Use `locationsCacheSize` instead."
+                    )
+            else:
+                cacheSize = 10
+        if (cacheTTL := locationsCacheTTL) is None:
+            if (cacheTTL := resourcesCacheTTL) is not None:
+                if logger.isEnabledFor(logging.WARNING):
+                    logger.warning(
+                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                        "Use `locationsCacheTTL` instead."
+                    )
+            else:
+                cacheTTL = 10
+        self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
         self.files = [
             file if os.path.isabs(file) else os.path.join(self.config_dir, file)
             for file in files
         ]
-        self.alwaysRecreateDeps = alwaysRecreateDeps
-        self.build = build
-        self.compatibility = compatibility
-        self.forceRecreate = forceRecreate
-        self.host = host
-        self.logLevel = logLevel
-        self.noAnsi = noAnsi
-        self.noBuild = noBuild
-        self.noDeps = noDeps
-        self.noRecreate = noRecreate
-        self.noStart = noStart
-        self.projectDirectory = projectDirectory
-        self.projectName = projectName
-        self.renewAnonVolumes = renewAnonVolumes
-        self.removeOrphans = removeOrphans
-        self.removeVolumes = removeVolumes
-        self.skipHostnameCheck = skipHostnameCheck
-        self.timeout = timeout
-        self.tls = tls
-        self.tlscacert = tlscacert
-        self.tlscert = tlscert
-        self.tlskey = tlskey
-        self.tlsverify = tlsverify
-        self.verbose = verbose
-        self.wait = wait
-        self._command = None
+        self.alwaysRecreateDeps: bool | None = alwaysRecreateDeps
+        self.build: bool | None = build
+        self.compatibility: bool | None = compatibility
+        self.forceRecreate: bool | None = forceRecreate
+        self.host: str | None = host
+        self.logLevel: str | None = logLevel
+        self.noAnsi: bool | None = noAnsi
+        self.noBuild: bool | None = noBuild
+        self.noDeps: bool | None = noDeps
+        self.noRecreate: bool | None = noRecreate
+        self.noStart: bool | None = noStart
+        self.projectDirectory: str | None = projectDirectory
+        self.projectName: str | None = projectName
+        self.renewAnonVolumes: bool | None = renewAnonVolumes
+        self.removeOrphans: bool | None = removeOrphans
+        self.removeVolumes: bool | None = removeVolumes
+        self.skipHostnameCheck: bool | None = skipHostnameCheck
+        self.timeout: int | None = timeout
+        self.tls: bool | None = tls
+        self.tlscacert: str | None = tlscacert
+        self.tlscert: str | None = tlscert
+        self.tlskey: str | None = tlskey
+        self.tlsverify: bool | None = tlsverify
+        self.verbose: bool | None = verbose
+        self.wait: bool | None = wait
+        self._command: list[str] | None = None
 
-    async def _get_base_command(self) -> str:
+    async def _check_docker_compose_installed(self):
+        if self._wraps_local():
+            returncode = 0 if which("docker-compose") is not None else 1
+        else:
+            _, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=["which", "docker-compose"],
+                capture_output=True,
+            )
+        if returncode != 0:
+            raise WorkflowExecutionException(
+                "Docker Compose must be installed on the system to use the "
+                f"{self.__class__.__name__} connector."
+            )
+
+    async def _get_base_command(self) -> list[str]:
         if self._command is None:
             compose_command = await self._get_docker_compose_command()
-            version = await _get_docker_compose_version(compose_command)
+            # Get Docker Compose version
+            version, _ = await self.connector.run(
+                location=self._inner_location.location,
+                command=compose_command + ["version", "--short"],
+                capture_output=True,
+            )
             if version.startswith("v"):
                 version = version[1:]
+            # Check version compatibility
             major = int(version.split(".")[0])
             if not major >= 2:
                 raise WorkflowExecutionException(
@@ -796,73 +1229,70 @@ class DockerComposeConnector(DockerBaseConnector):
                 )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
-                    f"Using Docker {await _get_docker_version()} "
+                    f"Using Docker {await self._get_docker_version()} "
                     f"and Docker Compose {version}."
                 )
-            self._command = (
-                f"{compose_command} "
-                f"{get_option('file', self.files)}"
-                f"{get_option('project-name', self.projectName)}"
-                f"{get_option('verbose', self.verbose)}"
-                f"{get_option('no-ansi', self.noAnsi)}"
-                f"{get_option('skip-hostname-check', self.skipHostnameCheck)}"
-                f"{get_option('project-directory', self.projectDirectory)}"
-                f"{get_option('compatibility', self.compatibility)}"
-            )
+            self._command = compose_command + [
+                get_option("file", self.files),
+                get_option("project-name", self.projectName),
+                get_option("verbose", self.verbose),
+                get_option("no-ansi", self.noAnsi),
+                get_option("skip-hostname-check", self.skipHostnameCheck),
+                get_option("project-directory", self.projectDirectory),
+                get_option("compatibility", self.compatibility),
+            ]
         return self._command
 
-    async def _get_docker_compose_command(self) -> str:
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split("docker compose"),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+    async def _get_docker_compose_command(self) -> list[str]:
+        options = [
+            get_option("log-level", self.logLevel),
+            get_option("host", self.host),
+            get_option("tls", self.tls),
+            get_option("tlscacert", self.tlscacert),
+            get_option("tlscert", self.tlscert),
+            get_option("tlskey", self.tlskey),
+            get_option("tlsverify", self.tlsverify),
+        ]
+        # Check if `docker compose` is a valid command
+        _, returncode = await self.connector.run(
+            location=self._inner_location.location,
+            command=["docker", "compose"],
+            capture_output=True,
         )
-        await proc.wait()
-        options = (
-            f"{get_option('log-level', self.logLevel)}"
-            f"{get_option('host', self.host)}"
-            f"{get_option('tls', self.tls)}"
-            f"{get_option('tlscacert', self.tlscacert)}"
-            f"{get_option('tlscert', self.tlscert)}"
-            f"{get_option('tlskey', self.tlskey)}"
-            f"{get_option('tlsverify', self.tlsverify)}"
-        )
-        if proc.returncode == 0:
-            return f"docker {options} compose"
+        if returncode == 0:
+            return ["docker"] + options + ["compose"]
+        # Otherwise, check if `docker-compose` is installed
         else:
-            if which("docker-compose") is not None:
-                return f"docker-compose {options}"
-            else:
-                raise WorkflowExecutionException(
-                    "Docker Compose must be installed on the system to use the Docker Compose connector."
-                )
+            await self._check_docker_compose_installed()
+            return ["docker-compose"] + options
 
     async def deploy(self, external: bool) -> None:
+        await super().deploy(external)
+        # Check if Docker is installed in the wrapped connector
+        await self._check_docker_installed()
+        # If the deployment is not external, deploy the manifest
         if not external:
-            _check_docker_installed("Docker Compose")
-            deploy_command = (
-                f"{await self._get_base_command()} up --detach "
-                f"{get_option('always-recreate-deps', self.alwaysRecreateDeps)}"
-                f"{get_option('build', self.build)}"
-                f"{get_option('force-recreate', self.forceRecreate)}"
-                f"{get_option('no-build', self.noBuild)}"
-                f"{get_option('no-deps ', self.noDeps)}"
-                f"{get_option('no-recreate', self.noRecreate)}"
-                f"{get_option('no-start', self.noStart)}"
-                f"{get_option('timeout', self.timeout)}"
-                f"{get_option('wait', self.wait)}"
+            deploy_command = await self._get_base_command() + [
+                "up",
+                "--detach",
+                get_option("always-recreate-deps", self.alwaysRecreateDeps),
+                get_option("build", self.build),
+                get_option("force-recreate", self.forceRecreate),
+                get_option("no-build", self.noBuild),
+                get_option("no-deps ", self.noDeps),
+                get_option("no-recreate", self.noRecreate),
+                get_option("no-start", self.noStart),
+                get_option("timeout", self.timeout),
+                get_option("wait", self.wait),
+            ]
+            stdout, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=deploy_command,
+                capture_output=True,
             )
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"EXECUTING command {deploy_command}")
-            proc = await asyncio.create_subprocess_exec(
-                *shlex.split(deploy_command),
-                stderr=asyncio.subprocess.STDOUT,
-                stdout=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await proc.communicate()
-            if proc.returncode != 0:
+            if returncode != 0:
                 raise WorkflowExecutionException(
-                    f"FAILED Deployment of {self.deployment_name} environment:\n\t{stdout.decode().strip()}"
+                    f"FAILED Deployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
                 )
 
     @cachedmethod(lambda self: self.locationsCache)
@@ -873,23 +1303,17 @@ class DockerComposeConnector(DockerBaseConnector):
         output_directory: str | None = None,
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
-        ps_command = (await self._get_base_command()) + "".join(
-            ["ps ", "--format ", "json ", service or ""]
+        output, _ = await self.connector.run(
+            location=self._inner_location.location,
+            command=await self._get_base_command()
+            + ["ps", "--format", "json", service or ""],
+            capture_output=True,
         )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"EXECUTING command {ps_command}")
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(ps_command),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        stdout, _ = await proc.communicate()
-        output = stdout.decode().strip()
         if ((json_start := output.find("{")) != -1) and (
             (json_end := output.rfind("}")) != -1
         ):
             if json_start != 0 and logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"DockerCompose log: {output[:json_start]}")
+                logger.debug(f"Docker Compose log: {output[:json_start]}")
             locations = json.loads(output[json_start : json_end + 1])
         else:
             raise WorkflowExecutionException(
@@ -922,20 +1346,15 @@ class DockerComposeConnector(DockerBaseConnector):
 
     async def undeploy(self, external: bool) -> None:
         if not external:
-            undeploy_command = (
-                await self._get_base_command()
-            ) + f"down {get_option('volumes', self.removeVolumes)}"
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"EXECUTING command {undeploy_command}")
-            proc = await asyncio.create_subprocess_exec(
-                *shlex.split(undeploy_command),
-                stderr=asyncio.subprocess.STDOUT,
-                stdout=asyncio.subprocess.PIPE,
+            stdout, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=await self._get_base_command()
+                + ["down", get_option("volumes", self.removeVolumes)],
+                capture_output=True,
             )
-            stdout, _ = await proc.communicate()
-            if proc.returncode != 0:
+            if returncode != 0:
                 raise WorkflowExecutionException(
-                    f"FAILED Undeployment of {self.deployment_name} environment:\n\t{stdout.decode().strip()}"
+                    f"FAILED Undeployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
                 )
 
 
@@ -944,6 +1363,8 @@ class SingularityConnector(ContainerConnector):
         self,
         deployment_name: str,
         config_dir: str,
+        connector: Connector,
+        service: str | None,
         image: str,
         addCaps: str | None = None,
         allowSetuid: bool = False,
@@ -971,10 +1392,9 @@ class SingularityConnector(ContainerConnector):
         fusemount: MutableSequence[str] | None = None,
         home: str | None = None,
         hostname: str | None = None,
-        instanceNames: MutableSequence[str] | None = None,
+        instanceName: str | None = None,
         ipc: bool = False,
         keepPrivs: bool = False,
-        locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
         memory: str | None = None,
         memoryReservation: str | None = None,
@@ -997,8 +1417,6 @@ class SingularityConnector(ContainerConnector):
         pemPath: str | None = None,
         pidFile: str | None = None,
         pidsLimit: int | None = None,
-        replicas: int = 1,
-        resourcesCacheSize: int = None,
         resourcesCacheTTL: int = None,
         rocm: bool = False,
         scratch: MutableSequence[str] | None = None,
@@ -1013,12 +1431,20 @@ class SingularityConnector(ContainerConnector):
         super().__init__(
             deployment_name=deployment_name,
             config_dir=config_dir,
+            connector=connector,
+            service=service,
             transferBufferSize=transferBufferSize,
-            locationsCacheSize=locationsCacheSize,
-            locationsCacheTTL=locationsCacheTTL,
-            resourcesCacheSize=resourcesCacheSize,
-            resourcesCacheTTL=resourcesCacheTTL,
         )
+        if (cacheTTL := locationsCacheTTL) is None:
+            if (cacheTTL := resourcesCacheTTL) is not None:
+                if logger.isEnabledFor(logging.WARNING):
+                    logger.warning(
+                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
+                        "Use `locationsCacheTTL` instead."
+                    )
+            else:
+                cacheTTL = 10
+        self.locationsCache: Cache = TTLCache(maxsize=1, ttl=cacheTTL)
         self.image: str = image
         self.addCaps: str | None = addCaps
         self.allowSetuid: bool = allowSetuid
@@ -1047,7 +1473,7 @@ class SingularityConnector(ContainerConnector):
         self.home: str | None = home
         self.hostname: str | None = hostname
         self.ipc: bool = ipc
-        self.instanceNames: MutableSequence[str] | None = instanceNames or []
+        self.instanceName: str | None = instanceName
         self.keepPrivs: bool = keepPrivs
         self.memory: str | None = memory
         self.memoryReservation: str | None = memoryReservation
@@ -1070,7 +1496,6 @@ class SingularityConnector(ContainerConnector):
         self.pemPath: str | None = pemPath
         self.pidFile: str | None = pidFile
         self.pidsLimit: int | None = pidsLimit
-        self.replicas: int = replicas
         self.rocm: bool = rocm
         self.scratch: MutableSequence[str] | None = scratch
         self.security: MutableSequence[str] | None = security
@@ -1079,21 +1504,40 @@ class SingularityConnector(ContainerConnector):
         self.workdir: str | None = workdir
         self.writable: bool = writable
         self.writableTmpfs: bool = writableTmpfs
+        self._instance_lock: Lock = Lock()
 
-    async def _get_bind_mounts(
-        self, location: ExecutionLocation
+    async def _check_singularity_installed(self):
+        if self._wraps_local():
+            returncode = 0 if which("singularity") is not None else 1
+        else:
+            _, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=["which", "singularity"],
+                capture_output=True,
+            )
+        if returncode != 0:
+            raise WorkflowExecutionException(
+                "Singularity must be installed on the system to use the "
+                f"{self.__class__.__name__} connector."
+            )
+
+    def _get_bind_mounts(
+        self, instance: ContainerInstance
     ) -> MutableSequence[MutableMapping[str, str]]:
-        return await self._get_volumes(location)
+        return instance.volumes
 
-    async def _get_location(self, location_name: str) -> AvailableLocation | None:
-        inspect_command = "singularity instance list --json"
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(inspect_command),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+    async def _get_location(self, location_name: str) -> AvailableLocation:
+        stdout, returncode = await self.connector.run(
+            location=self._inner_location.location,
+            command=[
+                "singularity",
+                "instance",
+                "list",
+                "--json",
+            ],
+            capture_output=True,
         )
-        stdout, _ = await proc.communicate()
-        if stdout:
+        if returncode == 0:
             json_out = json.loads(stdout)
             for instance in json_out["instances"]:
                 if instance["instance"] == location_name:
@@ -1101,121 +1545,183 @@ class SingularityConnector(ContainerConnector):
                         name=location_name,
                         deployment=self.deployment_name,
                         hostname=instance["ip"],
+                        wraps=self._inner_location,
                     )
-        return None
-
-    async def _get_volumes(
-        self, location: ExecutionLocation
-    ) -> MutableSequence[MutableMapping[str, str]]:
-        bind_mounts, _ = await self.run(
-            location=location,
-            command=["cat", "/proc/1/mountinfo", "|", "awk", "'{print $9,$4,$5}'"],
-            capture_output=True,
-        )
-        # Exclude `overlay` and `tmpfs` mounts
-        return [
-            {
-                "Source": (
-                    line.split()[2] if line.split()[1] == "/" else line.split()[1]
-                ),
-                "Destination": line.split()[2],
-            }
-            for line in bind_mounts.splitlines()
-            if line.split()[0] not in ["tmpfs", "overlay"]
-        ]
+            raise WorkflowExecutionException(
+                f"FAILED retrieving location '{location_name}' from available locations "
+                f"in deplotment {self.deployment_name}"
+            )
+        else:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving available locations for deployment {self.deployment_name}"
+            )
 
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
-    ):
-        return (
-            f"singularity exec "
-            f"{get_option('cleanenv', self.cleanenv)}"
-            f"instance://{location.name} sh -c '{command}'"
-        )
+    ) -> MutableSequence[str]:
+        return [
+            "singularity",
+            "exec",
+            get_option("cleanenv", self.cleanenv),
+            f"instance://{location.name}",
+            "sh",
+            "-c",
+            f"'{command}'",
+        ]
 
-    async def deploy(self, external: bool) -> None:
-        if not external:
-            _check_singularity_installed()
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Using {await _get_singularity_version()}.")
-            _prepare_volumes(self.bind, self.mount)
-            for _ in range(0, self.replicas):
-                instance_name = random_name()
-                deploy_command = (
-                    f"singularity instance start "
-                    f"{get_option('add-caps', self.addCaps)}"
-                    f"{get_option('allow-setuid', self.allowSetuid)}"
-                    f"{get_option('apply-cgroups', self.applyCgroups)}"
-                    f"{get_option('bind', self.bind)}"
-                    f"{get_option('blkio-weight', self.blkioWeight)}"
-                    f"{get_option('blkio-weight-device', self.blkioWeightDevice)}"
-                    f"{get_option('boot', self.boot)}"
-                    f"{get_option('cleanenv', self.cleanenv)}"
-                    f"{get_option('compat', self.compat)}"
-                    f"{get_option('contain', self.contain)}"
-                    f"{get_option('containall', self.containall)}"
-                    f"{get_option('cpu-shares', self.cpuShares)}"
-                    f"{get_option('cpus', self.cpus)}"
-                    f"{get_option('cpuset-cpus', self.cpusetCpus)}"
-                    f"{get_option('cpuset-mems', self.cpusetMems)}"
-                    f"{get_option('disable-cache', self.disableCache)}"
-                    f"{get_option('docker-host', self.dockerHost)}"
-                    f"{get_option('dns', self.dns)}"
-                    f"{get_option('drop-caps', self.dropCaps)}"
-                    f"{get_option('env-file', self.envFile)}"
-                    f"{get_option('fakeroot', self.fakeroot)}"
-                    f"{get_option('fusemount', self.fusemount)}"
-                    f"{get_option('home', self.home)}"
-                    f"{get_option('hostname', self.hostname)}"
-                    f"{get_option('ipc', self.ipc)}"
-                    f"{get_option('keep-privs', self.keepPrivs)}"
-                    f"{get_option('memory', self.memory)}"
-                    f"{get_option('memory-reservation', self.memoryReservation)}"
-                    f"{get_option('memory-swap', self.memorySwap)}"
-                    f"{get_option('mount', self.mount)}"
-                    f"{get_option('net', self.net)}"
-                    f"{get_option('network', self.network)}"
-                    f"{get_option('network-args', self.networkArgs)}"
-                    f"{get_option('no-eval', self.noEval)}"
-                    f"{get_option('no-home', self.noHome)}"
-                    f"{get_option('no-https', self.noHttps)}"
-                    f"{get_option('no-init', self.noInit)}"
-                    f"{get_option('no-mount', self.noMount)}"
-                    f"{get_option('no-privs', self.noPrivs)}"
-                    f"{get_option('no-umask', self.noUmask)}"
-                    f"{get_option('nv', self.nv)}"
-                    f"{get_option('nvccli', self.nvccli)}"
-                    f"{get_option('oom-kill-disable', self.oomKillDisable)}"
-                    f"{get_option('overlay', self.overlay)}"
-                    f"{get_option('pem-path', self.pemPath)}"
-                    f"{get_option('pid-file', self.pidFile)}"
-                    f"{get_option('pids-limit', self.pidsLimit)}"
-                    f"{get_option('rocm', self.rocm)}"
-                    f"{get_option('scratch', self.scratch)}"
-                    f"{get_option('security', self.security)}"
-                    f"{get_option('userns', self.userns)}"
-                    f"{get_option('uts', self.uts)}"
-                    f"{get_option('workdir', self.workdir)}"
-                    f"{get_option('writable', self.writable)}"
-                    f"{get_option('writable-tmpfs', self.writableTmpfs)}"
-                    f"{self.image} "
-                    f"{instance_name} "
-                    f"{' '.join(self.command) if self.command else ''}"
+    async def _get_singularity_version(self) -> str:
+        stdout, _ = await self.connector.run(
+            location=self._inner_location.location,
+            command=["singularity", "--version"],
+            capture_output=True,
+        )
+        return stdout
+
+    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
+        if location.name not in self._instances:
+            await self._populate_instance(location)
+        return self._instances[location.name]
+
+    async def _populate_instance(self, location: ExecutionLocation) -> None:
+        async with self._instance_lock:
+            if location.name not in self._instances:
+                # Get the list of mounted volumes
+                bind_mounts, _ = await self.run(
+                    location=location,
+                    command=[
+                        "cat",
+                        "/proc/1/mounts",
+                        "|",
+                        "grep",
+                        "'^[0-9]\\|^/dev'",
+                        "|",
+                        "awk",
+                        "'{print $2}'",
+                    ],
+                    capture_output=True,
                 )
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"EXECUTING command {deploy_command}")
-                proc = await asyncio.create_subprocess_exec(
-                    *shlex.split(deploy_command),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
+                    logger.debug(
+                        "Output of `/proc/1/mounts` command "
+                        f"for location {location.name}:\n{bind_mounts}"
+                    )
+                # Parse bind mounts
+                mounts = {}
+                for b in self.bind or []:
+                    source, destination = b.split(":", 2)
+                    mounts[destination] = source
+                for m in self.mount or []:
+                    mount_type = next(
+                        part[5:] for part in m.split(",") if part.startswith("type=")
+                    )
+                    if mount_type == "bind":
+                        source, destination = _parse_mount(m)
+                        mounts[destination] = source
+                # Populate volumes
+                volumes = []
+                for line in bind_mounts.splitlines():
+                    volumes.append(
+                        {
+                            "Destination": line,
+                            "Source": mounts[line] if line in mounts else line,
+                        }
+                    )
+                # Create instance
+                self._instances[location.name] = ContainerInstance(
+                    current_user=True, volumes=volumes
                 )
-                stdout, _ = await proc.communicate()
-                if proc.returncode == 0:
-                    self.instanceNames.append(instance_name)
-                else:
-                    raise WorkflowExecutionException(stdout.decode().strip())
 
-    @cachedmethod(lambda self: self.locationsCache)
+    async def deploy(self, external: bool) -> None:
+        await super().deploy(external)
+        # Check if Singularity is installed in the wrapped connector
+        await self._check_singularity_installed()
+        # If the deployment is not external, deploy the container
+        if not external:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Using {await self._get_singularity_version()}.")
+            await self._prepare_volumes(self.bind, self.mount)
+            instance_name = random_name()
+            deploy_command = [
+                "singularity",
+                "instance",
+                "start",
+                get_option("add-caps", self.addCaps),
+                get_option("allow-setuid", self.allowSetuid),
+                get_option("apply-cgroups", self.applyCgroups),
+                get_option("bind", self.bind),
+                get_option("blkio-weight", self.blkioWeight),
+                get_option("blkio-weight-device", self.blkioWeightDevice),
+                get_option("boot", self.boot),
+                get_option("cleanenv", self.cleanenv),
+                get_option("compat", self.compat),
+                get_option("contain", self.contain),
+                get_option("containall", self.containall),
+                get_option("cpu-shares", self.cpuShares),
+                get_option("cpus", self.cpus),
+                get_option("cpuset-cpus", self.cpusetCpus),
+                get_option("cpuset-mems", self.cpusetMems),
+                get_option("disable-cache", self.disableCache),
+                get_option("docker-host", self.dockerHost),
+                get_option("dns", self.dns),
+                get_option("drop-caps", self.dropCaps),
+                get_option("env-file", self.envFile),
+                get_option("fakeroot", self.fakeroot),
+                get_option("fusemount", self.fusemount),
+                get_option("home", self.home),
+                get_option("hostname", self.hostname),
+                get_option("ipc", self.ipc),
+                get_option("keep-privs", self.keepPrivs),
+                get_option("memory", self.memory),
+                get_option("memory-reservation", self.memoryReservation),
+                get_option("memory-swap", self.memorySwap),
+                get_option("mount", self.mount),
+                get_option("net", self.net),
+                get_option("network", self.network),
+                get_option("network-args", self.networkArgs),
+                get_option("no-eval", self.noEval),
+                get_option("no-home", self.noHome),
+                get_option("no-https", self.noHttps),
+                get_option("no-init", self.noInit),
+                get_option("no-mount", self.noMount),
+                get_option("no-privs", self.noPrivs),
+                get_option("no-umask", self.noUmask),
+                get_option("nv", self.nv),
+                get_option("nvccli", self.nvccli),
+                get_option("oom-kill-disable", self.oomKillDisable),
+                get_option("overlay", self.overlay),
+                get_option("pem-path", self.pemPath),
+                get_option("pid-file", self.pidFile),
+                get_option("pids-limit", self.pidsLimit),
+                get_option("rocm", self.rocm),
+                get_option("scratch", self.scratch),
+                get_option("security", self.security),
+                get_option("userns", self.userns),
+                get_option("uts", self.uts),
+                get_option("workdir", self.workdir),
+                get_option("writable", self.writable),
+                get_option("writable-tmpfs", self.writableTmpfs),
+                self.image,
+                instance_name,
+                " ".join(self.command) if self.command else "",
+            ]
+            stdout, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=deploy_command,
+                capture_output=True,
+            )
+            if returncode == 0:
+                self.instanceName = instance_name
+            else:
+                raise WorkflowExecutionException(
+                    f"FAILED Deployment of {self.deployment_name} environment:"
+                    f"[{returncode}] {stdout}"
+                )
+        elif self.instanceName is None:
+            raise WorkflowDefinitionException(
+                f"FAILED Deployment of {self.deployment_name} environment: "
+                "external Singularity deployments must specify the instanceName of an existing Singularity container"
+            )
+
     async def get_available_locations(
         self,
         service: str | None = None,
@@ -1223,18 +1729,7 @@ class SingularityConnector(ContainerConnector):
         output_directory: str | None = None,
         tmp_directory: str | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
-        location_tasks = {}
-        for instance_name in self.instanceNames:
-            location_tasks[instance_name] = asyncio.create_task(
-                self._get_location(instance_name)
-            )
-        return {
-            k: v
-            for k, v in zip(
-                location_tasks.keys(), await asyncio.gather(*location_tasks.values())
-            )
-            if v is not None
-        }
+        return {self.instanceName: await self._get_location(self.instanceName)}
 
     @classmethod
     def get_schema(cls) -> str:
@@ -1246,15 +1741,13 @@ class SingularityConnector(ContainerConnector):
         )
 
     async def undeploy(self, external: bool) -> None:
-        if not external and self.instanceNames:
-            for instance_name in self.instanceNames:
-                undeploy_command = f"singularity instance stop {instance_name}"
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"EXECUTING command {undeploy_command}")
-                proc = await asyncio.create_subprocess_exec(
-                    *shlex.split(undeploy_command),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
+        if not external:
+            stdout, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=["singularity", "instance", "stop", self.instanceName],
+                capture_output=True,
+            )
+            if returncode != 0:
+                raise WorkflowExecutionException(
+                    f"FAILED Undeployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
                 )
-                stdout, _ = await proc.communicate()
-            self.instanceNames = []

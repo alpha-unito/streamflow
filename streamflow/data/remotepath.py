@@ -321,8 +321,7 @@ async def mkdirs(
         for path in paths:
             os.makedirs(path, exist_ok=True)
     else:
-        command = ["mkdir", "-p"]
-        command.extend(paths)
+        command = ["mkdir", "-p"] + list(paths)
         await asyncio.gather(
             *(
                 asyncio.create_task(connector.run(location=location, command=command))

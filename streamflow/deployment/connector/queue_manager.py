@@ -22,10 +22,10 @@ from streamflow.core.exception import (
 )
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
+from streamflow.deployment.connector.base import BatchConnector
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
-from streamflow.deployment.utils import get_inner_location
-from streamflow.deployment.wrapper import ConnectorWrapper
+from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
 
 
@@ -318,7 +318,7 @@ class FluxService(QueueManagerService):
         self.urgency: int | None = urgency
 
 
-class QueueManagerConnector(ConnectorWrapper, ABC):
+class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
     def __init__(
         self,
         deployment_name: str,

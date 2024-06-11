@@ -29,7 +29,7 @@ async def _copy(
 ) -> None:
     if isinstance(src_connector, LocalConnector):
         if isinstance(dst_connector, LocalConnector):
-            local_copy(src, dst)
+            local_copy(src, dst, not writable)
         else:
             await dst_connector.copy_local_to_remote(
                 src=src,

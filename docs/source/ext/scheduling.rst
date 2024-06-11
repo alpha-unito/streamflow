@@ -97,7 +97,6 @@ The ``locations`` parameter is the set of locations allocated to at least one ``
 
 Note that when multiple locations are stacked through the ``wraps`` directive and specify the ``stacked`` flag, a ``LocationAllocation`` object contains also the jobs allocated to the locations that wrap the associated ``AvailableLocation`` object, either directly or indirectly. Conversely, ``JobAllocation`` objects only register direct allocations.
 
-
 Implementations
 ---------------
 
