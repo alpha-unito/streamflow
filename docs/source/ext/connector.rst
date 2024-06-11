@@ -53,14 +53,14 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
 
     async def get_stream_reader(
         self,
-        command: MutableSequence[int],
+        command: MutableSequence[str],
         location: ExecutionLocation,
     ) -> StreamWrapperContextManager:
         ...
 
     async def get_stream_writer(
         self,
-        command: MutableSequence[int],
+        command: MutableSequence[str],
         location: ExecutionLocation,
     ) -> StreamWrapperContextManager:
         ...

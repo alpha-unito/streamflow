@@ -87,9 +87,16 @@ The ``get_location`` method receives much information about the current executio
 
 The ``Job`` parameter contains the ``Job`` object to be allocated, and the ``hardware_requirement`` parameter is a ``HardwareRequirement`` object specifying the ``Job``'s resource requirements. The ``available_locations`` parameter contains the list of locations available for placement in the target deployment. They are obtained by calling the ``get_available_locations`` method of the related :ref:`Connector <Connector>` object.
 
+An ``AvailableLocation`` object should specify the ``stacked`` flag to state if the location relies on hardware resources from the underlying wrapped locations (e.g., a Docker container) or not (e.g., a Slurm submission to a remote node). When ``stacked`` is true, a ``Scheduler`` implementation should take into account the lower levels of the stack to validate if the execution environment provides enough resources for running a ``Job``. Conversely, when ``stacked`` is false (the default value), the ``Scheduler`` should only consider hardware information provided by the current ``AvailableLocation`` object.
+
+Note that a ``Scheduler`` implementation should run these checks before calling the ``get_location`` method of a scheduling ``Policy``, properly filtering the ``available_locations`` parameter before propagating it. Therefore, the ``available_locations`` parameter should only contain the locations that satisfy the hardware requirements of the processed ``Job`` object.
+
 The ``jobs`` and ``locations`` parameters describe the current status of the workflow execution. The ``jobs`` parameter is a dictionary of ``JobAllocation`` objects, containing information about all the previously allocated ``Job`` objects, indexed by their unique name. Each ``JobAllocation`` structure contains the ``Job`` name, its target, the list of locations associated with the ``Job`` execution, the current ``Status`` of the ``Job``, and the hardware resources allocated for its execution on each selected location.
 
 The ``locations`` parameter is the set of locations allocated to at least one ``Job`` in the past, indexed by their deployment and unique name. Each ``LocationAllocation`` object contains the location name, the name of its deployment, and the list of ``Job`` objects allocated to it, identified by their unique name.
+
+Note that when multiple locations are stacked through the ``wraps`` directive and specify the ``stacked`` flag, a ``LocationAllocation`` object contains also the jobs allocated to the locations that wrap the associated ``AvailableLocation`` object, either directly or indirectly. Conversely, ``JobAllocation`` objects only register direct allocations.
+
 
 Implementations
 ---------------

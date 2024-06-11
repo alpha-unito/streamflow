@@ -480,6 +480,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 service=service,
                 hostname=location.hostname,
                 slots=self.maxConcurrentJobs,
+                stacked=False,
                 wraps=location,
             )
         }
