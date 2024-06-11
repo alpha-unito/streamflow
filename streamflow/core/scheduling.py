@@ -142,6 +142,7 @@ class AvailableLocation:
         "hardware",
         "location",
         "slots",
+        "stacked",
         "wraps",
     )
 
@@ -151,7 +152,8 @@ class AvailableLocation:
         deployment: str,
         hostname: str,
         service: str | None = None,
-        slots: int = 1,
+        slots: int | None = None,
+        stacked: bool = False,
         hardware: Hardware | None = None,
         wraps: AvailableLocation | None = None,
     ):
@@ -163,7 +165,8 @@ class AvailableLocation:
             service=service,
             wraps=wraps.location if wraps else None,
         )
-        self.slots: int = slots
+        self.slots: int | None = slots
+        self.stacked: bool = stacked
         self.wraps: AvailableLocation | None = wraps
 
     @property

@@ -10,7 +10,6 @@ from importlib_resources import files
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.deployment import (
     BindingFilter,
-    ExecutionLocation,
     FilterConfig,
     Target,
 )
@@ -56,14 +55,14 @@ class DefaultScheduler(Scheduler):
         self,
         job: Job,
         hardware: Hardware,
-        selected_locations: MutableSequence[ExecutionLocation],
+        selected_locations: MutableSequence[AvailableLocation],
         target: Target,
     ):
         if logger.isEnabledFor(logging.DEBUG):
             if len(selected_locations) == 1:
                 is_local = isinstance(
                     self.context.deployment_manager.get_connector(
-                        selected_locations[0].deployment
+                        selected_locations[0].location.deployment
                     ),
                     LocalConnector,
                 )
@@ -85,16 +84,24 @@ class DefaultScheduler(Scheduler):
         self.job_allocations[job.name] = JobAllocation(
             job=job.name,
             target=target,
-            locations=selected_locations,
+            locations=[loc.location for loc in selected_locations],
             status=Status.FIREABLE,
             hardware=hardware or Hardware(),
         )
         for loc in selected_locations:
-            if loc not in self.location_allocations:
-                self.location_allocations.setdefault(loc.deployment, {}).setdefault(
-                    loc.name,
-                    LocationAllocation(name=loc.name, deployment=loc.deployment),
-                ).jobs.append(job.name)
+            while loc is not None:
+                if loc.location not in self.location_allocations:
+                    self.location_allocations.setdefault(
+                        loc.location.deployment, {}
+                    ).setdefault(
+                        loc.location.name,
+                        LocationAllocation(
+                            name=loc.location.name, deployment=loc.location.deployment
+                        ),
+                    ).jobs.append(
+                        job.name
+                    )
+                    loc = loc.wraps if loc.stacked else None
 
     def _deallocate_job(self, job: str):
         job_allocation = self.job_allocations.pop(job)
@@ -138,37 +145,40 @@ class DefaultScheduler(Scheduler):
         locations: int,
         scheduling_policy: Policy,
         available_locations: MutableMapping[str, AvailableLocation],
-    ) -> MutableSequence[ExecutionLocation]:
-        selected_locations = []
-        for _ in range(locations):
-            if selected_location := await scheduling_policy.get_location(
-                context=self.context,
-                job=job,
-                hardware_requirement=hardware_requirement,
-                available_locations=available_locations,
-                jobs=self.job_allocations,
-                locations=self.location_allocations,
-            ):
-                selected_locations.append(selected_location.location)
-                available_locations = {
-                    k: v
-                    for k, v in available_locations.items()
-                    if v != selected_location
-                }
-            else:
-                return []
-        return selected_locations
+    ) -> MutableSequence[AvailableLocation]:
+        # If available locations are exactly the amount of required locations, simply use them
+        if len(available_locations) == locations:
+            return list(available_locations.values())
+        # Otherwise, use the `Policy` to select the best set of locations to allocate
+        else:
+            selected_locations = []
+            for _ in range(locations):
+                if selected_location := await scheduling_policy.get_location(
+                    context=self.context,
+                    job=job,
+                    hardware_requirement=hardware_requirement,
+                    available_locations=available_locations,
+                    jobs=self.job_allocations,
+                    locations=self.location_allocations,
+                ):
+                    selected_locations.append(selected_location)
+                    available_locations = {
+                        k: v
+                        for k, v in available_locations.items()
+                        if v != selected_location
+                    }
+                else:
+                    return []
+            return selected_locations
 
     def _get_policy(self, config: Config):
         if config.name not in self.policy_map:
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
 
-    def _is_valid(
-        self, location: AvailableLocation, hardware_requirement: Hardware
-    ) -> bool:
+    def _get_running_jobs(self, location: AvailableLocation):
         if location.name in self.location_allocations.get(location.deployment, {}):
-            running_jobs = list(
+            return list(
                 filter(
                     lambda x: (
                         self.job_allocations[x].status == Status.RUNNING
@@ -178,23 +188,43 @@ class DefaultScheduler(Scheduler):
                 )
             )
         else:
-            running_jobs = []
-        # If location is segmentable and job provides requirements, compute the used amount of locations
-        if location.hardware is not None and hardware_requirement is not None:
-            used_hardware = sum(
-                (self.job_allocations[j].hardware for j in running_jobs),
-                start=hardware_requirement.__class__(),
-            )
-            if (location.hardware - used_hardware) >= hardware_requirement:
-                return True
+            return []
+
+    def _is_valid(
+        self, location: AvailableLocation, hardware_requirement: Hardware
+    ) -> bool:
+        # Check if a location provides hardware capabilities or slots
+        loc = location
+        slots = None
+        while (
+            (hardware := loc.hardware) is None
+            and (slots := loc.slots) is None
+            and loc is not None
+            and loc.stacked
+        ):
+            loc = loc.wraps
+        # If at least one location provides hardware capabilities
+        if hardware is not None:
+            # If job provides requirements
+            if hardware_requirement is not None:
+                # Retrieve the jobs running on that location
+                running_jobs = self._get_running_jobs(loc)
+                # Compute the used amount of locations
+                used_hardware = sum(
+                    (self.job_allocations[j].hardware for j in running_jobs),
+                    start=hardware_requirement.__class__(),
+                )
+                return (loc.hardware - used_hardware) >= hardware_requirement
+            # Otherwise, treat it as null-weighted
             else:
-                return False
-        # If location is segmentable but job does not provide requirements, treat it as null-weighted
-        elif location.hardware is not None:
-            return True
+                return True
         # Otherwise, simply compute the number of allocated slots
         else:
-            return len(running_jobs) < location.slots
+            slots = slots if slots is not None else 1
+            return (
+                len(self._get_running_jobs(loc if loc is not None else location))
+                < slots
+            )
 
     async def _process_target(
         self, target: Target, job_context: JobContext, hardware_requirement: Hardware
@@ -252,20 +282,14 @@ class DefaultScheduler(Scheduler):
                                     list(valid_locations.keys()),
                                 )
                             )
-                        # If available locations are exactly the amount of required locations, simply use them
-                        # Otherwise, use the `Policy` to select the best set of locations to allocate
-                        if selected_locations := (
-                            [loc.location for loc in valid_locations.values()]
-                            if len(valid_locations) == target.locations
-                            else await self._get_locations(
-                                job=job_context.job,
-                                hardware_requirement=hardware_requirement,
-                                locations=target.locations,
-                                scheduling_policy=self._get_policy(
-                                    target.deployment.scheduling_policy
-                                ),
-                                available_locations=valid_locations,
-                            )
+                        if selected_locations := await self._get_locations(
+                            job=job_context.job,
+                            hardware_requirement=hardware_requirement,
+                            locations=target.locations,
+                            scheduling_policy=self._get_policy(
+                                target.deployment.scheduling_policy
+                            ),
+                            available_locations=valid_locations,
                         ):
                             self._allocate_job(
                                 job=job_context.job,
