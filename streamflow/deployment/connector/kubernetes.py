@@ -358,20 +358,6 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                 effective_locations.append(location)
         return effective_locations
 
-    def _get_run_command(
-        self, command: str, location: ExecutionLocation, interactive: bool = False
-    ):
-        pod, container = location.name.split(":")
-        return (
-            f"kubectl "
-            f"{get_option('namespace', self.namespace)}"
-            f"{get_option('kubeconfig', self.kubeconfig)}"
-            f"exec {pod} "
-            f"{get_option('i', interactive)}"
-            f"{get_option('container', container)}"
-            f"-- {command}"
-        )
-
     @abstractmethod
     async def _get_running_pods(self) -> V1PodList: ...
 

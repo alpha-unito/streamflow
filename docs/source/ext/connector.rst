@@ -119,6 +119,11 @@ ConnectorWrapper
 
 StreamFlow supports :ref:`stacked locations <Stacked locations>` using the ``wraps`` directive. However, not all ``Connector`` instances support inner connectors, but only those that extend the ``ConenctorWrapper`` interface. By default, a ``ConnectorWrapper`` instance receives an internal ``Connector`` object as a constructor parameter and delegates all the method calls to the wrapped ``Connector``. Plus, it already extends the ``FutureAware`` class, correctly handling :ref:`FutureConnector <FutureConnector>` instances. Users who want to create a custom ``Connector`` instance with support for the ``wraps`` directive must extend the ``ConnectorWrapper`` class and not the ``BaseConnector`` as in other cases.
 
+BatchConnector
+==============
+
+Some ``Connector`` instances implement remote executions through batch systems (e.g., Slurm, PBS, or AWS Batch). These connectors should extend the ``BatchConnector`` base class to notify users that they cannot manage deployment, execution, and undeployment operations of an internal ``ConnectorWrapper`` instance as separate phases of its life-cycle (see :ref:`QueueManagerConnector <QueueManagerConnector>`). On the other hand, ``ConnectorWrapper`` implementers can explicitly disallow their class to wrap inner ``BatchConnector`` classes by failing fast during object construction (see :ref:`ContainerConnector <ContainerConnector>`).
+
 Streaming
 =========
 

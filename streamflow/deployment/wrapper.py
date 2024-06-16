@@ -6,12 +6,26 @@ from typing import Any, MutableMapping, MutableSequence
 
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
-from streamflow.deployment.future import FutureAware
-from streamflow.deployment.utils import get_inner_location, get_inner_locations
+from streamflow.deployment.connector.base import BaseConnector
 
 
-class ConnectorWrapper(Connector, FutureAware, ABC):
+def get_inner_location(location: ExecutionLocation) -> ExecutionLocation:
+    if location.wraps is None:
+        raise WorkflowExecutionException(
+            f"Location {location.name} does not wrap any inner location"
+        )
+    return location.wraps
+
+
+def get_inner_locations(
+    locations: MutableSequence[ExecutionLocation],
+) -> MutableSequence[ExecutionLocation]:
+    return list({get_inner_location(loc) for loc in locations})
+
+
+class ConnectorWrapper(BaseConnector, ABC):
     def __init__(
         self,
         deployment_name: str,
@@ -28,7 +42,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self.connector: Connector = connector
         self.service: str | None = service
 
-    async def copy_local_to_remote(
+    async def _copy_local_to_remote(
         self,
         src: str,
         dst: str,
@@ -42,21 +56,21 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
             read_only=read_only,
         )
 
-    async def copy_remote_to_local(
+    async def _copy_remote_to_local(
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[ExecutionLocation],
+        location: ExecutionLocation,
         read_only: bool = False,
     ) -> None:
         await self.connector.copy_remote_to_local(
             src=src,
             dst=dst,
-            locations=get_inner_locations(locations),
+            locations=get_inner_locations([location]),
             read_only=read_only,
         )
 
-    async def copy_remote_to_remote(
+    async def _copy_remote_to_remote(
         self,
         src: str,
         dst: str,
