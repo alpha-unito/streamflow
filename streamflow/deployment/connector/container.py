@@ -6,7 +6,6 @@ import logging
 import os
 import posixpath
 from abc import ABC, abstractmethod
-from asyncio import Lock
 from shutil import which
 from typing import Any, MutableMapping, MutableSequence
 
@@ -581,7 +580,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             service=service,
             transferBufferSize=transferBufferSize,
         )
-        self._instance_lock: Lock = Lock()
+        self._instance_lock: asyncio.Lock = asyncio.Lock()
 
     async def _check_docker_installed(self):
         if self._wraps_local():
@@ -1504,7 +1503,7 @@ class SingularityConnector(ContainerConnector):
         self.workdir: str | None = workdir
         self.writable: bool = writable
         self.writableTmpfs: bool = writableTmpfs
-        self._instance_lock: Lock = Lock()
+        self._instance_lock: asyncio.Lock = asyncio.Lock()
 
     async def _check_singularity_installed(self):
         if self._wraps_local():
