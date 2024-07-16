@@ -13,6 +13,7 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Port, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
+from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.step import build_token
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.token import ListToken
@@ -388,6 +389,7 @@ class ValueFromTransformer(ManyToOneTransformer):
         token = await build_token(
             job=await cast(JobPort, self.get_input_port("__job__")).get_job(self.name),
             token_value=token_value,
+            cwl_version=cast(CWLTokenProcessor, self.processor).cwl_version,
             streamflow_context=self.workflow.context,
         )
         return {output_name: token}

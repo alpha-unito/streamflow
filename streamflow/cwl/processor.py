@@ -117,6 +117,7 @@ class CWLTokenProcessor(TokenProcessor):
         self,
         name: str,
         workflow: Workflow,
+        cwl_version: str,
         token_type: str | None = None,
         check_type: bool = True,
         enum_symbols: MutableSequence[str] | None = None,
@@ -134,6 +135,7 @@ class CWLTokenProcessor(TokenProcessor):
         super().__init__(name, workflow)
         self.token_type: str = token_type
         self.check_type: bool = check_type
+        self.cwl_version: str = cwl_version
         self.enum_symbols: MutableSequence[str] | None = enum_symbols
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
@@ -157,6 +159,7 @@ class CWLTokenProcessor(TokenProcessor):
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
+            cwl_version=row["cwl_version"],
             token_type=row["token_type"],
             check_type=row["check_type"],
             enum_symbols=row["enum_symbols"],
@@ -232,6 +235,7 @@ class CWLTokenProcessor(TokenProcessor):
                 token_value = await utils.update_file_token(
                     context=self.workflow.context,
                     connector=connector,
+                    cwl_version=self.cwl_version,
                     location=data_location.location,
                     token_value=token_value,
                     load_contents=self.load_contents,
@@ -252,6 +256,7 @@ class CWLTokenProcessor(TokenProcessor):
                                         utils.update_file_token(
                                             context=self.workflow.context,
                                             connector=connector,
+                                            cwl_version=self.cwl_version,
                                             location=data_location.location,
                                             token_value=sf,
                                             load_contents=self.load_contents,
@@ -269,6 +274,7 @@ class CWLTokenProcessor(TokenProcessor):
                     sf_context = {**context, "self": token_value}
                     await utils.process_secondary_files(
                         context=self.workflow.context,
+                        cwl_version=self.cwl_version,
                         secondary_files=self.secondary_files,
                         sf_map=sf_map,
                         js_context=sf_context,
@@ -301,6 +307,7 @@ class CWLTokenProcessor(TokenProcessor):
             **{
                 "token_type": self.token_type,
                 "check_type": self.check_type,
+                "cwl_version": self.cwl_version,
                 "enum_symbols": self.enum_symbols,
                 "expression_lib": self.expression_lib,
                 "file_format": self.file_format,
@@ -361,6 +368,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self,
         name: str,
         workflow: Workflow,
+        cwl_version: str,
         target: Target | None = None,
         token_type: str | MutableSequence[str] | None = None,
         enum_symbols: MutableSequence[str] | None = None,
@@ -376,6 +384,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         streamable: bool = False,
     ):
         super().__init__(name, workflow, target)
+        self.cwl_version: str = cwl_version
         self.token_type: str | MutableSequence[str] | None = token_type
         self.enum_symbols: MutableSequence[str] | None = enum_symbols
         self.expression_lib: MutableSequence[str] | None = expression_lib
@@ -399,6 +408,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
+            cwl_version=row["cwl_version"],
             target=(
                 (await loading_context.load_target(context, row["workflow"]))
                 if row["target"]
@@ -504,6 +514,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             token = token_value[self.name]
             return await utils.build_token_value(
                 context=self.workflow.context,
+                cwl_version=self.cwl_version,
                 js_context=context,
                 full_js=self.full_js,
                 expression_lib=self.expression_lib,
@@ -581,6 +592,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             if self.output_eval is None:
                 token_list = await utils.build_token_value(
                     context=self.workflow.context,
+                    cwl_version=self.cwl_version,
                     js_context=context,
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
@@ -600,6 +612,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             else:
                 context["self"] = await utils.build_token_value(
                     context=self.workflow.context,
+                    cwl_version=self.cwl_version,
                     js_context=context,
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
@@ -623,6 +636,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             # Build token
             return await utils.build_token_value(
                 context=self.workflow.context,
+                cwl_version=self.cwl_version,
                 js_context=context,
                 full_js=self.full_js,
                 expression_lib=self.expression_lib,
@@ -630,12 +644,15 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 connector=connector,
                 locations=locations,
                 token_value=token,
-                load_contents=self.load_contents,
-                load_listing=self.load_listing,
+                load_contents=self.load_contents if self.glob is None else False,
+                load_listing=(
+                    self.load_listing if self.glob is None else LoadListing.no_listing
+                ),
             )
         # As the default value (no return path is met in previous code), simply process the command output
         return await utils.build_token_value(
             context=self.workflow.context,
+            cwl_version=self.cwl_version,
             js_context=context,
             full_js=self.full_js,
             expression_lib=self.expression_lib,
@@ -652,6 +669,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             **await super()._save_additional_params(context),
             **{
                 "token_type": self.token_type,
+                "cwl_version": self.cwl_version,
                 "enum_symbols": self.enum_symbols,
                 "expression_lib": self.expression_lib,
                 "file_format": self.file_format,

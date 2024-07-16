@@ -31,7 +31,7 @@ from streamflow.cwl.transformer import (
 )
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import CombinatorStep
-from tests.conftest import are_equals
+from tests.conftest import are_equals, CWL_VERSION
 from tests.test_build_wf import (
     _base_step_test_process,
     _persistent_id_test,
@@ -152,6 +152,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=port.name,
                 workflow=workflow,
+                cwl_version=CWL_VERSION,
             ),
             "port_name": port.name,
             "full_js": True,
@@ -207,6 +208,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=port.name,
                 workflow=workflow,
+                cwl_version=CWL_VERSION,
             ),
             "port_name": port.name,
             "full_js": True,
@@ -268,6 +270,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
         {
             "name": utils.random_name() + "-injector",
             "job_port": port,
+            "cwl_version": CWL_VERSION,
         },
         context,
     )
@@ -303,6 +306,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=step_name,
                 workflow=workflow,
+                cwl_version=CWL_VERSION,
             ),
         },
         context,
@@ -324,11 +328,12 @@ async def test_cwl_transfer_step(context: StreamFlowContext):
     """Test saving CWLTransferStep on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
     await _base_step_test_process(
-        workflow,
-        CWLTransferStep,
-        {
+        workflow=workflow,
+        step_cls=CWLTransferStep,
+        kwargs_step={
             "name": posixpath.join(utils.random_name(), "__transfer__", "test"),
             "job_port": port,
+            "cwl_version": CWL_VERSION,
         },
-        context,
+        context=context,
     )
