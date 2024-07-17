@@ -93,7 +93,7 @@ async def _get_contents(
     size: int,
     cwl_version: str,
 ):
-    if cwl_version == "v1.2" and size > CONTENT_LIMIT:
+    if (cwl_version not in ("v1.0", "v.1.1")) and size > CONTENT_LIMIT:
         raise WorkflowExecutionException(
             f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB"
         )
