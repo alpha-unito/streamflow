@@ -644,10 +644,8 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 connector=connector,
                 locations=locations,
                 token_value=token,
-                load_contents=self.load_contents if self.glob is None else False,
-                load_listing=(
-                    self.load_listing if self.glob is None else LoadListing.no_listing
-                ),
+                load_contents=False,
+                load_listing=LoadListing.no_listing,
             )
         # As the default value (no return path is met in previous code), simply process the command output
         return await utils.build_token_value(
