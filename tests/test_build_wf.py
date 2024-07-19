@@ -58,9 +58,7 @@ async def _base_step_test_process(
 
 
 async def _clone_step(step, workflow, context):
-    new_workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    new_workflow = Workflow(context=context, name=utils.random_name(), config={})
     loading_context = WorkflowBuilder(workflow=new_workflow)
     new_step = await loading_context.load_step(context, step.persistent_id)
     new_workflow.steps[new_step.name] = new_step
@@ -80,9 +78,7 @@ async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     assert workflow.persistent_id
     assert port.persistent_id
 
-    new_workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    new_workflow = Workflow(context=context, name=utils.random_name(), config={})
     loading_context = WorkflowBuilder(new_workflow)
 
     new_port = await loading_context.load_port(context, port.persistent_id)

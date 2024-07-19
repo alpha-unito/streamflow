@@ -14,7 +14,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
 from streamflow.core.persistence import DependencyType
 from streamflow.core.utils import get_date_from_ns
-from streamflow.core.workflow import Port, Status, Step, Token
+from streamflow.core.workflow import Port, Status, Step, Token, Workflow
 from streamflow.persistence.base import CachedDatabase
 from streamflow.version import VERSION
 
@@ -248,7 +248,11 @@ class SqliteDatabase(CachedDatabase):
                 return cursor.lastrowid
 
     async def add_workflow(
-        self, name: str, params: MutableMapping[str, Any], status: int, type: str
+        self,
+        name: str,
+        params: MutableMapping[str, Any],
+        status: int,
+        type: type[Workflow],
     ) -> int:
         async with self.connection as db:
             async with db.execute(
@@ -258,7 +262,7 @@ class SqliteDatabase(CachedDatabase):
                     "name": name,
                     "params": json.dumps(params),
                     "status": status,
-                    "type": type,
+                    "type": utils.get_class_fullname(type),
                 },
             ) as cursor:
                 return cursor.lastrowid
