@@ -30,7 +30,6 @@ from streamflow.workflow.token import (
     ListToken,
     TerminationToken,
 )
-from tests.conftest import CWL_VERSION
 from tests.utils.workflow import (
     create_workflow,
     create_deploy_step,
@@ -251,7 +250,6 @@ async def test_execute_step(context: StreamFlowContext):
             port_target=None,
             port_type="string",
             cwl_element={},
-            cwl_version=CWL_VERSION,
             context={"hints": {}, "requirements": {}},
         ),
     )

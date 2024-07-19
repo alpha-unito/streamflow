@@ -25,6 +25,7 @@ from streamflow.cwl.utils import (
     get_token_class,
     register_data,
 )
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
@@ -99,7 +100,7 @@ async def _process_file_token(
 
 
 async def build_token(
-    job: Job, token_value: Any, cwl_version, streamflow_context: StreamFlowContext
+    job: Job, token_value: Any, cwl_version: str, streamflow_context: StreamFlowContext
 ) -> Token:
     if isinstance(token_value, MutableSequence):
         return ListToken(
@@ -373,42 +374,11 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
 
 
 class CWLInputInjectorStep(InputInjectorStep):
-    def __init__(
-        self, name: str, workflow: Workflow, job_port: JobPort, cwl_version: str
-    ):
-        super().__init__(name, workflow, job_port)
-        self.cwl_version: str = cwl_version
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> CWLInputInjectorStep:
-        params = json.loads(row["params"])
-        return cls(
-            name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
-            ),
-            cwl_version=params["cwl_version"],
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"cwl_version": self.cwl_version},
-        }
-
     async def process_input(self, job: Job, token_value: Any) -> Token:
         return await build_token(
             job=job,
             token_value=token_value,
-            cwl_version=self.cwl_version,
+            cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
             streamflow_context=self.workflow.context,
         )
 
@@ -436,15 +406,9 @@ class CWLLoopOutputLastStep(LoopOutputStep):
 
 class CWLTransferStep(TransferStep):
     def __init__(
-        self,
-        name: str,
-        workflow: Workflow,
-        job_port: JobPort,
-        cwl_version: str,
-        writable: bool = False,
+        self, name: str, workflow: Workflow, job_port: JobPort, writable: bool = False
     ):
         super().__init__(name, workflow, job_port)
-        self.cwl_version: str = cwl_version
         self.writable: bool = writable
 
     @classmethod
@@ -461,7 +425,6 @@ class CWLTransferStep(TransferStep):
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])
             ),
-            cwl_version=params["cwl_version"],
             writable=params["writable"],
         )
         return step
@@ -471,7 +434,7 @@ class CWLTransferStep(TransferStep):
     ) -> MutableMapping[str, Any]:
         return {
             **await super()._save_additional_params(context),
-            **{"cwl_version": self.cwl_version, "writable": self.writable},
+            **{"writable": self.writable},
         }
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
@@ -659,7 +622,7 @@ class CWLTransferStep(TransferStep):
             new_token_value = await utils.get_file_token(
                 context=self.workflow.context,
                 connector=dst_connector,
-                cwl_version=self.cwl_version,
+                cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 locations=dst_locations,
                 token_class=token_class,
                 filepath=filepath,

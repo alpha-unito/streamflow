@@ -726,7 +726,7 @@ async def test_cwl_loop_conditional_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_transfer_step(context: StreamFlowContext):
+async def test_cwl_transfer_step(context: StreamFlowContext):
     """Test saving and loading CWLTransferStep from database"""
     workflow = CWLWorkflow(
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
@@ -738,6 +738,7 @@ async def test_transfer_step(context: StreamFlowContext):
         cls=CWLTransferStep,
         name=posixpath.join(utils.random_name(), "__transfer__", port.name),
         job_port=port,
+        writable=True,
     )
     await save_load_and_test(step, context)
 

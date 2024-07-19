@@ -188,7 +188,6 @@ def _create_command_output_processor_base(
     port_target: Target | None,
     port_type: Any,
     cwl_element: MutableMapping[str, Any],
-    cwl_version: str,
     context: MutableMapping[str, Any],
     optional: bool = False,
 ) -> CWLCommandOutputProcessor:
@@ -206,7 +205,6 @@ def _create_command_output_processor_base(
         return CWLCommandOutputProcessor(
             name=port_name,
             workflow=workflow,
-            cwl_version=cwl_version,
             target=port_target,
             token_type=port_type[0] if len(port_type) == 1 else port_type,
             expression_lib=expression_lib,
@@ -231,7 +229,6 @@ def _create_command_output_processor_base(
         return CWLCommandOutputProcessor(
             name=port_name,
             workflow=workflow,
-            cwl_version=cwl_version,
             target=port_target,
             token_type=port_type[0] if len(port_type) == 1 else port_type,
             expression_lib=expression_lib,
@@ -256,7 +253,6 @@ def _create_command_output_processor(
     port_type: Any,
     cwl_element: MutableMapping[str, Any],
     cwl_name_prefix: str,
-    cwl_version: str,
     schema_def_types: MutableMapping[str, Any],
     context: MutableMapping[str, Any],
     optional: bool = False,
@@ -275,7 +271,6 @@ def _create_command_output_processor(
                         port_type=port_type["items"],
                         cwl_element=cwl_element,
                         cwl_name_prefix=cwl_name_prefix,
-                        cwl_version=cwl_version,
                         schema_def_types=schema_def_types,
                         context=context,
                         optional=True,
@@ -295,7 +290,6 @@ def _create_command_output_processor(
                 return CWLCommandOutputProcessor(
                     name=port_name,
                     workflow=workflow,
-                    cwl_version=cwl_version,
                     target=port_target,
                     token_type=port_type["type"],
                     enum_symbols=[
@@ -335,7 +329,6 @@ def _create_command_output_processor(
                                     "", record_name_prefix, port_type["name"]
                                 ),
                             ),
-                            cwl_version=cwl_version,
                             schema_def_types=schema_def_types,
                             context=context,
                         )
@@ -367,7 +360,6 @@ def _create_command_output_processor(
                 port_type=types[0],
                 cwl_element=cwl_element,
                 cwl_name_prefix=cwl_name_prefix,
-                cwl_version=cwl_version,
                 schema_def_types=schema_def_types,
                 context=context,
                 optional=optional,
@@ -389,7 +381,6 @@ def _create_command_output_processor(
                         port_type=port_type,
                         cwl_element=cwl_element,
                         cwl_name_prefix=cwl_name_prefix,
-                        cwl_version=cwl_version,
                         schema_def_types=schema_def_types,
                         context=context,
                         optional=optional,
@@ -406,7 +397,6 @@ def _create_command_output_processor(
                         port_target=port_target,
                         port_type=simple_types,
                         cwl_element=cwl_element,
-                        cwl_version=cwl_version,
                         context=context,
                         optional=optional,
                     )
@@ -425,7 +415,6 @@ def _create_command_output_processor(
             port_type=schema_def_types[port_type],
             cwl_element=cwl_element,
             cwl_name_prefix=cwl_name_prefix,
-            cwl_version=cwl_version,
             schema_def_types=schema_def_types,
             context=context,
             optional=optional,
@@ -438,7 +427,6 @@ def _create_command_output_processor(
             port_target=port_target,
             port_type=port_type,
             cwl_element=cwl_element,
-            cwl_version=cwl_version,
             context=context,
             optional=optional,
         )
@@ -600,7 +588,6 @@ def _create_token_processor(
     schema_def_types: MutableMapping[str, Any],
     format_graph: Graph,
     context: MutableMapping[str, Any],
-    cwl_version: str,
     optional: bool = False,
     default_required_sf: bool = True,
     check_type: bool = True,
@@ -620,7 +607,6 @@ def _create_token_processor(
                         port_type=port_type["items"],
                         cwl_element=cwl_element,
                         cwl_name_prefix=cwl_name_prefix,
-                        cwl_version=cwl_version,
                         schema_def_types=schema_def_types,
                         format_graph=format_graph,
                         context=context,
@@ -646,7 +632,6 @@ def _create_token_processor(
                     workflow=workflow,
                     token_type=port_type["type"],
                     check_type=check_type,
-                    cwl_version=cwl_version,
                     enum_symbols=[
                         posixpath.relpath(
                             utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
@@ -679,7 +664,6 @@ def _create_token_processor(
                                     "", record_name_prefix, port_type["name"]
                                 ),
                             ),
-                            cwl_version=cwl_version,
                             schema_def_types=schema_def_types,
                             format_graph=format_graph,
                             context=context,
@@ -712,7 +696,6 @@ def _create_token_processor(
                 port_type=types[0],
                 cwl_element=cwl_element,
                 cwl_name_prefix=cwl_name_prefix,
-                cwl_version=cwl_version,
                 schema_def_types=schema_def_types,
                 format_graph=format_graph,
                 context=context,
@@ -733,7 +716,6 @@ def _create_token_processor(
                         port_type=port_type,
                         cwl_element=cwl_element,
                         cwl_name_prefix=cwl_name_prefix,
-                        cwl_version=cwl_version,
                         schema_def_types=schema_def_types,
                         format_graph=format_graph,
                         context=context,
@@ -753,7 +735,6 @@ def _create_token_processor(
             port_type=schema_def_types[port_type],
             cwl_element=cwl_element,
             cwl_name_prefix=cwl_name_prefix,
-            cwl_version=cwl_version,
             schema_def_types=schema_def_types,
             format_graph=format_graph,
             context=context,
@@ -774,7 +755,6 @@ def _create_token_processor(
                 workflow=workflow,
                 token_type=port_type,
                 check_type=check_type,
-                cwl_version=cwl_version,
                 expression_lib=expression_lib,
                 file_format=cwl_element.get("format"),
                 format_graph=format_graph,
@@ -808,7 +788,6 @@ def _create_token_processor(
                 workflow=workflow,
                 token_type=port_type,
                 check_type=check_type,
-                cwl_version=cwl_version,
                 expression_lib=expression_lib,
                 full_js=full_js,
                 load_contents=cwl_element.get(
@@ -830,7 +809,6 @@ def _create_token_transformer(
     workflow: Workflow,
     cwl_element: MutableMapping[str, Any],
     cwl_name_prefix: str,
-    cwl_version: str,
     schema_def_types: MutableMapping[str, Any],
     format_graph: Graph,
     context: MutableMapping[str, Any],
@@ -847,7 +825,6 @@ def _create_token_transformer(
             port_type=cwl_element["type"],
             cwl_element=cwl_element,
             cwl_name_prefix=cwl_name_prefix,
-            cwl_version=cwl_version,
             schema_def_types=schema_def_types,
             format_graph=format_graph,
             context=context,
@@ -1469,7 +1446,6 @@ class CWLTranslator:
             cls=CWLInputInjectorStep,
             name=global_name + "-injector",
             job_port=schedule_step.get_output_port(),
-            cwl_version=self.loading_context.metadata["cwlVersion"],
         )
         # Create an input port and inject values
         input_port = workflow.create_port()
@@ -1671,7 +1647,6 @@ class CWLTranslator:
                 workflow=workflow,
                 cwl_element=element_input,
                 cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
-                cwl_version=self.loading_context.metadata["cwlVersion"],
                 schema_def_types=schema_def_types,
                 format_graph=self.loading_context.loader.graph,
                 context=context,
@@ -1684,7 +1659,6 @@ class CWLTranslator:
                 cls=CWLTransferStep,
                 name=posixpath.join(name_prefix, "__transfer__", port_name),
                 job_port=schedule_step.get_output_port(),
-                cwl_version=self.loading_context.metadata["cwlVersion"],
             )
             transfer_step.add_input_port(port_name, token_transformer.get_output_port())
             transfer_step.add_output_port(port_name, workflow.create_port())
@@ -1757,7 +1731,6 @@ class CWLTranslator:
                     port_type=port_type,
                     cwl_element=element_output,
                     cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
-                    cwl_version=self.loading_context.metadata["cwlVersion"],
                     schema_def_types=schema_def_types,
                     context=context,
                 ),
@@ -1830,7 +1803,6 @@ class CWLTranslator:
                 workflow=workflow,
                 cwl_element=element_input,
                 cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
-                cwl_version=self.loading_context.metadata["cwlVersion"],
                 schema_def_types=schema_def_types,
                 format_graph=self.loading_context.loader.graph,
                 context=context,
@@ -2530,7 +2502,6 @@ class CWLTranslator:
                     port_type="Any",
                     cwl_element=element_input,
                     cwl_name_prefix=posixpath.join(cwl_step_name, port_name),
-                    cwl_version=self.loading_context.metadata["cwlVersion"],
                     schema_def_types=schema_def_types,
                     format_graph=self.loading_context.loader.graph,
                     context=context,
@@ -2731,7 +2702,6 @@ class CWLTranslator:
                             port_type=cwl_elements[output_name]["type"],
                             cwl_element=cwl_elements[output_name],
                             cwl_name_prefix=posixpath.join(cwl_root_prefix, port_name),
-                            cwl_version=self.loading_context.metadata["cwlVersion"],
                             schema_def_types=_get_schema_def_types(requirements),
                             format_graph=self.loading_context.loader.graph,
                             context=context,
@@ -2778,7 +2748,6 @@ class CWLTranslator:
                         cls=CWLTransferStep,
                         name=f"{output_name}-collector",
                         job_port=schedule_step.get_output_port(),
-                        cwl_version=self.loading_context.metadata["cwlVersion"],
                         writable=True,
                     )
                     transfer_step.add_input_port(

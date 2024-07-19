@@ -44,7 +44,6 @@ from streamflow.workflow.token import (
     ListToken,
     TerminationToken,
 )
-from tests.conftest import CWL_VERSION
 from tests.test_provenance import _general_test, _verify_dependency_tokens, _put_tokens
 from tests.utils.workflow import (
     create_workflow,
@@ -207,7 +206,6 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=step_name,
                 workflow=workflow,
-                cwl_version=CWL_VERSION,
             ),
         },
         token_list=token_list,
@@ -241,7 +239,6 @@ async def test_value_from_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=in_port.name,
                 workflow=workflow,
-                cwl_version=CWL_VERSION,
             ),
             "port_name": in_port.name,
             "full_js": True,
@@ -491,7 +488,7 @@ async def test_cwl_transfer_step(context: StreamFlowContext):
         kwargs_step={
             "name": posixpath.join(utils.random_name(), "__transfer__", port_name),
             "job_port": schedule_step.get_output_port(),
-            "cwl_version": CWL_VERSION,
+            "writable": True,
         },
         token_list=token_list,
         port_name=port_name,
@@ -524,7 +521,6 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
         kwargs_step={
             "name": posixpath.join(utils.random_name(), "-injector"),
             "job_port": schedule_step.get_output_port(),
-            "cwl_version": CWL_VERSION,
         },
         token_list=token_list,
     )
@@ -620,7 +616,6 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         processor=CWLTokenProcessor(
             name=in_port.name,
             workflow=workflow,
-            cwl_version=CWL_VERSION,
         ),
         port_name=port_name,
         full_js=True,

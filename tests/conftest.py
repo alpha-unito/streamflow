@@ -20,8 +20,6 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
 from tests.utils.deployment import get_deployment_config, ReverseTargetsBindingFilter
 
-CWL_VERSION = "v1.2"
-
 
 def csvtype(choices):
     """Return a function that splits and checks comma-separated values."""

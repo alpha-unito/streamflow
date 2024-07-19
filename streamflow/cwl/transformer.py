@@ -13,8 +13,8 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Port, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
-from streamflow.cwl.processor import CWLTokenProcessor
 from streamflow.cwl.step import build_token
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.token import ListToken
 from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
@@ -392,7 +392,7 @@ class ValueFromTransformer(ManyToOneTransformer):
                     self.name
                 ),
                 token_value=token_value,
-                cwl_version=cast(CWLTokenProcessor, self.processor).cwl_version,
+                cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 streamflow_context=self.workflow.context,
             )
         }

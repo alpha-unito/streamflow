@@ -20,7 +20,7 @@ from streamflow.workflow.step import (
     GatherStep,
     ScatterStep,
 )
-from tests.conftest import are_equals, CWL_VERSION
+from tests.conftest import are_equals
 from tests.utils.workflow import (
     create_workflow,
     create_schedule_step,
@@ -207,7 +207,6 @@ async def test_execute_step(context: StreamFlowContext):
             port_target=None,
             port_type="string",
             cwl_element={},
-            cwl_version=CWL_VERSION,
             context={"hints": {}, "requirements": {}},
         ),
     )
@@ -350,7 +349,6 @@ async def test_workflow(context: StreamFlowContext):
             port_target=None,
             port_type="string",
             cwl_element={},
-            cwl_version=CWL_VERSION,
             context={"hints": {}, "requirements": {}},
         ),
     )
