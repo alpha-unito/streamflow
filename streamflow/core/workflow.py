@@ -494,18 +494,27 @@ class Workflow(PersistableEntity):
     def __init__(
         self,
         context: StreamFlowContext,
-        type: str,
         config: MutableMapping[str, Any],
         name: str = None,
     ):
         super().__init__()
         self.context: StreamFlowContext = context
-        self.type: str = type
         self.config: MutableMapping[str, Any] = config
         self.name: str = name if name is not None else str(uuid.uuid4())
         self.output_ports: MutableMapping[str, str] = {}
         self.ports: MutableMapping[str, Port] = {}
         self.steps: MutableMapping[str, Step] = {}
+        self.type: str | None = None
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Workflow:
+        params = json.loads(row["params"])
+        return cls(context=context, config=params["config"], name=row["name"])
 
     async def _save_additional_params(
         self, context: StreamFlowContext
@@ -540,12 +549,11 @@ class Workflow(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Workflow:
         row = await context.database.get_workflow(persistent_id)
-        params = json.loads(row["params"])
-        workflow = cls(
-            context=context, type=row["type"], config=params["config"], name=row["name"]
-        )
+        type = cast(Type[Workflow], utils.get_class_from_name(row["type"]))
+        workflow = await type._load(context, row, loading_context)
         loading_context.add_workflow(persistent_id, workflow)
         rows = await context.database.get_workflow_ports(persistent_id)
+        params = json.loads(row["params"])
         workflow.ports = {
             r["name"]: v
             for r, v in zip(
@@ -585,7 +593,7 @@ class Workflow(PersistableEntity):
                     name=self.name,
                     params=await self._save_additional_params(context),
                     status=Status.WAITING.value,
-                    type=self.type,
+                    type=type(self),
                 )
         await asyncio.gather(
             *(asyncio.create_task(port.save(context)) for port in self.ports.values())

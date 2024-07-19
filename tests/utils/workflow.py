@@ -7,6 +7,7 @@ from typing import MutableSequence, TYPE_CHECKING
 from streamflow.core import utils
 from streamflow.core.deployment import Target
 from streamflow.core.config import BindingConfig
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import (
     DotProductCombinator,
     CartesianProductCombinator,
@@ -19,6 +20,8 @@ from tests.utils.deployment import get_docker_deployment_config
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
+
+CWL_VERSION = "v1.2"
 
 
 def create_deploy_step(workflow, deployment_config=None):
@@ -62,11 +65,19 @@ def create_schedule_step(
 
 
 async def create_workflow(
-    context: StreamFlowContext, num_port: int = 2
+    context: StreamFlowContext,
+    num_port: int = 2,
+    type: str = "cwl",
 ) -> tuple[Workflow, tuple[Port, ...]]:
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    if type == "cwl":
+        workflow = CWLWorkflow(
+            context=context,
+            name=utils.random_name(),
+            config={},
+            cwl_version=CWL_VERSION,
+        )
+    else:
+        workflow = Workflow(context=context, name=utils.random_name(), config={})
     ports = []
     for _ in range(num_port):
         ports.append(workflow.create_port())

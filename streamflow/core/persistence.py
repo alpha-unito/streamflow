@@ -155,7 +155,11 @@ class Database(SchemaEntity):
 
     @abstractmethod
     async def add_workflow(
-        self, name: str, params: MutableMapping[str, Any], status: int, type: str
+        self,
+        name: str,
+        params: MutableMapping[str, Any],
+        status: int,
+        type: type[Workflow],
     ) -> int: ...
 
     @abstractmethod

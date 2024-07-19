@@ -38,18 +38,14 @@ from tests.utils.workflow import create_workflow
 @pytest.mark.asyncio
 async def test_workflow(context: StreamFlowContext):
     """Test saving and loading Workflow from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await save_load_and_test(workflow, context)
 
 
 @pytest.mark.asyncio
 async def test_port(context: StreamFlowContext):
     """Test saving and loading Port from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
     port = workflow.create_port()
     await save_load_and_test(port, context)
@@ -58,9 +54,7 @@ async def test_port(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_job_port(context: StreamFlowContext):
     """Test saving and loading JobPort from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
     port = workflow.create_port(JobPort)
     await save_load_and_test(port, context)
@@ -69,9 +63,7 @@ async def test_job_port(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_connector_port(context: StreamFlowContext):
     """Test saving and loading ConnectorPort from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
     port = workflow.create_port(ConnectorPort)
     await save_load_and_test(port, context)
@@ -80,9 +72,7 @@ async def test_connector_port(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_combinator_step(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with CartesianProductCombinator from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
     name = utils.random_name()
     step = workflow.create_step(
@@ -98,9 +88,7 @@ async def test_combinator_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_loop_combinator_step(context: StreamFlowContext):
     """Test saving and loading LoopCombinatorStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
 
     name = utils.random_name()
@@ -117,9 +105,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_deploy_step(context: StreamFlowContext):
     """Test saving and loading DeployStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     connector_port = workflow.create_port(cls=ConnectorPort)
     await workflow.save(context)
 
@@ -169,9 +155,7 @@ async def test_schedule_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_execute_step(context: StreamFlowContext):
     """Test saving and loading ExecuteStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     port = workflow.create_port()
     await workflow.save(context)
 
@@ -199,9 +183,7 @@ async def test_gather_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_scatter_step(context: StreamFlowContext):
     """Test saving and loading ScatterStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
 
     step = workflow.create_step(cls=ScatterStep, name=utils.random_name() + "-scatter")
@@ -211,9 +193,7 @@ async def test_scatter_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_dot_product_combinator(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with DotProductCombinator from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
 
     name = utils.random_name()
@@ -228,9 +208,7 @@ async def test_dot_product_combinator(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_loop_combinator(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with LoopCombinator from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
 
     name = utils.random_name()
@@ -245,9 +223,7 @@ async def test_loop_combinator(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_loop_termination_combinator(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with LoopTerminationCombinator from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
 
     name = utils.random_name()

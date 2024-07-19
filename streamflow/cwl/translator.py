@@ -97,6 +97,7 @@ from streamflow.cwl.transformer import (
     ValueFromTransformer,
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.deployment.utils import get_binding_config
 from streamflow.log_handler import logger
 from streamflow.workflow.combinator import (
@@ -2621,11 +2622,11 @@ class CWLTranslator:
             input_ports[global_name] = workflow.create_port()
 
     def translate(self) -> Workflow:
-        workflow = Workflow(
+        workflow = CWLWorkflow(
             context=self.context,
-            type="cwl",
             config=self.workflow_config.config,
             name=self.name,
+            cwl_version=self.loading_context.metadata["cwlVersion"],
         )
         # Create context
         context = _create_context()
