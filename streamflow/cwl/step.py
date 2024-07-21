@@ -15,7 +15,7 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag, random_name
-from streamflow.core.workflow import Job, Port, Token, Workflow
+from streamflow.core.workflow import Job, Port, Token
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import (
@@ -152,7 +152,7 @@ async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
 
 
 class CWLBaseConditionalStep(ConditionalStep, ABC):
-    def __init__(self, name: str, workflow: Workflow):
+    def __init__(self, name: str, workflow: CWLWorkflow):
         super().__init__(name, workflow)
         self.skip_ports: MutableMapping[str, str] = {}
 
@@ -181,7 +181,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
     def __init__(
         self,
         name: str,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         expression: str,
         expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
@@ -312,7 +312,7 @@ class CWLLoopConditionalStep(CWLConditionalStep):
 
 
 class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
-    def __init__(self, name: str, workflow: Workflow, scatter_method: str):
+    def __init__(self, name: str, workflow: CWLWorkflow, scatter_method: str):
         super().__init__(name, workflow)
         self.scatter_method: str = scatter_method
 
@@ -374,6 +374,9 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
 
 
 class CWLInputInjectorStep(InputInjectorStep):
+    def __init__(self, name: str, workflow: CWLWorkflow, job_port: JobPort):
+        super().__init__(name, workflow, job_port)
+
     async def process_input(self, job: Job, token_value: Any) -> Token:
         return await build_token(
             job=job,
@@ -406,7 +409,11 @@ class CWLLoopOutputLastStep(LoopOutputStep):
 
 class CWLTransferStep(TransferStep):
     def __init__(
-        self, name: str, workflow: Workflow, job_port: JobPort, writable: bool = False
+        self,
+        name: str,
+        workflow: CWLWorkflow,
+        job_port: JobPort,
+        writable: bool = False,
     ):
         super().__init__(name, workflow, job_port)
         self.writable: bool = writable
