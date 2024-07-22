@@ -242,15 +242,15 @@ async def test_execute_step(context: StreamFlowContext):
         processors=[CWLCommandTokenProcessor(name=in_port_name, expression=None)],
     )
     execute_step.add_output_port(
-        out_port_name,
-        out_port,
-        _create_command_output_processor_base(
-            out_port.name,
-            workflow,
-            None,
-            "string",
-            {},
-            {"hints": {}, "requirements": {}},
+        name=out_port_name,
+        port=out_port,
+        output_processor=_create_command_output_processor_base(
+            port_name=out_port.name,
+            workflow=workflow,
+            port_target=None,
+            port_type="string",
+            cwl_element={},
+            context={"hints": {}, "requirements": {}},
         ),
     )
     token_list = [Token(token_value)]

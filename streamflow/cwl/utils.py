@@ -86,9 +86,24 @@ async def _check_glob_path(
             )
 
 
+async def _get_contents(
+    connector: Connector,
+    location: ExecutionLocation,
+    path: str,
+    size: int,
+    cwl_version: str,
+):
+    if (cwl_version not in ("v1.0", "v.1.1")) and size > CONTENT_LIMIT:
+        raise WorkflowExecutionException(
+            f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB"
+        )
+    return await remotepath.head(connector, location, path, CONTENT_LIMIT)
+
+
 async def _process_secondary_file(
     context: StreamFlowContext,
     connector: Connector,
+    cwl_version: str,
     locations: MutableSequence[ExecutionLocation],
     secondary_file: Any,
     token_value: MutableMapping[str, Any],
@@ -109,6 +124,7 @@ async def _process_secondary_file(
                 return await get_file_token(
                     context=context,
                     connector=connector,
+                    cwl_version=cwl_version,
                     locations=locations,
                     token_class=get_token_class(secondary_file),
                     filepath=filepath,
@@ -149,6 +165,7 @@ async def _process_secondary_file(
                         return await get_file_token(
                             context=context,
                             connector=connector,
+                            cwl_version=cwl_version,
                             locations=locations,
                             token_class=token_class,
                             filepath=filepath,
@@ -243,6 +260,7 @@ def build_context(
 
 async def build_token_value(
     context: StreamFlowContext,
+    cwl_version: str,
     js_context: MutableMapping[str, Any],
     full_js: bool,
     expression_lib: MutableSequence[str] | None,
@@ -260,6 +278,7 @@ async def build_token_value(
                 asyncio.create_task(
                     build_token_value(
                         context=context,
+                        cwl_version=cwl_version,
                         js_context=js_context,
                         full_js=full_js,
                         expression_lib=expression_lib,
@@ -293,6 +312,7 @@ async def build_token_value(
                             get_file_token(
                                 context=context,
                                 connector=connector,
+                                cwl_version=cwl_version,
                                 locations=locations,
                                 token_class=get_token_class(sf),
                                 filepath=sf_path,
@@ -311,6 +331,7 @@ async def build_token_value(
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
+                cwl_version=cwl_version,
                 locations=locations,
                 token_class=token_class,
                 filepath=filepath,
@@ -324,6 +345,7 @@ async def build_token_value(
             if secondary_files:
                 await process_secondary_files(
                     context=context,
+                    cwl_version=cwl_version,
                     secondary_files=secondary_files,
                     sf_map=sf_map,
                     js_context=sf_context,
@@ -348,6 +370,7 @@ async def build_token_value(
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
+                cwl_version=cwl_version,
                 locations=locations,
                 token_class=token_class,
                 filepath=filepath,
@@ -373,6 +396,7 @@ async def build_token_value(
                     asyncio.create_task(
                         build_token_value(
                             context=context,
+                            cwl_version=cwl_version,
                             js_context=js_context,
                             full_js=full_js,
                             expression_lib=expression_lib,
@@ -390,6 +414,7 @@ async def build_token_value(
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
+                cwl_version=cwl_version,
                 locations=locations,
                 token_class=token_class,
                 filepath=filepath,
@@ -484,6 +509,7 @@ async def get_class_from_path(
 async def get_file_token(
     context: StreamFlowContext,
     connector: Connector,
+    cwl_version: str,
     locations: MutableSequence[ExecutionLocation],
     token_class: str,
     filepath: str,
@@ -512,12 +538,12 @@ async def get_file_token(
             ):
                 token["size"] = await remotepath.size(connector, location, real_path)
                 if load_contents:
-                    if token["size"] > CONTENT_LIMIT:
-                        raise WorkflowExecutionException(
-                            f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB"
-                        )
-                    token["contents"] = await remotepath.head(
-                        connector, location, real_path, CONTENT_LIMIT
+                    token["contents"] = await _get_contents(
+                        connector,
+                        location,
+                        real_path,
+                        token["size"],
+                        cwl_version,
                     )
                 token["checksum"] = "sha1${checksum}".format(
                     checksum=await remotepath.checksum(
@@ -531,6 +557,7 @@ async def get_file_token(
                 token["listing"] = await get_listing(
                     context=context,
                     connector=connector,
+                    cwl_version=cwl_version,
                     locations=locations,
                     dirpath=filepath,
                     load_contents=load_contents,
@@ -543,6 +570,7 @@ async def get_file_token(
 async def get_listing(
     context: StreamFlowContext,
     connector: Connector,
+    cwl_version: str,
     locations: MutableSequence[ExecutionLocation],
     dirpath: str,
     load_contents: bool,
@@ -562,6 +590,7 @@ async def get_listing(
                     get_file_token(  # nosec
                         context=context,
                         connector=connector,
+                        cwl_version=cwl_version,
                         locations=locations,
                         token_class="Directory",
                         filepath=directory,
@@ -576,6 +605,7 @@ async def get_listing(
                     get_file_token(  # nosec
                         context=context,
                         connector=connector,
+                        cwl_version=cwl_version,
                         locations=locations,
                         token_class="File",
                         filepath=file,
@@ -710,6 +740,7 @@ class LoadListing(Enum):
 
 async def process_secondary_files(
     context: StreamFlowContext,
+    cwl_version: str,
     secondary_files: MutableSequence[SecondaryFile],
     sf_map: MutableMapping[str, Any],
     js_context: MutableMapping[str, Any],
@@ -742,6 +773,7 @@ async def process_secondary_files(
                             _process_secondary_file(
                                 context=context,
                                 connector=connector,
+                                cwl_version=cwl_version,
                                 locations=locations,
                                 secondary_file=sf,
                                 token_value=token_value,
@@ -760,6 +792,7 @@ async def process_secondary_files(
                         _process_secondary_file(
                             context=context,
                             connector=connector,
+                            cwl_version=cwl_version,
                             locations=locations,
                             secondary_file=sf_value,
                             token_value=token_value,
@@ -779,6 +812,7 @@ async def process_secondary_files(
                     _process_secondary_file(
                         context=context,
                         connector=connector,
+                        cwl_version=cwl_version,
                         locations=locations,
                         secondary_file=secondary_file.pattern,
                         token_value=token_value,
@@ -988,6 +1022,7 @@ class SecondaryFile:
 async def update_file_token(
     context: StreamFlowContext,
     connector: Connector,
+    cwl_version: str,
     location: ExecutionLocation,
     token_value: MutableMapping[str, Any],
     load_contents: bool | None,
@@ -996,15 +1031,15 @@ async def update_file_token(
     filepath = get_path_from_token(token_value)
     if load_contents is not None:
         if load_contents and "contents" not in token_value:
-            if token_value["size"] > CONTENT_LIMIT:
-                raise WorkflowExecutionException(
-                    f"Cannot read contents from files larger than {round(CONTENT_LIMIT / 1024)}kB"
-                )
             token_value = {
                 **token_value,
                 **{
-                    "contents": await remotepath.head(
-                        connector, location, filepath, CONTENT_LIMIT
+                    "contents": await _get_contents(
+                        connector,
+                        location,
+                        filepath,
+                        token_value["size"],
+                        cwl_version,
                     )
                 },
             }
@@ -1024,6 +1059,7 @@ async def update_file_token(
                     "listing": await get_listing(
                         context=context,
                         connector=connector,
+                        cwl_version=cwl_version,
                         locations=[location],
                         dirpath=filepath,
                         load_contents=False,

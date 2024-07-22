@@ -488,6 +488,7 @@ async def test_cwl_transfer_step(context: StreamFlowContext):
         kwargs_step={
             "name": posixpath.join(utils.random_name(), "__transfer__", port_name),
             "job_port": schedule_step.get_output_port(),
+            "writable": True,
         },
         token_list=token_list,
         port_name=port_name,

@@ -11,9 +11,10 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
-from streamflow.core.workflow import Port, Token, TokenProcessor, Workflow
+from streamflow.core.workflow import Port, Token, TokenProcessor
 from streamflow.cwl import utils
 from streamflow.cwl.step import build_token
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.token import ListToken
 from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
@@ -54,7 +55,7 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
 
 
 class CloneTransformer(ManyToOneTransformer):
-    def __init__(self, name: str, workflow: Workflow, replicas_port: Port):
+    def __init__(self, name: str, workflow: CWLWorkflow, replicas_port: Port):
         super().__init__(name, workflow)
         self.add_input_port("__replicas__", replicas_port)
 
@@ -101,7 +102,11 @@ class CloneTransformer(ManyToOneTransformer):
 
 class CWLTokenTransformer(ManyToOneTransformer):
     def __init__(
-        self, name: str, workflow: Workflow, port_name: str, processor: TokenProcessor
+        self,
+        name: str,
+        workflow: CWLWorkflow,
+        port_name: str,
+        processor: TokenProcessor,
     ):
         super().__init__(name, workflow)
         self.port_name: str = port_name
@@ -146,7 +151,7 @@ class CWLTokenTransformer(ManyToOneTransformer):
 
 
 class DefaultTransformer(ManyToOneTransformer):
-    def __init__(self, name: str, workflow: Workflow, default_port: Port):
+    def __init__(self, name: str, workflow: CWLWorkflow, default_port: Port):
         super().__init__(name, workflow)
         self.default_port: Port = default_port
         self.default_token: Token | None = None
@@ -307,7 +312,7 @@ class ValueFromTransformer(ManyToOneTransformer):
     def __init__(
         self,
         name: str,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         port_name: str,
         processor: TokenProcessor,
         value_from: str,
@@ -385,19 +390,23 @@ class ValueFromTransformer(ManyToOneTransformer):
             full_js=self.full_js,
             expression_lib=self.expression_lib,
         )
-        token = await build_token(
-            job=await cast(JobPort, self.get_input_port("__job__")).get_job(self.name),
-            token_value=token_value,
-            streamflow_context=self.workflow.context,
-        )
-        return {output_name: token}
+        return {
+            output_name: await build_token(
+                job=await cast(JobPort, self.get_input_port("__job__")).get_job(
+                    self.name
+                ),
+                token_value=token_value,
+                cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
+                streamflow_context=self.workflow.context,
+            )
+        }
 
 
 class LoopValueFromTransformer(ValueFromTransformer):
     def __init__(
         self,
         name: str,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         port_name: str,
         processor: TokenProcessor,
         value_from: str,
