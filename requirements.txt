@@ -1,7 +1,7 @@
 aiohttp==3.9.5
 aiosqlite==0.20.0
 antlr4-python3-runtime==4.13.1
-asyncssh==2.14.2
+asyncssh==2.15.0
 bcrypt==4.2.0
 cachetools==5.4.0
 cwltool==3.1.20240708091337
