@@ -1,5 +1,5 @@
 cwltest==2.5.20240714110256
-pytest==8.3.1
+pytest==8.3.2
 pytest-asyncio==0.21.2
 pytest-cov==5.0.0
 pytest-xdist==3.6.1
