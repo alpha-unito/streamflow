@@ -213,6 +213,9 @@ def _create_command_output_processor_base(
             glob=cwl_element.get("outputBinding", {}).get(
                 "glob", cwl_element.get("path")
             ),
+            inplace_update=context["requirements"]
+            .get("InplaceUpdateRequirement", {})
+            .get("inplaceUpdate", False),
             load_contents=cwl_element.get(
                 "loadContents",
                 cwl_element.get("outputBinding", {}).get("loadContents", False),
@@ -236,6 +239,9 @@ def _create_command_output_processor_base(
             glob=cwl_element.get("outputBinding", {}).get(
                 "glob", cwl_element.get("path")
             ),
+            inplace_update=context["requirements"]
+            .get("InplaceUpdateRequirement", {})
+            .get("inplaceUpdate", False),
             load_contents=cwl_element.get(
                 "loadContents",
                 cwl_element.get("outputBinding", {}).get("loadContents", False),
@@ -301,6 +307,9 @@ def _create_command_output_processor(
                     expression_lib=expression_lib,
                     full_js=full_js,
                     optional=optional,
+                    inplace_update=context["requirements"]
+                    .get("InplaceUpdateRequirement", {})
+                    .get("inplaceUpdate", False),
                 )
             # Record type: -> ObjectCommandOutputProcessor
             elif port_type["type"] == "record":
