@@ -67,6 +67,7 @@ class SSHContext:
                         logger.warning(
                             f"Connection to {self._config.hostname} failed: {e}."
                         )
+                    self._connect_event.set()
                     raise
                 except asyncssh.Error:
                     self._connect_event.set()
@@ -185,15 +186,11 @@ class SSHContextManager:
                     == 0
                 ):
                     await self._condition.wait()
-                    self._sleeping_contexts = [
-                        t for t in self._sleeping_contexts if not t.done()
-                    ]
                 else:
                     for context in free_contexts:
                         if context.ssh_attempts > context.retries:
                             # context terminated the retries
                             continue
-                        ssh_connection = None
                         try:
                             ssh_connection = await context.get_connection()
                             self._selected_context = context
@@ -205,22 +202,26 @@ class SSHContextManager:
                                 stderr=self.stderr,
                                 encoding=self.encoding,
                             )
+                            logger.info("self._proc acquiring")
                             await self._proc.__aenter__()
+                            logger.info("self._proc return")
                             return self._proc
                         except (ConnectionError, ConnectionLost, ChannelOpenError) as e:
+                            msg = ""
+                            if isinstance(e, ChannelOpenError):
+                                msg = f"code: {e.code} - reason: {e.reason} - lang: {e.lang}"
                             logger.warning(
-                                f"Error {e}. Opening SSH session to {context.get_hostname()} "
+                                f"Error {type(e)}: {e}. {msg}. Opening SSH session to {context.get_hostname()} "
                                 f"to execute command `{self.command}`"
                             )
-                            if self._proc:
-                                await self._proc.__aexit__(None, None, None)
+                            # if self._proc:
+                            #     await self._proc.__aexit__(None, None, None)
+                            #     self._proc = None
                             context.ssh_attempts += 1
                             context.close()
-                            self._sleeping_contexts.append(
-                                asyncio.create_task(context.sleep(self._condition))
-                            )
-                            if ssh_connection:
-                                ssh_connection.close()
+                            await asyncio.sleep(context._retry_delay)
+                        finally:
+                            logger.info(f"self._proc is None: {self._proc is None}")
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         async with self._condition:
@@ -695,9 +696,19 @@ class SSHConnector(BaseConnector):
                 environment=environment,
             ) as proc:
                 result = await proc.wait(timeout=timeout)
-        logger.info(f"CMD: {command} returncode: {result.returncode}")
-        if result.returncode is None:
-            result.returncode = 9999
+        if result.returncode is None or result.returncode != 0:
+            logger.info(
+                f"CMD: {command}"
+                f"\n\tcommand: {result.command}"
+                f"\n\tenv: {result.env}"
+                f"\n\texit_signal: {result.exit_signal}"
+                f"\n\texit_status: {result.exit_status}"
+                f"\n\tstderr: {result.stderr}"
+                f"\n\tstdout: {result.stdout}"
+                f"\n\treturncode: {result.returncode}"
+            )
+            if result.returncode is None:
+                result.returncode = 9999
         return (result.stdout.strip(), result.returncode) if capture_output else None
 
     async def undeploy(self, external: bool) -> None:
