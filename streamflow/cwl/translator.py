@@ -211,6 +211,11 @@ def _create_command_output_processor_base(
                 if getattr(cwl_element, "outputBinding", None)
                 else None
             ),
+            inplace_update=(
+                requirements["InplaceUpdateRequirement"].inplaceUpdate
+                if "InplaceUpdateRequirement" in requirements
+                else False
+            ),
             load_contents=_get_load_contents(cwl_element),
             load_listing=_get_load_listing(cwl_element, context),
             optional=optional,
@@ -237,6 +242,11 @@ def _create_command_output_processor_base(
                 cwl_element.outputBinding.glob
                 if getattr(cwl_element, "outputBinding", None)
                 else None
+            ),
+            inplace_update=(
+                requirements["InplaceUpdateRequirement"].inplaceUpdate
+                if "InplaceUpdateRequirement" in requirements
+                else False
             ),
             load_contents=_get_load_contents(cwl_element),
             load_listing=_get_load_listing(cwl_element, context),
@@ -316,6 +326,11 @@ def _create_command_output_processor(
             ],
             expression_lib=expression_lib,
             full_js=full_js,
+            inplace_update=(
+                requirements["InplaceUpdateRequirement"].inplaceUpdate
+                if "InplaceUpdateRequirement" in requirements
+                else False
+            ),
             optional=optional,
         )
     # Record type: -> ObjectCommandOutputProcessor

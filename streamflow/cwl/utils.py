@@ -246,7 +246,14 @@ async def _register_path(
         if real_path != path:
             if inplace_update:
                 for data_loc in context.data_manager.get_data_locations(path=real_path):
-                    if data_loc.deployment != connector.deployment_name:
+                    if (
+                        data_loc.deployment != connector.deployment_name
+                        or data_loc.data_type == DataType.SYMBOLIC_LINK
+                        or (
+                            data_loc.data_type == DataType.PRIMARY
+                            and data_loc.path != path
+                        )
+                    ):
                         data_loc.data_type = DataType.INVALID
             if data_locations := context.data_manager.get_data_locations(
                 path=str(real_path), deployment=connector.deployment_name
