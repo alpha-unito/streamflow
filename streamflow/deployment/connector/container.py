@@ -394,7 +394,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     )
                 )
             # Perform a standard remote-to-remote copy for unbound locations
-            await BaseConnector._copy_remote_to_remote(
+            return await BaseConnector._copy_remote_to_remote(
                 self,
                 src=src,
                 dst=dst,
@@ -405,7 +405,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
             )
         # Otherwise, perform a standard remote-to-remote copy
         else:
-            await BaseConnector._copy_remote_to_remote(
+            return await BaseConnector._copy_remote_to_remote(
                 self,
                 src=src,
                 dst=dst,
