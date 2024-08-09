@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 from abc import ABC
@@ -19,7 +20,11 @@ from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.template import CommandTemplateMap
-from streamflow.log_handler import logger
+from streamflow.log_handler import logger, defaultStreamHandler
+
+asyncssh.logging.logger.setLevel(logging.DEBUG)
+asyncssh.logging.logger.set_debug_level(2)
+asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
 
 
 def _parse_hostname(hostname):
@@ -45,36 +50,25 @@ class SSHContext:
         self._max_concurrent_sessions: int = max_concurrent_sessions
         self._ssh_connection: asyncssh.SSHClientConnection | None = None
         self._connecting = False
-        self._retries = retries
-        self._retry_delay = retry_delay
         self._connect_event: asyncio.Event = asyncio.Event()
+        self.retries: int = retries
+        self.retry_delay: int = retry_delay
+        self.ssh_attempts: int = 0
 
     async def get_connection(self) -> asyncssh.SSHClientConnection:
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
-                for i in range(1, self._retries + 1):
-                    try:
-                        self._ssh_connection = await self._get_connection(self._config)
-                        break
-                    except (ConnectionError, ConnectionLost) as e:
-                        if i == self._retries:
-                            logger.exception(
-                                f"Impossible to connect to {self._config.hostname}: {e}"
-                            )
-                            self._connect_event.set()
-                            self.close()
-                            raise
-                        if logger.isEnabledFor(logging.WARNING):
-                            logger.warning(
-                                f"Connection to {self._config.hostname} failed: {e}. "
-                                f"Waiting {self._retry_delay} seconds for the next attempt."
-                            )
-                    except asyncssh.Error:
-                        self._connect_event.set()
-                        self.close()
-                        raise
-                    await asyncio.sleep(self._retry_delay)
+                try:
+                    self._ssh_connection = await self._get_connection(self._config)
+                except (ConnectionError, ConnectionLost, asyncssh.Error) as e:
+                    if logger.isEnabledFor(logging.WARNING):
+                        logger.warning(
+                            f"Connection to {self._config.hostname} failed: {e}."
+                        )
+                    self._connect_event.set()
+                    self.close()
+                    raise
                 self._connect_event.set()
             else:
                 await self._connect_event.wait()
@@ -136,10 +130,10 @@ class SSHContext:
             self._connect_event.clear()
 
     def full(self) -> bool:
-        if self._ssh_connection:
-            return len(self._ssh_connection._channels) >= self._max_concurrent_sessions
-        else:
-            return False
+        return (
+            self._ssh_connection
+            and len(self._ssh_connection._channels) >= self._max_concurrent_sessions
+        )
 
 
 class SSHContextManager:
@@ -163,15 +157,25 @@ class SSHContextManager:
         self._condition: asyncio.Condition = condition
         self._contexts: MutableSequence[SSHContext] = contexts
         self._selected_context: SSHContext | None = None
+        self._sleeping_contexts: MutableSequence[asyncio.Task] = []
         self._proc: asyncssh.SSHClientProcess | None = None
 
     async def __aenter__(self) -> asyncssh.SSHClientProcess:
         async with self._condition:
             while True:
-                for context in self._contexts:
-                    if not context.full():
-                        ssh_connection = await context.get_connection()
+                if (
+                    len(free_contexts := [c for c in self._contexts if not c.full()])
+                    == 0
+                ):
+                    await self._condition.wait()
+                else:
+                    for context in free_contexts:
+                        if context.ssh_attempts >= context.retries:
+                            raise WorkflowExecutionException(
+                                "No more connection attempts available"
+                            )
                         try:
+                            ssh_connection = await context.get_connection()
                             self._selected_context = context
                             self._proc = await ssh_connection.create_process(
                                 self.command,
@@ -183,12 +187,26 @@ class SSHContextManager:
                             )
                             await self._proc.__aenter__()
                             return self._proc
-                        except ChannelOpenError as coe:
-                            logger.warning(
-                                f"Error opening SSH session to {context.get_hostname()} "
-                                f"to execute command `{self.command}`: [{coe.code}] {coe.reason}"
-                            )
-                await self._condition.wait()
+                        except (
+                            ConnectionError,
+                            ConnectionLost,
+                            ChannelOpenError,
+                        ) as coe:
+                            if isinstance(coe, ChannelOpenError):
+                                logger.warning(
+                                    f"Error opening SSH session to {context.get_hostname()} "
+                                    f"to execute command `{self.command}`: [{coe.code}] {coe.reason}"
+                                )
+                            self._selected_context = None
+                            if self._proc:
+                                await self._proc.__aexit__(None, None, None)
+                                self._proc = None
+                            context.close()
+                            context.ssh_attempts += 1
+                            logger.warning(f"Attempt {context.ssh_attempts}")
+                        except Exception as e:
+                            logger.warning(f"Fatal error: {e}")
+                            raise
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         async with self._condition:
@@ -726,22 +744,29 @@ class SSHConnector(BaseConnector):
                 workdir=workdir,
             )
             command = utils.encode_command(command)
-            async with self._get_ssh_client_process(
-                location=location.name,
-                command=command,
-                stderr=asyncio.subprocess.STDOUT,
-                environment=environment,
-            ) as proc:
-                result = await proc.wait(timeout=timeout)
-        else:
-            async with self._get_ssh_client_process(
-                location=location.name,
-                command=command,
-                stderr=asyncio.subprocess.STDOUT,
-                environment=environment,
-            ) as proc:
-                result = await proc.wait(timeout=timeout)
-        return result.stdout.strip(), result.returncode if capture_output else None
+        async with self._get_ssh_client_process(
+            location=location.name,
+            command=command,
+            stderr=asyncio.subprocess.STDOUT,
+            environment=environment,
+        ) as proc:
+            result = await proc.wait(timeout=timeout)
+        if result.returncode is None or result.returncode not in (0, 1):
+            logger.info(
+                f"CMD: {command}"
+                f"\n\tcommand: {result.command}"
+                f"\n\tenv: {result.env}"
+                f"\n\texit_signal: {result.exit_signal}"
+                f"\n\texit_status: {result.exit_status}"
+                f"\n\tstderr: {result.stderr}"
+                f"\n\tstdout: {result.stdout}"
+                f"\n\treturncode: {result.returncode}"
+            )
+        if result.returncode is None:
+            raise WorkflowExecutionException(
+                f"Connection failed executing command {base64.b64decode(command).decode('utf-8')}"
+            )
+        return (result.stdout.strip(), result.returncode) if capture_output else None
 
     async def undeploy(self, external: bool) -> None:
         for ssh_context in self.ssh_context_factories.values():
