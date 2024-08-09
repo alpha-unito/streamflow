@@ -20,7 +20,6 @@ import cwltool.context
 import cwltool.docker_id
 import cwltool.process
 import cwltool.workflow
-from rdflib import Graph
 from ruamel.yaml.comments import CommentedSeq
 
 from streamflow.config.config import WorkflowConfig
@@ -586,7 +585,7 @@ def _create_token_processor(
     cwl_element: MutableMapping[str, Any],
     cwl_name_prefix: str,
     schema_def_types: MutableMapping[str, Any],
-    format_graph: Graph,
+    format_graph: bool,
     context: MutableMapping[str, Any],
     optional: bool = False,
     default_required_sf: bool = True,
@@ -810,7 +809,7 @@ def _create_token_transformer(
     cwl_element: MutableMapping[str, Any],
     cwl_name_prefix: str,
     schema_def_types: MutableMapping[str, Any],
-    format_graph: Graph,
+    format_graph: bool,
     context: MutableMapping[str, Any],
     check_type: bool = True,
     only_propagate_secondary_files: bool = True,
@@ -1555,7 +1554,7 @@ class CWLTranslator:
 
     def _translate_command_line_tool(
         self,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         cwl_element: (
             cwltool.command_line_tool.CommandLineTool
             | cwltool.command_line_tool.ExpressionTool
@@ -1640,6 +1639,9 @@ class CWLTranslator:
                 global_name=global_name,
                 port_name=port_name,
             )
+            # Add the `Graph` in the workflow
+            if workflow.format_graph is None:
+                workflow.format_graph = self.loading_context.loader.graph
             # Add a token transformer step to process inputs
             token_transformer = _create_token_transformer(
                 name=global_name + "-token-transformer",
@@ -1648,7 +1650,7 @@ class CWLTranslator:
                 cwl_element=element_input,
                 cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
                 schema_def_types=schema_def_types,
-                format_graph=self.loading_context.loader.graph,
+                format_graph=True,
                 context=context,
                 only_propagate_secondary_files=(name_prefix != "/"),
             )
@@ -1765,7 +1767,7 @@ class CWLTranslator:
 
     def _translate_workflow(
         self,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         cwl_element: cwltool.workflow.Workflow,
         context: MutableMapping[str, Any],
         name_prefix: str,
@@ -1796,6 +1798,9 @@ class CWLTranslator:
                 global_name=global_name,
                 port_name=port_name,
             )
+            # Add the `Graph` in the workflow
+            if workflow.format_graph is None:
+                workflow.format_graph = self.loading_context.loader.graph
             # Create token transformer step
             token_transformers[global_name] = _create_token_transformer(
                 name=global_name + "-token-transformer",
@@ -1804,7 +1809,7 @@ class CWLTranslator:
                 cwl_element=element_input,
                 cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
                 schema_def_types=schema_def_types,
-                format_graph=self.loading_context.loader.graph,
+                format_graph=True,
                 context=context,
                 only_propagate_secondary_files=(name_prefix != "/"),
             )
@@ -2691,6 +2696,9 @@ class CWLTranslator:
                         full_js=full_js,
                         expression_lib=expression_lib,
                     )
+                    # Add the `Graph` in the workflow
+                    if workflow.format_graph is None:
+                        workflow.format_graph = self.loading_context.loader.graph
                     # Build transformer step
                     transformer_step = workflow.create_step(
                         cls=CWLTokenTransformer,
@@ -2703,7 +2711,7 @@ class CWLTranslator:
                             cwl_element=cwl_elements[output_name],
                             cwl_name_prefix=posixpath.join(cwl_root_prefix, port_name),
                             schema_def_types=_get_schema_def_types(requirements),
-                            format_graph=self.loading_context.loader.graph,
+                            format_graph=True,
                             context=context,
                             check_type=False,
                             default_required_sf=False,
