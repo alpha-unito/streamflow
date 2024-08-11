@@ -21,10 +21,11 @@ class CWLWorkflow(Workflow):
         cwl_version: str,
         config: MutableMapping[str, Any],
         name: str = None,
+        format_graph: Graph | None = None,
     ):
         super().__init__(context, config, name)
         self.cwl_version: str = cwl_version
-        self.format_graph: Graph | None = None
+        self.format_graph: Graph | None = format_graph
         self.type: str | None = "cwl"
 
     async def _save_additional_params(
@@ -50,15 +51,14 @@ class CWLWorkflow(Workflow):
         loading_context: DatabaseLoadingContext,
     ) -> CWLWorkflow:
         params = json.loads(row["params"])
-        workflow = cls(
+        return cls(
             context=context,
             config=params["config"],
             cwl_version=params["cwl_version"],
             name=row["name"],
+            format_graph=(
+                Graph().parse(data=params["format_graph"])
+                if params["format_graph"] is not None
+                else None
+            ),
         )
-        workflow.format_graph = (
-            Graph().parse(data=params["format_graph"])
-            if params["format_graph"] is not None
-            else None
-        )
-        return workflow

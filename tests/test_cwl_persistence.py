@@ -102,7 +102,6 @@ def _create_cwl_token_processor(name: str, workflow: CWLWorkflow) -> CWLTokenPro
         enum_symbols=["path1", "path2"],
         expression_lib=["expr_lib1", "expr_lib2"],
         secondary_files=[SecondaryFile("file1", True)],
-        format_graph=workflow.format_graph is not None,
         load_listing=LoadListing.no_listing,
     )
 

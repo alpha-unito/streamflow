@@ -116,7 +116,6 @@ class CWLTokenProcessor(TokenProcessor):
         enum_symbols: MutableSequence[str] | None = None,
         expression_lib: MutableSequence[str] | None = None,
         file_format: str | None = None,
-        format_graph: bool = False,
         full_js: bool = False,
         load_contents: bool | None = None,
         load_listing: LoadListing | None = None,
@@ -131,7 +130,6 @@ class CWLTokenProcessor(TokenProcessor):
         self.enum_symbols: MutableSequence[str] | None = enum_symbols
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
-        self.format_graph: bool = format_graph
         self.full_js: bool = full_js
         self.load_contents: bool | None = load_contents
         self.load_listing: LoadListing | None = load_listing
@@ -155,7 +153,6 @@ class CWLTokenProcessor(TokenProcessor):
             enum_symbols=row["enum_symbols"],
             expression_lib=row["expression_lib"],
             file_format=row["file_format"],
-            format_graph=row["format_graph"],
             full_js=row["full_js"],
             load_contents=row["load_contents"],
             load_listing=(
@@ -192,11 +189,7 @@ class CWLTokenProcessor(TokenProcessor):
                 cwl_utils.file_formats.check_format(
                     token_value,
                     input_formats,
-                    (
-                        cast(CWLWorkflow, self.workflow).format_graph
-                        if self.format_graph
-                        else None
-                    ),
+                    cast(CWLWorkflow, self.workflow).format_graph,
                 )
             except ValidationException as e:
                 raise WorkflowExecutionException(e.message) from e
@@ -303,7 +296,6 @@ class CWLTokenProcessor(TokenProcessor):
                 "enum_symbols": self.enum_symbols,
                 "expression_lib": self.expression_lib,
                 "file_format": self.file_format,
-                "format_graph": self.format_graph,
                 "full_js": self.full_js,
                 "load_contents": self.load_contents,
                 "load_listing": self.load_listing.value if self.load_listing else None,
