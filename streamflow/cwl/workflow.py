@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+
+from rdflib import Graph
+
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Workflow
 
@@ -18,9 +21,11 @@ class CWLWorkflow(Workflow):
         cwl_version: str,
         config: MutableMapping[str, Any],
         name: str = None,
+        format_graph: Graph | None = None,
     ):
         super().__init__(context, config, name)
         self.cwl_version: str = cwl_version
+        self.format_graph: Graph | None = format_graph
         self.type: str | None = "cwl"
 
     async def _save_additional_params(
@@ -30,6 +35,11 @@ class CWLWorkflow(Workflow):
             **await super()._save_additional_params(context),
             **{
                 "cwl_version": self.cwl_version,
+                "format_graph": (
+                    self.format_graph.serialize()
+                    if self.format_graph is not None
+                    else None
+                ),
             },
         }
 
@@ -46,4 +56,9 @@ class CWLWorkflow(Workflow):
             config=params["config"],
             cwl_version=params["cwl_version"],
             name=row["name"],
+            format_graph=(
+                Graph().parse(data=params["format_graph"])
+                if params["format_graph"] is not None
+                else None
+            ),
         )

@@ -20,7 +20,6 @@ import cwltool.context
 import cwltool.docker_id
 import cwltool.process
 import cwltool.workflow
-from rdflib import Graph
 from ruamel.yaml.comments import CommentedSeq
 
 from streamflow.config.config import WorkflowConfig
@@ -184,7 +183,7 @@ def _create_command(
 
 def _create_command_output_processor_base(
     port_name: str,
-    workflow: Workflow,
+    workflow: CWLWorkflow,
     port_target: Target | None,
     port_type: Any,
     cwl_element: MutableMapping[str, Any],
@@ -248,7 +247,7 @@ def _create_command_output_processor_base(
 
 def _create_command_output_processor(
     port_name: str,
-    workflow: Workflow,
+    workflow: CWLWorkflow,
     port_target: Target | None,
     port_type: Any,
     cwl_element: MutableMapping[str, Any],
@@ -438,7 +437,7 @@ def _create_context() -> MutableMapping[str, Any]:
 
 def _create_list_merger(
     name: str,
-    workflow: Workflow,
+    workflow: CWLWorkflow,
     ports: MutableMapping[str, Port],
     output_port: Port | None = None,
     link_merge: str | None = None,
@@ -581,12 +580,11 @@ def _create_residual_combinator(
 
 def _create_token_processor(
     port_name: str,
-    workflow: Workflow,
+    workflow: CWLWorkflow,
     port_type: Any,
     cwl_element: MutableMapping[str, Any],
     cwl_name_prefix: str,
     schema_def_types: MutableMapping[str, Any],
-    format_graph: Graph,
     context: MutableMapping[str, Any],
     optional: bool = False,
     default_required_sf: bool = True,
@@ -608,7 +606,6 @@ def _create_token_processor(
                         cwl_element=cwl_element,
                         cwl_name_prefix=cwl_name_prefix,
                         schema_def_types=schema_def_types,
-                        format_graph=format_graph,
                         context=context,
                         check_type=check_type,
                         force_deep_listing=force_deep_listing,
@@ -665,7 +662,6 @@ def _create_token_processor(
                                 ),
                             ),
                             schema_def_types=schema_def_types,
-                            format_graph=format_graph,
                             context=context,
                             check_type=check_type,
                             force_deep_listing=force_deep_listing,
@@ -697,7 +693,6 @@ def _create_token_processor(
                 cwl_element=cwl_element,
                 cwl_name_prefix=cwl_name_prefix,
                 schema_def_types=schema_def_types,
-                format_graph=format_graph,
                 context=context,
                 optional=optional,
                 check_type=check_type,
@@ -717,7 +712,6 @@ def _create_token_processor(
                         cwl_element=cwl_element,
                         cwl_name_prefix=cwl_name_prefix,
                         schema_def_types=schema_def_types,
-                        format_graph=format_graph,
                         context=context,
                         optional=optional,
                         check_type=check_type,
@@ -736,7 +730,6 @@ def _create_token_processor(
             cwl_element=cwl_element,
             cwl_name_prefix=cwl_name_prefix,
             schema_def_types=schema_def_types,
-            format_graph=format_graph,
             context=context,
             optional=optional,
             check_type=check_type,
@@ -757,7 +750,6 @@ def _create_token_processor(
                 check_type=check_type,
                 expression_lib=expression_lib,
                 file_format=cwl_element.get("format"),
-                format_graph=format_graph,
                 full_js=full_js,
                 load_contents=cwl_element.get(
                     "loadContents",
@@ -806,11 +798,10 @@ def _create_token_processor(
 def _create_token_transformer(
     name: str,
     port_name: str,
-    workflow: Workflow,
+    workflow: CWLWorkflow,
     cwl_element: MutableMapping[str, Any],
     cwl_name_prefix: str,
     schema_def_types: MutableMapping[str, Any],
-    format_graph: Graph,
     context: MutableMapping[str, Any],
     check_type: bool = True,
     only_propagate_secondary_files: bool = True,
@@ -826,7 +817,6 @@ def _create_token_transformer(
             cwl_element=cwl_element,
             cwl_name_prefix=cwl_name_prefix,
             schema_def_types=schema_def_types,
-            format_graph=format_graph,
             context=context,
             check_type=check_type,
             only_propagate_secondary_files=only_propagate_secondary_files,
@@ -1494,7 +1484,7 @@ class CWLTranslator:
 
     def _recursive_translate(
         self,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         cwl_element: cwltool.process.Process,
         context: MutableMapping[str, Any],
         name_prefix: str,
@@ -1555,7 +1545,7 @@ class CWLTranslator:
 
     def _translate_command_line_tool(
         self,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         cwl_element: (
             cwltool.command_line_tool.CommandLineTool
             | cwltool.command_line_tool.ExpressionTool
@@ -1648,7 +1638,6 @@ class CWLTranslator:
                 cwl_element=element_input,
                 cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
                 schema_def_types=schema_def_types,
-                format_graph=self.loading_context.loader.graph,
                 context=context,
                 only_propagate_secondary_files=(name_prefix != "/"),
             )
@@ -1765,7 +1754,7 @@ class CWLTranslator:
 
     def _translate_workflow(
         self,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         cwl_element: cwltool.workflow.Workflow,
         context: MutableMapping[str, Any],
         name_prefix: str,
@@ -1804,7 +1793,6 @@ class CWLTranslator:
                 cwl_element=element_input,
                 cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
                 schema_def_types=schema_def_types,
-                format_graph=self.loading_context.loader.graph,
                 context=context,
                 only_propagate_secondary_files=(name_prefix != "/"),
             )
@@ -1928,7 +1916,7 @@ class CWLTranslator:
 
     def _translate_workflow_step(
         self,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         cwl_element: cwltool.workflow.WorkflowStep,
         context: MutableMapping[str, Any],
         name_prefix: str,
@@ -2431,7 +2419,7 @@ class CWLTranslator:
 
     def _translate_workflow_step_input(
         self,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         context: MutableMapping[str, Any],
         element_id: str,
         element_input: MutableMapping[str, Any],
@@ -2503,7 +2491,6 @@ class CWLTranslator:
                     cwl_element=element_input,
                     cwl_name_prefix=posixpath.join(cwl_step_name, port_name),
                     schema_def_types=schema_def_types,
-                    format_graph=self.loading_context.loader.graph,
                     context=context,
                     check_type=False,
                 ),
@@ -2627,6 +2614,7 @@ class CWLTranslator:
             config=self.workflow_config.config,
             name=self.name,
             cwl_version=self.loading_context.metadata["cwlVersion"],
+            format_graph=self.loading_context.loader.graph,
         )
         # Create context
         context = _create_context()
@@ -2703,7 +2691,6 @@ class CWLTranslator:
                             cwl_element=cwl_elements[output_name],
                             cwl_name_prefix=posixpath.join(cwl_root_prefix, port_name),
                             schema_def_types=_get_schema_def_types(requirements),
-                            format_graph=self.loading_context.loader.graph,
                             context=context,
                             check_type=False,
                             default_required_sf=False,

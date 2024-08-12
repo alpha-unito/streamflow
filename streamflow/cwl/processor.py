@@ -5,7 +5,6 @@ import json
 from typing import Any, Callable, MutableMapping, MutableSequence, cast
 
 import cwl_utils.file_formats
-from rdflib import Graph
 from schema_salad.exceptions import ValidationException
 
 from streamflow.core.command import CommandOutput, CommandOutputProcessor
@@ -117,7 +116,6 @@ class CWLTokenProcessor(TokenProcessor):
         enum_symbols: MutableSequence[str] | None = None,
         expression_lib: MutableSequence[str] | None = None,
         file_format: str | None = None,
-        format_graph: Graph | None = None,
         full_js: bool = False,
         load_contents: bool | None = None,
         load_listing: LoadListing | None = None,
@@ -132,7 +130,6 @@ class CWLTokenProcessor(TokenProcessor):
         self.enum_symbols: MutableSequence[str] | None = enum_symbols
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
-        self.format_graph: Graph | None = format_graph
         self.full_js: bool = full_js
         self.load_contents: bool | None = load_contents
         self.load_listing: LoadListing | None = load_listing
@@ -148,7 +145,6 @@ class CWLTokenProcessor(TokenProcessor):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLTokenProcessor:
-        format_graph = Graph()
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -157,11 +153,6 @@ class CWLTokenProcessor(TokenProcessor):
             enum_symbols=row["enum_symbols"],
             expression_lib=row["expression_lib"],
             file_format=row["file_format"],
-            format_graph=(
-                format_graph.parse(data=row["format_graph"])
-                if row["format_graph"] is not None
-                else None
-            ),  # todo: fix multiple instances
             full_js=row["full_js"],
             load_contents=row["load_contents"],
             load_listing=(
@@ -196,7 +187,9 @@ class CWLTokenProcessor(TokenProcessor):
             )
             try:
                 cwl_utils.file_formats.check_format(
-                    token_value, input_formats, self.format_graph
+                    token_value,
+                    input_formats,
+                    cast(CWLWorkflow, self.workflow).format_graph,
                 )
             except ValidationException as e:
                 raise WorkflowExecutionException(e.message) from e
@@ -303,11 +296,6 @@ class CWLTokenProcessor(TokenProcessor):
                 "enum_symbols": self.enum_symbols,
                 "expression_lib": self.expression_lib,
                 "file_format": self.file_format,
-                "format_graph": (
-                    self.format_graph.serialize()
-                    if self.format_graph is not None
-                    else None
-                ),
                 "full_js": self.full_js,
                 "load_contents": self.load_contents,
                 "load_listing": self.load_listing.value if self.load_listing else None,
