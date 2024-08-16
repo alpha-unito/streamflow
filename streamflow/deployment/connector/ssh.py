@@ -55,8 +55,9 @@ class SSHContext:
         self._ssh_connection: asyncssh.SSHClientConnection | None = None
         self._connecting = False
         self._connect_event: asyncio.Event = asyncio.Event()
+        self._retry_delay: int = retry_delay
+        self._sleeping = False
         self.retries: int = retries
-        self.retry_delay: int = retry_delay
         self.ssh_attempts: int = 0
 
     async def get_connection(self) -> asyncssh.SSHClientConnection:
@@ -134,10 +135,17 @@ class SSHContext:
             self._connect_event.clear()
 
     def full(self) -> bool:
-        return (
+        return self._sleeping or (
             self._ssh_connection
             and len(self._ssh_connection._channels) >= self._max_concurrent_sessions
         )
+
+    async def sleep(self, condition: asyncio.Condition):
+        self._sleeping = True
+        await asyncio.sleep(self._retry_delay)
+        self._sleeping = False
+        async with condition:
+            condition.notify_all()
 
 
 class SSHContextManager:
@@ -166,17 +174,26 @@ class SSHContextManager:
     async def __aenter__(self) -> asyncssh.SSHClientProcess:
         async with self._condition:
             while True:
+                if all(c.ssh_attempts >= c.retries for c in self._contexts):
+                    raise WorkflowExecutionException(
+                        "No more contexts available. Attempts to reconnect terminated."
+                    )
                 if (
-                    len(free_contexts := [c for c in self._contexts if not c.full()])
+                    len(
+                        free_contexts := [
+                            c
+                            for c in self._contexts
+                            if not c.full() and c.ssh_attempts < c.retries
+                        ]
+                    )
                     == 0
                 ):
                     await self._condition.wait()
                 else:
                     for context in free_contexts:
                         if context.ssh_attempts >= context.retries:
-                            raise WorkflowExecutionException(
-                                "No more connection attempts available"
-                            )
+                            # context terminated the retries
+                            continue
                         try:
                             ssh_connection = await context.get_connection()
                             self._selected_context = context
@@ -205,7 +222,7 @@ class SSHContextManager:
                             context.ssh_attempts += 1
                             context.close()
                             logger.warning(f"Attempt {context.ssh_attempts}")
-                            await asyncio.sleep(context.retry_delay)
+                            _ = asyncio.create_task(context.sleep(self._condition))
                         except Exception as e:
                             logger.warning(f"Fatal error: {e}")
                             raise
