@@ -24,11 +24,7 @@ from streamflow.deployment.connector.base import (
 )
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.template import CommandTemplateMap
-from streamflow.log_handler import logger, defaultStreamHandler
-
-asyncssh.logging.logger.setLevel(logging.DEBUG)
-asyncssh.logging.logger.set_debug_level(2)
-asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
+from streamflow.log_handler import logger
 
 
 def _parse_hostname(hostname):
@@ -46,8 +42,6 @@ class SSHContext:
         streamflow_config_dir: str,
         config: SSHConfig,
         max_concurrent_sessions: int,
-        retries: int,
-        retry_delay: int,
     ):
         self._streamflow_config_dir: str = streamflow_config_dir
         self._config: SSHConfig = config
@@ -55,9 +49,6 @@ class SSHContext:
         self._ssh_connection: asyncssh.SSHClientConnection | None = None
         self._connecting = False
         self._connect_event: asyncio.Event = asyncio.Event()
-        self._retry_delay: int = retry_delay
-        self._sleeping = False
-        self.retries: int = retries
         self.ssh_attempts: int = 0
 
     async def get_connection(self) -> asyncssh.SSHClientConnection:
@@ -135,17 +126,10 @@ class SSHContext:
             self._connect_event.clear()
 
     def full(self) -> bool:
-        return self._sleeping or (
+        return (
             self._ssh_connection
             and len(self._ssh_connection._channels) >= self._max_concurrent_sessions
         )
-
-    async def sleep(self, condition: asyncio.Condition):
-        self._sleeping = True
-        await asyncio.sleep(self._retry_delay)
-        self._sleeping = False
-        async with condition:
-            condition.notify_all()
 
 
 class SSHContextManager:
@@ -155,6 +139,8 @@ class SSHContextManager:
         contexts: MutableSequence[SSHContext],
         command: str,
         environment: MutableMapping[str, str] | None,
+        retries: int,
+        retry_delay: int,
         stdin: int = asyncio.subprocess.PIPE,
         stdout: int = asyncio.subprocess.PIPE,
         stderr: int = asyncio.subprocess.PIPE,
@@ -168,30 +154,26 @@ class SSHContextManager:
         self.encoding: str | None = encoding
         self._condition: asyncio.Condition = condition
         self._contexts: MutableSequence[SSHContext] = contexts
+        self._retries: int = retries
+        self._retry_delay: int = retry_delay
         self._selected_context: SSHContext | None = None
         self._proc: asyncssh.SSHClientProcess | None = None
 
     async def __aenter__(self) -> asyncssh.SSHClientProcess:
         async with self._condition:
             while True:
-                if all(c.ssh_attempts >= c.retries for c in self._contexts):
+                if all(c.ssh_attempts > self._retries for c in self._contexts):
                     raise WorkflowExecutionException(
-                        "No more contexts available. Attempts to reconnect terminated."
+                        "No more contexts available: terminating."
                     )
                 if (
-                    len(
-                        free_contexts := [
-                            c
-                            for c in self._contexts
-                            if not c.full() and c.ssh_attempts < c.retries
-                        ]
-                    )
+                    len(free_contexts := [c for c in self._contexts if not c.full()])
                     == 0
                 ):
                     await self._condition.wait()
                 else:
                     for context in free_contexts:
-                        if context.ssh_attempts >= context.retries:
+                        if context.ssh_attempts > self._retries:
                             # context terminated the retries
                             continue
                         try:
@@ -221,11 +203,8 @@ class SSHContextManager:
                             self._selected_context = None
                             context.ssh_attempts += 1
                             context.close()
-                            logger.warning(f"Attempt {context.ssh_attempts}")
-                            _ = asyncio.create_task(context.sleep(self._condition))
-                        except Exception as e:
-                            logger.warning(f"Fatal error: {e}")
-                            raise
+                            logger.warning(f"Connection attempt {context.ssh_attempts}")
+                    await asyncio.sleep(self._retry_delay)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         async with self._condition:
@@ -251,11 +230,11 @@ class SSHContextFactory:
                 streamflow_config_dir=streamflow_config_dir,
                 config=config,
                 max_concurrent_sessions=max_concurrent_sessions,
-                retries=retries,
-                retry_delay=retry_delay,
             )
             for _ in range(max_connections)
         ]
+        self._retries = retries
+        self._retry_delay = retry_delay
 
     def close(self):
         for c in self._contexts:
@@ -279,6 +258,8 @@ class SSHContextFactory:
             stdout=stdout,
             stderr=stderr,
             encoding=encoding,
+            retries=self._retries,
+            retry_delay=self._retry_delay,
         )
 
 
