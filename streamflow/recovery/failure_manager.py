@@ -273,7 +273,7 @@ class DummyFailureManager(FailureManager):
     ) -> CommandOutput:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
-                f"Job {job.name} failure can not be recovered. Fault tolerance manager not enable"
+                f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
             )
         raise exception
 
@@ -282,7 +282,7 @@ class DummyFailureManager(FailureManager):
     ) -> CommandOutput:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
-                f"Job {job.name} failure can not be recovered. Fault tolerance manager not enable"
+                f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
             )
         raise FailureHandlingException(
             f"FAILED Job {job.name} with error:\n\t{command_output.value}"

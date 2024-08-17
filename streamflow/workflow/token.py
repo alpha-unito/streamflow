@@ -165,7 +165,7 @@ class TerminationToken(Token):
     def __init__(self, value: Any = Status.COMPLETED):
         if not isinstance(value, Status):
             raise WorkflowExecutionException(
-                f"Termination token received an invalid value type {type(value)}. Accepted only Status."
+                f"Termination token received an invalid value type {type(value)}: it should be of type `Status`."
             )
         super().__init__(value)
 
