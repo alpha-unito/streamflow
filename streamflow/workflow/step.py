@@ -50,8 +50,7 @@ def _add_storage_path(connector: Connector, directory: str, hardware: Hardware):
     path = get_pure_path(connector, directory)
     while str(path) != posixpath.sep and path not in hardware.storage.keys():
         path = path.parent
-    if str(path) in hardware.storage.keys():
-        hardware.storage[str(path)].add_path(directory)
+    hardware.storage[str(path)].add_path(directory)
 
 
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
@@ -1396,9 +1395,13 @@ class ScheduleStep(BaseStep):
             self.workflow.context, connector, locations[0], job.tmp_directory
         )
         # todo: change API get_hardware?
-        hardware = self.workflow.context.scheduler.get_hardware(job.name) or Hardware()
-        for directory in (job.input_directory, job.output_directory, job.tmp_directory):
-            _add_storage_path(connector, directory, hardware)
+        if hardware := self.workflow.context.scheduler.get_hardware(job.name):
+            for directory in (
+                job.input_directory,
+                job.output_directory,
+                job.tmp_directory,
+            ):
+                _add_storage_path(connector, directory, hardware)
 
         # Register paths
         for location in locations:

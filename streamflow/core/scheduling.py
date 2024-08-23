@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING, Type, cast, MutableSet, Iterable
 
@@ -18,9 +19,11 @@ if TYPE_CHECKING:
 def get_mapping_hardware(
     job_hardware: Hardware, available_locations: Iterable[AvailableLocation]
 ) -> MutableMapping[str, Hardware]:
+    if job_hardware is None:
+        raise WorkflowExecutionException("Hardware cannot be empty")
     hardware = {}
     for location in available_locations:
-        if location.hardware and job_hardware:
+        if location.hardware:
             storage = {}
             for path, disk in job_hardware.storage.items():
                 # Get the mount_point of the job storage requirement in the current location storage
@@ -35,7 +38,7 @@ def get_mapping_hardware(
                 job_hardware.cores, job_hardware.memory, storage
             )
         else:
-            hardware[location.name] = None
+            hardware[location.name] = Hardware()
     return hardware
 
 
@@ -48,15 +51,23 @@ class Hardware:
     ):
         self.cores: float = cores
         self.memory: float = memory
-        self.storage: MutableMapping[str, Storage] = storage or {}
+        self.storage: MutableMapping[str, Storage] = storage or {
+            os.sep: Storage(os.sep, 0.0)
+        }
 
     def get_mount_point(self, path: str) -> str | None:
+        if path in self.storage.keys():
+            return path
         for disk in self.storage.values():
             if path in disk.paths:
                 return disk.mount_point
-        raise KeyError
+        raise KeyError(path)
 
     def get_size(self, path: str) -> float:
+        try:
+            self.get_mount_point(path)
+        except KeyError:
+            pass
         return self.storage[self.get_mount_point(path)].size
 
     def __add__(self, other):
@@ -285,7 +296,7 @@ class Scheduler(SchemaEntity):
     def get_hardware(self, job_name: str) -> Hardware | None:
         allocation = self.get_allocation(job_name)
         # todo: change API get_hardware?
-        return allocation.hardware if allocation else Hardware()
+        return allocation.hardware if allocation else None
 
     def get_connector(self, job_name: str) -> Connector | None:
         allocation = self.get_allocation(job_name)
