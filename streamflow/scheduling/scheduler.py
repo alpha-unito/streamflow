@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import posixpath
 from typing import MutableSequence, TYPE_CHECKING, cast
 
@@ -35,6 +36,20 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
     from typing import MutableMapping
+
+
+def _get_location_for_requirement(
+    connector: Connector, location: AvailableLocation
+) -> AvailableLocation:
+    loc = location
+    # Check if a location provides hardware capabilities or slots
+    while (
+        loc.hardware is None and loc.slots is None and loc is not None and loc.stacked
+    ):
+        loc = loc.wraps
+        connector = cast(ConnectorWrapper, connector).connector
+        # todo: storage paths could be wrong when we go to the inner location
+    return loc or location
 
 
 class JobContext:
@@ -202,45 +217,24 @@ class DefaultScheduler(Scheduler):
         else:
             return []
 
-    async def _is_valid(
+    def _is_valid(
         self,
         connector: Connector,
         location: AvailableLocation,
         hardware_requirement: Hardware,
     ) -> bool:
-        # Check if a location provides hardware capabilities or slots
-        loc = location
-        slots = None
-        while (
-            (hardware := loc.hardware) is None
-            and (slots := loc.slots) is None
-            and loc is not None
-            and loc.stacked
-        ):
-            loc = loc.wraps
-            connector = cast(ConnectorWrapper, connector).connector
-            # todo: storage paths could be wrong when we go to the inner location
+        location = _get_location_for_requirement(connector, location)
         # If at least one location provides hardware capabilities
-        if hardware is not None:
-            hardware_requirement = Hardware(
-                cores=hardware_requirement.cores,
-                memory=hardware_requirement.memory,
-                storage=await self._resolve_storage(
-                    connector, location, hardware_requirement.storage
-                ),
-            )
+        if location.hardware is not None:
             # Compute the used amount of locations
-            available_hardware = location.hardware
-            if location.name in self.hardware_locations.keys():
-                available_hardware -= self.hardware_locations[location.name]
-            return available_hardware >= hardware_requirement
+            return (
+                location.hardware
+                - self.hardware_locations.get(location.name, Hardware())
+            ) >= hardware_requirement
         # Otherwise, simply compute the number of allocated slots
         else:
-            slots = slots if slots is not None else 1
-            return (
-                len(self._get_running_jobs(loc if loc is not None else location))
-                < slots
-            )
+            slots = location.slots if location.slots is not None else 1
+            return len(self._get_running_jobs(location)) < slots
 
     async def _process_target(
         self,
@@ -289,13 +283,29 @@ class DefaultScheduler(Scheduler):
                         if hardware_requirement
                         else Hardware()
                     )
+                    hardware_requirements = {
+                        location: hardware_requirement
+                        for location, hardware_requirement in zip(
+                            available_locations.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        self._resolve_hardware_requirement(
+                                            connector, location, job_hardware
+                                        )
+                                    )
+                                    for location in available_locations.values()
+                                )
+                            ),
+                        )
+                    }
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
-                        if await self._is_valid(
+                        if self._is_valid(
                             connector=connector,
                             location=loc,
-                            hardware_requirement=job_hardware,
+                            hardware_requirement=hardware_requirements[loc.name],
                         )
                     }
                     if len(valid_locations) >= target.locations:
@@ -322,7 +332,7 @@ class DefaultScheduler(Scheduler):
                         ):
                             self._allocate_job(
                                 job=job_context.job,
-                                hardware=job_hardware,
+                                hardware=hardware_requirements,
                                 selected_locations=selected_locations,
                                 target=target,
                             )
@@ -357,20 +367,41 @@ class DefaultScheduler(Scheduler):
                             f"in target {target_name}. Waiting {self.retry_interval} seconds."
                         )
 
-    async def _resolve_storage(
+    async def _resolve_hardware_requirement(
         self,
         connector: Connector,
         location: AvailableLocation,
-        storage_requirement: MutableMapping[str, Storage],
-    ) -> MutableMapping[str, Storage]:
-        storage = {}
-        for path, disk in storage_requirement.items():
-            mount_point = await remotepath.get_mount_point(
-                self.context, connector, location, path
+        hardware_requirement: Hardware,
+    ) -> Hardware:
+        location = _get_location_for_requirement(connector, location)
+        if location.hardware is not None:
+            storage = {}
+            for disk in hardware_requirement.storage.values():
+                for path in disk.paths:
+                    mount_point = await remotepath.get_mount_point(
+                        self.context, connector, location, path
+                    )
+                    storage.setdefault(mount_point, Storage(mount_point, 0.0)).add_path(
+                        path
+                    )
+                    storage[mount_point].size += disk.size
+            return Hardware(
+                cores=hardware_requirement.cores,
+                memory=hardware_requirement.memory,
+                storage=storage,
             )
-            storage.setdefault(mount_point, Storage(mount_point, 0.0)).add_path(path)
-            storage[mount_point].size += disk.size
-        return storage
+        else:
+            return Hardware(
+                cores=hardware_requirement.cores,
+                memory=hardware_requirement.memory,
+                storage={
+                    os.sep: Storage(
+                        mount_point=os.sep,
+                        size=sum(s.size for s in hardware_requirement.storage.values()),
+                        paths=set(hardware_requirement.storage.keys()),
+                    )
+                },
+            )
 
     async def close(self):
         pass

@@ -6,6 +6,7 @@ import logging
 import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
+from pathlib import PurePosixPath, PurePath
 from types import ModuleType
 from typing import Any, AsyncIterable, MutableMapping, MutableSequence, MutableSet, cast
 
@@ -35,7 +36,8 @@ from streamflow.core.workflow import (
     Workflow,
 )
 from streamflow.data import remotepath
-from streamflow.deployment.utils import get_path_processor, get_pure_path
+from streamflow.deployment.connector import LocalConnector
+from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
@@ -47,8 +49,12 @@ from streamflow.workflow.utils import (
 
 
 def _add_storage_path(connector: Connector, directory: str, hardware: Hardware):
-    path = get_pure_path(connector, directory)
-    while str(path) != posixpath.sep and path not in hardware.storage.keys():
+    path = (
+        PurePosixPath(directory)
+        if connector is not None and not isinstance(connector, LocalConnector)
+        else PurePath(directory)
+    )
+    while str(path) != posixpath.sep and str(path) not in hardware.storage.keys():
         path = path.parent
     hardware.storage[str(path)].add_path(directory)
 

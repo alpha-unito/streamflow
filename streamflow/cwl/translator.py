@@ -1426,9 +1426,6 @@ class CWLTranslator:
             name=posixpath.join(f"{global_name}-injector", "__schedule__"),
             job_prefix=f"{global_name}-injector",
             connector_ports={target.deployment.name: deploy_step.get_output_port()},
-            input_directory=target.workdir or output_directory,
-            output_directory=target.workdir or output_directory,
-            tmp_directory=target.workdir or output_directory,
             binding_config=binding_config,
         )
         # Create a CWLInputInjector step to process the input
@@ -2474,9 +2471,6 @@ class CWLTranslator:
                 ),
                 job_prefix=f"{global_name}-value-from",
                 connector_ports={target.deployment.name: deploy_step.get_output_port()},
-                input_directory=target.workdir or self.output_directory,
-                output_directory=target.workdir or self.output_directory,
-                tmp_directory=target.workdir or self.output_directory,
                 binding_config=binding_config,
             )
 
