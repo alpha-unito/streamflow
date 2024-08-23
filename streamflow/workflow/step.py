@@ -1394,7 +1394,6 @@ class ScheduleStep(BaseStep):
         job.tmp_directory = await remotepath.follow_symlink(
             self.workflow.context, connector, locations[0], job.tmp_directory
         )
-        # todo: change API get_hardware?
         if hardware := self.workflow.context.scheduler.get_hardware(job.name):
             for directory in (
                 job.input_directory,

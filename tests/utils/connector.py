@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import MutableSequence, MutableMapping, Any
 
 from streamflow.core.data import StreamWrapperContextManager
@@ -108,6 +109,8 @@ class ParameterizableHardwareConnector(LocalConnector):
         service: str | None = None,
         directories: MutableSequence[str] | None = None,
     ) -> MutableMapping[str, AvailableLocation]:
+        for dir in directories:
+            self.hardware.storage[os.sep].add_path(dir)
         return {
             LOCAL_LOCATION: AvailableLocation(
                 name=LOCAL_LOCATION,

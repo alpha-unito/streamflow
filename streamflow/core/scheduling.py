@@ -295,7 +295,6 @@ class Scheduler(SchemaEntity):
 
     def get_hardware(self, job_name: str) -> Hardware | None:
         allocation = self.get_allocation(job_name)
-        # todo: change API get_hardware?
         return allocation.hardware if allocation else None
 
     def get_connector(self, job_name: str) -> Connector | None:
