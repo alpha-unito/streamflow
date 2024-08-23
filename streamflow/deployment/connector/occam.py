@@ -371,9 +371,7 @@ class OccamConnector(SSHConnector):
             await asyncio.gather(*deploy_tasks)
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         nodes = (
             self.jobs_table.get(service, [])

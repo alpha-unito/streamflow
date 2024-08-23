@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import MutableSequence, MutableMapping, Any
 
 from streamflow.core.data import StreamWrapperContextManager
@@ -59,9 +58,7 @@ class FailureConnector(Connector):
         raise FailureConnectorException("FailureConnector deploy")
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         raise FailureConnectorException("FailureConnector get_available_locations")
 
@@ -105,12 +102,8 @@ class ParameterizableHardwareConnector(LocalConnector):
         self.hardware = hardware
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
-        for dir in directories:
-            self.hardware.storage[os.sep].add_path(dir)
         return {
             LOCAL_LOCATION: AvailableLocation(
                 name=LOCAL_LOCATION,

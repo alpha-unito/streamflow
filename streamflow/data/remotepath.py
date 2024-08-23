@@ -9,6 +9,7 @@ import os
 import posixpath
 import shutil
 from email.message import Message
+from pathlib import Path
 from typing import MutableSequence, TYPE_CHECKING
 
 import aiohttp
@@ -18,6 +19,7 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType, FileType
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:
@@ -168,7 +170,7 @@ async def follow_symlink(
     connector: Connector,
     location: ExecutionLocation | None,
     path: str,
-) -> str:
+) -> str | None:
     if isinstance(connector, LocalConnector):
         return os.path.realpath(path) if os.path.exists(path) else None
     else:
@@ -200,6 +202,29 @@ async def follow_symlink(
                 )
             )
         return result.strip()
+
+
+async def get_mount_point(
+    context: StreamFlowContext,
+    connector: Connector,
+    location: AvailableLocation | None,
+    path: str,
+) -> str:
+    try:
+        return location.hardware.get_mount_point(path)
+    except KeyError:
+        mount_point = path
+        while (
+            mount_point := await follow_symlink(
+                context, connector, location.location, mount_point
+            )
+        ) is None:
+            mount_point = Path(mount_point).parent
+        # todo: wraps not considered
+        while str(mount_point) not in location.hardware.storage.keys():
+            mount_point = Path(mount_point).parent
+        location.hardware.storage[str(mount_point)].add_path(path)
+        return str(mount_point)
 
 
 async def head(

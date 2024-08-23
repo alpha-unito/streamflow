@@ -455,9 +455,7 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
     def _service_class(self) -> type[QueueManagerService]: ...
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         if service is not None and service not in self.services:
             raise WorkflowDefinitionException(

@@ -104,9 +104,7 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]: ...
 
     @abstractmethod

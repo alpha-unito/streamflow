@@ -128,9 +128,7 @@ class FutureConnector(Connector):
         self.deploy_event.set()
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         if self.connector is None:
             if not self.deploying:
@@ -138,9 +136,7 @@ class FutureConnector(Connector):
                 await self.deploy(self.external)
             else:
                 await self._safe_deploy_event_wait()
-        return await self.connector.get_available_locations(
-            service=service, directories=directories
-        )
+        return await self.connector.get_available_locations(service=service)
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation

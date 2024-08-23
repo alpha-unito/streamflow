@@ -2,58 +2,17 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING, Type, cast, MutableSet, Iterable
+from typing import Any, TYPE_CHECKING, Type, cast, MutableSet
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation, Target
-from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status
     from typing import MutableSequence, MutableMapping
-
-
-def get_mapping_hardware(
-    job_hardware: Hardware, available_locations: Iterable[AvailableLocation]
-) -> MutableMapping[str, Hardware]:
-    if job_hardware is None:
-        raise WorkflowExecutionException("Hardware cannot be empty")
-    hardware = {}
-    for location in available_locations:
-        if location.hardware:
-            storage = {}
-            for path, disk in job_hardware.storage.items():
-                # Get the mount_point of the job storage requirement in the current location storage
-                try:
-                    mount_point = location.hardware.get_mount_point(path)
-                except KeyError:
-                    raise WorkflowExecutionException(
-                        f"Path {path} not found in {location.name} location"
-                    )
-                storage.setdefault(mount_point, Storage(mount_point, 0.0)).add_path(
-                    path
-                )
-                storage[mount_point].size += disk.size
-            hardware[location.name] = Hardware(
-                job_hardware.cores, job_hardware.memory, storage
-            )
-        else:
-            # Location has not Hardware, reduce all into root
-            hardware[location.name] = Hardware(
-                job_hardware.cores,
-                job_hardware.memory,
-                {
-                    os.sep: Storage(
-                        os.sep,
-                        sum(storage.size for storage in job_hardware.storage.values()),
-                        set(job_hardware.storage.keys()),
-                    ),
-                },
-            )
-    return hardware
 
 
 class Hardware:
@@ -358,18 +317,20 @@ class Storage:
     def __add__(self, other: Storage):
         if not isinstance(other, Storage):
             return NotImplementedError
-        storage = Storage(self.mount_point or other.mount_point, self.size + other.size)
-        for path in (*self.paths, *other.paths):
-            storage.add_path(path)
-        return storage
+        return Storage(
+            mount_point=self.mount_point or other.mount_point,
+            size=self.size + other.size,
+            paths=self.paths | other.paths,
+        )
 
     def __sub__(self, other: Storage):
         if not isinstance(other, Storage):
             return NotImplementedError
-        storage = Storage(self.mount_point or other.mount_point, self.size - other.size)
-        for path in (*self.paths, *other.paths):
-            storage.add_path(path)
-        return storage
+        return Storage(
+            mount_point=self.mount_point or other.mount_point,
+            size=self.size - other.size,
+            paths=self.paths | other.paths,
+        )
 
     def __ge__(self, other: Storage):
         if not isinstance(other, Storage):

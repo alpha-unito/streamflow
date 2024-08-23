@@ -4,7 +4,6 @@ import os
 import shutil
 import sys
 import tempfile
-from pathlib import Path
 from typing import MutableMapping, MutableSequence
 
 import psutil
@@ -15,10 +14,9 @@ from streamflow.core.deployment import (
     ExecutionLocation,
     LOCAL_LOCATION,
 )
-from streamflow.core.utils import local_copy
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
+from streamflow.core.utils import local_copy
 from streamflow.deployment.connector.base import BaseConnector
-from streamflow.log_handler import logger
 
 
 class LocalConnector(BaseConnector):
@@ -96,24 +94,8 @@ class LocalConnector(BaseConnector):
         )
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
-        for directory in directories or []:
-            try:
-                self.hardware.get_mount_point(directory)
-            except KeyError:
-                path = Path(directory)
-                while not path.exists():
-                    path = path.parent
-
-                # Get mount point of the path
-                mount_point = Path(os.path.realpath(path))
-                while not os.path.ismount(mount_point):
-                    mount_point = mount_point.parent
-                logger.info(self.hardware.storage.keys())
-                self.hardware.storage[str(mount_point)].add_path(directory)
         return {
             LOCAL_LOCATION: AvailableLocation(
                 name=LOCAL_LOCATION,

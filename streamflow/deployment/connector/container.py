@@ -1067,9 +1067,7 @@ class DockerConnector(DockerBaseConnector):
             )
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return {self.containerId: await self._get_location(self.containerId)}
 
@@ -1294,9 +1292,7 @@ class DockerComposeConnector(DockerBaseConnector):
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         output, _ = await self.connector.run(
             location=self._inner_location.location,
@@ -1718,9 +1714,7 @@ class SingularityConnector(ContainerConnector):
             )
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return {self.instanceName: await self._get_location(self.instanceName)}
 

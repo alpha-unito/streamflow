@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 from abc import ABC
-from pathlib import PurePosixPath
 from typing import Any, MutableMapping, MutableSequence
 
 import asyncssh
@@ -417,9 +416,7 @@ class SSHConnector(BaseConnector):
                     read_only=read_only,
                 )
 
-    async def _get_available_location(
-        self, location: str, directories: MutableSequence[str] | None
-    ) -> Hardware:
+    async def _get_available_location(self, location: str) -> Hardware:
         if location not in self.hardware.keys():
             async with self._get_ssh_client_process(
                 location=location,
@@ -448,16 +445,6 @@ class SSHConnector(BaseConnector):
                     )
                 else:
                     raise WorkflowExecutionException(result.returncode)
-        for directory in directories:
-            try:
-                self.hardware[location].get_mount_point(directory)
-            except KeyError:
-                existing_directory = await self._get_existing_parent(
-                    location, directory
-                )
-                while existing_directory not in self.hardware[location].storage.keys():
-                    existing_directory = existing_directory.parent
-                self.hardware[location].storage[existing_directory].add_path(directory)
         return self.hardware[location]
 
     def _get_command(
@@ -516,23 +503,6 @@ class SSHConnector(BaseConnector):
             ),
         )
 
-    async def _get_existing_parent(self, location: str, directory: str | None):
-        if directory is None:
-            return None
-        while True:
-            async with self._get_ssh_client_process(
-                location=location,
-                command=f'test -e "{directory}" && readlink -f "{directory}"',
-                stderr=asyncio.subprocess.STDOUT,
-            ) as proc:
-                result = await proc.wait()
-                if result.returncode == 0:
-                    return PurePosixPath(result.stdout.strip())
-                elif result.returncode == 1:
-                    directory = PurePosixPath(directory).parent
-                else:
-                    raise WorkflowExecutionException(result.stdout.strip())
-
     def _get_ssh_client_process(
         self,
         location: str,
@@ -589,18 +559,13 @@ class SSHConnector(BaseConnector):
         pass
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        directories: MutableSequence[str] | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         locations = {}
         hardware_locations = await asyncio.gather(
             *(
                 asyncio.create_task(
-                    self._get_available_location(
-                        location=location_obj.hostname,
-                        directories=directories,
-                    )
+                    self._get_available_location(location=location_obj.hostname)
                 )
                 for location_obj in self.nodes.values()
             )
