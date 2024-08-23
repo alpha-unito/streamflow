@@ -33,12 +33,26 @@ def get_mapping_hardware(
                     raise WorkflowExecutionException(
                         f"Path {path} not found in {location.name} location"
                     )
-                storage[mount_point] = Storage(mount_point, disk.size, {path})
+                storage.setdefault(mount_point, Storage(mount_point, 0.0)).add_path(
+                    path
+                )
+                storage[mount_point].size += disk.size
             hardware[location.name] = Hardware(
                 job_hardware.cores, job_hardware.memory, storage
             )
         else:
-            hardware[location.name] = Hardware()
+            # Location has not Hardware, reduce all into root
+            hardware[location.name] = Hardware(
+                job_hardware.cores,
+                job_hardware.memory,
+                {
+                    os.sep: Storage(
+                        os.sep,
+                        sum(storage.size for storage in job_hardware.storage.values()),
+                        set(job_hardware.storage.keys()),
+                    ),
+                },
+            )
     return hardware
 
 
@@ -64,10 +78,6 @@ class Hardware:
         raise KeyError(path)
 
     def get_size(self, path: str) -> float:
-        try:
-            self.get_mount_point(path)
-        except KeyError:
-            pass
         return self.storage[self.get_mount_point(path)].size
 
     def __add__(self, other):
