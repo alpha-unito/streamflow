@@ -6,7 +6,6 @@ import logging
 import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
-from pathlib import PurePosixPath, PurePath
 from types import ModuleType
 from typing import Any, AsyncIterable, MutableMapping, MutableSequence, MutableSet, cast
 
@@ -26,7 +25,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.scheduling import HardwareRequirement, Hardware
+from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.workflow import (
     Job,
     Port,
@@ -36,7 +35,6 @@ from streamflow.core.workflow import (
     Workflow,
 )
 from streamflow.data import remotepath
-from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -46,17 +44,6 @@ from streamflow.workflow.utils import (
     check_termination,
     get_job_token,
 )
-
-
-def _add_storage_path(connector: Connector, directory: str, hardware: Hardware):
-    path = (
-        PurePosixPath(directory)
-        if connector is not None and not isinstance(connector, LocalConnector)
-        else PurePath(directory)
-    )
-    while str(path) != posixpath.sep and str(path) not in hardware.storage.keys():
-        path = path.parent
-    hardware.storage[str(path)].add_path(directory)
 
 
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
@@ -1400,13 +1387,6 @@ class ScheduleStep(BaseStep):
         job.tmp_directory = await remotepath.follow_symlink(
             self.workflow.context, connector, locations[0], job.tmp_directory
         )
-        if hardware := self.workflow.context.scheduler.get_hardware(job.name):
-            for directory in (
-                job.input_directory,
-                job.output_directory,
-                job.tmp_directory,
-            ):
-                _add_storage_path(connector, directory, hardware)
 
         # Register paths
         for location in locations:

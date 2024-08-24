@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext
@@ -88,21 +89,15 @@ class CWLHardwareRequirement(HardwareRequirement):
         context = {
             "inputs": {name: get_token_value(t) for name, t in job.inputs.items()}
         }
-        storage = {
-            job.output_directory: Storage(
-                None, self.get_outdir_size(context), {job.output_directory}
-            )
-        }
-        if job.tmp_directory in storage.keys():
-            storage[job.tmp_directory] += Storage(
-                None, self.get_tmpdir_size(context), {job.tmp_directory}
-            )
-        else:
-            storage[job.tmp_directory] = Storage(
-                None, self.get_tmpdir_size(context), {job.tmp_directory}
-            )
         return Hardware(
             cores=self.get_cores(context),
             memory=self.get_memory(context),
-            storage=storage,
+            storage={
+                "__outdir__": Storage(
+                    os.sep, self.get_outdir_size(context), {job.output_directory}
+                ),
+                "__tmpdir__": Storage(
+                    os.sep, self.get_tmpdir_size(context), {job.tmp_directory}
+                ),
+            },
         )

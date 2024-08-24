@@ -2,17 +2,30 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING, Type, cast, MutableSet
+from typing import Any, TYPE_CHECKING, Type, cast, MutableSet, Iterable, Callable
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation, Target
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status
     from typing import MutableSequence, MutableMapping
+
+
+def reduce_storages(
+    storages: Iterable[Storage], operator: Callable[[Storage, Storage], Storage]
+) -> MutableMapping[str, Storage]:
+    storage = {}
+    for disk in storages:
+        if disk.mount_point in storage.keys():
+            storage[disk.mount_point] = operator(storage[disk.mount_point], disk)
+        else:
+            storage[disk.mount_point] = Storage(disk.mount_point, disk.size)
+    return storage
 
 
 class Hardware:
@@ -28,49 +41,66 @@ class Hardware:
             os.sep: Storage(os.sep, 0.0)
         }
 
-    def get_mount_point(self, path: str) -> str | None:
-        if path in self.storage.keys():
-            return path
-        for disk in self.storage.values():
-            if path in disk.paths:
-                return disk.mount_point
-        raise KeyError(path)
+    def get_mount_point(self, path: str) -> str:
+        return self.get_storage(path).mount_point
+
+    def get_mount_points(self) -> MutableSequence[str]:
+        return [storage.mount_point for storage in self.storage.values()]
 
     def get_size(self, path: str) -> float:
-        return self.storage[self.get_mount_point(path)].size
+        return self.get_storage(path).size
+
+    def get_storage(self, path: str) -> Storage:
+        for disk in self.storage.values():
+            if path == disk.mount_point:
+                return disk
+            elif path in disk.paths:
+                return disk
+        raise KeyError(path)
+
+    def get_standard_storage(self) -> MutableMapping[str, Storage]:
+        return reduce_storages(self.storage.values(), Storage.__add__)
 
     def __add__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
-        storage = {path: disk for path, disk in self.storage.items()}
-        for path, disk in other.storage.items():
-            if path in storage.keys():
-                storage[path] += disk
-            else:
-                storage[path] = disk
-        return Hardware(self.cores + other.cores, self.memory + other.memory, storage)
+        return Hardware(
+            self.cores + other.cores,
+            self.memory + other.memory,
+            reduce_storages(
+                (
+                    *self.get_standard_storage().values(),
+                    *other.get_standard_storage().values(),
+                ),
+                Storage.__add__,
+            ),
+        )
 
     def __sub__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
-        storage = {path: disk for path, disk in self.storage.items()}
-        for path, disk in other.storage.items():
-            if path in storage.keys():
-                storage[path] -= disk
-            else:
-                for self_path, self_disk in storage.items():
-                    if path in self_disk.paths:
-                        storage[self_path] -= disk
-        return Hardware(self.cores - other.cores, self.memory - other.memory, storage)
+        return Hardware(
+            self.cores - other.cores,
+            self.memory - other.memory,
+            reduce_storages(
+                (
+                    *self.get_standard_storage().values(),
+                    *other.get_standard_storage().values(),
+                ),
+                Storage.__sub__,
+            ),
+        )
 
     def __ge__(self, other):
         if not isinstance(other, Hardware):
             return NotImplementedError
         if self.cores >= other.cores and self.memory >= other.memory:
-            for disk in other.storage.values():
+            storage_a = self.get_standard_storage()
+            storage_b = other.get_standard_storage()
+            for disk in storage_b.values():
                 if (
-                    disk.mount_point not in self.storage.keys()
-                    or self.storage[disk.mount_point] < disk
+                    disk.mount_point not in storage_a.keys()
+                    or storage_a[disk.mount_point] < disk
                 ):
                     return False
             return True
@@ -80,10 +110,12 @@ class Hardware:
         if not isinstance(other, Hardware):
             return NotImplementedError
         if self.cores > other.cores and self.memory > other.memory:
-            for disk in other.storage.values():
+            storage_a = self.get_standard_storage()
+            storage_b = other.get_standard_storage()
+            for disk in storage_b.values():
                 if (
-                    disk.mount_point not in self.storage.keys()
-                    or self.storage[disk.mount_point] <= disk
+                    disk.mount_point not in storage_a.keys()
+                    or storage_a[disk.mount_point] <= disk
                 ):
                     return False
             return True
@@ -93,10 +125,12 @@ class Hardware:
         if not isinstance(other, Hardware):
             return NotImplementedError
         if self.cores <= other.cores and self.memory <= other.memory:
-            for disk in other.storage.values():
+            storage_a = self.get_standard_storage()
+            storage_b = other.get_standard_storage()
+            for disk in storage_b.values():
                 if (
-                    disk.mount_point not in self.storage.keys()
-                    or self.storage[disk.mount_point] > disk
+                    disk.mount_point not in storage_a.keys()
+                    or storage_a[disk.mount_point] > disk
                 ):
                     return False
             return True
@@ -106,10 +140,12 @@ class Hardware:
         if not isinstance(other, Hardware):
             return NotImplementedError
         if self.cores < other.cores and self.memory < other.memory:
-            for disk in other.storage.values():
+            storage_a = self.get_standard_storage()
+            storage_b = other.get_standard_storage()
+            for disk in storage_b.values():
                 if (
-                    disk.mount_point not in self.storage.keys()
-                    or self.storage[disk.mount_point] >= disk
+                    disk.mount_point not in storage_a.keys()
+                    or storage_a[disk.mount_point] >= disk
                 ):
                     return False
             return True
@@ -305,9 +341,9 @@ class Scheduler(SchemaEntity):
 
 class Storage:
     def __init__(
-        self, mount_point: str | None, size: float, paths: MutableSet[str] | None = None
+        self, mount_point: str, size: float, paths: MutableSet[str] | None = None
     ):
-        self.mount_point: str | None = mount_point
+        self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
         self.size: float = size
 
@@ -317,8 +353,12 @@ class Storage:
     def __add__(self, other: Storage):
         if not isinstance(other, Storage):
             return NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Cannot sum two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
         return Storage(
-            mount_point=self.mount_point or other.mount_point,
+            mount_point=self.mount_point,
             size=self.size + other.size,
             paths=self.paths | other.paths,
         )
@@ -326,8 +366,12 @@ class Storage:
     def __sub__(self, other: Storage):
         if not isinstance(other, Storage):
             return NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Cannot subtract two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
         return Storage(
-            mount_point=self.mount_point or other.mount_point,
+            mount_point=self.mount_point,
             size=self.size - other.size,
             paths=self.paths | other.paths,
         )

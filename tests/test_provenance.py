@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, MutableMapping, MutableSequence, cast
 
 import pytest
+from streamflow.cwl.workflow import CWLWorkflow
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -246,7 +247,7 @@ async def test_execute_step(context: StreamFlowContext):
         port=out_port,
         output_processor=_create_command_output_processor_base(
             port_name=out_port.name,
-            workflow=workflow,
+            workflow=cast(CWLWorkflow, workflow),
             port_target=None,
             port_type="string",
             cwl_element={},

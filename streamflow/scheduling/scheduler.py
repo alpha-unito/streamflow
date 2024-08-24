@@ -379,13 +379,12 @@ class DefaultScheduler(Scheduler):
         # when they are created in the `ScheduleStep`
         if location.hardware is not None:
             storage = {}
-            for disk in hardware_requirement.storage.values():
+            for key, disk in hardware_requirement.storage.items():
                 for path in disk.paths:
                     mount_point = await remotepath.get_mount_point(
                         self.context, connector, location, path
                     )
-                    storage.setdefault(mount_point, Storage(mount_point, 0.0))
-                    storage[mount_point].size += disk.size
+                    storage[key] = Storage(mount_point, disk.size)
             return Hardware(
                 cores=hardware_requirement.cores,
                 memory=hardware_requirement.memory,
@@ -396,10 +395,8 @@ class DefaultScheduler(Scheduler):
                 cores=hardware_requirement.cores,
                 memory=hardware_requirement.memory,
                 storage={
-                    os.sep: Storage(
-                        mount_point=os.sep,
-                        size=sum(s.size for s in hardware_requirement.storage.values())
-                    )
+                    key: Storage(os.sep, disk.size)
+                    for key, disk in hardware_requirement.storage.items()
                 },
             )
 
@@ -440,16 +437,19 @@ class DefaultScheduler(Scheduler):
                                             storage={
                                                 mount_point: Storage(
                                                     mount_point=mount_point,
-                                                    size=job_hardware.storage[
+                                                    size=job_hardware.get_storage(
                                                         mount_point
-                                                    ].size
+                                                    ).size
                                                     - size,
-                                                    paths=job_hardware.storage[
+                                                    paths=job_hardware.get_storage(
                                                         mount_point
-                                                    ].paths,
+                                                    ).paths,
                                                 )
                                                 for mount_point, size in zip(
-                                                    job_hardware.storage.keys(),
+                                                    (
+                                                        storage.mount_point
+                                                        for storage in job_hardware.storage.values()
+                                                    ),
                                                     await asyncio.gather(
                                                         *(
                                                             asyncio.create_task(

@@ -221,9 +221,12 @@ async def get_mount_point(
         ) is None:
             mount_point = Path(mount_point).parent
         # todo: wraps not considered
-        while str(mount_point) not in location.hardware.storage.keys():
+        location_mount_points = location.hardware.get_mount_points()
+        while (
+            str(mount_point) != os.sep and str(mount_point) not in location_mount_points
+        ):
             mount_point = Path(mount_point).parent
-        location.hardware.storage[str(mount_point)].add_path(path)
+        location.hardware.get_storage(str(mount_point)).add_path(path)
         return str(mount_point)
 
 

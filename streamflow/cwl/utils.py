@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import math
 import posixpath
 import urllib.parse
 from enum import Enum
@@ -244,12 +245,16 @@ def build_context(
     if tmp_directory:
         context["runtime"]["tmpdir"] = tmp_directory
     if hardware:
-        context["runtime"]["cores"] = hardware.cores
-        context["runtime"]["ram"] = hardware.memory
+        outstorage = hardware.storage["__outdir__"]
+        tmp_storage = hardware.storage["__tmpdir__"]
+        outstorage.add_path(output_directory)
+        tmp_storage.add_path(tmp_directory)
+        context["runtime"]["cores"] = math.ceil(hardware.cores)
+        context["runtime"]["ram"] = math.ceil(hardware.memory)
         # noinspection PyUnresolvedReferences
-        context["runtime"]["tmpdirSize"] = hardware.get_size(tmp_directory)
+        context["runtime"]["tmpdirSize"] = math.ceil(tmp_storage.size)
         # noinspection PyUnresolvedReferences
-        context["runtime"]["outdirSize"] = hardware.get_size(output_directory)
+        context["runtime"]["outdirSize"] = math.ceil(outstorage.size)
     return context
 
 
