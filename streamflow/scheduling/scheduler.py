@@ -374,6 +374,9 @@ class DefaultScheduler(Scheduler):
         hardware_requirement: Hardware,
     ) -> Hardware:
         location = _get_location_for_requirement(connector, location)
+        # The `paths` of the `hardware_requirement.storage.values()` are not added in the `paths` attribute of
+        # the new `Hardware` because the job dirs still do not exist. The directories will be added
+        # when they are created in the `ScheduleStep`
         if location.hardware is not None:
             storage = {}
             for disk in hardware_requirement.storage.values():
@@ -381,9 +384,7 @@ class DefaultScheduler(Scheduler):
                     mount_point = await remotepath.get_mount_point(
                         self.context, connector, location, path
                     )
-                    storage.setdefault(mount_point, Storage(mount_point, 0.0)).add_path(
-                        path
-                    )
+                    storage.setdefault(mount_point, Storage(mount_point, 0.0))
                     storage[mount_point].size += disk.size
             return Hardware(
                 cores=hardware_requirement.cores,
@@ -397,8 +398,7 @@ class DefaultScheduler(Scheduler):
                 storage={
                     os.sep: Storage(
                         mount_point=os.sep,
-                        size=sum(s.size for s in hardware_requirement.storage.values()),
-                        paths=set(hardware_requirement.storage.keys()),
+                        size=sum(s.size for s in hardware_requirement.storage.values())
                     )
                 },
             )
@@ -432,6 +432,8 @@ class DefaultScheduler(Scheduler):
                             if job_hardware := job_allocation.hardware:
                                 for loc in job_allocation.locations:
                                     if loc.name in self.hardware_locations.keys():
+                                        # It is executed `remotepath.size` to get the actual job output size.
+                                        # It is supposed that the output directory was empty before the `Job` execution
                                         self.hardware_locations[loc.name] -= Hardware(
                                             cores=job_hardware.cores,
                                             memory=job_hardware.memory,

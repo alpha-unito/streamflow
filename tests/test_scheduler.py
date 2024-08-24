@@ -53,10 +53,7 @@ async def test_scheduling(
         tmp_directory=deployment_config.workdir,
     )
     hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
-    target = Target(
-        deployment=deployment_config,
-        service=service,
-    )
+    target = Target(deployment=deployment_config, service=service)
     binding_config = BindingConfig(targets=[target])
     await context.scheduler.schedule(job, binding_config, hardware_requirement)
     assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
@@ -69,8 +66,15 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
 
     # Inject custom hardware to manipulate available resources
+    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     machine_hardware = Hardware(
-        cores=1, memory=4096, storage={os.sep: Storage(os.sep, 1024 * 2)}
+        cores=hardware_requirement.cores,
+        memory=hardware_requirement.memory,
+        storage={
+            os.sep: Storage(
+                os.sep, hardware_requirement.tmpdir + hardware_requirement.outdir
+            )
+        },
     )
     deployment_config = get_parameterizable_hardware_deployment_config()
     conn = cast(
@@ -91,7 +95,6 @@ async def test_single_env_few_resources(context: StreamFlowContext):
         )
         for _ in range(2)
     ]
-    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     target = Target(
         deployment=deployment_config,
         service=get_service(context, deployment_config.type),
@@ -243,7 +246,7 @@ async def test_multi_env(context: StreamFlowContext):
     jobs = [
         (
             Job(
-                name=random_job_name(),
+                name=random_job_name(f"a{i}"),
                 workflow_id=0,
                 inputs={},
                 input_directory=None,

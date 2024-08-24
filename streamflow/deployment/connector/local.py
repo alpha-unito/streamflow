@@ -32,6 +32,7 @@ class LocalConnector(BaseConnector):
                     disk.mountpoint, shutil.disk_usage(disk.mountpoint).free / 2**20
                 )
                 for disk in psutil.disk_partitions()
+                if os.access(disk.mountpoint, os.R_OK)
             },
         )
 

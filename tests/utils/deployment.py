@@ -20,6 +20,7 @@ from streamflow.core.deployment import (
     BindingFilter,
     Target,
 )
+from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job
 from streamflow.deployment import DefaultDeploymentManager
 from tests.utils.data import get_data_path
@@ -117,13 +118,17 @@ def get_kubernetes_deployment_config():
 
 
 def get_local_deployment_config():
+    workdir = os.path.join(
+        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
+    )
+    os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
         name=LOCAL_LOCATION,
         type="local",
         config={},
         external=True,
         lazy=False,
-        workdir=os.path.realpath(tempfile.gettempdir()),
+        workdir=workdir,
     )
 
 
@@ -138,13 +143,17 @@ async def get_location(
 
 
 def get_parameterizable_hardware_deployment_config():
+    workdir = os.path.join(
+        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
+    )
+    os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
         name="custom-hardware",
         type="parameterizable_hardware",
         config={},
         external=True,
         lazy=False,
-        workdir=os.path.realpath(tempfile.gettempdir()),
+        workdir=workdir,
     )
 
 
