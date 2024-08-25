@@ -19,7 +19,7 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType, FileType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import AvailableLocation
+from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:
@@ -228,6 +228,28 @@ async def get_mount_point(
             mount_point = Path(mount_point).parent
         location.hardware.get_storage(str(mount_point)).add_path(path)
         return str(mount_point)
+
+
+async def get_storage_usages(
+    connector: Connector, location: ExecutionLocation, hardware: Hardware
+):
+    return dict(
+        zip(
+            hardware.storage.keys(),
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        size(
+                            connector=connector,
+                            location=location,
+                            path=list(storage.paths),
+                        )
+                    )
+                    for storage in hardware.storage.values()
+                )
+            ),
+        )
+    )
 
 
 async def head(

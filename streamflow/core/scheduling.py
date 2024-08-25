@@ -10,6 +10,7 @@ from streamflow.core.context import SchemaEntity, StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation, Target
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status
@@ -41,6 +42,28 @@ class Hardware:
             os.sep: Storage(os.sep, 0.0)
         }
 
+    def get_free_resources(self, sizes: MutableMapping[str, float]) -> Hardware:
+        for k, s in self.storage.items():
+            logger.info(f"Curr storage: {k}: {self.storage[k].size} {s}")
+        return Hardware(
+            cores=self.cores,
+            memory=self.memory,
+            storage={
+                key: Storage(
+                    mount_point=self.storage[key].mount_point,
+                    size=self.storage[key].size - real_size,
+                    paths={p for p in self.storage[key].paths},
+                )
+                for key, real_size in sizes.items()
+            },
+        )
+
+    def print(self, msg):
+        res = ""
+        for s in self.storage.values():
+            res += f"{s.mount_point}: {s.size}\n"
+        logger.info(f"{msg}\n{res}")
+
     def get_mount_point(self, path: str) -> str:
         return self.get_storage(path).mount_point
 
@@ -50,6 +73,9 @@ class Hardware:
     def get_size(self, path: str) -> float:
         return self.get_storage(path).size
 
+    def get_standard_storage(self) -> MutableMapping[str, Storage]:
+        return reduce_storages(self.storage.values(), Storage.__add__)
+
     def get_storage(self, path: str) -> Storage:
         for disk in self.storage.values():
             if path == disk.mount_point:
@@ -57,9 +83,6 @@ class Hardware:
             elif path in disk.paths:
                 return disk
         raise KeyError(path)
-
-    def get_standard_storage(self) -> MutableMapping[str, Storage]:
-        return reduce_storages(self.storage.values(), Storage.__add__)
 
     def __add__(self, other):
         if not isinstance(other, Hardware):

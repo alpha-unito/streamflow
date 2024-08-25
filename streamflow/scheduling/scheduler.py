@@ -429,39 +429,21 @@ class DefaultScheduler(Scheduler):
                             if job_hardware := job_allocation.hardware:
                                 for loc in job_allocation.locations:
                                     if loc.name in self.hardware_locations.keys():
-                                        # It is executed `remotepath.size` to get the actual job output size.
+                                        # It is executed `remotepath.get_storage_usages` to get the actual job output size.
                                         # It is supposed that the output directory was empty before the `Job` execution
-                                        self.hardware_locations[loc.name] -= Hardware(
-                                            cores=job_hardware.cores,
-                                            memory=job_hardware.memory,
-                                            storage={
-                                                storage_key: Storage(
-                                                    mount_point=job_hardware.storage[storage_key].mount_point,
-                                                    size=job_hardware.storage[storage_key].size
-                                                    - size,
-                                                    # paths=job_hardware.get_storage(
-                                                    #     mount_point[0]
-                                                    # ).paths,
-                                                )
-                                                for storage_key, size in zip(
-                                                    job_hardware.storage.keys(),
-                                                    await asyncio.gather(
-                                                        *(
-                                                            asyncio.create_task(
-                                                                remotepath.size(
-                                                                    connector=connector,
-                                                                    location=loc,
-                                                                    path=list(
-                                                                        storage.paths
-                                                                    ),
-                                                                )
-                                                            )
-                                                            for storage in job_hardware.storage.values()
-                                                        )
-                                                    ),
-                                                )
-                                            },
+                                        self.hardware_locations[
+                                            loc.name
+                                        ].print("Pre")
+                                        self.hardware_locations[
+                                            loc.name
+                                        ] -= job_hardware.get_free_resources(
+                                            await remotepath.get_storage_usages(
+                                                connector, loc, job_hardware
+                                            )
                                         )
+                                        self.hardware_locations[
+                                            loc.name
+                                        ].print("post")
                             self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
