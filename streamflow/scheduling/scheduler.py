@@ -435,21 +435,16 @@ class DefaultScheduler(Scheduler):
                                             cores=job_hardware.cores,
                                             memory=job_hardware.memory,
                                             storage={
-                                                mount_point: Storage(
-                                                    mount_point=mount_point,
-                                                    size=job_hardware.get_storage(
-                                                        mount_point
-                                                    ).size
+                                                storage_key: Storage(
+                                                    mount_point=job_hardware.storage[storage_key].mount_point,
+                                                    size=job_hardware.storage[storage_key].size
                                                     - size,
-                                                    paths=job_hardware.get_storage(
-                                                        mount_point
-                                                    ).paths,
+                                                    # paths=job_hardware.get_storage(
+                                                    #     mount_point[0]
+                                                    # ).paths,
                                                 )
-                                                for mount_point, size in zip(
-                                                    (
-                                                        storage.mount_point
-                                                        for storage in job_hardware.storage.values()
-                                                    ),
+                                                for storage_key, size in zip(
+                                                    job_hardware.storage.keys(),
                                                     await asyncio.gather(
                                                         *(
                                                             asyncio.create_task(
