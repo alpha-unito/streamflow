@@ -433,15 +433,22 @@ class DefaultScheduler(Scheduler):
                                     if loc.name in self.hardware_locations.keys():
                                         # It is executed `remotepath.get_storage_usages` to get the actual job output size.
                                         # It is supposed that the output directory was empty before the `Job` execution
-                                        self.hardware_locations[loc.name].print("Pre")
-                                        self.hardware_locations[
-                                            loc.name
-                                        ] -= job_hardware.get_free_resources(
-                                            await remotepath.get_storage_usages(
-                                                connector, loc, job_hardware
-                                            )
+                                        self.hardware_locations[loc.name] = (
+                                            self.hardware_locations[loc.name]
+                                            - job_hardware
+                                        ) + Hardware(
+                                            storage={
+                                                k: Storage(
+                                                    job_hardware.storage[k].mount_point,
+                                                    size,
+                                                )
+                                                for k, size in (
+                                                    await remotepath.get_storage_usages(
+                                                        connector, loc, job_hardware
+                                                    )
+                                                ).items()
+                                            }
                                         )
-                                        self.hardware_locations[loc.name].print("post")
                             self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(

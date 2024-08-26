@@ -461,13 +461,9 @@ async def size(
     if not path:
         return 0
     elif isinstance(connector, LocalConnector):
-        if isinstance(path, MutableSequence):
-            weight = 0
-            for p in path:
-                weight += utils.get_size(p)
-            return weight
-        else:
-            return utils.get_size(path)
+        if not isinstance(path, MutableSequence):
+            path = [path]
+        return sum(utils.get_size(p) for p in path)
     else:
         if isinstance(path, MutableSequence):
             path = " ".join([f'"{p}"' for p in path])
@@ -488,7 +484,8 @@ async def size(
         )
         _check_status(command, location, result, status)
         result = result.strip().strip("'\"")
-        return int(result) if result.isdigit() else 0
+        res = int(result) if result.isdigit() else 0
+        return res
 
 
 async def symlink(
