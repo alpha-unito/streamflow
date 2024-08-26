@@ -7,6 +7,7 @@ from typing import MutableSequence, TYPE_CHECKING
 from streamflow.core import utils
 from streamflow.core.deployment import Target
 from streamflow.core.config import BindingConfig
+from streamflow.core.scheduling import HardwareRequirement
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import (
     DotProductCombinator,
@@ -40,6 +41,7 @@ def create_schedule_step(
     workflow: Workflow,
     deploy_steps: MutableSequence[DeployStep],
     binding_config: BindingConfig = None,
+    hardware_requirement: HardwareRequirement = None,
 ):
     # It is necessary to pass in the correct order biding_config.targets and deploy_steps for the mapping
     if not binding_config:
@@ -61,6 +63,7 @@ def create_schedule_step(
             for target, deploy_step in zip(binding_config.targets, deploy_steps)
         },
         binding_config=binding_config,
+        hardware_requirement=hardware_requirement,
     )
 
 
