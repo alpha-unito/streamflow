@@ -44,7 +44,9 @@ class Hardware:
 
     def get_free_resources(self, sizes: MutableMapping[str, float]) -> Hardware:
         for k, s in self.storage.items():
-            logger.info(f"Curr storage: {k}: {self.storage[k].size} {s}")
+            logger.info(
+                f"Storage: {k} - Current: {self.storage[k].size} - Misured: {s.size}"
+            )
         return Hardware(
             cores=self.cores,
             memory=self.memory,

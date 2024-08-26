@@ -127,7 +127,9 @@ class DefaultScheduler(Scheduler):
                         if loc.name in self.hardware_locations.keys():
                             self.hardware_locations[loc.name] += hardware[loc.name]
                         else:
-                            self.hardware_locations[loc.name] = hardware[loc.name]
+                            self.hardware_locations[loc.name] = (
+                                Hardware() + hardware[loc.name]
+                            )
                     loc = loc.wraps if loc.stacked else None
 
     def _deallocate_job(self, job: str):
@@ -431,9 +433,7 @@ class DefaultScheduler(Scheduler):
                                     if loc.name in self.hardware_locations.keys():
                                         # It is executed `remotepath.get_storage_usages` to get the actual job output size.
                                         # It is supposed that the output directory was empty before the `Job` execution
-                                        self.hardware_locations[
-                                            loc.name
-                                        ].print("Pre")
+                                        self.hardware_locations[loc.name].print("Pre")
                                         self.hardware_locations[
                                             loc.name
                                         ] -= job_hardware.get_free_resources(
@@ -441,9 +441,7 @@ class DefaultScheduler(Scheduler):
                                                 connector, loc, job_hardware
                                             )
                                         )
-                                        self.hardware_locations[
-                                            loc.name
-                                        ].print("post")
+                                        self.hardware_locations[loc.name].print("post")
                             self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
