@@ -35,6 +35,20 @@ class Hardware:
         memory: float = 0.0,
         storage: MutableMapping[str, Storage] | None = None,
     ):
+        """
+        The `Hardware` class represents the location resources.
+
+        The `storage` attribute is a map with `key : storage`. The key meaning is left to the implementation of
+        the `HardwareRequirement`. Outside of this class no assumption can be done about the key meaning.
+        Only other class of the same `HardwareRequirement` domain can use the key as fast entry point.
+        When an operation (arithmetic o comparison) is done, a new `Hardware` instance is created following
+        a standard form. In the standard form, the key are the mount point of the storages, and each mount point
+        can have just a `Storage` object
+
+        :param cores: Total number of cores
+        :param memory: Total number of memory
+        :param storage: A map with a key and a `Storage` object
+        """
         self.cores: float = cores
         self.memory: float = memory
         self.storage: MutableMapping[str, Storage] = storage or {
@@ -343,6 +357,13 @@ class Storage:
     def __init__(
         self, mount_point: str, size: float, paths: MutableSet[str] | None = None
     ):
+        """
+        The `Storage` class represents a location volume
+
+        :param mount_point: It is the mount point path
+        :param size: It is the total size of the volume, expressed in Kilobyte
+        :param paths: It is a list of paths inside the mount point
+        """
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
         if size < 0:

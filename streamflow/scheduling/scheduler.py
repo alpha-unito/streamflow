@@ -439,8 +439,10 @@ class DefaultScheduler(Scheduler):
                                         ) + Hardware(
                                             storage={
                                                 k: Storage(
-                                                    job_hardware.storage[k].mount_point,
-                                                    size,
+                                                    mount_point=job_hardware.storage[
+                                                        k
+                                                    ].mount_point,
+                                                    size=size / 2**20,
                                                 )
                                                 for k, size in (
                                                     await remotepath.get_storage_usages(

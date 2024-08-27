@@ -238,6 +238,10 @@ async def get_mount_point(
 async def get_storage_usages(
     connector: Connector, location: ExecutionLocation, hardware: Hardware
 ):
+    # It is not an accurate snapshot of the resources used
+    # The follow links should be resolved but checking their mount points.
+    # Warn. Storage keys are not mount points.
+    # Each HardwareRequirement implementation can use the storage dictionary keys as it wants
     return dict(
         zip(
             hardware.storage.keys(),
@@ -463,6 +467,19 @@ async def size(
     location: ExecutionLocation | None,
     path: str | MutableSequence[str],
 ) -> int:
+    """
+    Get the data size.
+    If the data is in the local location, the python library functions are called to get the size.
+    It is done to achieve two goals:
+        - these python library functions should be faster calling directly system calls instead of
+          execute the command spawning a new process.
+        - the driver is more portable across different platforms.
+    Otherwise, a linux shell command is executed in the remote location to get the data size.
+
+    :param connector: The `Connector` object to communicate with the location
+    :param location: The `ExecutionLocation` object with the location information
+    :return: the sum of all the input path sizes, expressed in bytes
+    """
     if not path:
         return 0
     elif isinstance(connector, LocalConnector):

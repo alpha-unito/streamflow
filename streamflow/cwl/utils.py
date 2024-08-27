@@ -245,6 +245,8 @@ def build_context(
     if tmp_directory:
         context["runtime"]["tmpdir"] = tmp_directory
     if hardware:
+        # Inside the job `Hardware`, the `outdir` and `tmpdir` paths are not available between the scheduling time
+        # and the calling of this function
         outstorage = hardware.storage["__outdir__"]
         tmp_storage = hardware.storage["__tmpdir__"]
         outstorage.add_path(output_directory)

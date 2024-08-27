@@ -251,7 +251,7 @@ async def get_remote_to_remote_write_command(
             return ["tar", "xf", "-", "-C", posixpath.dirname(dst)]
 
 
-def get_size(path):
+def get_size(path: str) -> int:
     if os.path.isfile(path):
         return os.path.getsize(path)
     else:
