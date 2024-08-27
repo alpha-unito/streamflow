@@ -252,6 +252,7 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
             ],
             "maxConcurrentSessions": 10,
         },
+        workdir="/tmp",
         external=False,
         lazy=False,
     )

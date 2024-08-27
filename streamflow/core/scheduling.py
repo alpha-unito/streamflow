@@ -345,6 +345,10 @@ class Storage:
     ):
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
+        if size < 0:
+            raise WorkflowExecutionException(
+                f"Storage {mount_point} with {paths} paths cannot have negative size: {size}"
+            )
         self.size: float = size
 
     def add_path(self, path: str):

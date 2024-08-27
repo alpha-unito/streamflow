@@ -220,6 +220,11 @@ async def get_mount_point(
             )
         ) is None:
             mount_point = Path(mount_point).parent
+        # follow symlynk can return empty string
+        if not mount_point:
+            raise WorkflowExecutionException(
+                f"Impossible to find the mountpoint: the {path} path does not exist"
+            )
         # todo: wraps not considered
         location_mount_points = location.hardware.get_mount_points()
         while (
