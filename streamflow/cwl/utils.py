@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import math
 import posixpath
 import urllib.parse
 from enum import Enum
@@ -247,16 +246,14 @@ def build_context(
     if hardware:
         # Inside the job `Hardware`, the `outdir` and `tmpdir` paths are not available between the scheduling time
         # and the calling of this function
-        outstorage = hardware.storage["__outdir__"]
-        tmp_storage = hardware.storage["__tmpdir__"]
-        outstorage.add_path(output_directory)
-        tmp_storage.add_path(tmp_directory)
-        context["runtime"]["cores"] = math.ceil(hardware.cores)
-        context["runtime"]["ram"] = math.ceil(hardware.memory)
+        hardware.storage["__outdir__"].add_path(output_directory)
+        hardware.storage["__tmpdir__"].add_path(tmp_directory)
+        context["runtime"]["cores"] = hardware.cores
+        context["runtime"]["ram"] = hardware.memory
         # noinspection PyUnresolvedReferences
-        context["runtime"]["tmpdirSize"] = math.ceil(tmp_storage.size)
+        context["runtime"]["tmpdirSize"] = hardware.storage["__tmpdir__"].size
         # noinspection PyUnresolvedReferences
-        context["runtime"]["outdirSize"] = math.ceil(outstorage.size)
+        context["runtime"]["outdirSize"] = hardware.storage["__outdir__"].size
     return context
 
 
