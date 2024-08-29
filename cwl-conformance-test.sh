@@ -64,7 +64,7 @@ mv "${CONFORMANCE_TEST}" "${CONFORMANCE_TEST%".yaml"}.cwltest.yaml"
 CONFORMANCE_TEST="${CONFORMANCE_TEST%".yaml"}.cwltest.yaml"
 
 # Build command
-TEST_COMMAND="python -m pytest ${CONFORMANCE_TEST} -n auto -rs -svvv"
+TEST_COMMAND="python -m pytest ${CONFORMANCE_TEST} -n auto -rs"
 if [[ -n "${EXCLUDE}" ]] ; then
   TEST_COMMAND="${TEST_COMMAND} --cwl-exclude ${EXCLUDE}"
 fi

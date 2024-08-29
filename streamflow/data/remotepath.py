@@ -10,7 +10,7 @@ import posixpath
 import shutil
 from email.message import Message
 from pathlib import Path
-from typing import MutableSequence, TYPE_CHECKING
+from typing import MutableSequence, TYPE_CHECKING, MutableMapping
 
 import aiohttp
 from aiohttp import ClientResponse
@@ -210,6 +210,15 @@ async def get_mount_point(
     location: AvailableLocation | None,
     path: str,
 ) -> str:
+    """
+    Get the mount point of a path in the location
+
+    :param context: the `StreamFlowContext` object with global application status.
+    :param connector: the `Connector` object to communicate with the location
+    :param location: the `ExecutionLocation` object with the location information
+    :param path: the path of which discover its mount point
+    :return: the mount point path
+    """
     try:
         return location.hardware.get_mount_point(path)
     except KeyError:
@@ -237,11 +246,22 @@ async def get_mount_point(
 
 async def get_storage_usages(
     connector: Connector, location: ExecutionLocation, hardware: Hardware
-):
+) -> MutableMapping[str, int]:
+    """
+    Get the mount point of a path in the location
+
+    Warn. Storage keys are not mount points.
+    Each `HardwareRequirement` implementation can use the storage dictionary keys as it wants.
+    No assumption about the key meaning can be done.
+
+    :param connector: the `Connector` object to communicate with the location
+    :param location: the `ExecutionLocation` object with the location information
+    :param hardware: The `Hardware` which contains the paths to discover size.
+    :return:
+    """
+
     # It is not an accurate snapshot of the resources used
-    # The follow links should be resolved but checking their mount points.
-    # Warn. Storage keys are not mount points.
-    # Each HardwareRequirement implementation can use the storage dictionary keys as it wants
+    # Eventual follow links inside the Storage paths should be resolved but checking their mount points.
     return dict(
         zip(
             hardware.storage.keys(),
@@ -506,8 +526,7 @@ async def size(
         )
         _check_status(command, location, result, status)
         result = result.strip().strip("'\"")
-        res = int(result) if result.isdigit() else 0
-        return res
+        return int(result) if result.isdigit() else 0
 
 
 async def symlink(
