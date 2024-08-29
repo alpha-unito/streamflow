@@ -248,7 +248,7 @@ async def get_storage_usages(
     connector: Connector, location: ExecutionLocation, hardware: Hardware
 ) -> MutableMapping[str, int]:
     """
-    Get the mount point of a path in the location
+    Get the real size of its paths of the hardware storages
 
     Warn. Storage keys are not mount points.
     Each `HardwareRequirement` implementation can use the storage dictionary keys as it wants.
@@ -257,7 +257,7 @@ async def get_storage_usages(
     :param connector: the `Connector` object to communicate with the location
     :param location: the `ExecutionLocation` object with the location information
     :param hardware: The `Hardware` which contains the paths to discover size.
-    :return:
+    :return: A map with the `key` of the `hardware` storage and the size of the paths in the `hardware` storage
     """
 
     # It is not an accurate snapshot of the resources used
