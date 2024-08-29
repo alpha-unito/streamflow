@@ -127,6 +127,7 @@ class DefaultScheduler(Scheduler):
                         if loc.name in self.hardware_locations.keys():
                             self.hardware_locations[loc.name] += hardware[loc.name]
                         else:
+                            # Get normalized hardware for the hardware location
                             self.hardware_locations[loc.name] = (
                                 Hardware() + hardware[loc.name]
                             )
@@ -376,9 +377,6 @@ class DefaultScheduler(Scheduler):
         hardware_requirement: Hardware,
     ) -> Hardware:
         location = _get_location_for_requirement(connector, location)
-        # The `paths` of the `hardware_requirement.storage.values()` are not added in the `paths` attribute of
-        # the new `Hardware` because the job dirs still do not exist. The directories will be added
-        # when they are created in the `ScheduleStep`
         if location.hardware is not None:
             storage = {}
             for key, disk in hardware_requirement.storage.items():

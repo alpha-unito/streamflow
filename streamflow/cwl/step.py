@@ -9,6 +9,7 @@ from typing import Any, MutableMapping, MutableSequence, cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -36,6 +37,7 @@ from streamflow.workflow.step import (
     LoopOutputStep,
     TransferStep,
     _get_token_ids,
+    ScheduleStep,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
@@ -405,6 +407,19 @@ class CWLLoopOutputLastStep(LoopOutputStep):
                 key=lambda t: int(t.tag.split(".")[-1]),
             )[-1],
         )
+
+
+class CWLScheduleStep(ScheduleStep):
+    async def _set_job_directories(
+        self,
+        connector: Connector,
+        locations: MutableSequence[ExecutionLocation],
+        job: Job,
+    ):
+        await super()._set_job_directories(connector, locations, job)
+        hardware = self.workflow.context.scheduler.get_hardware(job.name)
+        hardware.storage["__outdir__"].add_path(job.output_directory)
+        hardware.storage["__tmpdir__"].add_path(job.tmp_directory)
 
 
 class CWLTransferStep(TransferStep):

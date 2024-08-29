@@ -248,7 +248,7 @@ async def get_storage_usages(
     connector: Connector, location: ExecutionLocation, hardware: Hardware
 ) -> MutableMapping[str, int]:
     """
-    Get the real size of its paths of the hardware storages
+    Get the actual size of the hardware storage paths
 
     Warn. Storage keys are not mount points.
     Each `HardwareRequirement` implementation can use the storage dictionary keys as it wants.

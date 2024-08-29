@@ -79,6 +79,7 @@ from streamflow.cwl.step import (
     CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
     CWLTransferStep,
+    CWLScheduleStep,
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
@@ -1592,7 +1593,7 @@ class CWLTranslator:
         }
         # Create a schedule step and connect it to the DeployStep
         schedule_step = workflow.create_step(
-            cls=ScheduleStep,
+            cls=CWLScheduleStep,
             name=posixpath.join(name_prefix, "__schedule__"),
             job_prefix=name_prefix,
             connector_ports={

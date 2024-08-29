@@ -5,9 +5,12 @@ import posixpath
 from typing import MutableSequence, TYPE_CHECKING
 
 from streamflow.core import utils
-from streamflow.core.deployment import Target
 from streamflow.core.config import BindingConfig
+from streamflow.core.deployment import Target
 from streamflow.core.scheduling import HardwareRequirement
+from streamflow.core.workflow import Workflow, Port
+from streamflow.cwl.hardware import CWLHardwareRequirement
+from streamflow.cwl.step import CWLScheduleStep
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import (
     DotProductCombinator,
@@ -15,7 +18,6 @@ from streamflow.workflow.combinator import (
     LoopTerminationCombinator,
 )
 from streamflow.workflow.port import ConnectorPort
-from streamflow.core.workflow import Workflow, Port
 from streamflow.workflow.step import DeployStep, ScheduleStep
 from tests.utils.deployment import get_docker_deployment_config
 
@@ -55,7 +57,11 @@ def create_schedule_step(
             ]
         )
     return workflow.create_step(
-        cls=ScheduleStep,
+        cls=(
+            CWLScheduleStep
+            if isinstance(hardware_requirement, CWLHardwareRequirement)
+            else ScheduleStep
+        ),
         name=posixpath.join(utils.random_name(), "__schedule__"),
         job_prefix="something",
         connector_ports={
