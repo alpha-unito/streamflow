@@ -55,15 +55,18 @@ class Hardware:
         a new `Hardware` instance is created following a normalized form. In the normalized form, the `key` is equal
         to the storage's mount point, and there is only one (aggregated) `Storage` object for each mount point.
 
-        :param cores: Total number of cores
-        :param memory: Total number of memory
-        :param storage: A map with string keys and `Storage` values
+        :param cores: total number of cores
+        :param memory: total number of memory
+        :param storage: a map with string keys and `Storage` values
         """
         self.cores: float = cores
         self.memory: float = memory
         self.storage: MutableMapping[str, Storage] = storage or {
             os.sep: Storage(os.sep, 0.0)
         }
+
+    def _normalize_storage(self) -> MutableMapping[str, Storage]:
+        return _reduce_storages(self.storage.values(), Storage.__add__.__call__)
 
     def get_mount_point(self, path: str) -> str:
         return self.get_storage(path).mount_point
@@ -73,9 +76,6 @@ class Hardware:
 
     def get_size(self, path: str) -> float:
         return self.get_storage(path).size
-
-    def _normalize_storage(self) -> MutableMapping[str, Storage]:
-        return _reduce_storages(self.storage.values(), Storage.__add__.__call__)
 
     def get_storage(self, path: str) -> Storage:
         for disk in self.storage.values():

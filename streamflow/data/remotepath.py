@@ -256,8 +256,8 @@ async def get_storage_usages(
 
     :param connector: the `Connector` object to communicate with the location
     :param location: the `ExecutionLocation` object with the location information
-    :param hardware: The `Hardware` which contains the paths to discover size.
-    :return: A map with the `key` of the `hardware` storage and the size of the paths in the `hardware` storage
+    :param hardware: the `Hardware` which contains the paths to discover size.
+    :return: a map with the `key` of the `hardware` storage and the size of the paths in the `hardware` storage
     """
 
     # It is not an accurate snapshot of the resources used
@@ -489,15 +489,14 @@ async def size(
 ) -> int:
     """
     Get the data size.
-    If the data is in the local location, the python library functions are called to get the size.
-    It is done to achieve two goals:
-        - these python library functions should be faster calling directly system calls instead of
-          execute the command spawning a new process.
-        - the driver is more portable across different platforms.
-    Otherwise, a linux shell command is executed in the remote location to get the data size.
 
-    :param connector: The `Connector` object to communicate with the location
-    :param location: The `ExecutionLocation` object with the location information
+    If data reside in the local location, Python functions are called to get the size.
+    Indeed, Python functions are much faster than new processes calling shell commands,
+    and the Python stack is more portable across different platforms.
+    Otherwise, a Linux shell command is executed to get the data size from remote locations.
+
+    :param connector: the `Connector` object to communicate with the location
+    :param location: the `ExecutionLocation` object with the location information
     :return: the sum of all the input path sizes, expressed in bytes
     """
     if not path:

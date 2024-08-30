@@ -246,9 +246,7 @@ def build_context(
     if hardware:
         context["runtime"]["cores"] = hardware.cores
         context["runtime"]["ram"] = hardware.memory
-        # noinspection PyUnresolvedReferences
         context["runtime"]["tmpdirSize"] = hardware.storage["__tmpdir__"].size
-        # noinspection PyUnresolvedReferences
         context["runtime"]["outdirSize"] = hardware.storage["__outdir__"].size
     return context
 

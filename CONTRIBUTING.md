@@ -84,7 +84,7 @@ make format codespell
 ```
 Use it carefully as it modifies the target files in place.
 
-Finally, StreamFlow follows the reStructuredText format for docstring. The reStructuredText format is used by the [Sphinx](https://www.sphinx-doc.org/en/master/) framework. Follow this style to add function documentation.
+Finally, the StreamFlow documentation relies on the [Sphinx](https://www.sphinx-doc.org/en/master/) framework, which follows the reStructuredText format. Follow this style to add documentation for new functions.
 ```
 This is a reST style.
 
