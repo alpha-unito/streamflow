@@ -49,15 +49,15 @@ class Hardware:
         The `Hardware` class serves as a representation of the system's resources.
 
         The `storage` attribute is a map with `key : storage`. The `key` meaning is left to the implementation of
-        the `HardwareRequirement`. No assumption can be made about the `key` meaning outside this class.
-        Only other classes of the same `HardwareRequirement` domain can use the `key` as a fast entry point
-        to the `Storage`. When an operation (arithmetic or comparison) is done, a new `Hardware` instance is
-        created following a normalized form. In the normalized form, the `key` is the storage mount point,
-        and each mount point can have just a `Storage` object.
+        the `HardwareRequirement`. No assumption should be made about any specific behaviour of the `key` field
+        outside this class. Only other classes of the same `HardwareRequirement` domain should be allowed to use
+        the `key` as a fast entry point to the `Storage`. When an operation (arithmetic or comparison) is done,
+        a new `Hardware` instance is created following a normalized form. In the normalized form, the `key` is equal
+        to the storage's mount point, and there is only one (aggregated) `Storage` object for each mount point.
 
         :param cores: Total number of cores
         :param memory: Total number of memory
-        :param storage: A map with a `key` and a `Storage` object
+        :param storage: A map with string keys and `Storage` values
         """
         self.cores: float = cores
         self.memory: float = memory
@@ -354,11 +354,11 @@ class Storage:
         self, mount_point: str, size: float, paths: MutableSet[str] | None = None
     ):
         """
-        The `Storage` class represents a volume
+        The `Storage` class represents a persistent volume
 
-        :param mount_point: It is the mount point path
-        :param size: It is the total size of the volume, expressed in Kilobyte
-        :param paths: It is a list of paths inside the mount point
+        :param mount_point: the path of the volume's mount point
+        :param size: the total size of the volume, expressed in Kilobyte
+        :param paths: a list of paths inside the volume
         """
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
@@ -402,7 +402,7 @@ class Storage:
             raise NotImplementedError
         if self.mount_point != other.mount_point:
             raise KeyError(
-                f"Storage {self.mount_point} has different mount point of {other.mount_point} storage"
+                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
             )
         return self.size >= other.size
 
@@ -411,7 +411,7 @@ class Storage:
             raise NotImplementedError
         if self.mount_point != other.mount_point:
             raise KeyError(
-                f"Storage {self.mount_point} has different mount point of {other.mount_point} storage"
+                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
             )
         return self.size > other.size
 
@@ -420,7 +420,7 @@ class Storage:
             raise NotImplementedError
         if self.mount_point != other.mount_point:
             raise KeyError(
-                f"Storage {self.mount_point} has different mount point of {other.mount_point} storage"
+                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
             )
         return self.size <= other.size
 
@@ -429,6 +429,6 @@ class Storage:
             raise NotImplementedError
         if self.mount_point != other.mount_point:
             raise KeyError(
-                f"Storage {self.mount_point} has different mount point of {other.mount_point} storage"
+                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
             )
         return self.size < other.size

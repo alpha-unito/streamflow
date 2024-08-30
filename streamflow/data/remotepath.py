@@ -211,13 +211,13 @@ async def get_mount_point(
     path: str,
 ) -> str:
     """
-    Get the mount point of a path in the location
+    Get the mount point of a path in the given `location`
 
     :param context: the `StreamFlowContext` object with global application status.
     :param connector: the `Connector` object to communicate with the location
     :param location: the `ExecutionLocation` object with the location information
-    :param path: the path of which discover its mount point
-    :return: the mount point path
+    :param path: the path whose mount point should be returned
+    :return: the mount point containing the given path
     """
     try:
         return location.hardware.get_mount_point(path)
@@ -229,10 +229,10 @@ async def get_mount_point(
             )
         ) is None:
             mount_point = Path(mount_point).parent
-        # follow symlynk can return empty string
+        # follow symlink can return empty string
         if not mount_point:
             raise WorkflowExecutionException(
-                f"Impossible to find the mountpoint: the {path} path does not exist"
+                f"Impossible to find a mount point for path {path}: the path does not exist"
             )
         # todo: wraps not considered
         location_mount_points = location.hardware.get_mount_points()
@@ -251,8 +251,8 @@ async def get_storage_usages(
     Get the actual size of the hardware storage paths
 
     Warn. Storage keys are not mount points.
-    Each `HardwareRequirement` implementation can use the storage dictionary keys as it wants.
-    No assumption about the key meaning can be done.
+    Since the meaning of storage dictionary keys depends on each `HardwareRequirement` implementation,
+    no assumption about the key meaning should be made.
 
     :param connector: the `Connector` object to communicate with the location
     :param location: the `ExecutionLocation` object with the location information
