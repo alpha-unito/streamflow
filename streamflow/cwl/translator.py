@@ -79,6 +79,7 @@ from streamflow.cwl.step import (
     CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
     CWLTransferStep,
+    CWLScheduleStep,
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
@@ -1426,9 +1427,6 @@ class CWLTranslator:
             name=posixpath.join(f"{global_name}-injector", "__schedule__"),
             job_prefix=f"{global_name}-injector",
             connector_ports={target.deployment.name: deploy_step.get_output_port()},
-            input_directory=target.workdir or output_directory,
-            output_directory=target.workdir or output_directory,
-            tmp_directory=target.workdir or output_directory,
             binding_config=binding_config,
         )
         # Create a CWLInputInjector step to process the input
@@ -1595,7 +1593,7 @@ class CWLTranslator:
         }
         # Create a schedule step and connect it to the DeployStep
         schedule_step = workflow.create_step(
-            cls=ScheduleStep,
+            cls=CWLScheduleStep,
             name=posixpath.join(name_prefix, "__schedule__"),
             job_prefix=name_prefix,
             connector_ports={
@@ -2474,9 +2472,6 @@ class CWLTranslator:
                 ),
                 job_prefix=f"{global_name}-value-from",
                 connector_ports={target.deployment.name: deploy_step.get_output_port()},
-                input_directory=target.workdir or self.output_directory,
-                output_directory=target.workdir or self.output_directory,
-                tmp_directory=target.workdir or self.output_directory,
                 binding_config=binding_config,
             )
 

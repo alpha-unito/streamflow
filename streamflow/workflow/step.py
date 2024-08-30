@@ -1360,33 +1360,7 @@ class ScheduleStep(BaseStep):
         locations: MutableSequence[ExecutionLocation],
         job: Job,
     ):
-        # Set job directories
-        allocation = self.workflow.context.scheduler.get_allocation(job.name)
-        path_processor = get_path_processor(connector)
-        job.input_directory = _get_directory(
-            path_processor, job.input_directory, allocation.target
-        )
-        job.output_directory = _get_directory(
-            path_processor, job.output_directory, allocation.target
-        )
-        job.tmp_directory = _get_directory(
-            path_processor, job.tmp_directory, allocation.target
-        )
-        # Create directories
-        await remotepath.mkdirs(
-            connector=connector,
-            locations=locations,
-            paths=[job.input_directory, job.output_directory, job.tmp_directory],
-        )
-        job.input_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.input_directory
-        )
-        job.output_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.output_directory
-        )
-        job.tmp_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.tmp_directory
-        )
+        await self._set_job_directories(connector, locations, job)
 
         # Register paths
         for location in locations:
@@ -1460,6 +1434,39 @@ class ScheduleStep(BaseStep):
             )
         return params
 
+    async def _set_job_directories(
+        self,
+        connector: Connector,
+        locations: MutableSequence[ExecutionLocation],
+        job: Job,
+    ):
+        allocation = self.workflow.context.scheduler.get_allocation(job.name)
+        path_processor = get_path_processor(connector)
+        job.input_directory = _get_directory(
+            path_processor, job.input_directory, allocation.target
+        )
+        job.output_directory = _get_directory(
+            path_processor, job.output_directory, allocation.target
+        )
+        job.tmp_directory = _get_directory(
+            path_processor, job.tmp_directory, allocation.target
+        )
+        # Create directories
+        await remotepath.mkdirs(
+            connector=connector,
+            locations=locations,
+            paths=[job.input_directory, job.output_directory, job.tmp_directory],
+        )
+        job.input_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.input_directory
+        )
+        job.output_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.output_directory
+        )
+        job.tmp_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.tmp_directory
+        )
+
     def get_output_port(self, name: str | None = None) -> JobPort:
         return cast(JobPort, super().get_output_port(name))
 
@@ -1512,13 +1519,8 @@ class ScheduleStep(BaseStep):
                                 tmp_directory=self.tmp_directory,
                             )
                             # Schedule
-                            hardware_requirement = (
-                                self.hardware_requirement.eval(inputs)
-                                if self.hardware_requirement
-                                else None
-                            )
                             await self.workflow.context.scheduler.schedule(
-                                job, self.binding_config, hardware_requirement
+                                job, self.binding_config, self.hardware_requirement
                             )
                             locations = self.workflow.context.scheduler.get_locations(
                                 job.name
@@ -1540,11 +1542,7 @@ class ScheduleStep(BaseStep):
                 await self.workflow.context.scheduler.schedule(
                     job,
                     self.binding_config,
-                    (
-                        self.hardware_requirement.eval({})
-                        if self.hardware_requirement
-                        else None
-                    ),
+                    self.hardware_requirement,
                 )
                 locations = self.workflow.context.scheduler.get_locations(job.name)
                 await self._propagate_job(

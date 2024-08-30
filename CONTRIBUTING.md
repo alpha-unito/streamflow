@@ -84,6 +84,15 @@ make format codespell
 ```
 Use it carefully as it modifies the target files in place.
 
+Finally, the StreamFlow documentation relies on the [Sphinx](https://www.sphinx-doc.org/en/master/) framework, which follows the reStructuredText format. Follow this style to add documentation for new functions.
+```
+This is a reST style.
+
+:param param1: this is a first param
+:param param2: this is a second param
+:returns: this is a description of what is returned
+:raises keyError: raises an exception
+```
 
 ## Contribute to the documentation
 

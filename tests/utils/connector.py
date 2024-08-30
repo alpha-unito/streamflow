@@ -58,11 +58,7 @@ class FailureConnector(Connector):
         raise FailureConnectorException("FailureConnector deploy")
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         raise FailureConnectorException("FailureConnector get_available_locations")
 
@@ -106,11 +102,7 @@ class ParameterizableHardwareConnector(LocalConnector):
         self.hardware = hardware
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return {
             LOCAL_LOCATION: AvailableLocation(

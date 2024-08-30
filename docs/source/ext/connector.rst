@@ -44,10 +44,7 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
 
     async def get_available_locations(
         self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         ...
 
@@ -89,7 +86,7 @@ The ``deploy`` method instantiates the remote execution environment, making it r
 
 The ``undeploy`` method destroys the remote execution environment, potentially cleaning up all the temporary resources instantiated during the workflow execution (e.g., intermediate results). If a ``deployment`` object is marked as ``external``, the ``undeploy`` method should not destroy it but just close all the connections opened by the ``deploy`` method.
 
-The ``get_available_locations`` method is used in the scheduling phase to obtain the locations available for job execution, identified by their unique name (see :ref:`here <Scheduling>`). The method receives some optional input parameters to filter valid locations. The ``service`` parameter specifies a specific set of locations in a deployment, and its precise meaning differs for each deployment type (see :ref:`here <Binding steps and deployments>`). The other three parameters (``input_directory``, ``output_directory``, and ``tmp_directory``) allow the ``Connector`` to return correct disk usage values for each of the three folders in case of remote instances with multiple volumes attached.
+The ``get_available_locations`` method is used in the scheduling phase to obtain the locations available for job execution, identified by their unique name (see :ref:`here <Scheduling>`). The method receives an optional input parameter to filter valid locations. The ``service`` parameter specifies a specific set of locations in a deployment, and its precise meaning differs for each deployment type (see :ref:`here <Binding steps and deployments>`).
 
 The ``get_stream_reader`` and ``get_stream_writer`` methods return a ``StreamWrapperContextManager`` instance, obtained by executing the ``command`` on the ``location``, to read or write data using a stream (see :ref:`here <Streaming>`). The streams must be read and written respecting the size of the available buffer, which is defined by the ``transferBufferSize`` attribute of the ``Connector`` instance. These methods improve performance of data copies between pairs of remote locations.
 

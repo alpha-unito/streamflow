@@ -1,17 +1,41 @@
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING, Type, cast
+from typing import TYPE_CHECKING
+
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation, Target
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
-    from streamflow.core.workflow import Job, Status, Token
-    from typing import MutableSequence, MutableMapping
+    from streamflow.core.workflow import Job, Status
+    from typing import (
+        Any,
+        Callable,
+        Iterable,
+        MutableMapping,
+        MutableSequence,
+        MutableSet,
+        Type,
+        cast,
+    )
+
+
+def _reduce_storages(
+    storages: Iterable[Storage], operator: Callable[[Storage, Any], Storage]
+) -> MutableMapping[str, Storage]:
+    storage = {}
+    for disk in storages:
+        if disk.mount_point in storage.keys():
+            storage[disk.mount_point] = operator(storage[disk.mount_point], disk)
+        else:
+            storage[disk.mount_point] = Storage(disk.mount_point, disk.size)
+    return storage
 
 
 class Hardware:
@@ -19,67 +43,123 @@ class Hardware:
         self,
         cores: float = 0.0,
         memory: float = 0.0,
-        input_directory: float = 0.0,
-        output_directory: float = 0.0,
-        tmp_directory: float = 0.0,
+        storage: MutableMapping[str, Storage] | None = None,
     ):
+        """
+        The `Hardware` class serves as a representation of the system's resources.
+
+        The `storage` attribute is a map with `key : storage`. The `key` meaning is left to the implementation of
+        the `HardwareRequirement`. No assumption should be made about any specific behaviour of the `key` field
+        outside this class. Only other classes of the same `HardwareRequirement` domain should be allowed to use
+        the `key` as a fast entry point to the `Storage`. When an operation (arithmetic or comparison) is done,
+        a new `Hardware` instance is created following a normalized form. In the normalized form, the `key` is equal
+        to the storage's mount point, and there is only one (aggregated) `Storage` object for each mount point.
+
+        :param cores: total number of cores
+        :param memory: total number of memory
+        :param storage: a map with string keys and `Storage` values
+        """
         self.cores: float = cores
         self.memory: float = memory
-        self.input_directory: float = input_directory
-        self.output_directory: float = output_directory
-        self.tmp_directory: float = tmp_directory
+        self.storage: MutableMapping[str, Storage] = storage or {
+            os.sep: Storage(os.sep, 0.0)
+        }
 
-    def __add__(self, other):
+    def _normalize_storage(self) -> MutableMapping[str, Storage]:
+        return _reduce_storages(self.storage.values(), Storage.__add__.__call__)
+
+    def get_mount_point(self, path: str) -> str:
+        return self.get_storage(path).mount_point
+
+    def get_mount_points(self) -> MutableSequence[str]:
+        return [storage.mount_point for storage in self.storage.values()]
+
+    def get_size(self, path: str) -> float:
+        return self.get_storage(path).size
+
+    def get_storage(self, path: str) -> Storage:
+        for disk in self.storage.values():
+            if path == disk.mount_point or path in disk.paths:
+                return disk
+        raise KeyError(path)
+
+    def __add__(self, other: Any) -> Hardware:
         if not isinstance(other, Hardware):
-            return NotImplementedError
-        return self.__class__(
-            **{
-                k: vars(self).get(k, 0.0) + vars(other).get(k, 0.0)
-                for k in vars(self).keys()
-            }
+            raise NotImplementedError
+        return Hardware(
+            self.cores + other.cores,
+            self.memory + other.memory,
+            _reduce_storages(
+                (
+                    *self._normalize_storage().values(),
+                    *other._normalize_storage().values(),
+                ),
+                Storage.__add__.__call__,
+            ),
         )
 
-    def __sub__(self, other):
+    def __sub__(self, other: Any) -> Hardware:
         if not isinstance(other, Hardware):
-            return NotImplementedError
-        return self.__class__(
-            **{
-                k: vars(self).get(k, 0.0) - vars(other).get(k, 0.0)
-                for k in vars(self).keys()
-            }
+            raise NotImplementedError
+        return Hardware(
+            self.cores - other.cores,
+            self.memory - other.memory,
+            _reduce_storages(
+                (
+                    *self._normalize_storage().values(),
+                    *other._normalize_storage().values(),
+                ),
+                Storage.__sub__.__call__,
+            ),
         )
 
-    def __ge__(self, other):
+    def __ge__(self, other: Any) -> bool:
         if not isinstance(other, Hardware):
-            return NotImplementedError
-        return all(
-            vars(self).get(k, 0.0) >= vars(other).get(k, 0.0)
-            for k in set().union(vars(self).keys(), vars(other).keys())
-        )
+            raise NotImplementedError
+        if self.cores >= other.cores and self.memory >= other.memory:
+            normalized_storages = self._normalize_storage()
+            return all(
+                normalized_storages[disk.mount_point] >= disk
+                for disk in other._normalize_storage().values()
+            )
+        else:
+            return False
 
-    def __gt__(self, other):
+    def __gt__(self, other: Any) -> bool:
         if not isinstance(other, Hardware):
-            return NotImplementedError
-        return all(
-            vars(self).get(k, 0.0) > vars(other).get(k, 0.0)
-            for k in set().union(vars(self).keys(), vars(other).keys())
-        )
+            raise NotImplementedError
+        if self.cores > other.cores and self.memory > other.memory:
+            normalized_storages = self._normalize_storage()
+            return all(
+                normalized_storages[disk.mount_point] > disk
+                for disk in other._normalize_storage().values()
+            )
+        else:
+            return False
 
-    def __le__(self, other):
+    def __le__(self, other: Any) -> bool:
         if not isinstance(other, Hardware):
-            return NotImplementedError
-        return all(
-            vars(self).get(k, 0.0) <= vars(other).get(k, 0.0)
-            for k in set().union(vars(self).keys(), vars(other).keys())
-        )
+            raise NotImplementedError
+        if self.cores <= other.cores and self.memory <= other.memory:
+            normalized_storages = self._normalize_storage()
+            return all(
+                normalized_storages[disk.mount_point] <= disk
+                for disk in other._normalize_storage().values()
+            )
+        else:
+            return False
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> bool:
         if not isinstance(other, Hardware):
-            return NotImplementedError
-        return all(
-            vars(self).get(k, 0.0) < vars(other).get(k, 0.0)
-            for k in set().union(vars(self).keys(), vars(other).keys())
-        )
+            raise NotImplementedError
+        if self.cores < other.cores and self.memory < other.memory:
+            normalized_storages = self._normalize_storage()
+            return all(
+                normalized_storages[disk.mount_point] < disk
+                for disk in other._normalize_storage().values()
+            )
+        else:
+            return False
 
 
 class HardwareRequirement(ABC):
@@ -98,7 +178,7 @@ class HardwareRequirement(ABC):
     ) -> MutableMapping[str, Any]: ...
 
     @abstractmethod
-    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware: ...
+    def eval(self, job: Job) -> Hardware: ...
 
     @classmethod
     async def load(
@@ -262,5 +342,93 @@ class Scheduler(SchemaEntity):
 
     @abstractmethod
     async def schedule(
-        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
+        self,
+        job: Job,
+        binding_config: BindingConfig,
+        hardware_requirement: HardwareRequirement | None,
     ) -> None: ...
+
+
+class Storage:
+    def __init__(
+        self, mount_point: str, size: float, paths: MutableSet[str] | None = None
+    ):
+        """
+        The `Storage` class represents a persistent volume
+
+        :param mount_point: the path of the volume's mount point
+        :param size: the total size of the volume, expressed in Kilobyte
+        :param paths: a list of paths inside the volume
+        """
+        self.mount_point: str = mount_point
+        self.paths: MutableSet[str] = paths or set()
+        if size < 0:
+            raise WorkflowExecutionException(
+                f"Storage {mount_point} with {paths} paths cannot have negative size: {size}"
+            )
+        self.size: float = size
+
+    def add_path(self, path: str):
+        self.paths.add(path)
+
+    def __add__(self, other: Any) -> Storage:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Cannot sum two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return Storage(
+            mount_point=self.mount_point,
+            size=self.size + other.size,
+            paths=self.paths | other.paths,
+        )
+
+    def __sub__(self, other: Any) -> Storage:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Cannot subtract two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return Storage(
+            mount_point=self.mount_point,
+            size=self.size - other.size,
+            paths=self.paths | other.paths,
+        )
+
+    def __ge__(self, other: Storage) -> bool:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise KeyError(
+                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return self.size >= other.size
+
+    def __gt__(self, other: Storage) -> bool:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise KeyError(
+                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return self.size > other.size
+
+    def __le__(self, other: Storage) -> bool:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise KeyError(
+                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return self.size <= other.size
+
+    def __lt__(self, other: Storage) -> bool:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise KeyError(
+                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return self.size < other.size

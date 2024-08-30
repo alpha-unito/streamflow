@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import posixpath
+from typing import cast
 
 import pytest
+from streamflow.cwl.workflow import CWLWorkflow
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -238,7 +240,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
             "name": utils.random_name() + "-value-from-transformer",
             "processor": CWLTokenProcessor(
                 name=in_port.name,
-                workflow=workflow,
+                workflow=cast(CWLWorkflow, workflow),
             ),
             "port_name": in_port.name,
             "full_js": True,

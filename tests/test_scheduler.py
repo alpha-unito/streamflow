@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import cast
 
 import pytest
@@ -13,8 +14,9 @@ from streamflow.core.deployment import (
     LocalTarget,
     Target,
 )
-from streamflow.core.scheduling import Hardware
+from streamflow.core.scheduling import Hardware, Storage
 from streamflow.core.workflow import Job, Status
+from streamflow.cwl.hardware import CWLHardwareRequirement
 from tests.utils.connector import ParameterizableHardwareConnector
 from tests.utils.deployment import (
     get_docker_deployment_config,
@@ -22,7 +24,7 @@ from tests.utils.deployment import (
     get_deployment_config,
     get_parameterizable_hardware_deployment_config,
 )
-from tests.utils.workflow import random_job_name
+from tests.utils.workflow import random_job_name, CWL_VERSION
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -42,7 +44,6 @@ async def test_scheduling(
     service: str | None,
 ):
     """Test scheduling a job on a remote environment."""
-
     job = Job(
         name=random_job_name(),
         workflow_id=0,
@@ -51,11 +52,8 @@ async def test_scheduling(
         output_directory=deployment_config.workdir,
         tmp_directory=deployment_config.workdir,
     )
-    hardware_requirement = Hardware(cores=1)
-    target = Target(
-        deployment=deployment_config,
-        service=service,
-    )
+    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
+    target = Target(deployment=deployment_config, service=service)
     binding_config = BindingConfig(targets=[target])
     await context.scheduler.schedule(job, binding_config, hardware_requirement)
     assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
@@ -68,12 +66,15 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
 
     # Inject custom hardware to manipulate available resources
+    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     machine_hardware = Hardware(
-        cores=1,
-        memory=100,
-        input_directory=100,
-        output_directory=100,
-        tmp_directory=100,
+        cores=hardware_requirement.cores,
+        memory=hardware_requirement.memory,
+        storage={
+            os.sep: Storage(
+                os.sep, hardware_requirement.tmpdir + hardware_requirement.outdir
+            )
+        },
     )
     deployment_config = get_parameterizable_hardware_deployment_config()
     conn = cast(
@@ -83,19 +84,17 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     conn.set_hardware(machine_hardware)
 
     # Create fake jobs and schedule them
-    jobs = []
-    for _ in range(2):
-        jobs.append(
-            Job(
-                name=random_job_name(),
-                workflow_id=0,
-                inputs={},
-                input_directory=None,
-                output_directory=None,
-                tmp_directory=None,
-            )
+    jobs = [
+        Job(
+            name=random_job_name(),
+            workflow_id=0,
+            inputs={},
+            input_directory=None,
+            output_directory=None,
+            tmp_directory=None,
         )
-    hardware_requirement = Hardware(cores=1)
+        for _ in range(2)
+    ]
     target = Target(
         deployment=deployment_config,
         service=get_service(context, deployment_config.type),
@@ -143,14 +142,19 @@ async def test_single_env_few_resources(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_single_env_enough_resources(context: StreamFlowContext):
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
-
+    num_jobs = 2
     # Inject custom hardware to manipulate available resources
+    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     machine_hardware = Hardware(
-        cores=2,
-        memory=100,
-        input_directory=100,
-        output_directory=100,
-        tmp_directory=100,
+        cores=hardware_requirement.cores * num_jobs,
+        memory=hardware_requirement.memory * num_jobs,
+        storage={
+            os.sep: Storage(
+                os.sep,
+                hardware_requirement.tmpdir * num_jobs
+                + hardware_requirement.outdir * num_jobs,
+            )
+        },
     )
 
     deployment_config = get_parameterizable_hardware_deployment_config()
@@ -161,19 +165,17 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
     conn.set_hardware(machine_hardware)
 
     # Create fake jobs and schedule them
-    jobs = []
-    for _ in range(2):
-        jobs.append(
-            Job(
-                name=random_job_name(),
-                workflow_id=0,
-                inputs={},
-                input_directory=None,
-                output_directory=None,
-                tmp_directory=None,
-            )
+    jobs = [
+        Job(
+            name=random_job_name(),
+            workflow_id=0,
+            inputs={},
+            input_directory=None,
+            output_directory=None,
+            tmp_directory=None,
         )
-    hardware_requirement = Hardware(cores=1)
+        for _ in range(num_jobs)
+    ]
     target = Target(
         deployment=deployment_config,
         service=get_service(context, deployment_config.type),
@@ -186,7 +188,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
         )
         for job in jobs
     ]
-    assert len(task_pending) == 2
+    assert len(task_pending) == num_jobs
 
     # Available resources to schedule all the jobs (timeout parameter useful if a deadlock occurs)
     _, task_pending = await asyncio.wait(
@@ -212,7 +214,16 @@ async def test_multi_env(context: StreamFlowContext):
     """Test scheduling two jobs on two different environments."""
 
     # Inject custom hardware to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
+    machine_hardware = Hardware(
+        cores=hardware_requirement.cores,
+        memory=hardware_requirement.memory,
+        storage={
+            os.sep: Storage(
+                os.sep, hardware_requirement.tmpdir + hardware_requirement.outdir
+            )
+        },
+    )
     param_config = get_parameterizable_hardware_deployment_config()
     conn = cast(
         ParameterizableHardwareConnector,
@@ -221,7 +232,6 @@ async def test_multi_env(context: StreamFlowContext):
     conn.set_hardware(machine_hardware)
 
     # Create fake jobs with two different env and schedule them
-    jobs = []
     target = Target(
         deployment=param_config,
         service=get_service(context, param_config.type),
@@ -233,21 +243,20 @@ async def test_multi_env(context: StreamFlowContext):
         service=get_service(context, docker_config.type),
         workdir=docker_config.workdir,
     )
-    for i in range(2):
-        jobs.append(
-            (
-                Job(
-                    name=random_job_name(),
-                    workflow_id=0,
-                    inputs={},
-                    input_directory=None,
-                    output_directory=None,
-                    tmp_directory=None,
-                ),
-                BindingConfig(targets=[target] if i == 0 else [docker_target]),
-            )
+    jobs = [
+        (
+            Job(
+                name=random_job_name(f"a{i}"),
+                workflow_id=0,
+                inputs={},
+                input_directory=None,
+                output_directory=None,
+                tmp_directory=None,
+            ),
+            BindingConfig(targets=[target] if i == 0 else [docker_target]),
         )
-    hardware_requirement = Hardware(cores=1)
+        for i in range(2)
+    ]
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -280,7 +289,16 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     """Test scheduling one jobs with two targets: Local and Docker Image. The job will be scheduled in the first"""
 
     # Inject custom hardware to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
+    machine_hardware = Hardware(
+        cores=hardware_requirement.cores,
+        memory=hardware_requirement.memory,
+        storage={
+            os.sep: Storage(
+                os.sep, hardware_requirement.tmpdir + hardware_requirement.outdir
+            )
+        },
+    )
     param_config = get_parameterizable_hardware_deployment_config()
     conn = cast(
         ParameterizableHardwareConnector,
@@ -311,7 +329,6 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
     )
     binding_config = BindingConfig(targets=[target, docker_target])
 
-    hardware_requirement = Hardware(cores=1)
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)
@@ -349,7 +366,16 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     """
 
     # Inject custom connector to manipulate available resources
-    machine_hardware = Hardware(cores=1)
+    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
+    machine_hardware = Hardware(
+        cores=hardware_requirement.cores,
+        memory=hardware_requirement.memory,
+        storage={
+            os.sep: Storage(
+                os.sep, hardware_requirement.tmpdir + hardware_requirement.outdir
+            )
+        },
+    )
     param_config = get_parameterizable_hardware_deployment_config()
     conn = cast(
         ParameterizableHardwareConnector,
@@ -358,18 +384,17 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     conn.set_hardware(machine_hardware)
 
     # Create fake jobs with two same targets and schedule them
-    jobs = []
-    for _ in range(2):
-        jobs.append(
-            Job(
-                name=random_job_name(),
-                workflow_id=0,
-                inputs={},
-                input_directory=None,
-                output_directory=None,
-                tmp_directory=None,
-            )
+    jobs = [
+        Job(
+            name=random_job_name(),
+            workflow_id=0,
+            inputs={},
+            input_directory=None,
+            output_directory=None,
+            tmp_directory=None,
         )
+        for _ in range(2)
+    ]
     target = Target(
         deployment=param_config,
         service=get_service(context, param_config.type),
@@ -383,7 +408,6 @@ async def test_multi_targets_two_jobs(context: StreamFlowContext):
     )
     binding_config = BindingConfig(targets=[target, docker_target])
 
-    hardware_requirement = Hardware(cores=1)
     task_pending = [
         asyncio.create_task(
             context.scheduler.schedule(job, binding_config, hardware_requirement)

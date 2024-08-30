@@ -8,12 +8,7 @@ import urllib.parse
 from enum import Enum
 from pathlib import PurePath
 from types import ModuleType
-from typing import (
-    Any,
-    MutableMapping,
-    MutableSequence,
-    cast,
-)
+from typing import Any, MutableMapping, MutableSequence, cast
 
 import cwl_utils.expression
 import cwltool.context
@@ -251,10 +246,8 @@ def build_context(
     if hardware:
         context["runtime"]["cores"] = hardware.cores
         context["runtime"]["ram"] = hardware.memory
-        # noinspection PyUnresolvedReferences
-        context["runtime"]["tmpdirSize"] = hardware.tmp_directory
-        # noinspection PyUnresolvedReferences
-        context["runtime"]["outdirSize"] = hardware.output_directory
+        context["runtime"]["tmpdirSize"] = hardware.storage["__tmpdir__"].size
+        context["runtime"]["outdirSize"] = hardware.storage["__outdir__"].size
     return context
 
 

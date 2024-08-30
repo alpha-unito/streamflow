@@ -377,11 +377,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
 
     @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         pods = await self._get_running_pods()
         valid_targets = {}

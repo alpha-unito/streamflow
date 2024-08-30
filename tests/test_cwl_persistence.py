@@ -9,7 +9,9 @@ from ruamel.yaml.scalarstring import DoubleQuotedScalarString, LiteralScalarStri
 
 from streamflow.core import utils
 from streamflow.core.command import CommandTokenProcessor, UnionCommandTokenProcessor
+from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.deployment import FilterConfig, LocalTarget
 from streamflow.core.workflow import Step
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
@@ -34,6 +36,7 @@ from streamflow.cwl.step import (
     CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
     CWLTransferStep,
+    CWLScheduleStep,
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
@@ -49,7 +52,7 @@ from streamflow.cwl.transformer import (
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.cwl.workflow import CWLWorkflow
-from streamflow.workflow.port import JobPort
+from streamflow.workflow.port import JobPort, ConnectorPort
 from streamflow.workflow.step import CombinatorStep, ExecuteStep
 from tests.conftest import save_load_and_test
 from tests.utils.workflow import CWL_VERSION, create_workflow
@@ -723,7 +726,36 @@ async def test_cwl_loop_output(context: StreamFlowContext, step_cls: type[Step])
 
 
 @pytest.mark.asyncio
-async def test_cwlworkflow(context: StreamFlowContext):
+async def test_cwl_schedule_step(context: StreamFlowContext):
+    """Test saving and loading CWLScheduleStep from database"""
+    workflow, _ = await create_workflow(context, 0)
+    binding_config = BindingConfig(
+        targets=[
+            LocalTarget(workdir=utils.random_name()),
+        ],
+        filters=[FilterConfig(config={}, name=utils.random_name(), type="shuffle")],
+    )
+    connector_ports = {
+        target.deployment.name: workflow.create_port(ConnectorPort)
+        for target in binding_config.targets
+    }
+    await workflow.save(context)
+
+    schedule_step = workflow.create_step(
+        cls=CWLScheduleStep,
+        name=posixpath.join(utils.random_name(), "__schedule__"),
+        job_prefix="something",
+        connector_ports=connector_ports,
+        input_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
+        output_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
+        tmp_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
+        binding_config=binding_config,
+    )
+    await save_load_and_test(schedule_step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_workflow(context: StreamFlowContext):
     """Test saving and loading CWLWorkflow from database"""
     workflow = CWLWorkflow(
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION

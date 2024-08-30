@@ -30,7 +30,7 @@ The ``Scheduler`` interface contains three abstract methods: ``schedule``, ``not
 .. code-block:: python
 
     async def schedule(
-        self, job: Job, binding_config: BindingConfig, hardware_requirement: Hardware
+        self, job: Job, binding_config: BindingConfig, hardware_requirement: HardwareRequirement | None
     ) -> None:
         ...
 

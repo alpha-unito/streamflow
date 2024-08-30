@@ -4,6 +4,9 @@ from typing import Any, MutableMapping, MutableSequence, cast
 
 import pytest
 
+from streamflow.cwl.hardware import CWLHardwareRequirement
+from streamflow.cwl.workflow import CWLWorkflow
+
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Port, Status, Step, Token, Workflow
@@ -34,6 +37,7 @@ from tests.utils.workflow import (
     create_workflow,
     create_deploy_step,
     create_schedule_step,
+    CWL_VERSION,
 )
 
 
@@ -225,7 +229,11 @@ async def test_execute_step(context: StreamFlowContext):
         context, num_port=3
     )
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, [deploy_step])
+    schedule_step = create_schedule_step(
+        workflow,
+        [deploy_step],
+        hardware_requirement=CWLHardwareRequirement(cwl_version=CWL_VERSION),
+    )
 
     in_port_name = "in-1"
     out_port_name = "out-1"
@@ -246,7 +254,7 @@ async def test_execute_step(context: StreamFlowContext):
         port=out_port,
         output_processor=_create_command_output_processor_base(
             port_name=out_port.name,
-            workflow=workflow,
+            workflow=cast(CWLWorkflow, workflow),
             port_target=None,
             port_type="string",
             cwl_element={},

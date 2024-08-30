@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import math
-from typing import Any, MutableMapping, MutableSequence
+import os
+from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.scheduling import Hardware, HardwareRequirement
-from streamflow.core.workflow import Token
+from streamflow.core.scheduling import Hardware, HardwareRequirement, Storage
 from streamflow.cwl.utils import eval_expression
 from streamflow.workflow.utils import get_token_value
+
+if TYPE_CHECKING:
+    from streamflow.core.workflow import Job
 
 
 class CWLHardwareRequirement(HardwareRequirement):
@@ -70,11 +73,31 @@ class CWLHardwareRequirement(HardwareRequirement):
             )
         )
 
-    def eval(self, inputs: MutableMapping[str, Token]) -> Hardware:
-        context = {"inputs": {name: get_token_value(t) for name, t in inputs.items()}}
+    def get_cores(self, context):
+        return self._process_requirement(self.cores, context)
+
+    def get_memory(self, context):
+        return self._process_requirement(self.memory, context)
+
+    def get_outdir_size(self, context):
+        return self._process_requirement(self.outdir, context)
+
+    def get_tmpdir_size(self, context):
+        return self._process_requirement(self.tmpdir, context)
+
+    def eval(self, job: Job) -> Hardware:
+        context = {
+            "inputs": {name: get_token_value(t) for name, t in job.inputs.items()}
+        }
         return Hardware(
-            cores=self._process_requirement(self.cores, context),
-            memory=self._process_requirement(self.memory, context),
-            tmp_directory=self._process_requirement(self.tmpdir, context),
-            output_directory=self._process_requirement(self.outdir, context),
+            cores=self.get_cores(context),
+            memory=self.get_memory(context),
+            storage={
+                "__outdir__": Storage(
+                    os.sep, self.get_outdir_size(context), {job.output_directory}
+                ),
+                "__tmpdir__": Storage(
+                    os.sep, self.get_tmpdir_size(context), {job.tmp_directory}
+                ),
+            },
         )
