@@ -195,7 +195,7 @@ class DefaultScheduler(Scheduler):
                     self.job_allocations.keys(),
                 )
             )
-            logger.info(
+            logger.debug(
                 f"Scheduling job_name: {job_name} on {location.deployment}\n\t- running jobs: {running_jobs}"
                 f"\n\t- rollback jobs: {rollback_jobs}"
             )

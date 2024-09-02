@@ -133,7 +133,7 @@ class DefaultFailureManager(FailureManager):
 
     async def notify_jobs(self, job_token, out_port_name, token):
         job_name = job_token.value.name
-        logger.info(f"Notify end job {job_name}")
+        logger.debug(f"Notify end job {job_name}")
         if job_name in self.job_requests.keys():
             async with self.job_requests[job_name].lock:
                 if self.job_requests[job_name].job_token is None:
@@ -198,9 +198,9 @@ class DefaultFailureManager(FailureManager):
 
                 for elem in elems:
                     self.job_requests[job_name].queue.remove(elem)
-                logger.info(f"notify - job {job_name} is not running anymore")
+                logger.debug(f"notify - job {job_name} is not running anymore")
                 self.job_requests[job_name].is_running = False
-                logger.info(f"Notify end job {job_name} - done")
+                logger.debug(f"Notify end job {job_name} - done")
 
     @classmethod
     def get_schema(cls) -> str:
@@ -268,7 +268,7 @@ class DefaultFailureManager(FailureManager):
                 f"Handling {type(exception).__name__} failure for job {job.name}"
             )
         if job.name in self.job_requests.keys():
-            logger.info(f"handle_exception: job {job.name} is not running anymore")
+            logger.debug(f"handle_exception: job {job.name} is not running anymore")
             async with self.job_requests[job.name].lock:
                 self.job_requests[job.name].is_running = False
         return await self._do_handle_failure(job, step)

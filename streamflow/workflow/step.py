@@ -686,7 +686,7 @@ class ExecuteStep(BaseStep):
                     )
                 )
             else:
-                logger.info(f"Job {job.name} recupera token di output")
+                logger.debug(f"Job {job.name} recupera token di output")
                 job_token = get_job_token(
                     job.name, self.get_input_port("__job__").token_list
                 )
