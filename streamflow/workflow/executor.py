@@ -62,10 +62,16 @@ class StreamFlowExecutor(Executor):
             token = task.result()
             # If a TerminationToken is received, the corresponding port terminated its outputs
             if isinstance(token, TerminationToken):
-                self.received.append(task_name)
-                # When the last port terminates, the entire executor terminates
-                if len(self.received) == len(self.workflow.output_ports):
+                if token.value in (Status.CANCELLED, Status.FAILED):
                     self.closed = True
+                    for t in unfinished:
+                        t.cancel()
+                    return output_tokens
+                else:
+                    self.received.append(task_name)
+                    # When the last port terminates, the entire executor terminates
+                    if len(self.received) == len(self.workflow.output_ports):
+                        self.closed = True
             else:
                 # Collect result
                 output_tokens[task_name] = get_token_value(token)

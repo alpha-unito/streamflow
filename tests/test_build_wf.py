@@ -7,7 +7,7 @@ from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import LocalTarget, FilterConfig
 from streamflow.core.workflow import Workflow, Port, Step
-from streamflow.cwl.command import CWLCommand, CWLCommandToken
+from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.translator import _create_command_output_processor_base
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.workflow.combinator import LoopCombinator
@@ -58,9 +58,7 @@ async def _base_step_test_process(
 
 
 async def _clone_step(step, workflow, context):
-    new_workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    new_workflow = Workflow(context=context, name=utils.random_name(), config={})
     loading_context = WorkflowBuilder(workflow=new_workflow)
     new_step = await loading_context.load_step(context, step.persistent_id)
     new_workflow.steps[new_step.name] = new_step
@@ -80,9 +78,7 @@ async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
     assert workflow.persistent_id
     assert port.persistent_id
 
-    new_workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
+    new_workflow = Workflow(context=context, name=utils.random_name(), config={})
     loading_context = WorkflowBuilder(new_workflow)
 
     new_port = await loading_context.load_port(context, port.persistent_id)
@@ -200,18 +196,18 @@ async def test_execute_step(context: StreamFlowContext):
     step.command = CWLCommand(
         step=step,
         base_command=["echo"],
-        command_tokens=[CWLCommandToken(name=in_port_name, value=None)],
+        processors=[CWLCommandTokenProcessor(name=in_port_name, expression=None)],
     )
     step.add_output_port(
         out_port_name,
         out_port,
         _create_command_output_processor_base(
-            out_port.name,
-            workflow,
-            None,
-            "string",
-            {},
-            {"hints": {}, "requirements": {}},
+            port_name=out_port.name,
+            workflow=workflow,
+            port_target=None,
+            port_type="string",
+            cwl_element={},
+            context={"hints": {}, "requirements": {}},
         ),
     )
     step.add_input_port(in_port_name, in_port)
@@ -342,18 +338,18 @@ async def test_workflow(context: StreamFlowContext):
     exec_step.command = CWLCommand(
         step=exec_step,
         base_command=["echo"],
-        command_tokens=[CWLCommandToken(name=in_port_name, value=None)],
+        processors=[CWLCommandTokenProcessor(name=in_port_name, expression=None)],
     )
     exec_step.add_output_port(
         out_port_name,
         out_port,
         _create_command_output_processor_base(
-            out_port.name,
-            workflow,
-            None,
-            "string",
-            {},
-            {"hints": {}, "requirements": {}},
+            port_name=out_port.name,
+            workflow=workflow,
+            port_target=None,
+            port_type="string",
+            cwl_element={},
+            context={"hints": {}, "requirements": {}},
         ),
     )
     exec_step.add_input_port(in_port_name, in_port)

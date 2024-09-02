@@ -236,16 +236,6 @@
       "type": "integer",
       "description": "Limit number of container PIDs, use -1 for unlimited"
     },
-    "replicas": {
-      "type": "integer",
-      "description": "Number of instances to be co-allocated",
-      "default": 1
-    },
-    "locationsCacheSize": {
-      "type": "integer",
-      "description": "Available locations cache size",
-      "default": 10
-    },
     "locationsCacheTTL": {
       "type": "integer",
       "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",

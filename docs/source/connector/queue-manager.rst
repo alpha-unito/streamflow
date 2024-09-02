@@ -2,7 +2,7 @@
 QueueManagerConnector
 =====================
 
-The ``QueueManagerConnector`` is an abstract connector that serves as a base class to implement High Performance Computing connectors, based on queue managers (e.g., :ref:`Slurm <SlurmConnector>`, :ref:`PBS <PBSConnector>`, and :ref:`Flux <FluxConnector>`). It extends the :ref:`ConnectorWrapper <ConnectorWrapper>` interface, allowing users to offload jobs to local or remote queue managers. The HPC facility is supposed to be constantly active, reducing the deployment phase to deploy the inner connector (e.g., to create an :ref:`SSHConnection <SSHConnection>` pointing to an HPC login node).
+The ``QueueManagerConnector`` is an abstract connector that serves as a base class to implement High Performance Computing connectors, based on queue managers (e.g., :ref:`Slurm <SlurmConnector>`, :ref:`PBS <PBSConnector>`, and :ref:`Flux <FluxConnector>`). It extends the :ref:`ConnectorWrapper <ConnectorWrapper>` interface, allowing users to offload jobs to local or remote queue managers. Plus, it extends the :ref:`BatchConnector <BatchConnector>` interface. The underlying HPC facility is supposed to be constantly active, reducing the deployment phase to deploy the inner connector (e.g., to create an :ref:`SSHConnection <SSHConnection>` pointing to an HPC login node).
 
 .. warning::
 

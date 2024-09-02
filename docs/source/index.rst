@@ -80,6 +80,7 @@ For LaTeX users, the following BibTeX entry can be used:
    :caption: Connectors
    :hidden:
 
+   connector/container.rst
    connector/docker.rst
    connector/docker-compose.rst
    connector/flux.rst
@@ -98,4 +99,5 @@ For LaTeX users, the following BibTeX entry can be used:
 
    cwl/docker/docker.rst
    cwl/docker/kubernetes.rst
+   cwl/docker/no-container.rst
    cwl/docker/singularity.rst

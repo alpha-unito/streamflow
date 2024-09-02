@@ -22,10 +22,10 @@ from streamflow.core.exception import (
 )
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
+from streamflow.deployment.connector.base import BatchConnector
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
-from streamflow.deployment.utils import get_inner_location
-from streamflow.deployment.wrapper import ConnectorWrapper
+from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
 
 
@@ -318,7 +318,7 @@ class FluxService(QueueManagerService):
         self.urgency: int | None = urgency
 
 
-class QueueManagerConnector(ConnectorWrapper, ABC):
+class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
     def __init__(
         self,
         deployment_name: str,
@@ -455,11 +455,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
     def _service_class(self) -> type[QueueManagerService]: ...
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         if service is not None and service not in self.services:
             raise WorkflowDefinitionException(
@@ -480,6 +476,7 @@ class QueueManagerConnector(ConnectorWrapper, ABC):
                 service=service,
                 hostname=location.hostname,
                 slots=self.maxConcurrentJobs,
+                stacked=False,
                 wraps=location,
             )
         }
@@ -731,6 +728,8 @@ class SlurmConnector(QueueManagerConnector):
                 "--parsable",
             ]
         )
+        if workdir is not None:
+            batch_command.append(get_option("chdir", workdir))
         if stdin is not None and stdin != asyncio.subprocess.DEVNULL:
             batch_command.append(get_option("input", shlex.quote(stdin)))
         if stderr != asyncio.subprocess.STDOUT and stderr != stdout:
@@ -751,7 +750,6 @@ class SlurmConnector(QueueManagerConnector):
                     get_option("bb", service.bb),
                     get_option("bbf", service.bbf),
                     get_option("begin", service.begin),
-                    get_option("chdir", workdir),
                     get_option("cluster-constraint", service.clusterConstraint),
                     get_option("clusters", service.clusters),
                     get_option("constraint", service.constraint),

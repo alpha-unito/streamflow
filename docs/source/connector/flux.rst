@@ -50,7 +50,7 @@ Being passed directly to the ``flux batch`` command line, the YAML options have 
 
 .. warning::
 
-    Note that the ``file`` property in the upper configuration level, i.e., outside a ``service`` definition, is still supported in Streamflow ``v0.2``, but it is deprecated and will be removed in StreamFlow ``v0.3``.
+    Note that the ``file`` property in the upper configuration level, i.e., outside a ``service`` definition, is still supported in StreamFlow ``v0.2``, but it is deprecated and will be removed in StreamFlow ``v0.3``.
 
 For a quick demo or tutorial, see our `example workflow <https://github.com/alpha-unito/streamflow/tree/master/examples/flux>`_.
 

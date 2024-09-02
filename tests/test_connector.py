@@ -39,8 +39,8 @@ def _get_connector_method_params(method_name: str) -> MutableSequence[Any]:
         return ["test_src", "test_dst", [loc], loc]
     elif method_name == "get_available_locations":
         return []
-    elif method_name == "get_stream_reader":
-        return [loc, "test_src"]
+    elif method_name in ("get_stream_reader", "get_stream_writer"):
+        return [["test_command"], loc]
     elif method_name == "run":
         return [loc, ["ls"]]
     else:

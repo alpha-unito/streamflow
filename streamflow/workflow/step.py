@@ -7,16 +7,10 @@ import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
 from types import ModuleType
-from typing import (
-    Any,
-    AsyncIterable,
-    Iterable,
-    MutableMapping,
-    MutableSequence,
-    cast,
-)
+from typing import Any, AsyncIterable, MutableMapping, MutableSequence, MutableSet, cast
 
 from streamflow.core import utils
+from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
@@ -36,9 +30,6 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import get_class_fullname
 from streamflow.core.workflow import (
-    Command,
-    CommandOutput,
-    CommandOutputProcessor,
     Job,
     Port,
     Status,
@@ -62,7 +53,7 @@ def _get_directory(path_processor: ModuleType, directory: str | None, target: Ta
     return directory or path_processor.join(target.workdir, utils.random_name())
 
 
-def _get_step_status(statuses: MutableSequence[Status]):
+def _reduce_statuses(statuses: MutableSequence[Status]):
     num_skipped = 0
     for status in statuses:
         if status == Status.FAILED:
@@ -97,9 +88,6 @@ class BaseStep(Step, ABC):
         self._log_level: int = logging.DEBUG
 
     async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
-        logger.debug(
-            f"Step {self.name} (wf {self.workflow.name}) waiting tokens on ports {set(input_ports.keys())}"
-        )
         inputs = {
             k: v
             for k, v in zip(
@@ -112,7 +100,7 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
-        # debug
+        # fixme: debug
         if len({t.tag for t in inputs.values()}) != 1:
             tags = {t.tag for t in inputs.values()}
             raise Exception(
@@ -120,17 +108,26 @@ class BaseStep(Step, ABC):
             )
 
         if logger.isEnabledFor(logging.DEBUG):
-            if check_termination(inputs):
+            if check_termination(inputs.values()):
                 logger.debug(
-                    f"Step {self.name} (wf {self.workflow.name}) received termination token"
+                    f"Step {self.name} received termination token with Status {_reduce_statuses([t.value for t in inputs.values()]).name.lower()}"
                 )
-            logger.debug(
-                f"Step {self.name} (wf {self.workflow.name}) received inputs {[(t.tag, get_class_fullname(type(t))) for t in inputs.values()]}"
-            )
+            else:
+                logger.debug(
+                    f"Step {self.name} received inputs {[t.tag for t in inputs.values()]}"
+                )
         return inputs
 
+    def _get_status(self, status: Status):
+        if status == Status.FAILED:
+            return status
+        elif any(p.empty() for p in self.get_output_ports().values()):
+            return Status.SKIPPED
+        else:
+            return status
+
     async def _persist_token(
-        self, token: Token, port: Port, input_token_ids: Iterable[int]
+        self, token: Token, port: Port, input_token_ids: MutableSequence[int]
     ) -> Token:
         if token.persistent_id:
             raise WorkflowDefinitionException(
@@ -152,10 +149,10 @@ class BaseStep(Step, ABC):
                     port.close(posixpath.join(self.name, port_name))
             # Add a TerminationToken to each output port
             for port in self.get_output_ports().values():
+                port.put(TerminationToken(status))
                 logger.debug(
                     f"Step {self.name} inserts termination token into port {[k for k, v in self.output_ports.items() if v == port.name].pop()} {port.name}"
                 )
-                port.put(TerminationToken())
             # Set termination status
             await self._set_status(status)
             logger.log(
@@ -173,6 +170,9 @@ class Combinator(ABC):
         self.items: MutableSequence[str] = []
         self.combinators: MutableMapping[str, Combinator] = {}
         self.combinators_map: MutableMapping[str, str] = {}
+        self._token_values: MutableMapping[
+            str, MutableMapping[str, MutableSequence[Any]]
+        ] = {}
 
     @classmethod
     async def _load(
@@ -269,20 +269,20 @@ class Combinator(ABC):
         )
         if depth:
             tag = ".".join(tag.split(".")[:-depth])
-        for key in list(self.token_values.keys()):
+        for key in list(self._token_values.keys()):
             if tag == key:
                 continue
             elif key.startswith(tag):
-                self._add_to_port(token, self.token_values[key], port_name)
+                self._add_to_port(token, self._token_values[key], port_name)
             elif tag.startswith(key):
-                if tag not in self.token_values:
-                    self.token_values[tag] = {}
-                for p in self.token_values[key]:
-                    for t in self.token_values[key][p]:
-                        self._add_to_port(t, self.token_values[tag], p)
-        if tag not in self.token_values:
-            self.token_values[tag] = {}
-        self._add_to_port(token, self.token_values[tag], port_name)
+                if tag not in self._token_values:
+                    self._token_values[tag] = {}
+                for p in self._token_values[key]:
+                    for t in self._token_values[key][p]:
+                        self._add_to_port(t, self._token_values[tag], p)
+        if tag not in self._token_values:
+            self._token_values[tag] = {}
+        self._add_to_port(token, self._token_values[tag], port_name)
 
     def _add_to_port(
         self,
@@ -346,6 +346,7 @@ class CombinatorStep(BaseStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
+                        status = _reduce_statuses([status, token.value])
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 f"Step {self.name} received termination token for port {task_name}"
@@ -355,7 +356,7 @@ class CombinatorStep(BaseStep):
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) received token {token.tag} on port {task_name}"
+                                f"Step {self.name} received token {token.tag} on port {task_name}"
                             )
                         status = Status.COMPLETED
                         async for schema in cast(
@@ -374,9 +375,6 @@ class CombinatorStep(BaseStep):
 
                     # Create a new task in place of the completed one if the port is not terminated
                     if task_name not in terminated:
-                        logger.debug(
-                            f"Step {self.name} (wf {self.workflow.name}) re-appends port {task_name} in input tasks"
-                        )
                         input_tasks.append(
                             asyncio.create_task(
                                 self.get_input_ports()[task_name].get(
@@ -386,7 +384,7 @@ class CombinatorStep(BaseStep):
                             )
                         )
         # Terminate step
-        await self.terminate(status)
+        await self.terminate(self._get_status(status))
 
 
 class ConditionalStep(BaseStep):
@@ -411,6 +409,7 @@ class ConditionalStep(BaseStep):
                     inputs = await self._get_inputs(self.get_input_ports())
                     # Check for termination
                     if check_termination(inputs.values()):
+                        status = _reduce_statuses([t.value for t in inputs.values()])
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -431,7 +430,8 @@ class ConditionalStep(BaseStep):
                 # Otherwise
                 else:
                     await self._on_false({})
-            await self.terminate(Status.COMPLETED)
+                status = Status.COMPLETED
+            await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
@@ -526,6 +526,7 @@ class DeployStep(BaseStep):
                     inputs = await self._get_inputs(self.get_input_ports())
                     # Check for termination
                     if check_termination(inputs.values()):
+                        status = _reduce_statuses([t.value for t in inputs.values()])
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -558,7 +559,8 @@ class DeployStep(BaseStep):
                         input_token_ids=[],
                     )
                 )
-            await self.terminate(Status.COMPLETED)
+                status = Status.COMPLETED
+            await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
@@ -578,6 +580,40 @@ class ExecuteStep(BaseStep):
         self.output_connectors: MutableMapping[str, str] = {}
         self.output_processors: MutableMapping[str, CommandOutputProcessor] = {}
         self.add_input_port("__job__", job_port)
+
+    async def _check_inputs(
+        self,
+        inputs: MutableMapping[str, Token],
+        input_ports: MutableMapping[str, Port],
+        inputs_map: MutableMapping[str, MutableMapping[str, Token]],
+        connectors: MutableMapping[str, Connector],
+        unfinished: MutableSet[asyncio.Task],
+    ) -> None:
+        if (
+            job := await cast(JobPort, self.get_input_port("__job__")).get_job(
+                self.name
+            )
+        ) is not None:
+            # Group inputs by tag
+            _group_by_tag(inputs, inputs_map)
+            # Process tags
+            for tag in list(inputs_map.keys()):
+                if len(inputs_map[tag]) == len(input_ports):
+                    inputs = inputs_map.pop(tag)
+                    # Set status to fireable
+                    await self._set_status(Status.FIREABLE)
+                    # Run job
+                    unfinished.add(
+                        asyncio.create_task(
+                            self._run_job(job, inputs, connectors),
+                            name=job.name,
+                        )
+                    )
+            unfinished.add(
+                asyncio.create_task(
+                    self._get_inputs(input_ports), name="retrieve_inputs"
+                )
+            )
 
     @classmethod
     async def _load(
@@ -628,14 +664,16 @@ class ExecuteStep(BaseStep):
                 job_token.value, command_output, connector
             )
         ) is not None:
-            token = await self._persist_token(
-                token=token,
-                port=output_port,
-                input_token_ids=_get_token_ids(
-                    list(job_token.value.inputs.values()) + [job_token]
-                ),
+            job_token = get_job_token(
+                job_token.value.name, self.get_input_port("__job__").token_list
             )
-            output_port.put(token)
+            output_port.put(
+                await self._persist_token(
+                    token=token,
+                    port=output_port,
+                    input_token_ids=_get_token_ids((*job_token.job.inputs.values(), job_token)),
+                )
+            )
             await self.workflow.context.failure_manager.notify_jobs(
                 job_token, output_port.name, token
             )
@@ -668,49 +706,43 @@ class ExecuteStep(BaseStep):
                 job.name, Status.RUNNING
             )
             command_output = await self.command.execute(job)
-            logger.debug(f"Job {job.name} executed the cmd")
-            # _ = self.command.get_work_reuse(job)  # debug
             if command_output.status == Status.FAILED:
-                jt = self.get_input_port("__job__").token_list
                 logger.error(
-                    f"FAILED Job {job.name} {get_job_token(job.name, jt if isinstance(jt, Iterable) else [jt]).persistent_id} (wf {self.workflow.name}) with error:\n\t{command_output.value}"
+                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
                 )
                 command_output = (
                     await self.workflow.context.failure_manager.handle_failure(
                         job, self, command_output
                     )
                 )
-            else:
-                logger.debug(f"Job {job.name} recupera token di output")
-                job_token = get_job_token(
-                    job.name, self.get_input_port("__job__").token_list
-                )
-                job_token.value = job
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._retrieve_output(
-                                job_token=job_token,
-                                output_name=output_name,
-                                output_port=self.workflow.ports[output_port],
-                                command_output=command_output,
-                                connector=connectors.get(output_name),
+            elif command_output.status != Status.CANCELLED:
+                # Retrieve output tokens
+                if not self.terminated:
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                self._retrieve_output(
+                                    job=get_job_token(
+                                        job.name, self.get_input_port("__job__").token_list
+                                    ),
+                                    output_name=output_name,
+                                    output_port=self.workflow.ports[output_port],
+                                    command_output=command_output,
+                                    connector=connectors.get(output_name),
+                                )
                             )
+                            for output_name, output_port in self.output_ports.items()
                         )
-                        for output_name, output_port in self.output_ports.items()
                     )
-                )
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
         # When receiving a CancelledError, mark the step as Cancelled
         except asyncio.CancelledError:
             command_output.status = Status.CANCELLED
-            await self.terminate(command_output.status)
         # When receiving a FailureHandling exception, mark the step as Failed
         except FailureHandlingException:
             command_output.status = Status.FAILED
-            await self.terminate(command_output.status)
         # When receiving a generic exception, try to handle it
         except Exception as e:
             logger.exception(e)
@@ -725,7 +757,6 @@ class ExecuteStep(BaseStep):
                 if ie != e:
                     logger.exception(ie)
                 command_output.status = Status.FAILED
-                await self.terminate(command_output.status)
         finally:
             # Notify completion to scheduler
             await self.workflow.context.scheduler.notify_status(
@@ -733,9 +764,7 @@ class ExecuteStep(BaseStep):
             )
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"{command_output.status.name} Job {job.name} (wf {self.workflow.name}) terminated"
-            )
+            logger.debug(f"{command_output.status.name} Job {job.name} terminated")
         return command_output.status
 
     async def _save_additional_params(
@@ -771,7 +800,6 @@ class ExecuteStep(BaseStep):
         )
 
     async def run(self) -> None:
-        jobs = []
         # If there are input connector ports, retrieve connectors
         connector_ports = {
             k: self.get_input_port(v)
@@ -785,7 +813,9 @@ class ExecuteStep(BaseStep):
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            p.get_connector(posixpath.join(self.name, port_name))
+                            cast(ConnectorPort, p).get_connector(
+                                posixpath.join(self.name, port_name)
+                            )
                         )
                         for port_name, p in connector_ports.items()
                     )
@@ -793,38 +823,48 @@ class ExecuteStep(BaseStep):
             )
         }
         # If there are input ports create jobs until termination token are received
-        input_ports = {
+        if input_ports := {
             k: v
             for k, v in self.get_input_ports().items()
             if k != "__job__" and not isinstance(v, ConnectorPort)
-        }
-        if input_ports:
+        }:
+            statuses = []
             inputs_map = {}
-            while True:
-                # Retrieve input tokens
-                inputs = await self._get_inputs(input_ports)
-                # Retrieve job
-                job = await cast(JobPort, self.get_input_port("__job__")).get_job(
-                    self.name
+            unfinished = {
+                asyncio.create_task(
+                    self._get_inputs(input_ports), name="retrieve_inputs"
                 )
-                # Check for termination
-                if check_termination(inputs.values()) or job is None:
-                    break
-                # Group inputs by tag
-                _group_by_tag(inputs, inputs_map)
-                # Process tags
-                for tag in list(inputs_map.keys()):
-                    if len(inputs_map[tag]) == len(input_ports):
-                        inputs = inputs_map.pop(tag)
-                        # Set status to fireable
-                        await self._set_status(Status.FIREABLE)
-                        # Run job
-                        jobs.append(
-                            asyncio.create_task(
-                                self._run_job(job, inputs, connectors),
-                                name=utils.random_name(),
+            }
+            while unfinished:
+                finished, unfinished = await asyncio.wait(
+                    unfinished, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in finished:
+                    if task.cancelled():
+                        continue
+                    if cast(asyncio.Task, task).get_name() == "retrieve_inputs":
+                        inputs = task.result()
+                        # Check for termination
+                        if check_termination(inputs):
+                            statuses.append(_reduce_statuses([t.value for t in inputs]))
+                            if statuses[-1] in (Status.CANCELLED, Status.FAILED):
+                                for t in unfinished:
+                                    t.cancel()
+                        else:
+                            await self._check_inputs(
+                                inputs,
+                                input_ports,
+                                inputs_map,
+                                connectors,
+                                unfinished,
                             )
-                        )
+                    else:
+                        # check job exit status
+                        job_status = task.result()
+                        if job_status in (Status.CANCELLED, Status.FAILED):
+                            for t in unfinished:
+                                t.cancel()
+                        statuses.append(job_status)
         # Otherwise simply run job
         else:
             # Retrieve job
@@ -833,13 +873,9 @@ class ExecuteStep(BaseStep):
                     self.name
                 )
             ) is not None:
-                jobs.append(
-                    asyncio.create_task(
-                        self._run_job(job, {}, connectors), name=utils.random_name()
-                    )
-                )
-        # Wait for jobs termination
-        statuses = cast(MutableSequence[Status], await asyncio.gather(*jobs))
+                statuses = [await self._run_job(job, {}, connectors)]
+            else:
+                statuses = [Status.SKIPPED]
         # If there are connector ports, retrieve termination tokens from them
         await asyncio.gather(
             *(
@@ -848,7 +884,7 @@ class ExecuteStep(BaseStep):
             )
         )
         # Terminate step
-        await self.terminate(_get_step_status(statuses))
+        await self.terminate(self._get_status(_reduce_statuses(statuses)))
 
 
 class GatherStep(BaseStep):
@@ -945,6 +981,7 @@ class GatherStep(BaseStep):
             ),
         }
         keys_completed = set()
+        status = Status.SKIPPED
         while tasks:
             finished, unfinished = await asyncio.wait(
                 tasks, return_when=asyncio.FIRST_COMPLETED
@@ -955,6 +992,7 @@ class GatherStep(BaseStep):
                 task_name = cast(asyncio.Task, task).get_name()
                 token = task.result()
                 if check_termination(token):
+                    status = _reduce_statuses([status, token.value])
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(
                             f"Step {self.name} received termination token on port {task_name}"
@@ -986,21 +1024,20 @@ class GatherStep(BaseStep):
                     )
             tasks = unfinished
         # Gather all the token when the size is unknown
-        for key in (k for k in self.token_map.keys() if k not in keys_completed):
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Step {self.name} forces gather on key {key}")
+        if status != Status.FAILED:
+            for key in (k for k in self.token_map.keys() if k not in keys_completed):
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Step {self.name} forces gather on key {key}")
 
-            # Update size_map with the current size
-            self.size_map[key] = Token(value=len(self.token_map[key]), tag=key)
-            await self.size_map[key].save(
-                self.workflow.context, size_port.persistent_id
-            )
+                # Update size_map with the current size
+                self.size_map[key] = Token(value=len(self.token_map[key]), tag=key)
+                await self.size_map[key].save(
+                    self.workflow.context, size_port.persistent_id
+                )
 
-            await self._gather(key)
+                await self._gather(key)
         # Terminate step
-        await self.terminate(
-            Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED
-        )
+        await self.terminate(self._get_status(status))
 
 
 class InputInjectorStep(BaseStep, ABC):
@@ -1020,8 +1057,7 @@ class InputInjectorStep(BaseStep, ABC):
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
-                JobPort,
-                await loading_context.load_port(context, params["job_port"]),
+                JobPort, await loading_context.load_port(context, params["job_port"])
             ),
         )
 
@@ -1056,6 +1092,7 @@ class InputInjectorStep(BaseStep, ABC):
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a single output port."
             )
+        status = Status.SKIPPED
         if input_ports:
             while True:
                 # Retrieve input token
@@ -1074,6 +1111,7 @@ class InputInjectorStep(BaseStep, ABC):
                 )
                 # Check for termination
                 if check_termination(token) or job is None:
+                    status = token.value
                     break
                 try:
                     await self.workflow.context.scheduler.notify_status(
@@ -1086,10 +1124,9 @@ class InputInjectorStep(BaseStep, ABC):
                         token,
                     ]
                     # Process value and inject token in the output port
-                    new_token = await self.process_input(job, token.value)
                     self.get_output_port().put(
                         await self._persist_token(
-                            token=new_token,
+                            token=await self.process_input(job, token.value),
                             port=self.get_output_port(),
                             input_token_ids=_get_token_ids(in_list),
                         )
@@ -1100,9 +1137,7 @@ class InputInjectorStep(BaseStep, ABC):
                         job.name, Status.COMPLETED
                     )
         # Terminate step
-        await self.terminate(
-            Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED
-        )
+        await self.terminate(self._get_status(status))
 
 
 class LoopCombinatorStep(CombinatorStep):
@@ -1133,23 +1168,20 @@ class LoopCombinatorStep(CombinatorStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
+                        status = _reduce_statuses([status, token.value])
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) received termination token for port {task_name}"
+                                f"Step {self.name} received termination token for port {task_name}"
                             )
-                        if task_name in terminated:
-                            if logger.isEnabledFor(logging.DEBUG):
-                                logger.warning(
-                                    f"Step {self.name} (wf {self.workflow.name}) anomalously terminates the iteration on port {task_name}."
-                                )
-                            self.iteration_termination_checklist[task_name].clear()
+                        if token.value != Status.COMPLETED:
+                            self.iteration_termination_checklist.get(task_name).clear()
                         terminated.append(task_name)
                     # If an IterationTerminationToken is received, mark the corresponding iteration as terminated
                     elif check_iteration_termination(token):
                         if token.tag in self.iteration_termination_checklist[task_name]:
                             if logger.isEnabledFor(logging.DEBUG):
                                 logger.debug(
-                                    f"Step {self.name} (wf {self.workflow.name}) received iteration termination token {token.tag} "
+                                    f"Step {self.name} received iteration termination token {token.tag} "
                                     f"for port {task_name}"
                                 )
                             self.iteration_termination_checklist[task_name].remove(
@@ -1159,22 +1191,17 @@ class LoopCombinatorStep(CombinatorStep):
                     else:
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) received token {token.tag} on port {task_name}"
+                                f"Step {self.name} received token {token.tag} "
+                                f"on port {task_name}"
                             )
-                        status = Status.COMPLETED
                         if (
                             ".".join(token.tag.split(".")[:-1])
                             not in self.iteration_termination_checklist[task_name]
                         ):
-                            logger.debug(
-                                f"Step {self.name} (wf {self.workflow.name}) add token tag {token.tag} on "
-                                f"iteration_termination_checklist {task_name}. "
-                                f"{'.'.join(token.tag.split('.')[:-1])} not in "
-                                f"{self.iteration_termination_checklist[task_name]}"
-                            )
                             self.iteration_termination_checklist[task_name].add(
                                 token.tag
                             )
+
                         async for schema in cast(
                             AsyncIterable,
                             self.combinator.combine(task_name, token),
@@ -1187,9 +1214,6 @@ class LoopCombinatorStep(CombinatorStep):
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )
-                                )
-                                logger.debug(
-                                    f"Step {self.name} (wf {self.workflow.name}) produced token {self.get_output_port(port_name).token_list[-1].tag} in port {port_name} (name {self.get_output_port(port_name).name})"
                                 )
                     # Create a new task in place of the completed one if the port is not terminated
                     if not (
@@ -1205,7 +1229,7 @@ class LoopCombinatorStep(CombinatorStep):
                             )
                         )
         # Terminate step
-        await self.terminate(status)
+        await self.terminate(self._get_status(status))
 
 
 class LoopOutputStep(BaseStep, ABC):
@@ -1244,6 +1268,7 @@ class LoopOutputStep(BaseStep, ABC):
                 f"{self.name} step must contain a single output port."
             )
         input_port = self.get_input_port()
+        status = Status.SKIPPED
         while True:
             token = await input_port.get(
                 posixpath.join(self.name, next(iter(self.input_ports)))
@@ -1251,10 +1276,9 @@ class LoopOutputStep(BaseStep, ABC):
             prefix = ".".join(token.tag.split(".")[:-1])
             # If a TerminationToken is received, terminate the step
             if check_termination(token):
+                status = _reduce_statuses([status, token.value])
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Step {self.name} (wf {self.workflow.name}) received termination token"
-                    )
+                    logger.debug(f"Step {self.name} received termination token")
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
                     break
@@ -1268,15 +1292,13 @@ class LoopOutputStep(BaseStep, ABC):
             elif check_iteration_termination(token):
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Step {self.name} (wf {self.workflow.name}) received iteration termination token {token.tag}."
+                        f"Step {self.name} received iteration termination token {token.tag}."
                     )
                 self.size_map[prefix] = int(token.tag.split(".")[-1])
             # Otherwise, store the new token in the map
             else:
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Step {self.name} (wf {self.workflow.name}) received token {token.tag}."
-                    )
+                    logger.debug(f"Step {self.name} received token {token.tag}.")
                 if prefix not in self.token_map:
                     self.token_map[prefix] = []
                 self.token_map[prefix].append(token)
@@ -1295,9 +1317,7 @@ class LoopOutputStep(BaseStep, ABC):
                 )
                 break
         # Terminate step
-        await self.terminate(
-            Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED
-        )
+        await self.terminate(self._get_status(status))
 
 
 class ScheduleStep(BaseStep):
@@ -1363,34 +1383,7 @@ class ScheduleStep(BaseStep):
         locations: MutableSequence[ExecutionLocation],
         job: Job,
     ):
-        # Set job directories
-        allocation = self.workflow.context.scheduler.get_allocation(job.name)
-        path_processor = get_path_processor(connector)
-        job.input_directory = _get_directory(
-            path_processor, job.input_directory, allocation.target
-        )
-        job.output_directory = _get_directory(
-            path_processor, job.output_directory, allocation.target
-        )
-        job.tmp_directory = _get_directory(
-            path_processor, job.tmp_directory, allocation.target
-        )
-
-        # Create directories
-        await remotepath.mkdirs(
-            connector=connector,
-            locations=locations,
-            paths=[job.input_directory, job.output_directory, job.tmp_directory],
-        )
-        job.input_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.input_directory
-        )
-        job.output_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.output_directory
-        )
-        job.tmp_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.tmp_directory
-        )
+        await self._set_job_directories(connector, locations, job)
 
         # Register paths
         for location in locations:
@@ -1464,6 +1457,39 @@ class ScheduleStep(BaseStep):
             )
         return params
 
+    async def _set_job_directories(
+        self,
+        connector: Connector,
+        locations: MutableSequence[ExecutionLocation],
+        job: Job,
+    ):
+        allocation = self.workflow.context.scheduler.get_allocation(job.name)
+        path_processor = get_path_processor(connector)
+        job.input_directory = _get_directory(
+            path_processor, job.input_directory, allocation.target
+        )
+        job.output_directory = _get_directory(
+            path_processor, job.output_directory, allocation.target
+        )
+        job.tmp_directory = _get_directory(
+            path_processor, job.tmp_directory, allocation.target
+        )
+        # Create directories
+        await remotepath.mkdirs(
+            connector=connector,
+            locations=locations,
+            paths=[job.input_directory, job.output_directory, job.tmp_directory],
+        )
+        job.input_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.input_directory
+        )
+        job.output_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.output_directory
+        )
+        job.tmp_directory = await remotepath.follow_symlink(
+            self.workflow.context, connector, locations[0], job.tmp_directory
+        )
+
     def get_output_port(self, name: str | None = None) -> JobPort:
         return cast(JobPort, super().get_output_port(name))
 
@@ -1498,6 +1524,7 @@ class ScheduleStep(BaseStep):
                     inputs = await self._get_inputs(input_ports)
                     # Check for termination
                     if check_termination(inputs.values()):
+                        status = _reduce_statuses([t.value for t in inputs.values()])
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1505,7 +1532,7 @@ class ScheduleStep(BaseStep):
                     for tag in list(inputs_map.keys()):
                         if len(inputs_map[tag]) == len(input_ports):
                             inputs = inputs_map.pop(tag)
-                            # debug
+                            # fixme: debug
                             job_name = posixpath.join(self.job_prefix, tag)
                             if (
                                 job_alloc := self.workflow.context.scheduler.job_allocations.get(
@@ -1525,13 +1552,8 @@ class ScheduleStep(BaseStep):
                                 tmp_directory=self.tmp_directory,
                             )
                             # Schedule
-                            hardware_requirement = (
-                                self.hardware_requirement.eval(inputs)
-                                if self.hardware_requirement
-                                else None
-                            )
                             await self.workflow.context.scheduler.schedule(
-                                job, self.binding_config, hardware_requirement
+                                job, self.binding_config, self.hardware_requirement
                             )
                             locations = self.workflow.context.scheduler.get_locations(
                                 job.name
@@ -1553,19 +1575,14 @@ class ScheduleStep(BaseStep):
                 await self.workflow.context.scheduler.schedule(
                     job,
                     self.binding_config,
-                    (
-                        self.hardware_requirement.eval({})
-                        if self.hardware_requirement
-                        else None
-                    ),
+                    self.hardware_requirement,
                 )
                 locations = self.workflow.context.scheduler.get_locations(job.name)
                 await self._propagate_job(
                     connectors[locations[0].deployment], locations, job
                 )
-            await self.terminate(
-                Status.SKIPPED if self.get_output_port().empty() else Status.COMPLETED
-            )
+                status = Status.COMPLETED
+            await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
@@ -1683,19 +1700,17 @@ class ScatterStep(BaseStep):
                 "Scatter step must contain a single output port."
             )
         input_port = self.get_input_port()
-        output_port = self.get_output_port()
         while True:
             token = await input_port.get(
                 posixpath.join(self.name, next(iter(self.input_ports)))
             )
             if isinstance(token, TerminationToken):
+                status = token.value
                 break
             else:
                 await self._scatter(token)
         # Terminate step
-        await self.terminate(
-            Status.SKIPPED if output_port.empty() else Status.COMPLETED
-        )
+        await self.terminate(self._get_status(status))
 
 
 class TransferStep(BaseStep, ABC):
@@ -1779,31 +1794,59 @@ class TransferStep(BaseStep, ABC):
         }
         if input_ports:
             inputs_map = {}
-            while True:
-                # Retrieve input tokens
-                inputs = await self._get_inputs(input_ports)
-                # Retrieve job
-                job = await cast(JobPort, self.get_input_port("__job__")).get_job(
-                    self.name
-                )
-                # Check for termination
-                if check_termination(inputs.values()) or job is None:
-                    logger.debug(
-                        f"Step {self.name} (wf {self.workflow.name}) received termination token"
+            try:
+                while True:
+                    # Retrieve input tokens
+                    inputs = await self._get_inputs(input_ports)
+                    # Retrieve job
+                    job = await cast(JobPort, self.get_input_port("__job__")).get_job(
+                        self.name
                     )
-                    break
-                # Group inputs by tag
-                _group_by_tag(inputs, inputs_map)
-                # Process tags
-                for tag in list(inputs_map.keys()):
-                    if len(inputs_map[tag]) == len(input_ports):
-                        inputs = inputs_map.pop(tag)
-                        # Transfer token
-                        jobs.append(await self._transfer(job, inputs))
+                    # Check for termination
+                    if check_termination(inputs.values()) or job is None:
+                        status = _reduce_statuses([t.value for t in inputs.values()])
+                        break
+                    # Group inputs by tag
+                    _group_by_tag(inputs, inputs_map)
+                    # Process tags
+                    for tag in list(inputs_map.keys()):
+                        if len(inputs_map[tag]) == len(input_ports):
+                            inputs = inputs_map.pop(tag)
+                            # Change default status to COMPLETED
+                            status = Status.COMPLETED
+                            # Transfer token
+                            jobs.append(await self._transfer(job, inputs))
+                            # for port_name, token in inputs.items():
+                            #     self.get_output_port(port_name).put(
+                            #         await self._persist_token(
+                            #             token=await self.transfer(job, token),
+                            #             port=self.get_output_port(port_name),
+                            #             input_token_ids=_get_token_ids(
+                            #                 list(inputs.values())
+                            #                 + [
+                            #                     get_job_token(
+                            #                         job.name,
+                            #                         self.get_input_port(
+                            #                             "__job__"
+                            #                         ).token_list,
+                            #                     )
+                            #                 ]
+                            #             ),
+                            #         )
+                            #     )
+            # # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+            # except KeyboardInterrupt:
+            #     raise
+            # # When receiving a CancelledError, mark the step as Cancelled
+            # except asyncio.CancelledError:
+            #     await self.terminate(Status.CANCELLED)
+            # except Exception as e:
+            #     logger.exception(e)
+            #     await self.terminate(Status.FAILED)
         # Wait for jobs termination
         statuses = cast(MutableSequence[Status], jobs)
         # Terminate step
-        await self.terminate(_get_step_status(statuses))
+        await self.terminate(_reduce_statuses(statuses))
 
     @abstractmethod
     async def transfer(self, job: Job, token: Token) -> Token: ...
@@ -1825,6 +1868,7 @@ class Transformer(BaseStep, ABC):
                     inputs = await self._get_inputs(input_ports)
                     # Check for termination
                     if check_termination(inputs.values()):
+                        status = _reduce_statuses([t.value for t in inputs.values()])
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1875,12 +1919,9 @@ class Transformer(BaseStep, ABC):
                             input_token_ids=[],
                         )
                     )
+                status = Status.COMPLETED
             # Terminate step
-            await self.terminate(
-                Status.SKIPPED
-                if any(p.empty() for p in self.get_output_ports().values())
-                else Status.COMPLETED
-            )
+            await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise

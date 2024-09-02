@@ -104,11 +104,7 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]: ...
 
     @abstractmethod
@@ -131,7 +127,12 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def get_stream_reader(
-        self, location: ExecutionLocation, src: str
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager: ...
+
+    @abstractmethod
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager: ...
 
 

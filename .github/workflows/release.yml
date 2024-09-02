@@ -26,7 +26,7 @@ jobs:
         run: echo "NEW_IMAGE=$(docker buildx imagetools inspect alphaunito/streamflow:${STREAMFLOW_VERSION} > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
       - name: "Build Docker image"
         if: ${{ env.NEW_IMAGE == 1 }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           build-args: |
             HELM_VERSION=v3.7.2

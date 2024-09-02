@@ -7,7 +7,7 @@ from typing import MutableSequence
 from importlib_resources import files
 
 from streamflow.core import utils
-from streamflow.core.deployment import DeploymentConfig, Target
+from streamflow.core.deployment import DeploymentConfig, Target, WrapsConfig
 from streamflow.cwl.requirement.docker.translator import CWLDockerTranslator
 
 
@@ -45,7 +45,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         hostname: str | None = None,
         ipc: bool = False,
         keepPrivs: bool = False,
-        locationsCacheSize: int = None,
         locationsCacheTTL: int = None,
         memory: str | None = None,
         memoryReservation: str | None = None,
@@ -68,7 +67,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         pemPath: str | None = None,
         pidFile: str | None = None,
         pidsLimit: int | None = None,
-        replicas: int = 1,
         rocm: bool = False,
         scratch: MutableSequence[str] | None = None,
         security: MutableSequence[str] | None = None,
@@ -106,7 +104,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         self.home: str | None = home
         self.hostname: str | None = hostname
         self.ipc: bool = ipc
-        self.locationsCacheSize: int | None = locationsCacheSize
         self.locationsCacheTTL: int | None = locationsCacheTTL
         self.keepPrivs: bool = keepPrivs
         self.memory: str | None = memory
@@ -130,7 +127,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         self.pemPath: str | None = pemPath
         self.pidFile: str | None = pidFile
         self.pidsLimit: int | None = pidsLimit
-        self.replicas: int = replicas
         self.rocm: bool = rocm
         self.scratch: MutableSequence[str] | None = scratch
         self.security: MutableSequence[str] | None = security
@@ -202,7 +198,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
                     "hostname": self.hostname,
                     "ipc": self.ipc,
                     "keepPrivs": self.keepPrivs,
-                    "locationsCacheSize": self.locationsCacheSize,
                     "locationsCacheTTL": self.locationsCacheTTL,
                     "memory": self.memory,
                     "memoryReservation": self.memoryReservation,
@@ -225,7 +220,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
                     "pemPath": self.pemPath,
                     "pidFile": self.pidFile,
                     "pidsLimit": self.pidsLimit,
-                    "replicas": self.replicas,
                     "rocm": self.rocm,
                     "scratch": self.scratch,
                     "security": self.security,
@@ -236,7 +230,13 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
                     "writableTmpfs": self.writableTmpfs,
                 },
                 workdir="/tmp/streamflow",  # nosec
-                wraps=target if self.wrapper else None,
+                wraps=(
+                    WrapsConfig(
+                        deployment=target.deployment.name, service=target.service
+                    )
+                    if self.wrapper
+                    else None
+                ),
             ),
             service=image,
         )

@@ -4,7 +4,6 @@ import os
 import shutil
 import sys
 import tempfile
-from pathlib import Path
 from typing import MutableMapping, MutableSequence
 
 import psutil
@@ -15,14 +14,9 @@ from streamflow.core.deployment import (
     ExecutionLocation,
     LOCAL_LOCATION,
 )
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
+from streamflow.core.utils import local_copy
 from streamflow.deployment.connector.base import BaseConnector
-
-
-def _get_disk_usage(path: Path):
-    while not os.path.exists(path):
-        path = path.parent
-    return float(shutil.disk_usage(path).free / 2**20)
 
 
 class LocalConnector(BaseConnector):
@@ -30,16 +24,25 @@ class LocalConnector(BaseConnector):
         self, deployment_name: str, config_dir: str, transferBufferSize: int = 2**16
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
-        self.cores = float(psutil.cpu_count())
-        self.memory = float(psutil.virtual_memory().available / 2**20)
+        self.hardware: Hardware = Hardware(
+            cores=float(psutil.cpu_count()),
+            memory=float(psutil.virtual_memory().total / 2**20),
+            storage={
+                disk.mountpoint: Storage(
+                    disk.mountpoint, shutil.disk_usage(disk.mountpoint).free / 2**20
+                )
+                for disk in psutil.disk_partitions()
+                if os.access(disk.mountpoint, os.R_OK)
+            },
+        )
 
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
-    ):
+    ) -> MutableSequence[str]:
         if sys.platform == "win32":
-            return f"{self._get_shell()} /C '{command}'"
+            return [self._get_shell(), "/C", f"'{command}'"]
         else:
-            return f"{self._get_shell()} -c '{command}'"
+            return [self._get_shell(), "-c", f"'{command}'"]
 
     def _get_shell(self) -> str:
         if sys.platform == "win32":
@@ -48,6 +51,20 @@ class LocalConnector(BaseConnector):
             return "bash"
         else:
             return "sh"
+
+    async def _copy_local_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[ExecutionLocation],
+        read_only: bool = False,
+    ) -> None:
+        local_copy(src, dst, read_only)
+
+    async def _copy_remote_to_local(
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
+    ) -> None:
+        local_copy(src, dst, read_only)
 
     async def _copy_remote_to_remote(
         self,
@@ -60,11 +77,7 @@ class LocalConnector(BaseConnector):
     ) -> None:
         source_connector = source_connector or self
         if source_connector == self:
-            if os.path.isdir(src):
-                os.makedirs(dst, exist_ok=True)
-                shutil.copytree(src, dst, dirs_exist_ok=True)
-            else:
-                shutil.copy(src, dst)
+            local_copy(src, dst, read_only)
         else:
             await super()._copy_remote_to_remote(
                 src=src,
@@ -82,11 +95,7 @@ class LocalConnector(BaseConnector):
         )
 
     async def get_available_locations(
-        self,
-        service: str | None = None,
-        input_directory: str | None = None,
-        output_directory: str | None = None,
-        tmp_directory: str | None = None,
+        self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return {
             LOCAL_LOCATION: AvailableLocation(
@@ -95,25 +104,7 @@ class LocalConnector(BaseConnector):
                 service=service,
                 hostname="localhost",
                 slots=1,
-                hardware=Hardware(
-                    cores=self.cores,
-                    memory=self.memory,
-                    input_directory=(
-                        _get_disk_usage(Path(input_directory))
-                        if input_directory
-                        else float("inf")
-                    ),
-                    output_directory=(
-                        _get_disk_usage(Path(output_directory))
-                        if output_directory
-                        else float("inf")
-                    ),
-                    tmp_directory=(
-                        _get_disk_usage(Path(tmp_directory))
-                        if tmp_directory
-                        else float("inf")
-                    ),
-                ),
+                hardware=self.hardware,
             )
         }
 

@@ -4,10 +4,13 @@ from typing import Any, MutableMapping, MutableSequence, cast
 
 import pytest
 
+from streamflow.cwl.hardware import CWLHardwareRequirement
+from streamflow.cwl.workflow import CWLWorkflow
+
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Port, Status, Step, Token, Workflow
-from streamflow.cwl.command import CWLCommand, CWLCommandToken
+from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.translator import _create_command_output_processor_base
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_depender_tokens, load_dependee_tokens
@@ -34,6 +37,7 @@ from tests.utils.workflow import (
     create_workflow,
     create_deploy_step,
     create_schedule_step,
+    CWL_VERSION,
 )
 
 
@@ -225,7 +229,11 @@ async def test_execute_step(context: StreamFlowContext):
         context, num_port=3
     )
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, [deploy_step])
+    schedule_step = create_schedule_step(
+        workflow,
+        [deploy_step],
+        hardware_requirement=CWLHardwareRequirement(cwl_version=CWL_VERSION),
+    )
 
     in_port_name = "in-1"
     out_port_name = "out-1"
@@ -239,18 +247,18 @@ async def test_execute_step(context: StreamFlowContext):
     execute_step.command = CWLCommand(
         step=execute_step,
         base_command=["echo"],
-        command_tokens=[CWLCommandToken(name=in_port_name, value=None)],
+        processors=[CWLCommandTokenProcessor(name=in_port_name, expression=None)],
     )
     execute_step.add_output_port(
-        out_port_name,
-        out_port,
-        _create_command_output_processor_base(
-            out_port.name,
-            workflow,
-            None,
-            "string",
-            {},
-            {"hints": {}, "requirements": {}},
+        name=out_port_name,
+        port=out_port,
+        output_processor=_create_command_output_processor_base(
+            port_name=out_port.name,
+            workflow=cast(CWLWorkflow, workflow),
+            port_target=None,
+            port_type="string",
+            cwl_element={},
+            context={"hints": {}, "requirements": {}},
         ),
     )
     token_list = [Token(token_value)]

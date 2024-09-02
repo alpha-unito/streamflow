@@ -2,7 +2,8 @@
 CWLDockerTranslator
 ===================
 
-StreamFlow relies on a ``CWLDockerTranslator`` object to convert a CWL `DockerRequirement <https://www.commonwl.org/v1.2/CommandLineTool.html#DockerRequirement>`_ specification into a step binding on a given :ref:`Connector <Connector>` instance. By default, the :ref:`DockerCWLDockerTranslator <DockerCWLDockerTranslator>` is used to spawn a :ref:`DockerConnector <DockerConnector>`. However, StreamFlow also supports translators for :ref:`Kubernetes <SingularityCWLDockerTranslator>` and :ref:`Singularity <KubernetesCWLDockerTranslator>`, and more can be implemented by the community using the :ref:`plugins <Plugins>` mechanism (see :ref:`here <CWL Docker Requirement>`).
+StreamFlow relies on a ``CWLDockerTranslator`` object to convert a CWL `DockerRequirement <https://www.commonwl.org/v1.2/CommandLineTool.html#DockerRequirement>`_ specification into a step binding on a given :ref:`Connector <Connector>` instance. By default, the :ref:`DockerCWLDockerTranslator <DockerCWLDockerTranslator>` is used to spawn a :ref:`DockerConnector <DockerConnector>`.
+However, StreamFlow also supports translators for :ref:`Kubernetes <KubernetesCWLDockerTranslator>`, :ref:`Singularity <SingularityCWLDockerTranslator>` and :ref:`NoContainer <NoContainerCWLDockerTranslator>`. This latter allows to execute the step without a container, even if the ``DockerRequirement`` feature is defined. More ``CWLDockerTranslators`` can be implemented by the community using the :ref:`plugins <Plugins>` mechanism (see :ref:`here <CWL Docker Requirement>`).
 
 The ``CWLDockerTranslator`` interface is defined in the ``streamflow.cwl.requirement.docker.translator`` module and exposes a single public method ``get_target``:
 

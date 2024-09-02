@@ -5,7 +5,8 @@ from typing import Any, AsyncIterable, MutableMapping, MutableSequence
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
-from streamflow.core.workflow import Token, Workflow
+from streamflow.core.workflow import Token
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import DotProductCombinator
 from streamflow.workflow.token import IterationTerminationToken, ListToken
 
@@ -24,7 +25,7 @@ class ListMergeCombinator(DotProductCombinator):
     def __init__(
         self,
         name: str,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         input_names: MutableSequence[str],
         output_name: str,
         flatten: bool = False,
@@ -33,7 +34,6 @@ class ListMergeCombinator(DotProductCombinator):
         self.flatten: bool = flatten
         self.input_names: MutableSequence[str] = input_names
         self.output_name: str = output_name
-        self.token_values: MutableMapping[str, MutableMapping[str, Any]] = {}
 
     @classmethod
     async def _load(

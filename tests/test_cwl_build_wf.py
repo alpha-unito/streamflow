@@ -324,11 +324,12 @@ async def test_cwl_transfer_step(context: StreamFlowContext):
     """Test saving CWLTransferStep on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
     await _base_step_test_process(
-        workflow,
-        CWLTransferStep,
-        {
+        workflow=workflow,
+        step_cls=CWLTransferStep,
+        kwargs_step={
             "name": posixpath.join(utils.random_name(), "__transfer__", "test"),
             "job_port": port,
+            "writable": True,
         },
-        context,
+        context=context,
     )

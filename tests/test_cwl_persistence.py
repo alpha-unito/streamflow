@@ -8,17 +8,18 @@ from rdflib import Graph
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString, LiteralScalarString
 
 from streamflow.core import utils
+from streamflow.core.command import CommandTokenProcessor, UnionCommandTokenProcessor
+from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.workflow import Step, Workflow
+from streamflow.core.deployment import FilterConfig, LocalTarget
+from streamflow.core.workflow import Step
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
     CWLCommand,
-    CWLCommandToken,
+    CWLCommandTokenProcessor,
     CWLExpressionCommand,
-    CWLMapCommandToken,
-    CWLObjectCommandToken,
-    CWLStepCommand,
-    CWLUnionCommandToken,
+    CWLMapCommandTokenProcessor,
+    CWLObjectCommandTokenProcessor,
 )
 from streamflow.cwl.processor import (
     CWLFileToken,
@@ -35,6 +36,7 @@ from streamflow.cwl.step import (
     CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
     CWLTransferStep,
+    CWLScheduleStep,
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
@@ -49,19 +51,21 @@ from streamflow.cwl.transformer import (
     ValueFromTransformer,
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile
-from streamflow.workflow.port import JobPort
+from streamflow.cwl.workflow import CWLWorkflow
+from streamflow.workflow.port import JobPort, ConnectorPort
 from streamflow.workflow.step import CombinatorStep, ExecuteStep
 from tests.conftest import save_load_and_test
+from tests.utils.workflow import CWL_VERSION, create_workflow
 
 
 def _create_cwl_command(
-    step: Step, command_tokens: MutableSequence[CWLCommandToken]
+    step: Step, processors: MutableSequence[CommandTokenProcessor]
 ) -> CWLCommand:
     return CWLCommand(
         step=step,
         absolute_initial_workdir_allowed=False,
         base_command=["command", "tool"],
-        command_tokens=command_tokens,
+        processors=processors,
         expression_lib=["Requirement"],
         failure_codes=[0, 0],
         full_js=False,
@@ -76,10 +80,10 @@ def _create_cwl_command(
     )
 
 
-def _create_cwl_command_token(
-    cls: type[CWLCommandToken] = CWLCommandToken, value: Any | None = None
+def _create_cwl_command_token_processor(
+    processor: CommandTokenProcessor | None = None, expression: Any | None = None
 ):
-    return cls(
+    return CWLCommandTokenProcessor(
         is_shell_command=False,
         item_separator="&",
         name="test",
@@ -88,11 +92,12 @@ def _create_cwl_command_token(
         separate=True,
         shell_quote=True,
         token_type="string",
-        value=value,
+        processor=processor,
+        expression=expression,
     )
 
 
-def _create_cwl_token_processor(name: str, workflow: Workflow) -> CWLTokenProcessor:
+def _create_cwl_token_processor(name: str, workflow: CWLWorkflow) -> CWLTokenProcessor:
     return CWLTokenProcessor(
         name=name,
         workflow=workflow,
@@ -100,7 +105,6 @@ def _create_cwl_token_processor(name: str, workflow: Workflow) -> CWLTokenProces
         enum_symbols=["path1", "path2"],
         expression_lib=["expr_lib1", "expr_lib2"],
         secondary_files=[SecondaryFile("file1", True)],
-        format_graph=Graph(),
         load_listing=LoadListing.no_listing,
     )
 
@@ -124,13 +128,13 @@ async def test_cwl_file_token(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_command(context: StreamFlowContext):
     """Test saving and loading ExecuteStep with CWLCommand from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
     step.command = _create_cwl_command(step, [])
     await save_load_and_test(step, context)
@@ -139,13 +143,13 @@ async def test_cwl_command(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_expression_command(context: StreamFlowContext):
     """Test saving and loading ExecuteStep with CWLExpressionCommand from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
     step.command = CWLExpressionCommand(
         step=step,
@@ -160,47 +164,25 @@ async def test_cwl_expression_command(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_step_command(context: StreamFlowContext):
-    """Test saving and loading ExecuteStep with CWLStepCommand from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+async def test_cwl_command_token_processor(context: StreamFlowContext):
+    """Test saving and loading CWLCommand with CWLCommandTokens from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
-    )
-    step.command = CWLStepCommand(
-        step=step,
-        absolute_initial_workdir_allowed=False,
-        expression_lib=["a", "b"],
-        full_js=False,
-        initial_work_dir="/tmp/workdir",
-        inplace_update=False,
-        time_limit=10000,
-    )
-    step.command.input_expressions["test"] = "test"
-    await save_load_and_test(step, context)
-
-
-@pytest.mark.asyncio
-async def test_cwl_command_token(context: StreamFlowContext):
-    """Test saving and loading CWLCommannd with CWLCommandTokens from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    port = workflow.create_port()
-    await workflow.save(context)
-    step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
 
     step.command = _create_cwl_command(
         step,
         [
-            _create_cwl_command_token(value=DoubleQuotedScalarString("60")),
-            _create_cwl_command_token(
-                value=LiteralScalarString("${ return 10 + 20 - (5 * 4) }")
+            _create_cwl_command_token_processor(
+                expression=DoubleQuotedScalarString("60")
+            ),
+            _create_cwl_command_token_processor(
+                expression=LiteralScalarString("${ return 10 + 20 - (5 * 4) }")
             ),
         ],
     )
@@ -208,46 +190,50 @@ async def test_cwl_command_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_command_token_nested(context: StreamFlowContext):
-    """Test saving and loading CWLCommannd with nested CWLCommandTokens from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+async def test_cwl_command_token_processors_nested(context: StreamFlowContext):
+    """Test saving and loading CWLCommand with nested CWLCommandTokenProcessors from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
 
     step.command = _create_cwl_command(
         step,
         [
-            _create_cwl_command_token(value=_create_cwl_command_token(value=1123)),
-            _create_cwl_command_token(value=_create_cwl_command_token(value="hello")),
+            _create_cwl_command_token_processor(
+                processor=_create_cwl_command_token_processor(expression=1123)
+            ),
+            _create_cwl_command_token_processor(
+                processor=_create_cwl_command_token_processor(expression="hello")
+            ),
         ],
     )
     await save_load_and_test(step, context)
 
 
 @pytest.mark.asyncio
-async def test_cwl_object_command_token(context: StreamFlowContext):
-    """Test saving and loading CWLCommannd with CWLObjectCommandTokens from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+async def test_cwl_object_command_token_processor(context: StreamFlowContext):
+    """Test saving and loading CWLCommand with CWLObjectCommandProcessors from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
     step.command = _create_cwl_command(
         step,
         [
-            _create_cwl_command_token(
-                cls=CWLObjectCommandToken,
-                value={
-                    "a": _create_cwl_command_token(value=10),
-                    "b": _create_cwl_command_token(value=234),
+            CWLObjectCommandTokenProcessor(
+                name="test",
+                processors={
+                    "a": _create_cwl_command_token_processor(expression=10),
+                    "b": _create_cwl_command_token_processor(expression=234),
                 },
             )
         ],
@@ -256,69 +242,69 @@ async def test_cwl_object_command_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_object_command_token_nested(context: StreamFlowContext):
-    """Test saving and loading CWLCommandToken with nested CWLObjectCommandToken from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+async def test_cwl_object_command_token_processors_nested(context: StreamFlowContext):
+    """Test saving and loading CWLCommandToken with nested CWLObjectCommandTokenProcessors from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
 
-    command_tokens = [
-        _create_cwl_command_token(
-            cls=CWLObjectCommandToken,
-            value={
-                "zero": _create_cwl_command_token(
-                    cls=CWLObjectCommandToken,
-                    value={
-                        "type": _create_cwl_command_token(value="File"),
-                        "params": _create_cwl_command_token(value=None),
+    processors = [
+        CWLObjectCommandTokenProcessor(
+            name="test",
+            processors={
+                "zero": CWLObjectCommandTokenProcessor(
+                    name="test",
+                    processors={
+                        "type": _create_cwl_command_token_processor(expression="File"),
+                        "params": _create_cwl_command_token_processor(expression=None),
                     },
                 )
             },
         ),
-        _create_cwl_command_token(
-            cls=CWLObjectCommandToken,
-            value={
-                "zero": _create_cwl_command_token(
-                    cls=CWLObjectCommandToken,
-                    value={
-                        "one": _create_cwl_command_token(value="89"),
-                        "two": _create_cwl_command_token(value=29),
-                        "three": _create_cwl_command_token(value=None),
+        CWLObjectCommandTokenProcessor(
+            name="test",
+            processors={
+                "zero": CWLObjectCommandTokenProcessor(
+                    name="test",
+                    processors={
+                        "one": _create_cwl_command_token_processor(expression="89"),
+                        "two": _create_cwl_command_token_processor(expression=29),
+                        "three": _create_cwl_command_token_processor(expression=None),
                     },
                 )
             },
         ),
-        _create_cwl_command_token(value=11),
+        _create_cwl_command_token_processor(expression=11),
     ]
-    step.command = _create_cwl_command(step, command_tokens)
+    step.command = _create_cwl_command(step, processors)
     await save_load_and_test(step, context)
 
 
 @pytest.mark.asyncio
-async def test_cwl_union_command_token(context: StreamFlowContext):
-    """Test saving and loading CWLCommannd with CWLUnionCommandTokens from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+async def test_cwl_union_command_token_processor(context: StreamFlowContext):
+    """Test saving and loading CWLCommand with CWLUnionCommandTokenProcessor from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
     step.command = _create_cwl_command(
         step,
         [
-            _create_cwl_command_token(
-                cls=CWLUnionCommandToken,
-                value=[
-                    _create_cwl_command_token(value="qwerty"),
-                    _create_cwl_command_token(value=987),
-                    _create_cwl_command_token(value="qaz"),
+            UnionCommandTokenProcessor(
+                name="test",
+                processors=[
+                    _create_cwl_command_token_processor(expression="qwerty"),
+                    _create_cwl_command_token_processor(expression=987),
+                    _create_cwl_command_token_processor(expression="qaz"),
                 ],
             )
         ],
@@ -327,34 +313,34 @@ async def test_cwl_union_command_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_union_command_token_nested(context: StreamFlowContext):
-    """Test saving and loading CWLCommannd with nested CWLUnionCommandTokens from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+async def test_cwl_union_command_token_processor_nested(context: StreamFlowContext):
+    """Test saving and loading CWLCommand with nested CWLUnionCommandProcessors from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
     step.command = _create_cwl_command(
         step,
         [
-            _create_cwl_command_token(
-                cls=CWLUnionCommandToken,
-                value=[
-                    _create_cwl_command_token(
-                        cls=CWLUnionCommandToken,
-                        value=[
-                            _create_cwl_command_token(value="aaa"),
-                            _create_cwl_command_token(value="bbb"),
+            UnionCommandTokenProcessor(
+                name="test",
+                processors=[
+                    UnionCommandTokenProcessor(
+                        name="test",
+                        processors=[
+                            _create_cwl_command_token_processor(expression="aaa"),
+                            _create_cwl_command_token_processor(expression="bbb"),
                         ],
                     ),
-                    _create_cwl_command_token(
-                        cls=CWLUnionCommandToken,
-                        value=[
-                            _create_cwl_command_token(value="ccc"),
-                            _create_cwl_command_token(value="ddd"),
+                    UnionCommandTokenProcessor(
+                        name="test",
+                        processors=[
+                            _create_cwl_command_token_processor(expression="ccc"),
+                            _create_cwl_command_token_processor(expression="ddd"),
                         ],
                     ),
                 ],
@@ -365,24 +351,26 @@ async def test_cwl_union_command_token_nested(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_map_command_token(context: StreamFlowContext):
-    """Test saving and loading CWLCommannd with CWLMapCommandTokens from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+async def test_cwl_map_command_token_processor(context: StreamFlowContext):
+    """Test saving and loading CWLCommand with CWLMapCommandTokenProcessor from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
     step = workflow.create_step(
-        cls=ExecuteStep, name=utils.random_name(), job_port=port
+        cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
     step.command = _create_cwl_command(
         step,
         [
-            _create_cwl_command_token(
-                cls=CWLMapCommandToken, value=_create_cwl_command_token(value="z")
+            CWLMapCommandTokenProcessor(
+                name="test",
+                processor=_create_cwl_command_token_processor(expression="z"),
             ),
-            _create_cwl_command_token(
-                cls=CWLMapCommandToken, value=_create_cwl_command_token(value="xy")
+            CWLMapCommandTokenProcessor(
+                name="test",
+                processor=_create_cwl_command_token_processor(expression="xy"),
             ),
         ],
     )
@@ -392,12 +380,7 @@ async def test_cwl_map_command_token(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_list_merge_combinator(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with ListMergeCombinator from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
     name = utils.random_name()
     step = workflow.create_step(
         cls=CombinatorStep,
@@ -416,15 +399,11 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_default_transformer(context: StreamFlowContext):
     """Test saving and loading DefaultTransformer from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    port = workflow.create_port()
-    await workflow.save(context)
-
-    name = utils.random_name()
+    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
     transformer = workflow.create_step(
-        cls=DefaultTransformer, name=name + "-transformer", default_port=port
+        cls=DefaultTransformer,
+        name=utils.random_name() + "-transformer",
+        default_port=port,
     )
     await save_load_and_test(transformer, context)
 
@@ -432,15 +411,11 @@ async def test_default_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_default_retag_transformer(context: StreamFlowContext):
     """Test saving and loading DefaultRetagTransformer from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    port = workflow.create_port()
-    await workflow.save(context)
-
-    name = utils.random_name()
+    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
     transformer = workflow.create_step(
-        cls=DefaultRetagTransformer, name=name + "-transformer", default_port=port
+        cls=DefaultRetagTransformer,
+        name=utils.random_name() + "-transformer",
+        default_port=port,
     )
     await save_load_and_test(transformer, context)
 
@@ -448,10 +423,12 @@ async def test_default_retag_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_token_transformer(context: StreamFlowContext):
     """Test saving and loading CWLTokenTransformer with CWLTokenProcessor from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
+    if workflow.format_graph is None:
+        workflow.format_graph = Graph()
     await workflow.save(context)
 
     name = utils.random_name()
@@ -467,11 +444,13 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_value_from_transformer(context: StreamFlowContext):
     """Test saving and loading ValueFromTransformer with CWLTokenProcessor from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
     job_port = workflow.create_port(JobPort)
+    if workflow.format_graph is None:
+        workflow.format_graph = Graph()
     await workflow.save(context)
 
     name = utils.random_name()
@@ -491,11 +470,13 @@ async def test_value_from_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_loop_value_from_transformer(context: StreamFlowContext):
     """Test saving and loading LoopValueFromTransformer with CWLTokenProcessor from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
     job_port = workflow.create_port(JobPort)
+    if workflow.format_graph is None:
+        workflow.format_graph = Graph()
     await workflow.save(context)
 
     name = utils.random_name()
@@ -515,10 +496,12 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_map_token_transformer(context: StreamFlowContext):
     """Test saving and loading CWLTokenTransformer with CWLMapTokenProcessor from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
+    if workflow.format_graph is None:
+        workflow.format_graph = Graph()
     await workflow.save(context)
 
     name = utils.random_name()
@@ -538,10 +521,12 @@ async def test_cwl_map_token_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_object_token_transformer(context: StreamFlowContext):
     """Test saving and loading CWLTokenTransformer with CWLObjectTokenProcessor from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
+    if workflow.format_graph is None:
+        workflow.format_graph = Graph()
     await workflow.save(context)
 
     name = utils.random_name()
@@ -563,10 +548,12 @@ async def test_cwl_object_token_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_union_token_transformer(context: StreamFlowContext):
     """Test saving and loading CWLTokenTransformer with CWLUnionTokenProcessor from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
+    if workflow.format_graph is None:
+        workflow.format_graph = Graph()
     await workflow.save(context)
 
     name = utils.random_name()
@@ -586,13 +573,7 @@ async def test_cwl_union_token_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_all_non_null_transformer(context: StreamFlowContext):
     """Test saving and loading AllNonNullTransformer from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    in_port = workflow.create_port()
-    out_port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (in_port, out_port) = await create_workflow(context=context)
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=AllNonNullTransformer, name=name + "-transformer"
@@ -605,13 +586,7 @@ async def test_all_non_null_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_first_non_null_transformer(context: StreamFlowContext):
     """Test saving and loading FirstNonNullTransformer from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    in_port = workflow.create_port()
-    out_port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (in_port, out_port) = await create_workflow(context=context)
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=FirstNonNullTransformer, name=name + "-transformer"
@@ -624,13 +599,7 @@ async def test_first_non_null_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_forward_transformer(context: StreamFlowContext):
     """Test saving and loading ForwardTransformer from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    in_port = workflow.create_port()
-    out_port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (in_port, out_port) = await create_workflow(context=context)
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=ForwardTransformer, name=name + "-transformer"
@@ -643,13 +612,7 @@ async def test_forward_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_list_to_element_transformer(context: StreamFlowContext):
     """Test saving and loading ListToElementTransformer from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    in_port = workflow.create_port()
-    out_port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (in_port, out_port) = await create_workflow(context=context)
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=ListToElementTransformer, name=name + "-transformer"
@@ -662,13 +625,7 @@ async def test_list_to_element_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_only_non_null_transformer(context: StreamFlowContext):
     """Test saving and loading OnlyNonNullTransformer from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    in_port = workflow.create_port()
-    out_port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (in_port, out_port) = await create_workflow(context=context)
     name = utils.random_name()
     transformer = workflow.create_step(
         cls=OnlyNonNullTransformer, name=name + "-transformer"
@@ -681,13 +638,7 @@ async def test_only_non_null_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
     """Test saving and loading CWLEmptyScatterConditionalStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    in_port = workflow.create_port()
-    out_port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (in_port, out_port) = await create_workflow(context=context)
     name = utils.random_name()
     empty_scatter_conditional_step = workflow.create_step(
         cls=CWLEmptyScatterConditionalStep,
@@ -702,12 +653,7 @@ async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_conditional_step(context: StreamFlowContext):
     """Test saving and loading CWLConditionalStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    skip_port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (skip_port, *_) = await create_workflow(context=context, num_port=1)
     step = workflow.create_step(
         cls=CWLConditionalStep,
         name=utils.random_name() + "-when",
@@ -722,12 +668,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_loop_conditional_step(context: StreamFlowContext):
     """Test saving and loading CWLLoopConditionalStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    skip_port = workflow.create_port()
-    await workflow.save(context)
-
+    workflow, (skip_port, *_) = await create_workflow(context=context, num_port=1)
     step = workflow.create_step(
         cls=CWLLoopConditionalStep,
         name=utils.random_name() + "-when",
@@ -740,18 +681,18 @@ async def test_cwl_loop_conditional_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_transfer_step(context: StreamFlowContext):
+async def test_cwl_transfer_step(context: StreamFlowContext):
     """Test saving and loading CWLTransferStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
-
     step = workflow.create_step(
         cls=CWLTransferStep,
-        name=posixpath.join(utils.random_name(), "__transfer__", port.name),
-        job_port=port,
+        name=posixpath.join(utils.random_name(), "__transfer__", "test"),
+        job_port=job_port,
+        writable=True,
     )
     await save_load_and_test(step, context)
 
@@ -759,16 +700,15 @@ async def test_transfer_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_input_injector_step(context: StreamFlowContext):
     """Test saving and loading CWLInputInjectorStep from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
     await workflow.save(context)
-
     step = workflow.create_step(
         cls=CWLInputInjectorStep,
         name=posixpath.join(utils.random_name(), "-injector"),
-        job_port=port,
+        job_port=job_port,
     )
     await save_load_and_test(step, context)
 
@@ -777,13 +717,47 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
 @pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
 async def test_cwl_loop_output(context: StreamFlowContext, step_cls: type[Step]):
     """Test saving and loading CWLLoopOutput from database"""
-    workflow = Workflow(
-        context=context, type="cwl", name=utils.random_name(), config={}
-    )
-    await workflow.save(context)
-
+    workflow, _ = await create_workflow(context=context, num_port=0)
     step = workflow.create_step(
         cls=step_cls,
         name=posixpath.join(utils.random_name(), "-loop-output"),
     )
     await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_schedule_step(context: StreamFlowContext):
+    """Test saving and loading CWLScheduleStep from database"""
+    workflow, _ = await create_workflow(context, 0)
+    binding_config = BindingConfig(
+        targets=[
+            LocalTarget(workdir=utils.random_name()),
+        ],
+        filters=[FilterConfig(config={}, name=utils.random_name(), type="shuffle")],
+    )
+    connector_ports = {
+        target.deployment.name: workflow.create_port(ConnectorPort)
+        for target in binding_config.targets
+    }
+    await workflow.save(context)
+
+    schedule_step = workflow.create_step(
+        cls=CWLScheduleStep,
+        name=posixpath.join(utils.random_name(), "__schedule__"),
+        job_prefix="something",
+        connector_ports=connector_ports,
+        input_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
+        output_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
+        tmp_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
+        binding_config=binding_config,
+    )
+    await save_load_and_test(schedule_step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_workflow(context: StreamFlowContext):
+    """Test saving and loading CWLWorkflow from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
+    )
+    await save_load_and_test(workflow, context)
