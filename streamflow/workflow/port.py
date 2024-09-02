@@ -43,7 +43,7 @@ class FilterTokenPort(Port):
 
     def put(self, token: Token):
         if token.tag in self.stop_tags:
-            logger.info(
+            logger.debug(
                 f"Port {self.name} of wf {self.workflow.name} received token {token.tag} but it will replace with TerminationToken"
             )
             super().put(TerminationToken())

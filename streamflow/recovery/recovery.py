@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-
+import datetime
 from typing import MutableMapping, MutableSet
 
 from streamflow.core import utils
@@ -375,6 +375,9 @@ async def _new_put_tokens(
 
 
 async def _new_set_steps_state(new_workflow, rdwp):
+    dt = str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
+    dir_path = f"graphs/set_steps_state/{dt}-{new_workflow.name}"
+    dag_workflow(new_workflow, dir_path + "/new-wf")
     for step in new_workflow.steps.values():
         if isinstance(step, ScatterStep):
             port = step.get_output_port()
