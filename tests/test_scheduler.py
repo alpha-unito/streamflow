@@ -56,9 +56,9 @@ async def test_scheduling(
     target = Target(deployment=deployment_config, service=service)
     binding_config = BindingConfig(targets=[target])
     await context.scheduler.schedule(job, binding_config, hardware_requirement)
-    assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
+    assert context.scheduler.get_allocation(job.name).status == Status.FIREABLE
     await context.scheduler.notify_status(job.name, Status.COMPLETED)
-    assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
+    assert context.scheduler.get_allocation(job.name).status == Status.COMPLETED
 
 
 @pytest.mark.asyncio
@@ -341,21 +341,21 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
         task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
     )
     assert len(task_pending) == 0
-    assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
+    assert context.scheduler.get_allocation(job.name).status == Status.FIREABLE
 
     # Check if it has been scheduled into the first target
     assert (
-        context.scheduler.job_allocations[job.name].target.deployment.name
+        context.scheduler.get_allocation(job.name).target.deployment.name
         == param_config.name
     )
 
     # Job changes status to RUNNING
     await context.scheduler.notify_status(job.name, Status.RUNNING)
-    assert context.scheduler.job_allocations[job.name].status == Status.RUNNING
+    assert context.scheduler.get_allocation(job.name).status == Status.RUNNING
 
     # Job changes status to COMPLETED
     await context.scheduler.notify_status(job.name, Status.COMPLETED)
-    assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
+    assert context.scheduler.get_allocation(job.name).status == Status.COMPLETED
 
 
 @pytest.mark.asyncio
@@ -480,18 +480,18 @@ async def test_binding_filter(context: StreamFlowContext):
         task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
     )
     assert len(task_pending) == 0
-    assert context.scheduler.job_allocations[job.name].status == Status.FIREABLE
+    assert context.scheduler.get_allocation(job.name).status == Status.FIREABLE
 
     # Check if the job has been scheduled into the second target
     assert (
-        context.scheduler.job_allocations[job.name].target.deployment.name
+        context.scheduler.get_allocation(job.name).target.deployment.name
         == docker_config.name
     )
 
     # Job changes status to RUNNING
     await context.scheduler.notify_status(job.name, Status.RUNNING)
-    assert context.scheduler.job_allocations[job.name].status == Status.RUNNING
+    assert context.scheduler.get_allocation(job.name).status == Status.RUNNING
 
     # Job changes status to COMPLETED
     await context.scheduler.notify_status(job.name, Status.COMPLETED)
-    assert context.scheduler.job_allocations[job.name].status == Status.COMPLETED
+    assert context.scheduler.get_allocation(job.name).status == Status.COMPLETED

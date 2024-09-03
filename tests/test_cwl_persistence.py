@@ -21,6 +21,7 @@ from streamflow.cwl.command import (
     CWLMapCommandTokenProcessor,
     CWLObjectCommandTokenProcessor,
 )
+from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLFileToken,
     CWLMapTokenProcessor,
@@ -727,7 +728,7 @@ async def test_cwl_loop_output(context: StreamFlowContext, step_cls: type[Step])
 
 @pytest.mark.asyncio
 async def test_cwl_schedule_step(context: StreamFlowContext):
-    """Test saving and loading CWLScheduleStep from database"""
+    """Test saving and loading CWLScheduleStep with a CWLHardwareRequirement from database"""
     workflow, _ = await create_workflow(context, 0)
     binding_config = BindingConfig(
         targets=[
@@ -750,6 +751,15 @@ async def test_cwl_schedule_step(context: StreamFlowContext):
         output_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
         tmp_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
         binding_config=binding_config,
+        hardware_requirement=CWLHardwareRequirement(
+            CWL_VERSION,
+            1.5,
+            "$(inputs.mem * 2)",
+            1024,
+            4096,
+            True,
+            ["function function nope(message) {return message}"],
+        ),
     )
     await save_load_and_test(schedule_step, context)
 
