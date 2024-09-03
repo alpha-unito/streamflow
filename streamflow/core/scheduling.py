@@ -263,6 +263,9 @@ class AvailableLocation:
     def service(self) -> str | None:
         return self.location.service
 
+    def __str__(self):
+        return self.location.__str__()
+
 
 class LocationAllocation:
     __slots__ = ("name", "deployment", "jobs")
