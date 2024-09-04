@@ -4,23 +4,20 @@ from collections import deque
 from enum import Enum
 from typing import MutableMapping, Iterable
 
+from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import (
     get_class_from_name,
     contains_id,
     get_tag,
     get_class_fullname,
 )
-from streamflow.core.exception import FailureHandlingException
-from streamflow.cwl.processor import CWLTokenProcessor
-
-from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.core.workflow import Token
 from streamflow.cwl.transformer import (
     BackPropagationTransformer,
-    CWLTokenTransformer,
     OutputForwardTransformer,
 )
 from streamflow.log_handler import logger
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
 from streamflow.recovery.dev_utils import print_token_val
 from streamflow.recovery.utils import (
@@ -581,17 +578,6 @@ class RollbackDeterministicWorkflowPolicy:
                 f"populate_workflow: Rimozione (2) definitiva step {step_name} dal new_workflow {new_workflow.name}"
             )
             new_workflow.steps.pop(step_name)
-
-        graph = None
-        # todo tmp solution
-        for s in new_workflow.steps.values():
-            if isinstance(s, CWLTokenTransformer) and isinstance(
-                s.processor, CWLTokenProcessor
-            ):
-                if not graph:
-                    graph = s.processor.format_graph
-                else:
-                    s.processor.format_graph = graph
         logger.debug("populate_workflow: Finish")
 
     async def load_and_add_steps(self, step_ids, new_workflow, loading_context):

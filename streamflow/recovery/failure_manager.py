@@ -7,9 +7,10 @@ from typing import MutableMapping, MutableSequence
 
 import pkg_resources
 
+from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.recovery import FailureManager
-from streamflow.core.workflow import CommandOutput, Job, Status, Step, Token
+from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowTransferException,
@@ -85,7 +86,7 @@ class DefaultFailureManager(FailureManager):
                     return True
         return False
 
-    async def setup_job_request(self, job_name, default_is_running=True):
+    async def setup_job_request(self, job_name, default_is_running=True) -> JobRequest:
         if job_name not in self.job_requests.keys():
             async with self.create_request_lock:
                 request = JobRequest()
@@ -108,7 +109,9 @@ class DefaultFailureManager(FailureManager):
             logger.error(
                 f"FAILED Job {job_name} {self.job_requests[job_name].version} times. Execution aborted"
             )
-            raise FailureHandlingException()
+            raise FailureHandlingException(
+                f"FAILED Job {job_name} {self.job_requests[job_name].version} times. Execution aborted"
+            )
 
     # todo: situazione problematica
     #  A -> B
