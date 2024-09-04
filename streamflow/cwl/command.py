@@ -721,9 +721,10 @@ class CWLCommand(TokenizedCommand):
                 LocalConnector,
             )
             logger.info(
-                "EXECUTING step {step} (job {job}) {location} into directory {outdir}:\n{command}".format(
+                "EXECUTING step {step} (job {job}) of workflow {wf} in {location} into directory {outdir}:\n{command}".format(
                     step=self.step.name,
                     job=job.name,
+                    wf=self.step.workflow.name,
                     location="locally" if is_local else f"on location {locations[0]}",
                     outdir=job.output_directory,
                     command=cmd_string,

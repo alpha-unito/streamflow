@@ -214,7 +214,7 @@ class DefaultScheduler(Scheduler):
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
 
-    def _get_running_jobs(self, location: AvailableLocation):
+    def _get_running_jobs(self, location: AvailableLocation, job_name: str):
         if location.name in self.location_allocations.get(location.deployment, {}):
             return list(
                 filter(
@@ -224,7 +224,8 @@ class DefaultScheduler(Scheduler):
                         or (
                             x != job_name
                             and get_job_root_name(x) == get_job_root_name(job_name)
-                            and compare_tags(get_job_tag(x), get_job_tag(job_name)) == -1
+                            and compare_tags(get_job_tag(x), get_job_tag(job_name))
+                            == -1
                             and self.job_allocations[x].status == Status.ROLLBACK
                         )
                     ),
@@ -239,6 +240,7 @@ class DefaultScheduler(Scheduler):
         connector: Connector,
         location: AvailableLocation,
         hardware_requirement: Hardware,
+        job_name: str,
     ) -> bool:
         location = _get_location_for_requirement(connector, location)
         # If at least one location provides hardware capabilities
@@ -251,7 +253,7 @@ class DefaultScheduler(Scheduler):
         # Otherwise, simply compute the number of allocated slots
         else:
             slots = location.slots if location.slots is not None else 1
-            return len(self._get_running_jobs(location)) < slots
+            return len(self._get_running_jobs(location, job_name)) < slots
 
     async def _process_target(
         self,
@@ -323,6 +325,7 @@ class DefaultScheduler(Scheduler):
                             connector=connector,
                             location=loc,
                             hardware_requirement=hardware_requirements[loc.name],
+                            job_name=job.name,
                         )
                     }
                     if len(valid_locations) >= target.locations:

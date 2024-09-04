@@ -4,13 +4,13 @@ import datetime
 from typing import MutableMapping, MutableSet
 
 from streamflow.core import utils
-from streamflow.core.utils import (
-    random_name,
-    compare_tags,
-)
 from streamflow.core.exception import FailureHandlingException
-
+from streamflow.core.utils import (
+    compare_tags,
+    random_name,
+)
 from streamflow.core.workflow import Job, Step, Token
+from streamflow.core.workflow import Workflow
 from streamflow.cwl.transformer import BackPropagationTransformer
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
@@ -43,7 +43,6 @@ from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
 )
-from streamflow.core.workflow import Workflow
 from streamflow.workflow.utils import get_job_token
 
 
@@ -59,13 +58,12 @@ class RollbackRecoveryPolicy:
 
     async def recover_workflow(self, failed_job: Job, failed_step: Step):
         workflow = failed_step.workflow
-        new_workflow = Workflow(
-            context=workflow.context,
-            type=workflow.type,
-            name=random_name(),
-            config=workflow.config,
+
+        loading_context = WorkflowBuilder()
+        new_workflow = await loading_context.load_workflow(
+            workflow.context, workflow.persistent_id
         )
-        loading_context = WorkflowBuilder(new_workflow)
+        new_workflow.name = random_name()
 
         for port in failed_step.get_output_ports().values():
             # stop_tag = increase_tag(utils.get_tag(failed_job.inputs.values()))

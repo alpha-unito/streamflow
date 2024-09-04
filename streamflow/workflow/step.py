@@ -24,11 +24,9 @@ from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
     WorkflowTransferException,
-    WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import get_class_fullname
 from streamflow.core.workflow import (
     Job,
     Port,
@@ -653,7 +651,7 @@ class ExecuteStep(BaseStep):
 
     async def _retrieve_output(
         self,
-        job_token: JobToken,
+        job: Job,
         output_name: str,
         output_port: Port,
         command_output: CommandOutput,
@@ -661,17 +659,18 @@ class ExecuteStep(BaseStep):
     ) -> None:
         if (
             token := await self.output_processors[output_name].process(
-                job_token.value, command_output, connector
+                job, command_output, connector
             )
         ) is not None:
-            job_token = get_job_token(
-                job_token.value.name, self.get_input_port("__job__").token_list
-            )
+            job_token = JobToken(job)
+            job_token.persistent_id = get_job_token(
+                job.name, self.get_input_port("__job__").token_list
+            ).persistent_id
             output_port.put(
                 await self._persist_token(
                     token=token,
                     port=output_port,
-                    input_token_ids=_get_token_ids((*job_token.job.inputs.values(), job_token)),
+                    input_token_ids=_get_token_ids((*job.inputs.values(), job_token)),
                 )
             )
             await self.workflow.context.failure_manager.notify_jobs(
@@ -708,7 +707,7 @@ class ExecuteStep(BaseStep):
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
                 logger.error(
-                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
+                    f"FAILED Job {job.name} of workflow {self.workflow.name} with error:\n\t{command_output.value}"
                 )
                 command_output = (
                     await self.workflow.context.failure_manager.handle_failure(
@@ -722,9 +721,7 @@ class ExecuteStep(BaseStep):
                         *(
                             asyncio.create_task(
                                 self._retrieve_output(
-                                    job=get_job_token(
-                                        job.name, self.get_input_port("__job__").token_list
-                                    ),
+                                    job=job,
                                     output_name=output_name,
                                     output_port=self.workflow.ports[output_port],
                                     command_output=command_output,
@@ -764,7 +761,9 @@ class ExecuteStep(BaseStep):
             )
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"{command_output.status.name} Job {job.name} terminated")
+            logger.debug(
+                f"{command_output.status.name} Job {job.name} of workflow {self.workflow.name} terminated"
+            )
         return command_output.status
 
     async def _save_additional_params(
@@ -1535,11 +1534,11 @@ class ScheduleStep(BaseStep):
                             # fixme: debug
                             job_name = posixpath.join(self.job_prefix, tag)
                             if (
-                                job_alloc := self.workflow.context.scheduler.job_allocations.get(
-                                    job_name, None
+                                job_alloc := self.workflow.context.scheduler.get_allocation(
+                                    job_name
                                 )
                             ) and job_alloc.status != Status.ROLLBACK:
-                                raise WorkflowExecutionException(
+                                raise FailureHandlingException(
                                     f"Step {self.name} (wf {self.workflow.name}) cannot schedule the job {job_name} because it has status finished. Status: {job_alloc.status}"
                                 )
                             # Create Job
@@ -1753,9 +1752,7 @@ class TransferStep(BaseStep, ABC):
                     transferred_token = await self._persist_token(
                         token=await self.transfer(job, token),
                         port=self.get_output_port(port_name),
-                        input_token_ids=_get_token_ids(
-                            list(inputs.values()) + [job_token]
-                        ),
+                        input_token_ids=_get_token_ids([*inputs.values(), job_token]),
                     )
                     self.get_output_port(port_name).put(transferred_token)
                 except WorkflowTransferException as e:
@@ -1794,55 +1791,26 @@ class TransferStep(BaseStep, ABC):
         }
         if input_ports:
             inputs_map = {}
-            try:
-                while True:
-                    # Retrieve input tokens
-                    inputs = await self._get_inputs(input_ports)
-                    # Retrieve job
-                    job = await cast(JobPort, self.get_input_port("__job__")).get_job(
-                        self.name
-                    )
-                    # Check for termination
-                    if check_termination(inputs.values()) or job is None:
-                        status = _reduce_statuses([t.value for t in inputs.values()])
-                        break
-                    # Group inputs by tag
-                    _group_by_tag(inputs, inputs_map)
-                    # Process tags
-                    for tag in list(inputs_map.keys()):
-                        if len(inputs_map[tag]) == len(input_ports):
-                            inputs = inputs_map.pop(tag)
-                            # Change default status to COMPLETED
-                            status = Status.COMPLETED
-                            # Transfer token
-                            jobs.append(await self._transfer(job, inputs))
-                            # for port_name, token in inputs.items():
-                            #     self.get_output_port(port_name).put(
-                            #         await self._persist_token(
-                            #             token=await self.transfer(job, token),
-                            #             port=self.get_output_port(port_name),
-                            #             input_token_ids=_get_token_ids(
-                            #                 list(inputs.values())
-                            #                 + [
-                            #                     get_job_token(
-                            #                         job.name,
-                            #                         self.get_input_port(
-                            #                             "__job__"
-                            #                         ).token_list,
-                            #                     )
-                            #                 ]
-                            #             ),
-                            #         )
-                            #     )
-            # # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-            # except KeyboardInterrupt:
-            #     raise
-            # # When receiving a CancelledError, mark the step as Cancelled
-            # except asyncio.CancelledError:
-            #     await self.terminate(Status.CANCELLED)
-            # except Exception as e:
-            #     logger.exception(e)
-            #     await self.terminate(Status.FAILED)
+            while True:
+                # Retrieve input tokens
+                inputs = await self._get_inputs(input_ports)
+                # Retrieve job
+                job = await cast(JobPort, self.get_input_port("__job__")).get_job(
+                    self.name
+                )
+                # Check for termination
+                if check_termination(inputs.values()) or job is None:
+                    jobs.append(_reduce_statuses([t.value for t in inputs.values()]))
+                    break
+                # Group inputs by tag
+                _group_by_tag(inputs, inputs_map)
+                # Process tags
+                for tag in list(inputs_map.keys()):
+                    if len(inputs_map[tag]) == len(input_ports):
+                        inputs = inputs_map.pop(tag)
+                        # Change default status to COMPLETED
+                        # Transfer token
+                        jobs.append(await self._transfer(job, inputs))
         # Wait for jobs termination
         statuses = cast(MutableSequence[Status], jobs)
         # Terminate step

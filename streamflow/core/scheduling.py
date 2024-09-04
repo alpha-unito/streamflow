@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Type, cast
 
 
 from streamflow.core import utils
@@ -21,8 +21,6 @@ if TYPE_CHECKING:
         MutableMapping,
         MutableSequence,
         MutableSet,
-        Type,
-        cast,
     )
 
 
