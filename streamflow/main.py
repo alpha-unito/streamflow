@@ -4,9 +4,12 @@ import argparse
 import asyncio
 import logging
 import os
+import platform
 import sys
 import uuid
 from typing import Any, MutableMapping
+
+import uvloop
 
 from streamflow import report
 from streamflow.config.config import WorkflowConfig
@@ -244,20 +247,25 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
 def main(args):
     try:
         args = parser.parse_args(args)
+        if sys.platform != "win32" and platform.python_implementation() == "CPython":
+            logger.info("CPython detected: using uvloop EventLoop implementation")
+            engine = uvloop
+        else:
+            engine = asyncio
         if args.context == "version":
             from streamflow.version import VERSION
 
             print(f"StreamFlow version {VERSION}")
         elif args.context == "ext":
-            asyncio.run(_async_ext(args))
+            engine.run(_async_ext(args))
         elif args.context == "list":
-            asyncio.run(_async_list(args))
+            engine.run(_async_list(args))
         elif args.context == "plugin":
-            asyncio.run(_async_plugin(args))
+            engine.run(_async_plugin(args))
         elif args.context == "prov":
-            asyncio.run(_async_prov(args))
+            engine.run(_async_prov(args))
         elif args.context == "report":
-            asyncio.run(_async_report(args))
+            engine.run(_async_report(args))
         elif args.context == "run":
             if args.quiet:
                 logger.setLevel(logging.WARNING)
@@ -269,7 +277,7 @@ def main(args):
                 logger.handlers = []
                 logger.addHandler(colored_stream_handler)
                 logger.addFilter(HighlitingFilter())
-            asyncio.run(_async_run(args))
+            engine.run(_async_run(args))
         else:
             parser.print_help(file=sys.stderr)
             return 1
