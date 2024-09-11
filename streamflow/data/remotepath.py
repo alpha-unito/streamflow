@@ -171,6 +171,15 @@ async def follow_symlink(
     location: ExecutionLocation | None,
     path: str,
 ) -> str | None:
+    """
+    Get resolved symbolic links or canonical file names
+
+    :param context: the `StreamFlowContext` object with global application status.
+    :param connector: the `Connector` object to communicate with the location
+    :param location: the `ExecutionLocation` object with the location information
+    :param path: the path to be resolved in the case of symbolic link
+    :return: the path of the resolved symlink or `None` if the link points to a location that does not exist
+    """
     if isinstance(connector, LocalConnector):
         return os.path.realpath(path) if os.path.exists(path) else None
     else:
@@ -201,7 +210,7 @@ async def follow_symlink(
                     status, command, location, result
                 )
             )
-        return result.strip()
+        return result.strip() if status == 0 else None
 
 
 async def get_mount_point(
@@ -222,18 +231,13 @@ async def get_mount_point(
     try:
         return location.hardware.get_mount_point(path)
     except KeyError:
-        mount_point = path
+        path_to_resolve = path
         while (
             mount_point := await follow_symlink(
-                context, connector, location.location, mount_point
+                context, connector, location.location, path_to_resolve
             )
         ) is None:
-            mount_point = Path(mount_point).parent
-        # follow symlink can return empty string
-        if not mount_point:
-            raise WorkflowExecutionException(
-                f"Impossible to find a mount point for path {path}: the path does not exist"
-            )
+            path_to_resolve = Path(path_to_resolve).parent
         # todo: wraps not considered
         location_mount_points = location.hardware.get_mount_points()
         while (
