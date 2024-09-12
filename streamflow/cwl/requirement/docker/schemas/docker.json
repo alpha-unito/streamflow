@@ -401,11 +401,6 @@
       "type": "boolean",
       "description": "Mount the container's root filesystem as read only"
     },
-    "locationsCacheTTL": {
-      "type": "integer",
-      "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
-      "default": 10
-    },
     "restart": {
       "type": "string",
       "description": "Restart policy to apply when a container exists",

@@ -9,10 +9,8 @@ from abc import ABC, abstractmethod
 from shutil import which
 from typing import Any, MutableMapping, MutableSequence
 
-from cachetools import Cache, TTLCache
 from importlib_resources import files
 
-from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation, LOCAL_LOCATION
 from streamflow.core.exception import (
@@ -48,11 +46,15 @@ def _parse_mount(mount: str) -> tuple[str, str]:
 
 
 class ContainerInstance:
-    __slots__ = ("current_user", "volumes")
+    __slots__ = ("address", "current_user", "volumes")
 
     def __init__(
-        self, current_user: bool, volumes: MutableSequence[MutableMapping[str, str]]
+        self,
+        address: str,
+        current_user: bool,
+        volumes: MutableSequence[MutableMapping[str, str]],
     ):
+        self.address: str = address
         self.current_user: bool = current_user
         self.volumes: MutableSequence[MutableMapping[str, str]] = volumes
 
@@ -469,9 +471,6 @@ class ContainerConnector(ConnectorWrapper, ABC):
     async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance: ...
 
     @abstractmethod
-    async def _get_location(self, location_name: str) -> AvailableLocation: ...
-
-    @abstractmethod
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
     ) -> MutableSequence[str]: ...
@@ -579,7 +578,6 @@ class DockerBaseConnector(ContainerConnector, ABC):
             service=service,
             transferBufferSize=transferBufferSize,
         )
-        self._instance_lock: asyncio.Lock = asyncio.Lock()
 
     async def _check_docker_installed(self):
         if self._wraps_local():
@@ -609,30 +607,6 @@ class DockerBaseConnector(ContainerConnector, ABC):
         )
         return stdout
 
-    async def _get_location(self, location_name: str) -> AvailableLocation:
-        stdout, returncode = await self.connector.run(
-            location=self._inner_location.location,
-            command=[
-                "docker",
-                "inspect",
-                "--format",
-                "'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'",
-                location_name,
-            ],
-            capture_output=True,
-        )
-        if returncode == 0:
-            return AvailableLocation(
-                name=location_name,
-                deployment=self.deployment_name,
-                hostname=stdout,
-                wraps=self._inner_location,
-            )
-        else:
-            raise WorkflowExecutionException(
-                f"FAILED retrieving available locations for deployment {self.deployment_name}"
-            )
-
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
     ) -> MutableSequence[str]:
@@ -646,77 +620,90 @@ class DockerBaseConnector(ContainerConnector, ABC):
             f"'{command}'",
         ]
 
-    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
-        if location.name not in self._instances:
-            await self._populate_instance(location)
-        return self._instances[location.name]
-
-    async def _populate_instance(self, location: ExecutionLocation):
-        async with self._instance_lock:
-            if location.name not in self._instances:
-                # Get volumes
-                stdout, returncode = await self.connector.run(
-                    location=get_inner_location(location),
-                    command=[
-                        "docker",
-                        "inspect",
-                        "--format",
-                        "'{{json .Mounts}}'",
-                        location.name,
-                    ],
-                    capture_output=True,
+    async def _populate_instance(self, name: str):
+        # Get IP address
+        ip_address, returncode = await self.connector.run(
+            location=self._inner_location.location,
+            command=[
+                "docker",
+                "inspect",
+                "--format",
+                "'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'",
+                name,
+            ],
+            capture_output=True,
+        )
+        if returncode != 0:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving available locations for deployment {self.deployment_name}"
+            )
+        # Get volumes
+        stdout, returncode = await self.connector.run(
+            location=self._inner_location.location,
+            command=[
+                "docker",
+                "inspect",
+                "--format",
+                "'{{json .Mounts}}'",
+                name,
+            ],
+            capture_output=True,
+        )
+        if returncode == 0:
+            try:
+                volumes = json.loads(stdout) if stdout else []
+            except json.decoder.JSONDecodeError:
+                raise WorkflowExecutionException(
+                    f"Error retrieving volumes for Docker container {name}: {stdout}"
                 )
-                if returncode == 0:
-                    try:
-                        volumes = json.loads(stdout) if stdout else []
-                    except json.decoder.JSONDecodeError:
-                        raise WorkflowExecutionException(
-                            f"Error retrieving volumes for Docker container {location.name}: {stdout}"
-                        )
-                else:
+        else:
+            raise WorkflowExecutionException(
+                f"Error retrieving volumes for Docker container {name}: [{returncode}] {stdout}"
+            )
+        # Check if the container user is the current host user
+        if self._wraps_local():
+            host_user = os.getuid()
+        else:
+            stdout, returncode = self.connector.run(
+                location=self._inner_location.location,
+                command=["id", "-u"],
+                capture_output=True,
+            )
+            if returncode == 0:
+                try:
+                    host_user = int(stdout)
+                except json.decoder.JSONDecodeError:
                     raise WorkflowExecutionException(
-                        f"Error retrieving volumes for Docker container {location.name}: [{returncode}] {stdout}"
+                        f"Error retrieving volumes for Docker container {name}: {stdout}"
                     )
-                # Check if the container user is the current host user
-                if self._wraps_local():
-                    host_user = os.getuid()
-                else:
-                    stdout, returncode = self.connector.run(
-                        location=get_inner_location(location),
-                        command=["id", "-u"],
-                        capture_output=True,
-                    )
-                    if returncode == 0:
-                        try:
-                            host_user = int(stdout)
-                        except json.decoder.JSONDecodeError:
-                            raise WorkflowExecutionException(
-                                f"Error retrieving volumes for Docker container {location.name}: {stdout}"
-                            )
-                    else:
-                        raise WorkflowExecutionException(
-                            f"Error retrieving volumes for Docker container {location.name}: [{returncode}] {stdout}"
-                        )
-                stdout, returncode = await self.run(
-                    location=location,
-                    command=["id", "-u"],
-                    capture_output=True,
+            else:
+                raise WorkflowExecutionException(
+                    f"Error retrieving volumes for Docker container {name}: [{returncode}] {stdout}"
                 )
-                if returncode == 0:
-                    try:
-                        container_user = int(stdout)
-                    except json.decoder.JSONDecodeError:
-                        raise WorkflowExecutionException(
-                            f"Error retrieving volumes for Docker container {location.name}: {stdout}"
-                        )
-                else:
-                    raise WorkflowExecutionException(
-                        f"Error retrieving volumes for Docker container {location.name}: [{returncode}] {stdout}"
-                    )
-                # Create instance
-                self._instances[location.name] = ContainerInstance(
-                    current_user=host_user == container_user, volumes=volumes
+        stdout, returncode = await self.run(
+            location=ExecutionLocation(
+                name=name,
+                deployment=self.deployment_name,
+                wraps=self._inner_location.location
+            ),
+            command=["id", "-u"],
+            capture_output=True,
+        )
+        if returncode == 0:
+            try:
+                container_user = int(stdout)
+            except json.decoder.JSONDecodeError:
+                raise WorkflowExecutionException(
+                    f"Error retrieving volumes for Docker container {name}: {stdout}"
                 )
+        else:
+            raise WorkflowExecutionException(
+                f"Error retrieving volumes for Docker container {name}: [{returncode}] {stdout}"
+            )
+        # Create instance
+        self._instances[name] = ContainerInstance(
+            address=ip_address, current_user=host_user == container_user, volumes=volumes
+        )
 
 
 class DockerConnector(DockerBaseConnector):
@@ -779,7 +766,6 @@ class DockerConnector(DockerBaseConnector):
         labelFile: MutableSequence[str] | None = None,
         link: MutableSequence[str] | None = None,
         linkLocalIP: MutableSequence[str] | None = None,
-        locationsCacheTTL: int | None = None,
         logDriver: str | None = None,
         logOpts: MutableSequence[str] | None = None,
         macAddress: str | None = None,
@@ -799,7 +785,6 @@ class DockerConnector(DockerBaseConnector):
         publish: MutableSequence[str] | None = None,
         publishAll: bool = False,
         readOnly: bool = False,
-        resourcesCacheTTL: int | None = None,
         restart: str | None = None,
         rm: bool = True,
         runtime: str | None = None,
@@ -828,16 +813,6 @@ class DockerConnector(DockerBaseConnector):
             service=service,
             transferBufferSize=transferBufferSize,
         )
-        if (cacheTTL := locationsCacheTTL) is None:
-            if (cacheTTL := resourcesCacheTTL) is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheTTL` instead."
-                    )
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=1, ttl=cacheTTL)
         self.image: str = image
         self.addHost: MutableSequence[str] | None = addHost
         self.blkioWeight: int | None = blkioWeight
@@ -929,6 +904,12 @@ class DockerConnector(DockerBaseConnector):
         self.volumeDriver: str | None = volumeDriver
         self.volumesFrom: MutableSequence[str] | None = volumesFrom
         self.workdir: str | None = workdir
+
+    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
+        if location.name not in self._instances:
+            raise WorkflowExecutionException(f"FAILED retrieving instance for location {location.name} "
+                                             f"for deployment {self.deployment_name}")
+        return self._instances[location.name]
 
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
@@ -1064,11 +1045,19 @@ class DockerConnector(DockerBaseConnector):
                 f"FAILED Deployment of {self.deployment_name} environment:\n\t"
                 "external Docker deployments must specify the containerId of an existing Docker container"
             )
+        # Populate instance
+        await self._populate_instance(self.containerId)
 
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
-        return {self.containerId: await self._get_location(self.containerId)}
+        instance = self._instances[self.containerId]
+        return {self.containerId: AvailableLocation(
+            name=self.containerId,
+            deployment=self.deployment_name,
+            hostname=instance.address,
+            wraps=self._inner_location,
+        )}
 
     @classmethod
     def get_schema(cls) -> str:
@@ -1125,10 +1114,6 @@ class DockerComposeConnector(DockerBaseConnector):
         renewAnonVolumes: bool | None = False,
         removeOrphans: bool | None = False,
         removeVolumes: bool | None = False,
-        locationsCacheSize: int = None,
-        locationsCacheTTL: int = None,
-        resourcesCacheSize: int = None,
-        resourcesCacheTTL: int = None,
         wait: bool = True,
     ) -> None:
         super().__init__(
@@ -1138,25 +1123,6 @@ class DockerComposeConnector(DockerBaseConnector):
             service=service,
             transferBufferSize=transferBufferSize,
         )
-        if (cacheSize := locationsCacheSize) is None:
-            if (cacheSize := resourcesCacheSize) is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheSize` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheSize` instead."
-                    )
-            else:
-                cacheSize = 10
-        if (cacheTTL := locationsCacheTTL) is None:
-            if (cacheTTL := resourcesCacheTTL) is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheTTL` instead."
-                    )
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
         self.files = [
             file if os.path.isabs(file) else os.path.join(self.config_dir, file)
             for file in files
@@ -1187,6 +1153,7 @@ class DockerComposeConnector(DockerBaseConnector):
         self.verbose: bool | None = verbose
         self.wait: bool | None = wait
         self._command: list[str] | None = None
+        self._instance_lock: asyncio.Lock = asyncio.Lock()
 
     async def _check_docker_compose_installed(self):
         if self._wraps_local():
@@ -1260,6 +1227,13 @@ class DockerComposeConnector(DockerBaseConnector):
             await self._check_docker_compose_installed()
             return ["docker-compose"] + options
 
+    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
+        if location.name not in self._instances:
+            async with self._instance_lock:
+                if location.name not in self._instances:
+                    await self._populate_instance(location.name)
+        return self._instances[location.name]
+
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
         # Check if Docker is installed in the wrapped connector
@@ -1289,7 +1263,6 @@ class DockerComposeConnector(DockerBaseConnector):
                     f"FAILED Deployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
                 )
 
-    @cachedmethod(lambda self: self.locationsCache)
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
@@ -1312,18 +1285,24 @@ class DockerComposeConnector(DockerBaseConnector):
             )
         if not isinstance(locations, MutableSequence):
             locations = [locations]
-        return {
+        instances = {
             loc["Name"]: v
             for loc, v in zip(
                 locations,
                 await asyncio.gather(
                     *(
-                        asyncio.create_task(self._get_location(location["Name"]))
+                        asyncio.create_task(self._get_instance(location["Name"]))
                         for location in locations
                     )
                 ),
             )
         }
+        return {k: AvailableLocation(
+            name=k,
+            deployment=self.deployment_name,
+            hostname=instance.address,
+            wraps=self._inner_location,
+        ) for k, instance in instances.items()}
 
     @classmethod
     def get_schema(cls) -> str:
@@ -1385,7 +1364,6 @@ class SingularityConnector(ContainerConnector):
         instanceName: str | None = None,
         ipc: bool = False,
         keepPrivs: bool = False,
-        locationsCacheTTL: int = None,
         memory: str | None = None,
         memoryReservation: str | None = None,
         memorySwap: str | None = None,
@@ -1407,7 +1385,6 @@ class SingularityConnector(ContainerConnector):
         pemPath: str | None = None,
         pidFile: str | None = None,
         pidsLimit: int | None = None,
-        resourcesCacheTTL: int = None,
         rocm: bool = False,
         scratch: MutableSequence[str] | None = None,
         security: MutableSequence[str] | None = None,
@@ -1425,16 +1402,6 @@ class SingularityConnector(ContainerConnector):
             service=service,
             transferBufferSize=transferBufferSize,
         )
-        if (cacheTTL := locationsCacheTTL) is None:
-            if (cacheTTL := resourcesCacheTTL) is not None:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning(
-                        "The `resourcesCacheTTL` keyword is deprecated and will be removed in StreamFlow 0.3.0. "
-                        "Use `locationsCacheTTL` instead."
-                    )
-            else:
-                cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=1, ttl=cacheTTL)
         self.image: str = image
         self.addCaps: str | None = addCaps
         self.allowSetuid: bool = allowSetuid
@@ -1494,7 +1461,6 @@ class SingularityConnector(ContainerConnector):
         self.workdir: str | None = workdir
         self.writable: bool = writable
         self.writableTmpfs: bool = writableTmpfs
-        self._instance_lock: asyncio.Lock = asyncio.Lock()
 
     async def _check_singularity_installed(self):
         if self._wraps_local():
@@ -1515,36 +1481,6 @@ class SingularityConnector(ContainerConnector):
         self, instance: ContainerInstance
     ) -> MutableSequence[MutableMapping[str, str]]:
         return instance.volumes
-
-    async def _get_location(self, location_name: str) -> AvailableLocation:
-        stdout, returncode = await self.connector.run(
-            location=self._inner_location.location,
-            command=[
-                "singularity",
-                "instance",
-                "list",
-                "--json",
-            ],
-            capture_output=True,
-        )
-        if returncode == 0:
-            json_out = json.loads(stdout)
-            for instance in json_out["instances"]:
-                if instance["instance"] == location_name:
-                    return AvailableLocation(
-                        name=location_name,
-                        deployment=self.deployment_name,
-                        hostname=instance["ip"],
-                        wraps=self._inner_location,
-                    )
-            raise WorkflowExecutionException(
-                f"FAILED retrieving location '{location_name}' from available locations "
-                f"in deplotment {self.deployment_name}"
-            )
-        else:
-            raise WorkflowExecutionException(
-                f"FAILED retrieving available locations for deployment {self.deployment_name}"
-            )
 
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
@@ -1569,57 +1505,87 @@ class SingularityConnector(ContainerConnector):
 
     async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
         if location.name not in self._instances:
-            await self._populate_instance(location)
+            raise WorkflowExecutionException(f"FAILED retrieving instance for location {location.name} "
+                                             f"for deployment {self.deployment_name}")
         return self._instances[location.name]
 
-    async def _populate_instance(self, location: ExecutionLocation) -> None:
-        async with self._instance_lock:
-            if location.name not in self._instances:
-                # Get the list of mounted volumes
-                bind_mounts, _ = await self.run(
-                    location=location,
-                    command=[
-                        "cat",
-                        "/proc/1/mounts",
-                        "|",
-                        "grep",
-                        "'^[0-9]\\|^/dev'",
-                        "|",
-                        "awk",
-                        "'{print $2}'",
-                    ],
-                    capture_output=True,
+    async def _populate_instance(self, name: str) -> None:
+        # Get IP address
+        ip_address = None
+        stdout, returncode = await self.connector.run(
+            location=self._inner_location.location,
+            command=[
+                "singularity",
+                "instance",
+                "list",
+                "--json",
+            ],
+            capture_output=True,
+        )
+        if returncode == 0:
+            json_out = json.loads(stdout)
+            for instance in json_out["instances"]:
+                if instance["instance"] == name:
+                    ip_address = instance["ip"]
+                    break
+            if ip_address is None:
+                raise WorkflowExecutionException(
+                    f"FAILED retrieving instance '{name}' from running Singularity instances "
+                    f"in deplotment {self.deployment_name}"
                 )
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        "Output of `/proc/1/mounts` command "
-                        f"for location {location.name}:\n{bind_mounts}"
-                    )
-                # Parse bind mounts
-                mounts = {}
-                for b in self.bind or []:
-                    source, destination = b.split(":", 2)
-                    mounts[destination] = source
-                for m in self.mount or []:
-                    mount_type = next(
-                        part[5:] for part in m.split(",") if part.startswith("type=")
-                    )
-                    if mount_type == "bind":
-                        source, destination = _parse_mount(m)
-                        mounts[destination] = source
-                # Populate volumes
-                volumes = []
-                for line in bind_mounts.splitlines():
-                    volumes.append(
-                        {
-                            "Destination": line,
-                            "Source": mounts[line] if line in mounts else line,
-                        }
-                    )
-                # Create instance
-                self._instances[location.name] = ContainerInstance(
-                    current_user=True, volumes=volumes
-                )
+        else:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving running Singularity instances for deployment {self.deployment_name}"
+            )
+        # Get the list of mounted volumes
+        bind_mounts, _ = await self.run(
+            location=ExecutionLocation(
+                name=name,
+                deployment=self.deployment_name,
+                wraps=self._inner_location.location,
+            ),
+            command=[
+                "cat",
+                "/proc/1/mounts",
+                "|",
+                "grep",
+                "'^[0-9]\\|^/dev'",
+                "|",
+                "awk",
+                "'{print $2}'",
+            ],
+            capture_output=True,
+        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Output of `/proc/1/mounts` command "
+                f"for location {name}:\n{bind_mounts}"
+            )
+        # Parse bind mounts
+        mounts = {}
+        for b in self.bind or []:
+            source, destination = b.split(":", 2)
+            mounts[destination] = source
+        for m in self.mount or []:
+            mount_type = next(
+                part[5:] for part in m.split(",") if part.startswith("type=")
+            )
+            if mount_type == "bind":
+                source, destination = _parse_mount(m)
+                mounts[destination] = source
+        # Populate volumes
+        volumes = []
+        for line in bind_mounts.splitlines():
+            volumes.append(
+                {
+                    "Destination": line,
+                    "Source": mounts[line] if line in mounts else line,
+                }
+            )
+        # Create instance
+        self._instances[name] = ContainerInstance(
+            address=ip_address, current_user=True, volumes=volumes
+        )
 
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
@@ -1711,11 +1677,19 @@ class SingularityConnector(ContainerConnector):
                 f"FAILED Deployment of {self.deployment_name} environment: "
                 "external Singularity deployments must specify the instanceName of an existing Singularity container"
             )
+        # Populate instance
+        await self._populate_instance(self.instanceName)
 
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
-        return {self.instanceName: await self._get_location(self.instanceName)}
+        instance = self._instances[self.instanceName]
+        return {self.instanceName: AvailableLocation(
+            name=self.instanceName,
+            deployment=self.deployment_name,
+            hostname=instance.address,
+            wraps=self._inner_location,
+        )}
 
     @classmethod
     def get_schema(cls) -> str:
