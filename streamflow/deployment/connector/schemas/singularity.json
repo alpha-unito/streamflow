@@ -242,16 +242,6 @@
       "type": "integer",
       "description": "Limit number of container PIDs, use -1 for unlimited"
     },
-    "locationsCacheTTL": {
-      "type": "integer",
-      "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
-      "default": 10
-    },
-    "resourcesCacheTTL": {
-      "type": "integer",
-      "description": "(**Deprecated.** Use locationsCacheTTL.) Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
-      "default": 10
-    },
     "rocm": {
       "type": "boolean",
       "description": "Enable experimental ROCM support"

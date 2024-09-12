@@ -24,7 +24,7 @@ class LocalConnector(BaseConnector):
         self, deployment_name: str, config_dir: str, transferBufferSize: int = 2**16
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
-        self.hardware: Hardware = Hardware(
+        self._hardware: Hardware = Hardware(
             cores=float(psutil.cpu_count()),
             memory=float(psutil.virtual_memory().total / 2**20),
             storage={
@@ -104,7 +104,7 @@ class LocalConnector(BaseConnector):
                 service=service,
                 hostname="localhost",
                 slots=1,
-                hardware=self.hardware,
+                hardware=self._hardware,
             )
         }
 
