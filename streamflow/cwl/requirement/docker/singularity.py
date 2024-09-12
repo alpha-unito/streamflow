@@ -45,7 +45,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         hostname: str | None = None,
         ipc: bool = False,
         keepPrivs: bool = False,
-        locationsCacheTTL: int = None,
         memory: str | None = None,
         memoryReservation: str | None = None,
         memorySwap: str | None = None,
@@ -104,7 +103,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         self.home: str | None = home
         self.hostname: str | None = hostname
         self.ipc: bool = ipc
-        self.locationsCacheTTL: int | None = locationsCacheTTL
         self.keepPrivs: bool = keepPrivs
         self.memory: str | None = memory
         self.memoryReservation: str | None = memoryReservation
@@ -198,7 +196,6 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
                     "hostname": self.hostname,
                     "ipc": self.ipc,
                     "keepPrivs": self.keepPrivs,
-                    "locationsCacheTTL": self.locationsCacheTTL,
                     "memory": self.memory,
                     "memoryReservation": self.memoryReservation,
                     "memorySwap": self.memorySwap,
