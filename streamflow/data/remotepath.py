@@ -384,7 +384,7 @@ async def listdir(
         )
         _check_status(command, location, content, status)
         content = content.strip(" \n")
-        return content.split("\n") if content else []
+        return content.splitlines() if content else []
 
 
 async def mkdir(
