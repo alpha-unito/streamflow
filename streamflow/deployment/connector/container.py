@@ -17,7 +17,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.scheduling import AvailableLocation
+from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.core.utils import (
     get_local_to_remote_destination,
     get_option,
@@ -26,6 +26,61 @@ from streamflow.core.utils import (
 from streamflow.deployment.connector.base import BaseConnector, BatchConnector
 from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
+
+
+async def _get_storage_from_binds(
+    connector: Connector,
+    location: ExecutionLocation,
+    name: str,
+    entity: str,
+    binds: MutableMapping[str, str],
+) -> MutableMapping[str, Storage]:
+    storage = {}
+    stdout, returncode = await connector.run(
+        location=location,
+        command=[
+            "df",
+            "-aT",
+            "|",
+            "tail",
+            "-n",
+            "+2",
+            "|",
+            "awk",
+            "'{print $7, $2, $3}'",
+        ],
+        capture_output=True,
+    )
+    if returncode == 0:
+        for line in stdout.splitlines():
+            mount_point, fs_type, size = line.split(" ")
+            if fs_type not in [
+                "cgroup",
+                "cgroup2",
+                "configfs",
+                "debugfs",
+                "devpts",
+                "devtmpfs",
+                "hugetlbfs",
+                "mqueue",
+                "proc",
+                "securityfs",
+                "selinuxfs",
+                "sysfs",
+                "tmpfs",
+            ]:
+                storage[mount_point] = Storage(
+                    mount_point=mount_point,
+                    size=float(size) / 2**10,
+                )
+                if mount_point in binds:
+                    storage[mount_point].bind = binds[mount_point]
+        return storage
+    else:
+        raise WorkflowExecutionException(
+            f"FAILED retrieving bind mounts from `/proc/1/mounts` for {entity} '{name}' "
+            f"in deployment {connector.deployment_name}: [{returncode}]: {stdout}"
+        )
 
 
 def _parse_mount(mount: str) -> tuple[str, str]:
@@ -46,17 +101,21 @@ def _parse_mount(mount: str) -> tuple[str, str]:
 
 
 class ContainerInstance:
-    __slots__ = ("address", "current_user", "volumes")
+    __slots__ = ("address", "cores", "current_user", "memory", "volumes")
 
     def __init__(
         self,
         address: str,
+        cores: float,
         current_user: bool,
-        volumes: MutableSequence[MutableMapping[str, str]],
+        memory: float,
+        volumes: MutableMapping[str, Storage],
     ):
         self.address: str = address
+        self.cores: float = cores
         self.current_user: bool = current_user
-        self.volumes: MutableSequence[MutableMapping[str, str]] = volumes
+        self.memory: float = memory
+        self.volumes: MutableMapping[str, Storage] = volumes
 
 
 class ContainerConnector(ConnectorWrapper, ABC):
@@ -93,30 +152,35 @@ class ContainerConnector(ConnectorWrapper, ABC):
         source_location: ExecutionLocation | None = None,
     ) -> tuple[MutableMapping[str, Any], MutableSequence[ExecutionLocation]]:
         # Get all container mounts
-        for volume in (await self._get_instance(location)).volumes:
-            # If path is in a persistent volume
-            if path.startswith(volume["Destination"]):
-                if path not in common_paths:
-                    common_paths[path] = []
-                # Check if path is shared with another location that has been already processed
-                for i, common_path in enumerate(common_paths[path]):
-                    if common_path["source"] == volume["Source"]:
-                        # If path has already been processed, but the current location is the source, substitute it
-                        if source_location and location.name == source_location.name:
-                            effective_locations.remove(common_path["location"])
-                            common_path["location"] = location
-                            common_paths[path][i] = common_path
-                            effective_locations.append(location)
-                            return common_paths, effective_locations
-                        # Otherwise simply skip current location
-                        else:
-                            return common_paths, effective_locations
-                # If this is the first location encountered with the persistent path, add it to the list
-                effective_locations.append(location)
-                common_paths[path].append(
-                    {"source": volume["Source"], "location": location}
-                )
-                return common_paths, effective_locations
+        for volume in (await self._get_instance(location.name)).volumes.values():
+            # If volume is a bind mount
+            if volume.bind is not None:
+                # If path is in a persistent volume
+                if path.startswith(volume.mount_point):
+                    if path not in common_paths:
+                        common_paths[path] = []
+                    # Check if path is shared with another location that has been already processed
+                    for i, common_path in enumerate(common_paths[path]):
+                        if common_path["source"] == volume.bind:
+                            # If path has already been processed, but the current location is the source, substitute it
+                            if (
+                                source_location
+                                and location.name == source_location.name
+                            ):
+                                effective_locations.remove(common_path["location"])
+                                common_path["location"] = location
+                                common_paths[path][i] = common_path
+                                effective_locations.append(location)
+                                return common_paths, effective_locations
+                            # Otherwise simply skip current location
+                            else:
+                                return common_paths, effective_locations
+                    # If this is the first location encountered with the persistent path, add it to the list
+                    effective_locations.append(location)
+                    common_paths[path].append(
+                        {"source": volume.bind, "location": location}
+                    )
+                    return common_paths, effective_locations
         # If path is not in a persistent volume, add the current location to the list
         effective_locations.append(location)
         return common_paths, effective_locations
@@ -132,7 +196,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         copy_tasks = []
         dst = await get_local_to_remote_destination(self, locations[0], src, dst)
         for location in await self._get_effective_locations(locations, dst):
-            instance = await self._get_instance(location)
+            instance = await self._get_instance(location.name)
             # Check if the container user is the current host user
             # and if the destination path is on a mounted volume
             if (
@@ -228,7 +292,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         location: ExecutionLocation,
         read_only: bool = False,
     ) -> None:
-        instance = await self._get_instance(location)
+        instance = await self._get_instance(location.name)
         # Check if the container user is the current host user
         # and the source path is on a mounted volume in the source location
         if (
@@ -315,7 +379,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
             source_connector == self
             and (
                 host_src := self._get_host_path(
-                    await self._get_instance(source_location), src
+                    await self._get_instance(source_location.name), src
                 )
             )
             is not None
@@ -339,7 +403,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
             unbound_locations = []
             copy_tasks = []
             for location in effective_locations:
-                instance = await self._get_instance(location)
+                instance = await self._get_instance(location.name)
                 # Check if the source path is on a mounted volume
                 if (
                     adjusted_src := self._get_container_path(instance, host_src)
@@ -438,37 +502,28 @@ class ContainerConnector(ConnectorWrapper, ABC):
             )
         return effective_locations
 
-    @abstractmethod
-    def _get_bind_mounts(
-        self, instance: ContainerInstance
-    ) -> MutableSequence[MutableMapping[str, str]]: ...
-
     def _get_container_path(self, instance: ContainerInstance, path: str) -> str | None:
-        for bind_mount in self._get_bind_mounts(instance):
-            if path.startswith(bind_mount["Source"]):
+        for volume in instance.volumes.values():
+            if volume.bind is not None and path.startswith(volume.bind):
                 path_processor = os.path if self._wraps_local() else posixpath
                 return posixpath.join(
-                    bind_mount["Destination"],
-                    *path_processor.split(
-                        path_processor.relpath(path, bind_mount["Source"])
-                    ),
+                    volume.mount_point,
+                    *path_processor.split(path_processor.relpath(path, volume.bind)),
                 )
         return None
 
     def _get_host_path(self, instance: ContainerInstance, path: str) -> str | None:
-        for bind_mount in self._get_bind_mounts(instance):
-            if path.startswith(bind_mount["Destination"]):
+        for volume in instance.volumes.values():
+            if volume.bind is not None and path.startswith(volume.mount_point):
                 path_processor = os.path if self._wraps_local() else posixpath
                 return path_processor.join(
-                    bind_mount["Source"],
-                    *posixpath.split(
-                        posixpath.relpath(path, bind_mount["Destination"])
-                    ),
+                    volume.bind,
+                    *posixpath.split(posixpath.relpath(path, volume.mount_point)),
                 )
         return None
 
     @abstractmethod
-    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance: ...
+    async def _get_instance(self, location: str) -> ContainerInstance: ...
 
     @abstractmethod
     def _get_run_command(
@@ -594,11 +649,6 @@ class DockerBaseConnector(ContainerConnector, ABC):
                 f"{self.__class__.__name__} connector."
             )
 
-    def _get_bind_mounts(
-        self, instance: ContainerInstance
-    ) -> MutableSequence[MutableMapping[str, str]]:
-        return [v for v in instance.volumes if v["Type"] == "bind"]
-
     async def _get_docker_version(self) -> str:
         stdout, _ = await self.connector.run(
             location=self._inner_location.location,
@@ -621,44 +671,34 @@ class DockerBaseConnector(ContainerConnector, ABC):
         ]
 
     async def _populate_instance(self, name: str):
-        # Get IP address
-        ip_address, returncode = await self.connector.run(
-            location=self._inner_location.location,
-            command=[
-                "docker",
-                "inspect",
-                "--format",
-                "'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'",
-                name,
-            ],
-            capture_output=True,
+        # Build execution location
+        location = ExecutionLocation(
+            name=name,
+            deployment=self.deployment_name,
+            wraps=self._inner_location.location,
         )
-        if returncode != 0:
-            raise WorkflowExecutionException(
-                f"FAILED retrieving available locations for deployment {self.deployment_name}"
-            )
-        # Get volumes
+        # Inspect Docker container
         stdout, returncode = await self.connector.run(
             location=self._inner_location.location,
             command=[
                 "docker",
                 "inspect",
                 "--format",
-                "'{{json .Mounts}}'",
+                "'{{json .}}'",
                 name,
             ],
             capture_output=True,
         )
         if returncode == 0:
             try:
-                volumes = json.loads(stdout) if stdout else []
+                container = json.loads(stdout) if stdout else {}
             except json.decoder.JSONDecodeError:
                 raise WorkflowExecutionException(
-                    f"Error retrieving volumes for Docker container {name}: {stdout}"
+                    f"Error inspecting Docker container {name}: {stdout}"
                 )
         else:
             raise WorkflowExecutionException(
-                f"Error retrieving volumes for Docker container {name}: [{returncode}] {stdout}"
+                f"Error inspecting Docker container {name}: [{returncode}] {stdout}"
             )
         # Check if the container user is the current host user
         if self._wraps_local():
@@ -681,11 +721,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
                     f"Error retrieving volumes for Docker container {name}: [{returncode}] {stdout}"
                 )
         stdout, returncode = await self.run(
-            location=ExecutionLocation(
-                name=name,
-                deployment=self.deployment_name,
-                wraps=self._inner_location.location
-            ),
+            location=location,
             command=["id", "-u"],
             capture_output=True,
         )
@@ -700,9 +736,106 @@ class DockerBaseConnector(ContainerConnector, ABC):
             raise WorkflowExecutionException(
                 f"Error retrieving volumes for Docker container {name}: [{returncode}] {stdout}"
             )
+        # Retrieve cores and memory
+        stdout, returncode = await self.run(
+            location=location,
+            command=["test", "-e", "sys/fs/cgroup/cpuset"],
+            capture_output=True,
+        )
+        if returncode > 1:
+            raise WorkflowExecutionException(
+                f"Error retrieving cores for Docker container {name}: [{returncode}] {stdout}"
+            )
+        elif returncode == 0:
+            # Handle Cgroups V1 filesystem
+            stdout, returncode = await self.run(
+                location=location,
+                command=[
+                    "cat",
+                    "/sys/fs/cgroup/cpu/cpu.cfs_quota_us",
+                    "/sys/fs/cgroup/cpu/cpu.cfs_period_us",
+                    "/sys/fs/cgroup/cpuset/cpuset.effective_cpus",
+                    "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+                ],
+                capture_output=True,
+            )
+            quota, period, cpuset, memory = stdout.splitlines()
+            if int(quota) == -1:
+                quota = "max"
+            if int(memory) == 9223372036854771712:
+                memory = "max"
+        else:
+            # Handle Cgroups V2 filesystem
+            stdout, returncode = await self.run(
+                location=location,
+                command=[
+                    "cat",
+                    "/sys/fs/cgroup/cpu.max",
+                    "/sys/fs/cgroup/cpuset.cpus.effective",
+                    "/sys/fs/cgroup/memory.max",
+                ],
+                capture_output=True,
+            )
+            cfs, cpuset, memory = stdout.splitlines()
+            quota, period = cfs.split()
+        if returncode == 0:
+            if quota != "max":
+                cores = (int(quota) / 10**5) * (int(period) / 10**5)
+            else:
+                cores = 0.0
+                for s in cpuset.split(","):
+                    if "-" in s:
+                        start, end = s.split("-")
+                        cores += int(end) - int(start) + 1
+                    else:
+                        cores += 1
+            if memory != "max":
+                memory = float(memory) / 2**20
+            else:
+                stdout, returncode = await self.run(
+                    location=location,
+                    command=[
+                        "cat",
+                        "/proc/meminfo",
+                        "|",
+                        "grep",
+                        "MemTotal",
+                        "|",
+                        "awk",
+                        "'{print $2}'",
+                    ],
+                    capture_output=True,
+                )
+                if returncode == 0:
+                    memory = float(stdout) / 2**10
+                else:
+                    raise WorkflowExecutionException(
+                        f"Error retrieving memory from `/proc/meminfo` for Docker container {name}: "
+                        f"[{returncode}] {stdout}"
+                    )
+        else:
+            raise WorkflowExecutionException(
+                f"Error retrieving hardware resources for Docker container {name}: [{returncode}] {stdout}"
+            )
+        # Get storage
+        volumes = await _get_storage_from_binds(
+            connector=self,
+            location=location,
+            name=name,
+            entity="Docker container",
+            binds={
+                v["Destination"]: v["Source"]
+                for v in container["Mounts"]
+                if v["Type"] == "bind"
+            },
+        )
         # Create instance
         self._instances[name] = ContainerInstance(
-            address=ip_address, current_user=host_user == container_user, volumes=volumes
+            address=container["NetworkSettings"]["IPAddress"],
+            cores=cores,
+            memory=memory,
+            current_user=host_user == container_user,
+            volumes=volumes,
         )
 
 
@@ -905,11 +1038,13 @@ class DockerConnector(DockerBaseConnector):
         self.volumesFrom: MutableSequence[str] | None = volumesFrom
         self.workdir: str | None = workdir
 
-    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
-        if location.name not in self._instances:
-            raise WorkflowExecutionException(f"FAILED retrieving instance for location {location.name} "
-                                             f"for deployment {self.deployment_name}")
-        return self._instances[location.name]
+    async def _get_instance(self, location: str) -> ContainerInstance:
+        if location not in self._instances:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving instance for location {location} "
+                f"for deployment {self.deployment_name}"
+            )
+        return self._instances[location]
 
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
@@ -1052,12 +1187,19 @@ class DockerConnector(DockerBaseConnector):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         instance = self._instances[self.containerId]
-        return {self.containerId: AvailableLocation(
-            name=self.containerId,
-            deployment=self.deployment_name,
-            hostname=instance.address,
-            wraps=self._inner_location,
-        )}
+        return {
+            self.containerId: AvailableLocation(
+                name=self.containerId,
+                deployment=self.deployment_name,
+                hostname=instance.address,
+                hardware=Hardware(
+                    cores=instance.cores,
+                    memory=instance.memory,
+                    storage=instance.volumes,
+                ),
+                wraps=self._inner_location,
+            )
+        }
 
     @classmethod
     def get_schema(cls) -> str:
@@ -1227,12 +1369,12 @@ class DockerComposeConnector(DockerBaseConnector):
             await self._check_docker_compose_installed()
             return ["docker-compose"] + options
 
-    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
-        if location.name not in self._instances:
+    async def _get_instance(self, location: str) -> ContainerInstance:
+        if location not in self._instances:
             async with self._instance_lock:
-                if location.name not in self._instances:
-                    await self._populate_instance(location.name)
-        return self._instances[location.name]
+                if location not in self._instances:
+                    await self._populate_instance(location)
+        return self._instances[location]
 
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
@@ -1297,12 +1439,20 @@ class DockerComposeConnector(DockerBaseConnector):
                 ),
             )
         }
-        return {k: AvailableLocation(
-            name=k,
-            deployment=self.deployment_name,
-            hostname=instance.address,
-            wraps=self._inner_location,
-        ) for k, instance in instances.items()}
+        return {
+            k: AvailableLocation(
+                name=k,
+                deployment=self.deployment_name,
+                hostname=instance.address,
+                hardware=Hardware(
+                    cores=instance.cores,
+                    memory=instance.memory,
+                    storage=instance.volumes,
+                ),
+                wraps=self._inner_location,
+            )
+            for k, instance in instances.items()
+        }
 
     @classmethod
     def get_schema(cls) -> str:
@@ -1477,11 +1627,6 @@ class SingularityConnector(ContainerConnector):
                 f"{self.__class__.__name__} connector."
             )
 
-    def _get_bind_mounts(
-        self, instance: ContainerInstance
-    ) -> MutableSequence[MutableMapping[str, str]]:
-        return instance.volumes
-
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
     ) -> MutableSequence[str]:
@@ -1503,13 +1648,21 @@ class SingularityConnector(ContainerConnector):
         )
         return stdout
 
-    async def _get_instance(self, location: ExecutionLocation) -> ContainerInstance:
-        if location.name not in self._instances:
-            raise WorkflowExecutionException(f"FAILED retrieving instance for location {location.name} "
-                                             f"for deployment {self.deployment_name}")
-        return self._instances[location.name]
+    async def _get_instance(self, location: str) -> ContainerInstance:
+        if location not in self._instances:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving instance for location {location} "
+                f"for deployment {self.deployment_name}"
+            )
+        return self._instances[location]
 
     async def _populate_instance(self, name: str) -> None:
+        # Build execution location
+        location = ExecutionLocation(
+            name=name,
+            deployment=self.deployment_name,
+            wraps=self._inner_location.location,
+        )
         # Get IP address
         ip_address = None
         stdout, returncode = await self.connector.run(
@@ -1531,60 +1684,110 @@ class SingularityConnector(ContainerConnector):
             if ip_address is None:
                 raise WorkflowExecutionException(
                     f"FAILED retrieving instance '{name}' from running Singularity instances "
-                    f"in deplotment {self.deployment_name}"
+                    f"in deployment {self.deployment_name}: [{returncode}] {stdout}"
                 )
         else:
             raise WorkflowExecutionException(
-                f"FAILED retrieving running Singularity instances for deployment {self.deployment_name}"
+                f"FAILED retrieving running Singularity instances for deployment {self.deployment_name}: "
+                f"[{returncode}] {stdout}"
             )
-        # Get the list of mounted volumes
-        bind_mounts, _ = await self.run(
-            location=ExecutionLocation(
-                name=name,
-                deployment=self.deployment_name,
-                wraps=self._inner_location.location,
-            ),
+        # Retrieve cores and memory (cgroups are not taken into account for Singularity/Apptainer)
+        stdout, returncode = await self.run(
+            location=location,
+            command=["nproc"],
+            capture_output=True,
+        )
+        if returncode == 0:
+            cores = float(stdout)
+        else:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving cores from `nproc` for Singularity instance '{name}' "
+                f"in deployment {self.deployment_name}: [{returncode}] {stdout}"
+            )
+        stdout, returncode = await self.run(
+            location=location,
             command=[
                 "cat",
-                "/proc/1/mounts",
+                "/proc/meminfo",
                 "|",
                 "grep",
-                "'^[0-9]\\|^/dev'",
+                "MemTotal",
                 "|",
                 "awk",
                 "'{print $2}'",
             ],
             capture_output=True,
         )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "Output of `/proc/1/mounts` command "
-                f"for location {name}:\n{bind_mounts}"
+        if returncode == 0:
+            memory = float(stdout) / 2**10
+        else:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving memory from `/proc/meminfo` for Singularity instance '{name}' "
+                f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
             )
-        # Parse bind mounts
-        mounts = {}
-        for b in self.bind or []:
-            source, destination = b.split(":", 2)
-            mounts[destination] = source
-        for m in self.mount or []:
-            mount_type = next(
-                part[5:] for part in m.split(",") if part.startswith("type=")
+        # Get fs mount points
+        stdout, returncode = await self.run(
+            location=location,
+            command=[
+                "cat",
+                "/proc/1/mountinfo",
+            ],
+            capture_output=True,
+        )
+        if returncode == 0:
+            fs_mounts = {}
+            for line in stdout.splitlines():
+                mount_point = line.split()[4]
+                mount_source = line.split(" - ")[1].split()[1]
+                fs_mounts[mount_point] = mount_source
+        else:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving volume mounts from `/proc/1/mountinfo` for Singularity instance '{name}' "
+                f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
             )
-            if mount_type == "bind":
-                source, destination = _parse_mount(m)
-                mounts[destination] = source
-        # Populate volumes
-        volumes = []
-        for line in bind_mounts.splitlines():
-            volumes.append(
-                {
-                    "Destination": line,
-                    "Source": mounts[line] if line in mounts else line,
-                }
+        # Get the list of bind mounts for the container instance
+        stdout, returncode = await self.run(
+            location=location,
+            command=[
+                "cat",
+                "/proc/self/mountinfo",
+                "|",
+                "awk",
+                "'{print $4,$5,$10}'",
+            ],
+            capture_output=True,
+        )
+        if returncode == 0:
+            binds = {}
+            for line in stdout.splitlines():
+                src, dst, mount_source = line.split()
+                if src != "/":
+                    if dst not in fs_mounts:
+                        for path, value in fs_mounts.items():
+                            if mount_source == value:
+                                src = posixpath.join(path, src[1:])
+                                break
+                    binds[dst] = src
+        else:
+            raise WorkflowExecutionException(
+                f"FAILED retrieving bind mounts from `/proc/self/mountinfo` for Singularity instance '{name}' "
+                f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
             )
+        # Get storage sizes
+        volumes = await _get_storage_from_binds(
+            connector=self,
+            location=location,
+            name=name,
+            entity="Singularity instance",
+            binds=binds,
+        )
         # Create instance
         self._instances[name] = ContainerInstance(
-            address=ip_address, current_user=True, volumes=volumes
+            address=ip_address,
+            cores=cores,
+            memory=memory,
+            current_user=True,
+            volumes=volumes,
         )
 
     async def deploy(self, external: bool) -> None:
@@ -1684,12 +1887,19 @@ class SingularityConnector(ContainerConnector):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         instance = self._instances[self.instanceName]
-        return {self.instanceName: AvailableLocation(
-            name=self.instanceName,
-            deployment=self.deployment_name,
-            hostname=instance.address,
-            wraps=self._inner_location,
-        )}
+        return {
+            self.instanceName: AvailableLocation(
+                name=self.instanceName,
+                deployment=self.deployment_name,
+                hostname=instance.address,
+                hardware=Hardware(
+                    cores=instance.cores,
+                    memory=instance.memory,
+                    storage=instance.volumes,
+                ),
+                wraps=self._inner_location,
+            )
+        }
 
     @classmethod
     def get_schema(cls) -> str:

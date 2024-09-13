@@ -422,7 +422,7 @@ class SSHConnector(BaseConnector):
                 location=location,
                 command="nproc && "
                 "free | grep Mem | awk '{print $2}' && "
-                "df | tail -n +2 | awk '{print $6, $2}'",
+                "df -aT | tail -n +2 | awk '{print $7, $2, $3}'",
                 stderr=asyncio.subprocess.STDOUT,
             ) as proc:
                 result = await proc.wait()
@@ -432,14 +432,26 @@ class SSHConnector(BaseConnector):
                     )
                     storage = {}
                     for line in dir_info_list:
-                        mount_point, size = line.split(" ")
-                        storage.setdefault(
-                            mount_point,
-                            Storage(
+                        mount_point, fs_type, size = line.split(" ")
+                        if fs_type not in [
+                            "cgroup",
+                            "cgroup2",
+                            "configfs",
+                            "debugfs",
+                            "devpts",
+                            "devtmpfs",
+                            "hugetlbfs",
+                            "mqueue",
+                            "proc",
+                            "securityfs",
+                            "selinuxfs",
+                            "sysfs",
+                            "tmpfs",
+                        ]:
+                            storage[mount_point] = Storage(
                                 mount_point=mount_point,
                                 size=float(size) / 2**10,
-                            ),
-                        )
+                            )
                     self.hardware[location] = Hardware(
                         float(cores), float(memory), storage
                     )
