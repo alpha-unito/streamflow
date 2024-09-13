@@ -55,3 +55,10 @@ The following snippet contains an example of a minimal ``streamflow.yml`` file, 
        type: docker
        config:
          image: openjdk:9.0.1-11-slim
+
+JSON Schema
+-----------
+
+The StreamFlow file syntax is specified through an online-generated `JSON Schema <https://json-schema.org/>`_. The schema must be generated just in time to include all the extension points specified in the installed :ref:`StreamFlow plugins <Plugins>`.
+
+The ``streamflow schema`` command generates a JSON Schema for the current StreamFlow installation. The file can then be used to enable linting and auto-completion on IDEs that support JSON Schema-based language specifications (e.g., the `JetBrains suite <https://www.jetbrains.com/help/idea/json.html#ws_json_schema_add_custom>`_).

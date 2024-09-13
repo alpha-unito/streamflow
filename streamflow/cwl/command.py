@@ -999,7 +999,6 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
 
 
 class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
-
     def __init__(
         self,
         name: str,
@@ -1043,7 +1042,6 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
 
 
 class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
-
     def _update_options(
         self, options: CWLCommandOptions, token: Token
     ) -> CWLCommandOptions:
@@ -1058,7 +1056,6 @@ class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
 
 
 class CWLMapCommandTokenProcessor(MapCommandTokenProcessor):
-
     def _update_options(
         self, options: CWLCommandOptions, token: Token
     ) -> CWLCommandOptions:

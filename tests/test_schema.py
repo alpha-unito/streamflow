@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+
 from pytest import raises
 
+from streamflow.config.schema import SfSchema
 from streamflow.config.validator import SfValidator
 from streamflow.core.exception import WorkflowDefinitionException
 
@@ -174,6 +177,24 @@ def test_ext_fail_unsupoorted_type():
     }
     with raises(WorkflowDefinitionException):
         SfValidator().validate(config)
+
+
+def test_schema_generation():
+    """Check that the `streamflow schema` command generates a correct JSON Schema."""
+    assert (
+        hashlib.sha256(SfSchema().dump("v1.0", False).encode()).hexdigest()
+        == "e19129c2161e8e4f5137d355fc25cb1bc3f97ff646fc2261096ea5baec0be1d8"
+    )
+    assert (
+        hashlib.sha256(SfSchema().dump("v1.0", True).encode()).hexdigest()
+        == "68e735990ced2be92f7ee84ed6a8a2182ab49ce8d683354c806a0f309a0b40ff"
+    )
+
+
+def test_schema_generation_fail_invalid_version():
+    """Check that the `streamflow schema` command fails when an invalid version is passed."""
+    with raises(WorkflowDefinitionException):
+        SfSchema().dump("invalid", False)
 
 
 def test_target_fail_unsupported_property():

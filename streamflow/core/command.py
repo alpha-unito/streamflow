@@ -154,7 +154,6 @@ class CommandToken:
 
 
 class CommandTokenProcessor(ABC):
-
     def __init__(self, name: str):
         self.name: str = name
 
@@ -205,7 +204,6 @@ class ListCommandToken(CommandToken):
 
 
 class MapCommandTokenProcessor(CommandTokenProcessor):
-
     def __init__(self, name: str, processor: CommandTokenProcessor):
         super().__init__(name)
         self.processor: CommandTokenProcessor = processor
@@ -276,7 +274,6 @@ class ObjectCommandToken(CommandToken):
 
 
 class ObjectCommandTokenProcessor(CommandTokenProcessor):
-
     def __init__(
         self, name: str, processors: MutableMapping[str, CommandTokenProcessor]
     ):
@@ -374,7 +371,6 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
 
 
 class UnionCommandTokenProcessor(CommandTokenProcessor):
-
     def __init__(self, name: str, processors: MutableSequence[CommandTokenProcessor]):
         super().__init__(name)
         self.processors: MutableSequence[CommandTokenProcessor] = processors
@@ -441,7 +437,6 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
 
 
 class TokenizedCommand(Command):
-
     def __init__(
         self,
         step: Step,
