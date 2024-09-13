@@ -443,7 +443,7 @@ class OccamConnector(SSHConnector):
         ) as proc:
             result = await proc.wait(timeout=timeout)
             if capture_output:
-                lines = (line for line in result.stdout.split("\n"))
+                lines = (line for line in result.stdout.splitlines())
                 out = ""
                 for line in lines:
                     if line.startswith("Trying to exec commands into container"):

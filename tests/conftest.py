@@ -90,7 +90,7 @@ def all_deployment_types():
     return deployments_
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def context(chosen_deployment_types) -> StreamFlowContext:
     _context = build_context(
         {
