@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Type, cast
 
 
 from streamflow.core import utils
@@ -21,8 +21,6 @@ if TYPE_CHECKING:
         MutableMapping,
         MutableSequence,
         MutableSet,
-        Type,
-        cast,
     )
 
 
@@ -265,6 +263,9 @@ class AvailableLocation:
     def service(self) -> str | None:
         return self.location.service
 
+    def __str__(self):
+        return self.location.__str__()
+
 
 class LocationAllocation:
     __slots__ = ("name", "deployment", "jobs")
@@ -397,7 +398,7 @@ class Storage:
             paths=self.paths | other.paths,
         )
 
-    def __ge__(self, other: Storage) -> bool:
+    def __ge__(self, other: Any) -> bool:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
@@ -406,7 +407,7 @@ class Storage:
             )
         return self.size >= other.size
 
-    def __gt__(self, other: Storage) -> bool:
+    def __gt__(self, other: Any) -> bool:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
@@ -415,7 +416,7 @@ class Storage:
             )
         return self.size > other.size
 
-    def __le__(self, other: Storage) -> bool:
+    def __le__(self, other: Any) -> bool:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
@@ -424,7 +425,7 @@ class Storage:
             )
         return self.size <= other.size
 
-    def __lt__(self, other: Storage) -> bool:
+    def __lt__(self, other: Any) -> bool:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
