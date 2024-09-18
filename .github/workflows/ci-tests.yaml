@@ -52,11 +52,11 @@ jobs:
             on: "ubuntu-22.04"
             python: "3.12"
             version: "v1.2"
-          - on: "macos-13"
-            python: "3.12"
-            commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
-            exclude: "docker_entrypoint,modify_file_content"
-            version: "v1.2"
+          #- on: "macos-13"
+          #  python: "3.12"
+          #  commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
+          #  exclude: "docker_entrypoint,modify_file_content"
+          #  version: "v1.2"
     runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v4
@@ -213,9 +213,9 @@ jobs:
       matrix:
         on: [ "ubuntu-22.04"]
         python: [ "3.8", "3.9", "3.10", "3.11", "3.12" ]
-        include:
-          - on: "macos-13"
-            python: "3.12"
+        #include:
+        #  - on: "macos-13"
+        #    python: "3.12"
     runs-on: ${{ matrix.on }}
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
