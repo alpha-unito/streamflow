@@ -229,6 +229,21 @@ run_parser.add_argument(
 )
 
 
+# streamflow schema
+schema_parser = subparsers.add_parser(
+    "schema", help="Dump StreamFlow JSON Schema and exit"
+)
+schema_parser.add_argument("--pretty", action="store_true", help="Prettify JSON output")
+schema_parser.add_argument(
+    "version",
+    metavar="VERSION",
+    default="v1.0",
+    nargs="?",
+    type=str,
+    help="Version of the StreamFlow schema to print",
+)
+
+
 # streamflow version
 version_parser = subparsers.add_parser(
     "version", help="Only print StreamFlow version and exit"

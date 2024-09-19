@@ -49,7 +49,7 @@
         "host",
         "private"
       ],
-      "description": "Cgroup namespace to use. `host` runs the container in the Docker host's cgroup namespace, `private` runs the container in its own private cgroup namespace. By default, DOcker uses the cgroup namespace as configured by the `default-cgroupns-mode` option on the daemon"
+      "description": "Cgroup namespace to use. `host` runs the container in the Docker host's cgroup namespace, `private` runs the container in its own private cgroup namespace. By default, Docker uses the cgroup namespace as configured by the `default-cgroupns-mode` option on the daemon"
     },
     "cidfile": {
       "type": "string",

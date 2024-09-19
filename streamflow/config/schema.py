@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import json
-import posixpath
-from typing import MutableMapping
-
 from importlib_resources import files
-from referencing import Registry, Resource
 
-from streamflow.core.context import SchemaEntity
-from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.config import ext_schemas
+from streamflow.core.config import Schema
 from streamflow.cwl.requirement.docker import (
     cwl_docker_translator_classes,
 )
@@ -24,22 +19,15 @@ from streamflow.recovery import (
 from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes
 
-_CONFIGS = {
-    "v1.0": "https://streamflow.di.unito.it/schemas/config/v1.0/config_schema.json"
-}
 
-
-ext_schemas = [
-    files("streamflow.deployment.connector")
-    .joinpath("schemas")
-    .joinpath("queue_manager.json")
-]
-
-
-class SfSchema:
+class SfSchema(Schema):
     def __init__(self):
-        self.registry: Registry = Registry()
-        for version in _CONFIGS.keys():
+        super().__init__(
+            {
+                "v1.0": "https://streamflow.di.unito.it/schemas/config/v1.0/config_schema.json"
+            }
+        )
+        for version in self.configs.keys():
             self.add_schema(
                 files(__package__)
                 .joinpath("schemas")
@@ -59,38 +47,4 @@ class SfSchema:
         self.inject_ext(scheduler_classes, "scheduler")
         for schema in ext_schemas:
             self.add_schema(schema.read_text("utf-8"))
-        self.registry = self.registry.crawl()
-
-    def add_schema(self, schema: str) -> Resource:
-        resource = Resource.from_contents(json.loads(schema))
-        self.registry = resource @ self.registry
-        return resource
-
-    def get_config(self, version: str) -> Resource:
-        if version not in _CONFIGS:
-            raise WorkflowDefinitionException(
-                f"Version {version} is unsupported. The `version` clause should be equal to `v1.0`."
-            )
-        return self.registry.get(_CONFIGS[version])
-
-    def inject_ext(
-        self,
-        classes: MutableMapping[str, type[SchemaEntity]],
-        definition_name: str,
-    ):
-        for name, entity in classes.items():
-            if entity_schema := entity.get_schema():
-                entity_schema = self.add_schema(entity_schema).contents
-                for config_id in _CONFIGS.values():
-                    config = self.registry.contents(config_id)
-                    definition = config["$defs"]
-                    for el in definition_name.split(posixpath.sep):
-                        definition = definition[el]
-                    definition["properties"]["type"].setdefault("enum", []).append(name)
-                    definition["$defs"][name] = entity_schema
-                    definition.setdefault("allOf", []).append(
-                        {
-                            "if": {"properties": {"type": {"const": name}}},
-                            "then": {"properties": {"config": entity_schema}},
-                        }
-                    )
+        self._registry = self.registry.crawl()

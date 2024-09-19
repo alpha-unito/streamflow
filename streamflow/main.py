@@ -8,8 +8,9 @@ import sys
 import uuid
 from typing import Any, MutableMapping
 
-from streamflow import report
+from streamflow import VERSION, report
 from streamflow.config.config import WorkflowConfig
+from streamflow.config.schema import SfSchema
 from streamflow.config.validator import SfValidator
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowProvenanceException
@@ -244,11 +245,7 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
 def main(args):
     try:
         args = parser.parse_args(args)
-        if args.context == "version":
-            from streamflow.version import VERSION
-
-            print(f"StreamFlow version {VERSION}")
-        elif args.context == "ext":
+        if args.context == "ext":
             asyncio.run(_async_ext(args))
         elif args.context == "list":
             asyncio.run(_async_list(args))
@@ -270,6 +267,11 @@ def main(args):
                 logger.addHandler(colored_stream_handler)
                 logger.addFilter(HighlitingFilter())
             asyncio.run(_async_run(args))
+        elif args.context == "schema":
+            load_extensions()
+            print(SfSchema().dump(args.version, args.pretty))
+        elif args.context == "version":
+            print(f"StreamFlow version {VERSION}")
         else:
             parser.print_help(file=sys.stderr)
             return 1

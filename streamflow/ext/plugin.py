@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, MutableMapping, MutableSequence
 
-from streamflow.config.schema import ext_schemas
+from streamflow.config import ext_schemas
 from streamflow.core.data import DataManager
 from streamflow.core.deployment import BindingFilter, Connector, DeploymentManager
 from streamflow.core.persistence import Database

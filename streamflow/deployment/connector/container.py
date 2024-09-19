@@ -564,7 +564,6 @@ class ContainerConnector(ConnectorWrapper, ABC):
 
 
 class DockerBaseConnector(ContainerConnector, ABC):
-
     def __init__(
         self,
         deployment_name: str,
