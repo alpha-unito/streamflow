@@ -672,8 +672,8 @@ class SSHConnector(BaseConnector):
             stderr=asyncio.subprocess.STDOUT,
             environment=environment,
         ) as proc:
-            result = await proc.wait(timeout=timeout)
-        return (result.stdout.strip(), proc.returncode) if capture_output else None
+            result = await proc.wait(check=True, timeout=timeout)
+        return (result.stdout.strip(), result.returncode) if capture_output else None
 
     async def undeploy(self, external: bool) -> None:
         for ssh_context in self.ssh_context_factories.values():
