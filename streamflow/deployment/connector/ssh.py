@@ -24,7 +24,11 @@ from streamflow.deployment.connector.base import (
 )
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.template import CommandTemplateMap
-from streamflow.log_handler import logger
+from streamflow.log_handler import logger, defaultStreamHandler
+
+asyncssh.logging.logger.setLevel(logging.DEBUG)
+asyncssh.logging.logger.set_debug_level(2)
+asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
 
 
 def _parse_hostname(hostname):
@@ -62,8 +66,7 @@ class SSHContext:
                         logger.warning(
                             f"Connection to {self._config.hostname} failed: {e}."
                         )
-                    self._connect_event.set()
-                    self.close()
+                    await self.close()
                     raise
                 self._connect_event.set()
             else:
@@ -117,13 +120,14 @@ class SSHContext:
         with open(file_path) as f:
             return f.read().strip()
 
-    def close(self):
-        self._connecting = False
+    async def close(self):
         if self._ssh_connection is not None:
             self._ssh_connection.close()
+            await self._ssh_connection.wait_closed()
             self._ssh_connection = None
-        if self._connect_event.is_set():
-            self._connect_event.clear()
+        self._connect_event.set()  # it is necessary to free any blocked tasks and avoid deadlocks
+        self._connect_event.clear()
+        self._connecting = False
 
     def full(self) -> bool:
         return (
@@ -193,6 +197,7 @@ class SSHContextManager:
                         except (
                             ConnectionError,
                             ConnectionLost,
+                            asyncssh.Error,
                             ChannelOpenError,
                         ) as coe:
                             if isinstance(coe, ChannelOpenError):
@@ -202,7 +207,7 @@ class SSHContextManager:
                                 )
                             self._selected_context = None
                             context.ssh_attempts += 1
-                            context.close()
+                            await context.close()
                             logger.warning(f"Connection attempt {context.ssh_attempts}")
                     await asyncio.sleep(self._retry_delay)
 
@@ -236,9 +241,8 @@ class SSHContextFactory:
         self._retries = retries
         self._retry_delay = retry_delay
 
-    def close(self):
-        for c in self._contexts:
-            c.close()
+    async def close(self):
+        await asyncio.gather(*(asyncio.create_task(c.close()) for c in self._contexts))
 
     def get(
         self,
@@ -666,19 +670,41 @@ class SSHConnector(BaseConnector):
                 workdir=workdir,
             )
             command = utils.encode_command(command)
+        uid = random_name()
         async with self._get_ssh_client_process(
             location=location.name,
             command=command,
             stderr=asyncio.subprocess.STDOUT,
             environment=environment,
         ) as proc:
-            result = await proc.wait(check=True, timeout=timeout)
+            a = cast(asyncssh.SSHClientConnection, proc.get_extra_info("connection"))
+            logger.info(
+                f"A. {uid} Channel is closing: {proc.is_closing()} {a.is_closed()} .A"
+            )
+            result = await proc.wait(timeout=timeout)
+            logger.info(
+                f"B. {uid} Channel is closing: {proc.is_closing()} {a.is_closed()} .B"
+            )
+        if result.returncode is None:
+            a = cast(asyncssh.SSHClientConnection, proc.get_extra_info("connection"))
+            logger.info(
+                f"C. {uid} Channel is closing: {proc.is_closing()} {a.is_closed()} .C"
+            )
+            raise Exception("Return code cannot be None")
         return (result.stdout.strip(), result.returncode) if capture_output else None
 
     async def undeploy(self, external: bool) -> None:
-        for ssh_context in self.ssh_context_factories.values():
-            ssh_context.close()
+        await asyncio.gather(
+            *(
+                asyncio.create_task(ssh_context.close())
+                for ssh_context in self.ssh_context_factories.values()
+            )
+        )
         self.ssh_context_factories = {}
-        for ssh_context in self.data_transfer_context_factories.values():
-            ssh_context.close()
+        await asyncio.gather(
+            *(
+                asyncio.create_task(ssh_context.close())
+                for ssh_context in self.data_transfer_context_factories.values()
+            )
+        )
         self.data_transfer_context_factories = {}
