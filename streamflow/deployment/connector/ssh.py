@@ -24,11 +24,7 @@ from streamflow.deployment.connector.base import (
 )
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.template import CommandTemplateMap
-from streamflow.log_handler import logger, defaultStreamHandler
-
-asyncssh.logging.logger.setLevel(logging.DEBUG)
-asyncssh.logging.logger.set_debug_level(2)
-asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
+from streamflow.log_handler import logger
 
 
 def _parse_hostname(hostname):
@@ -192,7 +188,7 @@ class SSHContextManager:
                                 encoding=self.encoding,
                             )
                             await self._proc.__aenter__()
-                            context.ssh_attempts = 0
+                            context.ssh_attempts = 0  # reset attempts
                             return self._proc
                         except (
                             ConnectionError,
@@ -670,27 +666,13 @@ class SSHConnector(BaseConnector):
                 workdir=workdir,
             )
             command = utils.encode_command(command)
-        uid = random_name()
         async with self._get_ssh_client_process(
             location=location.name,
             command=command,
             stderr=asyncio.subprocess.STDOUT,
             environment=environment,
         ) as proc:
-            a = cast(asyncssh.SSHClientConnection, proc.get_extra_info("connection"))
-            logger.info(
-                f"A. {uid} Channel is closing: {proc.is_closing()} {a.is_closed()} .A"
-            )
             result = await proc.wait(timeout=timeout)
-            logger.info(
-                f"B. {uid} Channel is closing: {proc.is_closing()} {a.is_closed()} .B"
-            )
-        if result.returncode is None:
-            a = cast(asyncssh.SSHClientConnection, proc.get_extra_info("connection"))
-            logger.info(
-                f"C. {uid} Channel is closing: {proc.is_closing()} {a.is_closed()} .C"
-            )
-            raise Exception("Return code cannot be None")
         return (result.stdout.strip(), result.returncode) if capture_output else None
 
     async def undeploy(self, external: bool) -> None:
