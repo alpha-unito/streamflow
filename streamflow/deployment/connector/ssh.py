@@ -130,7 +130,7 @@ class SSHContext:
                 logger.info(
                     f"self._ssh_connection.is_closed(): {self._ssh_connection.is_closed()}"
                 )
-                await asyncio.sleep(1)
+                raise WorkflowExecutionException("Connection not yet closed")
             self._ssh_connection = None
         self._connect_event.set()  # it is necessary to free any blocked tasks and avoid deadlocks
         self._connect_event.clear()
