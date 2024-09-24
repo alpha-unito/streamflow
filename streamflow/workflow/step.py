@@ -94,7 +94,7 @@ class BaseStep(Step, ABC):
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs.values()):
                 logger.debug(
-                    f"Step {self.name} received termination token with Status {_reduce_statuses([t.value for t in inputs.values()]).name.lower()}"
+                    f"Step {self.name} received termination token with Status {_reduce_statuses([t.value for t in inputs.values()]).name}"
                 )
             else:
                 logger.debug(
