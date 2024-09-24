@@ -26,12 +26,6 @@ from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrappe
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.log_handler import logger
 
-from streamflow.log_handler import defaultStreamHandler
-
-asyncssh.logging.logger.setLevel(logging.DEBUG)
-asyncssh.logging.logger.set_debug_level(2)
-asyncssh.logging.logger.logger.addHandler(defaultStreamHandler)
-
 
 def _parse_hostname(hostname):
     if ":" in hostname:
@@ -126,11 +120,6 @@ class SSHContext:
         if self._ssh_connection is not None:
             self._ssh_connection.close()
             await self._ssh_connection.wait_closed()
-            while not self._ssh_connection.is_closed():
-                logger.info(
-                    f"self._ssh_connection.is_closed(): {self._ssh_connection.is_closed()}"
-                )
-                raise WorkflowExecutionException("Connection not yet closed")
             self._ssh_connection = None
         self._connect_event.set()  # it is necessary to free any blocked tasks and avoid deadlocks
         self._connect_event.clear()
@@ -684,8 +673,6 @@ class SSHConnector(BaseConnector):
             environment=environment,
         ) as proc:
             result = await proc.wait(timeout=timeout)
-        if result.returncode is None:
-            raise Exception("Return code cannot be None")
         return (result.stdout.strip(), result.returncode) if capture_output else None
 
     async def undeploy(self, external: bool) -> None:
