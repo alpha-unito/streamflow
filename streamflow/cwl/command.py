@@ -14,6 +14,7 @@ from typing import Any, IO, MutableMapping, MutableSequence, cast
 
 from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
+from streamflow.cwl.workflow import CWLWorkflow
 
 from streamflow.core.command import (
     Command,
@@ -53,6 +54,7 @@ from streamflow.cwl.processor import (
     CWLObjectCommandOutputProcessor,
     CWLUnionCommandOutputProcessor,
 )
+from streamflow.cwl.step import build_token
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
@@ -95,6 +97,7 @@ def _adjust_inputs(
                 dirname, basename = path_processor.split(dest_path)
                 inp["dirname"] = dirname
                 inp["basename"] = basename
+                inp["location"] = f"file://{dest_path}"
                 if token_class == "File":  # nosec
                     nameroot, nameext = path_processor.splitext(basename)
                     inp["nameroot"] = nameroot
@@ -687,8 +690,28 @@ class CWLCommand(TokenizedCommand):
                     step=self.step,
                 ),
             )
+            inputs = dict(
+                zip(
+                    job.inputs.keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                build_token(
+                                    job,
+                                    context["inputs"][key],
+                                    cast(CWLWorkflow, self.step.workflow).cwl_version,
+                                    self.step.workflow.context,
+                                )
+                            )
+                            for key in job.inputs.keys()
+                        )
+                    ),
+                )
+            )
+        else:
+            inputs = job.inputs
         # Build command string
-        cmd = self._get_executable_command(context, job.inputs)
+        cmd = self._get_executable_command(context, inputs)
         # Build environment variables
         parsed_env = {
             k: str(
