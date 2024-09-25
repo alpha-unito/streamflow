@@ -210,6 +210,7 @@ class SSHContextManager:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         async with self._condition:
             if self._selected_context:
+                await self._selected_context.close()
                 if self._proc:
                     await self._proc.__aexit__(exc_type, exc_val, exc_tb)
                 self._condition.notify_all()
