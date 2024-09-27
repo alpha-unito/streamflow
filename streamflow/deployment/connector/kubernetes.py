@@ -144,7 +144,7 @@ class KubernetesResponseWrapperContextManager(StreamWrapperContextManager):
 
     async def __aenter__(self):
         response = await self.coro
-        self.response = KubernetesResponseWrapper(response)
+        self.response = KubernetesResponseWrapper(await response.__aenter__())
         return self.response
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -481,7 +481,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         )
         pod, container = location.name.split(":")
         # noinspection PyUnresolvedReferences
-        response = await asyncio.wait_for(
+        result = await asyncio.wait_for(
             cast(
                 Awaitable,
                 self.client_ws.connect_get_namespaced_pod_exec(
@@ -500,19 +500,19 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         )
         if capture_output:
             with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
-                while not response.closed:
-                    async for msg in response:
-                        data = msg.data.decode("utf-8", "replace")
-                        channel = ord(data[0])
-                        data = data[1:]
-                        if data and channel in [
-                            ws_client.STDOUT_CHANNEL,
-                            ws_client.STDERR_CHANNEL,
-                        ]:
-                            out_buffer.write(data)
-                        elif data and channel == ws_client.ERROR_CHANNEL:
-                            err_buffer.write(data)
-                await response.close()
+                async with result as response:
+                    while not response.closed:
+                        async for msg in response:
+                            data = msg.data.decode("utf-8", "replace")
+                            channel = ord(data[0])
+                            data = data[1:]
+                            if data and channel in [
+                                ws_client.STDOUT_CHANNEL,
+                                ws_client.STDERR_CHANNEL,
+                            ]:
+                                out_buffer.write(data)
+                            elif data and channel == ws_client.ERROR_CHANNEL:
+                                err_buffer.write(data)
                 err = yaml.safe_load(err_buffer.getvalue())
                 if err["status"] == "Success":
                     return out_buffer.getvalue(), 0

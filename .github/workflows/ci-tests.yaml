@@ -83,8 +83,8 @@ jobs:
         uses: helm/kind-action@v1.10.0
         with:
           config: .github/kind/config.yaml
-          kubectl_version: v1.26.3
-          version: v0.18.0
+          kubectl_version: v1.30.3
+          version: v0.21.0
         if: ${{ matrix.docker == 'kubernetes' }}
       - name: "Configure Calico on KinD"
         run: |
@@ -244,8 +244,8 @@ jobs:
         uses: helm/kind-action@v1.10.0
         with:
           config: .github/kind/config.yaml
-          kubectl_version: v1.26.3
-          version: v0.18.0
+          kubectl_version: v1.30.3
+          version: v0.21.0
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Configure Calico on KinD"
         run: |
