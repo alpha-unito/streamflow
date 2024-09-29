@@ -117,10 +117,10 @@ def _build_command_output_processor(name: str, step: Step, value: Any):
     if isinstance(value, MutableSequence):
         return CWLMapCommandOutputProcessor(
             name=name,
-            workflow=step.workflow,
+            workflow=cast(CWLWorkflow, step.workflow),
             processor=CWLUnionCommandOutputProcessor(
                 name=name,
-                workflow=step.workflow,
+                workflow=cast(CWLWorkflow, step.workflow),
                 processors=[
                     _build_command_output_processor(name=name, step=step, value=v)
                     for v in value
@@ -130,12 +130,14 @@ def _build_command_output_processor(name: str, step: Step, value: Any):
     elif isinstance(value, MutableMapping):
         if (token_type := utils.get_token_class(value)) in ["File", "Directory"]:
             return CWLCommandOutputProcessor(
-                name=name, workflow=step.workflow, token_type=token_type  # nosec
+                name=name,
+                workflow=cast(CWLWorkflow, step.workflow),
+                token_type=token_type,  # nosec
             )
         else:
             return CWLObjectCommandOutputProcessor(
                 name=name,
-                workflow=step.workflow,
+                workflow=cast(CWLWorkflow, step.workflow),
                 processors={
                     k: _build_command_output_processor(name=name, step=step, value=v)
                     for k, v in value.items()
@@ -143,7 +145,7 @@ def _build_command_output_processor(name: str, step: Step, value: Any):
             )
     else:
         return CWLCommandOutputProcessor(  # nosec
-            name=name, workflow=step.workflow, token_type="Any"
+            name=name, workflow=cast(CWLWorkflow, step.workflow), token_type="Any"
         )
 
 

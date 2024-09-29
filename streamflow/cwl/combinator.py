@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, AsyncIterable, MutableMapping, MutableSequence
+from typing import Any, AsyncIterable, MutableMapping, MutableSequence, cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
@@ -44,7 +44,10 @@ class ListMergeCombinator(DotProductCombinator):
     ) -> ListMergeCombinator:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             input_names=row["input_names"],
             output_name=row["output_name"],
             flatten=row["flatten"],

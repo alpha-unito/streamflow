@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import posixpath
-from typing import Any, MutableSequence
+from typing import Any, MutableSequence, cast
 
 import pytest
 from rdflib import Graph
@@ -388,7 +388,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
         name=name + "-combinator",
         combinator=ListMergeCombinator(
             name=utils.random_name(),
-            workflow=workflow,
+            workflow=cast(CWLWorkflow, workflow),
             input_names=[port.name],
             output_name=name,
             flatten=False,
