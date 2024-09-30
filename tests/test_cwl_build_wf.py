@@ -1,5 +1,5 @@
 import posixpath
-from typing import Type
+from typing import Type, cast
 
 import pytest
 
@@ -29,6 +29,7 @@ from streamflow.cwl.transformer import (
     OnlyNonNullTransformer,
     ValueFromTransformer,
 )
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import CombinatorStep
 from tests.conftest import are_equals
@@ -106,7 +107,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
             "name": utils.random_name() + "-combinator",
             "combinator": ListMergeCombinator(
                 name=utils.random_name(),
-                workflow=workflow,
+                workflow=cast(CWLWorkflow, workflow),
                 input_names=[port.name],
                 output_name=port.name,
                 flatten=False,
@@ -151,7 +152,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
             "name": utils.random_name() + "-loop-value-from-transformer",
             "processor": CWLTokenProcessor(
                 name=port.name,
-                workflow=workflow,
+                workflow=cast(CWLWorkflow, workflow),
             ),
             "port_name": port.name,
             "full_js": True,
@@ -206,7 +207,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
             "name": utils.random_name() + "-value-from-transformer",
             "processor": CWLTokenProcessor(
                 name=port.name,
-                workflow=workflow,
+                workflow=cast(CWLWorkflow, workflow),
             ),
             "port_name": port.name,
             "full_js": True,
@@ -302,7 +303,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
             "port_name": "test",
             "processor": CWLTokenProcessor(
                 name=step_name,
-                workflow=workflow,
+                workflow=cast(CWLWorkflow, workflow),
             ),
         },
         context,

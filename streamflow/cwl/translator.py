@@ -1246,8 +1246,14 @@ def _process_transformers(
     if schedule_steps is None:
         schedule_steps = {}
     for input_name, token_transformer in transformers.items():
+        # If transformer has true dependencies, use them
+        if not (dependencies := input_dependencies[input_name]):
+            # Otherwise, if there are other inputs, use them as dependencies to preserve token tag
+            if not (dependencies := {k for k in input_ports.keys() if k != input_name}):
+                # Otherwise, if there is only one input without dependencies, use it as its own dependency
+                dependencies = {input_name}
         # Process inputs to attach ports
-        for dep_name in input_dependencies[input_name]:
+        for dep_name in dependencies:
             if dep_name in input_ports:
                 token_transformer.add_input_port(
                     posixpath.relpath(dep_name, step_name), input_ports[dep_name]
@@ -2512,7 +2518,7 @@ class CWLTranslator:
                     else set()
                 ),
                 {posixpath.join(step_name, d) for d in local_deps},
-            ) or {global_name}
+            )
         # If `source` entry is present, process output dependencies
         if "source" in element_input:
             # If source element is a list, the input element can depend on multiple ports

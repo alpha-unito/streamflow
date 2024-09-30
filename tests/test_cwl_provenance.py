@@ -207,7 +207,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
             "port_name": port_name,
             "processor": CWLTokenProcessor(
                 name=step_name,
-                workflow=workflow,
+                workflow=cast(CWLWorkflow, workflow),
             ),
         },
         token_list=token_list,
@@ -577,7 +577,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
         name=step_name + "-combinator",
         combinator=ListMergeCombinator(
             name=utils.random_name(),
-            workflow=workflow,
+            workflow=cast(CWLWorkflow, workflow),
             input_names=[port_name],
             output_name=port_name,
             flatten=False,
@@ -617,7 +617,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         name=name + "-loop-value-from-transformer",
         processor=CWLTokenProcessor(
             name=in_port.name,
-            workflow=workflow,
+            workflow=cast(CWLWorkflow, workflow),
         ),
         port_name=port_name,
         full_js=True,

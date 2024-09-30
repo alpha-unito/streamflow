@@ -9,6 +9,7 @@ from streamflow.core.deployment import LocalTarget, FilterConfig
 from streamflow.core.workflow import Workflow, Port, Step
 from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.translator import _create_command_output_processor_base
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.workflow.combinator import LoopCombinator
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -203,7 +204,7 @@ async def test_execute_step(context: StreamFlowContext):
         out_port,
         _create_command_output_processor_base(
             port_name=out_port.name,
-            workflow=workflow,
+            workflow=cast(CWLWorkflow, workflow),
             port_target=None,
             port_type="string",
             cwl_element={},
@@ -345,7 +346,7 @@ async def test_workflow(context: StreamFlowContext):
         out_port,
         _create_command_output_processor_base(
             port_name=out_port.name,
-            workflow=workflow,
+            workflow=cast(CWLWorkflow, workflow),
             port_target=None,
             port_type="string",
             cwl_element={},

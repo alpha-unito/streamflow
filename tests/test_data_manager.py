@@ -144,7 +144,7 @@ async def test_invalidate_location(context, src_connector, src_location):
     root_data_loc = context.data_manager.get_data_locations(
         "/", src_connector.deployment_name
     )[0]
-    context.data_manager.invalidate_location(root_data_loc, root_data_loc.path)
+    context.data_manager.invalidate_location(root_data_loc.location, root_data_loc.path)
 
     # Check data manager has invalidated the location
     path = "/"

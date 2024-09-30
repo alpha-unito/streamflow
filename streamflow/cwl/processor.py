@@ -147,7 +147,10 @@ class CWLTokenProcessor(TokenProcessor):
     ) -> CWLTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             token_type=row["token_type"],
             check_type=row["check_type"],
             enum_symbols=row["enum_symbols"],
@@ -385,7 +388,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             target=(
                 (await loading_context.load_target(context, row["workflow"]))
                 if row["target"]
@@ -726,7 +732,10 @@ class CWLMapTokenProcessor(TokenProcessor):
     ) -> CWLMapTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             processor=await TokenProcessor.load(
                 context, row["processor"], loading_context
             ),
@@ -788,7 +797,10 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             processor=await CommandOutputProcessor.load(
                 context, row["processor"], loading_context
             ),
@@ -865,7 +877,10 @@ class CWLObjectTokenProcessor(TokenProcessor):
     ) -> CWLObjectTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             processors={
                 k: v
                 for k, v in zip(
@@ -966,7 +981,10 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         params = json.loads(row["params"])
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             target=(
                 (await loading_context.load_target(context, row["workflow"]))
                 if row["target"]
@@ -1152,7 +1170,10 @@ class CWLUnionTokenProcessor(TokenProcessor):
     ) -> CWLUnionTokenProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             processors=cast(
                 MutableSequence[TokenProcessor],
                 await asyncio.gather(
@@ -1269,7 +1290,10 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
     ) -> CommandOutputProcessor:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             processors=cast(
                 MutableSequence[CommandOutputProcessor],
                 await asyncio.gather(
