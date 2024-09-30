@@ -98,13 +98,14 @@ async def test_download(context, connector, location):
         path_processor.join(parent_dir, "streamflow-0.1.6.zip"),
     ]
 
+    path = None
     for i, url in enumerate(urls):
         try:
             path = await remotepath.download(connector, [location], url, parent_dir)
             assert path == paths[i]
             assert await remotepath.exists(connector, location, path)
         finally:
-            if await remotepath.exists(connector, location, path):
+            if path and await remotepath.exists(connector, location, path):
                 await remotepath.rm(connector, location, path)
 
 

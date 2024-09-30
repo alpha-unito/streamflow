@@ -74,10 +74,9 @@ async def test_combinator_step(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with CartesianProductCombinator from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
-    name = utils.random_name()
     step = workflow.create_step(
         cls=CombinatorStep,
-        name=name + "-combinator",
+        name=utils.random_name() + "-combinator",
         combinator=CartesianProductCombinator(
             name=utils.random_name(), workflow=workflow, depth=1
         ),
@@ -91,10 +90,9 @@ async def test_loop_combinator_step(context: StreamFlowContext):
     workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
 
-    name = utils.random_name()
     step = workflow.create_step(
         cls=LoopCombinatorStep,
-        name=name + "-combinator",
+        name=utils.random_name() + "-loop-combinator",
         combinator=CartesianProductCombinator(
             name=utils.random_name(), workflow=workflow, depth=1
         ),
@@ -144,9 +142,6 @@ async def test_schedule_step(context: StreamFlowContext):
         name=posixpath.join(utils.random_name(), "__schedule__"),
         job_prefix="something",
         connector_ports=connector_ports,
-        input_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
-        output_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
-        tmp_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
         binding_config=binding_config,
     )
     await save_load_and_test(schedule_step, context)
@@ -270,7 +265,7 @@ async def test_job_token(context: StreamFlowContext):
         value=Job(
             workflow_id=0,
             name=utils.random_name(),
-            inputs={"test": Token(value="jobtoken")},
+            inputs={"test": Token(value="job_token")},
             input_directory=utils.random_name(),
             output_directory=utils.random_name(),
             tmp_directory=utils.random_name(),

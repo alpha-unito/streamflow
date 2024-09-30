@@ -116,12 +116,15 @@ async def test_cwl_file_token(context: StreamFlowContext):
     """Test saving and loading CWLFileToken from database"""
     token = CWLFileToken(
         value={
-            "location": "file:///home/ubuntu/output.txt",
-            "basename": "output.txt",
+            "basename": "version.py",
+            "checksum": "sha1$a4a8b0c0b19d3187a1ab8c9346fc105978115781",
             "class": "File",
-            "checksum": "sha1$aaaaaaaaaaaaaaaaaaaaaaaa",
-            "size": 100,
-            "path": "/home/ubuntu/output.txt",
+            "dirname": "/home/ubuntu/streamflow/streamflow",
+            "location": "file:///home/ubuntu/streamflow/streamflow/version.py",
+            "nameext": ".py",
+            "nameroot": "version",
+            "path": "/home/ubuntu/streamflow/streamflow/version.py",
+            "size": 24,
         }
     )
     await save_load_and_test(token, context)
@@ -745,12 +748,9 @@ async def test_cwl_schedule_step(context: StreamFlowContext):
 
     schedule_step = workflow.create_step(
         cls=CWLScheduleStep,
-        name=posixpath.join(utils.random_name(), "__schedule__"),
+        name=posixpath.join(posixpath.sep, utils.random_name(), "__schedule__"),
         job_prefix="something",
         connector_ports=connector_ports,
-        input_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
-        output_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
-        tmp_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
         binding_config=binding_config,
         hardware_requirement=CWLHardwareRequirement(
             CWL_VERSION,
