@@ -728,25 +728,9 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext):
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
-    nested_crossproduct_1 = [(t1, t2) for t2 in list_token_2 for t1 in list_token_1]
-    nested_crossproduct_2 = [(t1, t2) for t1 in list_token_1 for t2 in list_token_2]
+    nested_crossproduct_1 = [[t1, t2] for t2 in list_token_2 for t1 in list_token_1]
+    nested_crossproduct_2 = [[t1, t2] for t1 in list_token_1 for t2 in list_token_2]
 
-    for t in list_token_1:
-        print(f"{t.persistent_id}, {t.tag}, {[tt.value for tt in t.value]}")
-
-    for t in list_token_2:
-        print(f"{t.persistent_id}, {t.tag}, {[tt.value for tt in t.value]}")
-    print()
-
-    for out_token in out_port_1.token_list[:-1]:
-        print(
-            f"{out_token.persistent_id}, {out_token.tag}, {[tt.value for tt in out_token.value]}"
-        )
-    for out_token in out_port_2.token_list[:-1]:
-        print(
-            f"{out_token.persistent_id}, {out_token.tag}, {[tt.value for tt in out_token.value]}"
-        )
-    print()
     # The tokens id produced by combinators depend on the order of input tokens.
     # The use of the alternative_expected_dependee parameter is necessary
     # For example:
