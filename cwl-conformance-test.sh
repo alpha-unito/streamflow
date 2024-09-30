@@ -86,7 +86,6 @@ if [ "${RETURN_CODE}" -eq "0" ] ; then
 fi
 
 # Cleanup
-deactivate
 rm -rf "${COMMIT}.tar.gz" "${SCRIPT_DIRECTORY}/${REPO}-${COMMIT}" "${SCRIPT_DIRECTORY}/cwl-conformance-venv"
 
 # Exit

@@ -371,7 +371,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
         self.full_js: bool = full_js
-        self.glob: str | None = glob
+        self.glob: str | MutableSequence[str] | None = glob
         self.load_contents: bool = load_contents
         self.load_listing: LoadListing = load_listing
         self.optional: bool = optional
@@ -490,7 +490,6 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     ):
         connector = self._get_connector(connector, job)
         locations = await self._get_locations(connector, job)
-        path_processor = get_path_processor(connector)
         token_value = command_output.value
         cwl_workflow = cast(CWLWorkflow, self.workflow)
         # If `token_value` is a dictionary, directly extract the token value from it
@@ -512,22 +511,28 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         # Otherwise, generate the output object as described in `outputs` field
         if self.glob is not None:
             # Adjust glob path
-            if "$(" in self.glob or "${" in self.glob:
-                globpath = utils.eval_expression(
-                    expression=self.glob,
-                    context=context,
-                    full_js=self.full_js,
-                    expression_lib=self.expression_lib,
-                )
-            else:
-                globpath = self.glob
-            # Resolve glob
-            resolve_tasks = []
-            for location in locations:
+            globpaths = []
+            for glob in (
+                self.glob if isinstance(self.glob, MutableSequence) else [self.glob]
+            ):
                 globpath = (
+                    utils.eval_expression(
+                        expression=glob,
+                        context=context,
+                        full_js=self.full_js,
+                        expression_lib=self.expression_lib,
+                    )
+                    if "$(" in glob or "${" in glob
+                    else glob
+                )
+                globpaths.extend(
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
-                for path in globpath:
+            # Resolve glob
+            path_processor = get_path_processor(connector)
+            resolve_tasks = []
+            for location in locations:
+                for path in globpaths:
                     resolve_tasks.append(
                         asyncio.create_task(
                             utils.expand_glob(
@@ -557,21 +562,24 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                             )
                         )
                     )
-            paths, effective_paths = [
-                list(x)
-                for x in zip(*flatten_list(await asyncio.gather(*resolve_tasks)))
-            ] or [[], []]
-            # Get token class from paths
-            class_tasks = [
-                asyncio.create_task(
-                    utils.get_class_from_path(p, job, self.workflow.context)
-                )
-                for p in effective_paths
-            ]
-            paths = [
-                {"path": p, "class": c}
-                for p, c in zip(paths, await asyncio.gather(*class_tasks))
-            ]
+                globpaths = dict(flatten_list(await asyncio.gather(*resolve_tasks)))
+                # Get token class from paths
+                globpaths = [
+                    {"path": p, "class": c}
+                    for p, c in zip(
+                        globpaths.keys(),
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(
+                                    utils.get_class_from_path(
+                                        p, job, self.workflow.context
+                                    )
+                                )
+                                for p in globpaths.values()
+                            )
+                        ),
+                    )
+                ]
             # If evaluation is not needed, simply return paths as token value
             if self.output_eval is None:
                 token_list = await utils.build_token_value(
@@ -583,7 +591,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     secondary_files=self.secondary_files,
                     connector=connector,
                     locations=locations,
-                    token_value=paths,
+                    token_value=globpaths,
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
                 )
@@ -603,7 +611,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     secondary_files=self.secondary_files,
                     connector=connector,
                     locations=locations,
-                    token_value=paths,
+                    token_value=globpaths,
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
                 )
