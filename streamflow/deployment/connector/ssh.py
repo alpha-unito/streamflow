@@ -201,9 +201,10 @@ class SSHContextManager:
                                     f"Error opening SSH session to {context.get_hostname()} "
                                     f"to execute command `{self.command}`: [{coe.code}] {coe.reason}"
                                 )
-                            self._selected_context = None
                             context.ssh_attempts += 1
                             await context.close()
+                            self._selected_context = None
+                            self._proc.__aexit(None, None, None)
                             logger.warning(f"Connection attempt {context.ssh_attempts}")
                     await asyncio.sleep(self._retry_delay)
 
