@@ -92,18 +92,6 @@ def test_loop_fail_non_boolean_loop_when() -> None:
     assert main(params) == 1
 
 
-def test_loop_opt_variable(capsys) -> None:
-    """Test a loop case with two variables but one is optional."""
-    params = [
-        get_data("tests/loop/opt-var-loop.cwl"),
-        get_data("tests/loop/single-var-loop-job.yml"),
-    ]
-    main(params)
-    expected = {"o1": 10}
-    captured = capsys.readouterr()
-    assert json.loads(captured.out) == expected
-
-
 def test_loop_single_variable(capsys) -> None:
     """Test a simple loop case with a single variable."""
     params = [

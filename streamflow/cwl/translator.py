@@ -1415,7 +1415,7 @@ class CWLTranslator:
         workflow,
     ):
         inner_input_ports, outer_input_ports = set(), set()
-        # Get CommandLineTool/ExpressionTool input names
+        # Get inner CWL object input names
         for element_input in cwl_element.embedded_tool.tool["inputs"]:
             inner_cwl_name_prefix = utils.get_inner_cwl_prefix(
                 cwl_name_prefix, name_prefix, cwl_element
