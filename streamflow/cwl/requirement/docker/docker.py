@@ -67,7 +67,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         labelFile: MutableSequence[str] | None = None,
         link: MutableSequence[str] | None = None,
         linkLocalIP: MutableSequence[str] | None = None,
-        locationsCacheTTL: int | None = None,
         logDriver: str = "none",
         logOpts: MutableSequence[str] | None = None,
         macAddress: str | None = None,
@@ -160,7 +159,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         self.labelFile: MutableSequence[str] | None = labelFile
         self.link: MutableSequence[str] | None = link
         self.linkLocalIP: MutableSequence[str] | None = linkLocalIP
-        self.locationsCacheTTL: int | None = locationsCacheTTL
         self.logDriver: str = logDriver
         self.logOpts: MutableSequence[str] | None = logOpts
         self.macAddress: str | None = macAddress
@@ -285,7 +283,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
                     "labelFile": self.labelFile,
                     "link": self.link,
                     "linkLocalIP": self.linkLocalIP,
-                    "locationsCacheTTL": self.locationsCacheTTL,
                     "logDriver": self.logDriver,
                     "logOpts": self.logOpts,
                     "macAddress": self.macAddress,
