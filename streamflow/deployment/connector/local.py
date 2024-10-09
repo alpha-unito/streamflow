@@ -9,7 +9,7 @@ import tempfile
 from typing import Any, MutableMapping, MutableSequence
 
 import psutil
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.deployment import (

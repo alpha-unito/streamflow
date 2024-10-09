@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import yaml
 from cachetools import Cache, TTLCache
-from importlib_resources import files
+from importlib.resources import files
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiClient, Configuration, V1Container, V1PodList
 from kubernetes_asyncio.config import (

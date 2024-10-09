@@ -2,7 +2,7 @@ import os
 import posixpath
 from collections.abc import MutableSequence
 
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.deployment import DeploymentConfig, Target, WrapsConfig

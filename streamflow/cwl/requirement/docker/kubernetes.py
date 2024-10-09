@@ -1,6 +1,6 @@
 import tempfile
 
-from importlib_resources import files
+from importlib.resources import files
 from jinja2 import Template
 
 from streamflow.core import utils

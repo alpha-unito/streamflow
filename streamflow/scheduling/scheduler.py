@@ -7,7 +7,7 @@ import posixpath
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, cast
 
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.deployment import BindingFilter, Connector, FilterConfig, Target

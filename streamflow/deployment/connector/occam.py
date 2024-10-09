@@ -7,7 +7,7 @@ from collections.abc import MutableSequence, MutableMapping
 from typing import Any
 
 import asyncssh
-from importlib_resources import files
+from importlib.resources import files
 from ruamel.yaml import YAML
 
 from streamflow.core import utils

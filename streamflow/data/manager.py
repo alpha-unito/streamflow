@@ -5,7 +5,7 @@ from collections.abc import MutableSequence, MutableMapping
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.data import DataLocation, DataManager, DataType
 from streamflow.data import remotepath

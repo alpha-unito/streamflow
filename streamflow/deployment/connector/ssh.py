@@ -10,7 +10,7 @@ from typing import Any
 
 import asyncssh
 from asyncssh import ChannelOpenError, ConnectionLost
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
