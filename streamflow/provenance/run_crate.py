@@ -945,26 +945,27 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         jsonld_object: MutableMapping[str, Any],
     ) -> None:
         for key, value in cwl_object.metadata.items():
-            if key.startswith("http://schema.org/"):
-                jsonld_object[key[18:]] = self._add_metadata_entry(value)
-            elif key.startswith("https://schema.org/"):
-                jsonld_object[key[19:]] = self._add_metadata_entry(value)
+            jsonld_object[
+                key.removeprefix("http://schema.org/").removeprefix(
+                    "https://schema.org/"
+                )
+            ] = self._add_metadata_entry(value)
 
     def _add_metadata_entry(self, metadata: Any) -> Any:
         if isinstance(metadata, MutableMapping):
             jsonld_metadata = {}
             for key in metadata:
                 value = self._add_metadata_entry(metadata[key])
-                if key.startswith("http://schema.org/"):
-                    key = key[18:]
-                elif key.startswith("https://schema.org/"):
-                    key = key[19:]
                 if key == "class":
                     jsonld_metadata["@type"] = value
                 elif key == "identifier":
                     jsonld_metadata["@id"] = value
                 else:
-                    jsonld_metadata[key] = value
+                    jsonld_metadata[
+                        key.removeprefix("http://schema.org/").removeprefix(
+                            "https://schema.org/"
+                        )
+                    ] = value
             if "@id" not in jsonld_metadata:
                 jsonld_metadata["@id"] = "#" + str(uuid.uuid4())
             self.graph[jsonld_metadata["@id"]] = jsonld_metadata
@@ -972,12 +973,9 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         elif isinstance(metadata, MutableSequence):
             return [self._add_metadata_entry(v) for v in metadata]
         elif isinstance(metadata, str):
-            if metadata.startswith("http://schema.org/"):
-                return metadata[18:]
-            elif metadata.startswith("https://schema.org/"):
-                return metadata[19:]
-            else:
-                return metadata
+            return metadata.removeprefix("http://schema.org/").removeprefix(
+                "https://schema.org/"
+            )
         else:
             return metadata
 
