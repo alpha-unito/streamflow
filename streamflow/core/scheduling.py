@@ -233,8 +233,8 @@ class HardwareRequirement(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type = utils.get_class_from_name(row["type"])
-        return await cast(Type[HardwareRequirement], type)._load(
+        type_t = utils.get_class_from_name(row["type"])
+        return await cast(Type[HardwareRequirement], type_t)._load(
             context, row["params"], loading_context
         )
 
