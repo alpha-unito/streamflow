@@ -5,7 +5,7 @@ import tempfile
 from collections.abc import MutableSequence, MutableMapping
 
 import psutil
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.deployment import (
     Connector,

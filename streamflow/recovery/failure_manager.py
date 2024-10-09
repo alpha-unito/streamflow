@@ -3,7 +3,7 @@ import logging
 from collections.abc import MutableMapping
 from typing import cast
 
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext

@@ -4,9 +4,9 @@ import asyncio
 import logging
 import os
 from collections.abc import MutableMapping
+from importlib.resources import files
 from typing import TYPE_CHECKING
 
-from importlib_resources import files
 
 from streamflow.core.deployment import (
     Connector,

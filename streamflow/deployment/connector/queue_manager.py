@@ -10,7 +10,7 @@ from functools import partial
 from typing import Any, cast
 
 import cachetools
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod

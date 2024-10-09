@@ -5,7 +5,7 @@ from collections.abc import MutableMapping, MutableSequence
 from pathlib import PurePosixPath
 from typing import Any
 
-from importlib_metadata import entry_points
+from importlib.metadata import entry_points
 from referencing._core import Resolver, Resource
 
 from streamflow.config.schema import SfSchema

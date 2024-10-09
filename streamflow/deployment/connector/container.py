@@ -9,7 +9,7 @@ from shutil import which
 from typing import Any
 
 from cachetools import Cache, TTLCache
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapperContextManager
