@@ -102,8 +102,8 @@ class Job:
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type = cast(Type[Job], utils.get_class_from_name(row["type"]))
-        return await type._load(context, row["params"], loading_context)
+        type_t = cast(Type[Job], utils.get_class_from_name(row["type"]))
+        return await type_t._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -180,8 +180,8 @@ class Port(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Port:
         row = await context.database.get_port(persistent_id)
-        type = cast(Type[Port], utils.get_class_from_name(row["type"]))
-        port = await type._load(context, row, loading_context)
+        type_t = cast(Type[Port], utils.get_class_from_name(row["type"]))
+        port = await type_t._load(context, row, loading_context)
         loading_context.add_port(persistent_id, port)
         return port
 
@@ -221,10 +221,10 @@ class Step(PersistableEntity, ABC):
         self.terminated: bool = False
         self.workflow: Workflow = workflow
 
-    def _add_port(self, name: str, port: Port, type: DependencyType):
+    def _add_port(self, name: str, port: Port, type_t: DependencyType):
         if port.name not in self.workflow.ports:
             self.workflow.ports[port.name] = port
-        if type == DependencyType.INPUT:
+        if type_t == DependencyType.INPUT:
             self.input_ports[name] = port.name
         else:
             self.output_ports[name] = port.name
@@ -301,8 +301,8 @@ class Step(PersistableEntity, ABC):
         loading_context: DatabaseLoadingContext,
     ) -> Step:
         row = await context.database.get_step(persistent_id)
-        type = cast(Type[Step], utils.get_class_from_name(row["type"]))
-        step = await type._load(context, row, loading_context)
+        type_t = cast(Type[Step], utils.get_class_from_name(row["type"]))
+        step = await type_t._load(context, row, loading_context)
         step.status = Status(row["status"])
         step.terminated = step.status in [
             Status.COMPLETED,
@@ -415,8 +415,8 @@ class Token(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Token:
         row = await context.database.get_token(persistent_id)
-        type = cast(Type[Token], utils.get_class_from_name(row["type"]))
-        token = await type._load(context, row, loading_context)
+        type_t = cast(Type[Token], utils.get_class_from_name(row["type"]))
+        token = await type_t._load(context, row, loading_context)
         loading_context.add_token(persistent_id, token)
         return token
 
@@ -470,8 +470,8 @@ class TokenProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type = cast(Type[TokenProcessor], utils.get_class_from_name(row["type"]))
-        return await type._load(context, row["params"], loading_context)
+        type_t = cast(Type[TokenProcessor], utils.get_class_from_name(row["type"]))
+        return await type_t._load(context, row["params"], loading_context)
 
     @abstractmethod
     async def process(
@@ -549,8 +549,8 @@ class Workflow(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Workflow:
         row = await context.database.get_workflow(persistent_id)
-        type = cast(Type[Workflow], utils.get_class_from_name(row["type"]))
-        workflow = await type._load(context, row, loading_context)
+        type_t = cast(Type[Workflow], utils.get_class_from_name(row["type"]))
+        workflow = await type_t._load(context, row, loading_context)
         loading_context.add_workflow(persistent_id, workflow)
         rows = await context.database.get_workflow_ports(persistent_id)
         params = json.loads(row["params"])
