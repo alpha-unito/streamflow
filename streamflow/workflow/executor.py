@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import MutableSequence, TYPE_CHECKING, cast
+from collections.abc import MutableSequence, MutableMapping
+from typing import TYPE_CHECKING, cast
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException
@@ -13,7 +14,7 @@ from streamflow.workflow.utils import get_token_value
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Workflow
-    from typing import Any, MutableMapping
+    from typing import Any
 
 
 class StreamFlowExecutor(Executor):

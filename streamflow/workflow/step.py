@@ -6,8 +6,9 @@ import logging
 import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import MutableSequence, MutableMapping, AsyncIterable, MutableSet
 from types import ModuleType
-from typing import Any, AsyncIterable, MutableMapping, MutableSequence, MutableSet, cast
+from typing import Any, cast
 
 from streamflow.core import utils
 from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
@@ -224,7 +225,7 @@ class Combinator(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Combinator:
-        type_t = cast(Combinator, utils.get_class_from_name(row["type"]))
+        type_t = cast(type[Combinator], utils.get_class_from_name(row["type"]))
         combinator = await type_t._load(context, row["params"], loading_context)
         combinator.items = row["params"]["items"]
         combinator.combinators_map = row["params"]["combinators_map"]

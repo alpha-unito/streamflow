@@ -10,19 +10,14 @@ import posixpath
 import shlex
 import shutil
 import uuid
-from typing import (
-    Any,
-    MutableMapping,
-    MutableSequence,
-    TYPE_CHECKING,
-)
+from collections.abc import MutableSequence, MutableMapping, Iterable
+from typing import Any, TYPE_CHECKING
 
 from streamflow.core.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, ExecutionLocation
     from streamflow.core.workflow import Token
-    from typing import Iterable
 
 
 class NamesStack:

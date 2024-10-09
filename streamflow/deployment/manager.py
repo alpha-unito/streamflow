@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
 from importlib_resources import files
@@ -26,7 +27,7 @@ from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import MutableMapping, Any
+    from typing import Any
 
 
 class DefaultDeploymentManager(DeploymentManager):

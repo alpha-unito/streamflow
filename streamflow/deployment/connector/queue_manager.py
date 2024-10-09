@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import base64
 import json
@@ -7,8 +5,9 @@ import logging
 import os
 import shlex
 from abc import ABC, abstractmethod
+from collections.abc import MutableMapping, MutableSequence
 from functools import partial
-from typing import Any, MutableMapping, MutableSequence, cast
+from typing import Any, cast
 
 import cachetools
 from importlib_resources import files

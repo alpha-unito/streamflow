@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import os
 import posixpath
-from typing import MutableSequence
+from collections.abc import MutableSequence
 
 from importlib_resources import files
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, MutableMapping, MutableSequence, Type, cast
+from collections.abc import MutableMapping, MutableSequence
+from typing import Any, cast
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -31,7 +32,7 @@ class Command(ABC):
         loading_context: DatabaseLoadingContext,
         step: Step,
     ) -> Command:
-        type_t = cast(Type[Command], utils.get_class_from_name(row["type"]))
+        type_t = cast(type[Command], utils.get_class_from_name(row["type"]))
         return await type_t._load(context, row["params"], loading_context, step)
 
     async def save(self, context: StreamFlowContext):
@@ -125,7 +126,7 @@ class CommandOutputProcessor(ABC):
         loading_context: DatabaseLoadingContext,
     ) -> CommandOutputProcessor:
         type_t = cast(
-            Type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
+            type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
         )
         return await type_t._load(context, row["params"], loading_context)
 
@@ -189,7 +190,7 @@ class CommandTokenProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CommandTokenProcessor:
-        type_t = cast(Type[CommandTokenProcessor], get_class_from_name(row["type"]))
+        type_t = cast(type[CommandTokenProcessor], get_class_from_name(row["type"]))
         return await type_t._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):

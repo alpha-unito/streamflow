@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, MutableMapping, MutableSequence
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any
 
 from streamflow.config import ext_schemas
 from streamflow.core.data import DataManager

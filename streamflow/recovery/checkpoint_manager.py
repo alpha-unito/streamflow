@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from collections.abc import MutableSequence
 from typing import TYPE_CHECKING
 
 from importlib_resources import files
@@ -15,7 +16,6 @@ from streamflow.core.utils import random_name
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import MutableSequence
 
 
 class DefaultCheckpointManager(CheckpointManager):

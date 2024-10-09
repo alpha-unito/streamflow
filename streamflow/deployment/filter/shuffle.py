@@ -1,5 +1,5 @@
 import random
-from typing import MutableSequence
+from collections.abc import MutableSequence
 
 from importlib_resources import files
 

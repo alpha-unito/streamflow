@@ -1,5 +1,6 @@
 import asyncio
-from typing import Any, MutableSequence
+from collections.abc import MutableSequence
+from typing import Any
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType

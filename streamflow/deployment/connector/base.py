@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import logging
@@ -8,7 +6,8 @@ import posixpath
 import shlex
 import tarfile
 from abc import ABC
-from typing import MutableSequence, TYPE_CHECKING
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContextManager
@@ -26,9 +25,6 @@ from streamflow.deployment.stream import (
     SubprocessStreamWriterWrapperContextManager,
 )
 from streamflow.log_handler import logger
-
-if TYPE_CHECKING:
-    from typing import Any, MutableMapping
 
 
 async def extract_tar_stream(

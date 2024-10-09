@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import posixpath
-from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING, cast
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any, TYPE_CHECKING, cast
 
 from referencing import Registry, Resource
 

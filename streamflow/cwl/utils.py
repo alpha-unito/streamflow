@@ -5,10 +5,11 @@ import asyncio
 import logging
 import posixpath
 import urllib.parse
+from collections.abc import MutableSequence, MutableMapping
 from enum import Enum
 from pathlib import PurePath
 from types import ModuleType
-from typing import Any, MutableMapping, MutableSequence, cast
+from typing import Any, cast
 
 import cwl_utils.expression
 import cwltool.context
