@@ -1125,11 +1125,11 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
     ) -> MutableMapping[str, Any]:
         # Create entity
         entity_id = _get_cwl_entity_id(cwl_workflow.tool["id"])
-        jsonld_workflow = _get_workflow_template(entity_id, entity_id.split("#")[-1])
         path = cwl_workflow.tool["id"].split("#")[0][7:]
-        jsonld_workflow.update(
-            {"sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False))}
-        )
+        # todo: fix casting
+        jsonld_workflow = _get_workflow_template(
+            entity_id, entity_id.split("#")[-1]
+        ) |  {"sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False))}
         if (path := cwl_workflow.tool["id"].split("#")[0][7:]) not in self.files_map:
             self.graph["./"]["hasPart"].append({"@id": entity_id})
             self.files_map[path] = os.path.basename(path)
