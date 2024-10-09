@@ -63,7 +63,7 @@ async def extract_tar_stream(
             )
 
 
-class BaseConnector(Connector, FutureAware):
+class BaseConnector(Connector, FutureAware, ABC):
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
         super().__init__(
             deployment_name=deployment_name,
