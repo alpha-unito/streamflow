@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
-from typing import Any, MutableMapping
+from collections.abc import MutableMapping
+from typing import Any
 
 from streamflow.core.config import Config
 from streamflow.core.context import SchemaEntity

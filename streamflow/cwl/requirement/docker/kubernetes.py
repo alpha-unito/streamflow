@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import tempfile
 
 from importlib_resources import files

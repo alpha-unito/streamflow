@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import MutableMapping
 
 from streamflow.core.workflow import Job, Step, Token

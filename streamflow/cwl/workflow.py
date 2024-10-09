@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import MutableMapping
+from typing import TYPE_CHECKING
 
 from rdflib import Graph
 
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Workflow
-
-from typing import MutableMapping, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext

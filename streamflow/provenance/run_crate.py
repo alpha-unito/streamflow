@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import datetime
 import hashlib
@@ -11,7 +9,8 @@ import re
 import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, MutableMapping, MutableSequence, cast
+from collections.abc import MutableMapping, MutableSequence
+from typing import Any, cast
 from zipfile import ZipFile
 
 import cwltool.command_line_tool
@@ -1126,10 +1125,12 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         # Create entity
         entity_id = _get_cwl_entity_id(cwl_workflow.tool["id"])
         path = cwl_workflow.tool["id"].split("#")[0][7:]
-        # todo: fix casting
         jsonld_workflow = _get_workflow_template(
             entity_id, entity_id.split("#")[-1]
-        ) |  {"sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False))}
+        ) | cast(
+            type[MutableMapping[str, str]],
+            {"sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False))},
+        )
         if (path := cwl_workflow.tool["id"].split("#")[0][7:]) not in self.files_map:
             self.graph["./"]["hasPart"].append({"@id": entity_id})
             self.files_map[path] = os.path.basename(path)

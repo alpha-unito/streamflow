@@ -8,13 +8,13 @@ import posixpath
 import shlex
 import time
 from asyncio.subprocess import STDOUT
+from collections.abc import MutableSequence, MutableMapping
 from decimal import Decimal
 from types import ModuleType
-from typing import Any, IO, MutableMapping, MutableSequence, cast
+from typing import Any, IO, cast
 
 from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
-from streamflow.cwl.workflow import CWLWorkflow
 
 from streamflow.core.command import (
     Command,
@@ -55,6 +55,7 @@ from streamflow.cwl.processor import (
     CWLUnionCommandOutputProcessor,
 )
 from streamflow.cwl.step import build_token
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor

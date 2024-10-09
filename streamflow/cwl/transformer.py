@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import functools
 import json
-from typing import Any, MutableMapping, MutableSequence, cast
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any, cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import (

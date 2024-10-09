@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import io
 import logging
@@ -9,17 +7,11 @@ import re
 import shlex
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Coroutine, MutableMapping, MutableSequence
 from math import ceil, floor
 from pathlib import Path
 from shutil import which
-from typing import (
-    Any,
-    Awaitable,
-    Coroutine,
-    MutableMapping,
-    MutableSequence,
-    cast,
-)
+from typing import Any, cast
 
 import yaml
 from cachetools import Cache, TTLCache

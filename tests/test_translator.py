@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import json
 import os
 import tempfile
-from typing import MutableMapping, Any
+from collections.abc import MutableMapping
+from typing import Any
 
 import cwltool.context
 import pytest

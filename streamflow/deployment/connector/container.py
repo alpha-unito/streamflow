@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import base64
 import json
@@ -7,8 +5,9 @@ import logging
 import os
 import posixpath
 from abc import ABC, abstractmethod
+from collections.abc import MutableSequence, MutableMapping
 from shutil import which
-from typing import Any, MutableMapping, MutableSequence
+from typing import Any
 
 from importlib_resources import files
 

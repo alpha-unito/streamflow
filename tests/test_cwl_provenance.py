@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import posixpath
 from typing import cast
 

@@ -1,15 +1,11 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from collections.abc import MutableMapping
+from typing import Any
 
 from jsonschema.validators import validator_for
 from ruamel.yaml import YAML
 
 from streamflow.config.schema import SfSchema
 from streamflow.core.exception import WorkflowDefinitionException
-
-if TYPE_CHECKING:
-    from typing import Any, MutableMapping
 
 
 def handle_errors(errors):

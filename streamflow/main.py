@@ -1,12 +1,11 @@
-from __future__ import annotations
-
 import argparse
 import asyncio
 import logging
 import os
 import sys
 import uuid
-from typing import Any, MutableMapping
+from collections.abc import MutableMapping
+from typing import Any
 
 from streamflow import VERSION, report
 from streamflow.config.config import WorkflowConfig

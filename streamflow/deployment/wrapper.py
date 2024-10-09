@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import asyncio
 from abc import ABC
-from typing import Any, MutableMapping, MutableSequence
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any
 
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation

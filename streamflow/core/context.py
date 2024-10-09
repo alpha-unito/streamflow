@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
+from collections.abc import MutableMapping
 from concurrent.futures import ProcessPoolExecutor
-from typing import Any, MutableMapping, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from streamflow.log_handler import logger
 

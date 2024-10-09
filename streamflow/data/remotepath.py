@@ -8,9 +8,10 @@ import hashlib
 import os
 import posixpath
 import shutil
+from collections.abc import MutableSequence, MutableMapping
 from email.message import Message
 from pathlib import Path
-from typing import MutableSequence, TYPE_CHECKING, MutableMapping
+from typing import TYPE_CHECKING
 
 import aiohttp
 from aiohttp import ClientResponse

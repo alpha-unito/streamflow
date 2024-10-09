@@ -5,8 +5,9 @@ import json
 import sys
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
-from typing import MutableMapping, MutableSequence, TYPE_CHECKING, Type, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException
@@ -102,7 +103,7 @@ class Job:
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type_t = cast(Type[Job], utils.get_class_from_name(row["type"]))
+        type_t = cast(type[Job], utils.get_class_from_name(row["type"]))
         return await type_t._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
@@ -180,7 +181,7 @@ class Port(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Port:
         row = await context.database.get_port(persistent_id)
-        type_t = cast(Type[Port], utils.get_class_from_name(row["type"]))
+        type_t = cast(type[Port], utils.get_class_from_name(row["type"]))
         port = await type_t._load(context, row, loading_context)
         loading_context.add_port(persistent_id, port)
         return port
@@ -301,7 +302,7 @@ class Step(PersistableEntity, ABC):
         loading_context: DatabaseLoadingContext,
     ) -> Step:
         row = await context.database.get_step(persistent_id)
-        type_t = cast(Type[Step], utils.get_class_from_name(row["type"]))
+        type_t = cast(type[Step], utils.get_class_from_name(row["type"]))
         step = await type_t._load(context, row, loading_context)
         step.status = Status(row["status"])
         step.terminated = step.status in [
@@ -415,7 +416,7 @@ class Token(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Token:
         row = await context.database.get_token(persistent_id)
-        type_t = cast(Type[Token], utils.get_class_from_name(row["type"]))
+        type_t = cast(type[Token], utils.get_class_from_name(row["type"]))
         token = await type_t._load(context, row, loading_context)
         loading_context.add_token(persistent_id, token)
         return token
@@ -470,7 +471,7 @@ class TokenProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type_t = cast(Type[TokenProcessor], utils.get_class_from_name(row["type"]))
+        type_t = cast(type[TokenProcessor], utils.get_class_from_name(row["type"]))
         return await type_t._load(context, row["params"], loading_context)
 
     @abstractmethod
@@ -549,7 +550,7 @@ class Workflow(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Workflow:
         row = await context.database.get_workflow(persistent_id)
-        type_t = cast(Type[Workflow], utils.get_class_from_name(row["type"]))
+        type_t = cast(type[Workflow], utils.get_class_from_name(row["type"]))
         workflow = await type_t._load(context, row, loading_context)
         loading_context.add_workflow(persistent_id, workflow)
         rows = await context.database.get_workflow_ports(persistent_id)

@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import asyncio
 import os
 import tempfile
-from typing import cast, MutableSequence
+from collections.abc import MutableSequence
+from typing import cast
 
 import asyncssh
 import asyncssh.public_key

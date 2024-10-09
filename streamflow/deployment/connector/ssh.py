@@ -5,7 +5,8 @@ import logging
 import os
 import posixpath
 from abc import ABC
-from typing import Any, MutableMapping, MutableSequence
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any
 
 import asyncssh
 from asyncssh import ChannelOpenError, ConnectionLost

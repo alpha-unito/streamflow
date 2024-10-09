@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 from abc import ABC, abstractmethod
-from typing import Any, MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence
+from typing import Any
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException

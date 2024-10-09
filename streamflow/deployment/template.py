@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import MutableMapping
+from collections.abc import MutableMapping
 
 from jinja2 import Template
 

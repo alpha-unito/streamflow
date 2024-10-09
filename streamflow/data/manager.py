@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import MutableSequence, MutableMapping
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -14,7 +15,6 @@ from streamflow.deployment.utils import get_path_processor
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import Connector, ExecutionLocation
-    from typing import MutableMapping, MutableSequence
 
 
 async def _copy(
