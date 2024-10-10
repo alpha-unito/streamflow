@@ -34,9 +34,29 @@ from streamflow.workflow.step import (
     ExecuteStep,
     DeployStep,
     CombinatorStep,
-    LoopOutputStep,
+    LoopOutputStep, ConditionalStep,
 )
 from streamflow.workflow.token import JobToken
+
+
+#                               t_a 0  t_b 0 t_c 0
+#                                 |     |    |
+#                                   t_a 0.0
+
+
+#       sum...      combinator
+#           \       /
+#            merge 0.0
+#               |
+#            combinator
+#               |
+#           split 0.1
+#       /       |       \
+# sum 0.1.0     ...      sum 0.1.x
+#       \       |       /
+#           merge 0.1
+
+
 
 
 class TokenAvailability(Enum):
@@ -143,6 +163,7 @@ class DirectGraph:
         for vert in vertices_without_next:
             removed.extend(self.remove(vert))
 
+        # Assign the INIT node to vertices without parent
         to_mv = set()
         for k in self.keys():
             if k != DirectGraph.INIT_GRAPH_FLAG and not self.prev(k):

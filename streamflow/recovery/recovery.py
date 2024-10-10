@@ -77,6 +77,7 @@ class RollbackRecoveryPolicy:
             )
             new_port.add_inter_port(port, stop_tag)
             new_workflow.ports[new_port.name] = new_port
+            logger.debug(f"Added failed port {new_port.name} in the workflow {new_workflow.name}")
 
         # should be an impossible case
         if failed_step.persistent_id is None:
@@ -143,8 +144,8 @@ class RollbackRecoveryPolicy:
                 for t_id, instance in inner_graph.token_instances.items()
             },
             last_iteration,
+            inner_graph,
         )
-
         return new_workflow, last_iteration
 
     def add_waiter(self, job_name, port_name, workflow, rdwp, port_recovery=None):
@@ -218,6 +219,7 @@ class RollbackRecoveryPolicy:
                         )
                         map_job_port.setdefault(job_token.value.name, port_recovery)
                         workflow.ports[port_recovery.port.name] = port_recovery.port
+                        logger.debug(f"Added port {port_recovery.port.name} in the workflow {workflow.name}")
                     if len(job_token_names) == 1:
                         logger.debug(f"New-workflow {workflow.name} will be empty.")
                         pass
@@ -235,7 +237,6 @@ class RollbackRecoveryPolicy:
                     for t_id in execute_step_out_token_ids:
                         for t_id_dead_path in rdwp.remove_token_prev_links(t_id):
                             rdwp.remove_token(t_id_dead_path)
-
                 elif job_request.token_output and all(
                     [
                         await _is_token_available(t, self.context, valid_data)
