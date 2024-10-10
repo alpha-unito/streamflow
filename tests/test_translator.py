@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import json
 import tempfile
-from typing import MutableMapping, Any
+from collections.abc import MutableMapping
+from typing import Any
 
 
 from streamflow.core.context import StreamFlowContext

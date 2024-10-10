@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 import json
 import logging
 import sys
+from collections.abc import MutableMapping, MutableSequence
 from pathlib import PurePosixPath
-from typing import Any, MutableMapping, MutableSequence
+from typing import Any
 
 from importlib_metadata import entry_points
 from referencing._core import Resolver, Resource

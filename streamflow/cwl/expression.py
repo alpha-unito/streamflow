@@ -1,6 +1,5 @@
-from __future__ import annotations
-
-from typing import Any, MutableSequence
+from collections.abc import MutableSequence
+from typing import Any
 
 import antlr4
 from cwl_utils.sandboxjs import JSEngine, code_fragment_to_js, segment_re

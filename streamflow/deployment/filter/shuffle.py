@@ -1,7 +1,7 @@
 import random
-from typing import MutableSequence
+from collections.abc import MutableSequence
 
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.deployment import BindingFilter, Target
 from streamflow.core.workflow import Job

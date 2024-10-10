@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.config import ext_schemas
 from streamflow.core.config import Schema

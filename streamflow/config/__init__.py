@@ -1,4 +1,4 @@
-from importlib_resources import files
+from importlib.resources import files
 
 ext_schemas = [
     files("streamflow.deployment.connector")

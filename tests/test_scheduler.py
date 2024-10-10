@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import asyncio
 import os
-from typing import cast, MutableSequence
+from collections.abc import MutableSequence
+from typing import cast
 
 import pytest
 import pytest_asyncio
@@ -42,7 +41,7 @@ def _prepare_connector(context: StreamFlowContext, num_jobs: int = 1):
     # Inject custom hardware to manipulate available resources
     hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     conn = cast(
-        ParameterizableHardwareConnector,
+        type[ParameterizableHardwareConnector],
         context.deployment_manager.get_connector("custom-hardware"),
     )
     conn.set_hardware(

@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Type, cast
-
+from collections.abc import (
+    MutableSequence,
+    MutableMapping,
+    Iterable,
+    Callable,
+    MutableSet,
+)
+from typing import TYPE_CHECKING, cast
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
@@ -14,14 +20,7 @@ from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status
-    from typing import (
-        Any,
-        Callable,
-        Iterable,
-        MutableMapping,
-        MutableSequence,
-        MutableSet,
-    )
+    from typing import Any
 
 
 def _reduce_storages(
@@ -185,10 +184,8 @@ class HardwareRequirement(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type = utils.get_class_from_name(row["type"])
-        return await cast(Type[HardwareRequirement], type)._load(
-            context, row["params"], loading_context
-        )
+        type_ = cast(type[HardwareRequirement], utils.get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
         return {

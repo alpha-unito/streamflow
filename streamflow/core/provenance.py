@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import MutableMapping, MutableSequence, TYPE_CHECKING
+from collections.abc import MutableSequence, MutableMapping
+from typing import TYPE_CHECKING
 
 from streamflow.core.persistence import DatabaseLoadingContext
 
