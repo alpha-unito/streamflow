@@ -2,9 +2,10 @@ from __future__ import annotations
 from typing import MutableMapping
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import DeploymentConfig, Target, FilterConfig
+from streamflow.core.deployment import DeploymentConfig, FilterConfig, Target
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.workflow import Port, Step, Token, Workflow, Status
+from streamflow.core.workflow import Port, Status, Step, Token, Workflow
+from streamflow.log_handler import logger
 
 
 class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
@@ -126,6 +127,7 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
             return self._ports[persistent_id]
         else:
             port_row = await context.database.get_port(persistent_id)
+            logger.debug(f"Port {port_row['name']} loaded in the new workflow {self.workflow.name}")
             if (port := self.workflow.ports.get(port_row["name"])) is None:
                 # If the port is not available in the new workflow, a new one must be created
                 self.add_workflow(port_row["workflow"], self.workflow)

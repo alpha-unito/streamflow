@@ -444,7 +444,7 @@ class DefaultScheduler(Scheduler):
                                 logger.debug(
                                     f"Job {job_name} changed status to {status.name}"
                                 )
-                        if status in [Status.COMPLETED, Status.FAILED]:
+                        if status in [Status.ROLLBACK, Status.COMPLETED, Status.FAILED]:
                             if job_hardware := job_allocation.hardware:
                                 for loc in job_allocation.locations:
                                     if loc.name in self.hardware_locations.keys():

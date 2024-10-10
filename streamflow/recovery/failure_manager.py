@@ -113,13 +113,6 @@ class DefaultFailureManager(FailureManager):
                 f"FAILED Job {job_name} {self.job_requests[job_name].version} times. Execution aborted"
             )
 
-    # todo: situazione problematica
-    #  A -> B
-    #  A -> C
-    #  B -> C
-    # A ha successo, B fallisce (cade ambiente), viene rieseguito A, in C che input di A arriva?
-    # quello vecchio? quello vecchio e quello nuovo? In teoria solo quello vecchio, da gestire comunque?
-    # oppure lasciamo che fallisce e poi il failure manager prende l'output nuovo di A?
     async def _recover_jobs(self, failed_job: Job, failed_step: Step):
         rrp = RollbackRecoveryPolicy(self.context)
         # Generate new workflow

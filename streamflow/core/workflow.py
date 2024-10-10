@@ -15,6 +15,7 @@ from streamflow.core.persistence import (
     DependencyType,
     PersistableEntity,
 )
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, Location, Target
@@ -644,6 +645,7 @@ class Workflow(PersistableEntity):
             name = str(uuid.uuid4())
         port = cls(workflow=self, name=name, **kwargs)
         self.ports[name] = port
+        logger.info(f"Port {name} added in the workflow {self.name}")
         return port
 
     def create_step(self, cls: type[S], name: str = None, **kwargs) -> S:

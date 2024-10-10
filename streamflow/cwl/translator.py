@@ -1996,6 +1996,17 @@ class CWLTranslator:
                 loop_conditional_step.add_output_port(
                     port_name, input_ports[global_name]
                 )
+                # loop_conditional_output = workflow.create_port()
+                # loop_conditional_step.add_output_port(
+                #     port_name, loop_conditional_output
+                # )
+                # loop_cond_forward = workflow.create_step(
+                #     cls=BackPropagationTransformer,
+                #     name=step_name +  f"-{global_name}-loop-when-forward",
+                # )
+                # loop_cond_forward.add_input_port(global_name, loop_conditional_output)
+                # input_ports[global_name] = workflow.create_port()
+                # loop_cond_forward.add_output_port(port_name, input_ports[global_name])
         # Retrieve scatter method (default to dotproduct)
         scatter_method = cwl_element.tool.get("scatterMethod", "dotproduct")
         # If there are scatter inputs
