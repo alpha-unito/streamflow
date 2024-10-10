@@ -232,8 +232,8 @@ class HardwareRequirement(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type_t = cast(type[HardwareRequirement], utils.get_class_from_name(row["type"]))
-        return await type_t._load(context, row["params"], loading_context)
+        type_ = cast(type[HardwareRequirement], utils.get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
         return {

@@ -285,8 +285,8 @@ class Target(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Target:
         row = await context.database.get_target(persistent_id)
-        type_t = cast(type[Target], utils.get_class_from_name(row["type"]))
-        obj = await type_t._load(context, row, loading_context)
+        type_ = cast(type[Target], utils.get_class_from_name(row["type"]))
+        obj = await type_._load(context, row, loading_context)
         loading_context.add_target(persistent_id, obj)
         return obj
 

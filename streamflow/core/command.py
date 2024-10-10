@@ -32,8 +32,8 @@ class Command(ABC):
         loading_context: DatabaseLoadingContext,
         step: Step,
     ) -> Command:
-        type_t = cast(type[Command], utils.get_class_from_name(row["type"]))
-        return await type_t._load(context, row["params"], loading_context, step)
+        type_ = cast(type[Command], utils.get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context, step)
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -125,10 +125,10 @@ class CommandOutputProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CommandOutputProcessor:
-        type_t = cast(
+        type_ = cast(
             type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
         )
-        return await type_t._load(context, row["params"], loading_context)
+        return await type_._load(context, row["params"], loading_context)
 
     @abstractmethod
     async def process(
@@ -190,8 +190,8 @@ class CommandTokenProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CommandTokenProcessor:
-        type_t = cast(type[CommandTokenProcessor], get_class_from_name(row["type"]))
-        return await type_t._load(context, row["params"], loading_context)
+        type_ = cast(type[CommandTokenProcessor], get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
         return {
