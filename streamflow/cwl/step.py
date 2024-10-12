@@ -15,7 +15,7 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import get_tag, random_name
+from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Job, Port, Token
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
@@ -35,9 +35,9 @@ from streamflow.workflow.step import (
     ConditionalStep,
     InputInjectorStep,
     LoopOutputStep,
+    ScheduleStep,
     TransferStep,
     _get_token_ids,
-    ScheduleStep,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
@@ -434,9 +434,11 @@ class CWLTransferStep(TransferStep):
         name: str,
         workflow: CWLWorkflow,
         job_port: JobPort,
+        prefix_path: bool = True,
         writable: bool = False,
     ):
         super().__init__(name, workflow, job_port)
+        self.prefix_path: bool = prefix_path
         self.writable: bool = writable
 
     @classmethod
@@ -521,7 +523,7 @@ class CWLTransferStep(TransferStep):
         if "basename" in token_value:
             path_processor = get_path_processor(connector)
             dest_path = dest_path or path_processor.join(
-                job.input_directory, random_name()
+                job.input_directory, utils.random_name() if self.prefix_path else ""
             )
             dest_path = path_processor.join(dest_path, token_value["basename"])
         # Get destination coordinates
@@ -536,7 +538,9 @@ class CWLTransferStep(TransferStep):
         ):
             # Build destination path
             filepath = dest_path or path_processor.join(
-                job.input_directory, utils.random_name(), selected_location.relpath
+                job.input_directory,
+                utils.random_name() if self.prefix_path else "",
+                selected_location.relpath,
             )
             # Perform and transfer
             await self.workflow.context.data_manager.transfer_data(
@@ -633,7 +637,7 @@ class CWLTransferStep(TransferStep):
         else:
             # Build destination path
             filepath = dest_path or path_processor.join(
-                job.input_directory, utils.random_name()
+                job.input_directory, utils.random_name() if self.prefix_path else ""
             )
             # If the token contains a directory, simply create it
             if token_class == "Directory":  # nosec
