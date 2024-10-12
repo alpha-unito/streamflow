@@ -44,6 +44,30 @@ from streamflow.workflow.step import (
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
 
+async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
+    locations = context.scheduler.get_locations(job.name)
+    try:
+        filepaths = set(
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        remotepath.download(context, location, url, job.input_directory)
+                    )
+                    for location in locations
+                )
+            )
+        )
+        if len(filepaths) > 1:
+            raise WorkflowExecutionException(
+                "StreamFlow does not currently support multiple download "
+                "paths on different locations for the same file"
+            )
+        else:
+            return next(iter(filepaths))
+    except Exception:
+        raise WorkflowExecutionException("Error downloading file from " + url)
+
+
 async def _process_file_token(
     job: Job, token_value: Any, cwl_version: str, streamflow_context: StreamFlowContext
 ):
@@ -160,30 +184,6 @@ async def build_token(
             )
     else:
         return Token(tag=get_tag(job.inputs.values()), value=token_value)
-
-
-async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
-    locations = context.scheduler.get_locations(job.name)
-    try:
-        filepaths = set(
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        remotepath.download(context, location, url, job.input_directory)
-                    )
-                    for location in locations
-                )
-            )
-        )
-        if len(filepaths) > 1:
-            raise WorkflowExecutionException(
-                "StreamFlow does not currently support multiple download "
-                "paths on different locations for the same file"
-            )
-        else:
-            return next(iter(filepaths))
-    except Exception:
-        raise WorkflowExecutionException("Error downloading file from " + url)
 
 
 class CWLBaseConditionalStep(ConditionalStep, ABC):
@@ -458,9 +458,11 @@ class CWLTransferStep(TransferStep):
         name: str,
         workflow: CWLWorkflow,
         job_port: JobPort,
+        prefix_path: bool = True,
         writable: bool = False,
     ):
         super().__init__(name, workflow, job_port)
+        self.prefix_path: bool = prefix_path
         self.writable: bool = writable
 
     @classmethod
@@ -526,7 +528,7 @@ class CWLTransferStep(TransferStep):
         self,
         job: Job,
         token_value: MutableMapping[str, Any],
-        dest_path: StreamFlowPath | None = None,
+        dst_path: StreamFlowPath | None = None,
         src_location: DataLocation | None = None,
     ) -> MutableSequence[MutableMapping[str, Any]]:
         existing, tasks = [], []
@@ -543,7 +545,7 @@ class CWLTransferStep(TransferStep):
                             self.workflow.context.scheduler.get_connector(job.name)
                         ),
                         old_dir=token_value["path"],
-                        new_dir=str(dest_path),
+                        new_dir=str(dst_path),
                         value=element,
                     )
                 )
@@ -551,7 +553,7 @@ class CWLTransferStep(TransferStep):
                 tasks.append(
                     asyncio.create_task(
                         self._update_file_token(
-                            job=job, token_value=element, dest_path=dest_path
+                            job=job, token_value=element, dst_path=dst_path
                         )
                     )
                 )
@@ -563,21 +565,22 @@ class CWLTransferStep(TransferStep):
         self,
         job: Job,
         token_value: MutableMapping[str, Any],
-        dest_path: StreamFlowPath | None = None,
+        dst_path: StreamFlowPath | None = None,
     ) -> MutableMapping[str, Any]:
         token_class = utils.get_token_class(token_value)
         # Get destination coordinates
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
-        indir = StreamFlowPath(
+        dst_dir = StreamFlowPath(
             job.input_directory,
             context=self.workflow.context,
             location=next(iter(dst_locations)),
         )
-        if dest_path is not None and dest_path.is_relative_to(job.input_directory):
-            indir /= dest_path.relative_to(indir).parts[0]
-        else:
-            indir /= random_name()
+        if dst_path is not None and dst_path.is_relative_to(dst_dir):
+            if len((rel_path := dst_path.relative_to(dst_dir)).parts) > 0:
+                dst_dir /= rel_path.parts[0]
+        elif self.prefix_path:
+            dst_dir /= random_name()
         # Extract location
         location = token_value.get("location", token_value.get("path"))
         if location and "://" in location:
@@ -589,23 +592,30 @@ class CWLTransferStep(TransferStep):
                 location = urllib.parse.unquote(location[7:])
         # If basename is explicitly stated in the token, use it as destination path
         if "basename" in token_value:
-            dest_path = (dest_path or indir) / token_value["basename"]
+            dst_path = (dst_path or dst_dir) / token_value["basename"]
         # If source data exist, get source locations
         if location and (
             selected_location := self.workflow.context.data_manager.get_source_location(
                 path=location, dst_deployment=dst_connector.deployment_name
             )
         ):
-            # Build destination path
-            filepath = dest_path or (indir / selected_location.relpath)
-            # Perform and transfer
-            await self.workflow.context.data_manager.transfer_data(
-                src_location=selected_location.location,
-                src_path=selected_location.path,
-                dst_locations=dst_locations,
-                dst_path=str(filepath),
-                writable=self.writable,
-            )
+            try:
+                # Build unique destination path
+                filepath = dst_path or (dst_dir / selected_location.relpath)
+                if not self.prefix_path:
+                    filepath = cast(CWLWorkflow, self.workflow).get_unique_output_path(
+                        path=filepath, src_location=selected_location
+                    )
+                # Perform and transfer
+                await self.workflow.context.data_manager.transfer_data(
+                    src_location=selected_location.location,
+                    src_path=selected_location.path,
+                    dst_locations=dst_locations,
+                    dst_path=str(filepath),
+                    writable=self.writable,
+                )
+            except FileExistsError:
+                filepath = dst_path or (dst_dir / selected_location.relpath)
             # Transform token value
             new_token_value = {
                 "class": token_class,
@@ -666,7 +676,7 @@ class CWLTransferStep(TransferStep):
                                 self._update_file_token(
                                     job=job,
                                     token_value=element,
-                                    dest_path=filepath.parent,
+                                    dst_path=filepath.parent,
                                 )
                             )
                             for element in token_value["secondaryFiles"]
@@ -675,13 +685,17 @@ class CWLTransferStep(TransferStep):
             # If token contains a directory, propagate listing if present
             elif token_class == "Directory" and "listing" in token_value:  # nosec
                 new_token_value["listing"] = await self._update_listing(
-                    job, token_value, dest_path, selected_location
+                    job, token_value, dst_path, selected_location
                 )
             return new_token_value
         # Otherwise, create elements remotely
         else:
-            # Build destination path
-            filepath = dest_path or indir
+            # Build unique destination path
+            filepath = dst_path or dst_dir
+            if not self.prefix_path:
+                filepath = cast(CWLWorkflow, self.workflow).get_unique_output_path(
+                    path=filepath
+                )
             # If the token contains a directory, simply create it
             if token_class == "Directory":  # nosec
                 await utils.create_remote_directory(
@@ -692,9 +706,9 @@ class CWLTransferStep(TransferStep):
                         str(filepath.relative_to(job.output_directory))
                         if filepath.is_relative_to(job.output_directory)
                         else (
-                            str(filepath.relative_to(indir))
-                            if filepath != indir
-                            else str(indir)
+                            str(filepath.relative_to(dst_dir))
+                            if filepath != dst_dir
+                            else str(dst_dir)
                         )
                     ),
                 )
@@ -721,9 +735,9 @@ class CWLTransferStep(TransferStep):
                         str(filepath.relative_to(job.output_directory))
                         if filepath.is_relative_to(job.output_directory)
                         else (
-                            str(filepath.relative_to(indir))
-                            if filepath != indir
-                            else str(indir)
+                            str(filepath.relative_to(dst_dir))
+                            if filepath != dst_dir
+                            else str(dst_dir)
                         )
                     ),
                 )
@@ -754,7 +768,7 @@ class CWLTransferStep(TransferStep):
             # If listing is specified, recursively process its contents
             if "listing" in token_value:
                 new_token_value["listing"] = await self._update_listing(
-                    job, token_value, dest_path
+                    job, token_value, dst_path
                 )
             # Return the new token value
             return new_token_value

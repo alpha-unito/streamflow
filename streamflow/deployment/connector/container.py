@@ -467,14 +467,14 @@ class ContainerConnector(ConnectorWrapper, ABC):
     async def _get_effective_locations(
         self,
         locations: MutableSequence[ExecutionLocation],
-        dest_path: str,
+        dst_path: str,
         source_location: ExecutionLocation | None = None,
     ) -> MutableSequence[ExecutionLocation]:
         common_paths = {}
         effective_locations = []
         for location in locations:
             common_paths, effective_locations = await self._check_effective_location(
-                common_paths, effective_locations, location, dest_path, source_location
+                common_paths, effective_locations, location, dst_path, source_location
             )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(

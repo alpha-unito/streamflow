@@ -54,12 +54,12 @@ class OccamConnector(SSHConnector):
     def _get_effective_locations(
         self,
         locations: MutableSequence[ExecutionLocation],
-        dest_path: str,
+        dst_path: str,
         source_location: ExecutionLocation,
     ) -> MutableSequence[ExecutionLocation]:
         # If destination path is in a shared location, transfer only on the first location
         for shared_path in self.sharedPaths:
-            if dest_path.startswith(shared_path):
+            if dst_path.startswith(shared_path):
                 if source_location.name in [loc.name for loc in locations]:
                     return [source_location]
                 else:
@@ -68,7 +68,7 @@ class OccamConnector(SSHConnector):
         common_paths = {}
         effective_locations = []
         for location in locations:
-            shared_path = self._get_shared_path(location.name, dest_path)
+            shared_path = self._get_shared_path(location.name, dst_path)
             if shared_path is not None:
                 if shared_path not in common_paths:
                     common_paths[shared_path] = location
