@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, MutableMapping, MutableSequence, cast
+from collections.abc import MutableSequence, MutableMapping, Callable
+from typing import Any, cast
 
 import cwl_utils.file_formats
 from schema_salad.exceptions import ValidationException

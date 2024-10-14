@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from asyncio import Lock
+from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
-from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 

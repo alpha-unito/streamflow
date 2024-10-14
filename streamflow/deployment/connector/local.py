@@ -1,13 +1,11 @@
-from __future__ import annotations
-
 import os
 import shutil
 import sys
 import tempfile
-from typing import MutableMapping, MutableSequence
+from collections.abc import MutableSequence, MutableMapping
 
 import psutil
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.deployment import (
     Connector,

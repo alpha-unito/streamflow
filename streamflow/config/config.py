@@ -1,15 +1,11 @@
-from __future__ import annotations
-
 import logging
+from collections.abc import MutableMapping, MutableSequence
 from pathlib import PurePosixPath
-from typing import MutableSequence, TYPE_CHECKING
+from typing import Any
 
 from streamflow.core.config import Config
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.log_handler import logger
-
-if TYPE_CHECKING:
-    from typing import MutableMapping, Any
 
 
 def set_targets(current_node, target):

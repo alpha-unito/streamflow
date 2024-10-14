@@ -1,19 +1,13 @@
-from __future__ import annotations
-
 import copy
 import logging
 import os
 import posixpath
 import urllib.parse
+from collections.abc import MutableSequence, MutableMapping
 from enum import Enum
 from pathlib import PurePosixPath
 from types import ModuleType
-from typing import (
-    Any,
-    MutableMapping,
-    MutableSequence,
-    cast,
-)
+from typing import Any, cast
 
 import cwltool.command_line_tool
 import cwltool.context

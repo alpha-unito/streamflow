@@ -5,7 +5,8 @@ import json
 import logging
 import urllib.parse
 from abc import ABC
-from typing import Any, MutableMapping, MutableSequence, cast
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any, cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
@@ -9,7 +10,7 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
     from streamflow.core.workflow import Job, CommandOutput, Step
-    from typing import MutableMapping, Any
+    from typing import Any
 
 
 class CheckpointManager(SchemaEntity):

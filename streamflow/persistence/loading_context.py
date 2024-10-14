@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import MutableMapping
+from collections.abc import MutableMapping
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import DeploymentConfig, FilterConfig, Target

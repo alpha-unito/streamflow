@@ -1,6 +1,5 @@
-from __future__ import annotations
-
-from typing import Any, MutableMapping, MutableSequence, cast
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any, cast
 
 import pytest
 

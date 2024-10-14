@@ -4,9 +4,10 @@ import asyncio
 import logging
 import os
 import posixpath
-from typing import MutableSequence, TYPE_CHECKING, cast
+from collections.abc import MutableMapping, MutableSequence
+from typing import TYPE_CHECKING, cast
 
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.deployment import (
@@ -35,7 +36,6 @@ from streamflow.scheduling.policy import policy_classes
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
-    from typing import MutableMapping
 
 
 def _get_location_for_requirement(

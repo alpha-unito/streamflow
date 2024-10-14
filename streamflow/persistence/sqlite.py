@@ -1,12 +1,11 @@
-from __future__ import annotations
-
 import asyncio
 import json
 import os
-from typing import Any, MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence
+from typing import Any
 
 import aiosqlite
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
