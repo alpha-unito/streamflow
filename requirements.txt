@@ -4,7 +4,7 @@ antlr4-python3-runtime==4.13.2
 asyncssh==2.17.0
 bcrypt==4.2.0
 cachetools==5.5.0
-cwltool==3.1.20240708091337
+cwltool==3.1.20241007082533
 cwl-utils==0.35
 importlib-metadata==8.5.0
 importlib-resources==6.4.5
