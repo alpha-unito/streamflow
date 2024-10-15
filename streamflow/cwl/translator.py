@@ -1475,6 +1475,9 @@ class CWLTranslator:
             job_prefix=f"{global_name}-injector",
             connector_ports={target.deployment.name: deploy_step.get_output_port()},
             binding_config=binding_config,
+            input_directory=target.workdir or self.output_directory,
+            output_directory=target.workdir or self.output_directory,
+            tmp_directory=target.workdir or self.output_directory,
         )
         # Create a CWLInputInjector step to process the input
         injector_step = workflow.create_step(
