@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import MutableSequence, MutableMapping
 from typing import Any, cast
 

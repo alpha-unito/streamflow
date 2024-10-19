@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio.subprocess
 from abc import ABC
 from collections.abc import Coroutine

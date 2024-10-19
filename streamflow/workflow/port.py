@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from streamflow.core.deployment import Connector
 from streamflow.core.workflow import Job, Port, Token
 from streamflow.workflow.token import TerminationToken

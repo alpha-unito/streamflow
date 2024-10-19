@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import posixpath
 from collections.abc import MutableSequence
 from typing import Any, cast
