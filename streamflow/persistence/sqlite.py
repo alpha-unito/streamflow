@@ -498,87 +498,79 @@ class SqliteDatabase(CachedDatabase):
                     return await cursor.fetchall()
 
     async def update_deployment(
-        self, deployment_id: int, updates: MutableMapping[str, Any]
+        self, deployment_id: int, updates: dict[str, Any]
     ) -> int:
         async with self.connection as db:
             await db.execute(
                 "UPDATE deployment SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": deployment_id}},
+                updates | {"id": deployment_id},
             )
             self.deployment_cache.pop(deployment_id, None)
             return deployment_id
 
-    async def update_execution(
-        self, execution_id: int, updates: MutableMapping[str, Any]
-    ) -> int:
+    async def update_execution(self, execution_id: int, updates: dict[str, Any]) -> int:
         async with self.connection as db:
             await db.execute(
                 "UPDATE execution SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": execution_id}},
+                updates | {"id": execution_id},
             )
             return execution_id
 
-    async def update_filter(
-        self, filter_id: int, updates: MutableMapping[str, Any]
-    ) -> int:
+    async def update_filter(self, filter_id: int, updates: dict[str, Any]) -> int:
         async with self.connection as db:
             await db.execute(
                 "UPDATE filter SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": filter_id}},
+                updates | {"id": filter_id},
             )
             self.filter_cache.pop(filter_id, None)
             return filter_id
 
-    async def update_port(self, port_id: int, updates: MutableMapping[str, Any]) -> int:
+    async def update_port(self, port_id: int, updates: dict[str, Any]) -> int:
         async with self.connection as db:
             await db.execute(
                 "UPDATE port SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": port_id}},
+                updates | {"id": port_id},
             )
             self.port_cache.pop(port_id, None)
             return port_id
 
-    async def update_step(self, step_id: int, updates: MutableMapping[str, Any]) -> int:
+    async def update_step(self, step_id: int, updates: dict[str, Any]) -> int:
         async with self.connection as db:
             await db.execute(
                 "UPDATE step SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": step_id}},
+                updates | {"id": step_id},
             )
             self.step_cache.pop(step_id, None)
             return step_id
 
-    async def update_target(
-        self, target_id: int, updates: MutableMapping[str, Any]
-    ) -> int:
+    async def update_target(self, target_id: int, updates: dict[str, Any]) -> int:
         async with self.connection as db:
             await db.execute(
                 "UPDATE target SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": target_id}},
+                updates | {"id": target_id},
             )
             self.target_cache.pop(target_id, None)
             return target_id
 
-    async def update_workflow(
-        self, workflow_id: int, updates: MutableMapping[str, Any]
-    ) -> int:
+    async def update_workflow(self, workflow_id: int, updates: dict[str, Any]) -> int:
         async with self.connection as db:
             await db.execute(
                 "UPDATE workflow SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": workflow_id}},
+                updates | {"id": workflow_id},
             )
             self.workflow_cache.pop(workflow_id, None)
             return workflow_id

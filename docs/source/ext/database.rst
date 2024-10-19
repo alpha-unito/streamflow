@@ -209,32 +209,32 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         ...
 
     async def update_deployment(
-        self, deployment_id: int, updates: MutableMapping[str, Any]
+        self, deployment_id: int, updates: dict[str, Any]
     ) -> int:
         ...
 
     async def update_execution(
-        self, execution_id: int, updates: MutableMapping[str, Any]
+        self, execution_id: int, updates: dict[str, Any]
     ) -> int:
         ...
 
     async def update_port(
-        self, port_id: int, updates: MutableMapping[str, Any]
+        self, port_id: int, updates: dict[str, Any]
     ) -> int:
         ...
 
     async def update_step(
-        self, step_id: int, updates: MutableMapping[str, Any]
+        self, step_id: int, updates: dict[str, Any]
     ) -> int:
         ...
 
     async def update_target(
-        self, target_id: str, updates: MutableMapping[str, Any]
+        self, target_id: str, updates: dict[str, Any]
     ) -> int:
         ...
 
     async def update_workflow(
-        self, workflow_id: int, updates: MutableMapping[str, Any]
+        self, workflow_id: int, updates: dict[str, Any]
     ) -> int:
         ...
 

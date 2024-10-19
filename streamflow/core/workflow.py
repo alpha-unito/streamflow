@@ -83,7 +83,9 @@ class Job:
             tmp_directory=row["tmp_directory"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> dict[str, Any]:
         await asyncio.gather(
             *(asyncio.create_task(t.save(context)) for t in self.inputs.values())
         )
@@ -140,7 +142,7 @@ class Port(PersistableEntity):
 
     async def _save_additional_params(
         self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
+    ) -> dict[str, Any]:
         return {}
 
     def close(self, consumer: str):
@@ -244,7 +246,7 @@ class Step(PersistableEntity, ABC):
 
     async def _save_additional_params(
         self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
+    ) -> dict[str, Any]:
         return {}
 
     async def _set_status(self, status: Status):
@@ -461,7 +463,9 @@ class TokenProcessor(ABC):
             workflow=await loading_context.load_workflow(context, row["workflow"]),
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> dict[str, Any]:
         return {"name": self.name, "workflow": self.workflow.persistent_id}
 
     @classmethod
@@ -519,7 +523,7 @@ class Workflow(PersistableEntity):
 
     async def _save_additional_params(
         self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
+    ) -> dict[str, Any]:
         return {"config": self.config, "output_ports": self.output_ports}
 
     def create_port(self, cls: type[P] = Port, name: str = None, **kwargs) -> P:

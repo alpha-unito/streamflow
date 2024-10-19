@@ -154,12 +154,10 @@ class DefaultDeploymentManager(DeploymentManager):
             return DeploymentConfig(
                 name=deployment_config.name,
                 type=deployment_config.type,
-                config={
-                    **deployment_config.config,
-                    **{
-                        "connector": self.deployments_map[deployment_name],
-                        "service": service,
-                    },
+                config=deployment_config.config
+                | {
+                    "connector": self.deployments_map[deployment_name],
+                    "service": service,
                 },
                 external=deployment_config.external,
                 lazy=deployment_config.lazy,

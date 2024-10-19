@@ -383,7 +383,7 @@ class BaseConnector(Connector, FutureAware, ABC):
         run_command = self._get_run_command(command, location)
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(" ".join(run_command)),
-            env=({**os.environ, **location.environment}),
+            env=(os.environ | location.environment),
             stdin=None,
             stdout=(
                 asyncio.subprocess.PIPE

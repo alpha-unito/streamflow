@@ -154,7 +154,7 @@ def _get_item_preview(tag: Any, text: Any, value: Any) -> None:
         )
 
 
-def _get_workflow_template(entity_id: str, name: str) -> MutableMapping[str, Any]:
+def _get_workflow_template(entity_id: str, name: str) -> dict[str, Any]:
     return {
         "@id": entity_id,
         "@type": ["SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
@@ -1127,12 +1127,12 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         # Create entity
         entity_id = _get_cwl_entity_id(cwl_workflow.tool["id"])
         path = cwl_workflow.tool["id"].split("#")[0][7:]
-        jsonld_workflow = cast(MutableMapping[str, Any], _get_workflow_template(
+        jsonld_workflow = _get_workflow_template(
             entity_id, entity_id.split("#")[-1]
         ) | cast(
-            type[MutableMapping[str, Any]],
+            dict[str, Any],
             {"sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False))},
-        ))
+        )
         if (path := cwl_workflow.tool["id"].split("#")[0][7:]) not in self.files_map:
             self.graph["./"]["hasPart"].append({"@id": entity_id})
             self.files_map[path] = os.path.basename(path)

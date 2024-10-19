@@ -274,35 +274,27 @@ class Database(SchemaEntity):
 
     @abstractmethod
     async def update_deployment(
-        self, deployment_id: int, updates: MutableMapping[str, Any]
+        self, deployment_id: int, updates: dict[str, Any]
     ) -> int: ...
 
     @abstractmethod
     async def update_execution(
-        self, execution_id: int, updates: MutableMapping[str, Any]
+        self, execution_id: int, updates: dict[str, Any]
     ) -> int: ...
 
     @abstractmethod
-    async def update_filter(
-        self, filter_id: int, updates: MutableMapping[str, Any]
-    ) -> int: ...
+    async def update_filter(self, filter_id: int, updates: dict[str, Any]) -> int: ...
 
     @abstractmethod
-    async def update_port(
-        self, port_id: int, updates: MutableMapping[str, Any]
-    ) -> int: ...
+    async def update_port(self, port_id: int, updates: dict[str, Any]) -> int: ...
 
     @abstractmethod
-    async def update_step(
-        self, step_id: int, updates: MutableMapping[str, Any]
-    ) -> int: ...
+    async def update_step(self, step_id: int, updates: dict[str, Any]) -> int: ...
 
     @abstractmethod
-    async def update_target(
-        self, target_id: str, updates: MutableMapping[str, Any]
-    ) -> int: ...
+    async def update_target(self, target_id: str, updates: dict[str, Any]) -> int: ...
 
     @abstractmethod
     async def update_workflow(
-        self, workflow_id: int, updates: MutableMapping[str, Any]
+        self, workflow_id: int, updates: dict[str, Any]
     ) -> int: ...

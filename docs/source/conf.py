@@ -204,7 +204,7 @@ def patched_run(self, schema, pointer=''):
             if prop in schema['properties']:
                 props[prop] = schema['properties'][prop]
                 del schema['properties'][prop]
-        schema['properties'] = {**props, **schema['properties']}
+        schema['properties'] = props | schema['properties']
     return original_run(self, schema, pointer)
 
 
@@ -226,7 +226,7 @@ def patched_get_json_data(self):
                 target_file = os.path.join(os.path.dirname(filename), obj['$ref'])
                 target_schema, _ = self.from_file(target_file)
                 target_schema = self.ordered_load(target_schema)
-                schema['properties'] = {**target_schema.get('properties', {}), **schema['properties']}
+                schema['properties'] = target_schema.get('properties', {}) | schema['properties']
         del schema['allOf']
         schema['properties'] = dict(sorted(schema['properties'].items()))
     return schema, source, pointer

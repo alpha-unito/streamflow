@@ -98,7 +98,7 @@ async def _process_file_token(
                 for t in token_value["listing"]
             )
         )
-        new_token_value = {**new_token_value, **{"listing": listing}}
+        new_token_value |= {"listing": listing}
     return new_token_value
 
 
@@ -161,14 +161,9 @@ class CWLBaseConditionalStep(ConditionalStep, ABC):
 
     async def _save_additional_params(
         self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "skip_ports": {
-                    k: p.persistent_id for k, p in self.get_skip_ports().items()
-                }
-            },
+    ) -> dict[str, Any]:
+        return await super()._save_additional_params(context) | {
+            "skip_ports": {k: p.persistent_id for k, p in self.get_skip_ports().items()}
         }
 
     def add_skip_port(self, name: str, port: Port) -> None:
@@ -233,14 +228,11 @@ class CWLConditionalStep(CWLBaseConditionalStep):
 
     async def _save_additional_params(
         self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "expression": self.expression,
-                "expression_lib": self.expression_lib,
-                "full_js": self.full_js,
-            },
+    ) -> dict[str, Any]:
+        return await super()._save_additional_params(context) | {
+            "expression": self.expression,
+            "expression_lib": self.expression_lib,
+            "full_js": self.full_js,
         }
 
     @classmethod
@@ -375,10 +367,9 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
 
     async def _save_additional_params(
         self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"scatter_method": self.scatter_method},
+    ) -> dict[str, Any]:
+        return await super()._save_additional_params(context) | {
+            "scatter_method": self.scatter_method
         }
 
 
@@ -463,10 +454,9 @@ class CWLTransferStep(TransferStep):
 
     async def _save_additional_params(
         self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"writable": self.writable},
+    ) -> dict[str, Any]:
+        return await super()._save_additional_params(context) | {
+            "writable": self.writable
         }
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
@@ -590,14 +580,11 @@ class CWLTransferStep(TransferStep):
                                 )
                             )
                 # Add size, checksum and format fields
-                new_token_value = {
-                    **new_token_value,
-                    **{
-                        "nameroot": token_value["nameroot"],
-                        "nameext": token_value["nameext"],
-                        "size": token_value["size"],
-                        "checksum": original_checksum,
-                    },
+                new_token_value |= {
+                    "nameroot": token_value["nameroot"],
+                    "nameext": token_value["nameext"],
+                    "size": token_value["size"],
+                    "checksum": original_checksum,
                 }
                 if "format" in token_value:
                     new_token_value["format"] = token_value["format"]
