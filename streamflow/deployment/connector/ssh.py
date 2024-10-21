@@ -144,6 +144,7 @@ class SSHContext:
 class SSHContextManager:
     def __init__(
         self,
+        bufsize: int,
         condition: asyncio.Condition,
         contexts: MutableSequence[SSHContext],
         command: str,
@@ -153,6 +154,7 @@ class SSHContextManager:
         stderr: int = asyncio.subprocess.PIPE,
         encoding: str | None = "utf-8",
     ):
+        self.bufsize: int = bufsize
         self.command: str = command
         self.environment: MutableMapping[str, str] | None = environment
         self.stdin: int = stdin
@@ -174,6 +176,7 @@ class SSHContextManager:
                             self._selected_context = context
                             self._proc = await ssh_connection.create_process(
                                 self.command,
+                                bufsize=self.bufsize,
                                 env=self.environment,
                                 stdin=self.stdin,
                                 stdout=self.stdout,
@@ -206,7 +209,9 @@ class SSHContextFactory:
         max_connections: int,
         retries: int,
         retry_delay: int,
+        transfer_buffer_size: int,
     ):
+        self._bufsize: int = transfer_buffer_size
         self._condition: asyncio.Condition = asyncio.Condition()
         self._contexts: MutableSequence[SSHContext] = [
             SSHContext(
@@ -233,6 +238,7 @@ class SSHContextFactory:
         encoding: str | None = "utf-8",
     ):
         return SSHContextManager(
+            bufsize=self._bufsize,
             condition=self._condition,
             contexts=self._contexts,
             command=command,
@@ -521,6 +527,7 @@ class SSHConnector(BaseConnector):
                 max_connections=self.maxConnections,
                 retries=self.retries,
                 retry_delay=self.retryDelay,
+                transfer_buffer_size=self.transferBufferSize,
             )
         return self.ssh_context_factories[location].get(
             command=command,
@@ -541,6 +548,7 @@ class SSHConnector(BaseConnector):
                     max_connections=self.maxConnections,
                     retries=self.retries,
                     retry_delay=self.retryDelay,
+                    transfer_buffer_size=self.transferBufferSize,
                 )
             return self.data_transfer_context_factories[location.name]
         else:
@@ -552,6 +560,7 @@ class SSHConnector(BaseConnector):
                     max_connections=self.maxConnections,
                     retries=self.retries,
                     retry_delay=self.retryDelay,
+                    transfer_buffer_size=self.transferBufferSize,
                 )
             return self.ssh_context_factories[location.name]
 

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import io
 import logging
 import os
-import posixpath
 import re
 import shlex
 import uuid
@@ -244,59 +242,14 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         source_connector: str | None = None,
         read_only: bool = False,
     ) -> None:
-        source_connector = source_connector or self
-        locations = await self._get_effective_locations(locations, dst)
-        if source_connector == self and source_location.name in (
-            loc.name for loc in locations
-        ):
-            if src != dst:
-                command = ["/bin/cp", "-rf", src, dst]
-                await self.run(source_location, command)
-                locations.remove(source_location)
-        if locations:
-            # Get write command
-            write_command = await utils.get_remote_to_remote_write_command(
-                src_connector=source_connector,
-                src_location=source_location,
-                src=src,
-                dst_connector=self,
-                dst_locations=locations,
-                dst=dst,
-            )
-            # Open source StreamReader
-            async with await source_connector.get_stream_reader(
-                command=["tar", "chf", "-", "-C", *posixpath.split(src)],
-                location=source_location,
-            ) as reader:
-                # Open a target StreamWriter for each location
-                write_contexts = await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self.get_stream_writer(
-                                command=["sh", "-c", " ".join(write_command)],
-                                location=location,
-                            )
-                        )
-                        for location in locations
-                    )
-                )
-                async with contextlib.AsyncExitStack() as exit_stack:
-                    writers = await asyncio.gather(
-                        *(
-                            asyncio.create_task(exit_stack.enter_async_context(context))
-                            for context in write_contexts
-                        )
-                    )
-                    # Multiplex the reader output to all the writers
-                    while content := await reader.read(
-                        source_connector.transferBufferSize
-                    ):
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(writer.write(content))
-                                for writer in writers
-                            )
-                        )
+        return await super()._copy_remote_to_remote(
+            src=src,
+            dst=dst,
+            locations=await self._get_effective_locations(locations, dst),
+            source_location=source_location,
+            source_connector=source_connector,
+            read_only=read_only,
+        )
 
     async def _get_container(
         self, location: ExecutionLocation
