@@ -39,7 +39,7 @@ class StreamReaderWrapper(StreamWrapper):
 
 class StreamWriterWrapper(StreamWrapper):
     async def close(self):
-        self.stream.write_eof()
+        # self.stream.write_eof()
         self.stream.close()
         await self.stream.wait_closed()
 
