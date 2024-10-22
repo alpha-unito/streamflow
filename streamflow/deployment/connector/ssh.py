@@ -204,14 +204,14 @@ class SSHContextManager:
                             context.ssh_attempts += 1
                             await context.close()
                             self._selected_context = None
-                            self._proc.__aexit(None, None, None)
                             logger.warning(f"Connection attempt {context.ssh_attempts}")
                     await asyncio.sleep(self._retry_delay)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         async with self._condition:
             if self._selected_context:
-                await self._selected_context.close()
+                # await self._selected_context.close()
+                # self._selected_context = None
                 if self._proc:
                     await self._proc.__aexit__(exc_type, exc_val, exc_tb)
                 self._condition.notify_all()
