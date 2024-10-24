@@ -430,19 +430,19 @@ class SSHConnector(BaseConnector):
                     cores, memory, *dir_info_list = str(result.stdout.strip()).split(
                         "\n"
                     )
-                    storage = {}
+                    try:
+                        self.hardware[location] = Hardware(float(cores), float(memory))
+                    except ValueError:
+                        raise WorkflowExecutionException(
+                            f"Impossible to retrieve available hardware for location {self.deployment_name}. "
+                            f"An error message occurred: {cores}"
+                        ) from None
                     for line in dir_info_list:
                         mount_point, size = line.split(" ")
-                        storage.setdefault(
-                            mount_point,
-                            Storage(
-                                mount_point=mount_point,
-                                size=float(size) / 2**10,
-                            ),
+                        self.hardware[location].storage[mount_point] = Storage(
+                            mount_point=mount_point,
+                            size=float(size) / 2**10,
                         )
-                    self.hardware[location] = Hardware(
-                        float(cores), float(memory), storage
-                    )
                 else:
                     raise WorkflowExecutionException(result.returncode)
         return self.hardware[location]
@@ -469,9 +469,9 @@ class SSHConnector(BaseConnector):
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"EXECUTING command {command} on {location}" f" for job {job_name}"
-                if job_name
-                else ""
+                "EXECUTING command {} on {}{}".format(
+                    command, location, f" for job {job_name}" if job_name else ""
+                )
             )
         return utils.encode_command(command)
 
