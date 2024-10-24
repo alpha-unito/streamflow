@@ -54,7 +54,7 @@ class Hardware:
         to the storage's mount point, and there is only one (aggregated) `Storage` object for each mount point.
 
         :param cores: total number of cores
-        :param memory: total number of memory
+        :param memory: total amount of memory (in MB)
         :param storage: a map with string keys and `Storage` values
         """
         self.cores: float = cores
@@ -351,8 +351,14 @@ class Scheduler(SchemaEntity):
 
 
 class Storage:
+    __slots__ = ("mount_point", "size", "paths", "bind")
+
     def __init__(
-        self, mount_point: str, size: float, paths: MutableSet[str] | None = None
+        self,
+        mount_point: str,
+        size: float,
+        paths: MutableSet[str] | None = None,
+        bind: str | None = None,
     ):
         """
         The `Storage` class represents a persistent volume
@@ -360,6 +366,7 @@ class Storage:
         :param mount_point: the path of the volume's mount point
         :param size: the total size of the volume, expressed in Kilobyte
         :param paths: a list of paths inside the volume
+        :param bind: the path bound by the volume, if any
         """
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
@@ -368,6 +375,7 @@ class Storage:
                 f"Storage {mount_point} with {paths} paths cannot have negative size: {size}"
             )
         self.size: float = size
+        self.bind: str | None = bind
 
     def add_path(self, path: str):
         self.paths.add(path)
