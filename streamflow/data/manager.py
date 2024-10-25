@@ -41,7 +41,7 @@ async def _copy(
         await src_connector.copy_remote_to_local(
             src=src,
             dst=dst,
-            locations=[src_location],
+            location=src_location,
             read_only=not writable,
         )
     else:

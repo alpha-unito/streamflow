@@ -36,7 +36,7 @@ class FailureConnector(Connector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[ExecutionLocation],
+        location: ExecutionLocation,
         read_only: bool = False,
     ) -> None:
         raise FailureConnectorException("FailureConnector copy_remote_to_local")

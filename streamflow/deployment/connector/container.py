@@ -11,6 +11,7 @@ from typing import Any, MutableMapping, MutableSequence
 
 from importlib_resources import files
 
+from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation, LOCAL_LOCATION
 from streamflow.core.exception import (
@@ -333,7 +334,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     f"{self.connector.__class__.__name__} connector."
                 )
                 await self.connector.copy_remote_to_local(
-                    src=adjusted_src, dst=dst, locations=[location], read_only=read_only
+                    src=adjusted_src, dst=dst, location=location, read_only=read_only
                 )
         # Otherwise, check if the destination path is bound to a mounted volume
         elif (adjusted_dst := self._get_container_path(instance, dst)) is not None:
@@ -602,15 +603,29 @@ class ContainerConnector(ConnectorWrapper, ABC):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[Any | None, int] | None:
-        return await BaseConnector.run(
-            self,
-            location=location,
-            command=command,
-            environment=environment,
-            workdir=workdir,
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
+        command = utils.create_command(
+            self.__class__.__name__,
+            command,
+            environment,
+            workdir,
+            stdin,
+            stdout,
+            stderr,
+        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "EXECUTING command {command} on {location} {job}".format(
+                    command=command,
+                    location=location,
+                    job=f"for job {job_name}" if job_name else "",
+                )
+            )
+        return await self.connector.run(
+            location=self._inner_location.location,
+            command=self._get_run_command(
+                command=utils.encode_command(command, "sh"),
+                location=location,
+            ),
             capture_output=capture_output,
             timeout=timeout,
             job_name=job_name,
@@ -675,6 +690,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         location = ExecutionLocation(
             name=name,
             deployment=self.deployment_name,
+            stacked=True,
             wraps=self._inner_location.location,
         )
         # Inspect Docker container
@@ -704,7 +720,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         if self._wraps_local():
             host_user = os.getuid()
         else:
-            stdout, returncode = self.connector.run(
+            stdout, returncode = await self.connector.run(
                 location=self._inner_location.location,
                 command=["id", "-u"],
                 capture_output=True,
@@ -712,7 +728,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             if returncode == 0:
                 try:
                     host_user = int(stdout)
-                except json.decoder.JSONDecodeError:
+                except ValueError:
                     raise WorkflowExecutionException(
                         f"Error retrieving volumes for Docker container {name}: {stdout}"
                     )
@@ -728,7 +744,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         if returncode == 0:
             try:
                 container_user = int(stdout)
-            except json.decoder.JSONDecodeError:
+            except ValueError:
                 raise WorkflowExecutionException(
                     f"Error retrieving volumes for Docker container {name}: {stdout}"
                 )
@@ -739,7 +755,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         # Retrieve cores and memory
         stdout, returncode = await self.run(
             location=location,
-            command=["test", "-e", "sys/fs/cgroup/cpuset"],
+            command=["test", "-e", "/sys/fs/cgroup/cpuset"],
             capture_output=True,
         )
         if returncode > 1:
@@ -1197,6 +1213,7 @@ class DockerConnector(DockerBaseConnector):
                     memory=instance.memory,
                     storage=instance.volumes,
                 ),
+                stacked=True,
                 wraps=self._inner_location,
             )
         }
@@ -1449,6 +1466,7 @@ class DockerComposeConnector(DockerBaseConnector):
                     memory=instance.memory,
                     storage=instance.volumes,
                 ),
+                stacked=True,
                 wraps=self._inner_location,
             )
             for k, instance in instances.items()
@@ -1661,6 +1679,7 @@ class SingularityConnector(ContainerConnector):
         location = ExecutionLocation(
             name=name,
             deployment=self.deployment_name,
+            stacked=True,
             wraps=self._inner_location.location,
         )
         # Get IP address
@@ -1897,6 +1916,7 @@ class SingularityConnector(ContainerConnector):
                     memory=instance.memory,
                     storage=instance.volumes,
                 ),
+                stacked=True,
                 wraps=self._inner_location,
             )
         }

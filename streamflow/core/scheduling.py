@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Type, cast
@@ -32,7 +33,12 @@ def _reduce_storages(
         if disk.mount_point in storage.keys():
             storage[disk.mount_point] = operator(storage[disk.mount_point], disk)
         else:
-            storage[disk.mount_point] = Storage(disk.mount_point, disk.size)
+            storage[disk.mount_point] = Storage(
+                mount_point=disk.mount_point,
+                size=disk.size,
+                paths=disk.paths,
+                bind=disk.bind,
+            )
     return storage
 
 
@@ -52,6 +58,8 @@ class Hardware:
         the `key` as a fast entry point to the `Storage`. When an operation (arithmetic or comparison) is done,
         a new `Hardware` instance is created following a normalized form. In the normalized form, the `key` is equal
         to the storage's mount point, and there is only one (aggregated) `Storage` object for each mount point.
+        Instead, the merge operators preserve the existing storage keys, but pretend that all `Storage` objects
+        under the same key expose the same mount point. Conversely, the operation throws an exception.
 
         :param cores: total number of cores
         :param memory: total amount of memory (in MB)
@@ -81,6 +89,29 @@ class Hardware:
                 return disk
         raise KeyError(path)
 
+    def bind(self, path_processor) -> Hardware:
+        return Hardware(
+            cores=self.cores,
+            memory=self.memory,
+            storage={
+                key: Storage(
+                    mount_point=disk.bind,
+                    size=disk.size,
+                    paths={
+                        path_processor.normpath(
+                            path_processor.join(
+                                disk.bind,
+                                path_processor.relpath(p, disk.mount_point),
+                            )
+                        )
+                        for p in disk.paths
+                    },
+                )
+                for key, disk in self.storage.items()
+                if disk.bind is not None
+            },
+        )
+
     def __add__(self, other: Any) -> Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
@@ -95,6 +126,24 @@ class Hardware:
                 Storage.__add__.__call__,
             ),
         )
+
+    def __ior__(self, other) -> None:
+        if not isinstance(other, Hardware):
+            raise NotImplementedError
+        self.cores += other.cores
+        self.memory += other.memory
+        for key, disk in other.storage.items():
+            if key not in self.storage.keys():
+                self.storage[key] = disk
+            else:
+                self.storage[key] |= disk
+
+    def __or__(self, other) -> Hardware:
+        if not isinstance(other, Hardware):
+            raise NotImplementedError
+        hardware = copy.deepcopy(self)
+        hardware |= other
+        return hardware
 
     def __sub__(self, other: Any) -> Hardware:
         if not isinstance(other, Hardware):
@@ -241,6 +290,7 @@ class AvailableLocation:
             hostname=hostname,
             name=name,
             service=service,
+            stacked=stacked,
             wraps=wraps.location if wraps else None,
         )
         self.slots: int | None = slots
@@ -391,6 +441,31 @@ class Storage:
             mount_point=self.mount_point,
             size=self.size + other.size,
             paths=self.paths | other.paths,
+            bind=self.bind,
+        )
+
+    def __ior__(self, other) -> None:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        self.size = max(self.size, other.size)
+        self.paths |= other.paths
+
+    def __or__(self, other) -> Storage:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return Storage(
+            mount_point=self.mount_point,
+            size=max(self.size, other.size),
+            paths=self.paths | other.paths,
+            bind=self.bind,
         )
 
     def __sub__(self, other: Any) -> Storage:
@@ -404,6 +479,7 @@ class Storage:
             mount_point=self.mount_point,
             size=self.size - other.size,
             paths=self.paths | other.paths,
+            bind=self.bind,
         )
 
     def __ge__(self, other: Any) -> bool:

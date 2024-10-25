@@ -66,7 +66,7 @@ class ConnectorWrapper(BaseConnector, ABC):
         await self.connector.copy_remote_to_local(
             src=src,
             dst=dst,
-            locations=get_inner_locations([location]),
+            location=get_inner_location(location),
             read_only=read_only,
         )
 

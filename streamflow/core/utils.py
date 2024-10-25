@@ -121,7 +121,7 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
         yield dict(zip(keys, list(instance)))
 
 
-def encode_command(command: str, shell: str = "sh"):
+def encode_command(command: str, shell: str = "sh") -> str:
     return "echo {command} | base64 -d | {shell}".format(
         command=base64.b64encode(command.encode("utf-8")).decode("utf-8"),
         shell=shell,  # nosec
@@ -286,6 +286,31 @@ def local_copy(src: str, dst: str, read_only: bool):
 
 def random_name() -> str:
     return str(uuid.uuid4())
+
+
+async def run_in_subprocess(
+    location: ExecutionLocation,
+    command: MutableSequence[str],
+    capture_output: bool,
+    timeout: int | None,
+) -> tuple[Any | None, int] | None:
+    proc = await asyncio.create_subprocess_exec(
+        *shlex.split(" ".join(command)),
+        env=({**os.environ, **location.environment}),
+        stdin=None,
+        stdout=(
+            asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL
+        ),
+        stderr=(
+            asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL
+        ),
+    )
+    if capture_output:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        return stdout.decode().strip(), proc.returncode
+    else:
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+        return None
 
 
 def wrap_command(command: str):

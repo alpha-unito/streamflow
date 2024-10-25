@@ -63,7 +63,7 @@ async def extract_tar_stream(
             )
 
 
-class BaseConnector(Connector, FutureAware):
+class BaseConnector(Connector, FutureAware, ABC):
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
         super().__init__(
             deployment_name=deployment_name,
@@ -187,14 +187,6 @@ class BaseConnector(Connector, FutureAware):
                             )
                         )
 
-    def _get_run_command(
-        self, command: str, location: ExecutionLocation, interactive: bool = False
-    ) -> MutableSequence[str]:
-        return [command]
-
-    def _get_shell(self) -> str:
-        return "sh"
-
     async def copy_local_to_remote(
         self,
         src: str,
@@ -252,21 +244,19 @@ class BaseConnector(Connector, FutureAware):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[ExecutionLocation],
+        location: ExecutionLocation,
         read_only: bool = False,
     ) -> None:
-        if len(locations) > 1:
-            raise Exception("Copy from multiple locations is not supported")
         if logger.isEnabledFor(logging.INFO):
             logger.info(
-                f"COPYING {src} on location {locations[0]} to {dst} on local file-system"
+                f"COPYING {src} on location {location} to {dst} on local file-system"
             )
         await self._copy_remote_to_local(
-            src=src, dst=dst, location=locations[0], read_only=read_only
+            src=src, dst=dst, location=location, read_only=read_only
         )
         if logger.isEnabledFor(logging.INFO):
             logger.info(
-                f"COMPLETED copy {src} on location {locations[0]} to {dst} on local file-system"
+                f"COMPLETED copy {src} on location {location} to {dst} on local file-system"
             )
 
     async def copy_remote_to_remote(
@@ -381,29 +371,12 @@ class BaseConnector(Connector, FutureAware):
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        command = utils.encode_command(command, self._get_shell())
-        run_command = self._get_run_command(command, location)
-        proc = await asyncio.create_subprocess_exec(
-            *shlex.split(" ".join(run_command)),
-            env=({**os.environ, **location.environment}),
-            stdin=None,
-            stdout=(
-                asyncio.subprocess.PIPE
-                if capture_output
-                else asyncio.subprocess.DEVNULL
-            ),
-            stderr=(
-                asyncio.subprocess.PIPE
-                if capture_output
-                else asyncio.subprocess.DEVNULL
-            ),
+        return await utils.run_in_subprocess(
+            location=location,
+            command=[utils.encode_command(command, "sh")],
+            capture_output=capture_output,
+            timeout=timeout,
         )
-        if capture_output:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            return stdout.decode().strip(), proc.returncode
-        else:
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-            return None
 
 
 class BatchConnector(Connector, ABC):

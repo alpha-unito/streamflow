@@ -440,6 +440,7 @@ class SSHConnector(BaseConnector):
                     for line in dir_info_list:
                         mount_point, fs_type, size = line.split(" ")
                         if fs_type not in [
+                            "-",
                             "cgroup",
                             "cgroup2",
                             "configfs",
@@ -456,7 +457,7 @@ class SSHConnector(BaseConnector):
                         ]:
                             self.hardware[location].storage[mount_point] = Storage(
                                 mount_point=mount_point,
-                                size=float(size) / 2 ** 10,
+                                size=float(size) / 2**10,
                             )
                 else:
                     raise WorkflowExecutionException(result.returncode)

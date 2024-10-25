@@ -238,7 +238,6 @@ async def get_mount_point(
             )
         ) is None:
             path_to_resolve = Path(path_to_resolve).parent
-        # todo: wraps not considered
         location_mount_points = location.hardware.get_mount_points()
         while (
             str(mount_point) != os.sep and str(mount_point) not in location_mount_points
