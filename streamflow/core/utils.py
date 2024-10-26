@@ -122,10 +122,7 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
 
 
 def encode_command(command: str, shell: str = "sh") -> str:
-    return "echo {command} | base64 -d | {shell}".format(
-        command=base64.b64encode(command.encode("utf-8")).decode("utf-8"),
-        shell=shell,  # nosec
-    )
+    return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | {shell}"
 
 
 def flatten_list(hierarchical_list):

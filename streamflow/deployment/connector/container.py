@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -575,7 +576,9 @@ class ContainerConnector(ConnectorWrapper, ABC):
     ) -> StreamWrapperContextManager:
         return await self.connector.get_stream_reader(
             command=self._get_run_command(
-                command=" ".join(command), location=location, interactive=False
+                command=utils.encode_command(" ".join(command), "sh"),
+                location=location,
+                interactive=False,
             ),
             location=get_inner_location(location),
         )
@@ -583,9 +586,14 @@ class ContainerConnector(ConnectorWrapper, ABC):
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager:
+        encoded_command = base64.b64encode(" ".join(command).encode("utf-8")).decode(
+            "utf-8"
+        )
         return await self.connector.get_stream_writer(
             command=self._get_run_command(
-                command=" ".join(command), location=location, interactive=True
+                command=f"eval $(echo {encoded_command} | base64 -d)",
+                location=location,
+                interactive=True,
             ),
             location=get_inner_location(location),
         )
