@@ -197,12 +197,9 @@ class DefaultScheduler(Scheduler):
             if location.hardware is not None:
                 # Compute the used amount of locations
                 if (
-                    not (
-                        location.hardware
-                        - self.hardware_locations.get(location.name, Hardware())
-                    )
-                    >= hardware_requirement
-                ):
+                    location.hardware
+                    - self.hardware_locations.get(location.name, Hardware())
+                ) < hardware_requirement:
                     return False
             # Otherwise, simply compute the number of allocated slots
             else:
