@@ -102,7 +102,7 @@ async def get_docker_wrapper_deployment_config(_context: StreamFlowContext):
     docker_dind_deployment = DeploymentConfig(
         name="docker-dind",
         type="docker",
-        config={"image": "docker:dind", "privileged": True},
+        config={"image": "docker:27.3.1-dind-alpine3.20", "privileged": True},
         external=False,
         lazy=False,
     )
