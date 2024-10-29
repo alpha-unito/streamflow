@@ -134,7 +134,7 @@ class LocalConnector(BaseConnector):
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        command = utils.encode_command(command, "sh")
+        command = utils.encode_command(command, self._get_shell())
         return await utils.run_in_subprocess(
             location=location,
             command=[
