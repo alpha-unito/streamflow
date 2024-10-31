@@ -66,12 +66,12 @@ def _prepare_connector(context: StreamFlowContext, num_jobs: int = 1):
     )
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def deployment_config(context, deployment) -> DeploymentConfig:
     return await get_deployment_config(context, deployment)
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def service(context, deployment) -> str | None:
     return get_service(context, deployment)
 
@@ -374,13 +374,16 @@ async def test_single_env_few_resources(context: StreamFlowContext):
     )
     assert len(task_pending) == 1
     assert context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
+    assert context.scheduler.get_allocation(jobs[1].name) is None
 
     # First job changes status to RUNNING and continue to keep all resources
     # Testing that second job is not scheduled (timeout parameter necessary)
     await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
     _, task_pending = await asyncio.wait(task_pending, timeout=2)
+
     assert len(task_pending) == 1
     assert context.scheduler.get_allocation(jobs[0].name).status == Status.RUNNING
+    assert context.scheduler.get_allocation(jobs[1].name) is None
 
     # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
     await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)

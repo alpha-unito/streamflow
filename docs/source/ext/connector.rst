@@ -21,7 +21,7 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[ExecutionLocation],
+        location: ExecutionLocation,
         read_only: bool = False,
     ) -> None:
         ...

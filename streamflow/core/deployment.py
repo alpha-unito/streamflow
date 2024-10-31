@@ -32,7 +32,15 @@ def _init_workdir(deployment_name: str) -> str:
 
 
 class ExecutionLocation:
-    __slots__ = ("deployment", "environment", "hostname", "name", "service", "wraps")
+    __slots__ = (
+        "deployment",
+        "environment",
+        "hostname",
+        "name",
+        "service",
+        "stacked",
+        "wraps",
+    )
 
     def __init__(
         self,
@@ -41,6 +49,7 @@ class ExecutionLocation:
         environment: MutableMapping[str, str] | None = None,
         hostname: str | None = None,
         service: str | None = None,
+        stacked: bool | None = False,
         wraps: ExecutionLocation | None = None,
     ):
         self.deployment: str = deployment
@@ -48,6 +57,7 @@ class ExecutionLocation:
         self.hostname: str | None = hostname
         self.name: str = name
         self.service: str | None = service
+        self.stacked: bool = stacked
         self.wraps: ExecutionLocation | None = wraps
 
     def __str__(self) -> str:
@@ -84,7 +94,7 @@ class Connector(SchemaEntity):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[ExecutionLocation],
+        location: ExecutionLocation,
         read_only: bool = False,
     ) -> None: ...
 

@@ -31,6 +31,8 @@ def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
         return LOCAL_LOCATION
     elif deployment_t == "docker":
         return "alpine-docker"
+    elif deployment_t == "docker-wrapper":
+        return "alpine-docker-wrapper"
     elif deployment_t == "docker-compose":
         return "alpine-docker-compose"
     elif deployment_t == "kubernetes":
@@ -56,6 +58,8 @@ async def get_deployment_config(
         return get_docker_deployment_config()
     elif deployment_t == "docker-compose":
         return get_docker_compose_deployment_config()
+    elif deployment_t == "docker-wrapper":
+        return await get_docker_wrapper_deployment_config(_context)
     elif deployment_t == "kubernetes":
         return get_kubernetes_deployment_config()
     elif deployment_t == "parameterizable_hardware":
@@ -91,6 +95,26 @@ def get_docker_deployment_config():
         config={"image": "alpine:3.16.2"},
         external=False,
         lazy=False,
+    )
+
+
+async def get_docker_wrapper_deployment_config(_context: StreamFlowContext):
+    docker_dind_deployment = DeploymentConfig(
+        name="docker-dind",
+        type="docker",
+        config={"image": "docker:27.3.1-dind-alpine3.20", "privileged": True},
+        external=False,
+        lazy=False,
+    )
+    await _context.deployment_manager.deploy(docker_dind_deployment)
+    await asyncio.sleep(5)
+    return DeploymentConfig(
+        name="alpine-docker-wrapper",
+        type="docker",
+        config={"image": "alpine:3.16.2"},
+        external=False,
+        lazy=False,
+        wraps=WrapsConfig(deployment="docker-dind"),
     )
 
 
@@ -161,6 +185,7 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
     if deployment_t in (
         "local",
         "docker",
+        "docker-wrapper",
         "parameterizable_hardware",
         "singularity",
         "ssh",

@@ -9,25 +9,21 @@ from typing import MutableSequence, TYPE_CHECKING, cast
 from importlib_resources import files
 
 from streamflow.core.config import BindingConfig, Config
-from streamflow.core.deployment import (
-    BindingFilter,
-    FilterConfig,
-    Target,
-    Connector,
-)
+from streamflow.core.deployment import BindingFilter, Connector, FilterConfig, Target
 from streamflow.core.scheduling import (
     Hardware,
+    HardwareRequirement,
     JobAllocation,
     LocationAllocation,
     Policy,
     Scheduler,
-    HardwareRequirement,
     Storage,
 )
 from streamflow.core.workflow import Job, Status
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
+from streamflow.deployment.utils import get_path_processor
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
 from streamflow.scheduling.policy import policy_classes
@@ -36,20 +32,6 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
     from typing import MutableMapping
-
-
-def _get_location_for_requirement(
-    connector: Connector, location: AvailableLocation
-) -> AvailableLocation:
-    loc = location
-    # Check if a location provides hardware capabilities or slots
-    while (
-        loc.hardware is None and loc.slots is None and loc is not None and loc.stacked
-    ):
-        loc = loc.wraps
-        connector = cast(ConnectorWrapper, connector).connector
-        # todo: storage paths could be wrong when we go to the inner location
-    return loc or location
 
 
 class JobContext:
@@ -76,6 +58,7 @@ class DefaultScheduler(Scheduler):
         self,
         job: Job,
         hardware: MutableMapping[str, Hardware],
+        connector: Connector,
         selected_locations: MutableSequence[AvailableLocation],
         target: Target,
     ):
@@ -107,59 +90,39 @@ class DefaultScheduler(Scheduler):
             target=target,
             locations=[loc.location for loc in selected_locations],
             status=Status.FIREABLE,
-            hardware=hardware[next(loc.name for loc in selected_locations)],
+            hardware=hardware[
+                posixpath.join(
+                    connector.deployment_name,
+                    next(loc.name for loc in selected_locations),
+                )
+            ],
         )
         for loc in selected_locations:
+            conn = connector
             while loc is not None:
-                if loc.location not in self.location_allocations:
-                    self.location_allocations.setdefault(
-                        loc.location.deployment, {}
-                    ).setdefault(
-                        loc.location.name,
-                        LocationAllocation(
-                            name=loc.location.name, deployment=loc.location.deployment
-                        ),
-                    ).jobs.append(
-                        job.name
-                    )
-                    # fixme: wraps not considered
-                    if loc.name in hardware.keys() and hardware[loc.name]:
-                        if loc.name in self.hardware_locations.keys():
-                            self.hardware_locations[loc.name] += hardware[loc.name]
-                        else:
-                            # Get normalized hardware for the hardware location
-                            self.hardware_locations[loc.name] = (
-                                Hardware() + hardware[loc.name]
-                            )
-                    loc = loc.wraps if loc.stacked else None
-
-    def _deallocate_job(self, job: str):
-        job_allocation = self.job_allocations.pop(job)
-        for loc in job_allocation.locations:
-            self.location_allocations[loc.deployment][loc.name].jobs.remove(job)
-        if logger.isEnabledFor(logging.INFO):
-            if len(job_allocation.locations) == 1:
-                is_local = isinstance(
-                    self.context.deployment_manager.get_connector(
-                        job_allocation.locations[0].deployment
+                self.location_allocations.setdefault(
+                    loc.location.deployment, {}
+                ).setdefault(
+                    loc.location.name,
+                    LocationAllocation(
+                        name=loc.location.name,
+                        deployment=loc.location.deployment,
                     ),
-                    LocalConnector,
+                ).jobs.append(
+                    job.name
                 )
-                logger.info(
-                    "Job {name} deallocated {location}".format(
-                        name=job,
-                        location=(
-                            "from local location"
-                            if is_local
-                            else f"from location {job_allocation.locations[0]}"
-                        ),
-                    )
+                key = posixpath.join(
+                    conn.deployment_name,
+                    loc.name,
                 )
-            else:
-                logger.info(
-                    "Job {job} deallocated from locations "
-                    ", ".join([str(loc) for loc in job_allocation.locations])
-                )
+                if key in hardware.keys() and hardware[key]:
+                    if loc.name in self.hardware_locations.keys():
+                        self.hardware_locations[loc.name] += hardware[key]
+                    else:
+                        # Get normalized hardware for the hardware location
+                        self.hardware_locations[loc.name] = Hardware() + hardware[key]
+                if loc := loc.wraps if loc.stacked else None:
+                    conn = cast(ConnectorWrapper, conn).connector
 
     def _get_binding_filter(self, config: FilterConfig):
         if config.name not in self.binding_filter_map:
@@ -224,20 +187,32 @@ class DefaultScheduler(Scheduler):
         self,
         connector: Connector,
         location: AvailableLocation,
-        hardware_requirement: Hardware,
+        hardware_requirements: MutableMapping[str, Hardware],
     ) -> bool:
-        location = _get_location_for_requirement(connector, location)
-        # If at least one location provides hardware capabilities
-        if location.hardware is not None:
-            # Compute the used amount of locations
-            return (
-                location.hardware
-                - self.hardware_locations.get(location.name, Hardware())
-            ) >= hardware_requirement
-        # Otherwise, simply compute the number of allocated slots
-        else:
-            slots = location.slots if location.slots is not None else 1
-            return len(self._get_running_jobs(location)) < slots
+        hardware_requirement = hardware_requirements[
+            posixpath.join(connector.deployment_name, location.name)
+        ]
+        while location is not None:
+            # If at least one location provides hardware capabilities
+            if location.hardware is not None:
+                # Compute the used amount of locations
+                if (
+                    location.hardware
+                    - self.hardware_locations.get(location.name, Hardware())
+                ) < hardware_requirement:
+                    return False
+            # Otherwise, simply compute the number of allocated slots
+            else:
+                slots = location.slots if location.slots is not None else 1
+                if not len(self._get_running_jobs(location)) < slots:
+                    return False
+            # If AvailableLocation is stacked, evaluate also the inner location
+            if location := location.wraps if location.stacked else None:
+                connector = cast(ConnectorWrapper, connector).connector
+                hardware_requirement = hardware_requirements[
+                    posixpath.join(connector.deployment_name, location.name)
+                ]
+        return True
 
     async def _process_target(
         self,
@@ -286,29 +261,29 @@ class DefaultScheduler(Scheduler):
                         if hardware_requirement
                         else Hardware()
                     )
-                    hardware_requirements = {
-                        location: hardware_requirement
-                        for location, hardware_requirement in zip(
-                            available_locations.keys(),
-                            await asyncio.gather(
-                                *(
-                                    asyncio.create_task(
-                                        self._resolve_hardware_requirement(
-                                            connector, location, job_hardware
-                                        )
-                                    )
-                                    for location in available_locations.values()
+                    hardware_requirements = {}
+                    for requirements in await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                self._resolve_hardware_requirement(
+                                    connector, location, job_hardware
                                 )
-                            ),
+                            )
+                            for location in available_locations.values()
                         )
-                    }
+                    ):
+                        for key, hardware in requirements.items():
+                            if key not in hardware_requirements:
+                                hardware_requirements[key] = hardware
+                            else:
+                                hardware_requirements[key] |= hardware
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
                         if self._is_valid(
                             connector=connector,
                             location=loc,
-                            hardware_requirement=hardware_requirements[loc.name],
+                            hardware_requirements=hardware_requirements,
                         )
                     }
                     if len(valid_locations) >= target.locations:
@@ -336,6 +311,7 @@ class DefaultScheduler(Scheduler):
                             self._allocate_job(
                                 job=job_context.job,
                                 hardware=hardware_requirements,
+                                connector=connector,
                                 selected_locations=selected_locations,
                                 target=target,
                             )
@@ -375,30 +351,47 @@ class DefaultScheduler(Scheduler):
         connector: Connector,
         location: AvailableLocation,
         hardware_requirement: Hardware,
-    ) -> Hardware:
-        location = _get_location_for_requirement(connector, location)
-        if location.hardware is not None:
-            storage = {}
-            for key, disk in hardware_requirement.storage.items():
-                for path in disk.paths:
-                    mount_point = await remotepath.get_mount_point(
-                        self.context, connector, location, path
-                    )
-                    storage[key] = Storage(mount_point, disk.size)
-            return Hardware(
-                cores=hardware_requirement.cores,
-                memory=hardware_requirement.memory,
-                storage=storage,
+    ) -> MutableMapping[str, Hardware]:
+        hardware = {}
+        while location is not None:
+            # If AvailableLocation defines the Hardware capabilities, process the requirement
+            if location.hardware is not None:
+                storage = {}
+                for key, disk in hardware_requirement.storage.items():
+                    for path in disk.paths:
+                        mount_point = await remotepath.get_mount_point(
+                            self.context, connector, location, path
+                        )
+                        storage[key] = Storage(
+                            mount_point=mount_point,
+                            size=disk.size,
+                            paths={path},
+                            bind=location.hardware.get_storage(mount_point).bind,
+                        )
+                current_hw = Hardware(
+                    cores=hardware_requirement.cores,
+                    memory=hardware_requirement.memory,
+                    storage=storage,
+                )
+            # Otherwise, if the AvailableLocation defines the slots, simply add the requirement as is
+            else:
+                current_hw = Hardware(
+                    cores=hardware_requirement.cores,
+                    memory=hardware_requirement.memory,
+                    storage={
+                        key: Storage(mount_point=os.sep, size=disk.size)
+                        for key, disk in hardware_requirement.storage.items()
+                    },
+                )
+            hardware[posixpath.join(connector.deployment_name, location.name)] = (
+                current_hw
             )
-        else:
-            return Hardware(
-                cores=hardware_requirement.cores,
-                memory=hardware_requirement.memory,
-                storage={
-                    key: Storage(os.sep, disk.size)
-                    for key, disk in hardware_requirement.storage.items()
-                },
-            )
+            # If AvailableLocation is stacked and wraps another location, compute the inner requirement
+            if location := location.wraps if location.stacked else None:
+                connector = cast(ConnectorWrapper, connector).connector
+                path_processor = get_path_processor(connector)
+                hardware_requirement = current_hw.bind(path_processor)
+        return hardware
 
     async def close(self):
         pass
@@ -413,24 +406,24 @@ class DefaultScheduler(Scheduler):
         )
 
     async def notify_status(self, job_name: str, status: Status) -> None:
-        connector = self.get_connector(job_name)
-        if connector:
-            if connector.deployment_name in self.wait_queues:
-                async with self.wait_queues[connector.deployment_name]:
-                    if job_name in self.job_allocations:
-                        job_allocation = self.job_allocations[job_name]
-                        if status != job_allocation.status:
-                            job_allocation.status = status
-                            if logger.isEnabledFor(logging.DEBUG):
-                                logger.debug(
-                                    f"Job {job_name} changed status to {status.name}"
-                                )
-                        if status in [Status.COMPLETED, Status.FAILED]:
-                            if job_hardware := job_allocation.hardware:
-                                for loc in job_allocation.locations:
+        if (
+            connector := self.get_connector(job_name)
+        ) and connector.deployment_name in self.wait_queues:
+            async with self.wait_queues[connector.deployment_name]:
+                if job_allocation := self.job_allocations.get(job_name):
+                    if status != job_allocation.status:
+                        job_allocation.status = status
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Job {job_name} changed status to {status.name}"
+                            )
+                    if status in [Status.COMPLETED, Status.FAILED]:
+                        if job_hardware := job_allocation.hardware:
+                            locations = job_allocation.locations
+                            conn = connector
+                            while locations:
+                                for loc in locations:
                                     if loc.name in self.hardware_locations.keys():
-                                        # It is executed `remotepath.get_storage_usages` to get the actual job output size.
-                                        # It is supposed that the output directory was empty before the `Job` execution
                                         self.hardware_locations[loc.name] = (
                                             self.hardware_locations[loc.name]
                                             - job_hardware
@@ -444,12 +437,18 @@ class DefaultScheduler(Scheduler):
                                                 )
                                                 for k, size in (
                                                     await remotepath.get_storage_usages(
-                                                        connector, loc, job_hardware
+                                                        conn, loc, job_hardware
                                                     )
                                                 ).items()
                                             }
                                         )
-                            self.wait_queues[connector.deployment_name].notify_all()
+                                if locations := [
+                                    loc.wraps for loc in locations if loc.stacked
+                                ]:
+                                    conn = cast(ConnectorWrapper, conn).connector
+                                    path_processor = get_path_processor(conn)
+                                    job_hardware = job_hardware.bind(path_processor)
+                        self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
         self,

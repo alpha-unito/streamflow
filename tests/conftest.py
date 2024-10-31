@@ -84,13 +84,13 @@ def pytest_generate_tests(metafunc):
 
 
 def all_deployment_types():
-    deployments_ = ["local", "docker", "docker-compose", "slurm"]
+    deployments_ = ["local", "docker", "docker-compose", "docker-wrapper", "slurm"]
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity", "ssh"])
     return deployments_
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def context(chosen_deployment_types) -> StreamFlowContext:
     _context = build_context(
         {

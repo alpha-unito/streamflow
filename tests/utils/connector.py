@@ -4,11 +4,7 @@ import asyncio
 from typing import MutableSequence, MutableMapping, Any
 
 from streamflow.core.data import StreamWrapperContextManager
-from streamflow.core.deployment import (
-    Connector,
-    LOCAL_LOCATION,
-    ExecutionLocation,
-)
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector import LocalConnector
 from streamflow.log_handler import logger
@@ -36,7 +32,7 @@ class FailureConnector(Connector):
         self,
         src: str,
         dst: str,
-        locations: MutableSequence[ExecutionLocation],
+        location: ExecutionLocation,
         read_only: bool = False,
     ) -> None:
         raise FailureConnectorException("FailureConnector copy_remote_to_local")
@@ -105,8 +101,8 @@ class ParameterizableHardwareConnector(LocalConnector):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return {
-            LOCAL_LOCATION: AvailableLocation(
-                name=LOCAL_LOCATION,
+            "custom-hardware": AvailableLocation(
+                name="custom-hardware",
                 deployment=self.deployment_name,
                 service=service,
                 hostname="localhost",

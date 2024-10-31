@@ -424,8 +424,8 @@ class CWLScheduleStep(ScheduleStep):
     ):
         await super()._set_job_directories(connector, locations, job)
         hardware = self.workflow.context.scheduler.get_hardware(job.name)
-        hardware.storage["__outdir__"].add_path(job.output_directory)
-        hardware.storage["__tmpdir__"].add_path(job.tmp_directory)
+        hardware.storage["__outdir__"].paths = {job.output_directory}
+        hardware.storage["__tmpdir__"].paths = {job.tmp_directory}
 
 
 class CWLTransferStep(TransferStep):
