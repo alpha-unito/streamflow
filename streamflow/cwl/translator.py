@@ -1975,10 +1975,6 @@ class CWLTranslator:
             name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
         )
         # Extract requirements
-        for hint in cwl_element.embedded_tool.hints:
-            context["hints"][hint["class"]] = hint
-        for requirement in cwl_element.embedded_tool.requirements:
-            context["requirements"][requirement["class"]] = requirement
         requirements = {**context["hints"], **context["requirements"]}
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
