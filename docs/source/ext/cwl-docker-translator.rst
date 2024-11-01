@@ -28,7 +28,8 @@ Implementations
 ===================================================     ================================================================
 Type                                                    Class
 ===================================================     ================================================================
-:ref:`docker <DockerCWLDockerTranslator>`               streamflow.cwl.requirement.docker.DockerCWLDockerTranslator
-:ref:`kubernetes <KubernetesCWLDockerTranslator>`       streamflow.cwl.requirement.docker.KubernetesCWLDockerTranslator
-:ref:`singularity <SingularityCWLDockerTranslator>`     streamflow.cwl.requirement.docker.SingularityCWLDockerTranslator
+:ref:`docker <DockerCWLDockerTranslator>`               streamflow.cwl.requirement.docker.docker.DockerCWLDockerTranslator
+:ref:`kubernetes <KubernetesCWLDockerTranslator>`       streamflow.cwl.requirement.docker.kubernetes.KubernetesCWLDockerTranslator
+:ref:`none <NoContainerCWLDockerTranslator>`            streamflow.cwl.requirement.docker.nocontainer.NoContainerCWLDockerTranslator
+:ref:`singularity <SingularityCWLDockerTranslator>`     streamflow.cwl.requirement.docker.singularity.SingularityCWLDockerTranslator
 ===================================================     ================================================================
