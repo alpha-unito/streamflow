@@ -48,6 +48,7 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         entrypoint: str | None = None,
         env: MutableSequence[str] | None = None,
         envFile: MutableSequence[str] | None = None,
+        ephemeral: bool = True,
         expose: MutableSequence[str] | None = None,
         gpus: MutableSequence[str] | None = None,
         groupAdd: MutableSequence[str] | None = None,
@@ -140,6 +141,7 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         self.entrypoint: str | None = entrypoint
         self.env: MutableSequence[str] | None = env
         self.envFile: MutableSequence[str] | None = envFile
+        self.ephemeral: bool = ephemeral
         self.expose: MutableSequence[str] | None = expose
         self.gpus: MutableSequence[str] | None = gpus
         self.groupAdd: MutableSequence[str] | None = groupAdd
@@ -218,14 +220,10 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         volume = list(self.volume) if self.volume else []
         volume.append(f"{target.workdir}:/tmp/streamflow")
         if output_directory is not None:
-            if target.deployment.type == "local":
-                volume.append(
-                    f"{os.path.join(target.workdir, utils.random_name())}:{output_directory}"
-                )
-            else:
-                volume.append(
-                    f"{posixpath.join(target.workdir, utils.random_name())}:{output_directory}"
-                )
+            path_processor = os.path if target.deployment.type == "local" else posixpath
+            volume.append(
+                f"{path_processor.join(target.workdir, utils.random_name())}:{output_directory}"
+            )
         return Target(
             deployment=DeploymentConfig(
                 name=utils.random_name(),
@@ -264,6 +262,7 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
                     "entrypoint": self.entrypoint,
                     "env": self.env,
                     "envFile": self.envFile,
+                    "ephemeral": self.ephemeral,
                     "expose": self.expose,
                     "gpus": self.gpus,
                     "groupAdd": self.groupAdd,
@@ -321,6 +320,7 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
                     "volume": volume,
                     "volumeDriver": self.volumeDriver,
                     "volumesFrom": self.volumesFrom,
+                    "workdir": self.workdir,
                 },
                 workdir="/tmp/streamflow",  # nosec
                 wraps=(
