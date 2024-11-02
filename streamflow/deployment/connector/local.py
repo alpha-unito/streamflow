@@ -18,9 +18,21 @@ from streamflow.core.deployment import (
     LOCAL_LOCATION,
 )
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
-from streamflow.core.utils import local_copy
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.log_handler import logger
+
+
+def _local_copy(src: str, dst: str, read_only: bool):
+    if read_only:
+        if os.path.isdir(dst):
+            dst = os.path.join(dst, os.path.basename(src))
+        os.symlink(src, dst, target_is_directory=os.path.isdir(src))
+    else:
+        if os.path.isdir(src):
+            os.makedirs(dst, exist_ok=True)
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        else:
+            shutil.copy(src, dst)
 
 
 class LocalConnector(BaseConnector):
@@ -55,12 +67,12 @@ class LocalConnector(BaseConnector):
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
-        local_copy(src, dst, read_only)
+        _local_copy(src, dst, read_only)
 
     async def _copy_remote_to_local(
         self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
-        local_copy(src, dst, read_only)
+        _local_copy(src, dst, read_only)
 
     async def _copy_remote_to_remote(
         self,
@@ -73,7 +85,7 @@ class LocalConnector(BaseConnector):
     ) -> None:
         source_connector = source_connector or self
         if source_connector == self:
-            local_copy(src, dst, read_only)
+            _local_copy(src, dst, read_only)
         else:
             await super()._copy_remote_to_remote(
                 src=src,

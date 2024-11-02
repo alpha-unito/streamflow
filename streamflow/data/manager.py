@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from importlib_resources import files
 
 from streamflow.core.data import DataLocation, DataManager, DataType
-from streamflow.core.utils import local_copy
 from streamflow.data import remotepath
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.utils import get_path_processor
@@ -28,15 +27,12 @@ async def _copy(
     writable: False,
 ) -> None:
     if isinstance(src_connector, LocalConnector):
-        if isinstance(dst_connector, LocalConnector):
-            local_copy(src, dst, not writable)
-        else:
-            await dst_connector.copy_local_to_remote(
-                src=src,
-                dst=dst,
-                locations=dst_locations,
-                read_only=not writable,
-            )
+        await dst_connector.copy_local_to_remote(
+            src=src,
+            dst=dst,
+            locations=dst_locations,
+            read_only=not writable,
+        )
     elif isinstance(dst_connector, LocalConnector):
         await src_connector.copy_remote_to_local(
             src=src,
