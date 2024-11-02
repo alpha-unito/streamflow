@@ -1522,11 +1522,14 @@ class ScheduleStep(BaseStep):
                             await self.workflow.context.scheduler.schedule(
                                 job, self.binding_config, self.hardware_requirement
                             )
-                            locations = self.workflow.context.scheduler.get_locations(
-                                job.name
-                            )
                             await self._propagate_job(
-                                connectors[locations[0].deployment], locations, job
+                                connector=self.workflow.context.scheduler.get_connector(
+                                    job.name
+                                ),
+                                locations=self.workflow.context.scheduler.get_locations(
+                                    job.name
+                                ),
+                                job=job,
                             )
             else:
                 # Create Job
@@ -1544,9 +1547,10 @@ class ScheduleStep(BaseStep):
                     self.binding_config,
                     self.hardware_requirement,
                 )
-                locations = self.workflow.context.scheduler.get_locations(job.name)
                 await self._propagate_job(
-                    connectors[locations[0].deployment], locations, job
+                    connector=self.workflow.context.scheduler.get_connector(job.name),
+                    locations=self.workflow.context.scheduler.get_locations(job.name),
+                    job=job,
                 )
                 status = Status.COMPLETED
             await self.terminate(self._get_status(status))
