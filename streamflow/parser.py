@@ -162,7 +162,10 @@ report_parser = subparsers.add_parser(
     "report", help="Generate a report for an executed workflow"
 )
 report_parser.add_argument(
-    "workflow", metavar="WORKFLOW", type=str, help="Name of the workflow to process"
+    "workflows",
+    metavar="WORKFLOWS",
+    type=str,
+    help="Comma-separated list workflow names to process",
 )
 report_parser.add_argument(
     "--all",
@@ -193,6 +196,12 @@ report_parser.add_argument(
 )
 report_parser.add_argument(
     "--name", type=str, help="Name of the report folder (default '${WORKFLOW}-report')"
+)
+report_parser.add_argument(
+    "--outdir",
+    default=os.getcwd(),
+    type=str,
+    help="Output directory in which to store the report file (default: current directory)",
 )
 
 # streamflow run

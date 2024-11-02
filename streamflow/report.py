@@ -7,25 +7,25 @@ import os
 from streamflow.core.context import StreamFlowContext
 
 
-def _export_to_file(fig, args: argparse.Namespace, dirname: str, i: int | None) -> None:
+def _export_to_file(fig, args: argparse.Namespace, path: str) -> None:
     import plotly.io as pio
 
     if "html" in args.format:
-        path = f"{dirname}/report{f'_{i+1}' if i is not None else ''}.html"
-        pio.write_html(fig, file=path)
-        print(f"Report saved to {path}")
+        fullpath = f"{path}.html"
+        pio.write_html(fig, file=fullpath)
+        print(f"Report saved to {fullpath}")
     if "json" in args.format:
-        path = f"{dirname}/report{f'_{i+1}' if i is not None else ''}.json"
-        pio.write_json(fig, file=path)
-        print(f"Report saved to {path}")
+        fullpath = f"{path}.json"
+        pio.write_json(fig, file=fullpath)
+        print(f"Report saved to {fullpath}")
     for f in (f for f in args.format if f not in ["csv", "html", "json"]):
-        path = f"{dirname}/report{f'_{i+1}' if i is not None else ''}.{f}"
+        fullpath = f"{path}.{f}"
         pio.write_image(
             fig,
             format=f,
-            file=path,
+            file=fullpath,
         )
-        print(f"Report saved to {path}")
+        print(f"Report saved to {fullpath}")
 
 
 async def create_report(context: StreamFlowContext, args: argparse.Namespace):
@@ -33,47 +33,60 @@ async def create_report(context: StreamFlowContext, args: argparse.Namespace):
     import plotly.express as px
 
     # Retrieve data
-    if reports := [
-        r
-        for r in await context.database.get_reports(
-            args.workflow, last_only=not args.all
-        )
-        if r
-    ]:
-        # Create report directory
-        dirname = os.path.abspath(f"{args.name or f'{args.workflow}-report'}/")
-        os.makedirs(dirname, exist_ok=True)
-        # Create reports
-        for i, report in enumerate(reports):
-            # If output format is csv, print DataFrame
-            if "csv" in args.format:
-                with open(
-                    f"{dirname}/report{f'_{i+1}' if len(reports) > 1 else ''}.csv", "w"
-                ) as f:
-                    writer = csv.DictWriter(f, report[0].keys())
-                    writer.writeheader()
-                    writer.writerows(report)
-                    # If no other formats are required, continue
-                    if len(args.format) == 1:
-                        continue
-            # Pre-process data
-            df = pd.DataFrame(data=report)
-            df["id"] = df["id"].map(str)
-            df["start_time"] = pd.to_datetime(df["start_time"])
-            df["end_time"] = pd.to_datetime(df["end_time"])
-            # Create chart
-            fig = px.timeline(
-                df,
-                x_start="start_time",
-                x_end="end_time",
-                y="name" if args.group_by_step else "id",
-                color="name",
+    path = os.path.abspath(
+        os.path.join(args.outdir or os.getcwd(), args.name or "report")
+    )
+    reports = []
+    workflows = [w.strip() for w in args.workflows.split(",")]
+    for workflow in workflows:
+        if wf_reports := [
+            r
+            for r in await context.database.get_reports(
+                workflow, last_only=not args.all
             )
-            fig.update_yaxes(visible=False)
-            # Export to file
-            _export_to_file(fig, args, dirname, i if len(reports) > 1 else None)
-    # If workflow has no step, simply print a message and exit
-    else:
-        print(
-            f"Workflow {args.workflow} did not execute any step: no report has been generated"
-        )
+            if r
+        ]:
+            for report in wf_reports:
+                reports.extend(
+                    [
+                        {
+                            **row,
+                            **{
+                                "name": (
+                                    workflow + row["name"]
+                                    if len(workflows) > 1
+                                    else row["name"]
+                                )
+                            },
+                        }
+                        for row in report
+                    ]
+                )
+        # If workflow has no step, simply print a message and exit
+        else:
+            print(
+                f"Workflow {workflow} did not execute any step: no report has been generated"
+            )
+    # If output format is csv, print DataFrame
+    if "csv" in args.format:
+        with open(f"{path}.csv", "w") as f:
+            writer = csv.DictWriter(f, reports[0].keys())
+            writer.writeheader()
+            writer.writerows(reports)
+        print(f"Report saved to {path}.csv")
+    # Pre-process data
+    df = pd.DataFrame(data=reports)
+    df["id"] = df["id"].map(str)
+    df["start_time"] = pd.to_datetime(df["start_time"])
+    df["end_time"] = pd.to_datetime(df["end_time"])
+    # Create chart
+    fig = px.timeline(
+        df,
+        x_start="start_time",
+        x_end="end_time",
+        y="name" if args.group_by_step else "id",
+        color="name",
+    )
+    fig.update_yaxes(visible=False)
+    # Export to file
+    _export_to_file(fig, args, path)
