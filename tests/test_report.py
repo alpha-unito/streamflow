@@ -3,6 +3,7 @@ import os
 from tempfile import TemporaryDirectory
 
 import pytest
+import pytest_asyncio
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.main import build_context
@@ -11,9 +12,9 @@ from streamflow.report import create_report
 from tests.utils.data import get_data_path
 
 
-@pytest.fixture(scope="module")
-def context() -> StreamFlowContext:
-    return build_context(
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def context() -> StreamFlowContext:
+    _context = build_context(
         {
             "database": {
                 "type": "sqlite",
@@ -24,9 +25,14 @@ def context() -> StreamFlowContext:
             "path": os.getcwd(),
         }
     )
+    yield _context
+    await _context.close()
 
 
-async def test_single_workflow_single_execution(context: StreamFlowContext) -> None:
+@pytest.mark.asyncio
+async def test_single_workflow_single_execution(
+    context: StreamFlowContext,
+) -> None:
     """Test producing a report for a single execution of a workflow."""
     digests = {
         "csv": "05ea34f00c0351d7812395abb175b6f3a98e131c4fcbc82053a940a853e08582",
@@ -53,6 +59,7 @@ async def test_single_workflow_single_execution(context: StreamFlowContext) -> N
             assert hashlib.sha256(open(report, "rb").read()).hexdigest() == digests[fmt]
 
 
+@pytest.mark.asyncio
 async def test_single_workflow_all_instances(context: StreamFlowContext) -> None:
     """Test producing a report for all executions of a workflow."""
     digests = {
@@ -81,6 +88,7 @@ async def test_single_workflow_all_instances(context: StreamFlowContext) -> None
             assert hashlib.sha256(open(report, "rb").read()).hexdigest() == digests[fmt]
 
 
+@pytest.mark.asyncio
 async def test_multiple_workflows(context: StreamFlowContext) -> None:
     """Test producing a report for multiple workflows."""
     digests = {

@@ -13,13 +13,12 @@ import pytest_asyncio
 
 import streamflow.deployment.connector
 import streamflow.deployment.filter
-
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
-from tests.utils.deployment import get_deployment_config, ReverseTargetsBindingFilter
+from tests.utils.deployment import ReverseTargetsBindingFilter, get_deployment_config
 
 
 def csvtype(choices):
