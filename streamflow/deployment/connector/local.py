@@ -84,15 +84,13 @@ class LocalConnector(BaseConnector):
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
-        if source_connector == self:
+        if isinstance(source_connector, LocalConnector):
             _local_copy(src, dst, read_only)
         else:
-            await super()._copy_remote_to_remote(
+            await source_connector.copy_remote_to_local(
                 src=src,
                 dst=dst,
-                locations=locations,
-                source_connector=source_connector,
-                source_location=source_location,
+                location=source_location,
                 read_only=read_only,
             )
 
