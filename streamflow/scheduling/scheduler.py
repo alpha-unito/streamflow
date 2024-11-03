@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import posixpath
@@ -34,6 +35,16 @@ if TYPE_CHECKING:
     from typing import MutableMapping
 
 
+def _get_connector_stack(connector: Connector) -> MutableSequence[Connector]:
+    connectors = []
+    while connector is not None:
+        connectors.append(connector)
+        connector = (
+            connector.connector if isinstance(connector, ConnectorWrapper) else None
+        )
+    return connectors
+
+
 class JobContext:
     __slots__ = ("job", "lock", "scheduled")
 
@@ -50,6 +61,7 @@ class DefaultScheduler(Scheduler):
         super().__init__(context)
         self.binding_filter_map: MutableMapping[str, BindingFilter] = {}
         self.hardware_locations: MutableMapping[str, Hardware] = {}
+        self.locks: MutableMapping[str, asyncio.Lock] = {}
         self.policy_map: MutableMapping[str, Policy] = {}
         self.retry_interval: int | None = retry_delay if retry_delay != 0 else None
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
@@ -277,59 +289,66 @@ class DefaultScheduler(Scheduler):
                                 hardware_requirements[key] = hardware
                             else:
                                 hardware_requirements[key] |= hardware
-                    valid_locations = {
-                        k: loc
-                        for k, loc in available_locations.items()
-                        if self._is_valid(
-                            connector=connector,
-                            location=loc,
-                            hardware_requirements=hardware_requirements,
-                        )
-                    }
-                    if len(valid_locations) >= target.locations:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                "Available locations for job {} on {} are {}.".format(
-                                    job_context.job.name,
-                                    (
-                                        posixpath.join(deployment, target.service)
-                                        if target.service
-                                        else deployment
-                                    ),
-                                    list(valid_locations.keys()),
-                                )
+                    async with contextlib.AsyncExitStack() as exit_stack:
+                        for conn in _get_connector_stack(connector):
+                            if conn.deployment_name not in self.locks:
+                                self.locks[conn.deployment_name] = asyncio.Lock()
+                            await exit_stack.enter_async_context(
+                                self.locks[conn.deployment_name]
                             )
-                        if selected_locations := await self._get_locations(
-                            job=job_context.job,
-                            hardware_requirement=job_hardware,
-                            locations=target.locations,
-                            scheduling_policy=self._get_policy(
-                                target.deployment.scheduling_policy
-                            ),
-                            available_locations=valid_locations,
-                        ):
-                            self._allocate_job(
-                                job=job_context.job,
-                                hardware=hardware_requirements,
+                        valid_locations = {
+                            k: loc
+                            for k, loc in available_locations.items()
+                            if self._is_valid(
                                 connector=connector,
-                                selected_locations=selected_locations,
-                                target=target,
+                                location=loc,
+                                hardware_requirements=hardware_requirements,
                             )
-                            job_context.scheduled = True
-                            return
-                    else:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            deployment_name = (
-                                posixpath.join(deployment, target.service)
-                                if target.service
-                                else deployment
-                            )
-                            logger.debug(
-                                f"Not enough available locations: job {job_context.job.name} "
-                                f"requires {target.locations} locations "
-                                f"on deployment {deployment_name}, "
-                                f"but only {len(valid_locations)} are available."
-                            )
+                        }
+                        if len(valid_locations) >= target.locations:
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.debug(
+                                    "Available locations for job {} on {} are {}.".format(
+                                        job_context.job.name,
+                                        (
+                                            posixpath.join(deployment, target.service)
+                                            if target.service
+                                            else deployment
+                                        ),
+                                        list(valid_locations.keys()),
+                                    )
+                                )
+                            if selected_locations := await self._get_locations(
+                                job=job_context.job,
+                                hardware_requirement=job_hardware,
+                                locations=target.locations,
+                                scheduling_policy=self._get_policy(
+                                    target.deployment.scheduling_policy
+                                ),
+                                available_locations=valid_locations,
+                            ):
+                                self._allocate_job(
+                                    job=job_context.job,
+                                    hardware=hardware_requirements,
+                                    connector=connector,
+                                    selected_locations=selected_locations,
+                                    target=target,
+                                )
+                                job_context.scheduled = True
+                                return
+                        else:
+                            if logger.isEnabledFor(logging.DEBUG):
+                                deployment_name = (
+                                    posixpath.join(deployment, target.service)
+                                    if target.service
+                                    else deployment
+                                )
+                                logger.debug(
+                                    f"Not enough available locations: job {job_context.job.name} "
+                                    f"requires {target.locations} locations "
+                                    f"on deployment {deployment_name}, "
+                                    f"but only {len(valid_locations)} are available."
+                                )
                 try:
                     await asyncio.wait_for(
                         self.wait_queues[deployment].wait(), timeout=self.retry_interval
@@ -373,7 +392,7 @@ class DefaultScheduler(Scheduler):
                     memory=hardware_requirement.memory,
                     storage=storage,
                 )
-            # Otherwise, if the AvailableLocation defines the slots, simply add the requirement as is
+            # Otherwise, simply add the requirement as is
             else:
                 current_hw = Hardware(
                     cores=hardware_requirement.cores,
@@ -419,35 +438,40 @@ class DefaultScheduler(Scheduler):
                             )
                     if status in [Status.COMPLETED, Status.FAILED]:
                         if job_hardware := job_allocation.hardware:
-                            locations = job_allocation.locations
-                            conn = connector
-                            while locations:
-                                for loc in locations:
-                                    if loc.name in self.hardware_locations.keys():
-                                        self.hardware_locations[loc.name] = (
-                                            self.hardware_locations[loc.name]
-                                            - job_hardware
-                                        ) + Hardware(
-                                            storage={
-                                                k: Storage(
-                                                    mount_point=job_hardware.storage[
-                                                        k
-                                                    ].mount_point,
-                                                    size=size / 2**20,
-                                                )
-                                                for k, size in (
-                                                    await remotepath.get_storage_usages(
-                                                        conn, loc, job_hardware
+                            async with contextlib.AsyncExitStack() as exit_stack:
+                                for conn in _get_connector_stack(connector):
+                                    await exit_stack.enter_async_context(
+                                        self.locks[conn.deployment_name]
+                                    )
+                                locations = job_allocation.locations
+                                conn = connector
+                                while locations:
+                                    for loc in locations:
+                                        if loc.name in self.hardware_locations.keys():
+                                            self.hardware_locations[loc.name] = (
+                                                self.hardware_locations[loc.name]
+                                                - job_hardware
+                                            ) + Hardware(
+                                                storage={
+                                                    k: Storage(
+                                                        mount_point=job_hardware.storage[
+                                                            k
+                                                        ].mount_point,
+                                                        size=size / 2**20,
                                                     )
-                                                ).items()
-                                            }
-                                        )
-                                if locations := [
-                                    loc.wraps for loc in locations if loc.stacked
-                                ]:
-                                    conn = cast(ConnectorWrapper, conn).connector
-                                    path_processor = get_path_processor(conn)
-                                    job_hardware = job_hardware.bind(path_processor)
+                                                    for k, size in (
+                                                        await remotepath.get_storage_usages(
+                                                            conn, loc, job_hardware
+                                                        )
+                                                    ).items()
+                                                }
+                                            )
+                                    if locations := [
+                                        loc.wraps for loc in locations if loc.stacked
+                                    ]:
+                                        conn = cast(ConnectorWrapper, conn).connector
+                                        path_processor = get_path_processor(conn)
+                                        job_hardware = job_hardware.bind(path_processor)
                         self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
