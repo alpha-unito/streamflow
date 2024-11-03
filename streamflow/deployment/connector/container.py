@@ -25,7 +25,12 @@ from streamflow.core.utils import (
     get_option,
     random_name,
 )
-from streamflow.deployment.connector.base import BaseConnector, BatchConnector
+from streamflow.deployment.connector.base import (
+    BatchConnector,
+    copy_local_to_remote,
+    copy_remote_to_local,
+    copy_remote_to_remote,
+)
 from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
 
@@ -187,7 +192,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         effective_locations.append(location)
         return common_paths, effective_locations
 
-    async def _copy_local_to_remote(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
@@ -271,8 +276,12 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     )
                 copy_tasks.append(
                     asyncio.create_task(
-                        self._copy_local_to_remote_single(
-                            src=src, dst=dst, location=location, read_only=read_only
+                        copy_local_to_remote(
+                            connector=self,
+                            location=location,
+                            src=src,
+                            dst=dst,
+                            writer_command=["tar", "xf", "-", "-C", "/"],
                         )
                     )
                 )
@@ -287,7 +296,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
             )
         await asyncio.gather(*copy_tasks)
 
-    async def _copy_remote_to_local(
+    async def copy_remote_to_local(
         self,
         src: str,
         dst: str,
@@ -358,15 +367,15 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     "the local file-system through the "
                     f"{self.__class__.__name__} copy strategy."
                 )
-            await BaseConnector._copy_remote_to_local(
-                self,
+            await copy_remote_to_local(
+                connector=self,
+                location=location,
                 src=src,
                 dst=dst,
-                location=location,
-                read_only=read_only,
+                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
             )
 
-    async def _copy_remote_to_remote(
+    async def copy_remote_to_remote(
         self,
         src: str,
         dst: str,
@@ -396,7 +405,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                         f"to locations {', '.join(loc.name for loc in locations)} "
                         f"through the {self.__class__.__name__} copy strategy."
                     )
-                return await self._copy_local_to_remote(
+                return await self.copy_local_to_remote(
                     src=host_src, dst=dst, locations=locations, read_only=read_only
                 )
             # Otherwise, check for optimizations
@@ -462,27 +471,40 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     )
                 )
             # Perform a standard remote-to-remote copy for unbound locations
-            return await BaseConnector._copy_remote_to_remote(
-                self,
-                src=src,
-                dst=dst,
+            return await copy_remote_to_remote(
+                connector=self,
                 locations=unbound_locations,
                 source_connector=source_connector,
                 source_location=source_location,
-                read_only=read_only,
+                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+                writer_command=await utils.get_remote_to_remote_write_command(
+                    src_connector=source_connector,
+                    src_location=source_location,
+                    src=src,
+                    dst_connector=self,
+                    dst_locations=unbound_locations,
+                    dst=dst,
+                ),
             )
         # Otherwise, perform a standard remote-to-remote copy
         else:
-            return await BaseConnector._copy_remote_to_remote(
-                self,
-                src=src,
-                dst=dst,
-                locations=await self._get_effective_locations(
-                    locations, dst, source_location
-                ),
+            locations = await self._get_effective_locations(
+                locations, dst, source_location
+            )
+            return await copy_remote_to_remote(
+                connector=self,
+                locations=locations,
                 source_connector=source_connector,
                 source_location=source_location,
-                read_only=read_only,
+                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+                writer_command=await utils.get_remote_to_remote_write_command(
+                    src_connector=source_connector,
+                    src_location=source_location,
+                    src=src,
+                    dst_connector=self,
+                    dst_locations=locations,
+                    dst=dst,
+                ),
             )
 
     async def _get_effective_locations(
@@ -629,7 +651,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 )
             )
         return await self.connector.run(
-            location=self._inner_location.location,
+            location=get_inner_location(location),
             command=self._get_run_command(
                 command=utils.encode_command(command, "sh"),
                 location=location,

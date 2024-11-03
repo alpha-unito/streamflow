@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import posixpath
 from abc import ABC
 from typing import Any, MutableMapping, MutableSequence
 
@@ -15,7 +16,7 @@ from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
-from streamflow.deployment.connector.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector, copy_remote_to_remote
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.log_handler import logger
@@ -407,13 +408,21 @@ class SSHConnector(BaseConnector):
                 locations[i : i + rounds] for i in range(0, len(locations), rounds)
             ]
             for location_group in location_groups:
-                await super()._copy_remote_to_remote(
-                    src=src,
-                    dst=dst,
+                # Perform remote to remote copy
+                await copy_remote_to_remote(
+                    connector=self,
                     locations=location_group,
-                    source_location=source_location,
                     source_connector=source_connector,
-                    read_only=read_only,
+                    source_location=source_location,
+                    reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+                    writer_command=await utils.get_remote_to_remote_write_command(
+                        src_connector=source_connector,
+                        src_location=source_location,
+                        src=src,
+                        dst_connector=self,
+                        dst_locations=location_group,
+                        dst=dst,
+                    ),
                 )
 
     async def _get_available_location(self, location: str) -> Hardware:

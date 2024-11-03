@@ -15,6 +15,7 @@ from importlib_resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
+from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
@@ -25,7 +26,11 @@ from streamflow.core.utils import get_option
 from streamflow.deployment.connector.base import BatchConnector
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
-from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
+from streamflow.deployment.wrapper import (
+    ConnectorWrapper,
+    get_inner_location,
+    get_inner_locations,
+)
 from streamflow.log_handler import logger
 
 
@@ -454,6 +459,52 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
     @abstractmethod
     def _service_class(self) -> type[QueueManagerService]: ...
 
+    async def copy_local_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[ExecutionLocation],
+        read_only: bool = False,
+    ) -> None:
+        await self.connector.copy_local_to_remote(
+            src=src,
+            dst=dst,
+            locations=get_inner_locations(locations=locations),
+            read_only=read_only,
+        )
+
+    async def copy_remote_to_local(
+        self,
+        src: str,
+        dst: str,
+        location: ExecutionLocation,
+        read_only: bool = False,
+    ) -> None:
+        await self.connector.copy_remote_to_local(
+            src=src,
+            dst=dst,
+            location=get_inner_location(location=location),
+            read_only=read_only,
+        )
+
+    async def copy_remote_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
+        source_connector: Connector | None = None,
+        read_only: bool = False,
+    ) -> None:
+        await self.connector.copy_remote_to_remote(
+            src=src,
+            dst=dst,
+            locations=get_inner_locations(locations=locations),
+            source_location=source_location,
+            source_connector=source_connector,
+            read_only=read_only,
+        )
+
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
@@ -480,6 +531,20 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
                 wraps=location,
             )
         }
+
+    async def get_stream_reader(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        return await self.connector.get_stream_reader(
+            command, get_inner_location(location=location)
+        )
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> StreamWrapperContextManager:
+        return await self.connector.get_stream_writer(
+            command, get_inner_location(location=location)
+        )
 
     async def run(
         self,
@@ -556,7 +621,7 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
             )
         else:
             return await super().run(
-                location=location,
+                location=get_inner_location(location),
                 command=command,
                 environment=environment,
                 workdir=workdir,

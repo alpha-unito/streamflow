@@ -8,7 +8,6 @@ from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
-from streamflow.deployment.connector.base import BaseConnector
 
 
 def get_inner_location(location: ExecutionLocation) -> ExecutionLocation:
@@ -25,7 +24,7 @@ def get_inner_locations(
     return list({get_inner_location(loc) for loc in locations})
 
 
-class ConnectorWrapper(BaseConnector, ABC):
+class ConnectorWrapper(Connector, ABC):
     def __init__(
         self,
         deployment_name: str,
@@ -42,7 +41,7 @@ class ConnectorWrapper(BaseConnector, ABC):
         self.connector: Connector = connector
         self.service: str | None = service
 
-    async def _copy_local_to_remote(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
@@ -52,11 +51,11 @@ class ConnectorWrapper(BaseConnector, ABC):
         await self.connector.copy_local_to_remote(
             src=src,
             dst=dst,
-            locations=get_inner_locations(locations),
+            locations=locations,
             read_only=read_only,
         )
 
-    async def _copy_remote_to_local(
+    async def copy_remote_to_local(
         self,
         src: str,
         dst: str,
@@ -66,11 +65,11 @@ class ConnectorWrapper(BaseConnector, ABC):
         await self.connector.copy_remote_to_local(
             src=src,
             dst=dst,
-            location=get_inner_location(location),
+            location=location,
             read_only=read_only,
         )
 
-    async def _copy_remote_to_remote(
+    async def copy_remote_to_remote(
         self,
         src: str,
         dst: str,
@@ -82,7 +81,7 @@ class ConnectorWrapper(BaseConnector, ABC):
         await self.connector.copy_remote_to_remote(
             src=src,
             dst=dst,
-            locations=get_inner_locations(locations),
+            locations=locations,
             source_location=source_location,
             source_connector=source_connector,
             read_only=read_only,
@@ -99,16 +98,12 @@ class ConnectorWrapper(BaseConnector, ABC):
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager:
-        return await self.connector.get_stream_reader(
-            command, get_inner_location(location)
-        )
+        return await self.connector.get_stream_reader(command, location)
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager:
-        return await self.connector.get_stream_writer(
-            command, get_inner_location(location)
-        )
+        return await self.connector.get_stream_writer(command, location)
 
     async def run(
         self,
@@ -124,7 +119,7 @@ class ConnectorWrapper(BaseConnector, ABC):
         job_name: str | None = None,
     ) -> tuple[Any | None, int] | None:
         return await self.connector.run(
-            location=get_inner_location(location),
+            location=location,
             command=command,
             environment=environment,
             workdir=workdir,

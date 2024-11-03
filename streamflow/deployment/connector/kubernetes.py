@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import io
 import logging
 import os
@@ -46,7 +45,7 @@ from streamflow.core.exception import (
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
 from streamflow.deployment.aiotarstream import BaseStreamWrapper
-from streamflow.deployment.connector.base import BaseConnector
+from streamflow.deployment.connector.base import BaseConnector, copy_remote_to_remote
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -254,49 +253,28 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                 await self.run(source_location, command)
                 locations.remove(source_location)
         if locations:
-            # Get write command
-            write_command = await utils.get_remote_to_remote_write_command(
-                src_connector=source_connector,
-                src_location=source_location,
-                src=src,
-                dst_connector=self,
-                dst_locations=locations,
-                dst=dst,
+            # Perform remote to remote copy
+            await copy_remote_to_remote(
+                connector=self,
+                locations=locations,
+                source_connector=source_connector,
+                source_location=source_location,
+                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+                writer_command=[
+                    "sh",
+                    "-c",
+                    " ".join(
+                        await utils.get_remote_to_remote_write_command(
+                            src_connector=source_connector,
+                            src_location=source_location,
+                            src=src,
+                            dst_connector=self,
+                            dst_locations=locations,
+                            dst=dst,
+                        )
+                    ),
+                ],
             )
-            # Open source StreamReader
-            async with await source_connector.get_stream_reader(
-                command=["tar", "chf", "-", "-C", *posixpath.split(src)],
-                location=source_location,
-            ) as reader:
-                # Open a target StreamWriter for each location
-                write_contexts = await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self.get_stream_writer(
-                                command=["sh", "-c", " ".join(write_command)],
-                                location=location,
-                            )
-                        )
-                        for location in locations
-                    )
-                )
-                async with contextlib.AsyncExitStack() as exit_stack:
-                    writers = await asyncio.gather(
-                        *(
-                            asyncio.create_task(exit_stack.enter_async_context(context))
-                            for context in write_contexts
-                        )
-                    )
-                    # Multiplex the reader output to all the writers
-                    while content := await reader.read(
-                        source_connector.transferBufferSize
-                    ):
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(writer.write(content))
-                                for writer in writers
-                            )
-                        )
 
     async def _get_container(
         self, location: ExecutionLocation
