@@ -17,7 +17,11 @@ from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
-from streamflow.deployment.connector.base import BaseConnector, copy_remote_to_remote
+from streamflow.deployment.connector.base import (
+    BaseConnector,
+    copy_remote_to_remote,
+    copy_same_connector,
+)
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.log_handler import logger
@@ -393,14 +397,14 @@ class SSHConnector(BaseConnector):
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
-        if source_connector == self and source_location.name in [
-            loc.name for loc in locations
-        ]:
-            if src != dst:
-                command = ["/bin/cp", "-rf", src, dst]
-                await self.run(source_location, command)
-                locations.remove(source_location)
-        if locations:
+        if locations := await copy_same_connector(
+            connector=self,
+            locations=locations,
+            source_location=source_location,
+            src=src,
+            dst=dst,
+            read_only=read_only,
+        ):
             conn_per_round = min(len(locations), self.maxConcurrentSessions)
             rounds = self.maxConcurrentSessions // conn_per_round
             if len(locations) % conn_per_round != 0:

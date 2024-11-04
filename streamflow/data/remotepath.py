@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import errno
 import glob
 import hashlib
 import os
 import posixpath
 import shutil
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from email.message import Message
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -530,24 +529,6 @@ async def size(
         _check_status(command, location, result, status)
         result = result.strip().strip("'\"")
         return int(result) if result.isdigit() else 0
-
-
-async def symlink(
-    connector: Connector, location: ExecutionLocation | None, src: str, path: str
-) -> None:
-    if isinstance(connector, LocalConnector):
-        src = os.path.abspath(src)
-        if os.path.isdir(path):
-            path = os.path.join(path, os.path.basename(src))
-        try:
-            os.symlink(
-                os.path.abspath(src), path, target_is_directory=os.path.isdir(src)
-            )
-        except OSError as e:
-            if not e.errno == errno.EEXIST:
-                raise
-    else:
-        await connector.run(location=location, command=["ln", "-snf", src, path])
 
 
 async def write(
