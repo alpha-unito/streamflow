@@ -31,16 +31,11 @@ class CWLWorkflow(Workflow):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "cwl_version": self.cwl_version,
-                "format_graph": (
-                    self.format_graph.serialize()
-                    if self.format_graph is not None
-                    else None
-                ),
-            },
+        return await super()._save_additional_params(context) | {
+            "cwl_version": self.cwl_version,
+            "format_graph": (
+                self.format_graph.serialize() if self.format_graph is not None else None
+            ),
         }
 
     @classmethod

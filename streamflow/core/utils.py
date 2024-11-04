@@ -274,7 +274,7 @@ async def run_in_subprocess(
 ) -> tuple[Any | None, int] | None:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(" ".join(command)),
-        env=({**os.environ, **location.environment}),
+        env=os.environ | location.environment,
         stdin=None,
         stdout=(
             asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL

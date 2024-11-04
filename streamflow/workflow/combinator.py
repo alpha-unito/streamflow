@@ -50,7 +50,7 @@ class CartesianProductCombinator(Combinator):
                 schema = {}
                 for key in self.items:
                     if key in self.combinators:
-                        schema = {**schema, **config[key]}
+                        schema |= config[key]
                     else:
                         schema[key] = config[key]
                 suffix = [t.tag.split(".")[-1] for t in schema.values()]
@@ -63,10 +63,7 @@ class CartesianProductCombinator(Combinator):
                 }
 
     async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{"depth": self.depth},
-        }
+        return await super()._save_additional_params(context) | {"depth": self.depth}
 
     async def combine(
         self,
@@ -122,7 +119,7 @@ class DotProductCombinator(Combinator):
                     for key, elements in self._token_values[tag].items():
                         element = elements.pop()
                         if key in self.combinators:
-                            schema = {**schema, **element}
+                            schema |= element
                         else:
                             schema[key] = {
                                 "token": element,
@@ -220,7 +217,6 @@ class LoopTerminationCombinator(DotProductCombinator):
 
     async def _save_additional_params(self, context: StreamFlowContext):
         # self._token_values is not saved because it is always empty at the beginning of execution
-        return {
-            **await super()._save_additional_params(context),
-            **{"output_items": self.output_items},
+        return await super()._save_additional_params(context) | {
+            "output_items": self.output_items
         }

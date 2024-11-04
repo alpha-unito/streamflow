@@ -503,7 +503,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE deployment SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": deployment_id}},
+                updates | {"id": deployment_id},
             )
             self.deployment_cache.pop(deployment_id, None)
             return deployment_id
@@ -516,7 +516,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE execution SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": execution_id}},
+                updates | {"id": execution_id},
             )
             return execution_id
 
@@ -528,7 +528,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE filter SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": filter_id}},
+                updates | {"id": filter_id},
             )
             self.filter_cache.pop(filter_id, None)
             return filter_id
@@ -539,7 +539,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE port SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": port_id}},
+                updates | {"id": port_id},
             )
             self.port_cache.pop(port_id, None)
             return port_id
@@ -550,7 +550,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE step SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": step_id}},
+                updates | {"id": step_id},
             )
             self.step_cache.pop(step_id, None)
             return step_id
@@ -563,7 +563,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE target SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": target_id}},
+                updates | {"id": target_id},
             )
             self.target_cache.pop(target_id, None)
             return target_id
@@ -576,7 +576,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE workflow SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": workflow_id}},
+                updates | {"id": workflow_id},
             )
             self.workflow_cache.pop(workflow_id, None)
             return workflow_id

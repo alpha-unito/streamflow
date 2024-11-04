@@ -197,7 +197,7 @@ def _get_instance_from_config(
     if config is not None:
         enabled = config.get("enabled", enabled_by_default)
         class_name = config.get("type", "default" if enabled else "dummy")
-        kwargs = {**kwargs, **config.get("config", {})}
+        kwargs |= config.get("config", {})
     else:
         class_name = "default" if enabled_by_default else "dummy"
     class_ = classes[class_name]

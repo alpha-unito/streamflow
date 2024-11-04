@@ -335,7 +335,7 @@ async def build_token_value(
                 load_listing=load_listing,
             )
             # Compute new secondary files from port specification
-            sf_context = {**js_context, **{"self": token_value}}
+            sf_context = js_context | {"self": token_value}
             if secondary_files:
                 await process_secondary_files(
                     context=context,
@@ -1025,17 +1025,14 @@ async def update_file_token(
     filepath = get_path_from_token(token_value)
     if load_contents is not None:
         if load_contents and "contents" not in token_value:
-            token_value = {
-                **token_value,
-                **{
-                    "contents": await _get_contents(
-                        connector,
-                        location,
-                        filepath,
-                        token_value["size"],
-                        cwl_version,
-                    )
-                },
+            token_value |= {
+                "contents": await _get_contents(
+                    connector,
+                    location,
+                    filepath,
+                    token_value["size"],
+                    cwl_version,
+                )
             }
         elif not load_contents and "contents" in token_value:
             token_value = {k: token_value[k] for k in token_value if k != "contents"}
@@ -1047,30 +1044,24 @@ async def update_file_token(
                 token_value = {k: token_value[k] for k in token_value if k != "listing"}
         # If listing is not present or if the token needs a deep listing, process directory contents
         elif "listing" not in token_value or load_listing == LoadListing.deep_listing:
-            token_value = {
-                **token_value,
-                **{
-                    "listing": await get_listing(
-                        context=context,
-                        connector=connector,
-                        cwl_version=cwl_version,
-                        locations=[location],
-                        dirpath=filepath,
-                        load_contents=False,
-                        recursive=load_listing == LoadListing.deep_listing,
-                    )
-                },
+            token_value |= {
+                "listing": await get_listing(
+                    context=context,
+                    connector=connector,
+                    cwl_version=cwl_version,
+                    locations=[location],
+                    dirpath=filepath,
+                    load_contents=False,
+                    recursive=load_listing == LoadListing.deep_listing,
+                )
             }
         # If load listing is set to `shallow_listing`, remove the deep listing entries if present
         elif load_listing == LoadListing.shallow_listing:
-            token_value = {
-                **token_value,
-                **{
-                    "listing": [
-                        {k: v[k] for k in v if k != "listing"}
-                        for v in token_value["listing"]
-                    ]
-                },
+            token_value |= {
+                "listing": [
+                    {k: v[k] for k in v if k != "listing"}
+                    for v in token_value["listing"]
+                ]
             }
     return token_value
 

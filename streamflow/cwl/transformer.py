@@ -134,12 +134,9 @@ class CWLTokenTransformer(ManyToOneTransformer):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "port_name": self.port_name,
-                "processor": await self.processor.save(context),
-            },
+        return await super()._save_additional_params(context) | {
+            "port_name": self.port_name,
+            "processor": await self.processor.save(context),
         }
 
     async def transform(
@@ -180,9 +177,8 @@ class DefaultTransformer(ManyToOneTransformer):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"default_port": self.default_port.persistent_id},
+        return await super()._save_additional_params(context) | {
+            "default_port": self.default_port.persistent_id
         }
 
     async def transform(
@@ -365,16 +361,13 @@ class ValueFromTransformer(ManyToOneTransformer):
     ) -> MutableMapping[str, Any]:
         job_port = self.get_input_port("__job__")
         await job_port.save(context)
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "port_name": self.port_name,
-                "processor": await self.processor.save(context),
-                "value_from": self.value_from,
-                "expression_lib": self.expression_lib,
-                "full_js": self.full_js,
-                "job_port": job_port.persistent_id,
-            },
+        return await super()._save_additional_params(context) | {
+            "port_name": self.port_name,
+            "processor": await self.processor.save(context),
+            "value_from": self.value_from,
+            "expression_lib": self.expression_lib,
+            "full_js": self.full_js,
+            "job_port": job_port.persistent_id,
         }
 
     async def transform(
@@ -382,16 +375,11 @@ class ValueFromTransformer(ManyToOneTransformer):
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         output_name = self.get_output_name()
         if output_name in inputs:
-            inputs = {
-                **inputs,
-                **{
-                    output_name: await self.processor.process(
-                        inputs, inputs[output_name]
-                    )
-                },
+            inputs |= {
+                output_name: await self.processor.process(inputs, inputs[output_name])
             }
         context = utils.build_context(inputs)
-        context = {**context, **{"self": context["inputs"].get(output_name)}}
+        context |= {"self": context["inputs"].get(output_name)}
         token_value = utils.eval_expression(
             expression=self.value_from,
             context=context,
@@ -454,8 +442,9 @@ class LoopValueFromTransformer(ValueFromTransformer):
             if self.loop_source_port
             else None
         )
-        context = utils.build_context(loop_inputs)
-        context = {**context, **{"self": get_token_value(self_token)}}
+        context = utils.build_context(loop_inputs) | {
+            "self": get_token_value(self_token)
+        }
         return {
             self.get_output_name(): Token(
                 tag=get_tag(inputs.values()),

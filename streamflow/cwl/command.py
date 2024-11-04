@@ -571,24 +571,21 @@ class CWLCommand(TokenizedCommand):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
-                "base_command": self.base_command,
-                "environment": self.environment,
-                "expression_lib": self.expression_lib,
-                "failure_codes": self.failure_codes,
-                "full_js": self.full_js,
-                "initial_work_dir": self.initial_work_dir,
-                "inplace_update": self.inplace_update,
-                "is_shell_command": self.is_shell_command,
-                "success_codes": self.success_codes,
-                "stderr": self.stderr,  # TODO: manage when is IO type
-                "stdin": self.stdin,  # TODO: manage when is IO type
-                "stdout": self.stdout,  # TODO: manage when is IO type
-                "time_limit": self.time_limit,
-            },
+        return await super()._save_additional_params(context) | {
+            "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
+            "base_command": self.base_command,
+            "environment": self.environment,
+            "expression_lib": self.expression_lib,
+            "failure_codes": self.failure_codes,
+            "full_js": self.full_js,
+            "initial_work_dir": self.initial_work_dir,
+            "inplace_update": self.inplace_update,
+            "is_shell_command": self.is_shell_command,
+            "success_codes": self.success_codes,
+            "stderr": self.stderr,  # TODO: manage when is IO type
+            "stdin": self.stdin,  # TODO: manage when is IO type
+            "stdout": self.stdout,  # TODO: manage when is IO type
+            "time_limit": self.time_limit,
         }
 
     @classmethod
@@ -943,10 +940,8 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
                 if isinstance(self.position, str) and not self.position.isnumeric():
                     position = utils.eval_expression(
                         expression=self.position,
-                        context={
-                            **options.context,
-                            **{"self": get_token_value(token) if token else None},
-                        },
+                        context=options.context
+                        | {"self": get_token_value(token) if token else None},
                         full_js=options.full_js,
                         expression_lib=options.expression_lib,
                     )
@@ -1004,23 +999,20 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "expression": self.expression,
-                "processor": (
-                    await self.processor.save(context)
-                    if self.processor is not None
-                    else None
-                ),
-                "token_type": self.token_type,
-                "is_shell_command": self.is_shell_command,
-                "item_separator": self.item_separator,
-                "position": self.position,
-                "prefix": self.prefix,
-                "separate": self.separate,
-                "shell_quote": self.shell_quote,
-            },
+        return await super()._save_additional_params(context) | {
+            "expression": self.expression,
+            "processor": (
+                await self.processor.save(context)
+                if self.processor is not None
+                else None
+            ),
+            "token_type": self.token_type,
+            "is_shell_command": self.is_shell_command,
+            "item_separator": self.item_separator,
+            "position": self.position,
+            "prefix": self.prefix,
+            "separate": self.separate,
+            "shell_quote": self.shell_quote,
         }
 
 
@@ -1048,9 +1040,8 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"token_type": self.token_type},
+        return await super()._save_additional_params(context) | {
+            "token_type": self.token_type
         }
 
     def bind(
@@ -1072,10 +1063,7 @@ class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
         self, options: CWLCommandOptions, token: Token
     ) -> CWLCommandOptions:
         return CWLCommandOptions(
-            context={
-                **options.context,
-                **{"inputs": {self.name: get_token_value(token)}},
-            },
+            context=options.context | {"inputs": {self.name: get_token_value(token)}},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
@@ -1087,10 +1075,7 @@ class CWLMapCommandTokenProcessor(MapCommandTokenProcessor):
     ) -> CWLCommandOptions:
         value = get_token_value(token)
         return CWLCommandOptions(
-            context={
-                **options.context,
-                **{"inputs": {self.name: value}, "self": value},
-            },
+            context=options.context | {"inputs": {self.name: value}, "self": value},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
@@ -1171,17 +1156,14 @@ class CWLExpressionCommand(Command):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
-                "expression": self.expression,
-                "expression_lib": self.expression_lib,
-                "initial_work_dir": self.initial_work_dir,
-                "inplace_update": self.inplace_update,
-                "full_js": self.full_js,
-                "time_limit": self.time_limit,
-            },
+        return await super()._save_additional_params(context) | {
+            "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
+            "expression": self.expression,
+            "expression_lib": self.expression_lib,
+            "initial_work_dir": self.initial_work_dir,
+            "inplace_update": self.inplace_update,
+            "full_js": self.full_js,
+            "time_limit": self.time_limit,
         }
 
     @classmethod

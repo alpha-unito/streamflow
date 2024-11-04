@@ -6,7 +6,8 @@ import os
 import shutil
 import sys
 import tempfile
-from typing import Any, MutableMapping, MutableSequence
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any
 
 import psutil
 from importlib.resources import files

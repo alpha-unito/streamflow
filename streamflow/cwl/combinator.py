@@ -55,13 +55,10 @@ class ListMergeCombinator(DotProductCombinator):
         )
 
     async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "input_names": self.input_names,
-                "output_name": self.output_name,
-                "flatten": self.flatten,
-            },
+        return await super()._save_additional_params(context) | {
+            "input_names": self.input_names,
+            "output_name": self.output_name,
+            "flatten": self.flatten,
         }
 
     async def combine(

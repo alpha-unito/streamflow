@@ -123,7 +123,7 @@ def _create_command(
 ) -> CWLCommand:
     command = CWLCommand(step)
     # Process InitialWorkDirRequirement
-    requirements = {**context["hints"], **context["requirements"]}
+    requirements = context["hints"] | context["requirements"]
     if "InitialWorkDirRequirement" in requirements:
         command.initial_work_dir = requirements["InitialWorkDirRequirement"]["listing"]
         command.absolute_initial_workdir_allowed = (
@@ -192,7 +192,7 @@ def _create_command_output_processor_base(
         "long" if t == "int" else "double" if t == "float" else t for t in port_type
     ]
     # Process InlineJavascriptRequirement
-    requirements = {**context["hints"], **context["requirements"]}
+    requirements = context["hints"] | context["requirements"]
     expression_lib, full_js = _process_javascript_requirement(requirements)
     # Create OutputProcessor
     if "File" in port_type:
@@ -273,7 +273,7 @@ def _create_command_output_processor(
             # Enum type: -> create command output processor
             elif port_type["type"] == "enum":
                 # Process InlineJavascriptRequirement
-                requirements = {**context["hints"], **context["requirements"]}
+                requirements = context["hints"] | context["requirements"]
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 enum_prefix = (
                     utils.get_name(posixpath.sep, posixpath.sep, port_type["name"])
@@ -299,7 +299,7 @@ def _create_command_output_processor(
             # Record type: -> ObjectCommandOutputProcessor
             elif port_type["type"] == "record":
                 # Process InlineJavascriptRequirement
-                requirements = {**context["hints"], **context["requirements"]}
+                requirements = context["hints"] | context["requirements"]
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 # Create processor
                 record_name_prefix = utils.get_name(
@@ -611,7 +611,7 @@ def _create_token_processor(
             # Enum type: -> create output processor
             elif port_type["type"] == "enum":
                 # Process InlineJavascriptRequirement
-                requirements = {**context["hints"], **context["requirements"]}
+                requirements = context["hints"] | context["requirements"]
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 enum_prefix = (
                     utils.get_name(posixpath.sep, posixpath.sep, port_type["name"])
@@ -734,7 +734,7 @@ def _create_token_processor(
     # Simple type -> Create typed processor
     else:
         # Process InlineJavascriptRequirement
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Create OutputProcessor
         if port_type == "File":
@@ -1010,7 +1010,7 @@ def _get_hardware_requirement(
 def _get_load_listing(
     port_description: MutableMapping[str, Any], context: MutableMapping[str, Any]
 ) -> LoadListing:
-    requirements = {**context["hints"], **context["requirements"]}
+    requirements = context["hints"] | context["requirements"]
     if "loadListing" in port_description:
         return LoadListing[port_description["loadListing"]]
     elif (
@@ -2035,9 +2035,8 @@ class CWLTranslator:
         input_ports = {**input_ports, **default_ports}
         # Process loop inputs
         element_requirements = {
-            **{h["class"]: h for h in cwl_element.embedded_tool.hints},
-            **{r["class"]: r for r in cwl_element.embedded_tool.requirements},
-        }
+            h["class"]: h for h in cwl_element.embedded_tool.hints
+        } | {r["class"]: r for r in cwl_element.embedded_tool.requirements}
         if "http://commonwl.org/cwltool#Loop" in element_requirements:
             loop_requirement = element_requirements["http://commonwl.org/cwltool#Loop"]
             # Build combinator
@@ -2493,10 +2492,7 @@ class CWLTranslator:
         port_name = posixpath.relpath(global_name, step_name)
         # Adjust type to handle scatter
         if global_name in scatter_inputs:
-            element_input = {
-                **element_input,
-                **{"type": element_input["type"]["items"]},
-            }
+            element_input |= {"type": element_input["type"]["items"]}
         # If element contains `valueFrom` directive
         if "valueFrom" in element_input:
             # Check if StepInputExpressionRequirement is specified
