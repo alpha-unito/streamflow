@@ -1226,7 +1226,11 @@ def _process_loop_transformers(
             )
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
-    return {**input_ports, **loop_input_ports, **new_input_ports}
+    return (
+        cast(dict[str, Port], input_ports)
+        | cast(dict[str, Port], loop_input_ports)
+        | new_input_ports
+    )
 
 
 def _process_transformers(
@@ -1258,7 +1262,7 @@ def _process_transformers(
                     )
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
-    return {**input_ports, **new_input_ports}
+    return cast(dict[str, Port], input_ports) | new_input_ports
 
 
 def _remap_path(
@@ -1599,7 +1603,7 @@ class CWLTranslator:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating {cwl_element.__class__.__name__} {name_prefix}")
         # Extract custom types if present
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         schema_def_types = _get_schema_def_types(requirements)
         # Process InlineJavascriptRequirement
         expression_lib, full_js = _process_javascript_requirement(requirements)
@@ -1806,7 +1810,7 @@ class CWLTranslator:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating Workflow {step_name}")
         # Extract custom types if present
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         schema_def_types = _get_schema_def_types(requirements)
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
@@ -1972,7 +1976,7 @@ class CWLTranslator:
             name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
         )
         # Extract requirements
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Find scatter elements
@@ -2032,7 +2036,7 @@ class CWLTranslator:
                     posixpath.relpath(default_name, step_name), workflow.create_port()
                 )
                 default_ports[default_name] = transformer.get_output_port()
-        input_ports = {**input_ports, **default_ports}
+        input_ports |= default_ports
         # Process loop inputs
         element_requirements = {
             h["class"]: h for h in cwl_element.embedded_tool.hints
@@ -2193,7 +2197,7 @@ class CWLTranslator:
         )
 
         # Save input ports in the global map
-        self.input_ports = {**self.input_ports, **input_ports}
+        self.input_ports |= input_ports
         # Process condition
         conditional_step = None
         if "when" in cwl_element.tool:
@@ -2405,7 +2409,7 @@ class CWLTranslator:
                         workflow.create_port(),
                     )
                     loop_default_ports[default_name] = transformer.get_output_port()
-            loop_input_ports = {**loop_input_ports, **loop_default_ports}
+            loop_input_ports |= loop_default_ports
             # Process inputs again to attach ports to transformers
             loop_input_ports = _process_loop_transformers(
                 step_name=step_name,
@@ -2447,7 +2451,7 @@ class CWLTranslator:
                     port_name, skip_port
                 )
         # Update output ports with the internal ones
-        self.output_ports = {**self.output_ports, **internal_output_ports}
+        self.output_ports |= internal_output_ports
         # Process inner element
         inner_cwl_name_prefix = utils.get_inner_cwl_prefix(
             cwl_name_prefix, name_prefix, cwl_element
@@ -2460,7 +2464,7 @@ class CWLTranslator:
             cwl_name_prefix=inner_cwl_name_prefix,
         )
         # Update output ports with the external ones
-        self.output_ports = {**self.output_ports, **external_output_ports}
+        self.output_ports |= external_output_ports
 
     def _translate_workflow_step_input(
         self,
@@ -2695,7 +2699,7 @@ class CWLTranslator:
             context["hints"][hint["class"]] = hint
         for requirement in self.cwl_definition.requirements:
             context["requirements"][requirement["class"]] = requirement
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         # Extract workflow outputs
         cwl_elements = {
             utils.get_name("/", cwl_root_prefix, element["id"]): element

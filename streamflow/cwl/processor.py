@@ -261,7 +261,7 @@ class CWLTokenProcessor(TokenProcessor):
                 else:
                     sf_map = {}
                 if self.secondary_files:
-                    sf_context = context | {"self": token_value}
+                    sf_context = cast(dict[str, Any], context) | {"self": token_value}
                     await utils.process_secondary_files(
                         context=self.workflow.context,
                         cwl_version=cwl_workflow.cwl_version,
@@ -291,8 +291,10 @@ class CWLTokenProcessor(TokenProcessor):
         # Return token value
         return token_value
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "token_type": self.token_type,
             "check_type": self.check_type,
             "enum_symbols": self.enum_symbols,
@@ -649,8 +651,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             load_listing=self.load_listing,
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "token_type": self.token_type,
             "enum_symbols": self.enum_symbols,
             "expression_lib": self.expression_lib,
@@ -739,8 +743,10 @@ class CWLMapTokenProcessor(TokenProcessor):
             optional=row["optional"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processor": await self.processor.save(context),
             "optional": self.optional,
         }
@@ -843,8 +849,10 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
             )
         return token.update(token.value)
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processor": await self.processor.save(context)
         }
 
@@ -891,8 +899,10 @@ class CWLObjectTokenProcessor(TokenProcessor):
             optional=row["optional"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processors": {
                 k: v
                 for k, v in zip(
@@ -999,8 +1009,10 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
             output_eval=params["output_eval"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processors": {
                 k: v
                 for k, v in zip(
@@ -1174,8 +1186,10 @@ class CWLUnionTokenProcessor(TokenProcessor):
             ),
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processors": await asyncio.gather(
                 *(asyncio.create_task(v.save(context)) for v in self.processors)
             )
@@ -1247,8 +1261,10 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
             self.check_processor[type(p)](p, token_value) for p in processor.processors
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processors": await asyncio.gather(
                 *(asyncio.create_task(v.save(context)) for v in self.processors)
             )

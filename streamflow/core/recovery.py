@@ -9,7 +9,7 @@ from streamflow.core.context import SchemaEntity
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import Job, CommandOutput, Step
+    from streamflow.core.workflow import CommandOutput, Job, Step
     from typing import Any
 
 

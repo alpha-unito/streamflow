@@ -335,7 +335,7 @@ async def build_token_value(
                 load_listing=load_listing,
             )
             # Compute new secondary files from port specification
-            sf_context = js_context | {"self": token_value}
+            sf_context = cast(dict[str, Any], js_context) | {"self": token_value}
             if secondary_files:
                 await process_secondary_files(
                     context=context,

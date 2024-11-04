@@ -54,8 +54,10 @@ class ListMergeCombinator(DotProductCombinator):
             flatten=row["flatten"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "input_names": self.input_names,
             "output_name": self.output_name,
             "flatten": self.flatten,

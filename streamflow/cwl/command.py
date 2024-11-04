@@ -571,7 +571,7 @@ class CWLCommand(TokenizedCommand):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
             "base_command": self.base_command,
             "environment": self.environment,
@@ -940,7 +940,7 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
                 if isinstance(self.position, str) and not self.position.isnumeric():
                     position = utils.eval_expression(
                         expression=self.position,
-                        context=options.context
+                        context=cast(dict[str, Any], options.context)
                         | {"self": get_token_value(token) if token else None},
                         full_js=options.full_js,
                         expression_lib=options.expression_lib,
@@ -999,7 +999,7 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "expression": self.expression,
             "processor": (
                 await self.processor.save(context)
@@ -1040,7 +1040,7 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "token_type": self.token_type
         }
 
@@ -1063,7 +1063,8 @@ class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
         self, options: CWLCommandOptions, token: Token
     ) -> CWLCommandOptions:
         return CWLCommandOptions(
-            context=options.context | {"inputs": {self.name: get_token_value(token)}},
+            context=cast(dict[str, Any], options.context)
+            | {"inputs": {self.name: get_token_value(token)}},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
@@ -1075,7 +1076,8 @@ class CWLMapCommandTokenProcessor(MapCommandTokenProcessor):
     ) -> CWLCommandOptions:
         value = get_token_value(token)
         return CWLCommandOptions(
-            context=options.context | {"inputs": {self.name: value}, "self": value},
+            context=cast(dict[str, Any], options.context)
+            | {"inputs": {self.name: value}, "self": value},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
@@ -1156,7 +1158,7 @@ class CWLExpressionCommand(Command):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
             "expression": self.expression,
             "expression_lib": self.expression_lib,

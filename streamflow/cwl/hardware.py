@@ -52,7 +52,9 @@ class CWLHardwareRequirement(HardwareRequirement):
             expression_lib=row["expression_lib"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         return {
             "cores": self.cores,
             "memory": self.memory,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import MutableMapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from rdflib import Graph
 
@@ -11,7 +11,6 @@ from streamflow.core.workflow import Workflow
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Any
 
 
 class CWLWorkflow(Workflow):
@@ -31,7 +30,7 @@ class CWLWorkflow(Workflow):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "cwl_version": self.cwl_version,
             "format_graph": (
                 self.format_graph.serialize() if self.format_graph is not None else None

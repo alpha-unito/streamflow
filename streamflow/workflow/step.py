@@ -172,7 +172,9 @@ class Combinator(ABC):
             workflow=await loading_context.load_workflow(context, row["workflow"]),
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         return {
             "name": self.name,
             "combinators": {
@@ -302,7 +304,7 @@ class CombinatorStep(BaseStep):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "combinator": await self.combinator.save(context)
         }
 
@@ -474,7 +476,7 @@ class DeployStep(BaseStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         await self.deployment_config.save(context)
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "deployment_config": self.deployment_config.persistent_id,
             "connector_port": self.get_output_port(
                 self.deployment_config.name
@@ -744,7 +746,7 @@ class ExecuteStep(BaseStep):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "job_port": self.get_input_port("__job__").persistent_id,
             "output_connectors": self.output_connectors,
             "output_processors": {
@@ -902,7 +904,7 @@ class GatherStep(BaseStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         await self.get_size_port().save(context)
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "depth": self.depth,
             "size_port": self.get_size_port().persistent_id,
         }
@@ -1035,7 +1037,7 @@ class InputInjectorStep(BaseStep, ABC):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "job_port": self.get_input_port("__job__").persistent_id
         }
 
@@ -1402,7 +1404,9 @@ class ScheduleStep(BaseStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         await self.get_output_port("__job__").save(context)
-        params = await super()._save_additional_params(context) | {
+        params = cast(
+            dict[str, Any], await super()._save_additional_params(context)
+        ) | {
             "connector_ports": {
                 name: self.get_input_port(name).persistent_id
                 for name in self.input_ports
@@ -1581,7 +1585,7 @@ class ScatterStep(BaseStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         await self.get_size_port().save(context)
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "size_port": self.get_size_port().persistent_id
         }
 
@@ -1681,7 +1685,7 @@ class TransferStep(BaseStep, ABC):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "job_port": self.get_input_port("__job__").persistent_id
         }
 

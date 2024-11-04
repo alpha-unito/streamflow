@@ -62,8 +62,12 @@ class CartesianProductCombinator(Combinator):
                     for k, t in schema.items()
                 }
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return await super()._save_additional_params(context) | {"depth": self.depth}
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "depth": self.depth
+        }
 
     async def combine(
         self,
@@ -215,8 +219,10 @@ class LoopTerminationCombinator(DotProductCombinator):
             combinator.add_output_item(item)
         return combinator
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         # self._token_values is not saved because it is always empty at the beginning of execution
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "output_items": self.output_items
         }

@@ -5,8 +5,7 @@ import logging
 import os
 from collections.abc import MutableMapping
 from importlib.resources import files
-from typing import TYPE_CHECKING
-
+from typing import TYPE_CHECKING, Any, cast
 
 from streamflow.core.deployment import (
     Connector,
@@ -27,7 +26,6 @@ from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import Any
 
 
 class DefaultDeploymentManager(DeploymentManager):
@@ -154,7 +152,7 @@ class DefaultDeploymentManager(DeploymentManager):
             return DeploymentConfig(
                 name=deployment_config.name,
                 type=deployment_config.type,
-                config=deployment_config.config
+                config=cast(dict[str, Any], deployment_config.config)
                 | {
                     "connector": self.deployments_map[deployment_name],
                     "service": service,

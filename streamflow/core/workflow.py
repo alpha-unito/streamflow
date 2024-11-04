@@ -83,7 +83,9 @@ class Job:
             tmp_directory=row["tmp_directory"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         await asyncio.gather(
             *(asyncio.create_task(t.save(context)) for t in self.inputs.values())
         )
@@ -461,7 +463,9 @@ class TokenProcessor(ABC):
             workflow=await loading_context.load_workflow(context, row["workflow"]),
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         return {"name": self.name, "workflow": self.workflow.persistent_id}
 
     @classmethod

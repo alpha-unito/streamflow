@@ -134,7 +134,7 @@ class CWLTokenTransformer(ManyToOneTransformer):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "port_name": self.port_name,
             "processor": await self.processor.save(context),
         }
@@ -177,7 +177,7 @@ class DefaultTransformer(ManyToOneTransformer):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "default_port": self.default_port.persistent_id
         }
 
@@ -361,7 +361,7 @@ class ValueFromTransformer(ManyToOneTransformer):
     ) -> MutableMapping[str, Any]:
         job_port = self.get_input_port("__job__")
         await job_port.save(context)
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "port_name": self.port_name,
             "processor": await self.processor.save(context),
             "value_from": self.value_from,
@@ -442,7 +442,7 @@ class LoopValueFromTransformer(ValueFromTransformer):
             if self.loop_source_port
             else None
         )
-        context = utils.build_context(loop_inputs) | {
+        context = cast(dict[str, Any], utils.build_context(loop_inputs)) | {
             "self": get_token_value(self_token)
         }
         return {

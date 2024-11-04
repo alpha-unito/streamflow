@@ -109,7 +109,9 @@ class CommandOutputProcessor(ABC):
             ),
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         if self.target:
             await self.target.save(context)
         return {
@@ -232,7 +234,7 @@ class MapCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processor": await self.processor.save(context)
         }
 
@@ -318,7 +320,7 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processors": {
                 name: token
                 for name, token in zip(
@@ -405,7 +407,7 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processors": await asyncio.gather(
                 *(asyncio.create_task(t.save(context)) for t in self.processors)
             )
@@ -476,7 +478,7 @@ class TokenizedCommand(Command):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "processors": await asyncio.gather(
                 *(
                     asyncio.create_task(processor.save(context))

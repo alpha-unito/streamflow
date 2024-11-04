@@ -1019,7 +1019,7 @@ class PBSConnector(QueueManagerConnector):
         if stderr == stdout:
             batch_command.append(get_option("j", "oe"))
         if service := cast(PBSService, self.services.get(location.service)):
-            resources = {**service.resources, **resources}
+            resources = cast(dict[str, str], service.resources) | resources
             batch_command.extend(
                 [
                     get_option("a", service.begin),

@@ -162,7 +162,7 @@ class CWLBaseConditionalStep(ConditionalStep, ABC):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "skip_ports": {k: p.persistent_id for k, p in self.get_skip_ports().items()}
         }
 
@@ -229,7 +229,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "expression": self.expression,
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,
@@ -368,7 +368,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "scatter_method": self.scatter_method
         }
 
@@ -455,7 +455,7 @@ class CWLTransferStep(TransferStep):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return await super()._save_additional_params(context) | {
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "writable": self.writable
         }
 
