@@ -375,9 +375,9 @@ class ValueFromTransformer(ManyToOneTransformer):
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         output_name = self.get_output_name()
         if output_name in inputs:
-            inputs |= {
+            inputs = {
                 output_name: await self.processor.process(inputs, inputs[output_name])
-            }
+            } | cast(dict[str, Token], inputs)
         context = utils.build_context(inputs)
         context |= {"self": context["inputs"].get(output_name)}
         token_value = utils.eval_expression(
