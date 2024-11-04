@@ -8,6 +8,7 @@ from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
+from streamflow.deployment.future import FutureAware
 
 
 def get_inner_location(location: ExecutionLocation) -> ExecutionLocation:
@@ -24,7 +25,7 @@ def get_inner_locations(
     return list({get_inner_location(loc) for loc in locations})
 
 
-class ConnectorWrapper(Connector, ABC):
+class ConnectorWrapper(Connector, FutureAware, ABC):
     def __init__(
         self,
         deployment_name: str,
