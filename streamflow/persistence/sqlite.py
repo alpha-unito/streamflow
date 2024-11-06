@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence
+from typing import Any, cast
 
 import aiosqlite
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -504,7 +505,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE deployment SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": deployment_id}},
+                cast(dict[str, Any], updates) | {"id": deployment_id},
             )
             self.deployment_cache.pop(deployment_id, None)
             return deployment_id
@@ -517,7 +518,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE execution SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": execution_id}},
+                cast(dict[str, Any], updates) | {"id": execution_id},
             )
             return execution_id
 
@@ -529,7 +530,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE filter SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": filter_id}},
+                cast(dict[str, Any], updates) | {"id": filter_id},
             )
             self.filter_cache.pop(filter_id, None)
             return filter_id
@@ -540,7 +541,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE port SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": port_id}},
+                cast(dict[str, Any], updates) | {"id": port_id},
             )
             self.port_cache.pop(port_id, None)
             return port_id
@@ -551,7 +552,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE step SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": step_id}},
+                cast(dict[str, Any], updates) | {"id": step_id},
             )
             self.step_cache.pop(step_id, None)
             return step_id
@@ -564,7 +565,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE target SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": target_id}},
+                cast(dict[str, Any], updates) | {"id": target_id},
             )
             self.target_cache.pop(target_id, None)
             return target_id
@@ -577,7 +578,7 @@ class SqliteDatabase(CachedDatabase):
                 "UPDATE workflow SET {} WHERE id = :id".format(  # nosec
                     ", ".join([f"{k} = :{k}" for k in updates])
                 ),
-                {**updates, **{"id": workflow_id}},
+                cast(dict[str, Any], updates) | {"id": workflow_id},
             )
             self.workflow_cache.pop(workflow_id, None)
             return workflow_id

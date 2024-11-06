@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Callable, MutableSequence, Any
+from collections.abc import MutableSequence, Callable
+from typing import Any
 
 import asyncssh
 import pytest

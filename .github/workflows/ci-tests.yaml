@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-22.04" ]
-        python: [ "3.8", "3.9", "3.10", "3.11", "3.12", "3.13" ]
+        python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
         version: [ "v1.0", "v1.1", "v1.2" ]
         docker: [ "docker" ]
         include:
@@ -147,7 +147,7 @@ jobs:
           python -m pip install -r docs/requirements.txt
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "420474994e8e580ebae9cfcc9a758292c1d75cffb2272e383f27a843889ff2e0"
+          CHECKSUM: "5273a970331a356c9772003487be7bdc1ee0d9c7f032ec69a759c85d2fbc6ba3"
         run: |
           cd docs
           HASH="$(make checksum | tail -n1)"
@@ -160,7 +160,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        container: ["fluxrm/flux-sched:focal-v0.28.0"]
+        container: ["fluxrm/flux-sched:noble-v0.39.0-amd64"]
     container:
       image: ${{ matrix.container }}
       options: "--platform=linux/amd64 --user root -it"
@@ -172,16 +172,23 @@ jobs:
           rm -rf /opt/ghc
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Install Python modules
+        run: |
+          apt update
+          apt install -yq python3-pip python3-venv
+          su fluxuser
       - name: Install StreamFlow
         run: |
-         pip install . 
-         pip install --upgrade --force-reinstall attrs lockfile
-         chown -R fluxuser .
+          python3 -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          pip install . 
+          pip install --upgrade --force-reinstall attrs lockfile
+          which streamflow
       - name: Start Flux and Test Workflow
         run: |
-          su fluxuser
-          cd examples/flux
+          . /tmp/venv/bin/activate
           which streamflow
+          cd examples/flux
           flux start streamflow run streamflow.yml
   static-checks:
     name: "StreamFlow static checks"
@@ -212,7 +219,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-22.04"]
-        python: [ "3.8", "3.9", "3.10", "3.11", "3.12", "3.13" ]
+        python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
         include:
           - on: "macos-13"
             python: "3.13"

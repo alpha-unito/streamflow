@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 import posixpath
-from typing import MutableSequence, TYPE_CHECKING
+from collections.abc import MutableSequence
+from typing import TYPE_CHECKING
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig

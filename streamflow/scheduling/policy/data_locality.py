@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
@@ -14,7 +15,6 @@ from streamflow.workflow.token import FileToken
 if TYPE_CHECKING:
     from streamflow.core.scheduling import AvailableLocation, LocationAllocation
     from streamflow.core.workflow import Job
-    from typing import MutableMapping
 
 
 class DataLocalityPolicy(Policy):

@@ -5,15 +5,11 @@ import logging
 import os
 import posixpath
 import urllib.parse
+from collections.abc import MutableSequence, MutableMapping
 from enum import Enum
 from pathlib import PurePosixPath
 from types import ModuleType
-from typing import (
-    Any,
-    MutableMapping,
-    MutableSequence,
-    cast,
-)
+from typing import Any, cast
 
 import cwltool.command_line_tool
 import cwltool.context
@@ -129,7 +125,7 @@ def _create_command(
 ) -> CWLCommand:
     command = CWLCommand(step)
     # Process InitialWorkDirRequirement
-    requirements = {**context["hints"], **context["requirements"]}
+    requirements = context["hints"] | context["requirements"]
     if "InitialWorkDirRequirement" in requirements:
         command.initial_work_dir = requirements["InitialWorkDirRequirement"]["listing"]
         command.absolute_initial_workdir_allowed = (
@@ -198,7 +194,7 @@ def _create_command_output_processor_base(
         "long" if t == "int" else "double" if t == "float" else t for t in port_type
     ]
     # Process InlineJavascriptRequirement
-    requirements = {**context["hints"], **context["requirements"]}
+    requirements = context["hints"] | context["requirements"]
     expression_lib, full_js = _process_javascript_requirement(requirements)
     # Create OutputProcessor
     if "File" in port_type:
@@ -279,7 +275,7 @@ def _create_command_output_processor(
             # Enum type: -> create command output processor
             elif port_type["type"] == "enum":
                 # Process InlineJavascriptRequirement
-                requirements = {**context["hints"], **context["requirements"]}
+                requirements = context["hints"] | context["requirements"]
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 enum_prefix = (
                     utils.get_name(posixpath.sep, posixpath.sep, port_type["name"])
@@ -305,7 +301,7 @@ def _create_command_output_processor(
             # Record type: -> ObjectCommandOutputProcessor
             elif port_type["type"] == "record":
                 # Process InlineJavascriptRequirement
-                requirements = {**context["hints"], **context["requirements"]}
+                requirements = context["hints"] | context["requirements"]
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 # Create processor
                 record_name_prefix = utils.get_name(
@@ -617,7 +613,7 @@ def _create_token_processor(
             # Enum type: -> create output processor
             elif port_type["type"] == "enum":
                 # Process InlineJavascriptRequirement
-                requirements = {**context["hints"], **context["requirements"]}
+                requirements = context["hints"] | context["requirements"]
                 expression_lib, full_js = _process_javascript_requirement(requirements)
                 enum_prefix = (
                     utils.get_name(posixpath.sep, posixpath.sep, port_type["name"])
@@ -740,7 +736,7 @@ def _create_token_processor(
     # Simple type -> Create typed processor
     else:
         # Process InlineJavascriptRequirement
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Create OutputProcessor
         if port_type == "File":
@@ -1016,7 +1012,7 @@ def _get_hardware_requirement(
 def _get_load_listing(
     port_description: MutableMapping[str, Any], context: MutableMapping[str, Any]
 ) -> LoadListing:
-    requirements = {**context["hints"], **context["requirements"]}
+    requirements = context["hints"] | context["requirements"]
     if "loadListing" in port_description:
         return LoadListing[port_description["loadListing"]]
     elif (
@@ -1232,7 +1228,11 @@ def _process_loop_transformers(
             )
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
-    return {**input_ports, **loop_input_ports, **new_input_ports}
+    return (
+        cast(dict[str, Port], input_ports)
+        | cast(dict[str, Port], loop_input_ports)
+        | new_input_ports
+    )
 
 
 def _process_transformers(
@@ -1264,7 +1264,7 @@ def _process_transformers(
                     )
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
-    return {**input_ports, **new_input_ports}
+    return cast(dict[str, Port], input_ports) | new_input_ports
 
 
 def _remap_path(
@@ -1605,7 +1605,7 @@ class CWLTranslator:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating {cwl_element.__class__.__name__} {name_prefix}")
         # Extract custom types if present
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         schema_def_types = _get_schema_def_types(requirements)
         # Process InlineJavascriptRequirement
         expression_lib, full_js = _process_javascript_requirement(requirements)
@@ -1812,7 +1812,7 @@ class CWLTranslator:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating Workflow {step_name}")
         # Extract custom types if present
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         schema_def_types = _get_schema_def_types(requirements)
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
@@ -1978,7 +1978,7 @@ class CWLTranslator:
             name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
         )
         # Extract requirements
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Find scatter elements
@@ -2038,12 +2038,11 @@ class CWLTranslator:
                     posixpath.relpath(default_name, step_name), workflow.create_port()
                 )
                 default_ports[default_name] = transformer.get_output_port()
-        input_ports = {**input_ports, **default_ports}
+        input_ports |= default_ports
         # Process loop inputs
         element_requirements = {
-            **{h["class"]: h for h in cwl_element.embedded_tool.hints},
-            **{r["class"]: r for r in cwl_element.embedded_tool.requirements},
-        }
+            h["class"]: h for h in cwl_element.embedded_tool.hints
+        } | {r["class"]: r for r in cwl_element.embedded_tool.requirements}
         if "http://commonwl.org/cwltool#Loop" in element_requirements:
             loop_requirement = element_requirements["http://commonwl.org/cwltool#Loop"]
             # Build combinator
@@ -2200,7 +2199,7 @@ class CWLTranslator:
         )
 
         # Save input ports in the global map
-        self.input_ports = {**self.input_ports, **input_ports}
+        self.input_ports |= input_ports
         # Process condition
         conditional_step = None
         if "when" in cwl_element.tool:
@@ -2412,7 +2411,7 @@ class CWLTranslator:
                         workflow.create_port(),
                     )
                     loop_default_ports[default_name] = transformer.get_output_port()
-            loop_input_ports = {**loop_input_ports, **loop_default_ports}
+            loop_input_ports |= loop_default_ports
             # Process inputs again to attach ports to transformers
             loop_input_ports = _process_loop_transformers(
                 step_name=step_name,
@@ -2454,7 +2453,7 @@ class CWLTranslator:
                     port_name, skip_port
                 )
         # Update output ports with the internal ones
-        self.output_ports = {**self.output_ports, **internal_output_ports}
+        self.output_ports |= internal_output_ports
         # Process inner element
         inner_cwl_name_prefix = utils.get_inner_cwl_prefix(
             cwl_name_prefix, name_prefix, cwl_element
@@ -2467,7 +2466,7 @@ class CWLTranslator:
             cwl_name_prefix=inner_cwl_name_prefix,
         )
         # Update output ports with the external ones
-        self.output_ports = {**self.output_ports, **external_output_ports}
+        self.output_ports |= external_output_ports
 
     def _translate_workflow_step_input(
         self,
@@ -2499,10 +2498,7 @@ class CWLTranslator:
         port_name = posixpath.relpath(global_name, step_name)
         # Adjust type to handle scatter
         if global_name in scatter_inputs:
-            element_input = {
-                **element_input,
-                **{"type": element_input["type"]["items"]},
-            }
+            element_input |= {"type": element_input["type"]["items"]}
         # If element contains `valueFrom` directive
         if "valueFrom" in element_input:
             # Check if StepInputExpressionRequirement is specified
@@ -2705,7 +2701,7 @@ class CWLTranslator:
             context["hints"][hint["class"]] = hint
         for requirement in self.cwl_definition.requirements:
             context["requirements"][requirement["class"]] = requirement
-        requirements = {**context["hints"], **context["requirements"]}
+        requirements = context["hints"] | context["requirements"]
         # Extract workflow outputs
         cwl_elements = {
             utils.get_name("/", cwl_root_prefix, element["id"]): element

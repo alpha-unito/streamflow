@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio.subprocess
 from abc import ABC
-from typing import Any, Coroutine
+from collections.abc import Coroutine
+from typing import Any
 
 from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
 

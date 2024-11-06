@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, MutableMapping, MutableSequence, cast
+from collections.abc import MutableSequence, MutableMapping, Callable
+from typing import Any, cast
 
 import cwl_utils.file_formats
 from schema_salad.exceptions import ValidationException
@@ -181,7 +182,7 @@ class CWLTokenProcessor(TokenProcessor):
         filepath = utils.get_path_from_token(token_value)
         # Check file format if present
         if self.file_format:
-            context = {**context, **{"self": token_value}}
+            context |= {"self": token_value}
             input_formats = utils.eval_expression(
                 expression=self.file_format,
                 context=context,
@@ -260,7 +261,7 @@ class CWLTokenProcessor(TokenProcessor):
                 else:
                     sf_map = {}
                 if self.secondary_files:
-                    sf_context = {**context, "self": token_value}
+                    sf_context = cast(dict[str, Any], context) | {"self": token_value}
                     await utils.process_secondary_files(
                         context=self.workflow.context,
                         cwl_version=cwl_workflow.cwl_version,
@@ -290,28 +291,24 @@ class CWLTokenProcessor(TokenProcessor):
         # Return token value
         return token_value
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "token_type": self.token_type,
-                "check_type": self.check_type,
-                "enum_symbols": self.enum_symbols,
-                "expression_lib": self.expression_lib,
-                "file_format": self.file_format,
-                "full_js": self.full_js,
-                "load_contents": self.load_contents,
-                "load_listing": self.load_listing.value if self.load_listing else None,
-                "only_propagate_secondary_files": self.only_propagate_secondary_files,
-                "optional": self.optional,
-                "secondary_files": await asyncio.gather(
-                    *(
-                        asyncio.create_task(s.save(context))
-                        for s in self.secondary_files
-                    )
-                ),
-                "streamable": self.streamable,
-            },
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "token_type": self.token_type,
+            "check_type": self.check_type,
+            "enum_symbols": self.enum_symbols,
+            "expression_lib": self.expression_lib,
+            "file_format": self.file_format,
+            "full_js": self.full_js,
+            "load_contents": self.load_contents,
+            "load_listing": self.load_listing.value if self.load_listing else None,
+            "only_propagate_secondary_files": self.only_propagate_secondary_files,
+            "optional": self.optional,
+            "secondary_files": await asyncio.gather(
+                *(asyncio.create_task(s.save(context)) for s in self.secondary_files)
+            ),
+            "streamable": self.streamable,
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
@@ -441,7 +438,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 )
                 # Process file format
                 if self.file_format:
-                    context = {**context, **{"self": token_value}}
+                    context |= {"self": token_value}
                     token_value["format"] = utils.eval_expression(
                         expression=self.file_format,
                         context=context,
@@ -654,28 +651,24 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             load_listing=self.load_listing,
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "token_type": self.token_type,
-                "enum_symbols": self.enum_symbols,
-                "expression_lib": self.expression_lib,
-                "file_format": self.file_format,
-                "full_js": self.full_js,
-                "glob": self.glob,
-                "load_contents": self.load_contents,
-                "load_listing": self.load_listing.value if self.load_listing else None,
-                "optional": self.optional,
-                "output_eval": self.output_eval,
-                "secondary_files": await asyncio.gather(
-                    *(
-                        asyncio.create_task(s.save(context))
-                        for s in self.secondary_files
-                    )
-                ),
-                "streamable": self.streamable,
-            },
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "token_type": self.token_type,
+            "enum_symbols": self.enum_symbols,
+            "expression_lib": self.expression_lib,
+            "file_format": self.file_format,
+            "full_js": self.full_js,
+            "glob": self.glob,
+            "load_contents": self.load_contents,
+            "load_listing": self.load_listing.value if self.load_listing else None,
+            "optional": self.optional,
+            "output_eval": self.output_eval,
+            "secondary_files": await asyncio.gather(
+                *(asyncio.create_task(s.save(context)) for s in self.secondary_files)
+            ),
+            "streamable": self.streamable,
         }
 
     async def process(
@@ -750,13 +743,12 @@ class CWLMapTokenProcessor(TokenProcessor):
             optional=row["optional"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "processor": await self.processor.save(context),
-                "optional": self.optional,
-            },
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processor": await self.processor.save(context),
+            "optional": self.optional,
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
@@ -857,10 +849,11 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
             )
         return token.update(token.value)
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{"processor": await self.processor.save(context)},
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processor": await self.processor.save(context)
         }
 
 
@@ -906,24 +899,23 @@ class CWLObjectTokenProcessor(TokenProcessor):
             optional=row["optional"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "processors": {
-                    k: v
-                    for k, v in zip(
-                        self.processors.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(p.save(context))
-                                for p in self.processors.values()
-                            )
-                        ),
-                    )
-                },
-                "optional": self.optional,
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processors": {
+                k: v
+                for k, v in zip(
+                    self.processors.keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(p.save(context))
+                            for p in self.processors.values()
+                        )
+                    ),
+                )
             },
+            "optional": self.optional,
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
@@ -1017,26 +1009,25 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
             output_eval=params["output_eval"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "processors": {
-                    k: v
-                    for k, v in zip(
-                        self.processors.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(p.save(context))
-                                for p in self.processors.values()
-                            )
-                        ),
-                    )
-                },
-                "expression_lib": self.expression_lib,
-                "full_js": self.full_js,
-                "output_eval": self.output_eval,
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processors": {
+                k: v
+                for k, v in zip(
+                    self.processors.keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(p.save(context))
+                            for p in self.processors.values()
+                        )
+                    ),
+                )
             },
+            "expression_lib": self.expression_lib,
+            "full_js": self.full_js,
+            "output_eval": self.output_eval,
         }
 
     async def process(
@@ -1195,14 +1186,13 @@ class CWLUnionTokenProcessor(TokenProcessor):
             ),
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "processors": await asyncio.gather(
-                    *(asyncio.create_task(v.save(context)) for v in self.processors)
-                )
-            },
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processors": await asyncio.gather(
+                *(asyncio.create_task(v.save(context)) for v in self.processors)
+            )
         }
 
     def get_processor(self, token_value: Any) -> TokenProcessor:
@@ -1271,14 +1261,13 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
             self.check_processor[type(p)](p, token_value) for p in processor.processors
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "processors": await asyncio.gather(
-                    *(asyncio.create_task(v.save(context)) for v in self.processors)
-                )
-            },
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processors": await asyncio.gather(
+                *(asyncio.create_task(v.save(context)) for v in self.processors)
+            )
         }
 
     def get_processor(self, token_value: Any) -> CommandOutputProcessor:

@@ -11,7 +11,7 @@ The StreamFlow module is available on `PyPI <https://pypi.org/project/streamflow
 
     pip install streamflow
 
-Please note that StreamFlow requires ``python >= 3.8`` to be installed on the system. Then you can execute your workflows through the StreamFlow CLI::
+Please note that StreamFlow requires ``python >= 3.9`` to be installed on the system. Then you can execute your workflows through the StreamFlow CLI::
 
     streamflow /path/to/streamflow.yml
 

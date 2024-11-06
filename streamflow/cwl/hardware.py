@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
+from collections.abc import MutableSequence, MutableMapping
+from typing import Any, TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
@@ -51,7 +52,9 @@ class CWLHardwareRequirement(HardwareRequirement):
             expression_lib=row["expression_lib"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         return {
             "cores": self.cores,
             "memory": self.memory,

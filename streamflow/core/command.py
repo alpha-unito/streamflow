@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, MutableMapping, MutableSequence, Type, cast
+from collections.abc import MutableMapping, MutableSequence
+from typing import Any, cast
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -31,8 +32,8 @@ class Command(ABC):
         loading_context: DatabaseLoadingContext,
         step: Step,
     ) -> Command:
-        type = cast(Type[Command], utils.get_class_from_name(row["type"]))
-        return await type._load(context, row["params"], loading_context, step)
+        type_ = cast(type[Command], utils.get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context, step)
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -108,7 +109,9 @@ class CommandOutputProcessor(ABC):
             ),
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         if self.target:
             await self.target.save(context)
         return {
@@ -124,10 +127,10 @@ class CommandOutputProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CommandOutputProcessor:
-        type = cast(
-            Type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
+        type_ = cast(
+            type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
         )
-        return await type._load(context, row["params"], loading_context)
+        return await type_._load(context, row["params"], loading_context)
 
     @abstractmethod
     async def process(
@@ -189,8 +192,8 @@ class CommandTokenProcessor(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CommandTokenProcessor:
-        type_t = cast(Type[CommandTokenProcessor], get_class_from_name(row["type"]))
-        return await type_t._load(context, row["params"], loading_context)
+        type_ = cast(type[CommandTokenProcessor], get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -231,9 +234,8 @@ class MapCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"processor": await self.processor.save(context)},
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processor": await self.processor.save(context)
         }
 
     def _update_options(self, options: CommandOptions, token: Token) -> CommandOptions:
@@ -318,22 +320,19 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "processors": {
-                    name: token
-                    for name, token in zip(
-                        self.processors.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(t.save(context))
-                                for t in self.processors.values()
-                            )
-                        ),
-                    )
-                }
-            },
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processors": {
+                name: token
+                for name, token in zip(
+                    self.processors.keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(t.save(context))
+                            for t in self.processors.values()
+                        )
+                    ),
+                )
+            }
         }
 
     def _update_options(self, options: CommandOptions, token: Token) -> CommandOptions:
@@ -408,13 +407,10 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "processors": await asyncio.gather(
-                    *(asyncio.create_task(t.save(context)) for t in self.processors)
-                )
-            },
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processors": await asyncio.gather(
+                *(asyncio.create_task(t.save(context)) for t in self.processors)
+            )
         }
 
     def _update_options(self, options: CommandOptions, token: Token) -> CommandOptions:
@@ -482,14 +478,11 @@ class TokenizedCommand(Command):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "processors": await asyncio.gather(
-                    *(
-                        asyncio.create_task(processor.save(context))
-                        for processor in self.processors
-                    )
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "processors": await asyncio.gather(
+                *(
+                    asyncio.create_task(processor.save(context))
+                    for processor in self.processors
                 )
-            },
+            )
         }

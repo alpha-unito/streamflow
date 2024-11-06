@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABCMeta
-from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
+from collections.abc import MutableMapping, MutableSequence
+from typing import Any, TYPE_CHECKING
 
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException

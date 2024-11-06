@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core.deployment import Target
 from streamflow.cwl.requirement.docker.translator import CWLDockerTranslator

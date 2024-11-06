@@ -5,7 +5,8 @@ import asyncio
 import os
 import platform
 from asyncio.locks import Lock
-from typing import Collection, MutableSequence, Any, Callable
+from collections.abc import MutableSequence, Callable, Collection
+from typing import Any
 
 import pytest
 import pytest_asyncio

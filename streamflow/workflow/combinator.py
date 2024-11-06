@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, AsyncIterable, MutableMapping, MutableSequence, cast
+from collections.abc import MutableMapping, MutableSequence, AsyncIterable
+from typing import Any, cast
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -49,7 +50,7 @@ class CartesianProductCombinator(Combinator):
                 schema = {}
                 for key in self.items:
                     if key in self.combinators:
-                        schema = {**schema, **config[key]}
+                        schema |= config[key]
                     else:
                         schema[key] = config[key]
                 suffix = [t.tag.split(".")[-1] for t in schema.values()]
@@ -61,10 +62,11 @@ class CartesianProductCombinator(Combinator):
                     for k, t in schema.items()
                 }
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{"depth": self.depth},
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "depth": self.depth
         }
 
     async def combine(
@@ -121,7 +123,7 @@ class DotProductCombinator(Combinator):
                     for key, elements in self._token_values[tag].items():
                         element = elements.pop()
                         if key in self.combinators:
-                            schema = {**schema, **element}
+                            schema |= element
                         else:
                             schema[key] = {
                                 "token": element,
@@ -217,9 +219,10 @@ class LoopTerminationCombinator(DotProductCombinator):
             combinator.add_output_item(item)
         return combinator
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         # self._token_values is not saved because it is always empty at the beginning of execution
-        return {
-            **await super()._save_additional_params(context),
-            **{"output_items": self.output_items},
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "output_items": self.output_items
         }

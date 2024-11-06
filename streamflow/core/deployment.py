@@ -6,7 +6,8 @@ import os
 import posixpath
 import tempfile
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Type, cast
+from collections.abc import MutableMapping, MutableSequence
+from typing import TYPE_CHECKING, cast
 
 from streamflow.core import utils
 from streamflow.core.config import Config
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.scheduling import AvailableLocation
     from streamflow.core.workflow import Job
-    from typing import MutableSequence, MutableMapping, Any
+    from typing import Any
 
 
 LOCAL_LOCATION = "__LOCAL__"
@@ -284,8 +285,8 @@ class Target(PersistableEntity):
         loading_context: DatabaseLoadingContext,
     ) -> Target:
         row = await context.database.get_target(persistent_id)
-        type = cast(Type[Target], utils.get_class_from_name(row["type"]))
-        obj = await type._load(context, row, loading_context)
+        type_ = cast(type[Target], utils.get_class_from_name(row["type"]))
+        obj = await type_._load(context, row, loading_context)
         loading_context.add_target(persistent_id, obj)
         return obj
 

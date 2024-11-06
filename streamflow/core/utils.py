@@ -9,19 +9,14 @@ import os
 import posixpath
 import shlex
 import uuid
-from typing import (
-    Any,
-    MutableMapping,
-    MutableSequence,
-    TYPE_CHECKING,
-)
+from collections.abc import MutableSequence, MutableMapping, Iterable
+from typing import Any, TYPE_CHECKING
 
 from streamflow.core.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, ExecutionLocation
     from streamflow.core.workflow import Token
-    from typing import Iterable
 
 
 class NamesStack:
@@ -279,7 +274,7 @@ async def run_in_subprocess(
 ) -> tuple[Any | None, int] | None:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(" ".join(command)),
-        env=({**os.environ, **location.environment}),
+        env=os.environ | location.environment,
         stdin=None,
         stdout=(
             asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL

@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import MutableMapping, MutableSequence
 from pathlib import PurePosixPath
-from typing import Any, MutableMapping, MutableSequence
+from typing import Any
 
 from importlib_metadata import entry_points
 from referencing._core import Resolver, Resource
@@ -30,11 +31,10 @@ def _filter_by_name(classes: MutableMapping[str, Any], name: str):
 def _flatten_all_of(entity_schema):
     for obj in entity_schema["allOf"]:
         if "allOf" in obj:
-            obj["properties"] = {**_flatten_all_of(obj), **obj.get("properties", {})}
-        entity_schema["properties"] = {
-            **obj.get("properties", {}),
-            **entity_schema.get("properties", {}),
-        }
+            obj["properties"] = _flatten_all_of(obj) | obj.get("properties", {})
+        entity_schema["properties"] = obj.get("properties", {}) | entity_schema.get(
+            "properties", {}
+        )
     del entity_schema["allOf"]
     return dict(sorted(entity_schema["properties"].items()))
 
@@ -125,7 +125,7 @@ def _split_refs(refs: MutableMapping[str, Any], processed: MutableSequence[str])
         ]
         processed.append(k)
     if subrefs := {k: v for k, v in subrefs.items() if k not in processed}:
-        refs_descs = {**refs_descs, **_split_refs(subrefs, processed)}
+        refs_descs |= _split_refs(subrefs, processed)
     return refs_descs
 
 

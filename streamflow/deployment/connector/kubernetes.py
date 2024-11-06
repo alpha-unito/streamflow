@@ -9,21 +9,15 @@ import re
 import shlex
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Coroutine, MutableMapping, MutableSequence
 from math import ceil, floor
 from pathlib import Path
 from shutil import which
-from typing import (
-    Any,
-    Awaitable,
-    Coroutine,
-    MutableMapping,
-    MutableSequence,
-    cast,
-)
+from typing import Any, cast
 
 import yaml
 from cachetools import Cache, TTLCache
-from importlib_resources import files
+from importlib.resources import files
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiClient, Configuration, V1Container, V1PodList
 from kubernetes_asyncio.config import (

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import posixpath
-from typing import Any, MutableSequence, cast
+from collections.abc import MutableSequence
+from typing import Any, cast
 
 import pytest
 from rdflib import Graph

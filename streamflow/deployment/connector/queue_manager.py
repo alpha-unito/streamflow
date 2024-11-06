@@ -7,11 +7,12 @@ import logging
 import os
 import shlex
 from abc import ABC, abstractmethod
+from collections.abc import MutableMapping, MutableSequence
 from functools import partial
-from typing import Any, MutableMapping, MutableSequence, cast
+from typing import Any, cast
 
 import cachetools
-from importlib_resources import files
+from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -1020,7 +1021,7 @@ class PBSConnector(QueueManagerConnector):
         if stderr == stdout:
             batch_command.append(get_option("j", "oe"))
         if service := cast(PBSService, self.services.get(location.service)):
-            resources = {**service.resources, **resources}
+            resources = cast(dict[str, str], service.resources) | resources
             batch_command.extend(
                 [
                     get_option("a", service.begin),

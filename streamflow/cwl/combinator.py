@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, AsyncIterable, MutableMapping, MutableSequence, cast
+from collections.abc import MutableSequence, MutableMapping, AsyncIterable
+from typing import Any, cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
@@ -53,14 +54,13 @@ class ListMergeCombinator(DotProductCombinator):
             flatten=row["flatten"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "input_names": self.input_names,
-                "output_name": self.output_name,
-                "flatten": self.flatten,
-            },
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "input_names": self.input_names,
+            "output_name": self.output_name,
+            "flatten": self.flatten,
         }
 
     async def combine(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import MutableSequence, TYPE_CHECKING
+from collections.abc import Iterable, MutableSequence
+from typing import Any
 
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Token
@@ -11,9 +12,6 @@ from streamflow.workflow.token import (
     ObjectToken,
     TerminationToken,
 )
-
-if TYPE_CHECKING:
-    from typing import Any, Iterable
 
 
 def check_iteration_termination(inputs: Token | Iterable[Token]) -> bool:
