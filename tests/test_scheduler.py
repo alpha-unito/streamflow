@@ -72,8 +72,8 @@ async def deployment_config(context, deployment) -> DeploymentConfig:
     return await get_deployment_config(context, deployment)
 
 
-@pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def service(context, deployment) -> str | None:
+@pytest.fixture(scope="module")
+def service(context, deployment) -> str | None:
     return get_service(context, deployment)
 
 

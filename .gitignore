@@ -131,3 +131,7 @@ dmypy.json
 
 # StreamFlow
 .streamflow
+
+#SQLite
+*.db-shm
+*.db-wal

@@ -43,9 +43,15 @@ To generate a timeline report of a workflow execution, use the following subcomm
 
 .. code-block:: bash
 
-    streamflow report
+    streamflow report <name>
 
 By default, an interactive ``HTML`` report is generated, but users can specify a different format through the ``--format`` option.
+
+It is also possible to generate a single report from a list of workflows by passing a comma-separated list of workflow names, as follows
+
+.. code-block:: bash
+
+    streamflow report <name1>,<name2>,...
 
 Collect provenance data
 =======================
@@ -56,7 +62,7 @@ To generate a provenance archive containing the last execution of a given workfl
 
 .. code-block:: bash
 
-    streamflow prov
+    streamflow prov <name>
 
 The ``--all`` option can instead be used to include the whole history of workflow execution inside a single archive.
 
