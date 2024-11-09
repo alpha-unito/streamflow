@@ -31,6 +31,7 @@ from streamflow.deployment.connector.base import (
     copy_local_to_remote,
     copy_remote_to_local,
     copy_remote_to_remote,
+    copy_same_connector,
 )
 from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
@@ -253,17 +254,17 @@ class ContainerConnector(ConnectorWrapper, ABC):
             # Otherwise, check if the source path is bound to a mounted volume
             elif (adjusted_src := self._get_container_path(instance, src)) is not None:
                 # If yes, perform a copy command through the container connector
-                command = ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Copying {adjusted_src} to {dst} on location {location.name} "
-                        f"through the `{command}` remote command"
-                    )
                 copy_tasks.append(
                     asyncio.create_task(
                         self.run(
                             location=location,
-                            command=command + [adjusted_src, dst],
+                            command=(
+                                ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
+                            )
+                            + [
+                                adjusted_src,
+                                dst,
+                            ],
                         )
                     )
                 )
@@ -350,15 +351,13 @@ class ContainerConnector(ConnectorWrapper, ABC):
         # Otherwise, check if the destination path is bound to a mounted volume
         elif (adjusted_dst := self._get_container_path(instance, dst)) is not None:
             # If yes, perform a copy command through the container connector
-            command = ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Copying {src} to {adjusted_dst} on location {location.name} "
-                    f"through the `{command}` remote command"
-                )
             await self.run(
                 location=location,
-                command=command + [src, adjusted_dst],
+                command=(["ln", "-snf"] if read_only else ["/bin/cp", "-rf"])
+                + [
+                    src,
+                    adjusted_dst,
+                ],
             )
         else:
             # If not, perform a transfer through the container connector
@@ -421,17 +420,17 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     adjusted_src := self._get_container_path(instance, host_src)
                 ) is not None:
                     # If yes, perform a copy command through the container connector
-                    command = ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Copying {adjusted_src} to {dst} on location {location.name} "
-                            f"through the `{command}` remote command"
-                        )
                     copy_tasks.append(
                         asyncio.create_task(
                             self.run(
                                 location=location,
-                                command=command + [adjusted_src, dst],
+                                command=(
+                                    ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
+                                )
+                                + [
+                                    adjusted_src,
+                                    dst,
+                                ],
                             )
                         )
                     )
@@ -489,24 +488,31 @@ class ContainerConnector(ConnectorWrapper, ABC):
             )
         # Otherwise, perform a standard remote-to-remote copy
         else:
-            locations = await self._get_effective_locations(
-                locations, dst, source_location
-            )
-            return await copy_remote_to_remote(
+            if locations := await copy_same_connector(
                 connector=self,
-                locations=locations,
-                source_connector=source_connector,
-                source_location=source_location,
-                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
-                writer_command=await utils.get_remote_to_remote_write_command(
-                    src_connector=source_connector,
-                    src_location=source_location,
-                    src=src,
-                    dst_connector=self,
-                    dst_locations=locations,
-                    dst=dst,
+                locations=await self._get_effective_locations(
+                    locations, dst, source_location
                 ),
-            )
+                source_location=source_location,
+                src=src,
+                dst=dst,
+                read_only=read_only,
+            ):
+                return await copy_remote_to_remote(
+                    connector=self,
+                    locations=locations,
+                    source_connector=source_connector,
+                    source_location=source_location,
+                    reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+                    writer_command=await utils.get_remote_to_remote_write_command(
+                        src_connector=source_connector,
+                        src_location=source_location,
+                        src=src,
+                        dst_connector=self,
+                        dst_locations=locations,
+                        dst=dst,
+                    ),
+                )
 
     async def _get_effective_locations(
         self,

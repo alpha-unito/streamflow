@@ -39,7 +39,11 @@ from streamflow.core.exception import (
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
 from streamflow.deployment.aiotarstream import BaseStreamWrapper
-from streamflow.deployment.connector.base import BaseConnector, copy_remote_to_remote
+from streamflow.deployment.connector.base import (
+    BaseConnector,
+    copy_remote_to_remote,
+    copy_same_connector,
+)
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -238,15 +242,14 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
-        locations = await self._get_effective_locations(locations, dst)
-        if source_connector == self and source_location.name in (
-            loc.name for loc in locations
+        if locations := await copy_same_connector(
+            connector=self,
+            locations=await self._get_effective_locations(locations, dst),
+            source_location=source_location,
+            src=src,
+            dst=dst,
+            read_only=read_only,
         ):
-            if src != dst:
-                command = ["/bin/cp", "-rf", src, dst]
-                await self.run(source_location, command)
-                locations.remove(source_location)
-        if locations:
             # Perform remote to remote copy
             await copy_remote_to_remote(
                 connector=self,

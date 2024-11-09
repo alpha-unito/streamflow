@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import errno
+import os
 import posixpath
 import tempfile
 
@@ -11,6 +15,24 @@ from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from tests.utils.deployment import get_location
+
+
+async def _symlink(
+    connector: Connector, location: ExecutionLocation | None, src: str, path: str
+) -> None:
+    if isinstance(connector, LocalConnector):
+        src = os.path.abspath(src)
+        if os.path.isdir(path):
+            path = os.path.join(path, os.path.basename(src))
+        try:
+            os.symlink(
+                os.path.abspath(src), path, target_is_directory=os.path.isdir(src)
+            )
+        except OSError as e:
+            if not e.errno == errno.EEXIST:
+                raise
+    else:
+        await connector.run(location=location, command=["ln", "-snf", src, path])
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
@@ -194,7 +216,7 @@ async def test_symlink(context, connector, location):
     try:
         # Test symlink to file
         await remotepath.write(connector, location, src, "StreamFlow")
-        await remotepath.symlink(connector, location, src, path)
+        await _symlink(connector, location, src, path)
         assert await remotepath.exists(connector, location, path)
         assert await remotepath.islink(connector, location, path)
         assert (
@@ -208,7 +230,7 @@ async def test_symlink(context, connector, location):
         await remotepath.rm(connector, location, src)
         # Test symlink to directory
         await remotepath.mkdir(connector, [location], src)
-        await remotepath.symlink(connector, location, src, path)
+        await _symlink(connector, location, src, path)
         assert await remotepath.exists(connector, location, path)
         assert await remotepath.islink(connector, location, path)
         assert (

@@ -24,7 +24,7 @@ from streamflow.core.exception import (
 )
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
-from streamflow.deployment.connector.base import BatchConnector
+from streamflow.deployment.connector.base import BatchConnector, copy_same_connector
 from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.deployment.wrapper import (
@@ -497,14 +497,23 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
-        await self.connector.copy_remote_to_remote(
+        source_connector = source_connector or self
+        if locations := await copy_same_connector(
+            connector=self,
+            locations=locations,
+            source_location=source_location,
             src=src,
             dst=dst,
-            locations=get_inner_locations(locations=locations),
-            source_location=source_location,
-            source_connector=source_connector,
             read_only=read_only,
-        )
+        ):
+            await self.connector.copy_remote_to_remote(
+                src=src,
+                dst=dst,
+                locations=get_inner_locations(locations=locations),
+                source_location=source_location,
+                source_connector=source_connector,
+                read_only=read_only,
+            )
 
     async def get_available_locations(
         self, service: str | None = None

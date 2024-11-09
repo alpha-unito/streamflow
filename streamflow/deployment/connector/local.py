@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 import os
 import shutil
@@ -27,7 +28,11 @@ def _local_copy(src: str, dst: str, read_only: bool):
     if read_only:
         if os.path.isdir(dst):
             dst = os.path.join(dst, os.path.basename(src))
-        os.symlink(src, dst, target_is_directory=os.path.isdir(src))
+        try:
+            os.symlink(src, dst, target_is_directory=os.path.isdir(src))
+        except OSError as e:
+            if not e.errno == errno.EEXIST:
+                raise
     else:
         if os.path.isdir(src):
             os.makedirs(dst, exist_ok=True)

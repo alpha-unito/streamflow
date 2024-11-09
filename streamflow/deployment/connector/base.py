@@ -145,6 +145,32 @@ async def copy_remote_to_remote(
                 )
 
 
+async def copy_same_connector(
+    connector: Connector,
+    locations: MutableSequence[ExecutionLocation],
+    source_location: ExecutionLocation,
+    src: str,
+    dst: str,
+    read_only: bool,
+) -> MutableSequence[ExecutionLocation]:
+    if src != dst:
+        for location in locations:
+            if (
+                location.name == source_location.name
+                and location.deployment == source_location.deployment
+            ):
+                await connector.run(
+                    location=location,
+                    command=(["ln", "-snf"] if read_only else ["/bin/cp", "-rf"])
+                    + [
+                        src,
+                        dst,
+                    ],
+                )
+                return [loc for loc in locations if loc != location]
+    return locations
+
+
 class BaseConnector(Connector, FutureAware, ABC):
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
         super().__init__(
@@ -204,14 +230,14 @@ class BaseConnector(Connector, FutureAware, ABC):
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
-        if source_connector == self and source_location.name in (
-            loc.name for loc in locations
+        if locations := await copy_same_connector(
+            connector=self,
+            locations=locations,
+            source_location=source_location,
+            src=src,
+            dst=dst,
+            read_only=read_only,
         ):
-            if src != dst:
-                command = ["/bin/cp", "-rf", src, dst]
-                await self.run(source_location, command)
-                locations.remove(source_location)
-        if locations:
             # Perform remote to remote copy
             await copy_remote_to_remote(
                 connector=self,

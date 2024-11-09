@@ -187,85 +187,51 @@ class DefaultDataManager(DataManager):
             # Check if a primary copy of the source path is already present on the destination location
             found_existing_loc = False
             for primary_loc in primary_locations:
-                if primary_loc.name == dst_location.name:
+                if (
+                    primary_loc.deployment == dst_location.deployment
+                    and primary_loc.name == dst_location.name
+                ):
                     # Wait for the source location to be available on the destination path
                     await primary_loc.available.wait()
-
-                    # save data location of destination folder created
-                    self.register_path(dst_location, str(Path(dst_path).parent))
-
                     # If yes, perform a symbolic link if possible
-                    if not writable:
-                        await remotepath.symlink(
-                            dst_connector, dst_location, primary_loc.path, dst_path
-                        )
-                        self.path_mapper.create_and_map(
-                            location_type=DataType.SYMBOLIC_LINK,
-                            src_path=src_path,
-                            dst_path=dst_path,
-                            dst_location=dst_location,
-                            available=True,
-                        )
-                    # Otherwise, perform a copy operation
-                    else:
-                        copy_tasks.append(
-                            asyncio.create_task(
-                                _copy(
-                                    src_connector=dst_connector,
-                                    src_location=dst_location,
-                                    src=primary_loc.path,
-                                    dst_connector=dst_connector,
-                                    dst_locations=[dst_location],
-                                    dst=dst_path,
-                                    writable=True,
-                                )
+                    copy_tasks.append(
+                        asyncio.create_task(
+                            _copy(
+                                src_connector=dst_connector,
+                                src_location=dst_location,
+                                src=primary_loc.path,
+                                dst_connector=dst_connector,
+                                dst_locations=[dst_location],
+                                dst=dst_path,
+                                writable=writable,
                             )
                         )
-                        data_locations.append(
-                            self.path_mapper.put(
-                                path=dst_path,
-                                data_location=DataLocation(
-                                    location=dst_location,
-                                    path=dst_path,
-                                    relpath=list(self.path_mapper.get(src_path))[
-                                        0
-                                    ].relpath,
-                                    data_type=DataType.PRIMARY,
-                                    available=False,
-                                ),
-                            )
-                        )
+                    )
                     found_existing_loc = True
                     break
             # Otherwise, perform a remote copy and mark the destination as primary
             if not found_existing_loc:
                 remote_locations.append(dst_location)
-
-                # save data location of destination folder created
-                self.register_path(dst_location, str(Path(dst_path).parent))
-
-                if writable:
-                    data_locations.append(
-                        self.path_mapper.put(
-                            path=dst_path,
-                            data_location=DataLocation(
-                                location=dst_location,
-                                path=dst_path,
-                                relpath=list(self.path_mapper.get(src_path))[0].relpath,
-                                data_type=DataType.PRIMARY,
-                                available=False,
-                            ),
-                        )
-                    )
-                else:
-                    data_locations.append(
-                        self.path_mapper.create_and_map(
-                            location_type=DataType.PRIMARY,
-                            src_path=src_path,
-                            dst_path=dst_path,
-                            dst_location=dst_location,
-                        )
-                    )
+            # Register path and data location
+            self.register_path(dst_location, str(Path(dst_path).parent))
+            data_locations.append(
+                self.path_mapper.put(
+                    path=dst_path,
+                    data_location=DataLocation(
+                        location=dst_location,
+                        path=dst_path,
+                        relpath=list(self.path_mapper.get(src_path))[0].relpath,
+                        data_type=DataType.PRIMARY,
+                    ),
+                )
+                if writable
+                else self.path_mapper.create_and_map(
+                    location_type=DataType.PRIMARY,
+                    src_path=src_path,
+                    dst_path=dst_path,
+                    dst_location=dst_location,
+                )
+            )
         # Perform all the copy operations
         if remote_locations:
             copy_tasks.append(
@@ -284,6 +250,28 @@ class DefaultDataManager(DataManager):
         await asyncio.gather(*copy_tasks)
         # Mark all destination data locations as available
         for data_location in data_locations:
+            if not writable:
+                path = (
+                    get_path_processor(dst_connector).join(
+                        data_location.path,
+                        get_path_processor(src_connector).basename(src_path),
+                    )
+                    if await remotepath.isdir(
+                        connector=dst_connector,
+                        location=data_location.location,
+                        path=data_location.path,
+                    )
+                    else data_location.path
+                )
+                data_location.data_type = (
+                    DataType.SYMBOLIC_LINK
+                    if await remotepath.islink(
+                        connector=dst_connector,
+                        location=data_location.location,
+                        path=path,
+                    )
+                    else DataType.PRIMARY
+                )
             data_location.available.set()
 
 
