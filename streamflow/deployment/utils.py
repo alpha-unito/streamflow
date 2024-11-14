@@ -24,6 +24,17 @@ if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
 
 
+def _get_workdir(deployment, workflow_config) -> None:
+    while (workdir := deployment.get("workdir")) is None and (
+        wraps := deployment.get("wraps")
+    ) is not None:
+        # Get parent deployment
+        deployment = workflow_config.deployments[
+            wraps if isinstance(wraps, str) else wraps["deployment"]
+        ]
+    return workdir
+
+
 def get_binding_config(
     name: str, target_type: str, workflow_config: WorkflowConfig
 ) -> BindingConfig:
@@ -60,14 +71,7 @@ def get_binding_config(
                 external=target_deployment.get("external", False),
                 lazy=target_deployment.get("lazy", True),
                 scheduling_policy=target_deployment["scheduling_policy"],
-                workdir=target_deployment.get("workdir")
-                or (
-                    workflow_config.deployments[target_deployment["wraps"]].get(
-                        "workdir"
-                    )
-                    if "wraps" in target_deployment
-                    else None
-                ),
+                workdir=_get_workdir(target_deployment, workflow_config),
                 wraps=get_wraps_config(target_deployment.get("wraps")),
             )
             targets.append(
