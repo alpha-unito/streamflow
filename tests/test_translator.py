@@ -175,18 +175,7 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_dot_product_transformer_raises_error() -> None:
-    """Test DotProductSizeTransformer which must raise an exception because the size tokens have different values"""
-    params = [
-        get_data("tests/wf/scatter-wf4.cwl"),
-        _create_file({"inp1": ["one", "two", "extra"], "inp2": ["three", "four"]}),
-    ]
-    assert main(params) == 1
-
-
-@pytest.mark.asyncio
-async def test_workdir_inheritance() -> None:
+def test_workdir_inheritance() -> None:
     """Test the workdir inheritance of deployments, wrapped deployments and targets"""
     workflow_config = _get_workflow_config()
     workdir_deployment_1 = workflow_config.deployments["handsome"]["workdir"]
@@ -224,3 +213,12 @@ async def test_workdir_inheritance() -> None:
     assert binding_config.targets[3].workdir == _init_workdir(
         binding_config.targets[3].deployment.name
     )
+
+
+def test_dot_product_transformer_raises_error() -> None:
+    """Test DotProductSizeTransformer which must raise an exception because the size tokens have different values"""
+    params = [
+        get_data("tests/wf/scatter-wf4.cwl"),
+        _create_file({"inp1": ["one", "two", "extra"], "inp2": ["three", "four"]}),
+    ]
+    assert main(params) == 1
