@@ -1,5 +1,6 @@
 import json
 import os
+import posixpath
 import tempfile
 from collections.abc import MutableMapping
 from pathlib import PurePosixPath
@@ -10,7 +11,6 @@ import pytest
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
-from streamflow.core.deployment import _init_workdir
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.workflow import CWLWorkflow
 
@@ -210,8 +210,10 @@ def test_workdir_inheritance() -> None:
     # Get default `workdir` because `handsome` deployment does NOT has a `workdir` either
     assert binding_config.targets[3].deployment.name == "wrapper_4"
     assert binding_config.targets[3].deployment.workdir is None
-    assert binding_config.targets[3].workdir == _init_workdir(
-        binding_config.targets[3].deployment.name
+    assert binding_config.targets[3].workdir == (
+        os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow")
+        if binding_config.targets[3].deployment == "local"
+        else posixpath.join("/tmp", "streamflow")
     )
 
 

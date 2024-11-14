@@ -10,7 +10,7 @@ from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.data import DataLocation
-from streamflow.core.deployment import ExecutionLocation, LOCAL_LOCATION
+from streamflow.core.deployment import ExecutionLocation, LocalTarget
 from streamflow.core.recovery import CheckpointManager
 from streamflow.core.utils import random_name
 
@@ -36,7 +36,11 @@ class DefaultCheckpointManager(CheckpointManager):
             src_location=data_location.location,
             src_path=data_location.path,
             dst_locations=[
-                ExecutionLocation(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
+                ExecutionLocation(
+                    deployment=LocalTarget.deployment_name,
+                    local=True,
+                    name="__LOCAL__",
+                )
             ],
             dst_path=local_path,
         )

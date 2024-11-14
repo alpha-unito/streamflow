@@ -10,7 +10,6 @@ from streamflow.core import utils
 from streamflow.core.data import DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.data import remotepath
-from streamflow.deployment.connector import LocalConnector
 from tests.utils.deployment import get_location
 
 
@@ -39,16 +38,16 @@ async def test_data_locations(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test the existence of data locations after the transfer data"""
-    if isinstance(src_connector, LocalConnector):
-        src_path = os.path.join(
-            tempfile.gettempdir(), utils.random_name(), utils.random_name()
-        )
-    else:
-        src_path = posixpath.join("/tmp", utils.random_name(), utils.random_name())
-    if isinstance(dst_connector, LocalConnector):
-        dst_path = os.path.join(tempfile.gettempdir(), utils.random_name())
-    else:
-        dst_path = posixpath.join("/tmp", utils.random_name())
+    src_path = (
+        os.path.join(tempfile.gettempdir(), utils.random_name(), utils.random_name())
+        if src_location.local
+        else posixpath.join("/tmp", utils.random_name(), utils.random_name())
+    )
+    dst_path = (
+        os.path.join(tempfile.gettempdir(), utils.random_name())
+        if dst_location.local
+        else posixpath.join("/tmp", utils.random_name())
+    )
 
     # Create working directories in src and dst locations
     await remotepath.mkdir(src_connector, [src_location], str(Path(src_path).parent))

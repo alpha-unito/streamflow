@@ -22,21 +22,12 @@ if TYPE_CHECKING:
     from typing import Any
 
 
-LOCAL_LOCATION = "__LOCAL__"
-
-
-def _init_workdir(deployment_name: str) -> str:
-    if deployment_name != LOCAL_LOCATION:
-        return posixpath.join("/tmp", "streamflow")  # nosec
-    else:
-        return os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow")
-
-
 class ExecutionLocation:
     __slots__ = (
         "deployment",
         "environment",
         "hostname",
+        "local",
         "name",
         "service",
         "stacked",
@@ -49,6 +40,7 @@ class ExecutionLocation:
         deployment: str,
         environment: MutableMapping[str, str] | None = None,
         hostname: str | None = None,
+        local: bool | None = False,
         service: str | None = None,
         stacked: bool | None = False,
         wraps: ExecutionLocation | None = None,
@@ -56,6 +48,7 @@ class ExecutionLocation:
         self.deployment: str = deployment
         self.environment: MutableMapping[str, str] = environment or {}
         self.hostname: str | None = hostname
+        self.local: bool = local
         self.name: str = name
         self.service: str | None = service
         self.stacked: bool = stacked
@@ -253,7 +246,13 @@ class Target(PersistableEntity):
         self.locations: int = locations
         self.service: str | None = service
         self.workdir: str = (
-            workdir or self.deployment.workdir or _init_workdir(deployment.name)
+            workdir
+            or self.deployment.workdir
+            or (
+                os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow")
+                if deployment.type == "local"
+                else posixpath.join("/tmp", "streamflow")  # nosec
+            )
         )
 
     async def _save_additional_params(
@@ -305,6 +304,7 @@ class Target(PersistableEntity):
 
 
 class LocalTarget(Target):
+    deployment_name = "__LOCAL__"
     __deployment_config = None
 
     def __init__(self, workdir: str | None = None):
@@ -316,7 +316,11 @@ class LocalTarget(Target):
     def _get_deployment_config(cls):
         if not cls.__deployment_config:
             cls.__deployment_config = DeploymentConfig(
-                name=LOCAL_LOCATION, type="local", config={}, external=True, lazy=False
+                name=cls.deployment_name,
+                type="local",
+                config={},
+                external=True,
+                lazy=False,
             )
         return cls.__deployment_config
 

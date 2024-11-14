@@ -274,6 +274,7 @@ class AvailableLocation:
         name: str,
         deployment: str,
         hostname: str,
+        local: bool | None = False,
         service: str | None = None,
         slots: int | None = None,
         stacked: bool = False,
@@ -284,6 +285,7 @@ class AvailableLocation:
         self.location: ExecutionLocation = ExecutionLocation(
             deployment=deployment,
             hostname=hostname,
+            local=local,
             name=name,
             service=service,
             stacked=stacked,
@@ -300,6 +302,10 @@ class AvailableLocation:
     @property
     def hostname(self) -> str:
         return self.location.hostname
+
+    @property
+    def local(self) -> bool:
+        return self.location.local
 
     @property
     def name(self) -> str:

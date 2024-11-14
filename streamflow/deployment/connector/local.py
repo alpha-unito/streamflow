@@ -17,7 +17,6 @@ from streamflow.core import utils
 from streamflow.core.deployment import (
     Connector,
     ExecutionLocation,
-    LOCAL_LOCATION,
 )
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import (
@@ -110,7 +109,7 @@ class LocalConnector(BaseConnector):
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
-        if isinstance(source_connector, LocalConnector):
+        if source_location.local:
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f"COPYING from {src} to {dst} on local file-system")
             _local_copy(src, dst, read_only)
@@ -134,11 +133,12 @@ class LocalConnector(BaseConnector):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return {
-            LOCAL_LOCATION: AvailableLocation(
-                name=LOCAL_LOCATION,
+            "__LOCAL__": AvailableLocation(
+                name="__LOCAL__",
                 deployment=self.deployment_name,
                 service=service,
                 hostname="localhost",
+                local=True,
                 slots=1,
                 hardware=self._hardware,
             )

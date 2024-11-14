@@ -16,7 +16,7 @@ import psutil
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContextManager
-from streamflow.core.deployment import Connector, ExecutionLocation, LOCAL_LOCATION
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -555,7 +555,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
             )
 
     def _wraps_local(self) -> bool:
-        return self._inner_location.name == LOCAL_LOCATION
+        return self._inner_location.local
 
     async def deploy(self, external: bool) -> None:
         # Retrieve the underlying location

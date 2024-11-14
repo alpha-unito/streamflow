@@ -16,7 +16,6 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     DeploymentConfig,
     ExecutionLocation,
-    LOCAL_LOCATION,
     WrapsConfig,
     BindingFilter,
     Target,
@@ -29,7 +28,7 @@ from tests.utils.data import get_data_path
 
 def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
     if deployment_t == "local":
-        return LOCAL_LOCATION
+        return "__LOCAL__"
     elif deployment_t == "docker":
         return "alpine-docker"
     elif deployment_t == "docker-wrapper":
@@ -148,7 +147,7 @@ def get_local_deployment_config():
     )
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
-        name=LOCAL_LOCATION,
+        name="__LOCAL__",
         type="local",
         config={},
         external=True,
