@@ -1023,7 +1023,8 @@ async def update_file_token(
     load_listing: LoadListing | None = None,
 ):
     filepath = get_path_from_token(token_value)
-    if load_contents is not None:
+    # Process contents
+    if get_token_class(token_value) == "File" and load_contents is not None:
         if load_contents and "contents" not in token_value:
             token_value |= {
                 "contents": await _get_contents(
