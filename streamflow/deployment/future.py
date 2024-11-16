@@ -39,9 +39,9 @@ class FutureConnector(Connector):
     async def _safe_deploy_event_wait(self):
         await self.deploy_event.wait()
         if self._connector is None:
-            logger.error(f"Deploying of {self.deployment_name} failed")
+            logger.error(f"FAILED deployment of {self.deployment_name}")
             raise WorkflowExecutionException(
-                f"Deploying of {self.deployment_name} failed"
+                f"FAILED deployment of {self.deployment_name}"
             )
 
     @property
@@ -134,7 +134,7 @@ class FutureConnector(Connector):
             raise
         if logger.isEnabledFor(logging.INFO):
             if not external:
-                logger.info(f"COMPLETED Deployment of {self.deployment_name}")
+                logger.info(f"COMPLETED deployment of {self.deployment_name}")
         self._connector = connector
         self.deploy_event.set()
 

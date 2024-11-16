@@ -93,7 +93,7 @@ async def test_deployment_manager_deploy_fails(context: StreamFlowContext) -> No
     ):
         assert isinstance(result, FailureConnectorException) or (
             isinstance(result, WorkflowExecutionException)
-            and result.args[0] == "Deploying of failure-test failed"
+            and result.args[0] == f"FAILED deployment of {deployment_config.name}"
         )
 
 
@@ -106,10 +106,9 @@ async def test_future_connector_multiple_request_fail(
     context: StreamFlowContext, method: Callable
 ) -> None:
     """Test FutureConnector with multiple requests but the deployment fails"""
-    deployment_name = "failure-test"
     deployment_config = get_failure_deployment_config()
     connector = FutureConnector(
-        name=deployment_name,
+        name=deployment_config.name,
         config_dir=os.path.dirname(context.config["path"]),
         connector_type=FailureConnector,
         external=deployment_config.external,
@@ -127,7 +126,7 @@ async def test_future_connector_multiple_request_fail(
     ):
         assert isinstance(result, FailureConnectorException) or (
             isinstance(result, WorkflowExecutionException)
-            and result.args[0] == "Deploying of failure-test failed"
+            and result.args[0] == f"FAILED deployment of {deployment_config.name}"
         )
 
 

@@ -3,14 +3,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import posixpath
 from abc import ABC
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
+from importlib.resources import files
 from typing import Any
 
 import asyncssh
 from asyncssh import ChannelOpenError, ConnectionLost
-from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
@@ -387,7 +386,7 @@ class SSHConnector(BaseConnector):
         }
         self.hardware: MutableMapping[str, Hardware] = {}
 
-    async def _copy_remote_to_remote(
+    async def copy_remote_to_remote(
         self,
         src: str,
         dst: str,
@@ -417,17 +416,10 @@ class SSHConnector(BaseConnector):
                 await copy_remote_to_remote(
                     connector=self,
                     locations=location_group,
+                    src=src,
+                    dst=dst,
                     source_connector=source_connector,
                     source_location=source_location,
-                    reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
-                    writer_command=await utils.get_remote_to_remote_write_command(
-                        src_connector=source_connector,
-                        src_location=source_location,
-                        src=src,
-                        dst_connector=self,
-                        dst_locations=location_group,
-                        dst=dst,
-                    ),
                 )
 
     async def _get_available_location(self, location: str) -> Hardware:

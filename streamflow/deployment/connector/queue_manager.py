@@ -659,7 +659,7 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
             await self.connector.undeploy(external)
             if logger.isEnabledFor(logging.INFO):
                 logger.warning(
-                    f"COMPLETED Undeployment of inner SSH connector for {self.deployment_name} deployment."
+                    f"COMPLETED undeployment of inner SSH connector for {self.deployment_name} deployment."
                 )
 
 

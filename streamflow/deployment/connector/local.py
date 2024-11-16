@@ -7,11 +7,11 @@ import os
 import shutil
 import sys
 import tempfile
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
+from importlib.resources import files
 from typing import Any
 
 import psutil
-from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.deployment import (
@@ -20,7 +20,9 @@ from streamflow.core.deployment import (
     LOCAL_LOCATION,
 )
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
-from streamflow.deployment.connector.base import BaseConnector
+from streamflow.deployment.connector.base import (
+    BaseConnector,
+)
 from streamflow.log_handler import logger
 
 
@@ -66,21 +68,29 @@ class LocalConnector(BaseConnector):
         else:
             return "sh"
 
-    async def _copy_local_to_remote(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"COPYING from {src} to {dst} on local file-system")
         _local_copy(src, dst, read_only)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"COMPLETED copy from {src} to {dst} on local file-system")
 
-    async def _copy_remote_to_local(
+    async def copy_remote_to_local(
         self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
     ) -> None:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"COPYING from {src} to {dst} on local file-system")
         _local_copy(src, dst, read_only)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"COMPLETED copy from {src} to {dst} on local file-system")
 
-    async def _copy_remote_to_remote(
+    async def copy_remote_to_remote(
         self,
         src: str,
         dst: str,
@@ -91,7 +101,11 @@ class LocalConnector(BaseConnector):
     ) -> None:
         source_connector = source_connector or self
         if isinstance(source_connector, LocalConnector):
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f"COPYING from {src} to {dst} on local file-system")
             _local_copy(src, dst, read_only)
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f"COMPLETED copy from {src} to {dst} on local file-system")
         else:
             await source_connector.copy_remote_to_local(
                 src=src,

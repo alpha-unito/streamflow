@@ -89,11 +89,11 @@ async def main(
         return
     await workflow.save(context)
     if logger.isEnabledFor(logging.INFO):
-        logger.info("COMPLETED Building of workflow execution plan")
+        logger.info("COMPLETED building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)
     if logger.isEnabledFor(logging.INFO):
-        logger.info(f"Running workflow {args.name}")
+        logger.info(f"EXECUTING workflow {args.name}")
     output_tokens = await executor.run()
     if logger.isEnabledFor(logging.INFO):
-        logger.info("COMPLETED Workflow execution")
+        logger.info("COMPLETED workflow execution")
     print(json.dumps(output_tokens, sort_keys=True, indent=4))

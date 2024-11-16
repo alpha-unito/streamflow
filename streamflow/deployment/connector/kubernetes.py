@@ -4,12 +4,12 @@ import asyncio
 import io
 import logging
 import os
-import posixpath
 import re
 import shlex
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Coroutine, MutableMapping, MutableSequence
+from importlib.resources import files
 from math import ceil, floor
 from pathlib import Path
 from shutil import which
@@ -17,7 +17,6 @@ from typing import Any, cast
 
 import yaml
 from cachetools import Cache, TTLCache
-from importlib.resources import files
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiClient, Configuration, V1Container, V1PodList
 from kubernetes_asyncio.config import (
@@ -218,21 +217,21 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                 if not self.namespace:
                     raise ConfigException("Namespace file exists but empty.")
 
-    async def _copy_local_to_remote(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ):
-        await super()._copy_local_to_remote(
+        await super().copy_local_to_remote(
             src=src,
             dst=dst,
             locations=await self._get_effective_locations(locations, dst),
             read_only=read_only,
         )
 
-    async def _copy_remote_to_remote(
+    async def copy_remote_to_remote(
         self,
         src: str,
         dst: str,
@@ -250,13 +249,13 @@ class KubernetesBaseConnector(BaseConnector, ABC):
             dst=dst,
             read_only=read_only,
         ):
-            # Perform remote to remote copy
             await copy_remote_to_remote(
                 connector=self,
                 locations=locations,
+                src=src,
+                dst=dst,
                 source_connector=source_connector,
                 source_location=source_location,
-                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
                 writer_command=[
                     "sh",
                     "-c",
