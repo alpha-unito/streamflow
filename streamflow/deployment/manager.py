@@ -79,14 +79,14 @@ class DefaultDeploymentManager(DeploymentManager):
                         raise
                     if logger.isEnabledFor(logging.INFO):
                         if not deployment_config.external:
-                            logger.info(f"COMPLETED Deployment of {deployment_name}")
+                            logger.info(f"COMPLETED deployment of {deployment_name}")
                     self.events_map[deployment_name].set()
                     break
             else:
                 await self.events_map[deployment_name].wait()
                 if deployment_name not in self.deployments_map:
                     raise WorkflowExecutionException(
-                        f"Deploying of {deployment_name} failed"
+                        f"FAILED deployment of {deployment_name}"
                     )
                 if deployment_name in self.config_map:
                     break
@@ -212,7 +212,7 @@ class DefaultDeploymentManager(DeploymentManager):
                 await connector.undeploy(config.external)
                 if logger.isEnabledFor(logging.INFO):
                     if not config.external:
-                        logger.info(f"COMPLETED Undeployment of {deployment_name}")
+                        logger.info(f"COMPLETED undeployment of {deployment_name}")
                 self.events_map[deployment_name].set()
             # Remove the current environment from all the other dependency graphs
             for name, deps in list(

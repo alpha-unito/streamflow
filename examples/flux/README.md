@@ -34,7 +34,7 @@ uses `mpirun`, but since Flux has MPI bindings, we replace this with flux run.
 You'll see the streamflow result printed to the screen:
 
 ```console
-2023-04-02 19:35:18.426 INFO     COMPLETED Workflow execution
+2023-04-02 19:35:18.426 INFO     COMPLETED workflow execution
 {
     "result": {
         "basename": "mpi_output.log",
@@ -49,7 +49,7 @@ You'll see the streamflow result printed to the screen:
     }
 }
 2023-04-02 19:35:18.428 INFO     UNDEPLOYING dc-mpi
-2023-04-02 19:35:18.443 INFO     COMPLETED Undeployment of dc-mpi
+2023-04-02 19:35:18.443 INFO     COMPLETED undeployment of dc-mpi
 ```
 
 And the output directory will be in your working directory:

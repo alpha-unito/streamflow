@@ -8,7 +8,7 @@ import posixpath
 import shlex
 import tarfile
 from abc import ABC
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from typing import Any
 
 from streamflow.core import utils
@@ -16,7 +16,6 @@ from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import (
     Connector,
     ExecutionLocation,
-    LOCAL_LOCATION,
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.utils import get_local_to_remote_destination
@@ -68,6 +67,10 @@ async def copy_local_to_remote(
     dst: str,
     writer_command: MutableSequence[str],
 ) -> None:
+    if logger.isEnabledFor(logging.INFO):
+        logger.info(
+            f"COPYING from {src} on local file-system to {dst} on location {location}"
+        )
     async with await connector.get_stream_writer(
         command=writer_command, location=location
     ) as writer:
@@ -82,8 +85,12 @@ async def copy_local_to_remote(
                 await tar.add(src, arcname=dst)
         except tarfile.TarError as e:
             raise WorkflowExecutionException(
-                f"Error copying {src} to {dst} on location {location}: {e}"
+                f"FAILED copy from {src} to {dst} on location {location}: {e}"
             ) from e
+    if logger.isEnabledFor(logging.INFO):
+        logger.info(
+            f"COMPLETED copy from {src} on local file-system to {dst} on location {location}"
+        )
 
 
 async def copy_remote_to_local(
@@ -93,6 +100,10 @@ async def copy_remote_to_local(
     dst: str,
     reader_command: MutableSequence[str],
 ) -> None:
+    if logger.isEnabledFor(logging.INFO):
+        logger.info(
+            f"COPYING from {src} on location {location} to {dst} on local file-system"
+        )
     async with await connector.get_stream_reader(
         command=reader_command, location=location
     ) as reader:
@@ -105,18 +116,50 @@ async def copy_remote_to_local(
                 await extract_tar_stream(tar, src, dst, connector.transferBufferSize)
         except tarfile.TarError as e:
             raise WorkflowExecutionException(
-                f"Error copying {src} from location {location} to {dst}: {e}"
+                f"FAILED copy from {src} from location {location} to {dst}: {e}"
             ) from e
+    if logger.isEnabledFor(logging.INFO):
+        logger.info(
+            f"COMPLETED copy from {src} on location {location} to {dst} on local file-system"
+        )
 
 
 async def copy_remote_to_remote(
     connector: Connector,
     locations: MutableSequence[ExecutionLocation],
+    src: str,
+    dst: str,
     source_connector: Connector,
     source_location: ExecutionLocation,
-    reader_command: MutableSequence[str],
-    writer_command: MutableSequence[str],
+    reader_command: MutableSequence[str] | None = None,
+    writer_command: MutableSequence[str] | None = None,
 ) -> None:
+    if logger.isEnabledFor(logging.INFO):
+        if len(locations) > 1:
+            logger.info(
+                "COPYING from {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
+                    src_loc=source_location,
+                    src=src,
+                    dst=dst,
+                    locations="\n\t".join([str(loc) for loc in locations]),
+                )
+            )
+        else:
+            logger.info(
+                f"COPYING from {src} on location {source_location} to {dst} on location {locations[0]}"
+            )
+    # Build reader and writer commands
+    if reader_command is None:
+        reader_command = ["tar", "chf", "-", "-C", *posixpath.split(src)]
+    if writer_command is None:
+        writer_command = await utils.get_remote_to_remote_write_command(
+            src_connector=source_connector,
+            src_location=source_location,
+            src=src,
+            dst_connector=connector,
+            dst_locations=locations,
+            dst=dst,
+        )
     # Open source StreamReader
     async with await source_connector.get_stream_reader(
         command=reader_command,
@@ -126,7 +169,10 @@ async def copy_remote_to_remote(
         write_contexts = await asyncio.gather(
             *(
                 asyncio.create_task(
-                    connector.get_stream_writer(writer_command, location)
+                    connector.get_stream_writer(
+                        command=writer_command,
+                        location=location,
+                    )
                 )
                 for location in locations
             )
@@ -143,6 +189,21 @@ async def copy_remote_to_remote(
                 await asyncio.gather(
                     *(asyncio.create_task(writer.write(content)) for writer in writers)
                 )
+    if logger.isEnabledFor(logging.INFO):
+        if len(locations) > 1:
+            logger.info(
+                "COMPLETED copy from {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
+                    src_loc=source_location,
+                    src=src,
+                    dst=dst,
+                    locations="\n\t".join([str(loc) for loc in locations]),
+                )
+            )
+        else:
+            logger.info(
+                f"COMPLETED copy from {src} on location {source_location} "
+                f"to {dst} on location {locations[0]}"
+            )
 
 
 async def copy_same_connector(
@@ -159,6 +220,8 @@ async def copy_same_connector(
                 location.name == source_location.name
                 and location.deployment == source_location.deployment
             ):
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info(f"COPYING from {src} to {dst} on location {location}")
                 await connector.run(
                     location=location,
                     command=(["ln", "-snf"] if read_only else ["/bin/cp", "-rf"])
@@ -167,6 +230,10 @@ async def copy_same_connector(
                         dst,
                     ],
                 )
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info(
+                        f"COMPLETED copy from {src} to {dst} on location {location}"
+                    )
                 return [loc for loc in locations if loc != location]
     return locations
 
@@ -179,7 +246,7 @@ class BaseConnector(Connector, FutureAware, ABC):
             transferBufferSize=transferBufferSize,
         )
 
-    async def _copy_local_to_remote(
+    async def copy_local_to_remote(
         self,
         src: str,
         dst: str,
@@ -190,27 +257,24 @@ class BaseConnector(Connector, FutureAware, ABC):
         await asyncio.gather(
             *(
                 asyncio.create_task(
-                    self._copy_local_to_remote_single(
-                        src=src, dst=dst, location=location, read_only=read_only
+                    copy_local_to_remote(
+                        connector=self,
+                        location=location,
+                        src=src,
+                        dst=dst,
+                        writer_command=["tar", "xf", "-", "-C", "/"],
                     )
                 )
                 for location in locations
             )
         )
 
-    async def _copy_local_to_remote_single(
-        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
-    ) -> None:
-        await copy_local_to_remote(
-            connector=self,
-            location=location,
-            src=src,
-            dst=dst,
-            writer_command=["tar", "xf", "-", "-C", "/"],
-        )
-
-    async def _copy_remote_to_local(
-        self, src: str, dst: str, location: ExecutionLocation, read_only: bool = False
+    async def copy_remote_to_local(
+        self,
+        src: str,
+        dst: str,
+        location: ExecutionLocation,
+        read_only: bool = False,
     ) -> None:
         await copy_remote_to_local(
             connector=self,
@@ -220,7 +284,7 @@ class BaseConnector(Connector, FutureAware, ABC):
             reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
         )
 
-    async def _copy_remote_to_remote(
+    async def copy_remote_to_remote(
         self,
         src: str,
         dst: str,
@@ -242,146 +306,11 @@ class BaseConnector(Connector, FutureAware, ABC):
             await copy_remote_to_remote(
                 connector=self,
                 locations=locations,
+                src=src,
+                dst=dst,
                 source_connector=source_connector,
                 source_location=source_location,
-                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
-                writer_command=await utils.get_remote_to_remote_write_command(
-                    src_connector=source_connector,
-                    src_location=source_location,
-                    src=src,
-                    dst_connector=self,
-                    dst_locations=locations,
-                    dst=dst,
-                ),
             )
-
-    async def copy_local_to_remote(
-        self,
-        src: str,
-        dst: str,
-        locations: MutableSequence[ExecutionLocation],
-        read_only: bool = False,
-    ) -> None:
-        if logger.isEnabledFor(logging.INFO):
-            if len(locations) > 1:
-                logger.info(
-                    "COPYING {src} on local file-system to {dst} on locations:\n\t{locations}".format(
-                        src=src,
-                        dst=dst,
-                        locations="\n\t".join([str(loc) for loc in locations]),
-                    )
-                )
-            else:
-                logger.info(
-                    "COPYING {src} on local file-system to {dst} {location}".format(
-                        src=src,
-                        dst=dst,
-                        location=(
-                            "on local file-system"
-                            if locations[0].name == LOCAL_LOCATION
-                            else f"on location {locations[0]}"
-                        ),
-                    )
-                )
-        await self._copy_local_to_remote(
-            src=src, dst=dst, locations=locations, read_only=read_only
-        )
-        if logger.isEnabledFor(logging.INFO):
-            if len(locations) > 1:
-                logger.info(
-                    "COMPLETED copy {src} on local file-system to {dst} on locations:\n\t{locations}".format(
-                        src=src,
-                        dst=dst,
-                        locations="\n\t".join([str(loc) for loc in locations]),
-                    )
-                )
-            else:
-                logger.info(
-                    "COMPLETED copy {src} on local file-system to {dst} {location}".format(
-                        src=src,
-                        dst=dst,
-                        location=(
-                            "on local file-system"
-                            if locations[0].name == LOCAL_LOCATION
-                            else f"on location {locations[0]}"
-                        ),
-                    )
-                )
-
-    async def copy_remote_to_local(
-        self,
-        src: str,
-        dst: str,
-        location: ExecutionLocation,
-        read_only: bool = False,
-    ) -> None:
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(
-                f"COPYING {src} on location {location} to {dst} on local file-system"
-            )
-        await self._copy_remote_to_local(
-            src=src, dst=dst, location=location, read_only=read_only
-        )
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(
-                f"COMPLETED copy {src} on location {location} to {dst} on local file-system"
-            )
-
-    async def copy_remote_to_remote(
-        self,
-        src: str,
-        dst: str,
-        locations: MutableSequence[ExecutionLocation],
-        source_location: ExecutionLocation,
-        source_connector: Connector | None = None,
-        read_only: bool = False,
-    ):
-        if logger.isEnabledFor(logging.INFO):
-            if len(locations) > 1:
-                logger.info(
-                    "COPYING {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
-                        src_loc=source_location,
-                        src=src,
-                        dst=dst,
-                        locations="\n\t".join([str(loc) for loc in locations]),
-                    )
-                )
-            else:
-                logger.info(
-                    "COPYING {src} on location {src_loc} to {dst} on location {location}".format(
-                        src_loc=source_location,
-                        src=src,
-                        dst=dst,
-                        location=locations[0],
-                    )
-                )
-        await self._copy_remote_to_remote(
-            src=src,
-            dst=dst,
-            locations=locations,
-            source_location=source_location,
-            source_connector=source_connector,
-            read_only=read_only,
-        )
-        if logger.isEnabledFor(logging.INFO):
-            if len(locations) > 1:
-                logger.info(
-                    "COMPLETED copy {src} on location {src_loc} to {dst} on locations:\n\t{locations}".format(
-                        src_loc=source_location,
-                        src=src,
-                        dst=dst,
-                        locations="\n\t".join([str(loc) for loc in locations]),
-                    )
-                )
-            else:
-                logger.info(
-                    "COMPLETED copy {src} on location {src_loc} to {dst} on location {location}".format(
-                        src_loc=source_location,
-                        src=src,
-                        dst=dst,
-                        location=locations[0],
-                    )
-                )
 
     async def get_stream_reader(
         self,

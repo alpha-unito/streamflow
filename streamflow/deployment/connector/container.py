@@ -7,11 +7,10 @@ import logging
 import os
 import posixpath
 from abc import ABC, abstractmethod
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
+from importlib.resources import files
 from shutil import which
 from typing import Any
-
-from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContextManager
@@ -64,6 +63,7 @@ async def _get_storage_from_binds(
         for line in stdout.splitlines():
             mount_point, fs_type, size = line.split(" ")
             if fs_type not in [
+                "-",
                 "cgroup",
                 "cgroup2",
                 "configfs",
@@ -194,6 +194,18 @@ class ContainerConnector(ConnectorWrapper, ABC):
         effective_locations.append(location)
         return common_paths, effective_locations
 
+    async def _local_copy(
+        self, src: str, dst: str, location: ExecutionLocation, read_only: bool
+    ) -> None:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"COPYING from {src} to {dst} on location {location}")
+        await self.run(
+            location=location,
+            command=(["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]) + [src, dst],
+        )
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"COMPLETED copy from {src} to {dst} on location {location}")
+
     async def copy_local_to_remote(
         self,
         src: str,
@@ -220,24 +232,23 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 ):
                     # If yes, then create a symbolic link
                     if self._wraps_local() and not os.path.exists(adjusted_dst):
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Creating symbolic link {adjusted_dst} "
-                                f"that points to {adjusted_src} on local file-system"
+                        if logger.isEnabledFor(logging.INFO):
+                            logger.info(
+                                f"COPYING from {adjusted_src} to {adjusted_dst} on local file-system"
                             )
                         os.symlink(adjusted_src, adjusted_dst)
-                    else:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Creating symbolic link {dst} "
-                                f"that points to {adjusted_src} on location {location.name} "
-                                f"through the `ln -snf` remote command"
+                        if logger.isEnabledFor(logging.INFO):
+                            logger.info(
+                                f"COMPLETED copy from {adjusted_src} to {adjusted_dst} on local file-system"
                             )
+                    else:
                         copy_tasks.append(
                             asyncio.create_task(
-                                self.run(
+                                self._local_copy(
+                                    src=adjusted_src,
+                                    dst=dst,
                                     location=location,
-                                    command=["ln", "-snf", adjusted_src, dst],
+                                    read_only=read_only,
                                 )
                             )
                         )
@@ -247,8 +258,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                         logger.debug(
                             f"Delegating the transfer of {src} "
                             f"to {adjusted_dst} from local file-system "
-                            f"to location {location.name} to the inner "
-                            f"{self.connector.__class__.__name__} connector."
+                            f"to location {location.name} to the inner connector."
                         )
                     bind_locations.setdefault(adjusted_dst, []).append(location)
             # Otherwise, check if the source path is bound to a mounted volume
@@ -256,26 +266,16 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 # If yes, perform a copy command through the container connector
                 copy_tasks.append(
                     asyncio.create_task(
-                        self.run(
+                        self._local_copy(
+                            src=adjusted_src,
+                            dst=dst,
                             location=location,
-                            command=(
-                                ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
-                            )
-                            + [
-                                adjusted_src,
-                                dst,
-                            ],
+                            read_only=read_only,
                         )
                     )
                 )
             else:
                 # If not, perform a transfer through the container connector
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Copying {src} to {dst} from local file-system to "
-                        f"location {location.name} through the "
-                        f"{self.__class__.__name__} copy strategy."
-                    )
                 copy_tasks.append(
                     asyncio.create_task(
                         copy_local_to_remote(
@@ -320,22 +320,21 @@ class ContainerConnector(ConnectorWrapper, ABC):
             ):
                 # If yes, then create a symbolic link
                 if self._wraps_local() and not os.path.exists(dst):
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Creating symbolic link {dst} "
-                            f"that points to {adjusted_src} on local file-system"
+                    if logger.isEnabledFor(logging.INFO):
+                        logger.info(
+                            f"COPYING from {adjusted_src} to {dst} on local file-system"
                         )
                     os.symlink(adjusted_src, dst)
-                else:
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Creating symbolic link {adjusted_dst} "
-                            f"that points to {src} on location {location.name} "
-                            f"through the `ln -snf` remote command"
+                    if logger.isEnabledFor(logging.INFO):
+                        logger.info(
+                            f"COMPLETED copy from {adjusted_src} to {dst} on local file-system"
                         )
-                    await self.run(
+                else:
+                    await self._local_copy(
+                        src=src,
+                        dst=adjusted_dst,
                         location=location,
-                        command=["ln", "-snf", src, adjusted_dst],
+                        read_only=read_only,
                     )
             # Otherwise, delegate transfer to the inner connector
             else:
@@ -351,22 +350,11 @@ class ContainerConnector(ConnectorWrapper, ABC):
         # Otherwise, check if the destination path is bound to a mounted volume
         elif (adjusted_dst := self._get_container_path(instance, dst)) is not None:
             # If yes, perform a copy command through the container connector
-            await self.run(
-                location=location,
-                command=(["ln", "-snf"] if read_only else ["/bin/cp", "-rf"])
-                + [
-                    src,
-                    adjusted_dst,
-                ],
+            await self._local_copy(
+                src=src, dst=adjusted_dst, location=location, read_only=read_only
             )
         else:
             # If not, perform a transfer through the container connector
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Copying {src} to {dst} from location {location.name} to "
-                    "the local file-system through the "
-                    f"{self.__class__.__name__} copy strategy."
-                )
             await copy_remote_to_local(
                 connector=self,
                 location=location,
@@ -405,87 +393,86 @@ class ContainerConnector(ConnectorWrapper, ABC):
                         f"to locations {', '.join(loc.name for loc in locations)} "
                         f"through the {self.__class__.__name__} copy strategy."
                     )
-                return await self.copy_local_to_remote(
+                await self.copy_local_to_remote(
                     src=host_src, dst=dst, locations=locations, read_only=read_only
                 )
             # Otherwise, check for optimizations
-            effective_locations = await self._get_effective_locations(locations, dst)
-            bind_locations = {}
-            unbound_locations = []
-            copy_tasks = []
-            for location in effective_locations:
-                instance = await self._get_instance(location.name)
-                # Check if the source path is on a mounted volume
-                if (
-                    adjusted_src := self._get_container_path(instance, host_src)
-                ) is not None:
-                    # If yes, perform a copy command through the container connector
+            else:
+                effective_locations = await self._get_effective_locations(
+                    locations, dst
+                )
+                bind_locations = {}
+                unbound_locations = []
+                copy_tasks = []
+                for location in effective_locations:
+                    instance = await self._get_instance(location.name)
+                    # Check if the source path is on a mounted volume
+                    if (
+                        adjusted_src := self._get_container_path(instance, host_src)
+                    ) is not None:
+                        # If yes, perform a copy command through the container connector
+                        copy_tasks.append(
+                            asyncio.create_task(
+                                self._local_copy(
+                                    src=adjusted_src,
+                                    dst=dst,
+                                    location=location,
+                                    read_only=read_only,
+                                )
+                            )
+                        )
+                    # Otherwise, check if the container user is the current host user
+                    # and the destination path is on a mounted volume
+                    elif (
+                        instance.current_user
+                        and (adjusted_dst := self._get_host_path(instance, dst))
+                        is not None
+                    ):
+                        # If yes, then delegate transfer to the inner connector
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Delegating the transfer of {src} "
+                                f"to {adjusted_dst} from location {source_location.name} "
+                                f"to location {location.name} to the inner "
+                                f"{self.connector.__class__.__name__} connector."
+                            )
+                        bind_locations.setdefault(adjusted_dst, []).append(location)
+                    # Otherwise, mask the location as not bound
+                    else:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Copying from {src} to {dst} from location {source_location.name} to "
+                                f"location {location.name} through the "
+                                f"{self.__class__.__name__} copy strategy."
+                            )
+                        unbound_locations.append(location)
+                # Delegate bind transfers to the inner connector, preventing symbolic links
+                for host_dst, locs in bind_locations.items():
                     copy_tasks.append(
                         asyncio.create_task(
-                            self.run(
-                                location=location,
-                                command=(
-                                    ["ln", "-snf"] if read_only else ["/bin/cp", "-rf"]
-                                )
-                                + [
-                                    adjusted_src,
-                                    dst,
-                                ],
+                            self.connector.copy_local_to_remote(
+                                src=host_src,
+                                dst=host_dst,
+                                locations=locs,
+                                read_only=False,
                             )
                         )
                     )
-                # Otherwise, check if the container user is the current host user
-                # and the destination path is on a mounted volume
-                elif (
-                    instance.current_user
-                    and (adjusted_dst := self._get_host_path(instance, dst)) is not None
-                ):
-                    # If yes, then delegate transfer to the inner connector
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Delegating the transfer of {src} "
-                            f"to {adjusted_dst} from location {source_location.name} "
-                            f"to location {location.name} to the inner "
-                            f"{self.connector.__class__.__name__} connector."
-                        )
-                    bind_locations.setdefault(adjusted_dst, []).append(location)
-                # Otherwise, mask the location as not bound
-                else:
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Copying {src} to {dst} from location {source_location.name} to "
-                            f"location {location.name} through the "
-                            f"{self.__class__.__name__} copy strategy."
-                        )
-                    unbound_locations.append(location)
-            # Delegate bind transfers to the inner connector, preventing symbolic links
-            for host_dst, locations in bind_locations.items():
+                # Perform a standard remote-to-remote copy for unbound locations
                 copy_tasks.append(
                     asyncio.create_task(
-                        self.connector.copy_local_to_remote(
-                            src=host_src,
-                            dst=host_dst,
-                            locations=locations,
-                            read_only=False,
+                        copy_remote_to_remote(
+                            connector=self,
+                            locations=unbound_locations,
+                            src=src,
+                            dst=dst,
+                            source_connector=source_connector,
+                            source_location=source_location,
                         )
                     )
                 )
-            # Perform a standard remote-to-remote copy for unbound locations
-            return await copy_remote_to_remote(
-                connector=self,
-                locations=unbound_locations,
-                source_connector=source_connector,
-                source_location=source_location,
-                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
-                writer_command=await utils.get_remote_to_remote_write_command(
-                    src_connector=source_connector,
-                    src_location=source_location,
-                    src=src,
-                    dst_connector=self,
-                    dst_locations=unbound_locations,
-                    dst=dst,
-                ),
-            )
+                # Wait for all copy tasks to finish
+                await asyncio.gather(*copy_tasks)
         # Otherwise, perform a standard remote-to-remote copy
         else:
             if locations := await copy_same_connector(
@@ -498,20 +485,13 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 dst=dst,
                 read_only=read_only,
             ):
-                return await copy_remote_to_remote(
+                await copy_remote_to_remote(
                     connector=self,
                     locations=locations,
+                    src=src,
+                    dst=dst,
                     source_connector=source_connector,
                     source_location=source_location,
-                    reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
-                    writer_command=await utils.get_remote_to_remote_write_command(
-                        src_connector=source_connector,
-                        src_location=source_location,
-                        src=src,
-                        dst_connector=self,
-                        dst_locations=locations,
-                        dst=dst,
-                    ),
                 )
 
     async def _get_effective_locations(
