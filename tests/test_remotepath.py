@@ -36,7 +36,7 @@ async def _symlink(
         await connector.run(location=location, command=["ln", "-snf", src, path])
 
 
-@pytest_asyncio.fixture(scope="module", loop_scope="module")
+@pytest_asyncio.fixture(scope="module")
 async def location(context, deployment_src) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
