@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import MutableSequence, MutableMapping
+import os
+import posixpath
+from collections.abc import MutableMapping, MutableSequence
+from importlib.resources import files
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from importlib.resources import files
-
 from streamflow.core.data import DataLocation, DataManager, DataType
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.data import remotepath
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.utils import get_path_processor
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -51,277 +54,69 @@ async def _copy(
         )
 
 
-class DefaultDataManager(DataManager):
-    def __init__(self, context: StreamFlowContext):
-        super().__init__(context)
-        self.path_mapper = RemotePathMapper(context)
-
-    async def close(self):
-        pass
-
-    def get_data_locations(
-        self,
-        path: str,
-        deployment: str | None = None,
-        location_name: str | None = None,
-        data_type: DataType | None = None,
-    ) -> MutableSequence[DataLocation]:
-        data_locations = self.path_mapper.get(
-            path, data_type, deployment, location_name
-        )
-        data_locations = [
-            loc for loc in data_locations if loc.data_type != DataType.INVALID
-        ]
-        return data_locations
-
-    @classmethod
-    def get_schema(cls) -> str:
-        return (
-            files(__package__)
-            .joinpath("schemas")
-            .joinpath("data_manager.json")
-            .read_text("utf-8")
-        )
-
-    def get_source_location(
-        self, path: str, dst_deployment: str
-    ) -> DataLocation | None:
-        if data_locations := self.get_data_locations(path=path):
-            dst_connector = self.context.deployment_manager.get_connector(
-                dst_deployment
-            )
-            same_connector_locations = {
-                loc
-                for loc in data_locations
-                if loc.deployment == dst_connector.deployment_name
-            }
-            if same_connector_locations:
-                for loc in same_connector_locations:
-                    if loc.data_type == DataType.PRIMARY:
-                        return loc
-                return list(same_connector_locations)[0]
-            else:
-                local_locations = {
-                    loc
-                    for loc in data_locations
-                    if isinstance(
-                        self.context.deployment_manager.get_connector(loc.deployment),
-                        LocalConnector,
-                    )
-                }
-                if local_locations:
-                    for loc in local_locations:
-                        if loc.data_type == DataType.PRIMARY:
-                            return loc
-                    return list(local_locations)[0]
-                else:
-                    for loc in data_locations:
-                        if loc.data_type == DataType.PRIMARY:
-                            return loc
-                    return list(data_locations)[0]
-        else:
-            return None
-
-    def invalidate_location(self, location: ExecutionLocation, path: str) -> None:
-        self.path_mapper.invalidate_location(location, path)
-
-    def register_path(
-        self,
-        location: ExecutionLocation,
-        path: str,
-        relpath: str | None = None,
-        data_type: DataType = DataType.PRIMARY,
-    ) -> DataLocation:
-        data_location = DataLocation(
-            location=location,
-            path=path,
-            relpath=relpath or path,
-            data_type=data_type,
-            available=True,
-        )
-        self.path_mapper.put(path=path, data_location=data_location, recursive=True)
-        self.context.checkpoint_manager.register(data_location)
-        return data_location
-
-    def register_relation(
-        self, src_location: DataLocation, dst_location: DataLocation
-    ) -> None:
-        data_locations = self.path_mapper.get(src_location.path)
-        for data_location in list(data_locations):
-            self.path_mapper.put(data_location.path, dst_location)
-            self.path_mapper.put(dst_location.path, data_location)
-
-    async def transfer_data(
-        self,
-        src_location: ExecutionLocation,
-        src_path: str,
-        dst_locations: MutableSequence[ExecutionLocation],
-        dst_path: str,
-        writable: bool = False,
-    ) -> None:
-        src_connector = self.context.deployment_manager.get_connector(
-            src_location.deployment
-        )
-        dst_connector = self.context.deployment_manager.get_connector(
-            dst_locations[0].deployment
-        )
-        # Create destination folder
-        await remotepath.mkdir(dst_connector, dst_locations, str(Path(dst_path).parent))
-        # Follow symlink for source path
-        await asyncio.gather(
-            *(
-                asyncio.create_task(src_data_loc.available.wait())
-                for src_data_loc in self.get_data_locations(
-                    src_path, src_location.deployment, src_location.name
+def _get_inner_path(location: ExecutionLocation, path: str) -> str | None:
+    if location.wraps:
+        for mount in sorted(location.mounts.keys(), reverse=True):
+            if path.startswith(mount):
+                return (posixpath if location.wraps.local else os.path).join(
+                    location.mounts[mount],
+                    (posixpath if location.local else os.path).relpath(path, mount),
                 )
-            )
-        )
-        src_path = await remotepath.follow_symlink(
-            self.context, src_connector, src_location, src_path
-        )
-        primary_locations = self.path_mapper.get(src_path, DataType.PRIMARY)
-        copy_tasks = []
-        remote_locations = []
-        data_locations = []
-        for dst_location in dst_locations:
-            # Check if a primary copy of the source path is already present on the destination location
-            found_existing_loc = False
-            for primary_loc in primary_locations:
-                if (
-                    primary_loc.deployment == dst_location.deployment
-                    and primary_loc.name == dst_location.name
-                ):
-                    # Wait for the source location to be available on the destination path
-                    await primary_loc.available.wait()
-                    # If yes, perform a symbolic link if possible
-                    copy_tasks.append(
-                        asyncio.create_task(
-                            _copy(
-                                src_connector=dst_connector,
-                                src_location=dst_location,
-                                src=primary_loc.path,
-                                dst_connector=dst_connector,
-                                dst_locations=[dst_location],
-                                dst=dst_path,
-                                writable=writable,
-                            )
-                        )
-                    )
-                    found_existing_loc = True
-                    break
-            # Otherwise, perform a remote copy and mark the destination as primary
-            if not found_existing_loc:
-                remote_locations.append(dst_location)
-            # Register path and data location
-            self.register_path(dst_location, str(Path(dst_path).parent))
-            data_locations.append(
-                self.path_mapper.put(
-                    path=dst_path,
-                    data_location=DataLocation(
-                        location=dst_location,
-                        path=dst_path,
-                        relpath=list(self.path_mapper.get(src_path))[0].relpath,
-                        data_type=DataType.PRIMARY,
-                    ),
-                )
-                if writable
-                else self.path_mapper.create_and_map(
-                    location_type=DataType.PRIMARY,
-                    src_path=src_path,
-                    dst_path=dst_path,
-                    dst_location=dst_location,
-                )
-            )
-        # Perform all the copy operations
-        if remote_locations:
-            copy_tasks.append(
-                asyncio.create_task(
-                    _copy(
-                        src_connector=src_connector,
-                        src_location=src_location,
-                        src=src_path,
-                        dst_connector=dst_connector,
-                        dst_locations=remote_locations,
-                        dst=dst_path,
-                        writable=writable,
-                    )
-                )
-            )
-        await asyncio.gather(*copy_tasks)
-        # Mark all destination data locations as available
-        for data_location in data_locations:
-            if not writable:
-                path = (
-                    get_path_processor(dst_connector).join(
-                        data_location.path,
-                        get_path_processor(src_connector).basename(src_path),
-                    )
-                    if await remotepath.isdir(
-                        connector=dst_connector,
-                        location=data_location.location,
-                        path=data_location.path,
-                    )
-                    else data_location.path
-                )
-                data_location.data_type = (
-                    DataType.SYMBOLIC_LINK
-                    if await remotepath.islink(
-                        connector=dst_connector,
-                        location=data_location.location,
-                        path=path,
-                    )
-                    else DataType.PRIMARY
-                )
-            data_location.available.set()
+    return None
 
 
-class RemotePathNode:
+class _RemotePathNode:
     __slots__ = ("children", "locations")
 
     def __init__(self):
-        self.children: MutableMapping[str, RemotePathNode] = {}
+        self.children: MutableMapping[str, _RemotePathNode] = {}
         self.locations: MutableMapping[
             str, MutableMapping[str, MutableSequence[DataLocation]]
         ] = {}
 
+    def __repr__(self):
+        return " - ".join(
+            [
+                ",".join(
+                    [
+                        ",".join(
+                            [
+                                f"{loc.path} ({str(loc.data_type)}) on location {loc.location}"
+                                for loc in name_locs
+                            ]
+                        )
+                        for name_locs in dep_locs.values()
+                    ]
+                )
+                for dep_locs in self.locations.values()
+            ]
+        )
 
-class RemotePathMapper:
+
+class _RemotePathMapper:
     def __init__(self, context: StreamFlowContext):
-        self._filesystem: RemotePathNode = RemotePathNode()
+        self._filesystem: _RemotePathNode = _RemotePathNode()
         self.context: StreamFlowContext = context
 
-    def _remove_node(self, location: DataLocation, node: RemotePathNode):
+    def __repr__(self):
+        return self._node_repr(next(iter(self._filesystem.children.values())), 0)
+
+    def _node_repr(self, node: _RemotePathNode, level: int) -> str:
+        tree = level * "\t" + "|-- " + repr(node) + "\n"
+        for child in node.children.values():
+            tree += self._node_repr(child, level + 1)
+        return tree
+
+    def _remove_node(self, location: DataLocation, node: _RemotePathNode):
         if location.deployment in node.locations:
             del node.locations[location.deployment][location.name]
         for n in node.children.values():
             self._remove_node(location, n)
 
-    def create_and_map(
-        self,
-        location_type: DataType,
-        src_path: str,
-        dst_path: str,
-        dst_location: ExecutionLocation,
-        available: bool = False,
-    ) -> DataLocation:
-        data_locations = self.get(src_path)
-        dst_data_location = DataLocation(
-            location=dst_location,
-            path=dst_path,
-            relpath=list(data_locations)[0].relpath,
-            data_type=location_type,
-            available=available,
-        )
-        for data_location in list(data_locations):
-            self.put(data_location.path, dst_data_location)
-            self.put(dst_path, data_location)
-        self.put(dst_path, dst_data_location)
-        return dst_data_location
-
     def get(
         self,
         path: str,
-        location_type: DataType | None = None,
+        data_type: DataType | None = None,
         deployment: str | None = None,
         name: str | None = None,
     ) -> MutableSequence[DataLocation]:
@@ -340,7 +135,7 @@ class RemotePathMapper:
                     [
                         loc
                         for loc in locations
-                        if not (location_type and loc.data_type != location_type)
+                        if not (data_type and loc.data_type != data_type)
                     ]
                 )
         return result
@@ -369,7 +164,7 @@ class RemotePathMapper:
         nodes = {}
         # Create or navigate hierarchy
         for i, token in enumerate(path.parts):
-            node = node.children.setdefault(token, RemotePathNode())
+            node = node.children.setdefault(token, _RemotePathNode())
             if recursive:
                 nodes[path_processor.join(*path.parts[: i + 1])] = node
         if not recursive:
@@ -412,3 +207,273 @@ class RemotePathMapper:
         ).get(location.name)
         for data_location in data_locations:
             self._remove_node(data_location, self._filesystem)
+
+
+class DefaultDataManager(DataManager):
+    def __init__(self, context: StreamFlowContext):
+        super().__init__(context)
+        self.path_mapper = _RemotePathMapper(context)
+
+    async def close(self):
+        pass
+
+    def get_data_locations(
+        self,
+        path: str,
+        deployment: str | None = None,
+        location_name: str | None = None,
+        data_type: DataType | None = None,
+    ) -> MutableSequence[DataLocation]:
+        data_locations = self.path_mapper.get(
+            path=path, data_type=data_type, deployment=deployment, name=location_name
+        )
+        data_locations = [
+            loc for loc in data_locations if loc.data_type != DataType.INVALID
+        ]
+        return data_locations
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("data_manager.json")
+            .read_text("utf-8")
+        )
+
+    def get_source_location(
+        self, path: str, dst_deployment: str
+    ) -> DataLocation | None:
+        if data_locations := self.get_data_locations(
+            path=path, data_type=DataType.PRIMARY
+        ):
+            if same_connector_locations := {
+                loc for loc in data_locations if loc.deployment == dst_deployment
+            }:
+                return next(iter(same_connector_locations))
+            elif local_locations := {
+                loc
+                for loc in data_locations
+                if isinstance(
+                    self.context.deployment_manager.get_connector(loc.deployment),
+                    LocalConnector,
+                )
+            }:
+                return next(iter(local_locations))
+            else:
+                return next(iter(data_locations))
+        else:
+            return None
+
+    def invalidate_location(self, location: ExecutionLocation, path: str) -> None:
+        self.path_mapper.invalidate_location(location, path)
+
+    def register_path(
+        self,
+        location: ExecutionLocation,
+        path: str,
+        relpath: str | None = None,
+        data_type: DataType = DataType.PRIMARY,
+    ) -> DataLocation:
+        data_location = DataLocation(
+            location=location,
+            path=path,
+            relpath=relpath or path,
+            data_type=data_type,
+            available=True,
+        )
+        self.path_mapper.put(path=path, data_location=data_location, recursive=True)
+        self.context.checkpoint_manager.register(data_location)
+        # Process wrapped locations if any
+        while (path := _get_inner_path(location=location, path=path)) is not None:
+            inner_location = DataLocation(
+                location=location.wraps,
+                path=path,
+                relpath=relpath or path,
+                data_type=data_type,
+                available=True,
+            )
+            self.path_mapper.put(
+                path=path, data_location=inner_location, recursive=True
+            )
+            self.register_relation(
+                src_location=data_location, dst_location=inner_location
+            )
+            location = location.wraps
+        return data_location
+
+    def register_relation(
+        self, src_location: DataLocation, dst_location: DataLocation
+    ) -> None:
+        for data_location in self.path_mapper.get(path=src_location.path):
+            self.path_mapper.put(data_location.path, dst_location)
+            self.path_mapper.put(dst_location.path, data_location)
+
+    async def transfer_data(
+        self,
+        src_location: ExecutionLocation,
+        src_path: str,
+        dst_locations: MutableSequence[ExecutionLocation],
+        dst_path: str,
+        writable: bool = False,
+    ) -> None:
+        src_connector = self.context.deployment_manager.get_connector(
+            src_location.deployment
+        )
+        dst_connector = self.context.deployment_manager.get_connector(
+            dst_locations[0].deployment
+        )
+        # Create destination folder
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    remotepath.mkdir(
+                        dst_connector, location, str(Path(dst_path).parent)
+                    )
+                )
+                for location in dst_locations
+            )
+        )
+        # Follow symlink for source path
+        await asyncio.gather(
+            *(
+                asyncio.create_task(src_data_loc.available.wait())
+                for src_data_loc in self.get_data_locations(
+                    src_path, src_location.deployment, src_location.name
+                )
+            )
+        )
+        if (
+            src_realpath := await remotepath.follow_symlink(
+                self.context, src_connector, src_location, src_path
+            )
+        ) is None:
+            logger.info(f"Remote file system: {repr(self.path_mapper)}")
+            raise WorkflowExecutionException(
+                f"Error retrieving realpath for {src_path} on location {src_location} "
+                f"while transferring it to {dst_path} on deployment {dst_connector.deployment_name}"
+            )
+        else:
+            src_path = src_realpath
+        primary_locations = self.path_mapper.get(
+            path=src_path, data_type=DataType.PRIMARY
+        )
+        copy_tasks = []
+        remote_locations = []
+        data_locations = []
+        for dst_location in dst_locations:
+            # Check if a primary copy of the source path is already present on the destination location
+            for primary_loc in primary_locations:
+                if (
+                    primary_loc.deployment == dst_location.deployment
+                    and primary_loc.name == dst_location.name
+                ):
+                    # Wait for the source location to be available on the destination path
+                    await primary_loc.available.wait()
+                    # If yes, perform a symbolic link if possible
+                    copy_tasks.append(
+                        asyncio.create_task(
+                            _copy(
+                                src_connector=dst_connector,
+                                src_location=dst_location,
+                                src=primary_loc.path,
+                                dst_connector=dst_connector,
+                                dst_locations=[dst_location],
+                                dst=dst_path,
+                                writable=writable,
+                            )
+                        )
+                    )
+                    break
+            # Otherwise, perform a remote copy and mark the destination as primary
+            else:
+                remote_locations.append(dst_location)
+            # Register path and data location for parent folder
+            self.register_path(dst_location, str(Path(dst_path).parent))
+            # If the source path has already been registered
+            if src_data_locations := self.path_mapper.get(path=src_path):
+                src_data_location = next(iter(src_data_locations))
+                # Register the new `DataLocation` object
+                dst_data_location = DataLocation(
+                    location=dst_location,
+                    path=dst_path,
+                    relpath=src_data_location.relpath,
+                    data_type=DataType.PRIMARY,
+                )
+                self.path_mapper.put(path=dst_path, data_location=dst_data_location)
+                data_locations.append(dst_data_location)
+                # If the destination is not writable , map the new `DataLocation` object to the source locations
+                if not writable:
+                    self.register_relation(src_data_location, dst_data_location)
+                # Process wrapped locations if any
+                inner_path = dst_path
+                inner_location = dst_location
+                while (
+                    inner_path := _get_inner_path(inner_location, inner_path)
+                ) is not None:
+                    inner_location = inner_location.wraps
+                    if inner_data_locs := self.path_mapper.get(
+                        path=inner_path,
+                        deployment=inner_location.deployment,
+                        name=inner_location.name,
+                    ):
+                        inner_data_location = inner_data_locs[0]
+                    else:
+                        inner_data_location = DataLocation(
+                            location=inner_location,
+                            path=inner_path,
+                            relpath=dst_data_location.relpath,
+                            data_type=dst_data_location.data_type,
+                        )
+                    self.register_relation(dst_data_location, inner_data_location)
+                    data_locations.append(inner_data_location)
+            # Otherwise, raise an exception
+            else:
+                raise WorkflowExecutionException(
+                    f"No data locations found for path {src_path} "
+                    f"while trying to map {dst_path} on {dst_location}"
+                )
+        # Perform all the copy operations
+        if remote_locations:
+            copy_tasks.append(
+                asyncio.create_task(
+                    _copy(
+                        src_connector=src_connector,
+                        src_location=src_location,
+                        src=src_path,
+                        dst_connector=dst_connector,
+                        dst_locations=remote_locations,
+                        dst=dst_path,
+                        writable=writable,
+                    )
+                )
+            )
+        await asyncio.gather(*copy_tasks)
+        # Mark all destination data locations as available
+        for data_location in data_locations:
+            if not writable:
+                connector = self.context.deployment_manager.get_connector(
+                    data_location.deployment
+                )
+                path = (
+                    get_path_processor(connector).join(
+                        data_location.path,
+                        get_path_processor(src_connector).basename(src_path),
+                    )
+                    if await remotepath.isdir(
+                        connector=connector,
+                        location=data_location.location,
+                        path=data_location.path,
+                    )
+                    else data_location.path
+                )
+                data_location.data_type = (
+                    DataType.SYMBOLIC_LINK
+                    if await remotepath.islink(
+                        connector=connector,
+                        location=data_location.location,
+                        path=path,
+                    )
+                    else DataType.PRIMARY
+                )
+            data_location.available.set()

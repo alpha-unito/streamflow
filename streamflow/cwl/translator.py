@@ -2746,15 +2746,13 @@ class CWLTranslator:
                     transformer_step.add_input_port(port_name, port)
                     # If there are format dependencies, search for inputs in the port's input steps
                     for dep in format_deps:
-                        port_found = False
                         for step in port.get_input_steps():
                             if dep in step.input_ports:
                                 transformer_step.add_input_port(
                                     dep, step.get_input_port(dep)
                                 )
-                                port_found = True
                                 break
-                        if not port_found:
+                        else:
                             raise WorkflowDefinitionException(
                                 f"Cannot retrieve {dep} input port."
                             )

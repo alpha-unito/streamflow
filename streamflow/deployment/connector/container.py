@@ -58,7 +58,7 @@ async def _get_storage_from_binds(
             "+2",
             "|",
             "awk",
-            "'{print $7, $2, $3}'",
+            "'NF == 1 {device = $1; getline; $0 = device $0} {print $7, $2, $3}'",
         ],
         capture_output=True,
     )
@@ -1688,7 +1688,6 @@ class SingularityConnector(ContainerConnector):
             wraps=self._inner_location.location,
         )
         # Get IP address
-        ip_address = None
         stdout, returncode = await self.connector.run(
             location=self._inner_location.location,
             command=[
@@ -1705,7 +1704,7 @@ class SingularityConnector(ContainerConnector):
                 if instance["instance"] == name:
                     ip_address = instance["ip"]
                     break
-            if ip_address is None:
+            else:
                 raise WorkflowExecutionException(
                     f"FAILED retrieving instance '{name}' from running Singularity instances "
                     f"in deployment {self.deployment_name}: [{returncode}] {stdout}"

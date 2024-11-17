@@ -50,7 +50,7 @@ async def test_directory(context, connector, location):
     """Test directory creation and deletion."""
     path = utils.random_name()
     try:
-        await remotepath.mkdir(connector, [location], path)
+        await remotepath.mkdir(connector, location, path)
         assert await remotepath.exists(connector, location, path)
         assert await remotepath.isdir(connector, location, path)
         # ./
@@ -58,9 +58,9 @@ async def test_directory(context, connector, location):
         #   file2.csv
         #   dir1/
         #   dir2/
-        await remotepath.mkdirs(
+        await remotepath.mkdir(
             connector,
-            [location],
+            location,
             [posixpath.join(path, "dir1"), posixpath.join(path, "dir2")],
         )
         await remotepath.write(
@@ -101,7 +101,7 @@ async def test_download(context, connector, location):
     path = None
     for i, url in enumerate(urls):
         try:
-            path = await remotepath.download(connector, [location], url, parent_dir)
+            path = await remotepath.download(connector, location, url, parent_dir)
             assert path == paths[i]
             assert await remotepath.exists(connector, location, path)
         finally:
@@ -145,10 +145,10 @@ async def test_mkdir_failure(context):
     path = utils.random_name()
     await remotepath.write(connector, location, path, "StreamFlow")
     with pytest.raises(WorkflowExecutionException) as err:
-        await remotepath.mkdirs(
+        await remotepath.mkdir(
             connector,
-            [location],
-            [path],
+            location,
+            path,
         )
     expected_msg_err = f"1 Command 'mkdir -p {path}' on location {location}: mkdir: can't create directory '{path}': File exists"
     assert str(err.value) == expected_msg_err
@@ -159,7 +159,7 @@ async def test_resolve(context, connector, location):
     """Test glob resolution."""
     path_processor = get_path_processor(connector)
     path = utils.random_name()
-    await remotepath.mkdir(connector, [location], path)
+    await remotepath.mkdir(connector, location, path)
     try:
         # ./
         #   file1.txt
@@ -177,7 +177,7 @@ async def test_resolve(context, connector, location):
             connector, location, path_processor.join(path, "file2.csv"), "StreamFlow"
         )
         await remotepath.mkdir(
-            connector, [location], path_processor.join(path, "dir1", "dir2")
+            connector, location, path_processor.join(path, "dir1", "dir2")
         )
         await remotepath.write(
             connector,
@@ -248,7 +248,7 @@ async def test_symlink(context, connector, location):
         assert not await remotepath.exists(connector, location, path)
         await remotepath.rm(connector, location, src)
         # Test symlink to directory
-        await remotepath.mkdir(connector, [location], src)
+        await remotepath.mkdir(connector, location, src)
         await _symlink(connector, location, src, path)
         assert await remotepath.exists(connector, location, path)
         assert await remotepath.islink(connector, location, path)

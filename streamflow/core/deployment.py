@@ -28,6 +28,7 @@ class ExecutionLocation:
         "environment",
         "hostname",
         "local",
+        "mounts",
         "name",
         "service",
         "stacked",
@@ -41,6 +42,7 @@ class ExecutionLocation:
         environment: MutableMapping[str, str] | None = None,
         hostname: str | None = None,
         local: bool | None = False,
+        mounts: MutableMapping[str, str] | None = None,
         service: str | None = None,
         stacked: bool | None = False,
         wraps: ExecutionLocation | None = None,
@@ -49,6 +51,7 @@ class ExecutionLocation:
         self.environment: MutableMapping[str, str] = environment or {}
         self.hostname: str | None = hostname
         self.local: bool = local
+        self.mounts: MutableMapping[str, str] = mounts or {}
         self.name: str = name
         self.service: str | None = service
         self.stacked: bool = stacked

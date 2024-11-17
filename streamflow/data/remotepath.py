@@ -20,7 +20,6 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType, FileType
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware
-from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, ExecutionLocation
@@ -99,12 +98,12 @@ async def checksum(
 
 async def download(
     connector: Connector,
-    locations: MutableSequence[ExecutionLocation] | None,
+    location: ExecutionLocation | None,
     url: str,
     parent_dir: str,
 ) -> str:
-    await mkdir(connector, locations, parent_dir)
-    if isinstance(connector, LocalConnector):
+    await mkdir(connector, location, parent_dir)
+    if location.local:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:
@@ -128,20 +127,13 @@ async def download(
                     raise Exception(
                         f"Downloading {url} failed with status {response.status}:\n{response.content}"
                     )
-        download_tasks = []
-        for location in locations:
-            download_tasks.append(
-                asyncio.create_task(
-                    connector.run(
-                        location=location,
-                        command=[
-                            f'if [ command -v curl ]; then curl -L -o "{filepath}" "{url}"; '
-                            f'else wget -O "{filepath}" "{url}"; fi'
-                        ],
-                    )
-                )
-            )
-        await asyncio.gather(*download_tasks)
+        await connector.run(
+            location=location,
+            command=[
+                f'if [ command -v curl ]; then curl -L -o "{filepath}" "{url}"; '
+                f'else wget -O "{filepath}" "{url}"; fi'
+            ],
+        )
     return filepath
 
 
@@ -388,35 +380,19 @@ async def listdir(
 
 async def mkdir(
     connector: Connector,
-    locations: MutableSequence[ExecutionLocation] | None,
-    path: str,
+    location: ExecutionLocation,
+    path: str | MutableSequence[str],
 ) -> None:
-    await mkdirs(connector, locations, [path])
-
-
-async def mkdirs(
-    connector: Connector,
-    locations: MutableSequence[ExecutionLocation] | None,
-    paths: MutableSequence[str],
-) -> None:
-    if isinstance(connector, LocalConnector):
+    paths = path if isinstance(path, MutableSequence) else [path]
+    if location.local:
         for path in paths:
             os.makedirs(path, exist_ok=True)
     else:
         command = ["mkdir", "-p"] + list(paths)
-        for i, (result, status) in enumerate(
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        connector.run(
-                            location=location, command=command, capture_output=True
-                        )
-                    )
-                    for location in locations
-                )
-            )
-        ):
-            _check_status(command, locations[i], result, status)
+        result, status = await connector.run(
+            location=location, command=command, capture_output=True
+        )
+        _check_status(command, location, result, status)
 
 
 async def read(

@@ -360,7 +360,14 @@ async def _prepare_work_dir(
                         dest_path, path_processor.basename(src_path)
                     )
                 if listing_class == "Directory":
-                    await remotepath.mkdir(connector, locations, dest_path)
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                remotepath.mkdir(connector, location, dest_path)
+                            )
+                            for location in locations
+                        )
+                    )
                 else:
                     await utils.write_remote_file(
                         context=streamflow_context,
@@ -372,7 +379,14 @@ async def _prepare_work_dir(
             if "listing" in listing:
                 if "basename" in listing:
                     folder_path = path_processor.join(base_path, listing["basename"])
-                    await remotepath.mkdir(connector, locations, folder_path)
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                remotepath.mkdir(connector, location, folder_path)
+                            )
+                            for location in locations
+                        )
+                    )
                 else:
                     folder_path = dest_path or base_path
                 await asyncio.gather(

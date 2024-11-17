@@ -149,7 +149,25 @@ async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
     connector = context.scheduler.get_connector(job.name)
     locations = context.scheduler.get_locations(job.name)
     try:
-        return await remotepath.download(connector, locations, url, job.input_directory)
+        filepaths = set(
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        remotepath.download(
+                            connector, location, url, job.input_directory
+                        )
+                    )
+                    for location in locations
+                )
+            )
+        )
+        if len(filepaths) > 1:
+            raise WorkflowExecutionException(
+                "StreamFlow does not currently support multiple download "
+                "paths on different locations for the same file"
+            )
+        else:
+            return next(iter(filepaths))
     except Exception:
         raise WorkflowExecutionException("Error downloading file from " + url)
 
@@ -556,15 +574,13 @@ class CWLTransferStep(TransferStep):
                 # If the remote location is not a symbolic link, perform remote checksum
                 original_checksum = token_value["checksum"]
                 for location in dst_locations:
-                    perform_checksum = True
                     for data_location in data_locations:
                         if (
                             data_location.name == location.name
                             and data_location.path == filepath
                         ):
-                            perform_checksum = False
                             break
-                    if perform_checksum:
+                    else:
                         checksum = "sha1${}".format(
                             await remotepath.checksum(
                                 self.workflow.context, dst_connector, location, filepath
@@ -625,11 +641,27 @@ class CWLTransferStep(TransferStep):
             )
             # If the token contains a directory, simply create it
             if token_class == "Directory":  # nosec
-                await remotepath.mkdir(dst_connector, dst_locations, filepath)
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            remotepath.mkdir(dst_connector, location, filepath)
+                        )
+                        for location in dst_locations
+                    )
+                )
             # Otherwise, create the parent directories structure and write file contents
             else:
-                await remotepath.mkdir(
-                    dst_connector, dst_locations, path_processor.dirname(filepath)
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            remotepath.mkdir(
+                                dst_connector,
+                                location,
+                                path_processor.dirname(filepath),
+                            )
+                        )
+                        for location in dst_locations
+                    )
                 )
                 await utils.write_remote_file(
                     context=self.workflow.context,

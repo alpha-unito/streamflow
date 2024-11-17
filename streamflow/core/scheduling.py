@@ -300,6 +300,15 @@ class AvailableLocation:
             deployment=deployment,
             hostname=hostname,
             local=local,
+            mounts=(
+                {
+                    storage.mount_point: storage.bind
+                    for storage in self.hardware.storage.values()
+                    if storage.bind is not None
+                }
+                if hardware is not None
+                else {}
+            ),
             name=name,
             service=service,
             stacked=stacked,

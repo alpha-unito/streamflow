@@ -52,9 +52,9 @@ async def test_data_locations(
 
     # Create working directories in src and dst locations
     await remotepath.mkdir(
-        src_connector, [src_location], str(PurePath(src_path).parent)
+        src_connector, src_location, str(PurePath(src_path).parent)
     )
-    await remotepath.mkdir(dst_connector, [dst_location], dst_path)
+    await remotepath.mkdir(dst_connector, dst_location, dst_path)
 
     try:
         await remotepath.write(
@@ -102,18 +102,36 @@ async def test_data_locations(
             data_locs = context.data_manager.get_data_locations(
                 path, dst_connector.deployment_name
             )
-            assert 0 < len(data_locs) < 3
+            assert len(data_locs) in [1, 2]
             if len(data_locs) == 1:
                 assert data_locs[0].path == path
                 assert data_locs[0].deployment == dst_connector.deployment_name
             elif len(data_locs) == 2:
                 # src and dst are on the same location. So dst will be a symbolic link
                 assert src_connector.deployment_name == dst_connector.deployment_name
-                assert data_locs[0].data_type == DataType.PRIMARY
-                assert data_locs[0].deployment == src_connector.deployment_name
-                assert data_locs[1].data_type == DataType.SYMBOLIC_LINK
-                assert data_locs[1].deployment == dst_connector.deployment_name
-                assert data_locs[1].path == path
+                assert (
+                    len(
+                        [
+                            loc
+                            for loc in data_locs
+                            if loc.data_type == DataType.PRIMARY
+                            and loc.deployment == src_connector.deployment_name
+                        ]
+                    )
+                    == 1
+                )
+                assert (
+                    len(
+                        [
+                            loc
+                            for loc in data_locs
+                            if loc.data_type == DataType.SYMBOLIC_LINK
+                            and loc.deployment == dst_connector.deployment_name
+                            and loc.path == path
+                        ]
+                    )
+                    == 1
+                )
     finally:
         await remotepath.rm(src_connector, src_location, src_path)
         await remotepath.rm(dst_connector, dst_location, dst_path)
