@@ -391,7 +391,7 @@ async def mkdir(
     locations: MutableSequence[ExecutionLocation] | None,
     path: str,
 ) -> None:
-    return await mkdirs(connector, locations, [path])
+    await mkdirs(connector, locations, [path])
 
 
 async def mkdirs(
@@ -404,12 +404,19 @@ async def mkdirs(
             os.makedirs(path, exist_ok=True)
     else:
         command = ["mkdir", "-p"] + list(paths)
-        await asyncio.gather(
-            *(
-                asyncio.create_task(connector.run(location=location, command=command))
-                for location in locations
+        for i, (result, status) in enumerate(
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        connector.run(
+                            location=location, command=command, capture_output=True
+                        )
+                    )
+                    for location in locations
+                )
             )
-        )
+        ):
+            _check_status(command, locations[i], result, status)
 
 
 async def read(

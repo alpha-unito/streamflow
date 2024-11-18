@@ -11,10 +11,11 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.data import FileType
 from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.data import remotepath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
-from tests.utils.deployment import get_location
+from tests.utils.deployment import get_location, get_docker_deployment_config
 
 
 async def _symlink(
@@ -133,6 +134,26 @@ async def test_file(context, connector, location):
             await remotepath.rm(connector, location, path)
         if await remotepath.exists(connector, location, path2):
             await remotepath.rm(connector, location, path2)
+
+
+@pytest.mark.asyncio
+async def test_mkdir_failure(context):
+    """Test on `mkdirs` function failure"""
+    deployment_config = get_docker_deployment_config()
+    connector = context.deployment_manager.get_connector(deployment_config.name)
+    location = await get_location(context, deployment_config.type)
+
+    # Create a file and try to create a directory with the same name
+    path = utils.random_name()
+    await remotepath.write(connector, location, path, "StreamFlow")
+    with pytest.raises(WorkflowExecutionException) as err:
+        await remotepath.mkdirs(
+            connector,
+            [location],
+            [path],
+        )
+    expected_msg_err = f"1 Command 'mkdir -p {path}' on location {location}: mkdir: can't create directory '{path}': File exists"
+    assert str(err.value) == expected_msg_err
 
 
 @pytest.mark.asyncio
