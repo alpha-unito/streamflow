@@ -48,7 +48,7 @@ def _get_connector_method_params(method_name: str) -> MutableSequence[Any]:
         raise pytest.fail(f"Unknown method_name: {method_name}")
 
 
-@pytest_asyncio.fixture(scope="module", loop_scope="module")
+@pytest_asyncio.fixture(scope="module")
 async def curr_location(context, deployment_src) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 

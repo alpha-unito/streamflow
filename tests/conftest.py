@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import os
 import platform
 from asyncio.locks import Lock
-from collections.abc import MutableSequence, Callable, Collection
+from collections.abc import Callable, Collection, MutableSequence
 from typing import Any
 
 import pytest
 import pytest_asyncio
+from pytest_asyncio import is_async_test
 
 import streamflow.deployment.connector
 import streamflow.deployment.filter
@@ -43,8 +43,14 @@ def pytest_addoption(parser):
         "--deploys",
         type=csvtype(all_deployment_types()),
         default=all_deployment_types(),
-        help=f"List of deployments to deploy. Use the comma as delimiter e.g. --deploys local,docker. (default: {all_deployment_types()})",
+        help="List of deployments to deploy. Use the comma as delimiter e.g. --deploys "
+        f"local,docker. (default: {all_deployment_types()})",
     )
+
+
+def pytest_collection_modifyitems(items):
+    for async_test in (item for item in items if is_async_test(item)):
+        async_test.add_marker(pytest.mark.asyncio(loop_scope="session"), append=False)
 
 
 def pytest_configure(config):
@@ -90,7 +96,7 @@ def all_deployment_types():
     return deployments_
 
 
-@pytest_asyncio.fixture(scope="module", loop_scope="module")
+@pytest_asyncio.fixture(scope="module")
 async def context(chosen_deployment_types) -> StreamFlowContext:
     _context = build_context(
         {
@@ -104,14 +110,6 @@ async def context(chosen_deployment_types) -> StreamFlowContext:
     yield _context
     await _context.deployment_manager.undeploy_all()
     await _context.close()
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
 
 
 def is_primitive_type(elem: Any) -> bool:
