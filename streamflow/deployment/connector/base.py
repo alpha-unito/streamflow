@@ -28,6 +28,28 @@ from streamflow.deployment.stream import (
 from streamflow.log_handler import logger
 
 
+FS_TYPES_TO_SKIP = {
+    "-",
+    "bpf",
+    "cgroup",
+    "cgroup2",
+    "configfs",
+    "debugfs",
+    "devpts",
+    "devtmpfs",
+    "fusectl",
+    "hugetlbfs",
+    "mqueue",
+    "proc",
+    "pstore",
+    "securityfs",
+    "selinuxfs",
+    "sysfs",
+    "tmpfs",
+    "tracefs",
+}
+
+
 async def extract_tar_stream(
     tar: aiotarstream.AioTarStream,
     src: str,
