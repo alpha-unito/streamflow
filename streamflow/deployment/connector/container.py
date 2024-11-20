@@ -10,7 +10,9 @@ from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 from shutil import which
-from typing import Any
+from typing import Any, cast
+
+import psutil
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContextManager
@@ -27,6 +29,7 @@ from streamflow.core.utils import (
 )
 from streamflow.deployment.connector.base import (
     BatchConnector,
+    FS_TYPES_TO_SKIP,
     copy_local_to_remote,
     copy_remote_to_local,
     copy_remote_to_remote,
@@ -62,22 +65,7 @@ async def _get_storage_from_binds(
     if returncode == 0:
         for line in stdout.splitlines():
             mount_point, fs_type, size = line.split(" ")
-            if fs_type not in [
-                "-",
-                "cgroup",
-                "cgroup2",
-                "configfs",
-                "debugfs",
-                "devpts",
-                "devtmpfs",
-                "hugetlbfs",
-                "mqueue",
-                "proc",
-                "securityfs",
-                "selinuxfs",
-                "sysfs",
-                "tmpfs",
-            ]:
+            if fs_type not in FS_TYPES_TO_SKIP:
                 storage[mount_point] = Storage(
                     mount_point=mount_point,
                     size=float(size) / 2**10,
@@ -87,7 +75,7 @@ async def _get_storage_from_binds(
         return storage
     else:
         raise WorkflowExecutionException(
-            f"FAILED retrieving bind mounts from `/proc/1/mounts` for {entity} '{name}' "
+            f"FAILED retrieving bind mounts using `df -aT` for {entity} '{name}' "
             f"in deployment {connector.deployment_name}: [{returncode}]: {stdout}"
         )
 
@@ -1761,7 +1749,37 @@ class SingularityConnector(ContainerConnector):
                 f"FAILED retrieving memory from `/proc/meminfo` for Singularity instance '{name}' "
                 f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
             )
-        # Get fs mount points
+        # Get inner location mount points
+        if self._wraps_local():
+            fs_mounts = {
+                disk.device: disk.mountpoint
+                for disk in psutil.disk_partitions(all=True)
+                if disk.fstype not in FS_TYPES_TO_SKIP
+                and os.access(disk.mountpoint, os.R_OK)
+            }
+        else:
+            stdout, returncode = await self.connector.run(
+                location=self._inner_location.location,
+                command=[
+                    "cat",
+                    "/proc/1/mountinfo",
+                ],
+                capture_output=True,
+            )
+            if returncode == 0:
+                fs_mounts = {
+                    line.split(" - ")[1].split()[1]: line.split()[4]
+                    for line in stdout.splitlines()
+                    if line.split(" - ")[1].split()[0] not in FS_TYPES_TO_SKIP
+                }
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Host mount points: {fs_mounts}")
+            else:
+                raise WorkflowExecutionException(
+                    f"FAILED retrieving volume mounts from `/proc/1/mountinfo` "
+                    f"in deployment {self.connector.deployment_name}: [{returncode}]: {stdout}"
+                )
+        # Get the list of bind mounts for the container instance
         stdout, returncode = await self.run(
             location=location,
             command=[
@@ -1771,42 +1789,35 @@ class SingularityConnector(ContainerConnector):
             capture_output=True,
         )
         if returncode == 0:
-            fs_mounts = {}
-            for line in stdout.splitlines():
-                mount_point = line.split()[4]
-                mount_source = line.split(" - ")[1].split()[1]
-                fs_mounts[mount_point] = mount_source
-        else:
-            raise WorkflowExecutionException(
-                f"FAILED retrieving volume mounts from `/proc/1/mountinfo` for Singularity instance '{name}' "
-                f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
-            )
-        # Get the list of bind mounts for the container instance
-        stdout, returncode = await self.run(
-            location=location,
-            command=[
-                "cat",
-                "/proc/self/mountinfo",
-                "|",
-                "awk",
-                "'{print $4,$5,$10}'",
-            ],
-            capture_output=True,
-        )
-        if returncode == 0:
             binds = {}
             for line in stdout.splitlines():
-                src, dst, mount_source = line.split()
-                if src != "/":
-                    if dst not in fs_mounts:
-                        for path, value in fs_mounts.items():
-                            if mount_source == value:
-                                src = posixpath.join(path, src[1:])
+                if (dst := line.split()[4]) != posixpath.sep and (
+                    fs_type := line.split(" - ")[1].split()[0]
+                ) not in FS_TYPES_TO_SKIP:
+                    mount_source = line.split(" - ")[1].split()[1]
+                    if mount_source.startswith("/dev"):
+                        host_mount = line.split()[3]
+                    elif fs_type.startswith("nfs"):
+                        host_mount = None
+                        for host_source in sorted(fs_mounts.keys(), reverse=True):
+                            if mount_source.startswith(host_source):
+                                host_mount = mount_source.split(":", 1)[1]
                                 break
-                    binds[dst] = src
+                    else:
+                        host_mount = (
+                            (os.path if self._wraps_local() else posixpath).join(
+                                fs_mounts[mount_source], line.split()[3][1:]
+                            )
+                            if mount_source in fs_mounts
+                            else None
+                        )
+                    if host_mount is not None:
+                        binds[dst] = host_mount
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Container binds: {binds}")
         else:
             raise WorkflowExecutionException(
-                f"FAILED retrieving bind mounts from `/proc/self/mountinfo` for Singularity instance '{name}' "
+                f"FAILED retrieving bind mounts from `/proc/1/mountinfo` for Singularity instance '{name}' "
                 f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
             )
         # Get storage sizes
@@ -1815,7 +1826,7 @@ class SingularityConnector(ContainerConnector):
             location=location,
             name=name,
             entity="Singularity instance",
-            binds=binds,
+            binds=cast(MutableMapping[str, str], binds),
         )
         # Create instance
         self._instances[name] = ContainerInstance(

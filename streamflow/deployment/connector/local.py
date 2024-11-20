@@ -22,6 +22,7 @@ from streamflow.core.deployment import (
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import (
     BaseConnector,
+    FS_TYPES_TO_SKIP,
 )
 from streamflow.log_handler import logger
 
@@ -48,16 +49,25 @@ class LocalConnector(BaseConnector):
         self, deployment_name: str, config_dir: str, transferBufferSize: int = 2**16
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
+        storage = {}
+        for disk in psutil.disk_partitions(all=True):
+            if disk.fstype not in FS_TYPES_TO_SKIP and os.access(
+                disk.mountpoint, os.R_OK
+            ):
+                try:
+                    storage[disk.mountpoint] = Storage(
+                        mount_point=disk.mountpoint,
+                        size=shutil.disk_usage(disk.mountpoint).free / 2**20,
+                    )
+                except PermissionError as pe:
+                    logger.warning(
+                        f"Skippping Storage on partition {disk.device} on {disk.mountpoint} "
+                        f"for deployment {self.deployment_name}: {pe}"
+                    )
         self._hardware: Hardware = Hardware(
             cores=float(psutil.cpu_count()),
             memory=float(psutil.virtual_memory().total / 2**20),
-            storage={
-                disk.mountpoint: Storage(
-                    disk.mountpoint, shutil.disk_usage(disk.mountpoint).free / 2**20
-                )
-                for disk in psutil.disk_partitions()
-                if os.access(disk.mountpoint, os.R_OK)
-            },
+            storage=storage,
         )
 
     def _get_shell(self) -> str:

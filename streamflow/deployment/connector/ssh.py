@@ -18,6 +18,7 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import (
     BaseConnector,
+    FS_TYPES_TO_SKIP,
     copy_remote_to_remote,
     copy_same_connector,
 )
@@ -445,22 +446,7 @@ class SSHConnector(BaseConnector):
                         ) from None
                     for line in dir_info_list:
                         mount_point, fs_type, size = line.split(" ")
-                        if fs_type not in [
-                            "-",
-                            "cgroup",
-                            "cgroup2",
-                            "configfs",
-                            "debugfs",
-                            "devpts",
-                            "devtmpfs",
-                            "hugetlbfs",
-                            "mqueue",
-                            "proc",
-                            "securityfs",
-                            "selinuxfs",
-                            "sysfs",
-                            "tmpfs",
-                        ]:
+                        if fs_type not in FS_TYPES_TO_SKIP:
                             self.hardware[location].storage[mount_point] = Storage(
                                 mount_point=mount_point,
                                 size=float(size) / 2**10,
