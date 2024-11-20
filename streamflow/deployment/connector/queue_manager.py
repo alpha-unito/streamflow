@@ -1030,7 +1030,6 @@ class PBSConnector(QueueManagerConnector):
         if stderr == stdout:
             batch_command.append(get_option("j", "oe"))
         if service := cast(PBSService, self.services.get(location.service)):
-            resources = cast(dict[str, str], service.resources) | resources
             batch_command.extend(
                 [
                     get_option("a", service.begin),
@@ -1048,13 +1047,22 @@ class PBSConnector(QueueManagerConnector):
                     get_option("V", service.exportAllVariables),
                     get_option(
                         "W",
-                        ",".join([f"{k}={v}" for k, v in service.additionalAttributes]),
+                        (
+                            ",".join(
+                                [
+                                    f"{k}={v}"
+                                    for k, v in service.additionalAttributes.items()
+                                ]
+                            )
+                            if service.additionalAttributes
+                            else None
+                        ),
                     ),
                 ]
             )
-        if resources:
+        if resources := cast(dict[str, str], service.resources) | resources:
             batch_command.append(
-                get_option("l", ",".join([f"{k}={v}" for k, v in resources]))
+                get_option("l", ",".join([f"{k}={v}" for k, v in resources.items()]))
             )
         batch_command.append("-")
         stdout, returncode = await super().run(
