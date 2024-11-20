@@ -1,4 +1,4 @@
-aiohttp==3.11.4
+aiohttp==3.11.6
 aiosqlite==0.20.0
 antlr4-python3-runtime==4.13.2
 asyncssh==2.18.0
