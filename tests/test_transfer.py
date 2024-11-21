@@ -7,26 +7,24 @@ import pytest
 import pytest_asyncio
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType, FileType
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.data import remotepath
-from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from tests.utils.deployment import get_location
 
 
 async def _compare_remote_dirs(
-    context,
-    src_connector,
-    src_location,
-    src_path,
-    dst_connector,
-    dst_location,
-    dst_path,
+    context: StreamFlowContext,
+    src_connector: Connector,
+    src_location: ExecutionLocation,
+    src_path: str,
+    dst_connector: Connector,
+    dst_location: ExecutionLocation,
+    dst_path: str,
 ):
     assert await remotepath.exists(dst_connector, dst_location, dst_path)
-    src_path_processor = get_path_processor(src_connector)
-    dst_path_processor = get_path_processor(dst_connector)
 
     # the two dirs must have the same elements order
     src_files, dst_files = await asyncio.gather(
@@ -45,7 +43,7 @@ async def _compare_remote_dirs(
                     context,
                     src_connector,
                     src_location,
-                    src_path_processor.join(src_path, src_file),
+                    get_path_processor(src_connector).join(src_path, src_file),
                 )
             ),
             asyncio.create_task(
@@ -53,7 +51,7 @@ async def _compare_remote_dirs(
                     context,
                     dst_connector,
                     dst_location,
-                    dst_path_processor.join(dst_path, dst_file),
+                    get_path_processor(dst_connector).join(dst_path, dst_file),
                 )
             ),
         )
@@ -94,15 +92,16 @@ async def _compare_remote_dirs(
 async def _create_tmp_dir(context, connector, location, root=None, lvl=None, n_files=0):
     path_processor = get_path_processor(connector)
     dir_lvl = f"-{lvl}" if lvl else ""
-    if isinstance(src_connector, LocalConnector):
-        dir_path = os.path.join(
+    dir_path = (
+        os.path.join(
             root if root else tempfile.gettempdir(),
             f"dir{dir_lvl}-{utils.random_name()}",
         )
-    else:
-        dir_path = os.path.join(
+        if location.local
+        else os.path.join(
             root if root else "/tmp", f"dir{dir_lvl}-{utils.random_name()}"
         )
+    )
     await remotepath.mkdir(connector, [location], dir_path)
 
     dir_path = await remotepath.follow_symlink(context, connector, location, dir_path)
@@ -190,10 +189,11 @@ async def test_directory_to_directory(
         )
 
         # dst init
-        if isinstance(dst_connector, LocalConnector):
-            dst_path = os.path.join(tempfile.gettempdir(), utils.random_name())
-        else:
-            dst_path = posixpath.join("/tmp", utils.random_name())
+        dst_path = (
+            os.path.join(tempfile.gettempdir(), utils.random_name())
+            if dst_location.local
+            else posixpath.join("/tmp", utils.random_name())
+        )
 
         # save src_path into StreamFlow
         context.data_manager.register_path(
@@ -237,14 +237,16 @@ async def test_file_to_directory(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a file from one location to a directory into another location."""
-    if isinstance(src_connector, LocalConnector):
-        src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
-    else:
-        src_path = posixpath.join("/tmp", utils.random_name())
-    if isinstance(dst_connector, LocalConnector):
-        dst_path = os.path.join(tempfile.gettempdir(), utils.random_name())
-    else:
-        dst_path = posixpath.join("/tmp", utils.random_name())
+    src_path = (
+        os.path.join(tempfile.gettempdir(), utils.random_name())
+        if src_location.local
+        else posixpath.join("/tmp", utils.random_name())
+    )
+    dst_path = (
+        os.path.join(tempfile.gettempdir(), utils.random_name())
+        if dst_location.local
+        else posixpath.join("/tmp", utils.random_name())
+    )
     await remotepath.mkdir(dst_connector, [dst_location], dst_path)
     try:
         await remotepath.write(src_connector, src_location, src_path, "StreamFlow")
@@ -291,14 +293,16 @@ async def test_file_to_file(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test transferring a file from one location to another."""
-    if isinstance(src_connector, LocalConnector):
-        src_path = os.path.join(tempfile.gettempdir(), utils.random_name())
-    else:
-        src_path = posixpath.join("/tmp", utils.random_name())
-    if isinstance(dst_connector, LocalConnector):
-        dst_path = os.path.join(tempfile.gettempdir(), utils.random_name())
-    else:
-        dst_path = posixpath.join("/tmp", utils.random_name())
+    src_path = (
+        os.path.join(tempfile.gettempdir(), utils.random_name())
+        if src_location.local
+        else posixpath.join("/tmp", utils.random_name())
+    )
+    dst_path = (
+        os.path.join(tempfile.gettempdir(), utils.random_name())
+        if dst_location.local
+        else posixpath.join("/tmp", utils.random_name())
+    )
     try:
         await remotepath.write(
             src_connector,

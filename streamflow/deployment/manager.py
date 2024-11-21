@@ -11,7 +11,6 @@ from streamflow.core.deployment import (
     Connector,
     DeploymentConfig,
     DeploymentManager,
-    LOCAL_LOCATION,
     LocalTarget,
 )
 from streamflow.core.exception import (
@@ -101,7 +100,7 @@ class DefaultDeploymentManager(DeploymentManager):
         if issubclass(connector_type, ConnectorWrapper):
             # Retrieve the inner connector's config
             if deployment_config.wraps is None:
-                deployment_name = LOCAL_LOCATION
+                deployment_name = LocalTarget.deployment_name
                 service = None
                 if deployment_name not in self.config_map:
                     local_target = LocalTarget()

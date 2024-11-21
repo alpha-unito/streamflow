@@ -12,7 +12,7 @@ from streamflow.core.command import CommandOutput, CommandOutputProcessor
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     Connector,
-    LOCAL_LOCATION,
+    LocalTarget,
     Target,
 )
 from streamflow.core.exception import (
@@ -210,7 +210,7 @@ class CWLTokenProcessor(TokenProcessor):
             except StopIteration:
                 # If such location does not exist, apply the standard heuristic to select the best one
                 data_location = self.workflow.context.data_manager.get_source_location(
-                    path=filepath, dst_deployment=LOCAL_LOCATION
+                    path=filepath, dst_deployment=LocalTarget.deployment_name
                 )
             if data_location:
                 connector = self.workflow.context.deployment_manager.get_connector(

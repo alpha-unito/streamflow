@@ -75,7 +75,7 @@ async def checksum(
     location: ExecutionLocation | None,
     path: str,
 ) -> str | None:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         if os.path.isfile(path):
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
@@ -148,7 +148,7 @@ async def download(
 async def exists(
     connector: Connector, location: ExecutionLocation | None, path: str
 ) -> bool:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         return os.path.exists(path)
     else:
         command = [f'test -e "{path}"']
@@ -180,7 +180,7 @@ async def follow_symlink(
     :param path: the path to be resolved in the case of symbolic link
     :return: the path of the resolved symlink or `None` if the link points to a location that does not exist
     """
-    if isinstance(connector, LocalConnector):
+    if location.local:
         return os.path.realpath(path) if os.path.exists(path) else None
     else:
         # If at least one primary location is present on the site
@@ -287,7 +287,7 @@ async def get_storage_usages(
 async def head(
     connector: Connector, location: ExecutionLocation | None, path: str, num_bytes: int
 ) -> str:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         with open(path, "rb") as f:
             return f.read(num_bytes).decode("utf-8")
     else:
@@ -302,7 +302,7 @@ async def head(
 async def isdir(
     connector: Connector, location: ExecutionLocation | None, path: str
 ) -> bool:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         return os.path.isdir(path)
     else:
         command = [f'test -d "{path}"']
@@ -322,7 +322,7 @@ async def isdir(
 async def isfile(
     connector: Connector, location: ExecutionLocation | None, path: str
 ) -> bool:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         return os.path.isfile(path)
     else:
         command = [f'test -f "{path}"']
@@ -342,7 +342,7 @@ async def isfile(
 async def islink(
     connector: Connector, location: ExecutionLocation | None, path: str
 ) -> bool:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         return os.path.islink(path)
     else:
         command = [f'test -L "{path}"']
@@ -365,7 +365,7 @@ async def listdir(
     path: str,
     file_type: FileType | None = None,
 ) -> MutableSequence[str]:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         return _listdir_local(path, file_type)
     else:
         command = 'find -L "{path}" -mindepth 1 -maxdepth 1 {type}'.format(
@@ -422,7 +422,7 @@ async def mkdirs(
 async def read(
     connector: Connector, location: ExecutionLocation | None, path: str
 ) -> str:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         with open(path, "rb") as f:
             return f.read().decode("utf-8")
     else:
@@ -437,7 +437,7 @@ async def read(
 async def resolve(
     connector: Connector, location: ExecutionLocation | None, pattern: str
 ) -> MutableSequence[str] | None:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         return sorted(glob.glob(pattern))
     else:
         command = [
@@ -466,7 +466,7 @@ async def rm(
     location: ExecutionLocation | None,
     path: str | MutableSequence[str],
 ) -> None:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         if isinstance(path, MutableSequence):
             for p in path:
                 if os.path.exists(p):
@@ -511,7 +511,7 @@ async def size(
     """
     if not path:
         return 0
-    elif isinstance(connector, LocalConnector):
+    elif location.local:
         if not isinstance(path, MutableSequence):
             path = [path]
         return sum(utils.get_size(p) for p in path)
@@ -541,7 +541,7 @@ async def size(
 async def write(
     connector: Connector, location: ExecutionLocation | None, path: str, content: str
 ) -> None:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         with open(path, "w") as f:
             f.write(content)
     else:

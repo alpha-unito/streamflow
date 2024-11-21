@@ -5,7 +5,7 @@ import asyncio
 import logging
 import posixpath
 import urllib.parse
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import PurePath
 from types import ModuleType
@@ -32,7 +32,6 @@ from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver
 from streamflow.data import remotepath
-from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.utils import get_token_value
@@ -1080,7 +1079,7 @@ async def write_remote_file(
                         path=path,
                         location=(
                             "on local file-system"
-                            if isinstance(connector, LocalConnector)
+                            if location.local
                             else f"on location {location}"
                         ),
                     )

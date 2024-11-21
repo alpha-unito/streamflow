@@ -13,7 +13,6 @@ from streamflow.core.data import FileType
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.data import remotepath
-from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from tests.utils.deployment import get_location, get_docker_deployment_config
 
@@ -21,7 +20,7 @@ from tests.utils.deployment import get_location, get_docker_deployment_config
 async def _symlink(
     connector: Connector, location: ExecutionLocation | None, src: str, path: str
 ) -> None:
-    if isinstance(connector, LocalConnector):
+    if location.local:
         src = os.path.abspath(src)
         if os.path.isdir(path):
             path = os.path.join(path, os.path.basename(src))
@@ -92,9 +91,7 @@ async def test_download(context, connector, location):
         "https://raw.githubusercontent.com/alpha-unito/streamflow/master/LICENSE",
         "https://github.com/alpha-unito/streamflow/archive/refs/tags/0.1.6.zip",
     ]
-    parent_dir = (
-        tempfile.gettempdir() if isinstance(connector, LocalConnector) else "/tmp"
-    )
+    parent_dir = tempfile.gettempdir() if location.local else "/tmp"
     path_processor = get_path_processor(connector)
     paths = [
         path_processor.join(parent_dir, "LICENSE"),

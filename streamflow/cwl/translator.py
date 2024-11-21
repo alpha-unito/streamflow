@@ -29,7 +29,6 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     DeploymentConfig,
     ExecutionLocation,
-    LOCAL_LOCATION,
     LocalTarget,
     Target,
 )
@@ -1135,9 +1134,7 @@ def _process_docker_requirement(
         CWLDockerTranslator,
         translator_type(
             config_dir=config_dir,
-            wrapper=(
-                config.wrapper if target.deployment.name != LOCAL_LOCATION else None
-            ),
+            wrapper=(config.wrapper if target.deployment.type != "local" else None),
             **config.config,
         ),
     )
@@ -2671,9 +2668,12 @@ class CWLTranslator:
             else posixpath.sep
         )
         # Register data locations for config files
+        deployment_name = LocalTarget.deployment_name
         path = _get_path(self.cwl_definition.tool["id"])
         self.context.data_manager.register_path(
-            location=ExecutionLocation(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION),
+            location=ExecutionLocation(
+                deployment=deployment_name, local=True, name="__LOCAL__"
+            ),
             path=path,
             relpath=os.path.basename(path),
         )
@@ -2681,7 +2681,7 @@ class CWLTranslator:
             path = _get_path(self.cwl_inputs["id"])
             self.context.data_manager.register_path(
                 location=ExecutionLocation(
-                    deployment=LOCAL_LOCATION, name=LOCAL_LOCATION
+                    deployment=deployment_name, local=True, name="__LOCAL__"
                 ),
                 path=path,
                 relpath=os.path.basename(path),
