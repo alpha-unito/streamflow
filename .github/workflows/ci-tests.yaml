@@ -71,9 +71,10 @@ jobs:
         with:
           node-version: "20"
       - name: "Install Docker (MacOS X)"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.14
+        uses: douglascamata/setup-docker-macos-action@main
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v2
         with:
@@ -239,9 +240,10 @@ jobs:
         with:
           node-version: "20"
       - name: "Install Docker (MacOs X)"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.14
+        uses: douglascamata/setup-docker-macos-action@main
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v2
         with:
