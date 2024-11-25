@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import posixpath
 import tempfile
@@ -7,11 +9,33 @@ import pytest
 import pytest_asyncio
 
 from streamflow.core import utils
-from streamflow.core.data import DataType
+from streamflow.core.data import DataType, DataLocation
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from tests.utils.deployment import get_location
+
+
+def _contains_location(
+    searched_location: ExecutionLocation | DataLocation,
+    execution_location: ExecutionLocation,
+):
+    """
+    The `execution_location` object can wrap other `execution_location` object.
+    This function checks whether the `execution_location` object, or one of its
+    wrapped locations, contains the `searched_location`.
+
+    :param searched_location: the location to be found, it can be a `ExecutionLocation` or a `DataLocation`,
+                                identified by the name attribute
+    :param execution_location: the `ExecutionLocation` object with the location information
+    :return: a boolean which is true if the `execution_location` contains the `searched_location`
+    """
+    while execution_location is not None:
+        if searched_location.name == execution_location.name:
+            return True
+        else:
+            execution_location = execution_location.wraps
+    return False
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -108,14 +132,14 @@ async def test_data_locations(
                 assert data_locs[0].deployment == dst_connector.deployment_name
             elif len(data_locs) == 2:
                 # src and dst are on the same location. So dst will be a symbolic link
-                assert src_connector.deployment_name == dst_connector.deployment_name
+                assert _contains_location(dst_location, src_location)
                 assert (
                     len(
                         [
                             loc
                             for loc in data_locs
                             if loc.data_type == DataType.PRIMARY
-                            and loc.deployment == src_connector.deployment_name
+                            and _contains_location(loc, src_location)
                         ]
                     )
                     == 1
@@ -126,7 +150,7 @@ async def test_data_locations(
                             loc
                             for loc in data_locs
                             if loc.data_type == DataType.SYMBOLIC_LINK
-                            and loc.deployment == dst_connector.deployment_name
+                            and _contains_location(loc, dst_location)
                             and loc.path == path
                         ]
                     )

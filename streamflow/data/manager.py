@@ -58,9 +58,11 @@ def _get_inner_path(location: ExecutionLocation, path: str) -> str | None:
     if location.wraps:
         for mount in sorted(location.mounts.keys(), reverse=True):
             if path.startswith(mount):
-                return (posixpath if location.wraps.local else os.path).join(
-                    location.mounts[mount],
-                    (posixpath if location.local else os.path).relpath(path, mount),
+                return os.path.normpath(
+                    (posixpath if location.wraps.local else os.path).join(
+                        location.mounts[mount],
+                        (posixpath if location.local else os.path).relpath(path, mount),
+                    )
                 )
     return None
 
@@ -339,7 +341,10 @@ class DefaultDataManager(DataManager):
             *(
                 asyncio.create_task(src_data_loc.available.wait())
                 for src_data_loc in self.get_data_locations(
-                    src_path, src_location.deployment, src_location.name
+                    path=src_path,
+                    deployment=src_connector.deployment_name,
+                    location_name=src_location.name,
+                    data_type=DataType.PRIMARY,
                 )
             )
         )

@@ -492,15 +492,15 @@ async def size(
             path = [path]
         return sum(utils.get_size(p) for p in path)
     else:
-        if isinstance(path, MutableSequence):
-            path = " ".join([f'"{p}"' for p in path])
-        else:
-            path = f'"{path}"'
         command = [
             "".join(
                 [
                     "find -L ",
-                    path,
+                    (
+                        " ".join([f'"{p}"' for p in path])
+                        if isinstance(path, MutableSequence)
+                        else f'"{path}"'
+                    ),
                     " -type f -exec ls -ln {} \\+ | ",
                     "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; ",
                 ]
