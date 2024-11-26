@@ -64,7 +64,8 @@ class SSHContext:
                         )
                     await self.close()
                     raise
-                self._connect_event.set()
+                finally:
+                    self._connect_event.set()
             else:
                 await self._connect_event.wait()
                 if self._ssh_connection is None:
@@ -121,8 +122,8 @@ class SSHContext:
             self._ssh_connection.close()
             await self._ssh_connection.wait_closed()
             self._ssh_connection = None
-        self._connect_event.set()  # it is necessary to free any blocked tasks and avoid deadlocks
-        self._connect_event.clear()
+        # self._connect_event.set()  # it is necessary to free any blocked tasks and avoid deadlocks
+        # self._connect_event.clear()
         self._connecting = False
 
     def full(self) -> bool:
@@ -203,6 +204,7 @@ class SSHContextManager:
                                 )
                             context.ssh_attempts += 1
                             await context.close()
+                            context._connect_event.clear()  # tmp
                             self._selected_context = None
                             logger.warning(f"Connection attempt {context.ssh_attempts}")
                     await asyncio.sleep(self._retry_delay)
