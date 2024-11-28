@@ -9,20 +9,19 @@ import posixpath
 import shutil
 from collections.abc import MutableMapping, MutableSequence
 from email.message import Message
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
 from aiohttp import ClientResponse
 
 from streamflow.core import utils
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataType, FileType
+from streamflow.core.data import FileType, DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import AvailableLocation, Hardware
 
 if TYPE_CHECKING:
+    from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import Connector, ExecutionLocation
+    from streamflow.core.scheduling import Hardware
 
 
 def _check_status(
@@ -203,40 +202,6 @@ async def follow_symlink(
                 )
             )
         return result.strip() if status == 0 else None
-
-
-async def get_mount_point(
-    context: StreamFlowContext,
-    connector: Connector,
-    location: AvailableLocation | None,
-    path: str,
-) -> str:
-    """
-    Get the mount point of a path in the given `location`
-
-    :param context: the `StreamFlowContext` object with global application status.
-    :param connector: the `Connector` object to communicate with the location
-    :param location: the `ExecutionLocation` object with the location information
-    :param path: the path whose mount point should be returned
-    :return: the mount point containing the given path
-    """
-    try:
-        return location.hardware.get_mount_point(path)
-    except KeyError:
-        path_to_resolve = path
-        while (
-            mount_point := await follow_symlink(
-                context, connector, location.location, path_to_resolve
-            )
-        ) is None:
-            path_to_resolve = Path(path_to_resolve).parent
-        location_mount_points = location.hardware.get_mount_points()
-        while (
-            str(mount_point) != os.sep and str(mount_point) not in location_mount_points
-        ):
-            mount_point = Path(mount_point).parent
-        location.hardware.get_storage(str(mount_point)).add_path(path)
-        return str(mount_point)
 
 
 async def get_storage_usages(

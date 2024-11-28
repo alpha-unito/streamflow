@@ -393,45 +393,36 @@ class DefaultDataManager(DataManager):
             # Otherwise, perform a remote copy and mark the destination as primary
             else:
                 remote_locations.append(dst_location)
-            # Register path and data location for parent folder
-            self.register_path(dst_location, str(Path(dst_path).parent))
             # If the source path has already been registered
             if src_data_locations := self.path_mapper.get(path=src_path):
                 src_data_location = next(iter(src_data_locations))
+                # Compute actual destination path
+                loc_dst_path = (
+                    get_path_processor(dst_connector).join(
+                        dst_path,
+                        get_path_processor(src_connector).basename(src_path),
+                    )
+                    if await remotepath.isdir(
+                        connector=dst_connector,
+                        location=dst_location,
+                        path=dst_path,
+                    )
+                    else dst_path
+                )
+                # Register path and data location for parent folder
+                self.register_path(dst_location, str(Path(loc_dst_path).parent))
                 # Register the new `DataLocation` object
                 dst_data_location = DataLocation(
                     location=dst_location,
-                    path=dst_path,
+                    path=loc_dst_path,
                     relpath=src_data_location.relpath,
                     data_type=DataType.PRIMARY,
                 )
-                self.path_mapper.put(path=dst_path, data_location=dst_data_location)
+                self.path_mapper.put(path=loc_dst_path, data_location=dst_data_location)
                 data_locations.append(dst_data_location)
                 # If the destination is not writable , map the new `DataLocation` object to the source locations
                 if not writable:
                     self.register_relation(src_data_location, dst_data_location)
-                # Process wrapped locations if any
-                inner_path = dst_path
-                inner_location = dst_location
-                while (
-                    inner_path := _get_inner_path(inner_location, inner_path)
-                ) is not None:
-                    inner_location = inner_location.wraps
-                    if inner_data_locs := self.path_mapper.get(
-                        path=inner_path,
-                        deployment=inner_location.deployment,
-                        name=inner_location.name,
-                    ):
-                        inner_data_location = inner_data_locs[0]
-                    else:
-                        inner_data_location = DataLocation(
-                            location=inner_location,
-                            path=inner_path,
-                            relpath=dst_data_location.relpath,
-                            data_type=dst_data_location.data_type,
-                        )
-                    self.register_relation(dst_data_location, inner_data_location)
-                    data_locations.append(inner_data_location)
             # Otherwise, raise an exception
             else:
                 raise WorkflowExecutionException(
@@ -460,25 +451,35 @@ class DefaultDataManager(DataManager):
                 connector = self.context.deployment_manager.get_connector(
                     data_location.deployment
                 )
-                path = (
-                    get_path_processor(connector).join(
-                        data_location.path,
-                        get_path_processor(src_connector).basename(src_path),
-                    )
-                    if await remotepath.isdir(
-                        connector=connector,
-                        location=data_location.location,
-                        path=data_location.path,
-                    )
-                    else data_location.path
-                )
                 data_location.data_type = (
                     DataType.SYMBOLIC_LINK
                     if await remotepath.islink(
                         connector=connector,
                         location=data_location.location,
-                        path=path,
+                        path=data_location.path,
                     )
                     else DataType.PRIMARY
                 )
+            # Process wrapped locations if any
+            inner_path = data_location.path
+            inner_location = data_location.location
+            while (
+                inner_path := _get_inner_path(inner_location, inner_path)
+            ) is not None:
+                inner_location = inner_location.wraps
+                if inner_data_locs := self.path_mapper.get(
+                    path=inner_path,
+                    deployment=inner_location.deployment,
+                    name=inner_location.name,
+                ):
+                    inner_data_location = inner_data_locs[0]
+                else:
+                    inner_data_location = DataLocation(
+                        location=inner_location,
+                        path=inner_path,
+                        relpath=data_location.relpath,
+                        data_type=data_location.data_type,
+                        available=True,
+                    )
+                self.register_relation(data_location, inner_data_location)
             data_location.available.set()

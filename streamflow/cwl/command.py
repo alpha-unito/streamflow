@@ -340,7 +340,7 @@ async def _prepare_work_dir(
                 )
                 await streamflow_context.data_manager.transfer_data(
                     src_location=selected_location.location,
-                    src_path=src_path,
+                    src_path=selected_location.path,
                     dst_locations=locations,
                     dst_path=dest_path,
                     writable=writable,
