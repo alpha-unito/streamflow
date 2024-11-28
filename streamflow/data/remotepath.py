@@ -174,22 +174,14 @@ async def follow_symlink(
     if location.local:
         return os.path.realpath(path) if os.path.exists(path) else None
     else:
-        # If at least one primary location is present on the site
+        # If at least one primary location is present on the site, return its path
         if locations := context.data_manager.get_data_locations(
             path=path,
             deployment=connector.deployment_name,
             location_name=location.name,
             data_type=DataType.PRIMARY,
         ):
-            # If there is only one primary location on the site, return its path
-            if len(locations) == 1:
-                return locations[0].path
-            # If multiple primary locations are present for the same path, raise an Exception
-            else:
-                raise WorkflowExecutionException(
-                    f"Multiple primary locations on site {location} for path {path} "
-                    f": {[loc.path for loc in locations]}"
-                )
+            return next(iter(locations)).path
         # Otherwise, analyse the remote path
         command = [f'test -e "{path}" && readlink -f "{path}"']
         result, status = await connector.run(

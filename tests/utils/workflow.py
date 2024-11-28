@@ -52,7 +52,6 @@ def create_schedule_step(
             targets=[
                 Target(
                     deployment=deploy_step.deployment_config,
-                    workdir=utils.random_name(),
                 )
                 for deploy_step in deploy_steps
             ]

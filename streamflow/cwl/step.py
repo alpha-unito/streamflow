@@ -548,17 +548,13 @@ class CWLTransferStep(TransferStep):
                 job.input_directory, utils.random_name(), selected_location.relpath
             )
             # Perform and transfer
-            try:
-                await self.workflow.context.data_manager.transfer_data(
-                    src_location=selected_location.location,
-                    src_path=selected_location.path,
-                    dst_locations=dst_locations,
-                    dst_path=filepath,
-                    writable=self.writable,
-                )
-            except WorkflowExecutionException:
-                logger.error(f"Job {job.name} failed transfer data")
-                raise
+            await self.workflow.context.data_manager.transfer_data(
+                src_location=selected_location.location,
+                src_path=selected_location.path,
+                dst_locations=dst_locations,
+                dst_path=filepath,
+                writable=self.writable,
+            )
             # Transform token value
             new_token_value = {
                 "class": token_class,

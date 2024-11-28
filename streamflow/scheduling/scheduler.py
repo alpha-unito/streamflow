@@ -408,7 +408,7 @@ class DefaultScheduler(Scheduler):
             if location := location.wraps if location.stacked else None:
                 connector = cast(ConnectorWrapper, connector).connector
                 hardware_requirement = await utils.bind_mount_point(
-                    current_hw, self.context, connector, location
+                    self.context, connector, location, current_hw
                 )
         return hardware
 
@@ -472,7 +472,6 @@ class DefaultScheduler(Scheduler):
                                         conn = cast(ConnectorWrapper, conn).connector
                                         for execution_loc in locations:
                                             job_hardware = await utils.bind_mount_point(
-                                                job_hardware,
                                                 self.context,
                                                 conn,
                                                 next(
@@ -485,6 +484,7 @@ class DefaultScheduler(Scheduler):
                                                     if available_loc.name
                                                     == execution_loc.name
                                                 ),
+                                                job_hardware,
                                             )
                         self.wait_queues[connector.deployment_name].notify_all()
 

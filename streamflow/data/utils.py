@@ -4,6 +4,7 @@ import os
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, Storage
 from streamflow.data.remotepath import follow_symlink
 from streamflow.deployment.utils import get_path_processor
@@ -14,11 +15,23 @@ if TYPE_CHECKING:
 
 
 async def bind_mount_point(
-    hardware: Hardware,
     context: StreamFlowContext,
     connector: Connector,
     location: AvailableLocation,
+    hardware: Hardware,
 ) -> Hardware:
+    """
+    In the case of wrapped locations, the `Hardware` of the upper location must be
+    mapped to the below `location`. In particular, if the `Hardware` has some storages
+    that are bound, i.e., the `bind` attribute is not None, the storages must be
+    resolved with the paths of the below `location`.
+
+    :param context: the `StreamFlowContext` object with global application status.
+    :param connector: the `Connector` object to communicate with the location
+    :param location: the `AvailableLocation` object of the location information
+    :param hardware: the `Hardware` object with eventual binds to resolve
+    :return: a new `Hardware` object with the eventual bind in the storages resolved
+    """
     path_processor = get_path_processor(connector)
     return Hardware(
         cores=hardware.cores,
@@ -71,6 +84,10 @@ async def get_mount_point(
             )
         ) is None:
             path_to_resolve = path_processor.dirname(path_to_resolve)
+            if not path_to_resolve:
+                raise WorkflowExecutionException(
+                    f"Impossible to find the mount point of {path} path on location {location}"
+                )
         location_mount_points = location.hardware.get_mount_points()
         while mount_point != os.sep and mount_point not in location_mount_points:
             mount_point = path_processor.dirname(mount_point)

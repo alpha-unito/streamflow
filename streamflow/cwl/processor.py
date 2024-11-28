@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import MutableSequence, MutableMapping, Callable
 from typing import Any, cast
 
@@ -27,6 +28,7 @@ from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.deployment.utils import get_path_processor
+from streamflow.log_handler import logger
 from streamflow.workflow.token import ListToken, ObjectToken
 
 
@@ -213,6 +215,10 @@ class CWLTokenProcessor(TokenProcessor):
                     path=filepath, dst_deployment=LocalTarget.deployment_name
                 )
             if data_location:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Processing {filepath} on location {data_location.location}."
+                    )
                 connector = self.workflow.context.deployment_manager.get_connector(
                     data_location.deployment
                 )

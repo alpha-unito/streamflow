@@ -262,14 +262,17 @@ def _merge_tokens(token: CommandToken) -> Any:
         return [_merge_tokens(t) for t in token.value if t is not None]
     elif isinstance(token, ObjectCommandToken):
         tokens = sorted(
-            flatten_list(
-                [_merge_tokens(t) for t in token.value.values() if t is not None]
+            filter(
+                lambda t: t.position is not None,
+                flatten_list(
+                    [_merge_tokens(t) for t in token.value.values() if t is not None]
+                ),
             ),
             key=lambda t: (
                 [t.position, t.name] if t.name is not None else [t.position]
             ),
         )
-        return [t for t in tokens if t.position is not None] or [
+        return tokens or [
             CommandToken(name=token.name, position=token.position, value="")
         ]
     elif token is None:
