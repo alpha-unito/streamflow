@@ -139,11 +139,9 @@ def dst_connector(context, dst_location) -> Connector:
 
 @pytest.mark.asyncio
 async def test_directory_to_directory(
-    context, src_connector, src_location, dst_connector, dst_location
-):
+    context: StreamFlowContext, communication_pattern: tuple[str, str]
+) -> None:
     """Test transferring a directory and its content from one location to another."""
-    src_path = None
-    dst_path = None
     # dir
     #   |- file_0
     #   |- file_1
@@ -161,6 +159,15 @@ async def test_directory_to_directory(
     #   |   |- file_1_2
     #   |- dir_2
     #   |   |   empty
+
+    src_location = await get_location(context, communication_pattern[0])
+    src_connector = context.deployment_manager.get_connector(src_location.deployment)
+    src_path = None
+
+    dst_location = await get_location(context, communication_pattern[1])
+    dst_connector = context.deployment_manager.get_connector(dst_location.deployment)
+    dst_path = None
+
     try:
         # create src structure
         src_path = await _create_tmp_dir(
