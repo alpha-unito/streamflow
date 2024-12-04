@@ -24,6 +24,13 @@ if TYPE_CHECKING:
     from typing import Any
 
 
+def _check_storages(hardware_a: Hardware, hardware_b: Hardware) -> None:
+    if set(hardware_b.get_mount_points()) - set(hardware_a.get_mount_points()):
+        raise WorkflowExecutionException(
+            f"Invalid `Hardware` comparison: {hardware_a} should contain all the storage included in {hardware_b}."
+        )
+
+
 def _reduce_storages(
     storages: Iterable[Storage], operator: Callable[[Storage, Any], Storage]
 ) -> MutableMapping[str, Storage]:
@@ -76,7 +83,7 @@ class Hardware:
         return self.get_storage(path).mount_point
 
     def get_mount_points(self) -> MutableSequence[str]:
-        return [storage.mount_point for storage in self.storage.values()]
+        return list({storage.mount_point for storage in self.storage.values()})
 
     def get_size(self, path: str) -> float:
         return self.get_storage(path).size
@@ -86,6 +93,9 @@ class Hardware:
             if path == disk.mount_point or path in disk.paths:
                 return disk
         raise KeyError(path)
+
+    def __repr__(self):
+        return f"Hardware(cores={self.cores}, memory={self.memory}, storage={self.storage})"
 
     def bind(self, path_processor) -> Hardware:
         return Hardware(
@@ -162,10 +172,11 @@ class Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores >= other.cores and self.memory >= other.memory:
-            normalized_storages = self._normalize_storage()
+            _check_storages(self, other)
+            self_norm = self._normalize_storage()
             return all(
-                normalized_storages[disk.mount_point] >= disk
-                for disk in other._normalize_storage().values()
+                self_norm[other_disk.mount_point] >= other_disk
+                for other_disk in other._normalize_storage().values()
             )
         else:
             return False
@@ -174,10 +185,11 @@ class Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores > other.cores and self.memory > other.memory:
-            normalized_storages = self._normalize_storage()
+            _check_storages(self, other)
+            self_norm = self._normalize_storage()
             return all(
-                normalized_storages[disk.mount_point] > disk
-                for disk in other._normalize_storage().values()
+                self_norm[other_disk.mount_point] > other_disk
+                for other_disk in other._normalize_storage().values()
             )
         else:
             return False
@@ -186,10 +198,11 @@ class Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores <= other.cores and self.memory <= other.memory:
-            normalized_storages = self._normalize_storage()
+            _check_storages(other, self)
+            other_norm = other._normalize_storage()
             return all(
-                normalized_storages[disk.mount_point] <= disk
-                for disk in other._normalize_storage().values()
+                self_disk <= other_norm[self_disk.mount_point]
+                for self_disk in self._normalize_storage().values()
             )
         else:
             return False
@@ -198,10 +211,11 @@ class Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores < other.cores and self.memory < other.memory:
-            normalized_storages = self._normalize_storage()
+            _check_storages(other, self)
+            other_norm = other._normalize_storage()
             return all(
-                normalized_storages[disk.mount_point] < disk
-                for disk in other._normalize_storage().values()
+                self_disk < other_norm[self_disk.mount_point]
+                for self_disk in self._normalize_storage().values()
             )
         else:
             return False
@@ -431,6 +445,9 @@ class Storage:
 
     def add_path(self, path: str):
         self.paths.add(path)
+
+    def __repr__(self):
+        return f"Storage(mount_point={self.mount_point}, size={self.size}, paths={self.paths})"
 
     def __add__(self, other: Any) -> Storage:
         if not isinstance(other, Storage):

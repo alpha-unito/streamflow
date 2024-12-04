@@ -16,6 +16,7 @@ from streamflow.core.deployment import (
     Target,
     FilterConfig,
 )
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, Storage
 from streamflow.core.workflow import Job, Status
 from streamflow.cwl.hardware import CWLHardwareRequirement
@@ -124,6 +125,73 @@ async def test_binding_filter(context: StreamFlowContext):
     await _notify_status_and_test(context, job, Status.RUNNING)
     # Job changes status to COMPLETED
     await _notify_status_and_test(context, job, Status.COMPLETED)
+
+
+def test_hardware():
+    """Test Hardware arithmetic and comparison operations"""
+    main_hardware = Hardware(
+        cores=float(2**4),
+        memory=float(2**10),
+        storage={
+            "placeholder_1": Storage(
+                mount_point=os.sep,
+                size=float(2**20),
+            ),
+            "placeholder_2": Storage(
+                mount_point=os.sep,
+                size=float(2**12),
+            ),
+            "placeholder_3": Storage(
+                mount_point=os.path.join(os.sep, "tmp"),
+                size=float(2**15),
+            ),
+        },
+    )
+    additional_storage_size = float(2**10)
+    secondary_hardware = main_hardware + Hardware(
+        storage={
+            "placeholder_4": Storage(
+                mount_point=os.path.join(os.sep, "tmp"), size=additional_storage_size
+            )
+        }
+    )
+    # Secondary hardware after the sum operation has the storage keys in the normalized form
+    assert secondary_hardware.storage.keys() == {os.sep, os.path.join(os.sep, "tmp")}
+    assert (
+        secondary_hardware.get_storage(os.path.join(os.sep, "tmp")).size
+        == main_hardware.storage["placeholder_3"].size + additional_storage_size
+    )
+
+    # Changing storage keys and the number of storages to evaluate whether operations are independent of them.
+    # The `placeholder_1` and `placeholder_2` storages collapse into the `other_name_1` storage during the
+    # previous addition operation because they share the same mount point.
+    secondary_hardware.storage["other_name_1.1"] = secondary_hardware.storage.pop(
+        main_hardware.storage["placeholder_1"].mount_point
+    )
+    secondary_hardware.storage["other_name_2.1"] = secondary_hardware.storage.pop(
+        main_hardware.storage["placeholder_3"].mount_point
+    )
+    assert main_hardware <= secondary_hardware
+    assert secondary_hardware >= main_hardware
+
+    # Hardware must have the same `mount_point` to execute comparison operations.
+    # The "bigger" hardware must have at least all the mount_point values of the "smaller" one;
+    # otherwise, an error must be raised.
+    # If this check is not performed, for example, if the two hardware have different
+    # `mount_point` values at scheduling time, the scheduling process may enter an infinite loop.
+    main_hardware.storage.pop("placeholder_3")
+    with pytest.raises(WorkflowExecutionException) as err:
+        _ = secondary_hardware <= main_hardware
+    assert (
+        str(err.value) == f"Invalid `Hardware` comparison: {main_hardware} should "
+        f"contain all the storage included in {secondary_hardware}."
+    )
+    with pytest.raises(WorkflowExecutionException) as err:
+        _ = main_hardware >= secondary_hardware
+    assert (
+        str(err.value) == f"Invalid `Hardware` comparison: {main_hardware} should "
+        f"contain all the storage included in {secondary_hardware}."
+    )
 
 
 @pytest.mark.asyncio
