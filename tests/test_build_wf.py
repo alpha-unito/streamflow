@@ -177,7 +177,7 @@ async def test_combinator_step(context: StreamFlowContext, combinator: Combinato
 @pytest.mark.asyncio
 async def test_deploy_step(context: StreamFlowContext):
     """Test saving DeployStep on database and re-load it in a new Workflow"""
-    workflow = (await create_workflow(context, num_port=0))[0]
+    workflow, _ = await create_workflow(context, num_port=0)
     step = create_deploy_step(workflow)
     await workflow.save(context)
     new_workflow, new_step = await _clone_step(step, workflow, context)
@@ -236,11 +236,11 @@ async def test_execute_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_gather_step(context: StreamFlowContext):
     """Test saving GatherStep on database and re-load it in a new Workflow"""
-    workflow, ports = await create_workflow(context, num_port=1)
+    workflow, (port,) = await create_workflow(context, num_port=1)
     await _base_step_test_process(
         workflow,
         GatherStep,
-        {"name": utils.random_name() + "-gather", "depth": 1, "size_port": ports[0]},
+        {"name": utils.random_name() + "-gather", "depth": 1, "size_port": port},
         context,
     )
 
@@ -280,7 +280,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_scatter_step(context: StreamFlowContext):
     """Test saving ScatterStep on database and re-load it in a new Workflow"""
-    workflow = (await create_workflow(context, num_port=0))[0]
+    workflow, _ = await create_workflow(context, num_port=0)
     await _base_step_test_process(
         workflow, ScatterStep, {"name": utils.random_name() + "-scatter"}, context
     )
@@ -289,7 +289,7 @@ async def test_scatter_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_schedule_step(context: StreamFlowContext):
     """Test saving ScheduleStep on database and re-load it in a new Workflow"""
-    workflow = (await create_workflow(context, num_port=0))[0]
+    workflow, _ = await create_workflow(context, num_port=0)
     deploy_step = create_deploy_step(workflow)
     nof_deployments = 2
     step = create_schedule_step(
@@ -356,7 +356,7 @@ async def test_workflow(context: StreamFlowContext):
     exec_step.add_input_port(in_port_name, in_port)
     await workflow.save(context)
 
-    new_workflow = (await create_workflow(context, num_port=0))[0]
+    new_workflow, _ = await create_workflow(context, num_port=0)
     loading_context = WorkflowBuilder(new_workflow)
     new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
 

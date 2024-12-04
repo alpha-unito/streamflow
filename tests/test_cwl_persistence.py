@@ -385,7 +385,7 @@ async def test_cwl_map_command_token_processor(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_list_merge_combinator(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with ListMergeCombinator from database"""
-    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (port,) = await create_workflow(context=context, num_port=1)
     name = utils.random_name()
     step = workflow.create_step(
         cls=CombinatorStep,
@@ -404,7 +404,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_default_transformer(context: StreamFlowContext):
     """Test saving and loading DefaultTransformer from database"""
-    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (port,) = await create_workflow(context=context, num_port=1)
     transformer = workflow.create_step(
         cls=DefaultTransformer,
         name=utils.random_name() + "-transformer",
@@ -416,7 +416,7 @@ async def test_default_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_default_retag_transformer(context: StreamFlowContext):
     """Test saving and loading DefaultRetagTransformer from database"""
-    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (port,) = await create_workflow(context=context, num_port=1)
     transformer = workflow.create_step(
         cls=DefaultRetagTransformer,
         name=utils.random_name() + "-transformer",
@@ -658,7 +658,7 @@ async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_conditional_step(context: StreamFlowContext):
     """Test saving and loading CWLConditionalStep from database"""
-    workflow, (skip_port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (skip_port,) = await create_workflow(context=context, num_port=1)
     step = workflow.create_step(
         cls=CWLConditionalStep,
         name=utils.random_name() + "-when",
@@ -673,7 +673,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_loop_conditional_step(context: StreamFlowContext):
     """Test saving and loading CWLLoopConditionalStep from database"""
-    workflow, (skip_port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (skip_port,) = await create_workflow(context=context, num_port=1)
     step = workflow.create_step(
         cls=CWLLoopConditionalStep,
         name=utils.random_name() + "-when",

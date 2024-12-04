@@ -47,7 +47,7 @@ from tests.utils.workflow import create_workflow
 @pytest.mark.parametrize("step_cls", [CWLLoopOutputAllStep, CWLLoopOutputLastStep])
 async def test_cwl_loop_output(context: StreamFlowContext, step_cls: Type[Step]):
     """Test saving CWLLoopOutputAllStep on database and re-load it in a new Workflow"""
-    workflow = next(iter(await create_workflow(context, num_port=1)))
+    workflow, _ = await create_workflow(context, num_port=0)
     await _base_step_test_process(
         workflow,
         step_cls,
@@ -85,7 +85,7 @@ async def test_default_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_forward_transformer(context: StreamFlowContext):
     """Test saving ForwardTransformer on database and re-load it in a new Workflow"""
-    workflow = next(iter(await create_workflow(context, num_port=0)))
+    workflow, _ = await create_workflow(context, num_port=0)
     await _base_step_test_process(
         workflow,
         ForwardTransformer,
@@ -129,7 +129,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_list_to_element_transformer(context: StreamFlowContext):
     """Test saving ListToElementTransformer on database and re-load it in a new Workflow"""
-    workflow = next(iter(await create_workflow(context, num_port=0)))
+    workflow, _ = await create_workflow(context, num_port=0)
     await _base_step_test_process(
         workflow,
         ListToElementTransformer,
@@ -184,7 +184,7 @@ async def test_non_null_transformer(
     context: StreamFlowContext, transformer_cls: Type[Step]
 ):
     """Test saving All/First/Only NonNullTransformer on database and re-load it in a new Workflow"""
-    workflow = next(iter(await create_workflow(context, num_port=0)))
+    workflow, _ = await create_workflow(context, num_port=0)
     await _base_step_test_process(
         workflow,
         transformer_cls,
@@ -231,7 +231,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_conditional_step(context: StreamFlowContext):
     """Test saving CWLConditionalStep on database and re-load it in a new Workflow"""
-    workflow = next(iter(await create_workflow(context, num_port=0)))
+    workflow, _ = await create_workflow(context, num_port=0)
     await _base_step_test_process(
         workflow,
         CWLConditionalStep,
@@ -247,7 +247,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
     """Test saving CWLEmptyScatterConditionalStep on database and re-load it in a new Workflow"""
-    workflow = next(iter(await create_workflow(context, num_port=1)))
+    workflow, _ = await create_workflow(context, num_port=0)
     await _base_step_test_process(
         workflow,
         CWLEmptyScatterConditionalStep,
@@ -277,7 +277,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_loop_conditional_step(context: StreamFlowContext):
     """Test saving CWLLoopConditionalStep on database and re-load it in a new Workflow"""
-    workflow = next(iter(await create_workflow(context, num_port=0)))
+    workflow, _ = await create_workflow(context, num_port=0)
     await _base_step_test_process(
         workflow,
         CWLLoopConditionalStep,
@@ -293,7 +293,7 @@ async def test_cwl_loop_conditional_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_token_transformer(context: StreamFlowContext):
     """Test saving CWLTokenTransformer on database and re-load it in a new Workflow"""
-    workflow = next(iter(await create_workflow(context, num_port=0)))
+    workflow, _ = await create_workflow(context, num_port=0)
     step_name = utils.random_name()
     step, new_workflow, new_step = await _base_step_test_process(
         workflow,
