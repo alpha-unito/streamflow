@@ -75,9 +75,7 @@ async def test_data_locations(
     )
 
     # Create working directories in src and dst locations
-    await remotepath.mkdir(
-        src_connector, src_location, str(PurePath(src_path).parent)
-    )
+    await remotepath.mkdir(src_connector, src_location, str(PurePath(src_path).parent))
     await remotepath.mkdir(dst_connector, dst_location, dst_path)
 
     try:

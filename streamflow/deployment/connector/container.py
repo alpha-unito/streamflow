@@ -58,7 +58,7 @@ async def _get_storage_from_binds(
             "+2",
             "|",
             "awk",
-            "'{print $7, $2, $3}'",
+            "'{print $7, $2, $5}'",
         ],
         capture_output=True,
     )

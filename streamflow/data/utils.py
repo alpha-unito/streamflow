@@ -33,29 +33,25 @@ async def bind_mount_point(
     :return: a new `Hardware` object with the eventual bind in the storages resolved
     """
     path_processor = get_path_processor(connector)
-    return Hardware(
-        cores=hardware.cores,
-        memory=hardware.memory,
-        storage={
-            key: Storage(
-                mount_point=await get_mount_point(
-                    context, connector, location, disk.bind
-                ),
-                size=disk.size,
-                paths={
-                    path_processor.normpath(
-                        path_processor.join(
-                            disk.bind,
-                            path_processor.relpath(p, disk.mount_point),
+    storage = {}
+    for disk in hardware.storage.values():
+        if disk.bind is not None:
+            mount_point = await get_mount_point(context, connector, location, disk.bind)
+            if mount_point not in storage.keys():
+                storage[mount_point] = Storage(
+                    mount_point=mount_point,
+                    size=disk.size,
+                    paths={
+                        path_processor.normpath(
+                            path_processor.join(
+                                disk.bind,
+                                path_processor.relpath(p, disk.mount_point),
+                            )
                         )
-                    )
-                    for p in disk.paths
-                },
-            )
-            for key, disk in hardware.storage.items()
-            if disk.bind is not None
-        },
-    )
+                        for p in disk.paths
+                    },
+                )
+    return Hardware(cores=hardware.cores, memory=hardware.memory, storage=storage)
 
 
 async def get_mount_point(

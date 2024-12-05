@@ -92,9 +92,16 @@ def get_docker_deployment_config():
     return DeploymentConfig(
         name="alpine-docker",
         type="docker",
-        config={"image": "alpine:3.16.2"},
+        config={
+            "image": "alpine:3.16.2",
+            "volume": [
+                f"{get_local_deployment_config().workdir}:/tmp/streamflow",
+                f"{get_local_deployment_config().workdir}:/home/output",
+            ],
+        },
         external=False,
         lazy=False,
+        workdir="/tmp/streamflow",
     )
 
 
