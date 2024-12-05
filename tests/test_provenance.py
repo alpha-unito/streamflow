@@ -181,7 +181,7 @@ async def test_scatter_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_deploy_step(context: StreamFlowContext):
     """Test token provenance for DeployStep"""
-    workflow = (await create_workflow(context, num_port=0))[0]
+    workflow, _ = await create_workflow(context, num_port=0)
     step = create_deploy_step(workflow)
 
     await workflow.save(context)
@@ -199,7 +199,7 @@ async def test_deploy_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_schedule_step(context: StreamFlowContext):
     """Test token provenance for ScheduleStep"""
-    workflow = (await create_workflow(context, num_port=0))[0]
+    workflow, _ = await create_workflow(context, num_port=0)
     deploy_step = create_deploy_step(workflow)
     schedule_step = create_schedule_step(workflow, [deploy_step])
 

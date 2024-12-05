@@ -1,7 +1,7 @@
 import os
 import posixpath
 import tempfile
-from pathlib import Path
+from pathlib import PurePath
 
 import pytest
 import pytest_asyncio
@@ -10,6 +10,7 @@ from streamflow.core import utils
 from streamflow.core.data import DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.data import remotepath
+from streamflow.deployment.utils import get_path_processor
 from tests.utils.deployment import get_location
 
 
@@ -50,7 +51,9 @@ async def test_data_locations(
     )
 
     # Create working directories in src and dst locations
-    await remotepath.mkdir(src_connector, [src_location], str(Path(src_path).parent))
+    await remotepath.mkdir(
+        src_connector, [src_location], str(PurePath(src_path).parent)
+    )
     await remotepath.mkdir(dst_connector, [dst_location], dst_path)
 
     try:
@@ -73,8 +76,8 @@ async def test_data_locations(
         )
 
         # Check src data locations
-        path = "/"
-        for basename in src_path.split("/")[1:]:
+        path = get_path_processor(src_connector).sep
+        for basename in PurePath(src_path).parts:
             path = os.path.join(path, basename)
             data_locs = context.data_manager.get_data_locations(
                 path, src_connector.deployment_name
@@ -93,13 +96,13 @@ async def test_data_locations(
         )
 
         # Check dst data locations
-        path = "/"
-        for basename in dst_path.split("/")[1:]:
+        path = get_path_processor(dst_connector).sep
+        for basename in PurePath(dst_path).parts:
             path = os.path.join(path, basename)
             data_locs = context.data_manager.get_data_locations(
                 path, dst_connector.deployment_name
             )
-            assert len(data_locs) > 0 and len(data_locs) < 3
+            assert 0 < len(data_locs) < 3
             if len(data_locs) == 1:
                 assert data_locs[0].path == path
                 assert data_locs[0].deployment == dst_connector.deployment_name
@@ -119,7 +122,11 @@ async def test_data_locations(
 @pytest.mark.asyncio
 async def test_invalidate_location(context, src_connector, src_location):
     """Test the invalidation of a location"""
-    src_path = posixpath.join("/tmp", utils.random_name(), utils.random_name())
+    path_processor = get_path_processor(src_connector)
+    # Remote location are linux-like environments, so they have Posix paths
+    src_path = path_processor.join(
+        path_processor.sep, "tmp", utils.random_name(), utils.random_name()
+    )
 
     context.data_manager.register_path(
         location=src_location,
@@ -129,9 +136,9 @@ async def test_invalidate_location(context, src_connector, src_location):
     )
 
     # Check initial data location
-    path = "/"
-    for basename in src_path.split("/")[1:]:
-        path = os.path.join(path, basename)
+    path = path_processor.sep
+    for basename in PurePath(src_path).parts:
+        path = path_processor.join(path, basename)
         data_locs = context.data_manager.get_data_locations(
             path, src_connector.deployment_name
         )
@@ -141,15 +148,19 @@ async def test_invalidate_location(context, src_connector, src_location):
 
     # Invalidate location
     root_data_loc = context.data_manager.get_data_locations(
-        "/", src_connector.deployment_name
+        path_processor.sep, src_connector.deployment_name
     )[0]
     context.data_manager.invalidate_location(root_data_loc.location, root_data_loc.path)
 
     # Check data manager has invalidated the location
-    path = "/"
-    for basename in src_path.split("/")[1:]:
-        path = os.path.join(path, basename)
+    path = path_processor.sep
+    for basename in PurePath(src_path).parts:
+        path = path_processor.join(path, basename)
         data_locs = context.data_manager.get_data_locations(
             path, src_connector.deployment_name
         )
-        assert len(data_locs) == 0
+        # The data location of the root is not invalidated
+        if basename == path_processor.sep:
+            assert len(data_locs) == 1
+        else:
+            assert len(data_locs) == 0

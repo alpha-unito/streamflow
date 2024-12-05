@@ -116,12 +116,15 @@ async def test_cwl_file_token(context: StreamFlowContext):
     """Test saving and loading CWLFileToken from database"""
     token = CWLFileToken(
         value={
-            "location": "file:///home/ubuntu/output.txt",
-            "basename": "output.txt",
+            "basename": "version.py",
+            "checksum": "sha1$a4a8b0c0b19d3187a1ab8c9346fc105978115781",
             "class": "File",
-            "checksum": "sha1$aaaaaaaaaaaaaaaaaaaaaaaa",
-            "size": 100,
-            "path": "/home/ubuntu/output.txt",
+            "dirname": "/home/ubuntu/streamflow/streamflow",
+            "location": "file:///home/ubuntu/streamflow/streamflow/version.py",
+            "nameext": ".py",
+            "nameroot": "version",
+            "path": "/home/ubuntu/streamflow/streamflow/version.py",
+            "size": 24,
         }
     )
     await save_load_and_test(token, context)
@@ -382,7 +385,7 @@ async def test_cwl_map_command_token_processor(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_list_merge_combinator(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with ListMergeCombinator from database"""
-    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (port,) = await create_workflow(context=context, num_port=1)
     name = utils.random_name()
     step = workflow.create_step(
         cls=CombinatorStep,
@@ -401,7 +404,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_default_transformer(context: StreamFlowContext):
     """Test saving and loading DefaultTransformer from database"""
-    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (port,) = await create_workflow(context=context, num_port=1)
     transformer = workflow.create_step(
         cls=DefaultTransformer,
         name=utils.random_name() + "-transformer",
@@ -413,7 +416,7 @@ async def test_default_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_default_retag_transformer(context: StreamFlowContext):
     """Test saving and loading DefaultRetagTransformer from database"""
-    workflow, (port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (port,) = await create_workflow(context=context, num_port=1)
     transformer = workflow.create_step(
         cls=DefaultRetagTransformer,
         name=utils.random_name() + "-transformer",
@@ -655,7 +658,7 @@ async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_conditional_step(context: StreamFlowContext):
     """Test saving and loading CWLConditionalStep from database"""
-    workflow, (skip_port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (skip_port,) = await create_workflow(context=context, num_port=1)
     step = workflow.create_step(
         cls=CWLConditionalStep,
         name=utils.random_name() + "-when",
@@ -670,7 +673,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_loop_conditional_step(context: StreamFlowContext):
     """Test saving and loading CWLLoopConditionalStep from database"""
-    workflow, (skip_port, *_) = await create_workflow(context=context, num_port=1)
+    workflow, (skip_port,) = await create_workflow(context=context, num_port=1)
     step = workflow.create_step(
         cls=CWLLoopConditionalStep,
         name=utils.random_name() + "-when",
@@ -745,12 +748,9 @@ async def test_cwl_schedule_step(context: StreamFlowContext):
 
     schedule_step = workflow.create_step(
         cls=CWLScheduleStep,
-        name=posixpath.join(utils.random_name(), "__schedule__"),
+        name=posixpath.join(posixpath.sep, utils.random_name(), "__schedule__"),
         job_prefix="something",
         connector_ports=connector_ports,
-        input_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
-        output_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
-        tmp_directory=posixpath.join(*(utils.random_name() for _ in range(2))),
         binding_config=binding_config,
         hardware_requirement=CWLHardwareRequirement(
             CWL_VERSION,

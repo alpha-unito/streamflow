@@ -4,7 +4,6 @@ import posixpath
 import tempfile
 
 import pytest
-import pytest_asyncio
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -117,33 +116,11 @@ async def _create_tmp_dir(context, connector, location, root=None, lvl=None, n_f
     return dir_path
 
 
-@pytest_asyncio.fixture(scope="module")
-async def src_location(context, deployment_src) -> ExecutionLocation:
-    return await get_location(context, deployment_src)
-
-
-@pytest.fixture(scope="module")
-def src_connector(context, src_location) -> Connector:
-    return context.deployment_manager.get_connector(src_location.deployment)
-
-
-@pytest_asyncio.fixture(scope="module")
-async def dst_location(context, deployment_dst) -> ExecutionLocation:
-    return await get_location(context, deployment_dst)
-
-
-@pytest.fixture(scope="module")
-def dst_connector(context, dst_location) -> Connector:
-    return context.deployment_manager.get_connector(dst_location.deployment)
-
-
 @pytest.mark.asyncio
 async def test_directory_to_directory(
-    context, src_connector, src_location, dst_connector, dst_location
-):
+    context: StreamFlowContext, communication_pattern: tuple[str, str]
+) -> None:
     """Test transferring a directory and its content from one location to another."""
-    src_path = None
-    dst_path = None
     # dir
     #   |- file_0
     #   |- file_1
@@ -161,6 +138,15 @@ async def test_directory_to_directory(
     #   |   |- file_1_2
     #   |- dir_2
     #   |   |   empty
+
+    src_location = await get_location(context, communication_pattern[0])
+    src_connector = context.deployment_manager.get_connector(src_location.deployment)
+    src_path = None
+
+    dst_location = await get_location(context, communication_pattern[1])
+    dst_connector = context.deployment_manager.get_connector(dst_location.deployment)
+    dst_path = None
+
     try:
         # create src structure
         src_path = await _create_tmp_dir(
@@ -234,9 +220,14 @@ async def test_directory_to_directory(
 
 @pytest.mark.asyncio
 async def test_file_to_directory(
-    context, src_connector, src_location, dst_connector, dst_location
-):
+    context: StreamFlowContext, communication_pattern: tuple[str, str]
+) -> None:
     """Test transferring a file from one location to a directory into another location."""
+    src_location = await get_location(context, communication_pattern[0])
+    src_connector = context.deployment_manager.get_connector(src_location.deployment)
+    dst_location = await get_location(context, communication_pattern[1])
+    dst_connector = context.deployment_manager.get_connector(dst_location.deployment)
+
     src_path = (
         os.path.join(tempfile.gettempdir(), utils.random_name())
         if src_location.local
@@ -290,9 +281,13 @@ async def test_file_to_directory(
 
 @pytest.mark.asyncio
 async def test_file_to_file(
-    context, src_connector, src_location, dst_connector, dst_location
+    context: StreamFlowContext, communication_pattern: tuple[str, str]
 ):
     """Test transferring a file from one location to another."""
+    src_location = await get_location(context, communication_pattern[0])
+    src_connector = context.deployment_manager.get_connector(src_location.deployment)
+    dst_location = await get_location(context, communication_pattern[1])
+    dst_connector = context.deployment_manager.get_connector(dst_location.deployment)
     src_path = (
         os.path.join(tempfile.gettempdir(), utils.random_name())
         if src_location.local
@@ -343,16 +338,12 @@ async def test_file_to_file(
 
 @pytest.mark.asyncio
 async def test_multiple_files(
-    context, src_connector, src_location, dst_connector, dst_location
+    context: StreamFlowContext, communication_pattern: tuple[str, str]
 ):
     """Test transferring multiple files simultaneously from one location to another."""
     await asyncio.gather(
         *(
-            asyncio.create_task(
-                test_file_to_file(
-                    context, src_connector, src_location, dst_connector, dst_location
-                )
-            )
+            asyncio.create_task(test_file_to_file(context, communication_pattern))
             for _ in range(20)
         )
     )
