@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
 import posixpath
@@ -12,13 +11,8 @@ from types import ModuleType
 from typing import Any, cast
 
 import cwl_utils.expression
-import cwltool.context
-import cwltool.load_tool
-import cwltool.main
-import cwltool.process
-import cwltool.resolver
-import cwltool.workflow
-from cwltool.utils import CONTENT_LIMIT
+import cwl_utils.parser
+from cwl_utils.parser.cwl_v1_2_utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType, FileType
@@ -640,29 +634,6 @@ def get_path_from_token(token_value: MutableMapping[str, Any]) -> str | None:
     return location
 
 
-def get_inner_cwl_prefix(
-    cwl_prefix: str, prefix: str, step: cwltool.workflow.WorkflowStep
-) -> str:
-    cwl_step_name = get_name(prefix, cwl_prefix, step.id, preserve_cwl_prefix=True)
-    run_command = step.tool["run"]
-    if isinstance(run_command, MutableMapping):
-        if ":" in step.embedded_tool.tool["id"].split("#")[-1]:
-            return posixpath.join(cwl_step_name, "run")
-        else:
-            return get_name(
-                prefix,
-                cwl_prefix,
-                step.embedded_tool.tool["id"],
-                preserve_cwl_prefix=True,
-            )
-    else:
-        return (
-            get_name(posixpath.sep, posixpath.sep, step.embedded_tool.tool["id"])
-            if "#" in step.embedded_tool.tool["id"]
-            else posixpath.sep
-        )
-
-
 def get_token_class(token_value: Any) -> str | None:
     if isinstance(token_value, MutableMapping):
         return token_value.get("class", token_value.get("type"))
@@ -686,43 +657,6 @@ def infer_type_from_token(token_value: Any) -> str:
     else:
         # Could not infer token type: mark as Any
         return "Any"
-
-
-def load_cwl_inputs(
-    loading_context: cwltool.context.LoadingContext,
-    cwl_process: cwltool.process.Process,
-    path: str,
-) -> MutableMapping[str, Any]:
-    loader = cwltool.load_tool.default_loader(loading_context.fetcher_constructor)
-    loader.add_namespaces(cwl_process.metadata.get("$namespaces", {}))
-    cwl_inputs, _ = loader.resolve_ref(
-        path, checklinks=False, content_types=cwltool.CWL_CONTENT_TYPES
-    )
-
-    def expand_formats(p) -> None:
-        if "format" in p:
-            p["format"] = loader.expand_url(p["format"], "")
-
-    cwltool.utils.visit_class(cwl_inputs, ("File",), expand_formats)
-    return cwl_inputs
-
-
-def load_cwl_workflow(
-    path: str,
-) -> tuple[cwltool.process.Process, cwltool.context.LoadingContext]:
-    loading_context = cwltool.context.LoadingContext()
-    loading_context.resolver = cwltool.resolver.tool_resolver
-    loading_context.loader = cwltool.load_tool.default_loader(
-        loading_context.fetcher_constructor
-    )
-    loading_context, workflowobj, uri = cwltool.load_tool.fetch_document(
-        path, loading_context
-    )
-    cwltool.main.setup_schema(argparse.Namespace(enable_ext=True), None)
-    loading_context, uri = cwltool.load_tool.resolve_and_validate_document(
-        loading_context, workflowobj, uri
-    )
-    return cwltool.load_tool.make_tool(uri, loading_context), loading_context
 
 
 class LoadListing(Enum):

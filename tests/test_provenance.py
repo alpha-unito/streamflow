@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import MutableSequence, MutableMapping
 from typing import Any, cast
 
+import cwl_utils.parser.cwl_v1_2
 import pytest
 
 from streamflow.cwl.hardware import CWLHardwareRequirement
@@ -258,8 +259,10 @@ async def test_execute_step(context: StreamFlowContext):
             workflow=cast(CWLWorkflow, workflow),
             port_target=None,
             port_type="string",
-            cwl_element={},
-            context={"hints": {}, "requirements": {}},
+            cwl_element=cwl_utils.parser.cwl_v1_2.CommandOutputParameter(
+                type_="string"
+            ),
+            context={"hints": {}, "requirements": {}, "version": "v1.2"},
         ),
     )
     token_list = [Token(token_value)]
