@@ -2768,7 +2768,11 @@ class CWLTranslator:
                         connector_ports={
                             target.deployment.name: deploy_step.get_output_port()
                         },
-                        input_directory=self.output_directory,
+                        input_directory=os.path.join(
+                            self.output_directory,
+                            f"wf-{workflow.name}",
+                            output_name.lstrip(posixpath.sep),
+                        ),
                         binding_config=BindingConfig(targets=[target]),
                     )
                     # Add the port as an input of the schedule step
