@@ -262,14 +262,17 @@ def _merge_tokens(token: CommandToken) -> Any:
         return [_merge_tokens(t) for t in token.value if t is not None]
     elif isinstance(token, ObjectCommandToken):
         tokens = sorted(
-            flatten_list(
-                [_merge_tokens(t) for t in token.value.values() if t is not None]
+            filter(
+                lambda t: t.position is not None,
+                flatten_list(
+                    [_merge_tokens(t) for t in token.value.values() if t is not None]
+                ),
             ),
             key=lambda t: (
                 [t.position, t.name] if t.name is not None else [t.position]
             ),
         )
-        return [t for t in tokens if t.position is not None] or [
+        return tokens or [
             CommandToken(name=token.name, position=token.position, value="")
         ]
     elif token is None:
@@ -340,7 +343,7 @@ async def _prepare_work_dir(
                 )
                 await streamflow_context.data_manager.transfer_data(
                     src_location=selected_location.location,
-                    src_path=src_path,
+                    src_path=selected_location.path,
                     dst_locations=locations,
                     dst_path=dest_path,
                     writable=writable,
@@ -360,7 +363,14 @@ async def _prepare_work_dir(
                         dest_path, path_processor.basename(src_path)
                     )
                 if listing_class == "Directory":
-                    await remotepath.mkdir(connector, locations, dest_path)
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                remotepath.mkdir(connector, location, dest_path)
+                            )
+                            for location in locations
+                        )
+                    )
                 else:
                     await utils.write_remote_file(
                         context=streamflow_context,
@@ -372,7 +382,14 @@ async def _prepare_work_dir(
             if "listing" in listing:
                 if "basename" in listing:
                     folder_path = path_processor.join(base_path, listing["basename"])
-                    await remotepath.mkdir(connector, locations, folder_path)
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                remotepath.mkdir(connector, location, folder_path)
+                            )
+                            for location in locations
+                        )
+                    )
                 else:
                     folder_path = dest_path or base_path
                 await asyncio.gather(

@@ -9,21 +9,19 @@ import posixpath
 import shutil
 from collections.abc import MutableMapping, MutableSequence
 from email.message import Message
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
 from aiohttp import ClientResponse
 
 from streamflow.core import utils
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataType, FileType
+from streamflow.core.data import FileType, DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import AvailableLocation, Hardware
-from streamflow.deployment.connector.local import LocalConnector
 
 if TYPE_CHECKING:
+    from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import Connector, ExecutionLocation
+    from streamflow.core.scheduling import Hardware
 
 
 def _check_status(
@@ -99,12 +97,12 @@ async def checksum(
 
 async def download(
     connector: Connector,
-    locations: MutableSequence[ExecutionLocation] | None,
+    location: ExecutionLocation | None,
     url: str,
     parent_dir: str,
 ) -> str:
-    await mkdir(connector, locations, parent_dir)
-    if isinstance(connector, LocalConnector):
+    await mkdir(connector, location, parent_dir)
+    if location.local:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:
@@ -128,20 +126,13 @@ async def download(
                     raise Exception(
                         f"Downloading {url} failed with status {response.status}:\n{response.content}"
                     )
-        download_tasks = []
-        for location in locations:
-            download_tasks.append(
-                asyncio.create_task(
-                    connector.run(
-                        location=location,
-                        command=[
-                            f'if [ command -v curl ]; then curl -L -o "{filepath}" "{url}"; '
-                            f'else wget -O "{filepath}" "{url}"; fi'
-                        ],
-                    )
-                )
-            )
-        await asyncio.gather(*download_tasks)
+        await connector.run(
+            location=location,
+            command=[
+                f'if [ command -v curl ]; then curl -L -o "{filepath}" "{url}"; '
+                f'else wget -O "{filepath}" "{url}"; fi'
+            ],
+        )
     return filepath
 
 
@@ -183,22 +174,14 @@ async def follow_symlink(
     if location.local:
         return os.path.realpath(path) if os.path.exists(path) else None
     else:
-        # If at least one primary location is present on the site
+        # If at least one primary location is present on the site, return its path
         if locations := context.data_manager.get_data_locations(
             path=path,
             deployment=connector.deployment_name,
             location_name=location.name,
             data_type=DataType.PRIMARY,
         ):
-            # If there is only one primary location on the site, return its path
-            if len(locations) == 1:
-                return locations[0].path
-            # If multiple primary locations are present for the same path, raise an Exception
-            else:
-                raise WorkflowExecutionException(
-                    f"Multiple primary locations on site {location} for path {path} "
-                    f": {[loc.path for loc in locations]}"
-                )
+            return next(iter(locations)).path
         # Otherwise, analyse the remote path
         command = [f'test -e "{path}" && readlink -f "{path}"']
         result, status = await connector.run(
@@ -211,40 +194,6 @@ async def follow_symlink(
                 )
             )
         return result.strip() if status == 0 else None
-
-
-async def get_mount_point(
-    context: StreamFlowContext,
-    connector: Connector,
-    location: AvailableLocation | None,
-    path: str,
-) -> str:
-    """
-    Get the mount point of a path in the given `location`
-
-    :param context: the `StreamFlowContext` object with global application status.
-    :param connector: the `Connector` object to communicate with the location
-    :param location: the `ExecutionLocation` object with the location information
-    :param path: the path whose mount point should be returned
-    :return: the mount point containing the given path
-    """
-    try:
-        return location.hardware.get_mount_point(path)
-    except KeyError:
-        path_to_resolve = path
-        while (
-            mount_point := await follow_symlink(
-                context, connector, location.location, path_to_resolve
-            )
-        ) is None:
-            path_to_resolve = Path(path_to_resolve).parent
-        location_mount_points = location.hardware.get_mount_points()
-        while (
-            str(mount_point) != os.sep and str(mount_point) not in location_mount_points
-        ):
-            mount_point = Path(mount_point).parent
-        location.hardware.get_storage(str(mount_point)).add_path(path)
-        return str(mount_point)
 
 
 async def get_storage_usages(
@@ -388,35 +337,19 @@ async def listdir(
 
 async def mkdir(
     connector: Connector,
-    locations: MutableSequence[ExecutionLocation] | None,
-    path: str,
+    location: ExecutionLocation,
+    path: str | MutableSequence[str],
 ) -> None:
-    await mkdirs(connector, locations, [path])
-
-
-async def mkdirs(
-    connector: Connector,
-    locations: MutableSequence[ExecutionLocation] | None,
-    paths: MutableSequence[str],
-) -> None:
-    if isinstance(connector, LocalConnector):
+    paths = path if isinstance(path, MutableSequence) else [path]
+    if location.local:
         for path in paths:
             os.makedirs(path, exist_ok=True)
     else:
         command = ["mkdir", "-p"] + list(paths)
-        for i, (result, status) in enumerate(
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        connector.run(
-                            location=location, command=command, capture_output=True
-                        )
-                    )
-                    for location in locations
-                )
-            )
-        ):
-            _check_status(command, locations[i], result, status)
+        result, status = await connector.run(
+            location=location, command=command, capture_output=True
+        )
+        _check_status(command, location, result, status)
 
 
 async def read(
@@ -516,15 +449,15 @@ async def size(
             path = [path]
         return sum(utils.get_size(p) for p in path)
     else:
-        if isinstance(path, MutableSequence):
-            path = " ".join([f'"{p}"' for p in path])
-        else:
-            path = f'"{path}"'
         command = [
             "".join(
                 [
                     "find -L ",
-                    path,
+                    (
+                        " ".join([f'"{p}"' for p in path])
+                        if isinstance(path, MutableSequence)
+                        else f'"{path}"'
+                    ),
                     " -type f -exec ls -ln {} \\+ | ",
                     "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; ",
                 ]

@@ -11,3 +11,6 @@ query-filters:
   # Reason: false positive on function body ellipsis (issue 11351)
   - exclude:
       id: py/ineffectual-statement
+  # Reason: no support for the TYPE_CHECKING directive (issue 4258)
+  - exclude:
+      id:  py/unsafe-cyclic-import

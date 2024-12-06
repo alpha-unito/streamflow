@@ -15,11 +15,12 @@ from typing import TYPE_CHECKING, cast
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
-from streamflow.core.deployment import Connector, ExecutionLocation, Target
+from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
+    from streamflow.core.deployment import Connector, Target
     from streamflow.core.workflow import Job, Status
     from typing import Any
 
@@ -96,29 +97,6 @@ class Hardware:
 
     def __repr__(self):
         return f"Hardware(cores={self.cores}, memory={self.memory}, storage={self.storage})"
-
-    def bind(self, path_processor) -> Hardware:
-        return Hardware(
-            cores=self.cores,
-            memory=self.memory,
-            storage={
-                key: Storage(
-                    mount_point=disk.bind,
-                    size=disk.size,
-                    paths={
-                        path_processor.normpath(
-                            path_processor.join(
-                                disk.bind,
-                                path_processor.relpath(p, disk.mount_point),
-                            )
-                        )
-                        for p in disk.paths
-                    },
-                )
-                for key, disk in self.storage.items()
-                if disk.bind is not None
-            },
-        )
 
     def __add__(self, other: Any) -> Hardware:
         if not isinstance(other, Hardware):
@@ -300,6 +278,15 @@ class AvailableLocation:
             deployment=deployment,
             hostname=hostname,
             local=local,
+            mounts=(
+                {
+                    storage.mount_point: storage.bind
+                    for storage in self.hardware.storage.values()
+                    if storage.bind is not None
+                }
+                if hardware is not None
+                else {}
+            ),
             name=name,
             service=service,
             stacked=stacked,

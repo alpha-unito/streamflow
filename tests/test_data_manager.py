@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import posixpath
 import tempfile
@@ -7,11 +9,33 @@ import pytest
 import pytest_asyncio
 
 from streamflow.core import utils
-from streamflow.core.data import DataType
+from streamflow.core.data import DataType, DataLocation
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from tests.utils.deployment import get_location
+
+
+def _contains_location(
+    searched_location: ExecutionLocation | DataLocation,
+    execution_location: ExecutionLocation,
+):
+    """
+    The `execution_location` object can wrap other `execution_location` object.
+    This function checks whether the `execution_location` object, or one of its
+    wrapped locations, contains the `searched_location`.
+
+    :param searched_location: the location to be found, it can be a `ExecutionLocation` or a `DataLocation`,
+                                identified by the name attribute
+    :param execution_location: the `ExecutionLocation` object with the location information
+    :return: a boolean which is true if the `execution_location` contains the `searched_location`
+    """
+    while execution_location is not None:
+        if searched_location.name == execution_location.name:
+            return True
+        else:
+            execution_location = execution_location.wraps
+    return False
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -51,10 +75,8 @@ async def test_data_locations(
     )
 
     # Create working directories in src and dst locations
-    await remotepath.mkdir(
-        src_connector, [src_location], str(PurePath(src_path).parent)
-    )
-    await remotepath.mkdir(dst_connector, [dst_location], dst_path)
+    await remotepath.mkdir(src_connector, src_location, str(PurePath(src_path).parent))
+    await remotepath.mkdir(dst_connector, dst_location, dst_path)
 
     try:
         await remotepath.write(
@@ -102,18 +124,36 @@ async def test_data_locations(
             data_locs = context.data_manager.get_data_locations(
                 path, dst_connector.deployment_name
             )
-            assert 0 < len(data_locs) < 3
+            assert len(data_locs) in [1, 2]
             if len(data_locs) == 1:
                 assert data_locs[0].path == path
                 assert data_locs[0].deployment == dst_connector.deployment_name
             elif len(data_locs) == 2:
                 # src and dst are on the same location. So dst will be a symbolic link
-                assert src_connector.deployment_name == dst_connector.deployment_name
-                assert data_locs[0].data_type == DataType.PRIMARY
-                assert data_locs[0].deployment == src_connector.deployment_name
-                assert data_locs[1].data_type == DataType.SYMBOLIC_LINK
-                assert data_locs[1].deployment == dst_connector.deployment_name
-                assert data_locs[1].path == path
+                assert _contains_location(dst_location, src_location)
+                assert (
+                    len(
+                        [
+                            loc
+                            for loc in data_locs
+                            if loc.data_type == DataType.PRIMARY
+                            and _contains_location(loc, src_location)
+                        ]
+                    )
+                    == 1
+                )
+                assert (
+                    len(
+                        [
+                            loc
+                            for loc in data_locs
+                            if loc.data_type == DataType.SYMBOLIC_LINK
+                            and _contains_location(loc, dst_location)
+                            and loc.path == path
+                        ]
+                    )
+                    == 1
+                )
     finally:
         await remotepath.rm(src_connector, src_location, src_path)
         await remotepath.rm(dst_connector, dst_location, dst_path)

@@ -20,12 +20,14 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, Storage
 from streamflow.core.workflow import Job, Status
 from streamflow.cwl.hardware import CWLHardwareRequirement
+from streamflow.data import utils
 from tests.utils.connector import ParameterizableHardwareConnector
 from tests.utils.deployment import (
     get_docker_deployment_config,
     get_service,
     get_deployment_config,
     get_parameterizable_hardware_deployment_config,
+    get_local_deployment_config,
 )
 from tests.utils.workflow import random_job_name, CWL_VERSION
 
@@ -76,6 +78,65 @@ async def deployment_config(context, deployment) -> DeploymentConfig:
 @pytest.fixture(scope="module")
 def service(context, deployment) -> str | None:
     return get_service(context, deployment)
+
+
+@pytest.mark.asyncio
+async def test_bind_volumes(context: StreamFlowContext):
+    """Test the binding of volumes in stacked locations"""
+    local_deployment = get_local_deployment_config()
+    local_connector = context.deployment_manager.get_connector(local_deployment.name)
+    local_location = next(
+        iter(
+            (
+                await local_connector.get_available_locations(
+                    get_service(context, local_deployment.type)
+                )
+            ).values()
+        )
+    )
+    docker_deployment = get_docker_deployment_config()
+    docker_connector = context.deployment_manager.get_connector(docker_deployment.name)
+    docker_location = next(
+        iter(
+            (
+                await docker_connector.get_available_locations(
+                    get_service(context, docker_deployment.type)
+                )
+            ).values()
+        )
+    )
+    assert not (
+        {"/tmp/streamflow", "/home/output"} - docker_location.hardware.storage.keys()
+    )
+    path = docker_deployment.workdir
+    mount_point = await utils.get_mount_point(
+        context, docker_connector, docker_location, path
+    )
+    container_hardware = await utils.bind_mount_point(
+        context,
+        local_connector,
+        local_location,
+        Hardware(
+            cores=float(1),
+            memory=float(100),
+            storage={
+                key: Storage(
+                    mount_point=mount_point,
+                    size=float(100),
+                    paths={path},
+                    bind=docker_location.hardware.get_storage(mount_point).bind,
+                )
+                for key in ["tmpdir", "workdir"]
+            },
+        ),
+    )
+    # "/tmp/streamflow", "/home/output" are both mounted to the local workdir. So they collapse to the same mount point
+    assert len(container_hardware.storage) == 1 and next(
+        iter(container_hardware.storage.values())
+    ).mount_point == await utils.get_mount_point(
+        context, local_connector, local_location, local_deployment.workdir
+    )
+    assert container_hardware <= local_location.hardware
 
 
 @pytest.mark.asyncio

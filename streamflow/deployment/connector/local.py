@@ -14,15 +14,9 @@ from typing import Any
 import psutil
 
 from streamflow.core import utils
-from streamflow.core.deployment import (
-    Connector,
-    ExecutionLocation,
-)
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
-from streamflow.deployment.connector.base import (
-    BaseConnector,
-    FS_TYPES_TO_SKIP,
-)
+from streamflow.deployment.connector.base import BaseConnector, FS_TYPES_TO_SKIP
 from streamflow.log_handler import logger
 
 

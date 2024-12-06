@@ -357,23 +357,23 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         valid_targets = {}
         for pod in pods.items:
             # Check if pod is ready
-            is_ready = True
             for condition in pod.status.conditions:
                 if condition.status != "True":
-                    is_ready = False
                     break
-            # Filter out not ready and Terminating locations
-            if is_ready and pod.metadata.deletion_timestamp is None:
-                for container in pod.spec.containers:
-                    if not service or service == container.name:
-                        location_name = pod.metadata.name + ":" + service
-                        valid_targets[location_name] = AvailableLocation(
-                            name=location_name,
-                            deployment=self.deployment_name,
-                            service=service,
-                            hostname=pod.status.pod_ip,
-                        )
-                        break
+            # Otherwise
+            else:
+                # Filter out not ready and Terminating locations
+                if pod.metadata.deletion_timestamp is None:
+                    for container in pod.spec.containers:
+                        if not service or service == container.name:
+                            location_name = pod.metadata.name + ":" + service
+                            valid_targets[location_name] = AvailableLocation(
+                                name=location_name,
+                                deployment=self.deployment_name,
+                                service=service,
+                                hostname=pod.status.pod_ip,
+                            )
+                            break
         return valid_targets
 
     async def get_stream_reader(

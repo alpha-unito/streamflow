@@ -244,13 +244,14 @@ async def get_remote_to_remote_write_command(
 
 def get_size(path: str) -> int:
     if os.path.isfile(path):
-        return os.path.getsize(path)
+        return os.path.getsize(path) if not os.path.islink(path) else 0
     else:
         total_size = 0
-        for dirpath, _, filenames in os.walk(path, followlinks=True):
+        for dirpath, _, filenames in os.walk(path):
             for f in filenames:
                 fp = os.path.join(dirpath, f)
-                total_size += os.path.getsize(fp)
+                if not os.path.islink(fp):
+                    total_size += os.path.getsize(fp)
         return total_size
 
 

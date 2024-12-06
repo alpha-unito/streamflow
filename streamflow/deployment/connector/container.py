@@ -58,7 +58,7 @@ async def _get_storage_from_binds(
             "+2",
             "|",
             "awk",
-            "'{print $7, $2, $3}'",
+            "'{print $7, $2, $5}'",
         ],
         capture_output=True,
     )
@@ -219,27 +219,16 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     is not None
                 ):
                     # If yes, then create a symbolic link
-                    if self._wraps_local() and not os.path.exists(adjusted_dst):
-                        if logger.isEnabledFor(logging.INFO):
-                            logger.info(
-                                f"COPYING from {adjusted_src} to {adjusted_dst} on local file-system"
-                            )
-                        os.symlink(adjusted_src, adjusted_dst)
-                        if logger.isEnabledFor(logging.INFO):
-                            logger.info(
-                                f"COMPLETED copy from {adjusted_src} to {adjusted_dst} on local file-system"
-                            )
-                    else:
-                        copy_tasks.append(
-                            asyncio.create_task(
-                                self._local_copy(
-                                    src=adjusted_src,
-                                    dst=dst,
-                                    location=location,
-                                    read_only=read_only,
-                                )
+                    copy_tasks.append(
+                        asyncio.create_task(
+                            self._local_copy(
+                                src=adjusted_src,
+                                dst=dst,
+                                location=location,
+                                read_only=read_only,
                             )
                         )
+                    )
                 # Otherwise, delegate transfer to the inner connector
                 else:
                     if logger.isEnabledFor(logging.DEBUG):
@@ -303,26 +292,19 @@ class ContainerConnector(ConnectorWrapper, ABC):
             # If data is read_only, check if the destination path is bound to a mounted volume, too
             if (
                 read_only
-                and (adjusted_dst := self._get_container_path(instance, dst))
-                is not None
+                and self._wraps_local()
+                and not os.path.exists(dst)
+                and self._get_container_path(instance, dst) is not None
             ):
                 # If yes, then create a symbolic link
-                if self._wraps_local() and not os.path.exists(dst):
-                    if logger.isEnabledFor(logging.INFO):
-                        logger.info(
-                            f"COPYING from {adjusted_src} to {dst} on local file-system"
-                        )
-                    os.symlink(adjusted_src, dst)
-                    if logger.isEnabledFor(logging.INFO):
-                        logger.info(
-                            f"COMPLETED copy from {adjusted_src} to {dst} on local file-system"
-                        )
-                else:
-                    await self._local_copy(
-                        src=src,
-                        dst=adjusted_dst,
-                        location=location,
-                        read_only=read_only,
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info(
+                        f"COPYING from {adjusted_src} to {dst} on local file-system"
+                    )
+                os.symlink(adjusted_src, dst)
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info(
+                        f"COMPLETED copy from {adjusted_src} to {dst} on local file-system"
                     )
             # Otherwise, delegate transfer to the inner connector
             else:

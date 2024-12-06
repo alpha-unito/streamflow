@@ -22,10 +22,9 @@ from streamflow.core.scheduling import (
     Storage,
 )
 from streamflow.core.workflow import Job, Status
-from streamflow.data import remotepath
+from streamflow.data import remotepath, utils
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
-from streamflow.deployment.utils import get_path_processor
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
 from streamflow.scheduling.policy import policy_classes
@@ -378,7 +377,7 @@ class DefaultScheduler(Scheduler):
                 storage = {}
                 for key, disk in hardware_requirement.storage.items():
                     for path in disk.paths:
-                        mount_point = await remotepath.get_mount_point(
+                        mount_point = await utils.get_mount_point(
                             self.context, connector, location, path
                         )
                         storage[key] = Storage(
@@ -408,8 +407,9 @@ class DefaultScheduler(Scheduler):
             # If AvailableLocation is stacked and wraps another location, compute the inner requirement
             if location := location.wraps if location.stacked else None:
                 connector = cast(ConnectorWrapper, connector).connector
-                path_processor = get_path_processor(connector)
-                hardware_requirement = current_hw.bind(path_processor)
+                hardware_requirement = await utils.bind_mount_point(
+                    self.context, connector, location, current_hw
+                )
         return hardware
 
     async def close(self):
@@ -470,8 +470,22 @@ class DefaultScheduler(Scheduler):
                                         loc.wraps for loc in locations if loc.stacked
                                     ]:
                                         conn = cast(ConnectorWrapper, conn).connector
-                                        path_processor = get_path_processor(conn)
-                                        job_hardware = job_hardware.bind(path_processor)
+                                        for execution_loc in locations:
+                                            job_hardware = await utils.bind_mount_point(
+                                                self.context,
+                                                conn,
+                                                next(
+                                                    available_loc
+                                                    for available_loc in (
+                                                        await conn.get_available_locations(
+                                                            execution_loc.service
+                                                        )
+                                                    ).values()
+                                                    if available_loc.name
+                                                    == execution_loc.name
+                                                ),
+                                                job_hardware,
+                                            )
                         self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(

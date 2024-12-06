@@ -101,7 +101,7 @@ async def _create_tmp_dir(context, connector, location, root=None, lvl=None, n_f
             root if root else "/tmp", f"dir{dir_lvl}-{utils.random_name()}"
         )
     )
-    await remotepath.mkdir(connector, [location], dir_path)
+    await remotepath.mkdir(connector, location, dir_path)
 
     dir_path = await remotepath.follow_symlink(context, connector, location, dir_path)
     file_lvl = f"-{lvl}" if lvl else ""
@@ -238,7 +238,7 @@ async def test_file_to_directory(
         if dst_location.local
         else posixpath.join("/tmp", utils.random_name())
     )
-    await remotepath.mkdir(dst_connector, [dst_location], dst_path)
+    await remotepath.mkdir(dst_connector, dst_location, dst_path)
     try:
         await remotepath.write(src_connector, src_location, src_path, "StreamFlow")
         src_path = await remotepath.follow_symlink(

@@ -39,7 +39,6 @@ class FutureConnector(Connector):
     async def _safe_deploy_event_wait(self):
         await self.deploy_event.wait()
         if self._connector is None:
-            logger.error(f"FAILED deployment of {self.deployment_name}")
             raise WorkflowExecutionException(
                 f"FAILED deployment of {self.deployment_name}"
             )

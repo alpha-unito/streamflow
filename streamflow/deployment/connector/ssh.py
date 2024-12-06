@@ -429,7 +429,7 @@ class SSHConnector(BaseConnector):
                 location=location,
                 command="nproc && "
                 "free | grep Mem | awk '{print $2}' && "
-                "df -aT | tail -n +2 | awk '{print $7, $2, $3}'",
+                "df -aT | tail -n +2 | awk 'NF == 1 {device = $1; getline; $0 = device $0} {print $7, $2, $3}'",
                 stderr=asyncio.subprocess.STDOUT,
             ) as proc:
                 result = await proc.wait()
