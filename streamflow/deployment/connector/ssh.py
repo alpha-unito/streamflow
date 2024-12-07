@@ -9,6 +9,7 @@ from importlib.resources import files
 from typing import Any
 
 import asyncssh
+from asyncssh import ChannelOpenError, ConnectionLost, DisconnectError
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
@@ -98,8 +99,8 @@ class SSHContext:
                 max_times += 1
                 if max_times > 5:
                     logger.warning(
-                        f"The SSH connection {self.get_hostname()} has had open channels for too long. "
-                        f"Forcing connection closure"
+                        f"Closing the SSH connection {self.get_hostname()} is running, but the connection "
+                        f"has had open channels for too long. Forcing closure."
                     )
                     break
             self._ssh_connection.close()
@@ -205,18 +206,24 @@ class SSHContextManager:
                             await self._proc.__aenter__()
                             self._selected_context.ssh_attempts = 0
                             return self._proc
-                        except (ConnectionError, asyncssh.Error) as exc:
+                        except (
+                            ChannelOpenError,
+                            ConnectionError,
+                            ConnectionLost,
+                            DisconnectError,
+                        ) as exc:
                             if logger.isEnabledFor(logging.WARNING):
                                 logger.warning(
                                     f"Error {type(exc).__name__} opening SSH session to {context.get_hostname()} "
                                     f"to execute command `{self.command}`: [{exc.code}] {exc.reason}"
                                 )
-                                logger.warning(
-                                    f"Connection to {context.get_hostname()} attempts: {context.ssh_attempts} "
-                                    f"self._proc: {self._proc}, self._selected_context: {self._selected_context}"
-                                )
-                            self._selected_context = None
-                            await context.reset()
+                            if not isinstance(exc, ChannelOpenError):
+                                if logger.isEnabledFor(logging.WARNING):
+                                    logger.warning(
+                                        f"Connection to {context.get_hostname()} attempts: {context.ssh_attempts} "
+                                    )
+                                self._selected_context = None
+                                await context.reset()
                         except Exception as e:
                             if logger.isEnabledFor(logging.WARNING):
                                 logger.warning(f"Uncaught exception: {e}")

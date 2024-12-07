@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import Callable, MutableSequence
 from typing import Any
 
-import asyncssh
 import pytest
 import pytest_asyncio
 
