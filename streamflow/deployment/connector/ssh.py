@@ -92,6 +92,16 @@ class SSHContext:
 
     async def close(self):
         if self._ssh_connection is not None:
+            max_times = 0
+            while len(self._ssh_connection._channels) > 0:
+                await asyncio.sleep(5)
+                max_times += 1
+                if max_times > 5:
+                    logger.warning(
+                        f"The SSH connection {self.get_hostname()} has had open channels for too long. "
+                        f"Forcing connection closure"
+                    )
+                    break
             self._ssh_connection.close()
             await self._ssh_connection.wait_closed()
             self._ssh_connection = None
