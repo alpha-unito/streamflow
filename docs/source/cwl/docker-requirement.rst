@@ -43,6 +43,7 @@ By default, StreamFlow automatically maps a step with the ``DockerRequirement`` 
         type: docker
         config:
           image: node:slim
+          ephemeral: true
 
 StreamFlow also supports the possibility to map a CWL ``DockerRequirement`` onto different types of connectors through the :ref:`CWLDockerTranslator <CWLDockerTranslator>` extension point. In particular, the ``docker`` section of a workflow configuration can bind each step or subworkflow to a specific translator type, making it possible to convert a pure CWL workflow with ``DockerRequirement`` features into a hybrid workflow. The available translator types are: ``docker``, ``kubernetes``, ``none`` and ``singularity``.
 
