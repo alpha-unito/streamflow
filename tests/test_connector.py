@@ -145,8 +145,10 @@ async def test_ssh_connector_multiple_request_fail(context: StreamFlowContext) -
         *(connector.get_available_locations() for _ in range(3)),
         return_exceptions=True,
     ):
-        assert isinstance(result, (ConnectionError, asyncssh.Error)) or (
-            isinstance(result, WorkflowExecutionException)
-            and result.args[0]
-            == "Hosts .* have no more available contexts: terminating."
+        assert (
+            re.match(
+                r"Hosts \[.*] have no more available contexts: terminating.",
+                result.args[0],
+            )
+            is not None
         )

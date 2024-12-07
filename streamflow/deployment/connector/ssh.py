@@ -9,7 +9,6 @@ from importlib.resources import files
 from typing import Any
 
 import asyncssh
-from asyncssh import ChannelOpenError, ConnectionLost
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
@@ -110,7 +109,7 @@ class SSHContext:
                 self._connecting = True
                 try:
                     self._ssh_connection = await self._get_connection(self._config)
-                except (ConnectionError, ConnectionLost, asyncssh.Error) as e:
+                except (ConnectionError, asyncssh.Error) as e:
                     if logger.isEnabledFor(logging.WARNING):
                         logger.warning(
                             f"Connection to {self._config.hostname} failed: {e}."
@@ -196,19 +195,14 @@ class SSHContextManager:
                             await self._proc.__aenter__()
                             self._selected_context.ssh_attempts = 0
                             return self._proc
-                        except (
-                            ChannelOpenError,
-                            ConnectionError,
-                            ConnectionLost,
-                            asyncssh.Error,
-                        ) as exc:
+                        except (ConnectionError, asyncssh.Error) as exc:
                             if logger.isEnabledFor(logging.WARNING):
                                 logger.warning(
-                                    f"Error opening SSH session to {context.get_hostname()} "
-                                    f"to execute command `{self.command}`: {type(exc)}[{exc.code}] {exc.reason}"
+                                    f"Error {type(exc).__name__} opening SSH session to {context.get_hostname()} "
+                                    f"to execute command `{self.command}`: [{exc.code}] {exc.reason}"
                                 )
                                 logger.warning(
-                                    f"Connection to {context.get_hostname()} attempts: {context.ssh_attempts}"
+                                    f"Connection to {context.get_hostname()} attempts: {context.ssh_attempts} "
                                     f"self._proc: {self._proc}, self._selected_context: {self._selected_context}"
                                 )
                             self._selected_context = None
