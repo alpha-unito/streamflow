@@ -6,9 +6,8 @@ import logging
 import os
 import posixpath
 from collections.abc import MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, cast
-
 from importlib.resources import files
+from typing import TYPE_CHECKING, cast
 
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.deployment import BindingFilter, Connector, FilterConfig, Target
@@ -461,7 +460,9 @@ class DefaultScheduler(Scheduler):
                                                     )
                                                     for k, size in (
                                                         await remotepath.get_storage_usages(
-                                                            conn, loc, job_hardware
+                                                            self.context,
+                                                            loc,
+                                                            job_hardware,
                                                         )
                                                     ).items()
                                                 }

@@ -4,10 +4,10 @@ import asyncio
 import json
 import os
 from collections.abc import MutableMapping, MutableSequence
+from importlib.resources import files
 from typing import Any, cast
 
 import aiosqlite
-from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod

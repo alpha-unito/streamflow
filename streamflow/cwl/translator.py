@@ -5,13 +5,12 @@ import logging
 import os
 import posixpath
 import urllib.parse
+from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import PurePosixPath
 from types import ModuleType
 from typing import (
     Any,
-    MutableMapping,
-    MutableSequence,
     cast,
     get_args,
 )

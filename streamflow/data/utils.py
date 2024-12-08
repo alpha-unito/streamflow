@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, Storage
-from streamflow.data.remotepath import follow_symlink
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 
 if TYPE_CHECKING:
@@ -72,20 +71,20 @@ async def get_mount_point(
     try:
         return location.hardware.get_mount_point(path)
     except KeyError:
-        path_processor = get_path_processor(connector)
-        path_to_resolve = path
-        while (
-            mount_point := await follow_symlink(
-                context, connector, location.location, path_to_resolve
-            )
-        ) is None:
-            path_to_resolve = path_processor.dirname(path_to_resolve)
+        path_to_resolve = StreamFlowPath(
+            path, context=context, location=location.location
+        )
+        while (mount_point := await path_to_resolve.resolve()) is None:
+            path_to_resolve = path_to_resolve.parent
             if not path_to_resolve:
                 raise WorkflowExecutionException(
                     f"Impossible to find the mount point of {path} path on location {location}"
                 )
         location_mount_points = location.hardware.get_mount_points()
-        while mount_point != os.sep and mount_point not in location_mount_points:
-            mount_point = path_processor.dirname(mount_point)
-        location.hardware.get_storage(mount_point).add_path(path)
-        return mount_point
+        while (
+            mount_point.parent != mount_point
+            and str(mount_point) not in location_mount_points
+        ):
+            mount_point = mount_point.parent
+        location.hardware.get_storage(str(mount_point)).add_path(path)
+        return str(mount_point)

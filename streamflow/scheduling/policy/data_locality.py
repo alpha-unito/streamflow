@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import MutableMapping
-from typing import TYPE_CHECKING
-
 from importlib.resources import files
+from typing import TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import MutableMapping
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, TYPE_CHECKING, cast
 
 from rdflib import Graph
 

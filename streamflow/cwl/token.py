@@ -6,7 +6,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.workflow import Token
 from streamflow.cwl import utils
-from streamflow.data import remotepath
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.workflow.token import FileToken
 
 
@@ -20,16 +20,11 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
                 path=path, data_type=DataType.PRIMARY
             )
             if data_locations:
-                data_location = list(data_locations)[0]
-                connector = context.deployment_manager.get_connector(
-                    data_location.deployment
+                data_location = next(iter(data_locations))
+                path = StreamFlowPath(
+                    data_location.path, context=context, location=data_location.location
                 )
-                real_path = await remotepath.follow_symlink(
-                    context, connector, data_location.location, data_location.path
-                )
-                weight = await remotepath.size(
-                    connector, data_location.location, real_path
-                )
+                weight = await (await path.resolve()).size()
     if "secondaryFiles" in value:
         weight += sum(
             await asyncio.gather(
