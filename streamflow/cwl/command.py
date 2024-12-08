@@ -47,7 +47,7 @@ from streamflow.cwl.processor import (
 )
 from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow
-from streamflow.data import remotepath
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
@@ -55,14 +55,16 @@ from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.utils import get_token_value
 
 
-def _adjust_cwl_output(base_path: str, path_processor: ModuleType, value: Any) -> Any:
+def _adjust_cwl_output(
+    base_path: StreamFlowPath, path_processor: ModuleType, value: Any
+) -> Any:
     if isinstance(value, MutableSequence):
         return [_adjust_cwl_output(base_path, path_processor, v) for v in value]
     elif isinstance(value, MutableMapping):
         if utils.get_token_class(value) in ["File", "Directory"]:
             path = utils.get_path_from_token(value)
             if not path_processor.isabs(path):
-                path = path_processor.join(base_path, path)
+                path = base_path / path
                 value["path"] = path
                 value["location"] = f"file://{path}"
             return value
@@ -145,18 +147,25 @@ async def _check_cwl_output(job: Job, step: Step, result: Any) -> Any:
     connector = step.workflow.context.scheduler.get_connector(job.name)
     locations = step.workflow.context.scheduler.get_locations(job.name)
     path_processor = get_path_processor(connector)
-    cwl_output_path = path_processor.join(job.output_directory, "cwl.output.json")
     for location in locations:
-        if await remotepath.exists(connector, location, cwl_output_path):
+        cwl_output_path = StreamFlowPath(
+            job.output_directory,
+            "cwl.output.json",
+            context=step.workflow.context,
+            location=location,
+        )
+        if await cwl_output_path.exists():
             # If file exists, use its contents as token value
-            result = json.loads(
-                await remotepath.read(connector, location, cwl_output_path)
-            )
+            result = json.loads(await cwl_output_path.read_text())
             # Update step output ports at runtime if needed
             if isinstance(result, MutableMapping):
                 for out_name, out in result.items():
                     out = _adjust_cwl_output(
-                        base_path=job.output_directory,
+                        base_path=StreamFlowPath(
+                            job.output_directory,
+                            context=step.workflow.context,
+                            location=location,
+                        ),
                         path_processor=path_processor,
                         value=out,
                     )
@@ -281,9 +290,9 @@ async def _prepare_work_dir(
     dest_path: str | None = None,
     writable: bool = False,
 ) -> None:
-    streamflow_context = options.step.workflow.context
-    connector = streamflow_context.scheduler.get_connector(options.job.name)
-    locations = streamflow_context.scheduler.get_locations(options.job.name)
+    context = options.step.workflow.context
+    connector = context.scheduler.get_connector(options.job.name)
+    locations = context.scheduler.get_locations(options.job.name)
     path_processor = get_path_processor(connector)
     # Initialize base path to job output directory if present
     base_path = base_path or options.job.output_directory
@@ -332,7 +341,7 @@ async def _prepare_work_dir(
                 dest_path = dest_path or path_processor.join(
                     base_path, path_processor.basename(src_path)
                 )
-                await streamflow_context.data_manager.transfer_data(
+                await context.data_manager.transfer_data(
                     src_location=selected_location.location,
                     src_path=selected_location.path,
                     dst_locations=locations,
@@ -357,17 +366,20 @@ async def _prepare_work_dir(
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
-                                remotepath.mkdir(connector, location, dest_path)
+                                StreamFlowPath(
+                                    dest_path, context=context, location=location
+                                ).mkdir(mode=0o777, exist_ok=True)
                             )
                             for location in locations
                         )
                     )
                 else:
                     await utils.write_remote_file(
-                        context=streamflow_context,
-                        job=options.job,
+                        context=context,
+                        locations=locations,
                         content=(listing["contents"] if "contents" in listing else ""),
                         path=dest_path,
+                        relpath=path_processor.relpath(dest_path, base_path),
                     )
             # If `listing` is present, recursively process folder contents
             if "listing" in listing:
@@ -376,7 +388,9 @@ async def _prepare_work_dir(
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
-                                remotepath.mkdir(connector, location, folder_path)
+                                StreamFlowPath(
+                                    folder_path, context=context, location=location
+                                ).mkdir(mode=0o777, exist_ok=True)
                             )
                             for location in locations
                         )
@@ -458,10 +472,15 @@ async def _prepare_work_dir(
             # If entry is a string, a new text file must be created with the string as the file contents
             if isinstance(entry, str):
                 await utils.write_remote_file(
-                    context=streamflow_context,
-                    job=options.job,
+                    context=context,
+                    locations=locations,
                     content=entry,
                     path=dest_path or base_path,
+                    relpath=(
+                        path_processor.relpath(dest_path, base_path)
+                        if dest_path
+                        else base_path
+                    ),
                 )
             # If entry is a list
             elif isinstance(entry, MutableSequence):
@@ -479,10 +498,15 @@ async def _prepare_work_dir(
                 # Otherwise, the content should be serialised to JSON
                 else:
                     await utils.write_remote_file(
-                        context=streamflow_context,
-                        job=options.job,
+                        context=context,
+                        locations=locations,
                         content=json.dumps(entry),
                         path=dest_path or base_path,
+                        relpath=(
+                            path_processor.relpath(dest_path, base_path)
+                            if dest_path
+                            else base_path
+                        ),
                     )
             # If entry is a dict
             elif isinstance(entry, MutableMapping):
@@ -498,18 +522,28 @@ async def _prepare_work_dir(
                 # Otherwise, the content should be serialised to JSON
                 else:
                     await utils.write_remote_file(
-                        context=streamflow_context,
-                        job=options.job,
+                        context=context,
+                        locations=locations,
                         content=json.dumps(entry),
                         path=dest_path or base_path,
+                        relpath=(
+                            path_processor.relpath(dest_path, base_path)
+                            if dest_path
+                            else base_path
+                        ),
                     )
             # Every object different from a string should be serialised to JSON
             elif entry is not None:
                 await utils.write_remote_file(
-                    context=streamflow_context,
-                    job=options.job,
+                    context=context,
+                    locations=locations,
                     content=json.dumps(entry),
                     path=dest_path or base_path,
+                    relpath=(
+                        path_processor.relpath(dest_path, base_path)
+                        if dest_path
+                        else base_path
+                    ),
                 )
 
 

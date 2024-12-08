@@ -28,7 +28,7 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
-from streamflow.data import remotepath
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -1357,14 +1357,14 @@ class ScheduleStep(BaseStep):
                 if not self.workflow.context.data_manager.get_data_locations(
                     directory, location.deployment, location.name
                 ):
-                    realpath = await remotepath.follow_symlink(
-                        self.workflow.context, connector, location, directory
-                    )
-                    if realpath != directory:
+                    realpath = await StreamFlowPath(
+                        directory, context=self.workflow.context, location=location
+                    ).resolve()
+                    if str(realpath) != directory:
                         self.workflow.context.data_manager.register_path(
                             location=location,
-                            path=realpath,
-                            relpath=realpath,
+                            path=str(realpath),
+                            relpath=str(realpath),
                         )
                     self.workflow.context.data_manager.register_path(
                         location=location,
@@ -1372,7 +1372,7 @@ class ScheduleStep(BaseStep):
                         relpath=directory,
                         data_type=(
                             DataType.PRIMARY
-                            if realpath == directory
+                            if str(realpath) == directory
                             else DataType.SYMBOLIC_LINK
                         ),
                     )
@@ -1436,30 +1436,39 @@ class ScheduleStep(BaseStep):
             path_processor, job.tmp_directory, allocation.target
         )
         # Create directories
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    remotepath.mkdir(
-                        connector=connector,
-                        location=location,
-                        path=[
-                            job.input_directory,
-                            job.output_directory,
-                            job.tmp_directory,
-                        ],
+        create_tasks = []
+        for location in locations:
+            for directory in [
+                job.input_directory,
+                job.output_directory,
+                job.tmp_directory,
+            ]:
+                create_tasks.append(
+                    asyncio.create_task(
+                        StreamFlowPath(
+                            directory, context=self.workflow.context, location=location
+                        ).mkdir(mode=0o777, parents=True, exist_ok=True)
                     )
                 )
-                for location in locations
+        await asyncio.gather(*create_tasks)
+        job.input_directory, job.output_directory, job.tmp_directory = (
+            str(p)
+            for p in await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        StreamFlowPath(
+                            directory,
+                            context=self.workflow.context,
+                            location=next(iter(locations)),
+                        ).resolve()
+                    )
+                    for directory in (
+                        job.input_directory,
+                        job.output_directory,
+                        job.tmp_directory,
+                    )
+                )
             )
-        )
-        job.input_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.input_directory
-        )
-        job.output_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.output_directory
-        )
-        job.tmp_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.tmp_directory
         )
 
     def get_output_port(self, name: str | None = None) -> JobPort:

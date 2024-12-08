@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import os
-import posixpath
 import tempfile
-from pathlib import PurePath
 
 import pytest
 import pytest_asyncio
@@ -11,8 +8,7 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
-from streamflow.data import remotepath
-from streamflow.deployment.utils import get_path_processor
+from streamflow.data.remotepath import StreamFlowPath
 from tests.utils.deployment import get_location
 
 
@@ -63,70 +59,63 @@ async def test_data_locations(
     context, src_connector, src_location, dst_connector, dst_location
 ):
     """Test the existence of data locations after the transfer data"""
-    src_path = (
-        os.path.join(tempfile.gettempdir(), utils.random_name(), utils.random_name())
-        if src_location.local
-        else posixpath.join("/tmp", utils.random_name(), utils.random_name())
+    src_path = StreamFlowPath(
+        tempfile.gettempdir() if src_location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=src_location,
     )
-    dst_path = (
-        os.path.join(tempfile.gettempdir(), utils.random_name())
-        if dst_location.local
-        else posixpath.join("/tmp", utils.random_name())
+    dst_path = StreamFlowPath(
+        tempfile.gettempdir() if src_location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=dst_location,
     )
 
     # Create working directories in src and dst locations
-    await remotepath.mkdir(src_connector, src_location, str(PurePath(src_path).parent))
-    await remotepath.mkdir(dst_connector, dst_location, dst_path)
+    await src_path.parent.mkdir(mode=0o777, exist_ok=True)
+    await dst_path.mkdir(mode=0o777, parents=True)
 
     try:
-        await remotepath.write(
-            src_connector,
-            src_location,
-            src_path,
-            "StreamFlow",
-        )
-        src_path = await remotepath.follow_symlink(
-            context, src_connector, src_location, src_path
-        )
+        await src_path.write_text("StreamFlow")
+        src_path = await src_path.resolve()
         context.data_manager.register_path(
             location=src_location,
-            path=await remotepath.follow_symlink(
-                context, src_connector, src_location, src_path
-            ),
-            relpath=src_path,
+            path=str(src_path),
+            relpath=str(src_path),
             data_type=DataType.PRIMARY,
         )
 
         # Check src data locations
-        path = get_path_processor(src_connector).sep
-        for basename in PurePath(src_path).parts:
-            path = os.path.join(path, basename)
+        path = StreamFlowPath(context=context, location=src_location)
+        for part in src_path.parts:
+            path /= part
             data_locs = context.data_manager.get_data_locations(
-                path, src_connector.deployment_name
+                str(path), src_connector.deployment_name
             )
             assert len(data_locs) == 1
-            assert data_locs[0].path == path
+            assert data_locs[0].path == str(path)
             assert data_locs[0].deployment == src_connector.deployment_name
 
         # Transfer data from src to dst
         await context.data_manager.transfer_data(
             src_location=src_location,
-            src_path=src_path,
+            src_path=str(src_path),
             dst_locations=[dst_location],
-            dst_path=dst_path,
+            dst_path=str(dst_path),
             writable=False,
         )
 
         # Check dst data locations
-        path = get_path_processor(dst_connector).sep
-        for basename in PurePath(dst_path).parts:
-            path = os.path.join(path, basename)
+        path = StreamFlowPath(context=context, location=src_location)
+        for part in dst_path.parts:
+            path /= part
             data_locs = context.data_manager.get_data_locations(
-                path, dst_connector.deployment_name
+                str(path), dst_connector.deployment_name
             )
             assert len(data_locs) in [1, 2]
             if len(data_locs) == 1:
-                assert data_locs[0].path == path
+                assert data_locs[0].path == str(path)
                 assert data_locs[0].deployment == dst_connector.deployment_name
             elif len(data_locs) == 2:
                 # src and dst are on the same location. So dst will be a symbolic link
@@ -149,58 +138,60 @@ async def test_data_locations(
                             for loc in data_locs
                             if loc.data_type == DataType.SYMBOLIC_LINK
                             and _contains_location(loc, dst_location)
-                            and loc.path == path
+                            and loc.path == str(path)
                         ]
                     )
                     == 1
                 )
     finally:
-        await remotepath.rm(src_connector, src_location, src_path)
-        await remotepath.rm(dst_connector, dst_location, dst_path)
+        await src_path.rmtree()
+        await dst_path.rmtree()
 
 
 @pytest.mark.asyncio
 async def test_invalidate_location(context, src_connector, src_location):
     """Test the invalidation of a location"""
-    path_processor = get_path_processor(src_connector)
-    # Remote location are linux-like environments, so they have Posix paths
-    src_path = path_processor.join(
-        path_processor.sep, "tmp", utils.random_name(), utils.random_name()
+    src_path = StreamFlowPath(
+        tempfile.gettempdir() if src_location.local else "/tmp",
+        utils.random_name(),
+        utils.random_name(),
+        context=context,
+        location=src_location,
     )
-
     context.data_manager.register_path(
         location=src_location,
-        path=src_path,
-        relpath=src_path,
+        path=str(src_path),
+        relpath=str(src_path),
         data_type=DataType.PRIMARY,
     )
 
     # Check initial data location
-    path = path_processor.sep
-    for basename in PurePath(src_path).parts:
-        path = path_processor.join(path, basename)
+    path = StreamFlowPath(context=context, location=src_location)
+    for part in src_path.parts:
+        path /= part
         data_locs = context.data_manager.get_data_locations(
-            path, src_connector.deployment_name
+            str(path), src_connector.deployment_name
         )
         assert len(data_locs) == 1
-        assert data_locs[0].path == path
+        assert data_locs[0].path == str(path)
         assert data_locs[0].deployment == src_connector.deployment_name
 
     # Invalidate location
-    root_data_loc = context.data_manager.get_data_locations(
-        path_processor.sep, src_connector.deployment_name
-    )[0]
+    root_data_loc = next(
+        iter(
+            context.data_manager.get_data_locations(
+                path.root, src_connector.deployment_name
+            )
+        )
+    )
     context.data_manager.invalidate_location(root_data_loc.location, root_data_loc.path)
 
     # Check data manager has invalidated the location
-    path = path_processor.sep
-    for basename in PurePath(src_path).parts:
-        path = path_processor.join(path, basename)
+    path = StreamFlowPath(context=context, location=src_location)
+    for part in src_path.parts:
+        path /= part
         data_locs = context.data_manager.get_data_locations(
-            path, src_connector.deployment_name
+            str(path), src_connector.deployment_name
         )
         # The data location of the root is not invalidated
-        if basename == path_processor.sep:
-            assert len(data_locs) == 1
-        else:
-            assert len(data_locs) == 0
+        assert len(data_locs) == (1 if path == path.parent else 0)

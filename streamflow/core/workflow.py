@@ -436,12 +436,15 @@ class Token(PersistableEntity):
     async def save(self, context: StreamFlowContext, port_id: int | None = None):
         async with self.persistence_lock:
             if not self.persistent_id:
-                self.persistent_id = await context.database.add_token(
-                    port=port_id,
-                    tag=self.tag,
-                    type=type(self),
-                    value=json.dumps(await self._save_value(context)),
-                )
+                try:
+                    self.persistent_id = await context.database.add_token(
+                        port=port_id,
+                        tag=self.tag,
+                        type=type(self),
+                        value=json.dumps(await self._save_value(context)),
+                    )
+                except TypeError as e:
+                    raise WorkflowExecutionException from e
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value)
