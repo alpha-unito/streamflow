@@ -9,7 +9,7 @@ from typing import Any
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.workflow import Job, Token, Status
+from streamflow.core.workflow import Job, Status, Token
 
 
 class IterationTerminationToken(Token):

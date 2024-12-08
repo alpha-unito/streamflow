@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import MutableSequence, MutableMapping, AsyncIterable
+from collections.abc import AsyncIterable, MutableMapping, MutableSequence
 from typing import Any, cast
 
 from streamflow.core.context import StreamFlowContext

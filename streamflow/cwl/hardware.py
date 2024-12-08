@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import os
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from typing import Any, TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext

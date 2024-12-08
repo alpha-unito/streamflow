@@ -5,7 +5,7 @@ import logging
 import os
 import posixpath
 import urllib.parse
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import PurePosixPath
 from types import ModuleType
@@ -73,8 +73,8 @@ from streamflow.cwl.step import (
     CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
-    CWLTransferStep,
     CWLScheduleStep,
+    CWLTransferStep,
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,

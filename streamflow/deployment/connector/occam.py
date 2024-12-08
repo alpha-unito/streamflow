@@ -5,11 +5,11 @@ import logging
 import os
 import posixpath
 import re
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
+from importlib.resources import files
 from typing import Any
 
 import asyncssh
-from importlib.resources import files
 from ruamel.yaml import YAML
 
 from streamflow.core import utils

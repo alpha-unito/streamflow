@@ -5,7 +5,7 @@ import logging
 import os
 from collections.abc import MutableMapping
 from importlib.resources import files
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, TYPE_CHECKING, cast
 
 from streamflow.core.deployment import (
     Connector,

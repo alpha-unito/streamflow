@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import MutableSequence, MutableMapping, Callable
+from collections.abc import Callable, MutableMapping, MutableSequence
 from typing import Any, cast
 
 import cwl_utils.file_formats
@@ -489,7 +489,6 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         command_output: CWLCommandOutput,
         connector: Connector | None,
         context: MutableMapping[str, Any],
-        output_directory: str,
     ):
         connector = self._get_connector(connector, job)
         locations = await self._get_locations(connector, job)
@@ -532,7 +531,6 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
             # Resolve glob
-            path_processor = get_path_processor(connector)
             resolve_tasks = []
             for location in locations:
                 for path in globpaths:
@@ -557,11 +555,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                                     if self.target
                                     else job.tmp_directory
                                 ),
-                                path=(
-                                    path_processor.join(output_directory, path)
-                                    if not path_processor.isabs(path)
-                                    else path
-                                ),
+                                path=cast(str, path),
                             )
                         )
                     )
@@ -694,7 +688,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             hardware=self.workflow.context.scheduler.get_hardware(job.name),
         )
         token_value = await self._process_command_output(
-            job, command_output, connector, context, output_directory
+            job,
+            command_output,
+            connector,
+            context,
         )
         if isinstance(token_value, MutableSequence):
             for value in token_value:
