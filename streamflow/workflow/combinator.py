@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import MutableMapping, MutableSequence, AsyncIterable
+from collections.abc import AsyncIterable, MutableMapping, MutableSequence
 from typing import Any, cast
 
 from streamflow.core import utils

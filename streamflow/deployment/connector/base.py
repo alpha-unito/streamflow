@@ -27,7 +27,6 @@ from streamflow.deployment.stream import (
 )
 from streamflow.log_handler import logger
 
-
 FS_TYPES_TO_SKIP = {
     "-",
     "bpf",
