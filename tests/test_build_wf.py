@@ -1,5 +1,6 @@
 from typing import Type, cast
 
+import cwl_utils.parser.cwl_v1_2
 import pytest
 
 from streamflow.core import utils
@@ -23,6 +24,7 @@ from streamflow.workflow.step import (
 )
 from tests.conftest import are_equals
 from tests.utils.workflow import (
+    CWL_VERSION,
     create_workflow,
     create_schedule_step,
     create_deploy_step,
@@ -207,8 +209,10 @@ async def test_execute_step(context: StreamFlowContext):
             workflow=cast(CWLWorkflow, workflow),
             port_target=None,
             port_type="string",
-            cwl_element={},
-            context={"hints": {}, "requirements": {}},
+            cwl_element=cwl_utils.parser.cwl_v1_2.CommandOutputParameter(
+                type_="string"
+            ),
+            context={"hints": {}, "requirements": {}, "version": CWL_VERSION},
         ),
     )
     step.add_input_port(in_port_name, in_port)
@@ -349,8 +353,10 @@ async def test_workflow(context: StreamFlowContext):
             workflow=cast(CWLWorkflow, workflow),
             port_target=None,
             port_type="string",
-            cwl_element={},
-            context={"hints": {}, "requirements": {}},
+            cwl_element=cwl_utils.parser.cwl_v1_2.CommandOutputParameter(
+                type_="string"
+            ),
+            context={"hints": {}, "requirements": {}, "version": CWL_VERSION},
         ),
     )
     exec_step.add_input_port(in_port_name, in_port)
