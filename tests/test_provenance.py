@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
 import pytest
-
-from streamflow.cwl.hardware import CWLHardwareRequirement
-from streamflow.cwl.workflow import CWLWorkflow
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Port, Status, Step, Token, Workflow
 from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
+from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.translator import _create_command_output_processor_base
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.persistence.utils import load_depender_tokens, load_dependee_tokens
+from streamflow.persistence.utils import load_dependee_tokens, load_depender_tokens
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
@@ -34,11 +33,12 @@ from streamflow.workflow.token import (
     ListToken,
     TerminationToken,
 )
+from tests.utils.cwl import get_cwl_parser
 from tests.utils.workflow import (
-    create_workflow,
+    CWL_VERSION,
     create_deploy_step,
     create_schedule_step,
-    CWL_VERSION,
+    create_workflow,
 )
 
 
@@ -258,8 +258,10 @@ async def test_execute_step(context: StreamFlowContext):
             workflow=cast(CWLWorkflow, workflow),
             port_target=None,
             port_type="string",
-            cwl_element={},
-            context={"hints": {}, "requirements": {}},
+            cwl_element=get_cwl_parser(CWL_VERSION).CommandOutputParameter(
+                type_="string"
+            ),
+            context={"hints": {}, "requirements": {}, "version": CWL_VERSION},
         ),
     )
     token_list = [Token(token_value)]

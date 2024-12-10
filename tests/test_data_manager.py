@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 
 from streamflow.core import utils
-from streamflow.core.data import DataType, DataLocation
+from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor

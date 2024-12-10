@@ -54,7 +54,10 @@ class SqliteConnection:
 
     async def close(self):
         if self._connection:
+            async with self as db:
+                await db.commit()
             await self._connection.close()
+            self._connection = None
 
 
 class SqliteDatabase(CachedDatabase):
@@ -75,9 +78,8 @@ class SqliteDatabase(CachedDatabase):
         )
 
     async def close(self):
-        async with self.connection as db:
-            await db.commit()
         await self.connection.close()
+        self.connection = None
 
     @classmethod
     def get_schema(cls):

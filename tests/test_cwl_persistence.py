@@ -37,8 +37,8 @@ from streamflow.cwl.step import (
     CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
-    CWLTransferStep,
     CWLScheduleStep,
+    CWLTransferStep,
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
@@ -54,7 +54,7 @@ from streamflow.cwl.transformer import (
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.cwl.workflow import CWLWorkflow
-from streamflow.workflow.port import JobPort, ConnectorPort
+from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import CombinatorStep, ExecuteStep
 from tests.conftest import save_load_and_test
 from tests.utils.workflow import CWL_VERSION, create_workflow

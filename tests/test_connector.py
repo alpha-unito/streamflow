@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import MutableSequence, Callable
+from collections.abc import Callable, MutableSequence
 from typing import Any
 
 import asyncssh
@@ -13,7 +13,6 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector import SSHConnector
-
 from streamflow.deployment.future import FutureConnector
 from tests.conftest import get_class_callables
 from tests.utils.connector import FailureConnector, FailureConnectorException

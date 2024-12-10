@@ -4,7 +4,7 @@ From https://github.com/common-workflow-language/cwltool/blob/6f0e1d941a61063828
 """
 
 import json
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 
 from cwltool.tests.util import get_data
 

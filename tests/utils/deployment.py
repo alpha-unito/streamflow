@@ -4,21 +4,21 @@ import asyncio
 import os
 import tempfile
 from collections.abc import MutableSequence
+from importlib.resources import files
 from typing import cast
 
 import asyncssh
 import asyncssh.public_key
-from importlib.resources import files
 from jinja2 import Template
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
+    BindingFilter,
     DeploymentConfig,
     ExecutionLocation,
-    WrapsConfig,
-    BindingFilter,
     Target,
+    WrapsConfig,
 )
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job
