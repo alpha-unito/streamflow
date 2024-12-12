@@ -1,6 +1,5 @@
-from typing import Type, cast
-
 import pytest
+from typing import cast
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
@@ -74,7 +73,7 @@ async def _clone_step(step, workflow, context):
     return new_workflow, new_step
 
 
-async def _general_test_port(context: StreamFlowContext, cls_port: Type[Port]):
+async def _general_test_port(context: StreamFlowContext, cls_port: type[Port]):
     workflow, ports = await create_workflow(context)
     port = workflow.create_port(cls_port)
     await workflow.save(context)
@@ -325,7 +324,7 @@ async def test_schedule_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("port_cls", [Port, JobPort, ConnectorPort])
-async def test_port(context: StreamFlowContext, port_cls: Type[Port]):
+async def test_port(context: StreamFlowContext, port_cls: type[Port]):
     """Test saving Port on database and re-load it in a new Workflow"""
     await _general_test_port(context, port_cls)
 
