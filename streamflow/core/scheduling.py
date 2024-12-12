@@ -4,10 +4,10 @@ import copy
 import os
 from abc import ABC, abstractmethod
 from collections.abc import (
-    MutableSequence,
-    MutableMapping,
-    Iterable,
     Callable,
+    Iterable,
+    MutableMapping,
+    MutableSequence,
     MutableSet,
 )
 from typing import TYPE_CHECKING, cast
