@@ -3,9 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import MutableMapping
-from typing import cast
-
 from importlib.resources import files
+from typing import cast
 
 from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
@@ -15,13 +14,7 @@ from streamflow.core.exception import (
     UnrecoverableTokenException,
 )
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
-from streamflow.core.workflow import (
-    Job,
-    Status,
-    Step,
-    Token,
-    TokenProcessor,
-)
+from streamflow.core.workflow import Job, Status, Step, Token, TokenProcessor
 from streamflow.data import remotepath
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion

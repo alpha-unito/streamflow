@@ -21,9 +21,9 @@ from streamflow.cwl.step import (
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
-    CWLTokenTransformer,
     CartesianProductSizeTransformer,
     CloneTransformer,
+    CWLTokenTransformer,
     DefaultRetagTransformer,
     DefaultTransformer,
     DotProductSizeTransformer,

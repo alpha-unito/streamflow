@@ -8,10 +8,10 @@ import posixpath
 import shlex
 import time
 from asyncio.subprocess import STDOUT
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from decimal import Decimal
 from types import ModuleType
-from typing import Any, IO, cast
+from typing import IO, Any, cast
 
 from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
@@ -35,17 +35,8 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import (
-    flatten_list,
-    get_tag,
-)
-from streamflow.core.workflow import (
-    Job,
-    Status,
-    Step,
-    Token,
-    Workflow,
-)
+from streamflow.core.utils import flatten_list, get_tag
+from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.cwl import utils
 from streamflow.cwl.processor import (
     CWLCommandOutput,

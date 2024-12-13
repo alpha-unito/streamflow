@@ -4,10 +4,10 @@ import copy
 import os
 from abc import ABC, abstractmethod
 from collections.abc import (
-    MutableSequence,
-    MutableMapping,
-    Iterable,
     Callable,
+    Iterable,
+    MutableMapping,
+    MutableSequence,
     MutableSet,
 )
 from typing import TYPE_CHECKING, cast
@@ -20,9 +20,10 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from streamflow.core.deployment import Connector, Target
     from streamflow.core.workflow import Job, Status
-    from typing import Any
 
 
 def _check_storages(hardware_a: Hardware, hardware_b: Hardware) -> None:

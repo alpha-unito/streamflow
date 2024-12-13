@@ -15,7 +15,7 @@ import aiohttp
 from aiohttp import ClientResponse
 
 from streamflow.core import utils
-from streamflow.core.data import FileType, DataType
+from streamflow.core.data import DataType, FileType
 from streamflow.core.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:

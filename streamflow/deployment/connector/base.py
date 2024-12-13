@@ -13,10 +13,7 @@ from typing import Any
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapperContextManager
-from streamflow.core.deployment import (
-    Connector,
-    ExecutionLocation,
-)
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.utils import get_local_to_remote_destination
 from streamflow.deployment import aiotarstream
@@ -26,7 +23,6 @@ from streamflow.deployment.stream import (
     SubprocessStreamWriterWrapperContextManager,
 )
 from streamflow.log_handler import logger
-
 
 FS_TYPES_TO_SKIP = {
     "-",

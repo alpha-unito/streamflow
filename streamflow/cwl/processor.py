@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import MutableSequence, MutableMapping, Callable
+from collections.abc import Callable, MutableMapping, MutableSequence
 from typing import Any, cast
 
 import cwl_utils.file_formats
@@ -11,11 +11,7 @@ from schema_salad.exceptions import ValidationException
 
 from streamflow.core.command import CommandOutput, CommandOutputProcessor
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import (
-    Connector,
-    LocalTarget,
-    Target,
-)
+from streamflow.core.deployment import Connector, LocalTarget, Target
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,

@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import posixpath
 from collections.abc import MutableSequence
-
 from importlib.resources import files
 
 from streamflow.core import utils

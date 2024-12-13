@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING
 from streamflow.core.context import SchemaEntity
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import ExecutionLocation
-    from typing import Any
 
 
 class DataType(Enum):

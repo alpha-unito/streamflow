@@ -6,7 +6,7 @@ import posixpath
 from collections.abc import MutableMapping
 from pathlib import PurePosixPath
 from types import ModuleType
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from streamflow.core.config import BindingConfig
 from streamflow.core.deployment import (

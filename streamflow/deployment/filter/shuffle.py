@@ -1,6 +1,5 @@
 import random
 from collections.abc import MutableSequence
-
 from importlib.resources import files
 
 from streamflow.core.deployment import BindingFilter, Target

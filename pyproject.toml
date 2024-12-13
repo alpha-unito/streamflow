@@ -115,3 +115,7 @@ omit = [
 
 [tool.black]
 exclude = "streamflow/cwl/antlr"
+
+[tool.isort]
+profile = "black"
+skip = "streamflow/cwl/antlr"

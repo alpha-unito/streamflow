@@ -9,10 +9,10 @@ import shlex
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from functools import partial
+from importlib.resources import files
 from typing import Any, cast
 
 import cachetools
-from importlib.resources import files
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
