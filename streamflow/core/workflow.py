@@ -18,8 +18,9 @@ from streamflow.core.persistence import (
 )
 
 if TYPE_CHECKING:
-    from streamflow.core.context import StreamFlowContext
     from typing import Any
+
+    from streamflow.core.context import StreamFlowContext
 
 
 class Executor(ABC):

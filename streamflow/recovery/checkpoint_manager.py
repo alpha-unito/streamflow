@@ -4,9 +4,8 @@ import asyncio
 import os
 import tempfile
 from collections.abc import MutableSequence
-from typing import TYPE_CHECKING
-
 from importlib.resources import files
+from typing import TYPE_CHECKING
 
 from streamflow.core import utils
 from streamflow.core.data import DataLocation

@@ -1,5 +1,6 @@
-import pytest
 from typing import cast
+
+import pytest
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig

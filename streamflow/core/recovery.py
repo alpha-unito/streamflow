@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING
 from streamflow.core.context import SchemaEntity
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import Job, CommandOutput, Step
-    from typing import Any
+    from streamflow.core.workflow import CommandOutput, Job, Step
 
 
 class CheckpointManager(SchemaEntity):

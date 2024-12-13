@@ -6,7 +6,7 @@ import logging
 import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import MutableSequence, MutableMapping, AsyncIterable, MutableSet
+from collections.abc import AsyncIterable, MutableMapping, MutableSequence, MutableSet
 from types import ModuleType
 from typing import Any, cast
 
@@ -27,14 +27,7 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.workflow import (
-    Job,
-    Port,
-    Status,
-    Step,
-    Token,
-    Workflow,
-)
+from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
 from streamflow.data import remotepath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger

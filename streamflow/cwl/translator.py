@@ -5,15 +5,11 @@ import logging
 import os
 import posixpath
 import urllib.parse
+from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import PurePosixPath
 from types import ModuleType
-from typing import (
-    Any,
-    cast,
-    get_args,
-)
-from collections.abc import MutableMapping, MutableSequence
+from typing import Any, cast, get_args
 
 import cwl_utils.parser
 import cwl_utils.parser.utils
@@ -34,13 +30,7 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.exception import WorkflowDefinitionException
-from streamflow.core.workflow import (
-    Port,
-    Step,
-    Token,
-    TokenProcessor,
-    Workflow,
-)
+from streamflow.core.workflow import Port, Step, Token, TokenProcessor, Workflow
 from streamflow.cwl import utils
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
@@ -79,9 +69,9 @@ from streamflow.cwl.step import (
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
-    CWLTokenTransformer,
     CartesianProductSizeTransformer,
     CloneTransformer,
+    CWLTokenTransformer,
     DefaultRetagTransformer,
     DefaultTransformer,
     DotProductSizeTransformer,

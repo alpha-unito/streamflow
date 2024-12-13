@@ -9,8 +9,8 @@ import os
 import posixpath
 import shlex
 import uuid
-from collections.abc import MutableSequence, MutableMapping, Iterable
-from typing import Any, TYPE_CHECKING
+from collections.abc import Iterable, MutableMapping, MutableSequence
+from typing import TYPE_CHECKING, Any
 
 from streamflow.core.exception import WorkflowExecutionException
 

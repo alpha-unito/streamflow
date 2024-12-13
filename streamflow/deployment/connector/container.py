@@ -28,8 +28,8 @@ from streamflow.core.utils import (
     random_name,
 )
 from streamflow.deployment.connector.base import (
-    BatchConnector,
     FS_TYPES_TO_SKIP,
+    BatchConnector,
     copy_local_to_remote,
     copy_remote_to_local,
     copy_remote_to_remote,

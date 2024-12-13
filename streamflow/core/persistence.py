@@ -4,12 +4,12 @@ from abc import ABC, abstractmethod
 from asyncio import Lock
 from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import DeploymentConfig, Target, FilterConfig
+    from streamflow.core.deployment import DeploymentConfig, FilterConfig, Target
     from streamflow.core.workflow import Port, Step, Token, Workflow
 
 

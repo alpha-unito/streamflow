@@ -15,11 +15,12 @@ from streamflow.core.context import SchemaEntity
 from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
 
 if TYPE_CHECKING:
-    from streamflow.core.data import StreamWrapperContextManager
+    from typing import Any
+
     from streamflow.core.context import StreamFlowContext
+    from streamflow.core.data import StreamWrapperContextManager
     from streamflow.core.scheduling import AvailableLocation
     from streamflow.core.workflow import Job
-    from typing import Any
 
 
 class ExecutionLocation:

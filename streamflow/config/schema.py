@@ -2,18 +2,13 @@ from importlib.resources import files
 
 from streamflow.config import ext_schemas
 from streamflow.core.config import Schema
-from streamflow.cwl.requirement.docker import (
-    cwl_docker_translator_classes,
-)
+from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
 from streamflow.deployment.connector import connector_classes
 from streamflow.deployment.filter import binding_filter_classes
 from streamflow.persistence import database_classes
-from streamflow.recovery import (
-    checkpoint_manager_classes,
-    failure_manager_classes,
-)
+from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes
 

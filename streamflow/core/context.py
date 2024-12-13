@@ -4,7 +4,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping
 from concurrent.futures import ProcessPoolExecutor
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from streamflow.log_handler import logger
 

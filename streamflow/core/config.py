@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import posixpath
-from collections.abc import MutableSequence, MutableMapping
-from typing import Any, TYPE_CHECKING, cast
+from collections.abc import MutableMapping, MutableSequence
+from typing import TYPE_CHECKING, Any, cast
 
 from referencing import Registry, Resource
 
@@ -12,7 +12,7 @@ from streamflow.core.exception import WorkflowDefinitionException
 
 if TYPE_CHECKING:
     from streamflow.core.context import SchemaEntity, StreamFlowContext
-    from streamflow.core.deployment import Target, FilterConfig
+    from streamflow.core.deployment import FilterConfig, Target
     from streamflow.core.persistence import DatabaseLoadingContext
 
 

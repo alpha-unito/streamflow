@@ -14,9 +14,11 @@ flake8:
 	flake8 --exclude streamflow/cwl/antlr streamflow tests
 
 format:
+	isort streamflow tests
 	black streamflow tests
 
 format-check:
+	isort --check-only streamflow tests
 	black --diff --check streamflow tests
 
 pyupgrade:

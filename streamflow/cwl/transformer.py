@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 import json
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
 from streamflow.core.context import StreamFlowContext

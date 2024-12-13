@@ -4,7 +4,7 @@ import asyncio
 import logging
 from abc import ABCMeta
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException

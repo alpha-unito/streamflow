@@ -5,7 +5,7 @@ import json
 import logging
 import urllib.parse
 from abc import ABC
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
 from streamflow.core.context import StreamFlowContext
@@ -36,9 +36,9 @@ from streamflow.workflow.step import (
     ConditionalStep,
     InputInjectorStep,
     LoopOutputStep,
+    ScheduleStep,
     TransferStep,
     _get_token_ids,
-    ScheduleStep,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 

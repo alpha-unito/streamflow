@@ -17,8 +17,8 @@ from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import (
-    BaseConnector,
     FS_TYPES_TO_SKIP,
+    BaseConnector,
     copy_remote_to_remote,
     copy_same_connector,
 )
