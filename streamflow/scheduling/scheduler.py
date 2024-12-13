@@ -460,7 +460,9 @@ class DefaultScheduler(Scheduler):
                                                     )
                                                     for k, size in (
                                                         await remotepath.get_storage_usages(
-                                                            conn, loc, job_hardware
+                                                            self.context,
+                                                            loc,
+                                                            job_hardware,
                                                         )
                                                     ).items()
                                                 }

@@ -15,7 +15,7 @@ import cwl_utils.parser
 from cwl_utils.parser.cwl_v1_2_utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataLocation, DataType, FileType
+from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
@@ -25,7 +25,7 @@ from streamflow.core.scheduling import Hardware
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver
-from streamflow.data import remotepath
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.utils import get_token_value
@@ -38,47 +38,47 @@ async def _check_glob_path(
     input_directory: str,
     output_directory: str,
     tmp_directory: str,
-    path: str,
-    realpath: str,
+    path: StreamFlowPath,
+    real_path: StreamFlowPath,
 ) -> None:
     # Cannot glob outside the job output folder
     if not (
-        realpath.startswith(output_directory)
-        or realpath.startswith(input_directory)
-        or realpath.startswith(tmp_directory)
+        real_path.is_relative_to(input_directory)
+        or real_path.is_relative_to(output_directory)
+        or real_path.is_relative_to(tmp_directory)
     ):
-        path_processor = get_path_processor(connector)
-        relative_path = path_processor.relpath(path, output_directory)
-        base_path = (
-            path_processor.normpath(realpath[: -len(relative_path)])
-            if realpath.endswith(relative_path)
-            else path_processor.dirname(realpath)
+        relative_path = path.relative_to(output_directory)
+        base_path = StreamFlowPath(
+            (
+                str(real_path).removesuffix(str(relative_path))
+                if str(real_path).endswith(str(relative_path))
+                else real_path.parent
+            ),
+            context=workflow.context,
+            location=location,
         )
         if not await search_in_parent_locations(
             context=workflow.context,
             connector=connector,
-            path=realpath,
-            relpath=path_processor.relpath(path, output_directory),
-            base_path=base_path,
+            path=str(real_path),
+            relpath=str(relative_path),
+            base_path=str(base_path),
         ):
-            input_dirs = await remotepath.listdir(
-                connector, location, input_directory, FileType.DIRECTORY
+            indir = StreamFlowPath(
+                input_directory, context=workflow.context, location=location
             )
-            for input_dir in input_dirs:
-                input_path = path_processor.join(
-                    input_dir, path_processor.relpath(path, output_directory)
-                )
-                if await remotepath.exists(connector, location, input_path):
-                    return
+            async for _, dirnames, _ in indir.walk(follow_symlinks=True):
+                for dirname in dirnames:
+                    if await (indir / dirname / relative_path).exists():
+                        return
+                break
             raise WorkflowDefinitionException(
                 "Globs outside the job's output folder are not allowed"
             )
 
 
 async def _get_contents(
-    connector: Connector,
-    location: ExecutionLocation,
-    path: str,
+    path: StreamFlowPath,
     size: int,
     cwl_version: str,
 ):
@@ -86,7 +86,61 @@ async def _get_contents(
         raise WorkflowExecutionException(
             f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB"
         )
-    return await remotepath.head(connector, location, path, CONTENT_LIMIT)
+    return await path.read_text(n=CONTENT_LIMIT)
+
+
+async def _get_listing(
+    context: StreamFlowContext,
+    connector: Connector,
+    cwl_version: str,
+    locations: MutableSequence[ExecutionLocation],
+    dirpath: StreamFlowPath,
+    load_contents: bool,
+    recursive: bool,
+) -> MutableSequence[MutableMapping[str, Any]]:
+    listing_tokens = {}
+    for location in locations:
+        loc_path = StreamFlowPath(dirpath, context=context, location=location)
+        async for dirpath, dirnames, filenames in loc_path.walk(follow_symlinks=True):
+            for dirname in dirnames:
+                directory = dirpath / dirname
+                if str(directory) not in listing_tokens:
+                    load_listing = (
+                        LoadListing.deep_listing
+                        if recursive
+                        else LoadListing.no_listing
+                    )
+                    listing_tokens[str(directory)] = asyncio.create_task(
+                        get_file_token(  # nosec
+                            context=context,
+                            connector=connector,
+                            cwl_version=cwl_version,
+                            locations=locations,
+                            token_class="Directory",
+                            filepath=str(directory),
+                            load_contents=load_contents,
+                            load_listing=load_listing,
+                        )
+                    )
+            for filename in filenames:
+                file = dirpath / filename
+                if str(file) not in listing_tokens:
+                    listing_tokens[str(file)] = asyncio.create_task(
+                        get_file_token(  # nosec
+                            context=context,
+                            connector=connector,
+                            cwl_version=cwl_version,
+                            locations=locations,
+                            token_class="File",
+                            filepath=str(file),
+                            load_contents=load_contents,
+                        )
+                    )
+            break
+    return cast(
+        MutableSequence[MutableMapping[str, Any]],
+        await asyncio.gather(*listing_tokens.values()),
+    )
 
 
 async def _process_secondary_file(
@@ -109,7 +163,8 @@ async def _process_secondary_file(
     elif isinstance(secondary_file, MutableMapping):
         filepath = get_path_from_token(secondary_file)
         for location in locations:
-            if await remotepath.exists(connector, location, filepath):
+            path = StreamFlowPath(filepath, context=context, location=location)
+            if await path.exists():
                 return await get_file_token(
                     context=context,
                     connector=connector,
@@ -145,12 +200,9 @@ async def _process_secondary_file(
             else:
                 # Search file in job locations and build token value
                 for location in locations:
-                    if await remotepath.exists(connector, location, filepath):
-                        token_class = (
-                            "File"
-                            if await remotepath.isfile(connector, location, filepath)
-                            else "Directory"
-                        )
+                    path = StreamFlowPath(filepath, context=context, location=location)
+                    if await path.exists():
+                        token_class = "File" if await path.is_file() else "Directory"
                         return await get_file_token(
                             context=context,
                             connector=connector,
@@ -185,33 +237,37 @@ async def _register_path(
     relpath: str,
     data_type: DataType = DataType.PRIMARY,
 ) -> DataLocation | None:
-    if real_path := await remotepath.follow_symlink(context, connector, location, path):
+    path = StreamFlowPath(path, context=context, location=location)
+    if real_path := await path.resolve():
         if real_path != path:
             if data_locations := context.data_manager.get_data_locations(
-                path=real_path, deployment=connector.deployment_name
+                path=str(real_path), deployment=connector.deployment_name
             ):
                 data_location = next(iter(data_locations))
             else:
-                path_processor = get_path_processor(connector)
-                base_path = path_processor.normpath(path[: -len(relpath)])
-                if real_path.startswith(base_path):
+                base_path = StreamFlowPath(
+                    str(path).removesuffix(str(relpath)),
+                    context=context,
+                    location=location,
+                )
+                if real_path.is_relative_to(base_path):
                     data_location = context.data_manager.register_path(
                         location=location,
-                        path=real_path,
-                        relpath=path_processor.relpath(real_path, base_path),
+                        path=str(real_path),
+                        relpath=str(real_path.relative_to(base_path)),
                     )
                 elif data_locations := await search_in_parent_locations(
                     context=context,
                     connector=connector,
-                    path=real_path,
-                    relpath=path_processor.basename(real_path),
+                    path=str(real_path),
+                    relpath=real_path.name,
                 ):
                     data_location = data_locations[0]
                 else:
                     return None
             link_location = context.data_manager.register_path(
                 location=location,
-                path=path,
+                path=str(path),
                 relpath=relpath,
                 data_type=DataType.SYMBOLIC_LINK,
             )
@@ -219,7 +275,7 @@ async def _register_path(
             return data_location
         else:
             return context.data_manager.register_path(
-                location=location, path=path, relpath=relpath, data_type=data_type
+                location=location, path=str(path), relpath=relpath, data_type=data_type
             )
     return None
 
@@ -448,14 +504,12 @@ async def expand_glob(
     tmp_directory: str,
     path: str,
 ) -> MutableSequence[tuple[str, str]]:
-    paths = await remotepath.resolve(connector, location, path) or []
+    outdir = StreamFlowPath(
+        output_directory, context=workflow.context, location=location
+    )
+    paths = sorted([p async for p in outdir.glob(path)])
     effective_paths = await asyncio.gather(
-        *(
-            asyncio.create_task(
-                remotepath.follow_symlink(workflow.context, connector, location, p)
-            )
-            for p in paths
-        )
+        *(asyncio.create_task(p.resolve()) for p in paths)
     )
     await asyncio.gather(
         *(
@@ -468,24 +522,23 @@ async def expand_glob(
                     output_directory=output_directory,
                     tmp_directory=tmp_directory,
                     path=p,
-                    realpath=ep or p,
+                    real_path=ep or p,
                 )
             )
             for p, ep in zip(paths, effective_paths)
         )
     )
-    return [(p, (ep or p)) for p, ep in zip(paths, effective_paths)]
+    return [(str(p), str(ep or p)) for p, ep in zip(paths, effective_paths)]
 
 
 async def get_class_from_path(
     path: str, job: Job, context: StreamFlowContext
 ) -> str | None:
-    connector = context.scheduler.get_connector(job.name)
     locations = context.scheduler.get_locations(job.name)
     for location in locations:
         return (
             "File"
-            if await remotepath.isfile(connector, location, path)
+            if await StreamFlowPath(path, context=context, location=location).is_file()
             else "Directory"
         )
     raise WorkflowExecutionException(
@@ -520,89 +573,34 @@ async def get_file_token(
             token["format"] = file_format
         token["nameroot"], token["nameext"] = path_processor.splitext(basename)
         for location in locations:
-            if real_path := await remotepath.follow_symlink(
-                context, connector, location, filepath
-            ):
-                token["size"] = await remotepath.size(connector, location, real_path)
+            path = StreamFlowPath(filepath, context=context, location=location)
+            if real_path := await path.resolve():
+                token["size"] = await real_path.size()
                 if load_contents:
                     token["contents"] = await _get_contents(
-                        connector,
-                        location,
                         real_path,
                         token["size"],
                         cwl_version,
                     )
                 token["checksum"] = "sha1${checksum}".format(
-                    checksum=await remotepath.checksum(
-                        context, connector, location, real_path
-                    )
+                    checksum=await real_path.checksum()
                 )
                 break
     elif token_class == "Directory" and load_listing != LoadListing.no_listing:  # nosec
         for location in locations:
-            if await remotepath.exists(connector, location, filepath):
-                token["listing"] = await get_listing(
+            path = StreamFlowPath(filepath, context=context, location=location)
+            if await path.exists():
+                token["listing"] = await _get_listing(
                     context=context,
                     connector=connector,
                     cwl_version=cwl_version,
                     locations=locations,
-                    dirpath=filepath,
+                    dirpath=path,
                     load_contents=load_contents,
                     recursive=load_listing == LoadListing.deep_listing,
                 )
                 break
     return token
-
-
-async def get_listing(
-    context: StreamFlowContext,
-    connector: Connector,
-    cwl_version: str,
-    locations: MutableSequence[ExecutionLocation],
-    dirpath: str,
-    load_contents: bool,
-    recursive: bool,
-) -> MutableSequence[MutableMapping[str, Any]]:
-    listing_tokens = {}
-    for location in locations:
-        directories = await remotepath.listdir(
-            connector, location, dirpath, FileType.DIRECTORY
-        )
-        for directory in directories:
-            if directory not in listing_tokens:
-                load_listing = (
-                    LoadListing.deep_listing if recursive else LoadListing.no_listing
-                )
-                listing_tokens[directory] = asyncio.create_task(
-                    get_file_token(  # nosec
-                        context=context,
-                        connector=connector,
-                        cwl_version=cwl_version,
-                        locations=locations,
-                        token_class="Directory",
-                        filepath=directory,
-                        load_contents=load_contents,
-                        load_listing=load_listing,
-                    )
-                )
-        files = await remotepath.listdir(connector, location, dirpath, FileType.FILE)
-        for file in files:
-            if file not in listing_tokens:
-                listing_tokens[file] = asyncio.create_task(
-                    get_file_token(  # nosec
-                        context=context,
-                        connector=connector,
-                        cwl_version=cwl_version,
-                        locations=locations,
-                        token_class="File",
-                        filepath=file,
-                        load_contents=load_contents,
-                    )
-                )
-    return cast(
-        MutableSequence[MutableMapping[str, Any]],
-        await asyncio.gather(*listing_tokens.values()),
-    )
 
 
 def get_name(
@@ -955,14 +953,14 @@ async def update_file_token(
     load_contents: bool | None,
     load_listing: LoadListing | None = None,
 ):
-    filepath = get_path_from_token(token_value)
+    filepath = StreamFlowPath(
+        get_path_from_token(token_value), context=context, location=location
+    )
     # Process contents
     if get_token_class(token_value) == "File" and load_contents is not None:
         if load_contents and "contents" not in token_value:
             token_value |= {
                 "contents": await _get_contents(
-                    connector,
-                    location,
                     filepath,
                     token_value["size"],
                     cwl_version,
@@ -979,7 +977,7 @@ async def update_file_token(
         # If listing is not present or if the token needs a deep listing, process directory contents
         elif "listing" not in token_value or load_listing == LoadListing.deep_listing:
             token_value |= {
-                "listing": await get_listing(
+                "listing": await _get_listing(
                     context=context,
                     connector=connector,
                     cwl_version=cwl_version,
@@ -1001,16 +999,19 @@ async def update_file_token(
 
 
 async def write_remote_file(
-    context: StreamFlowContext, job: Job, content: str, path: str
+    context: StreamFlowContext,
+    locations: MutableSequence[ExecutionLocation],
+    content: str,
+    path: str,
+    relpath: str,
 ):
-    for location in context.scheduler.get_locations(job.name):
-        connector = context.deployment_manager.get_connector(location.deployment)
-        path_processor = get_path_processor(connector)
-        if not await remotepath.exists(connector, location, path):
+    for location in locations:
+        path = StreamFlowPath(path, context=context, location=location)
+        if not await path.exists():
             if logger.isEnabledFor(logging.INFO):
                 logger.info(
                     "Creating {path} {location}".format(
-                        path=path,
+                        path=str(path),
                         location=(
                             "on local file-system"
                             if location.local
@@ -1018,11 +1019,9 @@ async def write_remote_file(
                         ),
                     )
                 )
-            await remotepath.write(connector, location, path, content)
+            await path.write_text(content)
             context.data_manager.register_path(
                 location=location,
-                path=path,
-                relpath=path_processor.relpath(
-                    path_processor.normpath(path), job.output_directory
-                ),
+                path=str(path),
+                relpath=relpath,
             )

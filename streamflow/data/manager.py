@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core.data import DataLocation, DataManager, DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.data import remotepath
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
@@ -329,9 +329,9 @@ class DefaultDataManager(DataManager):
         await asyncio.gather(
             *(
                 asyncio.create_task(
-                    remotepath.mkdir(
-                        dst_connector, location, str(Path(dst_path).parent)
-                    )
+                    StreamFlowPath(
+                        dst_path, context=self.context, location=location
+                    ).parent.mkdir(mode=0o777, exist_ok=True)
                 )
                 for location in dst_locations
             )
@@ -349,9 +349,9 @@ class DefaultDataManager(DataManager):
             )
         )
         if (
-            src_realpath := await remotepath.follow_symlink(
-                self.context, src_connector, src_location, src_path
-            )
+            src_realpath := await StreamFlowPath(
+                src_path, context=self.context, location=src_location
+            ).resolve()
         ) is None:
             logger.info(f"Remote file system: {repr(self.path_mapper)}")
             raise WorkflowExecutionException(
@@ -361,7 +361,7 @@ class DefaultDataManager(DataManager):
         else:
             src_path = src_realpath
         primary_locations = self.path_mapper.get(
-            path=src_path, data_type=DataType.PRIMARY
+            path=str(src_path), data_type=DataType.PRIMARY
         )
         copy_tasks = []
         remote_locations = []
@@ -394,31 +394,26 @@ class DefaultDataManager(DataManager):
             else:
                 remote_locations.append(dst_location)
             # If the source path has already been registered
-            if src_data_locations := self.path_mapper.get(path=src_path):
+            if src_data_locations := self.path_mapper.get(path=str(src_path)):
                 src_data_location = next(iter(src_data_locations))
                 # Compute actual destination path
-                loc_dst_path = (
-                    get_path_processor(dst_connector).join(
-                        dst_path,
-                        get_path_processor(src_connector).basename(src_path),
-                    )
-                    if await remotepath.isdir(
-                        connector=dst_connector,
-                        location=dst_location,
-                        path=dst_path,
-                    )
-                    else dst_path
+                loc_dst_path = StreamFlowPath(
+                    dst_path, context=self.context, location=dst_location
                 )
+                if await loc_dst_path.is_dir():
+                    loc_dst_path /= src_path.name
                 # Register path and data location for parent folder
                 self.register_path(dst_location, str(Path(loc_dst_path).parent))
                 # Register the new `DataLocation` object
                 dst_data_location = DataLocation(
                     location=dst_location,
-                    path=loc_dst_path,
+                    path=str(loc_dst_path),
                     relpath=src_data_location.relpath,
                     data_type=DataType.PRIMARY,
                 )
-                self.path_mapper.put(path=loc_dst_path, data_location=dst_data_location)
+                self.path_mapper.put(
+                    path=str(loc_dst_path), data_location=dst_data_location
+                )
                 data_locations.append(dst_data_location)
                 # If the destination is not writable , map the new `DataLocation` object to the source locations
                 if not writable:
@@ -436,7 +431,7 @@ class DefaultDataManager(DataManager):
                     _copy(
                         src_connector=src_connector,
                         src_location=src_location,
-                        src=src_path,
+                        src=str(src_path),
                         dst_connector=dst_connector,
                         dst_locations=remote_locations,
                         dst=dst_path,
@@ -448,16 +443,14 @@ class DefaultDataManager(DataManager):
         # Mark all destination data locations as available
         for data_location in data_locations:
             if not writable:
-                connector = self.context.deployment_manager.get_connector(
-                    data_location.deployment
+                loc_path = StreamFlowPath(
+                    data_location.path,
+                    context=self.context,
+                    location=data_location.location,
                 )
                 data_location.data_type = (
                     DataType.SYMBOLIC_LINK
-                    if await remotepath.islink(
-                        connector=connector,
-                        location=data_location.location,
-                        path=data_location.path,
-                    )
+                    if await loc_path.is_symlink()
                     else DataType.PRIMARY
                 )
             # Process wrapped locations if any

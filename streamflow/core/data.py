@@ -112,11 +112,6 @@ class DataManager(SchemaEntity):
     ) -> None: ...
 
 
-class FileType(Enum):
-    FILE = 1
-    DIRECTORY = 2
-
-
 class StreamWrapper(ABC):
     def __init__(self, stream: Any):
         self.stream: Any = stream

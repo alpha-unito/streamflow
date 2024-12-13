@@ -29,6 +29,7 @@ from streamflow.cwl.utils import (
 )
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data import remotepath
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import JobPort
@@ -146,16 +147,13 @@ async def build_token(
 
 
 async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
-    connector = context.scheduler.get_connector(job.name)
     locations = context.scheduler.get_locations(job.name)
     try:
         filepaths = set(
             await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        remotepath.download(
-                            connector, location, url, job.input_directory
-                        )
+                        remotepath.download(context, location, url, job.input_directory)
                     )
                     for location in locations
                 )
@@ -512,11 +510,21 @@ class CWLTransferStep(TransferStep):
         self,
         job: Job,
         token_value: MutableMapping[str, Any],
-        dest_path: str | None = None,
+        dest_path: StreamFlowPath | None = None,
     ) -> MutableMapping[str, Any]:
         token_class = utils.get_token_class(token_value)
-        # Get allocation and connector
-        connector = self.workflow.context.scheduler.get_connector(job.name)
+        # Get destination coordinates
+        dst_connector = self.workflow.context.scheduler.get_connector(job.name)
+        dst_locations = self.workflow.context.scheduler.get_locations(job.name)
+        indir = StreamFlowPath(
+            job.input_directory,
+            context=self.workflow.context,
+            location=next(iter(dst_locations)),
+        )
+        if dest_path is not None and dest_path.is_relative_to(job.input_directory):
+            indir /= dest_path.relative_to(indir).parts[0]
+        else:
+            indir /= random_name()
         # Extract location
         location = token_value.get("location", token_value.get("path"))
         if location and "://" in location:
@@ -528,15 +536,7 @@ class CWLTransferStep(TransferStep):
                 location = urllib.parse.unquote(location[7:])
         # If basename is explicitly stated in the token, use it as destination path
         if "basename" in token_value:
-            path_processor = get_path_processor(connector)
-            dest_path = dest_path or path_processor.join(
-                job.input_directory, random_name()
-            )
-            dest_path = path_processor.join(dest_path, token_value["basename"])
-        # Get destination coordinates
-        dst_connector = self.workflow.context.scheduler.get_connector(job.name)
-        dst_locations = self.workflow.context.scheduler.get_locations(job.name)
-        path_processor = get_path_processor(dst_connector)
+            dest_path = (dest_path or indir) / token_value["basename"]
         # If source data exist, get source locations
         if location and (
             selected_location := self.workflow.context.data_manager.get_source_location(
@@ -544,30 +544,28 @@ class CWLTransferStep(TransferStep):
             )
         ):
             # Build destination path
-            filepath = dest_path or path_processor.join(
-                job.input_directory, utils.random_name(), selected_location.relpath
-            )
+            filepath = dest_path or (indir / selected_location.relpath)
             # Perform and transfer
             await self.workflow.context.data_manager.transfer_data(
                 src_location=selected_location.location,
                 src_path=selected_location.path,
                 dst_locations=dst_locations,
-                dst_path=filepath,
+                dst_path=str(filepath),
                 writable=self.writable,
             )
             # Transform token value
             new_token_value = {
                 "class": token_class,
-                "path": filepath,
-                "location": "file://" + filepath,
-                "basename": path_processor.basename(filepath),
-                "dirname": path_processor.dirname(filepath),
+                "path": str(filepath),
+                "location": "file://" + str(filepath),
+                "basename": filepath.name,
+                "dirname": str(filepath.parent),
             }
             # If token contains a file
             if token_class == "File":  # nosec
                 # Retrieve symbolic link data locations
                 data_locations = self.workflow.context.data_manager.get_data_locations(
-                    path=filepath,
+                    path=str(filepath),
                     deployment=dst_connector.deployment_name,
                     data_type=DataType.SYMBOLIC_LINK,
                 )
@@ -577,15 +575,16 @@ class CWLTransferStep(TransferStep):
                     for data_location in data_locations:
                         if (
                             data_location.name == location.name
-                            and data_location.path == filepath
+                            and data_location.path == str(filepath)
                         ):
                             break
                     else:
-                        checksum = "sha1${}".format(
-                            await remotepath.checksum(
-                                self.workflow.context, dst_connector, location, filepath
-                            )
+                        loc_path = StreamFlowPath(
+                            str(filepath),
+                            context=self.workflow.context,
+                            location=location,
                         )
+                        checksum = f"sha1${await loc_path.checksum()}"
                         if checksum != original_checksum:
                             raise WorkflowExecutionException(
                                 "Error transferring file {} in location {} to {} in location {}".format(
@@ -614,7 +613,7 @@ class CWLTransferStep(TransferStep):
                                 self._update_file_token(
                                     job=job,
                                     token_value=element,
-                                    dest_path=path_processor.dirname(filepath),
+                                    dest_path=filepath.parent,
                                 )
                             )
                             for element in token_value["secondaryFiles"]
@@ -636,15 +635,17 @@ class CWLTransferStep(TransferStep):
         # Otherwise, create elements remotely
         else:
             # Build destination path
-            filepath = dest_path or path_processor.join(
-                job.input_directory, utils.random_name()
-            )
+            filepath = dest_path or indir
             # If the token contains a directory, simply create it
             if token_class == "Directory":  # nosec
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            remotepath.mkdir(dst_connector, location, filepath)
+                            StreamFlowPath(
+                                str(filepath),
+                                context=self.workflow.context,
+                                location=location,
+                            ).mkdir(mode=0o777, parents=True, exist_ok=True)
                         )
                         for location in dst_locations
                     )
@@ -654,20 +655,29 @@ class CWLTransferStep(TransferStep):
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            remotepath.mkdir(
-                                dst_connector,
-                                location,
-                                path_processor.dirname(filepath),
-                            )
+                            StreamFlowPath(
+                                str(filepath.parent),
+                                context=self.workflow.context,
+                                location=location,
+                            ).mkdir(mode=0o777, exist_ok=True)
                         )
                         for location in dst_locations
                     )
                 )
                 await utils.write_remote_file(
                     context=self.workflow.context,
-                    job=job,
+                    locations=dst_locations,
                     content=token_value.get("contents", ""),
-                    path=filepath,
+                    path=str(filepath),
+                    relpath=(
+                        str(filepath.relative_to(job.output_directory))
+                        if filepath.is_relative_to(job.output_directory)
+                        else (
+                            str(filepath.relative_to(indir))
+                            if filepath != indir
+                            else str(indir)
+                        )
+                    ),
                 )
             # Build file token
             new_token_value = await utils.get_file_token(
@@ -676,7 +686,7 @@ class CWLTransferStep(TransferStep):
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 locations=dst_locations,
                 token_class=token_class,
-                filepath=filepath,
+                filepath=str(filepath),
                 load_contents="contents" in token_value,
                 load_listing=LoadListing.no_listing,
             )

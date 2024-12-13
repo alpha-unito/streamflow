@@ -8,25 +8,34 @@ from typing import cast
 
 from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import (
     FailureHandlingException,
     UnrecoverableTokenException,
 )
 from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
 from streamflow.core.workflow import Job, Status, Step, Token, TokenProcessor
-from streamflow.data import remotepath
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
 from streamflow.workflow.step import ExecuteStep
 
 
 async def _cleanup_dir(
-    connector: Connector, location: ExecutionLocation, directory: str
+    context: StreamFlowContext, location: ExecutionLocation, directory: str
 ) -> None:
-    await remotepath.rm(
-        connector, location, await remotepath.listdir(connector, location, directory)
-    )
+    path = StreamFlowPath(directory, context=context, location=location)
+    async for dirpath, dirnames, filenames in path.walk():
+        await asyncio.gather(
+            *(
+                asyncio.create_task((dirpath / filename).rmtree())
+                for filename in filenames
+            )
+        )
+        await asyncio.gather(
+            *(asyncio.create_task((dirpath / dirname).rmtree()) for dirname in dirnames)
+        )
+        break
 
 
 async def _replace_token(
@@ -107,7 +116,7 @@ class DefaultFailureManager(FailureManager):
                         for directory in [job.output_directory, job.tmp_directory]:
                             cleanup_tasks.append(
                                 asyncio.create_task(
-                                    _cleanup_dir(connector, location, directory)
+                                    _cleanup_dir(self.context, location, directory)
                                 )
                             )
                             self.context.data_manager.invalidate_location(

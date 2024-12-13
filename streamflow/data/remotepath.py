@@ -4,18 +4,22 @@ import asyncio
 import base64
 import glob
 import hashlib
+import io
 import os
+import pathlib
 import posixpath
 import shutil
-from collections.abc import MutableMapping, MutableSequence
+import sys
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, MutableMapping, MutableSequence
 from email.message import Message
-from typing import TYPE_CHECKING
+from pathlib import Path, PosixPath, PurePath, PurePosixPath, WindowsPath
+from typing import TYPE_CHECKING, cast
 
 import aiohttp
 from aiohttp import ClientResponse
 
-from streamflow.core import utils
-from streamflow.core.data import DataType, FileType
+from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:
@@ -52,56 +56,624 @@ def _get_filename_from_response(response: ClientResponse, url: str):
     return url.rsplit("/", 1)[-1]
 
 
-def _listdir_local(path: str, file_type: FileType | None) -> MutableSequence[str]:
-    content = []
-    dir_content = os.listdir(path)
-    check = (
-        (os.path.isfile if file_type == FileType.FILE else os.path.isdir)
-        if file_type is not None
-        else None
-    )
-    for element in dir_content:
-        element_path = os.path.join(path, element)
-        if check and check(element_path):
-            content.append(element_path)
-    return content
-
-
-async def checksum(
+async def _size(
     context: StreamFlowContext,
-    connector: Connector,
     location: ExecutionLocation | None,
-    path: str,
-) -> str | None:
-    if location.local:
-        if os.path.isfile(path):
+    path: str | MutableSequence[str],
+) -> int:
+    if not path:
+        return 0
+    elif location.local:
+        if not isinstance(path, MutableSequence):
+            path = [path]
+        size = 0
+        for p in path:
+            size += await StreamFlowPath(p, context=context, location=location).size()
+        return size
+    else:
+        command = [
+            "".join(
+                [
+                    "find -L ",
+                    (
+                        " ".join([f'"{p}"' for p in path])
+                        if isinstance(path, MutableSequence)
+                        else f'"{path}"'
+                    ),
+                    " -type f -exec ls -ln {} \\+ | ",
+                    "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; ",
+                ]
+            )
+        ]
+        connector = context.deployment_manager.get_connector(location.deployment)
+        result, status = await connector.run(
+            location=location, command=command, capture_output=True
+        )
+        _check_status(command, location, result, status)
+        result = result.strip().strip("'\"")
+        return int(result) if result.isdigit() else 0
+
+
+class StreamFlowPath(PurePath, ABC):
+    def __new__(
+        cls, *args, context: StreamFlowContext, location: ExecutionLocation, **kwargs
+    ):
+        if cls is StreamFlowPath:
+            cls = LocalStreamFlowPath if location.local else RemoteStreamFlowPath
+        if sys.version_info < (3, 12):
+            return cls._from_parts(args)
+        else:
+            return object.__new__(cls)
+
+    @abstractmethod
+    async def checksum(self) -> str | None: ...
+
+    @abstractmethod
+    async def exists(self) -> bool: ...
+
+    @abstractmethod
+    def glob(
+        self, pattern, *, case_sensitive=None
+    ) -> AsyncIterator[StreamFlowPath]: ...
+
+    @abstractmethod
+    async def is_dir(self) -> bool: ...
+
+    @abstractmethod
+    async def is_file(self) -> bool: ...
+
+    @abstractmethod
+    async def is_symlink(self) -> bool: ...
+
+    @abstractmethod
+    async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None: ...
+
+    @abstractmethod
+    async def read_text(self, n=-1, encoding=None, errors=None) -> str: ...
+
+    @abstractmethod
+    async def resolve(self, strict=False) -> StreamFlowPath | None: ...
+
+    @abstractmethod
+    async def rmtree(self) -> None: ...
+
+    @abstractmethod
+    async def size(self) -> int: ...
+
+    @abstractmethod
+    async def symlink_to(self, target, target_is_directory=False) -> None: ...
+
+    @abstractmethod
+    def walk(
+        self, top_down=True, on_error=None, follow_symlinks=False
+    ) -> AsyncIterator[
+        tuple[
+            StreamFlowPath,
+            MutableSequence[str],
+            MutableSequence[str],
+        ]
+    ]: ...
+
+    @abstractmethod
+    async def write_text(
+        self, data: str, encoding=None, errors=None, newline=None
+    ) -> int: ...
+
+
+class classinstancemethod(classmethod):
+    def __get__(self, *args, **kwargs):
+        return (super().__get__ if args[0] is None else self.__func__.__get__)(
+            args[0], args[1]
+        )
+
+
+class __LegacyStreamFlowPath(StreamFlowPath, ABC):
+
+    @classinstancemethod
+    def _from_parts(self, args, init=sys.version_info < (3, 10)) -> StreamFlowPath:
+        obj = (
+            object.__new__(self)
+            if isinstance(self, type)
+            else type(self)(
+                context=getattr(self, "context", None),
+                location=getattr(self, "location", None),
+            )
+        )
+        drv, root, parts = obj._parse_args(args)
+        obj._drv = drv
+        obj._root = root
+        obj._parts = parts
+        if init:
+            obj._init()
+        return obj
+
+    @classinstancemethod
+    def _from_parsed_parts(
+        self,
+        drv,
+        root,
+        parts,
+        init=sys.version_info < (3, 10),
+    ):
+        obj = (
+            object.__new__(self)
+            if isinstance(self, type)
+            else type(self)(
+                context=getattr(self, "context", None),
+                location=getattr(self, "location", None),
+            )
+        )
+        obj._drv = drv
+        obj._root = root
+        obj._parts = parts
+        if init:
+            obj._init()
+        return obj
+
+    def _scandir(self):
+        return os.scandir(self)
+
+    def walk(self, top_down=True, on_error=None, follow_symlinks=False):
+        paths = [self]
+        while paths:
+            path = paths.pop()
+            if isinstance(path, tuple):
+                yield path
+                continue
+            try:
+                scandir_it = path._scandir()
+            except OSError as error:
+                if on_error is not None:
+                    on_error(error)
+                continue
+
+            with scandir_it:
+                dirnames = []
+                filenames = []
+                for entry in scandir_it:
+                    try:
+                        is_dir = entry.is_dir(follow_symlinks=follow_symlinks)
+                    except OSError:
+                        is_dir = False
+                    if is_dir:
+                        dirnames.append(entry.name)
+                    else:
+                        filenames.append(entry.name)
+            if top_down:
+                yield path, dirnames, filenames
+            else:
+                paths.append((path, dirnames, filenames))
+            paths += [path._make_child_relpath(d) for d in reversed(dirnames)]
+
+
+class LocalStreamFlowPath(
+    WindowsPath if os.name == "nt" else PosixPath,
+    __LegacyStreamFlowPath if sys.version_info < (3, 12) else StreamFlowPath,
+):
+    def __init__(
+        self,
+        *args,
+        context: StreamFlowContext,
+        location: ExecutionLocation | None = None,
+    ):
+        if sys.version_info < (3, 12):
+            super().__init__()
+        else:
+            super().__init__(*args)
+        self.context: StreamFlowContext = context
+
+    async def checksum(self) -> str | None:
+        if await self.is_file():
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                context.process_executor, _file_checksum_local, path
+                self.context.process_executor, _file_checksum_local, self.__str__()
             )
         else:
             return None
-    else:
-        command = [f'test -f "{path}" && sha1sum "{path}" | awk \'{{print $1}}\'']
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
+
+    async def exists(self) -> bool:
+        return cast(Path, super()).exists()
+
+    async def glob(
+        self, pattern, *, case_sensitive=None
+    ) -> AsyncIterator[LocalStreamFlowPath]:
+        for path in glob.glob(str(self / pattern)):
+            yield LocalStreamFlowPath(path, context=self.context)
+
+    async def is_dir(self) -> bool:
+        return cast(Path, super()).is_dir()
+
+    async def is_file(self) -> bool:
+        return cast(Path, super()).is_file()
+
+    async def is_symlink(self) -> bool:
+        return cast(Path, super()).is_symlink()
+
+    async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None:
+        try:
+            os.mkdir(self, mode)
+        except FileNotFoundError:
+            if not parents or self.parent == self:
+                raise
+            await self.parent.mkdir(parents=True, exist_ok=True)
+            await self.mkdir(mode, parents=False, exist_ok=exist_ok)
+        except OSError:
+            if not exist_ok or not await self.is_dir():
+                raise
+
+    @property
+    def parents(self):
+        if sys.version_info < (3, 12):
+
+            class __PathParents(pathlib._PathParents):
+                def __init__(self, path):
+                    super().__init__(path)
+                    self._path = path
+
+                def __getitem__(self, idx):
+                    if idx < 0 or idx >= len(self):
+                        raise IndexError(idx)
+                    return self._path._from_parsed_parts(
+                        self._drv, self._root, self._parts[: -idx - 1]
+                    )
+
+            return __PathParents(self)
+        else:
+            return super().parents
+
+    async def read_text(self, n=-1, encoding=None, errors=None) -> str:
+        if sys.version_info >= (3, 10):
+            encoding = io.text_encoding(encoding)
+        with self.open(mode="r", encoding=encoding, errors=errors) as f:
+            return f.read(n)
+
+    async def resolve(self, strict=False) -> LocalStreamFlowPath | None:
+        if await self.exists():
+            return LocalStreamFlowPath(
+                super().resolve(strict=strict), context=self.context
+            )
+        else:
+            return None
+
+    async def rmtree(self) -> None:
+        if await self.exists():
+            if await self.is_symlink():
+                self.unlink()
+            elif await self.is_dir():
+                shutil.rmtree(self.__str__())
+            else:
+                self.unlink(missing_ok=True)
+
+    async def size(self) -> int:
+        if await self.is_file():
+            return self.stat().st_size if not await self.is_symlink() else 0
+        else:
+            total_size = 0
+            async for dirpath, _, filenames in self.walk():
+                for f in filenames:
+                    fp = dirpath / f
+                    if not await fp.is_symlink():
+                        total_size += fp.stat().st_size
+            return total_size
+
+    async def symlink_to(self, target, target_is_directory=False) -> None:
+        return cast(Path, super()).symlink_to(
+            target=target, target_is_directory=target_is_directory
+        )
+
+    async def walk(
+        self, top_down=True, on_error=None, follow_symlinks=False
+    ) -> AsyncIterator[
+        tuple[
+            LocalStreamFlowPath,
+            MutableSequence[str],
+            MutableSequence[str],
+        ]
+    ]:
+        for dirpath, dirnames, filenames in cast(Path, super()).walk(
+            top_down=top_down, on_error=on_error, follow_symlinks=follow_symlinks
+        ):
+            yield dirpath, dirnames, filenames
+
+    def with_segments(self, *pathsegments):
+        return type(self)(*pathsegments, context=self.context)
+
+    async def write_text(self, data: str, **kwargs) -> int:
+        return cast(Path, super()).write_text(data=data, **kwargs)
+
+
+class RemoteStreamFlowPath(
+    PurePosixPath,
+    __LegacyStreamFlowPath if sys.version_info < (3, 12) else StreamFlowPath,
+):
+    __slots__ = ("context", "connector", "location")
+
+    def __init__(self, *args, context: StreamFlowContext, location: ExecutionLocation):
+        if sys.version_info < (3, 12):
+            super().__init__()
+        else:
+            super().__init__(*args)
+        self.context: StreamFlowContext = context
+        self.connector: Connector = self.context.deployment_manager.get_connector(
+            location.deployment
+        )
+        self.location: ExecutionLocation = location
+
+    async def _test(self, command: list[str]) -> bool:
+        command = ["test"] + command
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
         )
         if status > 1:
             raise WorkflowExecutionException(
                 "{} Command '{}' on location {}: {}".format(
-                    status, command, location, result
+                    status, command, self.location, result
+                )
+            )
+        else:
+            return not status
+
+    async def checksum(self):
+        command = [
+            "test",
+            "-f",
+            f"'{self.__str__()}'",
+            "&&",
+            "sha1sum",
+            f"'{self.__str__()}'",
+            "|",
+            "awk",
+            "'{print $1}'",
+        ]
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
+        )
+        if status > 1:
+            raise WorkflowExecutionException(
+                "{} Command '{}' on location {}: {}".format(
+                    status, command, self.location, result
                 )
             )
         return result.strip()
 
+    async def exists(self, *, follow_symlinks=True) -> bool:
+        return await self._test(
+            command=(
+                ["-e", f"'{self.__str__()}'"]
+                if follow_symlinks
+                else ["-e", f"'{self.__str__()}'", "-o", "-L", f"'{self.__str__()}'"]
+            )
+        )
+
+    async def glob(
+        self, pattern, *, case_sensitive=None
+    ) -> AsyncIterator[RemoteStreamFlowPath]:
+        if not pattern:
+            raise ValueError(f"Unacceptable pattern: {pattern!r}")
+        command = [
+            "printf",
+            '"%s\\0"',
+            str(self / pattern),
+            "|",
+            "xargs",
+            "-0",
+            "-I{}",
+            "sh",
+            "-c",
+            '"if [ -e \\"{}\\" ]; then echo \\"{}\\"; fi"',
+            "|",
+            "sort",
+        ]
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
+        )
+        _check_status(command, self.location, result, status)
+        for path in result.split():
+            yield RemoteStreamFlowPath(
+                path, context=self.context, location=self.location
+            )
+
+    async def is_dir(self) -> bool:
+        return await self._test(command=["-d", f"'{self.__str__()}'"])
+
+    async def is_file(self) -> bool:
+        return await self._test(command=["-f", f"'{self.__str__()}'"])
+
+    async def is_symlink(self) -> bool:
+        return await self._test(command=["-L", f"'{self.__str__()}'"])
+
+    async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None:
+        command = ["mkdir", "-m", f"{mode:o}"]
+        if parents or exist_ok:
+            command.append("-p")
+        command.append(self.__str__())
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
+        )
+        _check_status(command, self.location, result, status)
+
+    async def read_text(self, n=-1, encoding=None, errors=None) -> str:
+        command = ["head", "-c", str(n)] if n >= 0 else ["cat"]
+        command.append(self.__str__())
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
+        )
+        _check_status(command, self.location, result, status)
+        return result.strip()
+
+    async def resolve(self, strict=False) -> RemoteStreamFlowPath | None:
+        # If at least one primary location is present on the site, return its path
+        if locations := self.context.data_manager.get_data_locations(
+            path=self.__str__(),
+            deployment=self.connector.deployment_name,
+            location_name=self.location.name,
+            data_type=DataType.PRIMARY,
+        ):
+            return RemoteStreamFlowPath(
+                next(iter(locations)).path,
+                context=self.context,
+                location=next(iter(locations)).location,
+            )
+        # Otherwise, analyse the remote path
+        command = [
+            "test",
+            "-e",
+            f"'{self.__str__()}'",
+            "&&",
+            "readlink",
+            "-f",
+            f"'{self.__str__()}'",
+        ]
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
+        )
+        if status > 1:
+            raise WorkflowExecutionException(
+                "{} Command '{}' on location {}: {}".format(
+                    status, command, self.location, result
+                )
+            )
+        return (
+            RemoteStreamFlowPath(
+                result.strip(), context=self.context, location=self.location
+            )
+            if status == 0
+            else None
+        )
+
+    async def rmtree(self) -> None:
+        command = ["rm", "-rf ", self.__str__()]
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
+        )
+        _check_status(command, self.location, result, status)
+
+    async def size(self) -> int:
+        command = [
+            "".join(
+                [
+                    "find -L ",
+                    f'"{self.__str__()}"',
+                    " -type f -exec ls -ln {} \\+ | ",
+                    "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; ",
+                ]
+            )
+        ]
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
+        )
+        _check_status(command, self.location, result, status)
+        result = result.strip().strip("'\"")
+        return int(result) if result.isdigit() else 0
+
+    async def symlink_to(self, target, target_is_directory=False) -> None:
+        command = ["ln", "-snf", str(target), self.__str__()]
+        result, status = await self.connector.run(
+            location=self.location, command=command, capture_output=True
+        )
+        _check_status(command, self.location, result, status)
+
+    async def walk(
+        self, top_down=True, on_error=None, follow_symlinks=False
+    ) -> AsyncIterator[
+        tuple[
+            LocalStreamFlowPath,
+            MutableSequence[str],
+            MutableSequence[str],
+        ]
+    ]:
+        paths = [self]
+        while paths:
+            path = paths.pop()
+            if isinstance(path, tuple):
+                yield path
+                continue
+            command = ["find"]
+            if follow_symlinks:
+                command.append("-L")
+            command.extend([f"'{str(path)}'", "-mindepth", "1", "-maxdepth", "1"])
+            try:
+                content, status = await self.connector.run(
+                    location=self.location,
+                    command=command + ["-type", "d"],
+                    capture_output=True,
+                )
+                _check_status(command, self.location, content, status)
+                content = content.strip(" \n")
+                dirnames = (
+                    [
+                        str(
+                            RemoteStreamFlowPath(
+                                p, context=self.context, location=self.location
+                            ).relative_to(path)
+                        )
+                        for p in content.splitlines()
+                    ]
+                    if content
+                    else []
+                )
+                content, status = await self.connector.run(
+                    location=self.location,
+                    command=command + ["-type", "f"],
+                    capture_output=True,
+                )
+                _check_status(command, self.location, content, status)
+                content = content.strip(" \n")
+                filenames = (
+                    [
+                        str(
+                            RemoteStreamFlowPath(
+                                p, context=self.context, location=self.location
+                            ).relative_to(path)
+                        )
+                        for p in content.splitlines()
+                    ]
+                    if content
+                    else []
+                )
+            except WorkflowExecutionException as error:
+                if on_error is not None:
+                    on_error(error)
+                continue
+
+            if top_down:
+                yield path, dirnames, filenames
+            else:
+                paths.append((path, dirnames, filenames))
+            paths += [path._make_child_relpath(d) for d in reversed(dirnames)]
+
+    def with_segments(self, *pathsegments):
+        return type(self)(*pathsegments, context=self.context, location=self.location)
+
+    async def write_text(self, data: str, **kwargs) -> int:
+        if not isinstance(data, str):
+            raise TypeError("data must be str, not %s" % data.__class__.__name__)
+        command = [
+            "echo",
+            base64.b64encode(data.encode("utf-8")).decode("utf-8"),
+            "|",
+            "base64",
+            "-d",
+        ]
+        result, status = await self.connector.run(
+            location=self.location,
+            command=command,
+            stdout=self.__str__(),
+            capture_output=True,
+        )
+        _check_status(command, self.location, result, status)
+        return len(data)
+
 
 async def download(
-    connector: Connector,
+    context: StreamFlowContext,
     location: ExecutionLocation | None,
     url: str,
     parent_dir: str,
-) -> str:
-    await mkdir(connector, location, parent_dir)
+) -> StreamFlowPath:
+    await StreamFlowPath(parent_dir, context=context, location=location).mkdir(
+        mode=0o777, exist_ok=True
+    )
     if location.local:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
@@ -126,6 +698,7 @@ async def download(
                     raise Exception(
                         f"Downloading {url} failed with status {response.status}:\n{response.content}"
                     )
+        connector = context.deployment_manager.get_connector(location.deployment)
         await connector.run(
             location=location,
             command=[
@@ -133,71 +706,11 @@ async def download(
                 f'else wget -O "{filepath}" "{url}"; fi'
             ],
         )
-    return filepath
-
-
-async def exists(
-    connector: Connector, location: ExecutionLocation | None, path: str
-) -> bool:
-    if location.local:
-        return os.path.exists(path)
-    else:
-        command = [f'test -e "{path}"']
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        if status > 1:
-            raise WorkflowExecutionException(
-                "{} Command '{}' on location {}: {}".format(
-                    status, command, location, result
-                )
-            )
-        else:
-            return not status
-
-
-async def follow_symlink(
-    context: StreamFlowContext,
-    connector: Connector,
-    location: ExecutionLocation | None,
-    path: str,
-) -> str | None:
-    """
-    Get resolved symbolic links or canonical file names
-
-    :param context: the `StreamFlowContext` object with global application status.
-    :param connector: the `Connector` object to communicate with the location
-    :param location: the `ExecutionLocation` object with the location information
-    :param path: the path to be resolved in the case of symbolic link
-    :return: the path of the resolved symlink or `None` if the link points to a location that does not exist
-    """
-    if location.local:
-        return os.path.realpath(path) if os.path.exists(path) else None
-    else:
-        # If at least one primary location is present on the site, return its path
-        if locations := context.data_manager.get_data_locations(
-            path=path,
-            deployment=connector.deployment_name,
-            location_name=location.name,
-            data_type=DataType.PRIMARY,
-        ):
-            return next(iter(locations)).path
-        # Otherwise, analyse the remote path
-        command = [f'test -e "{path}" && readlink -f "{path}"']
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        if status > 1:
-            raise WorkflowExecutionException(
-                "{} Command '{}' on location {}: {}".format(
-                    status, command, location, result
-                )
-            )
-        return result.strip() if status == 0 else None
+    return StreamFlowPath(filepath, context=context, location=location)
 
 
 async def get_storage_usages(
-    connector: Connector, location: ExecutionLocation, hardware: Hardware
+    context: StreamFlowContext, location: ExecutionLocation, hardware: Hardware
 ) -> MutableMapping[str, int]:
     """
     Get the actual size of the hardware storage paths
@@ -206,7 +719,7 @@ async def get_storage_usages(
     Since the meaning of storage dictionary keys depends on each `HardwareRequirement` implementation,
     no assumption about the key meaning should be made.
 
-    :param connector: the `Connector` object to communicate with the location
+    :param context: the `StreamFlowContext` object with global application status
     :param location: the `ExecutionLocation` object with the location information
     :param hardware: the `Hardware` which contains the paths to discover size.
     :return: a map with the `key` of the `hardware` storage and the size of the paths in the `hardware` storage
@@ -220,8 +733,8 @@ async def get_storage_usages(
             await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        size(
-                            connector=connector,
+                        _size(
+                            context=context,
                             location=location,
                             path=list(storage.paths),
                         )
@@ -231,261 +744,3 @@ async def get_storage_usages(
             ),
         )
     )
-
-
-async def head(
-    connector: Connector, location: ExecutionLocation | None, path: str, num_bytes: int
-) -> str:
-    if location.local:
-        with open(path, "rb") as f:
-            return f.read(num_bytes).decode("utf-8")
-    else:
-        command = ["head", "-c", str(num_bytes), path]
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        _check_status(command, location, result, status)
-        return result.strip()
-
-
-async def isdir(
-    connector: Connector, location: ExecutionLocation | None, path: str
-) -> bool:
-    if location.local:
-        return os.path.isdir(path)
-    else:
-        command = [f'test -d "{path}"']
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        if status > 1:
-            raise WorkflowExecutionException(
-                "{} Command '{}' on location {}: {}".format(
-                    status, command, location, result
-                )
-            )
-        else:
-            return not status
-
-
-async def isfile(
-    connector: Connector, location: ExecutionLocation | None, path: str
-) -> bool:
-    if location.local:
-        return os.path.isfile(path)
-    else:
-        command = [f'test -f "{path}"']
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        if status > 1:
-            raise WorkflowExecutionException(
-                "{} Command '{}' on location {}: {}".format(
-                    status, command, location, result
-                )
-            )
-        else:
-            return not status
-
-
-async def islink(
-    connector: Connector, location: ExecutionLocation | None, path: str
-) -> bool:
-    if location.local:
-        return os.path.islink(path)
-    else:
-        command = [f'test -L "{path}"']
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        if status > 1:
-            raise WorkflowExecutionException(
-                "{} Command '{}' on location {}: {}".format(
-                    status, command, location, result
-                )
-            )
-        else:
-            return not status
-
-
-async def listdir(
-    connector: Connector,
-    location: ExecutionLocation | None,
-    path: str,
-    file_type: FileType | None = None,
-) -> MutableSequence[str]:
-    if location.local:
-        return _listdir_local(path, file_type)
-    else:
-        command = 'find -L "{path}" -mindepth 1 -maxdepth 1 {type}'.format(
-            path=path,
-            type=(
-                "-type {type}".format(
-                    type="d" if file_type == FileType.DIRECTORY else "f"
-                )
-                if file_type is not None
-                else ""
-            ),
-        ).split()
-        content, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        _check_status(command, location, content, status)
-        content = content.strip(" \n")
-        return content.splitlines() if content else []
-
-
-async def mkdir(
-    connector: Connector,
-    location: ExecutionLocation,
-    path: str | MutableSequence[str],
-) -> None:
-    paths = path if isinstance(path, MutableSequence) else [path]
-    if location.local:
-        for path in paths:
-            os.makedirs(path, exist_ok=True)
-    else:
-        command = ["mkdir", "-p"] + list(paths)
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        _check_status(command, location, result, status)
-
-
-async def read(
-    connector: Connector, location: ExecutionLocation | None, path: str
-) -> str:
-    if location.local:
-        with open(path, "rb") as f:
-            return f.read().decode("utf-8")
-    else:
-        command = ["cat", path]
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        _check_status(command, location, result, status)
-        return result.strip()
-
-
-async def resolve(
-    connector: Connector, location: ExecutionLocation | None, pattern: str
-) -> MutableSequence[str] | None:
-    if location.local:
-        return sorted(glob.glob(pattern))
-    else:
-        command = [
-            "printf",
-            '"%s\\0"',
-            pattern,
-            "|",
-            "xargs",
-            "-0",
-            "-I{}",
-            "sh",
-            "-c",
-            '"if [ -e \\"{}\\" ]; then echo \\"{}\\"; fi"',
-            "|",
-            "sort",
-        ]
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        _check_status(command, location, result, status)
-        return result.split()
-
-
-async def rm(
-    connector: Connector,
-    location: ExecutionLocation | None,
-    path: str | MutableSequence[str],
-) -> None:
-    if location.local:
-        if isinstance(path, MutableSequence):
-            for p in path:
-                if os.path.exists(p):
-                    if os.path.islink(p):
-                        os.remove(p)
-                    elif os.path.isdir(p):
-                        shutil.rmtree(p)
-                    else:
-                        os.remove(p)
-        else:
-            if os.path.exists(path):
-                if os.path.islink(path):
-                    os.remove(path)
-                elif os.path.isdir(path):
-                    shutil.rmtree(path)
-                else:
-                    os.remove(path)
-    else:
-        if isinstance(path, MutableSequence):
-            path = " ".join([f'"{p}"' for p in path])
-        else:
-            path = f'"{path}"'
-        await connector.run(location=location, command=["".join(["rm -rf ", path])])
-
-
-async def size(
-    connector: Connector,
-    location: ExecutionLocation | None,
-    path: str | MutableSequence[str],
-) -> int:
-    """
-    Get the data size.
-
-    If data reside in the local location, Python functions are called to get the size.
-    Indeed, Python functions are much faster than new processes calling shell commands,
-    and the Python stack is more portable across different platforms.
-    Otherwise, a Linux shell command is executed to get the data size from remote locations.
-
-    :param connector: the `Connector` object to communicate with the location
-    :param location: the `ExecutionLocation` object with the location information
-    :return: the sum of all the input path sizes, expressed in bytes
-    """
-    if not path:
-        return 0
-    elif location.local:
-        if not isinstance(path, MutableSequence):
-            path = [path]
-        return sum(utils.get_size(p) for p in path)
-    else:
-        command = [
-            "".join(
-                [
-                    "find -L ",
-                    (
-                        " ".join([f'"{p}"' for p in path])
-                        if isinstance(path, MutableSequence)
-                        else f'"{path}"'
-                    ),
-                    " -type f -exec ls -ln {} \\+ | ",
-                    "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; ",
-                ]
-            )
-        ]
-        result, status = await connector.run(
-            location=location, command=command, capture_output=True
-        )
-        _check_status(command, location, result, status)
-        result = result.strip().strip("'\"")
-        return int(result) if result.isdigit() else 0
-
-
-async def write(
-    connector: Connector, location: ExecutionLocation | None, path: str, content: str
-) -> None:
-    if location.local:
-        with open(path, "w") as f:
-            f.write(content)
-    else:
-        command = [
-            "echo",
-            base64.b64encode(content.encode("utf-8")).decode("utf-8"),
-            "|",
-            "base64",
-            "-d",
-        ]
-        result, status = await connector.run(
-            location=location, command=command, stdout=path, capture_output=True
-        )
-        _check_status(command, location, result, status)
