@@ -19,6 +19,7 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         addCaps: str | None = None,
         allowSetuid: bool = False,
         applyCgroups: str | None = None,
+        arch: str | None = None,
         bind: MutableSequence[str] | None = None,
         blkioWeight: int | None = None,
         blkioWeightDevice: MutableSequence[str] | None = None,
@@ -38,6 +39,7 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         dropCaps: str | None = None,
         env: MutableSequence[str] | None = None,
         envFile: str | None = None,
+        ephemeral: bool = True,
         fakeroot: bool = False,
         fusemount: MutableSequence[str] | None = None,
         home: str | None = None,
@@ -65,6 +67,7 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         pemPath: str | None = None,
         pidFile: str | None = None,
         pidsLimit: int | None = None,
+        pullDir: str | None = None,
         rocm: bool = False,
         scratch: MutableSequence[str] | None = None,
         security: MutableSequence[str] | None = None,
@@ -78,6 +81,7 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         self.addCaps: str | None = addCaps
         self.allowSetuid: bool = allowSetuid
         self.applyCgroups: str | None = applyCgroups
+        self.arch: str | None = arch
         self.bind: MutableSequence[str] | None = bind
         self.blkioWeight: int | None = blkioWeight
         self.blkioWeightDevice: MutableSequence[str] | None = blkioWeightDevice
@@ -97,6 +101,7 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         self.dockerHost: str | None = dockerHost
         self.env: MutableSequence[str] | None = env
         self.envFile: str | None = envFile
+        self.ephemeral: bool = ephemeral
         self.fakeroot: bool = fakeroot
         self.fusemount: MutableSequence[str] | None = fusemount
         self.home: str | None = home
@@ -124,6 +129,7 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         self.pemPath: str | None = pemPath
         self.pidFile: str | None = pidFile
         self.pidsLimit: int | None = pidsLimit
+        self.pullDir: str | None = pullDir
         self.rocm: bool = rocm
         self.scratch: MutableSequence[str] | None = scratch
         self.security: MutableSequence[str] | None = security
@@ -153,14 +159,10 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
         bind = list(self.bind) if self.bind else []
         bind.append(f"{target.workdir}:/tmp/streamflow")
         if output_directory is not None:
-            if target.deployment.type == "local":
-                bind.append(
-                    f"{os.path.join(target.workdir, utils.random_name())}:{output_directory}"
-                )
-            else:
-                bind.append(
-                    f"{posixpath.join(target.workdir, utils.random_name())}:{output_directory}"
-                )
+            path_processor = os.path if target.deployment.type == "local" else posixpath
+            bind.append(
+                f"{path_processor.join(target.workdir, utils.random_name())}:{output_directory}"
+            )
         return Target(
             deployment=DeploymentConfig(
                 name=utils.random_name(),
@@ -170,6 +172,7 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
                     "addCaps": self.addCaps,
                     "allowSetuid": self.allowSetuid,
                     "applyCgroups": self.applyCgroups,
+                    "arch": self.arch,
                     "bind": bind,
                     "blkioWeight": self.blkioWeight,
                     "blkioWeightDevice": self.blkioWeightDevice,
@@ -189,6 +192,7 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
                     "dockerHost": self.dockerHost,
                     "env": self.env,
                     "envFile": self.envFile,
+                    "ephemeral": self.ephemeral,
                     "fakeroot": self.fakeroot,
                     "fusemount": self.fusemount,
                     "home": self.home,
@@ -216,12 +220,16 @@ class SingularityCWLDockerTranslator(CWLDockerTranslator):
                     "pemPath": self.pemPath,
                     "pidFile": self.pidFile,
                     "pidsLimit": self.pidsLimit,
+                    "pullDir": (
+                        self.pullDir if self.pullDir is not None else target.workdir
+                    ),
                     "rocm": self.rocm,
                     "scratch": self.scratch,
                     "security": self.security,
                     "transferBufferSize": self.transferBufferSize,
                     "userns": self.userns,
                     "uts": self.uts,
+                    "workdir": self.workdir,
                     "writable": self.writable,
                     "writableTmpfs": self.writableTmpfs,
                 },

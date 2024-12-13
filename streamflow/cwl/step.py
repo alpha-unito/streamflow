@@ -515,8 +515,8 @@ class CWLTransferStep(TransferStep):
         dest_path: str | None = None,
     ) -> MutableMapping[str, Any]:
         token_class = utils.get_token_class(token_value)
-        # Get allocation and connector
-        connector = self.workflow.context.scheduler.get_connector(job.name)
+        # Get destination connector
+        dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         # Extract location
         location = token_value.get("location", token_value.get("path"))
         if location and "://" in location:
@@ -528,13 +528,12 @@ class CWLTransferStep(TransferStep):
                 location = urllib.parse.unquote(location[7:])
         # If basename is explicitly stated in the token, use it as destination path
         if "basename" in token_value:
-            path_processor = get_path_processor(connector)
+            path_processor = get_path_processor(dst_connector)
             dest_path = dest_path or path_processor.join(
                 job.input_directory, random_name()
             )
             dest_path = path_processor.join(dest_path, token_value["basename"])
         # Get destination coordinates
-        dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
         path_processor = get_path_processor(dst_connector)
         # If source data exist, get source locations
