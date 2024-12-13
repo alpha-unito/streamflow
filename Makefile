@@ -20,7 +20,7 @@ format-check:
 	black --diff --check streamflow tests
 
 pyupgrade:
-	pyupgrade --py3-only --py38-plus $(shell git ls-files | grep .py | grep -v streamflow/cwl/antlr)
+	pyupgrade --py3-only --py39-plus $(shell git ls-files | grep .py | grep -v streamflow/cwl/antlr)
 
 test:
 	python -m pytest -rs ${PYTEST_EXTRA}

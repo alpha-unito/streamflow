@@ -10,11 +10,10 @@ from pathlib import PurePosixPath
 from types import ModuleType
 from typing import (
     Any,
-    MutableMapping,
-    MutableSequence,
     cast,
     get_args,
 )
+from collections.abc import MutableMapping, MutableSequence
 
 import cwl_utils.parser
 import cwl_utils.parser.utils
