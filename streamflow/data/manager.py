@@ -137,7 +137,7 @@ class _RemotePathMapper:
                     [
                         loc
                         for loc in locations
-                        if not (data_type and loc.data_type != data_type)
+                        if not (data_type is not None and loc.data_type != data_type)
                     ]
                 )
         return result
@@ -337,17 +337,6 @@ class DefaultDataManager(DataManager):
             )
         )
         # Follow symlink for source path
-        await asyncio.gather(
-            *(
-                asyncio.create_task(src_data_loc.available.wait())
-                for src_data_loc in self.get_data_locations(
-                    path=src_path,
-                    deployment=src_connector.deployment_name,
-                    location_name=src_location.name,
-                    data_type=DataType.PRIMARY,
-                )
-            )
-        )
         if (
             src_realpath := await StreamFlowPath(
                 src_path, context=self.context, location=src_location

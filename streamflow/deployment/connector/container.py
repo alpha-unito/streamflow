@@ -58,7 +58,7 @@ async def _get_storage_from_binds(
             "+2",
             "|",
             "awk",
-            "'{print $7, $2, $5}'",
+            "'NF == 1 {device = $1; getline; $0 = device $0} {print $7, $2, $5}'",
         ],
         capture_output=True,
     )
