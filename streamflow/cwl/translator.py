@@ -82,7 +82,12 @@ from streamflow.cwl.transformer import (
     OnlyNonNullTransformer,
     ValueFromTransformer,
 )
-from streamflow.cwl.utils import LoadListing, SecondaryFile, resolve_dependencies
+from streamflow.cwl.utils import (
+    LoadListing,
+    SecondaryFile,
+    process_inner_element,
+    resolve_dependencies,
+)
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.deployment.utils import get_binding_config
 from streamflow.log_handler import logger
@@ -2112,44 +2117,13 @@ class CWLTranslator:
             ]
 
         # Process inner element
-        run_command = cwl_element.run
-        if cwl_utils.parser.is_process(run_command):
-            run_command.cwlVersion = context["version"]
-            cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
-            if ":" in run_command.id.split("#")[-1]:
-                cwl_step_name = utils.get_name(
-                    name_prefix,
-                    cwl_name_prefix,
-                    cwl_element.id,
-                    preserve_cwl_prefix=True,
-                )
-                inner_cwl_name_prefix = (
-                    step_name
-                    if context["version"] == "v1.0"
-                    else posixpath.join(cwl_step_name, "run")
-                )
-            else:
-                inner_cwl_name_prefix = utils.get_name(
-                    name_prefix,
-                    cwl_name_prefix,
-                    run_command.id,
-                    preserve_cwl_prefix=True,
-                )
-            inner_context = context
-        else:
-            run_command = cwl_element.loadingOptions.fetcher.urljoin(
-                cwl_element.loadingOptions.fileuri, run_command
-            )
-            run_command = cwl_utils.parser.load_document_by_uri(
-                run_command, loadingOptions=cwl_element.loadingOptions
-            )
-            cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
-            inner_cwl_name_prefix = (
-                utils.get_name(posixpath.sep, posixpath.sep, run_command.id)
-                if "#" in run_command.id
-                else posixpath.sep
-            )
-            inner_context = {**context, **{"version": run_command.cwlVersion}}
+        run_command, inner_cwl_name_prefix, inner_context = process_inner_element(
+            cwl_element=cwl_element,
+            step_name=step_name,
+            name_prefix=name_prefix,
+            cwl_name_prefix=cwl_name_prefix,
+            context=context,
+        )
 
         # Handle optional input variables
         default_ports = {}
