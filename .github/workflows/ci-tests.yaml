@@ -104,11 +104,18 @@ jobs:
           EXCLUDE: ${{ matrix.exclude }}
           DOCKER: ${{ matrix.docker }}
         run: ./cwl-conformance-test.sh
+      - name: "Upload test results"
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: "Upload coverage report for conformance tests"
         uses: actions/upload-artifact@v4
         with:
           name: ${{ format('{0}-py{1}-cwl{2}-{3}-conformance-tests', matrix.on, matrix.python, matrix.version, matrix.docker) }}
-          path: ./coverage.xml
+          path: |
+            ./coverage.xml
           retention-days: 1
           if-no-files-found: error
   docker-image:
@@ -271,11 +278,18 @@ jobs:
           python -m pip install . --user
       - name: "Run StreamFlow tests via Tox"
         run: python -m tox
+      - name: "Upload test results"
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: "Upload coverage report for unit tests"
         uses: actions/upload-artifact@v4
         with:
           name: ${{ format('{0}-py{1}-unit-tests', matrix.on, matrix.python) }}
-          path: ./coverage.xml
+          path: |
+            ./coverage.xml
           retention-days: 1
           if-no-files-found: error
   upload-to-codecov:

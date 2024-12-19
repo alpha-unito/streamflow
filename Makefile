@@ -28,4 +28,4 @@ test:
 	python -m pytest -rs ${PYTEST_EXTRA}
 
 testcov:
-	python -m pytest -rs --cov --cov-report= ${PYTEST_EXTRA}
+	python -m pytest -rs --cov --junitxml=junit.xml -o junit_family=legacy --cov-report= ${PYTEST_EXTRA}

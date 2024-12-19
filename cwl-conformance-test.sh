@@ -68,10 +68,10 @@ TEST_COMMAND="python -m pytest ${CONFORMANCE_TEST} -n auto -rs"
 if [[ -n "${EXCLUDE}" ]] ; then
   TEST_COMMAND="${TEST_COMMAND} --cwl-exclude ${EXCLUDE}"
 fi
-TEST_COMMAND="${TEST_COMMAND} --cov --cov-report= ${PYTEST_EXTRA}"
+TEST_COMMAND="${TEST_COMMAND} --cov --junitxml=junit.xml -o junit_family=legacy --cov-report= ${PYTEST_EXTRA}"
 
 # Cleanup coverage
-rm -rf "${SCRIPT_DIRECTORY}/.coverage" "${SCRIPT_DIRECTORY}/coverage.xml"
+rm -rf "${SCRIPT_DIRECTORY}/.coverage" "${SCRIPT_DIRECTORY}/coverage.xml ${SCRIPT_DIRECTORY}/junit.xml"
 
 # Run test
 cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/conftest.py" "$(dirname "${CONFORMANCE_TEST}")/"
