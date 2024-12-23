@@ -44,10 +44,11 @@ class SSHContext:
         max_concurrent_sessions: int,
     ):
         self._streamflow_config_dir: str = streamflow_config_dir
+        self._closing: bool = False
         self._config: SSHConfig = config
         self._max_concurrent_sessions: int = max_concurrent_sessions
         self._ssh_connection: asyncssh.SSHClientConnection | None = None
-        self._connecting = False
+        self._connecting: bool = False
         self._connect_event: asyncio.Event = asyncio.Event()
         self.ssh_attempts: int = 0
 
@@ -92,6 +93,7 @@ class SSHContext:
             return f.read().strip()
 
     async def close(self):
+        self._closing = True
         if self._ssh_connection is not None:
             max_times = 0
             while len(self._ssh_connection._channels) > 0:
@@ -109,12 +111,16 @@ class SSHContext:
         self._connecting = False
 
     def full(self) -> bool:
-        return (
+        return self._closing or (
             self._ssh_connection
             and len(self._ssh_connection._channels) >= self._max_concurrent_sessions
         )
 
     async def get_connection(self) -> asyncssh.SSHClientConnection:
+        if self._closing:
+            raise WorkflowExecutionException(
+                f"Connecting to a closed SSH context {self.get_hostname()}"
+            )
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
@@ -144,9 +150,13 @@ class SSHContext:
     def get_hostname(self) -> str:
         return self._config.hostname
 
+    def is_closed(self) -> bool:
+        return self._closing
+
     async def reset(self):
         await self.close()
         self.ssh_attempts += 1
+        self._closing = False
         self._connect_event.clear()
 
 
