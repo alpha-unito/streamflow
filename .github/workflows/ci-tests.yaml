@@ -83,7 +83,7 @@ jobs:
           apptainer-version: 1.3.2
         if: ${{ matrix.docker == 'singularity' }}
       - name: "Install KinD"
-        uses: helm/kind-action@v1.11.0
+        uses: helm/kind-action@v1.12.0
         with:
           config: .github/kind/config.yaml
           kubectl_version: v1.30.3
@@ -261,7 +261,7 @@ jobs:
           apptainer-version: 1.3.2
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install KinD"
-        uses: helm/kind-action@v1.11.0
+        uses: helm/kind-action@v1.12.0
         with:
           config: .github/kind/config.yaml
           kubectl_version: v1.30.3
