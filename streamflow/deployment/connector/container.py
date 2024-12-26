@@ -1422,7 +1422,7 @@ class DockerComposeConnector(DockerBaseConnector):
             (json_end := output.rfind("}")) != -1
         ):
             if json_start != 0 and logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Docker Compose log: {output[:json_start]}")
+                logger.debug(f"Docker Compose log: {output[:json_start].strip()}")
             locations = json.loads(output[json_start : json_end + 1])
         else:
             raise WorkflowExecutionException(
