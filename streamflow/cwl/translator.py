@@ -7,7 +7,7 @@ import posixpath
 import urllib.parse
 from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any, cast, get_args
 
@@ -1411,6 +1411,13 @@ class CWLTranslator:
             | cwl_utils.parser.Workflow
         ) = cwl_definition
         self.cwl_inputs: MutableMapping[str, Any] = cwl_inputs
+
+        if cwl_inputs_path is not None:
+            uri = urllib.parse.urlparse(cwl_inputs_path)
+            if not uri.scheme or uri.scheme == "file":
+                cwl_inputs_path = _get_path(
+                    Path(urllib.parse.unquote_plus(uri.path)).resolve().as_uri()
+                )
         self.cwl_inputs_path: str | None = cwl_inputs_path
         self.default_map: MutableMapping[str, Any] = {}
         self.deployment_map: MutableMapping[str, DeployStep] = {}

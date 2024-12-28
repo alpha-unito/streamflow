@@ -6,7 +6,7 @@ import sys
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
-from enum import Enum
+from enum import IntEnum
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from streamflow.core import utils
@@ -205,7 +205,7 @@ class Port(PersistableEntity):
                 )
 
 
-class Status(Enum):
+class Status(IntEnum):
     WAITING = 0
     FIREABLE = 1
     RUNNING = 2
