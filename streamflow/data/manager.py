@@ -101,7 +101,9 @@ class _RemotePathMapper:
         self.context: StreamFlowContext = context
 
     def __repr__(self):
-        return self._node_repr(next(iter(self._filesystem.children.values())), 0)
+        return "\n".join(
+            self._node_repr(node, 0) for node in self._filesystem.children.values()
+        )
 
     def _node_repr(self, node: _RemotePathNode, level: int) -> str:
         tree = level * "\t" + "|-- " + repr(node) + "\n"
