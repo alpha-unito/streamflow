@@ -672,7 +672,7 @@ def process_inner_element(
     context: MutableMapping[str, Any],
 ):
     run_command = cwl_element.run
-    inner_context = {**context}
+    inner_context = dict(context)
     if cwl_utils.parser.is_process(run_command):
         run_command.cwlVersion = context["version"]
         cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
