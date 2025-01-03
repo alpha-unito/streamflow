@@ -39,6 +39,16 @@ from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
 
 
+def _get_host_mount(path: str, mounts: MutableMapping[str, str]):
+    result = path
+    for mnt_point, root in mounts.items():
+        if root == path:
+            result = mnt_point
+            break
+    logger.debug(f"Host mount of {path} is {result}")
+    return result
+
+
 async def _get_storage_from_binds(
     connector: Connector,
     location: ExecutionLocation,
@@ -1781,19 +1791,20 @@ class SingularityConnector(ContainerConnector):
                 f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
             )
         # Get inner location mount points
-        if self._wraps_local():
+        if False and self._wraps_local():
             fs_mounts = {
                 disk.device: disk.mountpoint
                 for disk in psutil.disk_partitions(all=True)
                 if disk.fstype not in FS_TYPES_TO_SKIP
                 and os.access(disk.mountpoint, os.R_OK)
             }
+            fs_host_mounts = {}  # todo
         else:
             stdout, returncode = await self.connector.run(
                 location=self._inner_location.location,
                 command=[
                     "cat",
-                    "/proc/1/mountinfo",
+                    "/proc/self/mountinfo",
                 ],
                 capture_output=True,
             )
@@ -1803,13 +1814,17 @@ class SingularityConnector(ContainerConnector):
                     for line in stdout.splitlines()
                     if line.split(" - ")[1].split()[0] not in FS_TYPES_TO_SKIP
                 }
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Host mount points: {fs_mounts}")
+                fs_host_mounts = {
+                    line.split()[4]: line.split()[3] for line in stdout.splitlines()
+                }
             else:
                 raise WorkflowExecutionException(
-                    f"FAILED retrieving volume mounts from `/proc/1/mountinfo` "
+                    f"FAILED retrieving volume mounts from `/proc/self/mountinfo` "
                     f"in deployment {self.connector.deployment_name}: [{returncode}]: {stdout}"
                 )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Host mount points: {fs_mounts}")
+
         # Get the list of bind mounts for the container instance
         stdout, returncode = await self.run(
             location=location,
@@ -1843,7 +1858,7 @@ class SingularityConnector(ContainerConnector):
                             else None
                         )
                     if host_mount is not None:
-                        binds[dst] = host_mount
+                        binds[dst] = _get_host_mount(host_mount, fs_host_mounts)
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
         else:
