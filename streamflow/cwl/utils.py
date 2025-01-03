@@ -85,7 +85,7 @@ async def _get_contents(
 ):
     if (cwl_version not in ("v1.0", "v.1.1")) and size > CONTENT_LIMIT:
         raise WorkflowExecutionException(
-            f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB"
+            f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB: file {str(path)} is {size} kB"
         )
     return await path.read_text(n=CONTENT_LIMIT)
 

@@ -356,28 +356,6 @@ class DefaultDataManager(DataManager):
             ).resolve()
         ) is None:
             logger.info(f"Remote file system: {repr(self.path_mapper)}")
-
-            src_tmp = await StreamFlowPath(
-                os.path.join(os.sep, "tmp"), context=self.context, location=src_location
-            ).resolve()
-            src_res, _ = await src_connector.run(
-                src_location,
-                ["ls", "-lhaR", str(src_tmp)],
-                capture_output=True,
-            )
-            logger.info(f"src_tmp: {src_tmp}\nsrc_res: {src_res}")
-            dst_tmp = await StreamFlowPath(
-                os.path.join(os.sep, "tmp"),
-                context=self.context,
-                location=dst_locations[0],
-            ).resolve()
-            dst_res, _ = await dst_connector.run(
-                dst_locations[0],
-                ["ls", "-lhaR", str(dst_tmp)],
-                capture_output=True,
-            )
-            logger.info(f"dst_tmp: {dst_tmp}\ndst_res: {dst_res}")
-
             raise WorkflowExecutionException(
                 f"Error retrieving realpath for {src_path} on location {src_location} "
                 f"while transferring it to {dst_path} on deployment {dst_connector.deployment_name}"

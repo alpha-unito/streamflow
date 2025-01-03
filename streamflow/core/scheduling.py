@@ -435,7 +435,7 @@ class Storage:
         self.paths.add(path)
 
     def __repr__(self):
-        return f"Storage(mount_point={self.mount_point}, size={self.size}, paths={self.paths})"
+        return f"Storage(mount_point={self.mount_point}, size={self.size}, bind={self.bind}, paths={self.paths})"
 
     def __add__(self, other: Any) -> Storage:
         if not isinstance(other, Storage):
