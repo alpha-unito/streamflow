@@ -627,6 +627,7 @@ def _create_token_processor(
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
             ),
+            optional=optional,
         )
     # Enum type: -> create output processor
     elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
@@ -684,6 +685,7 @@ def _create_token_processor(
                 )
                 for port_type in port_type.fields
             },
+            optional=optional,
         )
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type

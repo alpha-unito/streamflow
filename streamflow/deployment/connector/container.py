@@ -1803,13 +1803,15 @@ class SingularityConnector(ContainerConnector):
                     for line in stdout.splitlines()
                     if line.split(" - ")[1].split()[0] not in FS_TYPES_TO_SKIP
                 }
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Host mount points: {fs_mounts}")
             else:
                 raise WorkflowExecutionException(
                     f"FAILED retrieving volume mounts from `/proc/1/mountinfo` "
                     f"in deployment {self.connector.deployment_name}: [{returncode}]: {stdout}"
                 )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Host (local: {self._wraps_local()}) mount points: {fs_mounts}"
+            )
         # Get the list of bind mounts for the container instance
         stdout, returncode = await self.run(
             location=location,
@@ -1843,6 +1845,9 @@ class SingularityConnector(ContainerConnector):
                             else None
                         )
                     if host_mount is not None:
+                        if dst == os.path.join(os.sep, "tmp", "streamflow"):  # fixme
+                            logger.debug(f"HARDCODED: replaced {host_mount} with {dst}")
+                            host_mount = dst
                         binds[dst] = host_mount
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
