@@ -39,16 +39,6 @@ from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
 
 
-def _get_host_mount(path: str, mounts: MutableMapping[str, str]):
-    result = path
-    for mnt_point, root in mounts.items():
-        if root == path:
-            result = mnt_point
-            break
-    logger.debug(f"Host mount of {path} is {result}")
-    return result
-
-
 async def _get_storage_from_binds(
     connector: Connector,
     location: ExecutionLocation,
@@ -1858,7 +1848,18 @@ class SingularityConnector(ContainerConnector):
                             else None
                         )
                     if host_mount is not None:
-                        binds[dst] = _get_host_mount(host_mount, fs_host_mounts)
+                        # Get host mount point if the `root` is defined (see man proc -> mountinfo)
+                        binds[dst] = next(
+                            (
+                                mnt_point
+                                for mnt_point, root in fs_host_mounts.items()
+                                if root == host_mount
+                            ),
+                            host_mount,
+                        )  # Return `mnt_point` if a `root` is equal to `host_mount` else return `host_mount`
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(f"Host mount of {host_mount} is {binds[dst]}")
+
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
         else:
