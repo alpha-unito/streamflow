@@ -83,14 +83,13 @@ async def _get_storage_from_binds(
 async def _resolve_bind(
     container_connector: ContainerConnector, binds: MutableSequence[str] | None
 ) -> MutableSequence[str] | None:
+    src_paths, dst_paths = zip(*(v.split(":") for v in binds))
     return (
         [
-            ":".join(bind)
-            for bind in zip(
-                await container_connector._resolve_paths(
-                    [v.split(":")[0] for v in binds]
-                ),
-                [v.split(":")[1] for v in binds],
+            f"{src}:{dst}"
+            for src, dst in zip(
+                await container_connector._resolve_paths(src_paths),
+                dst_paths,
             )
         ]
         if binds is not None
@@ -579,6 +578,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 await self.connector.run(
                     location=self._inner_location.location,
                     command=["readlink", "-f", *paths],
+                    capture_output=True,
                 )
             )[0].split("\n")
 
@@ -1824,6 +1824,9 @@ class SingularityConnector(ContainerConnector):
             ],
             capture_output=True,
         )
+        logger.info(f"fs_mounts: {fs_mounts}")
+        logger.info(f"fs_host_mounts: {fs_host_mounts}")
+        logger.info(f"container mountinfo: {stdout}")
         if returncode == 0:
             binds = {}
             for line in stdout.splitlines():
@@ -1848,15 +1851,21 @@ class SingularityConnector(ContainerConnector):
                             else None
                         )
                     if host_mount is not None:
-                        # Get host mount point if the `root` is defined (see man proc -> mountinfo)
+                        # Return `mnt_point` if a `root` is equal to `host_mount` else return `host_mount`
                         binds[dst] = next(
                             (
-                                mnt_point
-                                for mnt_point, root in fs_host_mounts.items()
-                                if root == host_mount
+                                os.path.join(
+                                    mnt_point, os.path.relpath(host_mount, root)
+                                )
+                                for mnt_point, root in sorted(
+                                    fs_host_mounts.items(),
+                                    key=lambda x: len(x[1].split(os.sep)),
+                                    reverse=True,
+                                )
+                                if host_mount.startswith(root)
                             ),
                             host_mount,
-                        )  # Return `mnt_point` if a `root` is equal to `host_mount` else return `host_mount`
+                        )
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(f"Host mount of {host_mount} is {binds[dst]}")
 
