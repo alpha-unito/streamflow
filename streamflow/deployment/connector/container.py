@@ -83,14 +83,13 @@ async def _get_storage_from_binds(
 async def _resolve_bind(
     container_connector: ContainerConnector, binds: MutableSequence[str] | None
 ) -> MutableSequence[str] | None:
+    src_paths, dst_paths = zip(*(v.split(":") for v in binds))
     return (
         [
-            ":".join(bind)
-            for bind in zip(
-                await container_connector._resolve_paths(
-                    [v.split(":")[0] for v in binds]
-                ),
-                [v.split(":")[1] for v in binds],
+            f"{src}:{dst}"
+            for src, dst in zip(
+                await container_connector._resolve_paths(src_paths),
+                dst_paths,
             )
         ]
         if binds is not None
@@ -579,6 +578,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 await self.connector.run(
                     location=self._inner_location.location,
                     command=["readlink", "-f", *paths],
+                    capture_output=True,
                 )
             )[0].split("\n")
 
