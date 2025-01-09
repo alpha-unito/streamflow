@@ -85,7 +85,8 @@ async def _get_contents(
 ):
     if (cwl_version not in ("v1.0", "v.1.1")) and size > CONTENT_LIMIT:
         raise WorkflowExecutionException(
-            f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB: file {str(path)} is {size} kB"
+            f"Cannot read contents from files larger than "
+            f"{CONTENT_LIMIT / 1024}kB: file {str(path)} is {size / 1024}kB"
         )
     return await path.read_text(n=CONTENT_LIMIT)
 
@@ -607,10 +608,10 @@ async def get_file_token(
 def get_name(
     name_prefix: str,
     cwl_name_prefix: str,
-    element_id: str,
+    element_id: Any,
     preserve_cwl_prefix: bool = False,
 ) -> str:
-    name = element_id.split("#")[-1]
+    name = (element_id if isinstance(element_id, str) else element_id.id).split("#")[-1]
     return (
         posixpath.join(posixpath.sep, name)
         if preserve_cwl_prefix
@@ -664,7 +665,7 @@ class LoadListing(Enum):
     deep_listing = 2
 
 
-def process_inner_element(
+def process_embedded_tool(
     cwl_element: cwl_utils.parser.WorkflowStep,
     cwl_name_prefix: str,
     step_name: str,

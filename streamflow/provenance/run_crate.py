@@ -1077,7 +1077,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             "@type": "HowToStep",
         }
         step_name = streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_step.id)
-        embedded_tool, cwl_prefix, _ = streamflow.cwl.utils.process_inner_element(
+        embedded_tool, cwl_prefix, _ = streamflow.cwl.utils.process_embedded_tool(
             cwl_name_prefix=cwl_prefix,
             name_prefix=prefix,
             cwl_element=cwl_step,
@@ -1277,7 +1277,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 prefix, cwl_prefix, cwl_step.id, preserve_cwl_prefix=True
             )
             embedded_tool, inner_cwl_prefix, _ = (
-                streamflow.cwl.utils.process_inner_element(
+                streamflow.cwl.utils.process_embedded_tool(
                     cwl_name_prefix=cwl_prefix,
                     name_prefix=prefix,
                     cwl_element=cwl_step,

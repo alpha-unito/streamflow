@@ -85,7 +85,7 @@ from streamflow.cwl.transformer import (
 from streamflow.cwl.utils import (
     LoadListing,
     SecondaryFile,
-    process_inner_element,
+    process_embedded_tool,
     resolve_dependencies,
 )
 from streamflow.cwl.workflow import CWLWorkflow
@@ -255,10 +255,12 @@ def _create_command_output_processor(
     port_target: Target | None,
     port_type: (
         str
+        | cwl_utils.parser.InputSchema
         | cwl_utils.parser.OutputSchema
         | MutableSequence[
             str,
             cwl_utils.parser.OutputSchema,
+            cwl_utils.parser.InputSchema,
         ]
     ),
     cwl_element: (
@@ -1415,11 +1417,7 @@ class CWLTranslator:
         self.cwl_inputs: MutableMapping[str, Any] = cwl_inputs
 
         if cwl_inputs_path is not None:
-            uri = urllib.parse.urlparse(cwl_inputs_path)
-            if not uri.scheme or uri.scheme == "file":
-                cwl_inputs_path = _get_path(
-                    Path(urllib.parse.unquote_plus(uri.path)).resolve().as_uri()
-                )
+            cwl_inputs_path = _get_path(Path(cwl_inputs_path).resolve().as_uri())
         self.cwl_inputs_path: str | None = cwl_inputs_path
         self.default_map: MutableMapping[str, Any] = {}
         self.deployment_map: MutableMapping[str, DeployStep] = {}
@@ -2126,7 +2124,7 @@ class CWLTranslator:
             ]
 
         # Process inner element
-        run_command, inner_cwl_name_prefix, inner_context = process_inner_element(
+        run_command, inner_cwl_name_prefix, inner_context = process_embedded_tool(
             cwl_element=cwl_element,
             step_name=step_name,
             name_prefix=name_prefix,
@@ -2367,15 +2365,7 @@ class CWLTranslator:
         external_output_ports = {}
         internal_output_ports = {}
         for element_output in cwl_element.out:
-            global_name = utils.get_name(
-                step_name,
-                cwl_step_name,
-                (
-                    element_output
-                    if isinstance(element_output, str)
-                    else element_output.id
-                ),
-            )
+            global_name = utils.get_name(step_name, cwl_step_name, element_output)
             port_name = posixpath.relpath(global_name, step_name)
             # Retrieve or create output port
             if global_name not in self.output_ports:
@@ -2586,15 +2576,7 @@ class CWLTranslator:
         # Add skip ports if there is a condition
         if cwl_condition:
             for element_output in cwl_element.out:
-                global_name = utils.get_name(
-                    step_name,
-                    cwl_step_name,
-                    (
-                        element_output
-                        if isinstance(element_output, str)
-                        else element_output.id
-                    ),
-                )
+                global_name = utils.get_name(step_name, cwl_step_name, element_output)
                 port_name = posixpath.relpath(global_name, step_name)
                 skip_port = (
                     external_output_ports[global_name]

@@ -4,7 +4,7 @@ antlr4-python3-runtime==4.13.2
 asyncssh==2.19.0
 bcrypt==4.2.1
 cachetools==5.5.0
-cwl-utils@git+https://github.com/common-workflow-language/cwl-utils@33a706b
+cwl-utils==0.36
 importlib-metadata==8.5.0
 Jinja2==3.1.5
 jsonschema==4.23.0

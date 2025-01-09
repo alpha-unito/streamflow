@@ -52,10 +52,10 @@ class LocalConnector(BaseConnector):
                         mount_point=disk.mountpoint,
                         size=shutil.disk_usage(disk.mountpoint).free / 2**20,
                     )
-                except (FileNotFoundError, PermissionError) as err:
+                except PermissionError as pe:
                     logger.warning(
                         f"Skippping Storage on partition {disk.device} on {disk.mountpoint} "
-                        f"for deployment {self.deployment_name}: {err}"
+                        f"for deployment {self.deployment_name}: {pe}"
                     )
         self._hardware: Hardware = Hardware(
             cores=float(psutil.cpu_count()),
