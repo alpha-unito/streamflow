@@ -44,13 +44,12 @@ class SSHContext:
         max_concurrent_sessions: int,
     ):
         self._streamflow_config_dir: str = streamflow_config_dir
-        self._closing: bool = False
         self._config: SSHConfig = config
         self._max_concurrent_sessions: int = max_concurrent_sessions
         self._ssh_connection: asyncssh.SSHClientConnection | None = None
         self._connecting: bool = False
         self._connect_event: asyncio.Event = asyncio.Event()
-        self.ssh_attempts: int = 0
+        self.connection_attempts: int = 0
 
     async def _get_connection(
         self, config: SSHConfig
@@ -93,34 +92,23 @@ class SSHContext:
             return f.read().strip()
 
     async def close(self):
-        self._closing = True
         if self._ssh_connection is not None:
-            max_times = 0
-            while len(self._ssh_connection._channels) > 0:
-                await asyncio.sleep(5)
-                max_times += 1
-                if max_times > 5:
-                    logger.warning(
-                        f"Closing the SSH connection {self.get_hostname()} is running, but the connection "
-                        f"has had open channels for too long. Forcing closure."
-                    )
-                    break
+            if len(self._ssh_connection._channels) > 0:
+                logger.warning(
+                    f"Channels still open after closing the SSH connection to {self.get_hostname()}. Forcing closing."
+                )
             self._ssh_connection.close()
             await self._ssh_connection.wait_closed()
             self._ssh_connection = None
         self._connecting = False
 
     def full(self) -> bool:
-        return self._closing or (
+        return (
             self._ssh_connection
             and len(self._ssh_connection._channels) >= self._max_concurrent_sessions
         )
 
     async def get_connection(self) -> asyncssh.SSHClientConnection:
-        if self._closing:
-            raise WorkflowExecutionException(
-                f"Connecting to a closed SSH context {self.get_hostname()}"
-            )
         if self._ssh_connection is None:
             if not self._connecting:
                 self._connecting = True
@@ -146,13 +134,9 @@ class SSHContext:
     def get_hostname(self) -> str:
         return self._config.hostname
 
-    def is_closed(self) -> bool:
-        return self._closing
-
     async def reset(self):
         await self.close()
-        self.ssh_attempts += 1
-        self._closing = False
+        self.connection_attempts += 1
         self._connect_event.clear()
 
 
@@ -185,14 +169,26 @@ class SSHContextManager:
 
     async def __aenter__(self) -> asyncssh.SSHClientProcess:
         async with self._condition:
+            available_contexts = self._contexts
             while True:
-                if all(c.ssh_attempts > self._retries for c in self._contexts):
+                if (
+                    len(
+                        available_contexts := [
+                            c
+                            for c in available_contexts
+                            if c.connection_attempts < self._retries
+                        ]
+                    )
+                    == 0
+                ):
                     raise WorkflowExecutionException(
                         f"Hosts {[c.get_hostname() for c in self._contexts]} have no "
                         f"more available contexts: terminating."
                     )
                 elif (
-                    len(free_contexts := [c for c in self._contexts if not c.full()])
+                    len(
+                        free_contexts := [c for c in available_contexts if not c.full()]
+                    )
                     == 0
                 ):
                     await self._condition.wait()
@@ -210,7 +206,7 @@ class SSHContextManager:
                                 encoding=self.encoding,
                             )
                             await self._proc.__aenter__()
-                            self._selected_context.ssh_attempts = 0
+                            self._selected_context.connection_attempts = 0
                             return self._proc
                         except (
                             ChannelOpenError,
@@ -226,7 +222,7 @@ class SSHContextManager:
                             if not isinstance(exc, ChannelOpenError):
                                 if logger.isEnabledFor(logging.WARNING):
                                     logger.warning(
-                                        f"Connection to {context.get_hostname()} attempts: {context.ssh_attempts} "
+                                        f"Connection to {context.get_hostname()}: attempt {context.connection_attempts}"
                                     )
                                 self._selected_context = None
                                 await context.reset()
