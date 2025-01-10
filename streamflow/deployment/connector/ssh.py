@@ -74,8 +74,10 @@ def prefix0(h):
     return h
 
 
-class SSHVegaClient(asyncssh.SSHClient):
-    SECRET_FILE: str | None = None
+class SSH2FAClient(asyncssh.SSHClient):
+    def __init__(self, totp_secret_file: str):
+        super().__init__()
+        self.totp_secret_file: str = totp_secret_file
 
     async def kbdint_auth_requested(self):
         return ""
@@ -83,7 +85,7 @@ class SSHVegaClient(asyncssh.SSHClient):
     async def kbdint_challenge_received(
         self, name: str, instructions: str, lang: str, prompts
     ):
-        if type(self).SECRET_FILE is None:
+        if self.totp_secret_file is None:
             logger.error("TOTP Secret file does not defined")
             raise WorkflowExecutionException("TOTP Secret file does not defined")
         elif len(prompts) > 1:
@@ -92,7 +94,7 @@ class SSHVegaClient(asyncssh.SSHClient):
         elif prompts:
             prompt, _ = next(iter(prompts))
             if prompt.strip() == "Verification code:":
-                with open(type(self).SECRET_FILE) as f:
+                with open(self.totp_secret_file) as f:
                     totp = get_totp_token(f.read().strip())
                 logger.debug(f"TOTP code: {totp}")
                 return [totp]
@@ -138,8 +140,11 @@ class SSHContext:
         if config.totp_secret_file is None:
             client_factory = None
         else:
-            SSHVegaClient.SECRET_FILE = config.totp_secret_file
-            client_factory = SSHVegaClient
+
+            def two_fa():
+                return SSH2FAClient(config.totp_secret_file)
+
+            client_factory = two_fa
         return await asyncssh.connect(
             client_keys=config.client_keys,
             compression_algs=None,
