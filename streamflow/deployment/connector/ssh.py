@@ -185,14 +185,26 @@ class SSHContextManager:
 
     async def __aenter__(self) -> asyncssh.SSHClientProcess:
         async with self._condition:
+            available_contexts = self._contexts
             while True:
-                if all(c.ssh_attempts > self._retries for c in self._contexts):
+                if (
+                    len(
+                        available_contexts := [
+                            c
+                            for c in available_contexts
+                            if c.ssh_attempts < self._retries
+                        ]
+                    )
+                    == 0
+                ):
                     raise WorkflowExecutionException(
                         f"Hosts {[c.get_hostname() for c in self._contexts]} have no "
                         f"more available contexts: terminating."
                     )
                 elif (
-                    len(free_contexts := [c for c in self._contexts if not c.full()])
+                    len(
+                        free_contexts := [c for c in available_contexts if not c.full()]
+                    )
                     == 0
                 ):
                     await self._condition.wait()
