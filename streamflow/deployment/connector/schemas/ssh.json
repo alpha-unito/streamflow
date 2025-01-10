@@ -149,6 +149,11 @@
       "type": "string",
       "description": "Path to a file containing the passphrase protecting the SSH key"
     },
+    "totpSecretFile": {
+      "type": "string",
+      "description": "Path to a file containing the TOTP secret for the 2fa"
+
+    },
     "transferBufferSize": {
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",

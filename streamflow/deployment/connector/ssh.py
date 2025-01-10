@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import logging
 import os
+import struct
+import time
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
@@ -34,6 +39,68 @@ def _parse_hostname(hostname):
     else:
         port = 22
     return hostname, port
+
+
+def get_hotp_token(secret, intervals_no):
+    """This is where the magic happens."""
+    key = base64.b32decode(
+        normalize(secret), True
+    )  # True is to fold lower into uppercase
+    msg = struct.pack(">Q", intervals_no)
+    h = bytearray(hmac.new(key, msg, hashlib.sha1).digest())
+    o = h[19] & 15
+    h = str((struct.unpack(">I", h[o : o + 4])[0] & 0x7FFFFFFF) % 1000000)
+    return prefix0(h)
+
+
+def get_totp_token(secret):
+    """The TOTP token is just a HOTP token seeded with every 30 seconds."""
+    return get_hotp_token(secret, intervals_no=int(time.time()) // 30)
+
+
+def normalize(key):
+    """Normalizes secret by removing spaces and padding with = to a multiple of 8"""
+    k2 = key.strip().replace(" ", "")
+    # k2 = k2.upper()	# skipped b/c b32decode has a foldcase argument
+    if len(k2) % 8 != 0:
+        k2 += "=" * (8 - len(k2) % 8)
+    return k2
+
+
+def prefix0(h):
+    """Prefixes code with leading zeros if missing."""
+    if len(h) < 6:
+        h = "0" * (6 - len(h)) + h
+    return h
+
+
+class SSHVegaClient(asyncssh.SSHClient):
+    SECRET_FILE: str | None = None
+
+    async def kbdint_auth_requested(self):
+        return ""
+
+    async def kbdint_challenge_received(
+        self, name: str, instructions: str, lang: str, prompts
+    ):
+        if type(self).SECRET_FILE is None:
+            logger.error("TOTP Secret file does not defined")
+            raise WorkflowExecutionException("TOTP Secret file does not defined")
+        elif len(prompts) > 1:
+            logger.error(f"There are too many prompts: {prompts}")
+            raise NotImplementedError
+        elif prompts:
+            prompt, _ = next(iter(prompts))
+            if prompt.strip() == "Verification code:":
+                with open(type(self).SECRET_FILE) as f:
+                    totp = get_totp_token(f.read().strip())
+                logger.debug(f"TOTP code: {totp}")
+                return [totp]
+            else:
+                logger.error(f"Prompt does not recognized: {prompt}")
+                raise NotImplementedError
+        else:
+            return []
 
 
 class SSHContext:
@@ -68,6 +135,11 @@ class SSHContext:
             if config.password_file
             else None
         )
+        if config.totp_secret_file is None:
+            client_factory = None
+        else:
+            SSHVegaClient.SECRET_FILE = config.totp_secret_file
+            client_factory = SSHVegaClient
         return await asyncssh.connect(
             client_keys=config.client_keys,
             compression_algs=None,
@@ -84,6 +156,7 @@ class SSHContext:
             port=port,
             tunnel=await self._get_connection(config.tunnel),
             username=config.username,
+            client_factory=client_factory,
         )
 
     def _get_param_from_file(self, file_path: str):
@@ -355,6 +428,7 @@ class SSHConfig:
         hostname: str,
         password_file: str | None,
         ssh_key_passphrase_file: str | None,
+        totp_secret_file: str | None,
         tunnel: SSHConfig | None,
         username: str,
     ):
@@ -363,6 +437,7 @@ class SSHConfig:
         self.hostname: str = hostname
         self.password_file: str | None = password_file
         self.ssh_key_passphrase_file: str | None = ssh_key_passphrase_file
+        self.totp_secret_file: str | None = totp_secret_file
         self.tunnel: SSHConfig | None = tunnel
         self.username: str = username
 
@@ -386,6 +461,7 @@ class SSHConnector(BaseConnector):
         sharedPaths: MutableSequence[str] | None = None,
         sshKey: str | None = None,
         sshKeyPassphraseFile: str | None = None,
+        totpSecretFile: str | None = None,
         tunnel: MutableMapping[str, Any] | None = None,
         transferBufferSize: int = 2**16,
     ) -> None:
@@ -428,6 +504,7 @@ class SSHConnector(BaseConnector):
             {}
         )
         self.username: str = username
+        self.totp_secret_file: str | None = totpSecretFile
         self.tunnel: SSHConfig | None = self._get_config(tunnel)
         self.dataTransferConfig: SSHConfig | None = self._get_config(
             dataTransferConnection
@@ -553,6 +630,11 @@ class SSHConnector(BaseConnector):
                 node["sshKeyPassphraseFile"]
                 if "sshKeyPassphraseFile" in node
                 else self.sshKeyPassphraseFile
+            ),
+            totp_secret_file=(
+                node["totpSecretFile"]
+                if "totpSecretFile" in node
+                else self.totp_secret_file
             ),
             tunnel=(
                 self._get_config(node["tunnel"])
