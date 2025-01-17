@@ -10,6 +10,6 @@ Jinja2==3.1.5
 jsonschema==4.23.0
 kubernetes_asyncio==32.0.0
 psutil==6.1.1
-referencing==0.35.1
+referencing==0.36.1
 rdflib==7.1.1
 yattag==1.16.1
