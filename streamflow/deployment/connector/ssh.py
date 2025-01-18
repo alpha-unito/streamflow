@@ -83,6 +83,7 @@ class SSHContext:
             port=port,
             tunnel=await self._get_connection(config.tunnel),
             username=config.username,
+            connect_timeout=config.connect_timeout * (self.connection_attempts + 1),
         )
 
     def _get_param_from_file(self, file_path: str):
@@ -114,13 +115,14 @@ class SSHContext:
                 self._connecting = True
                 try:
                     self._ssh_connection = await self._get_connection(self._config)
-                except (ConnectionError, asyncssh.Error) as e:
-                    if logger.isEnabledFor(logging.WARNING):
-                        logger.warning(
-                            f"Connection to {self._config.hostname} failed: {e}."
-                        )
+                except (ConnectionError, asyncssh.Error, asyncio.TimeoutError) as err:
                     await self.close()
-                    raise
+                    if isinstance(err, asyncio.TimeoutError):
+                        raise asyncio.TimeoutError(
+                            f"The SSH connection attempt to {self.get_hostname()} took too long."
+                        )
+                    else:
+                        raise
                 finally:
                     self._connect_event.set()
             else:
@@ -213,6 +215,7 @@ class SSHContextManager:
                             ConnectionError,
                             ConnectionLost,
                             DisconnectError,
+                            asyncio.TimeoutError,
                         ) as exc:
                             if logger.isEnabledFor(logging.WARNING):
                                 logger.warning(
@@ -336,6 +339,7 @@ class SSHConfig:
         self,
         check_host_key: bool,
         client_keys: MutableSequence[str],
+        connect_timeout: int,
         hostname: str,
         password_file: str | None,
         ssh_key_passphrase_file: str | None,
@@ -344,6 +348,7 @@ class SSHConfig:
     ):
         self.check_host_key: bool = check_host_key
         self.client_keys: MutableSequence[str] = client_keys
+        self.connect_timeout: int = connect_timeout
         self.hostname: str = hostname
         self.password_file: str | None = password_file
         self.ssh_key_passphrase_file: str | None = ssh_key_passphrase_file
@@ -359,6 +364,7 @@ class SSHConnector(BaseConnector):
         nodes: MutableSequence[Any],
         username: str | None = None,
         checkHostKey: bool = True,
+        connectTimeout: int = 30,
         dataTransferConnection: str | MutableMapping[str, Any] | None = None,
         file: str | None = None,
         maxConcurrentSessions: int = 10,
@@ -399,6 +405,7 @@ class SSHConnector(BaseConnector):
                 template_map=services_map,
             )
         self.checkHostKey: bool = checkHostKey
+        self.connect_timeout: int = connectTimeout
         self.passwordFile: str | None = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
         self.maxConnections: int = maxConnections
@@ -542,6 +549,11 @@ class SSHConnector(BaseConnector):
                 self._get_config(node["tunnel"])
                 if "tunnel" in node
                 else self.tunnel if hasattr(self, "tunnel") else None
+            ),
+            connect_timeout=(
+                node["connect_timeout"]
+                if "connect_timeout" in node
+                else self.connect_timeout
             ),
         )
 
