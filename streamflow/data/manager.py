@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import posixpath
 from collections.abc import MutableMapping, MutableSequence
@@ -101,7 +102,9 @@ class _RemotePathMapper:
         self.context: StreamFlowContext = context
 
     def __repr__(self):
-        return self._node_repr(next(iter(self._filesystem.children.values())), 0)
+        return "\n".join(
+            self._node_repr(node, 0) for node in self._filesystem.children.values()
+        )
 
     def _node_repr(self, node: _RemotePathNode, level: int) -> str:
         tree = level * "\t" + "|-- " + repr(node) + "\n"
@@ -353,7 +356,8 @@ class DefaultDataManager(DataManager):
                 src_path, context=self.context, location=src_location
             ).resolve()
         ) is None:
-            logger.info(f"Remote file system: {repr(self.path_mapper)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Remote file system: {repr(self.path_mapper)}")
             raise WorkflowExecutionException(
                 f"Error retrieving realpath for {src_path} on location {src_location} "
                 f"while transferring it to {dst_path} on deployment {dst_connector.deployment_name}"
@@ -420,6 +424,8 @@ class DefaultDataManager(DataManager):
                     self.register_relation(src_data_location, dst_data_location)
             # Otherwise, raise an exception
             else:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Remote file system: {repr(self.path_mapper)}")
                 raise WorkflowExecutionException(
                     f"No data locations found for path {src_path} "
                     f"while trying to map {dst_path} on {dst_location}"

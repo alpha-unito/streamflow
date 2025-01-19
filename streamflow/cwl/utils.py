@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import cwl_utils.expression
 import cwl_utils.parser
+import cwl_utils.parser.utils
 from cwl_utils.parser.cwl_v1_2_utils import CONTENT_LIMIT
 
 from streamflow.core.context import StreamFlowContext
@@ -84,7 +85,8 @@ async def _get_contents(
 ):
     if (cwl_version not in ("v1.0", "v.1.1")) and size > CONTENT_LIMIT:
         raise WorkflowExecutionException(
-            f"Cannot read contents from files larger than {CONTENT_LIMIT / 1024}kB"
+            f"Cannot read contents from files larger than "
+            f"{CONTENT_LIMIT / 1024}kB: file {str(path)} is {size / 1024}kB"
         )
     return await path.read_text(n=CONTENT_LIMIT)
 
@@ -606,10 +608,10 @@ async def get_file_token(
 def get_name(
     name_prefix: str,
     cwl_name_prefix: str,
-    element_id: str,
+    element_id: Any,
     preserve_cwl_prefix: bool = False,
 ) -> str:
-    name = element_id.split("#")[-1]
+    name = (element_id if isinstance(element_id, str) else element_id.id).split("#")[-1]
     return (
         posixpath.join(posixpath.sep, name)
         if preserve_cwl_prefix
@@ -661,6 +663,54 @@ class LoadListing(Enum):
     no_listing = 0
     shallow_listing = 1
     deep_listing = 2
+
+
+def process_embedded_tool(
+    cwl_element: cwl_utils.parser.WorkflowStep,
+    cwl_name_prefix: str,
+    step_name: str,
+    name_prefix: str,
+    context: MutableMapping[str, Any],
+):
+    run_command = cwl_element.run
+    inner_context = dict(context)
+    if cwl_utils.parser.is_process(run_command):
+        run_command.cwlVersion = context["version"]
+        cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
+        if ":" in run_command.id.split("#")[-1]:
+            cwl_step_name = get_name(
+                name_prefix,
+                cwl_name_prefix,
+                cwl_element.id,
+                preserve_cwl_prefix=True,
+            )
+            inner_cwl_name_prefix = (
+                step_name
+                if context["version"] == "v1.0"
+                else posixpath.join(cwl_step_name, "run")
+            )
+        else:
+            inner_cwl_name_prefix = get_name(
+                name_prefix,
+                cwl_name_prefix,
+                run_command.id,
+                preserve_cwl_prefix=True,
+            )
+    else:
+        run_command = cwl_element.loadingOptions.fetcher.urljoin(
+            cwl_element.loadingOptions.fileuri, run_command
+        )
+        run_command = cwl_utils.parser.load_document_by_uri(
+            run_command, loadingOptions=cwl_element.loadingOptions
+        )
+        cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
+        inner_cwl_name_prefix = (
+            get_name(posixpath.sep, posixpath.sep, run_command.id)
+            if "#" in run_command.id
+            else posixpath.sep
+        )
+        inner_context |= {"version": run_command.cwlVersion}
+    return run_command, inner_cwl_name_prefix, inner_context
 
 
 async def process_secondary_files(

@@ -76,47 +76,6 @@ def _get_action_status(status: Status) -> str:
         raise WorkflowProvenanceException(f"Action status {status.name} not supported.")
 
 
-def _get_cwl_embedded_tool(
-    cwl_prefix: str,
-    prefix: str,
-    cwl_step: cwl_utils.parser.WorkflowStep,
-    step_name: str,
-    version: str,
-) -> tuple[cwl_utils.parser.Process, str]:
-    run_command = cwl_step.run
-    if cwl_utils.parser.is_process(run_command):
-        run_command.cwlVersion = version
-        cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
-        if ":" in run_command.id.split("#")[-1]:
-            cwl_step_name = streamflow.cwl.utils.get_name(
-                prefix, cwl_prefix, cwl_step.id, preserve_cwl_prefix=True
-            )
-            cwl_prefix = (
-                step_name if version == "v1.0" else posixpath.join(cwl_step_name, "run")
-            )
-        else:
-            cwl_prefix = streamflow.cwl.utils.get_name(
-                prefix,
-                cwl_prefix,
-                run_command.id,
-                preserve_cwl_prefix=True,
-            )
-    else:
-        run_command = cwl_step.loadingOptions.fetcher.urljoin(
-            cwl_step.loadingOptions.fileuri, run_command
-        )
-        run_command = cwl_utils.parser.load_document_by_uri(
-            run_command, loadingOptions=cwl_step.loadingOptions
-        )
-        cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
-        cwl_prefix = (
-            streamflow.cwl.utils.get_name(posixpath.sep, posixpath.sep, run_command.id)
-            if "#" in run_command.id
-            else posixpath.sep
-        )
-    return run_command, cwl_prefix
-
-
 def _get_cwl_entity_id(entity_id: str) -> str:
     tokens = entity_id.split("#")
     if len(tokens) > 1:
@@ -1118,12 +1077,12 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             "@type": "HowToStep",
         }
         step_name = streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_step.id)
-        embedded_tool, cwl_prefix = _get_cwl_embedded_tool(
-            cwl_prefix=cwl_prefix,
-            prefix=prefix,
-            cwl_step=cwl_step,
+        embedded_tool, cwl_prefix, _ = streamflow.cwl.utils.process_embedded_tool(
+            cwl_name_prefix=cwl_prefix,
+            name_prefix=prefix,
+            cwl_element=cwl_step,
             step_name=step_name,
-            version=version,
+            context={"version": version},
         )
         if isinstance(embedded_tool, get_args(cwl_utils.parser.Workflow)):
             work_example = self._get_workflow(
@@ -1317,12 +1276,14 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             cwl_step_name = streamflow.cwl.utils.get_name(
                 prefix, cwl_prefix, cwl_step.id, preserve_cwl_prefix=True
             )
-            embedded_tool, inner_cwl_prefix = _get_cwl_embedded_tool(
-                cwl_prefix=cwl_prefix,
-                prefix=prefix,
-                step_name=step_name,
-                cwl_step=cwl_step,
-                version=version,
+            embedded_tool, inner_cwl_prefix, _ = (
+                streamflow.cwl.utils.process_embedded_tool(
+                    cwl_name_prefix=cwl_prefix,
+                    name_prefix=prefix,
+                    cwl_element=cwl_step,
+                    step_name=step_name,
+                    context={"version": version},
+                )
             )
             # Register step
             jsonld_entity["step"].append({"@id": jsonld_step["@id"]})
