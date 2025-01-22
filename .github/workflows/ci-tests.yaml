@@ -71,7 +71,7 @@ jobs:
         with:
           node-version: "20"
       - name: "Install Docker (MacOS X)"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.15
+        uses: douglascamata/setup-docker-macos-action@v1-alpha.16
         with:
           colima-additional-options: '--mount /private/var/folders:w --mount-type virtiofs'
         if: ${{ startsWith(matrix.on, 'macos-') }}
@@ -249,7 +249,7 @@ jobs:
         with:
           node-version: "20"
       - name: "Install Docker (MacOs X)"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.15
+        uses: douglascamata/setup-docker-macos-action@v1-alpha.16
         with:
           colima-additional-options: '--mount /private/var/folders:w --mount-type virtiofs'
         if: ${{ startsWith(matrix.on, 'macos-') }}

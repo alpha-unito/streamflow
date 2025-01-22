@@ -1252,38 +1252,39 @@ def _process_input_value(
             _process_input_value(path_processor, output_directory, target, v)
             for v in value
         ]
+    elif isinstance(
+        value, (get_args(cwl_utils.parser.File), get_args(cwl_utils.parser.Directory))
+    ):
+        if value.path:
+            value.path = _remap_path(
+                path_processor=path_processor,
+                path=value.path,
+                old_dir=output_directory,
+                new_dir=target.workdir,
+            )
+        if value.location:
+            value.location = _remap_path(
+                path_processor=path_processor,
+                path=value.location,
+                old_dir=output_directory,
+                new_dir=target.workdir,
+            )
+        if value.secondaryFiles:
+            value.secondaryFiles = [
+                _process_input_value(path_processor, output_directory, target, sf)
+                for sf in value.secondaryFiles
+            ]
+        if isinstance(value, get_args(cwl_utils.parser.Directory)) and value.listing:
+            value.listing = [
+                _process_input_value(path_processor, output_directory, target, sf)
+                for sf in value["listing"]
+            ]
+        return value
     elif isinstance(value, MutableMapping):
-        if utils.get_token_class(value) in ["File", "Directory"]:
-            if "location" in value:
-                value["location"] = _remap_path(
-                    path_processor=path_processor,
-                    path=value["location"],
-                    old_dir=output_directory,
-                    new_dir=target.workdir,
-                )
-            if "path" in value:
-                value["path"] = _remap_path(
-                    path_processor=path_processor,
-                    path=value["path"],
-                    old_dir=output_directory,
-                    new_dir=target.workdir,
-                )
-            if "secondaryFiles" in value:
-                value["secondaryFiles"] = [
-                    _process_input_value(path_processor, output_directory, target, sf)
-                    for sf in value["secondaryFiles"]
-                ]
-            if "listing" in value:
-                value["listing"] = [
-                    _process_input_value(path_processor, output_directory, target, sf)
-                    for sf in value["listing"]
-                ]
-            return value
-        else:
-            return {
-                k: _process_input_value(path_processor, output_directory, target, v)
-                for k, v in value.items()
-            }
+        return {
+            k: _process_input_value(path_processor, output_directory, target, v)
+            for k, v in value.items()
+        }
     else:
         return value
 
