@@ -5,7 +5,7 @@ asyncssh==2.19.0
 bcrypt==4.2.1
 cachetools==5.5.0
 cwl-utils==0.36
-importlib-metadata==8.5.0
+importlib-metadata==8.6.1
 Jinja2==3.1.5
 jsonschema==4.23.0
 kubernetes_asyncio==32.0.0
