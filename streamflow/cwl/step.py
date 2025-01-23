@@ -458,9 +458,11 @@ class CWLTransferStep(TransferStep):
         name: str,
         workflow: CWLWorkflow,
         job_port: JobPort,
+        prefix_path: bool = True,
         writable: bool = False,
     ):
         super().__init__(name, workflow, job_port)
+        self.prefix_path: bool = prefix_path
         self.writable: bool = writable
 
     @classmethod
@@ -577,7 +579,7 @@ class CWLTransferStep(TransferStep):
         if dest_path is not None and dest_path.is_relative_to(job.input_directory):
             indir /= dest_path.relative_to(indir).parts[0]
         else:
-            indir /= random_name()
+            indir /= random_name() if self.prefix_path else ""
         # Extract location
         location = token_value.get("location", token_value.get("path"))
         if location and "://" in location:
