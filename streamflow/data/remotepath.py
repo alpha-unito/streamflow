@@ -444,6 +444,32 @@ class RemoteStreamFlowPath(
         self.location: ExecutionLocation = location
         self._inner_path: StreamFlowPath | None = None
 
+    def _get_primary_data(self) -> StreamFlowPath:
+        return (
+            self._inner_path
+            if next(
+                iter(
+                    self.context.data_manager.get_data_locations(
+                        path=self._inner_path.__str__(),
+                        deployment=(
+                            self._inner_path.connector.deployment_name
+                            if isinstance(self._inner_path, RemoteStreamFlowPath)
+                            else "local"
+                        ),
+                        location_name=(
+                            self._inner_path.location.name
+                            if isinstance(self._inner_path, RemoteStreamFlowPath)
+                            else "local"
+                        ),
+                        data_type=DataType.PRIMARY,
+                    )
+                ),
+                None,
+            )
+            is not None
+            else self
+        )
+
     async def _get_inner_path(self) -> StreamFlowPath:
         if self._inner_path is None:
             # Recurse through mount points to find the innermost path (more efficient)
@@ -473,10 +499,10 @@ class RemoteStreamFlowPath(
                                 location=self.location,
                                 path=await self.resolve(),
                             )
-                        return self._inner_path
+                        return self._get_primary_data()
                     else:
                         path = path.parent
-        return self._inner_path
+        return self._get_primary_data()
 
     async def _test(self, command: list[str]) -> bool:
         command = ["test"] + command

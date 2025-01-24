@@ -1269,15 +1269,16 @@ def _process_input_value(
                 old_dir=output_directory,
                 new_dir=target.workdir,
             )
-        if value.secondaryFiles:
-            value.secondaryFiles = [
-                _process_input_value(path_processor, output_directory, target, sf)
-                for sf in value.secondaryFiles
-            ]
-        if isinstance(value, get_args(cwl_utils.parser.Directory)) and value.listing:
+        if isinstance(value, get_args(cwl_utils.parser.File)):
+            if value.secondaryFiles:
+                value.secondaryFiles = [
+                    _process_input_value(path_processor, output_directory, target, sf)
+                    for sf in value.secondaryFiles
+                ]
+        elif value.listing:
             value.listing = [
                 _process_input_value(path_processor, output_directory, target, sf)
-                for sf in value["listing"]
+                for sf in value.listing
             ]
         return value
     elif isinstance(value, MutableMapping):
@@ -1382,9 +1383,7 @@ def _remap_path(
     else:
         return path_processor.join(
             new_dir,
-            *os.path.relpath(urllib.parse.unquote(path[7:]), old_dir).split(
-                os.path.sep
-            ),
+            *os.path.relpath(urllib.parse.unquote(path), old_dir).split(os.path.sep),
         )
 
 
