@@ -9,7 +9,7 @@ from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataType
+from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
@@ -90,6 +90,14 @@ async def _process_file_token(
                     for sf in token_value["secondaryFiles"]
                 )
             )
+            for sf in new_token_value["secondaryFiles"]:
+                await register_data(
+                    context=streamflow_context,
+                    connector=connector,
+                    locations=locations,
+                    base_path=job.output_directory,
+                    token_value=sf,
+                )
     if "listing" in token_value:
         listing = await asyncio.gather(
             *(
@@ -99,6 +107,15 @@ async def _process_file_token(
                 for t in token_value["listing"]
             )
         )
+        if filepath:
+            for file in listing:
+                await register_data(
+                    context=streamflow_context,
+                    connector=connector,
+                    locations=locations,
+                    base_path=job.output_directory,
+                    token_value=file,
+                )
         new_token_value |= {"listing": listing}
     return new_token_value
 
@@ -506,6 +523,45 @@ class CWLTransferStep(TransferStep):
         else:
             return token_value
 
+    async def _update_listing(
+        self,
+        job: Job,
+        token_value: MutableMapping[str, Any],
+        dest_path: StreamFlowPath | None = None,
+        src_location: DataLocation | None = None,
+    ) -> MutableSequence[MutableMapping[str, Any]]:
+        existing = []
+        tasks = []
+        for element in token_value["listing"]:
+            if src_location and self.workflow.context.data_manager.get_data_locations(
+                path=element["path"],
+                deployment=src_location.deployment,
+                location_name=src_location.name,
+                # data_type=DataType.PRIMARY # todo: is this param needed?
+            ):
+                # adjust the path
+                existing.append(
+                    utils.remap_file_value(
+                        path_processor=get_path_processor(
+                            self.workflow.context.scheduler.get_connector(job.name)
+                        ),
+                        output_directory=token_value["path"],
+                        new_dir=dest_path,
+                        value=element,
+                    )
+                )
+            else:
+                tasks.append(
+                    asyncio.create_task(
+                        self._update_file_token(
+                            job=job, token_value=element, dest_path=dest_path
+                        )
+                    )
+                )
+        return sorted(
+            existing + await asyncio.gather(*tasks), key=lambda t: t["basename"]
+        )
+
     async def _update_file_token(
         self,
         job: Job,
@@ -621,15 +677,8 @@ class CWLTransferStep(TransferStep):
                     )
             # If token contains a directory, propagate listing if present
             elif token_class == "Directory" and "listing" in token_value:  # nosec
-                new_token_value["listing"] = await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._update_file_token(
-                                job=job, token_value=element, dest_path=dest_path
-                            )
-                        )
-                        for element in token_value["listing"]
-                    )
+                new_token_value["listing"] = await self._update_listing(
+                    job, token_value, dest_path, selected_location
                 )
             return new_token_value
         # Otherwise, create elements remotely
@@ -697,21 +746,16 @@ class CWLTransferStep(TransferStep):
             ):
                 raise WorkflowExecutionException(
                     "Error creating file {} with path {} in locations {}.".format(
-                        token_value["path"], new_token_value["path"], dst_locations
+                        token_value["path"],
+                        new_token_value["path"],
+                        [str(loc) for loc in dst_locations],
                     )
                 )
 
             # If listing is specified, recursively process its contents
             if "listing" in token_value:
-                new_token_value["listing"] = await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._update_file_token(
-                                job=job, token_value=t, dest_path=dest_path
-                            )
-                        )
-                        for t in token_value["listing"]
-                    )
+                new_token_value["listing"] = await self._update_listing(
+                    job, token_value, dest_path
                 )
             # Return the new token value
             return new_token_value

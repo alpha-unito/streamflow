@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import posixpath
 import urllib.parse
 from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import PurePath
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import cwl_utils.expression
 import cwl_utils.parser
@@ -1075,3 +1076,99 @@ async def write_remote_file(
                 path=str(path),
                 relpath=relpath,
             )
+
+
+def remap_path(
+    path_processor: ModuleType, path: str, old_dir: str, new_dir: str
+) -> str:
+    if ":/" in path:
+        scheme = urllib.parse.urlsplit(path).scheme
+        if scheme == "file":
+            return "file://{}".format(
+                path_processor.join(
+                    new_dir,
+                    *os.path.relpath(urllib.parse.unquote(path[7:]), old_dir).split(
+                        os.path.sep
+                    ),
+                )
+            )
+        else:
+            return path
+    else:
+        return path_processor.join(
+            new_dir,
+            *os.path.relpath(urllib.parse.unquote(path), old_dir).split(os.path.sep),
+        )
+
+
+def remap_file_value(
+    path_processor: ModuleType, output_directory: str, new_dir, value: Any
+) -> Any:
+    if isinstance(value, MutableSequence):
+        return [
+            remap_file_value(path_processor, output_directory, new_dir, v)
+            for v in value
+        ]
+    elif isinstance(
+        value, (get_args(cwl_utils.parser.File), get_args(cwl_utils.parser.Directory))
+    ):
+        if value.path:
+            value.path = remap_path(
+                path_processor=path_processor,
+                path=value.path,
+                old_dir=output_directory,
+                new_dir=new_dir,
+            )
+        if value.location:
+            value.location = remap_path(
+                path_processor=path_processor,
+                path=value.location,
+                old_dir=output_directory,
+                new_dir=new_dir,
+            )
+        if isinstance(value, get_args(cwl_utils.parser.File)):
+            if value.secondaryFiles:
+                value.secondaryFiles = [
+                    remap_file_value(path_processor, output_directory, new_dir, sf)
+                    for sf in value.secondaryFiles
+                ]
+        elif value.listing:
+            value.listing = [
+                remap_file_value(path_processor, output_directory, new_dir, sf)
+                for sf in value.listing
+            ]
+        return value
+    elif isinstance(value, MutableMapping):
+        if get_token_class(value) in ["File", "Directory"]:
+            if "location" in value:
+                value["location"] = remap_path(
+                    path_processor=path_processor,
+                    path=value["location"],
+                    old_dir=output_directory,
+                    new_dir=new_dir,
+                )
+            if "path" in value:
+                value["path"] = remap_path(
+                    path_processor=path_processor,
+                    path=value["path"],
+                    old_dir=output_directory,
+                    new_dir=new_dir,
+                )
+            if "secondaryFiles" in value:
+                value["secondaryFiles"] = [
+                    remap_file_value(path_processor, output_directory, new_dir, sf)
+                    for sf in value["secondaryFiles"]
+                ]
+            if "listing" in value:
+                value["listing"] = [
+                    remap_file_value(path_processor, output_directory, new_dir, sf)
+                    for sf in value["listing"]
+                ]
+            return value
+        else:
+            return {
+                k: remap_file_value(path_processor, output_directory, new_dir, v)
+                for k, v in value.items()
+            }
+    else:
+        return value

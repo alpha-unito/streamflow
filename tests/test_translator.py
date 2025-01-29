@@ -66,7 +66,8 @@ def _get_workflow_config(streamflow_config) -> WorkflowConfig:
 
 
 @pytest.mark.asyncio
-async def test_inject_remote_input(context: StreamFlowContext) -> None:
+@pytest.mark.parametrize("config", ["File", "Directory:literal", "Directory:concrete"])
+async def test_inject_remote_input(context: StreamFlowContext, config: str) -> None:
     """Test injection of remote input data through the port targets in the StreamFlow file"""
 
     # Create remote file
@@ -76,37 +77,50 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
         "home", context=context, location=location
     ).resolve()
     remote_path = remote_workdir / "data"
-    await remote_path.mkdir()
+    await remote_path.mkdir(exist_ok=True)
     assert await remote_path.exists()
-    remote_path = remote_path / "dir1"
-    await remote_path.mkdir()
-    assert await remote_path.exists()
-    relative_path = os.path.relpath(remote_path, remote_workdir)
 
-    # Populate directory
-    await (remote_path / "file1.txt").write_text("StreamFlow")
-    assert await (remote_path / "file1.txt").exists()
-    await (remote_path / "file2.txt").write_text("Workflow Manager")
-    assert await (remote_path / "file2.txt").exists()
+    file_type, *other = config.split(":")
+    if file_type == "Directory":  # Input Directory
+        dir_type = other[0]
+        remote_path = remote_path / f"dir_{dir_type}"
+        await remote_path.mkdir()
+        assert await remote_path.exists()
+        relative_path = os.path.relpath(remote_path, remote_workdir)
+        if dir_type == "concrete":
+            await (remote_path / "file0.txt").write_text("CWL")
+            assert await (remote_path / "file0.txt").exists()
+        input_dict = {
+            "class": "Directory",
+            "path": relative_path,
+            "listing": [
+                {"class": "File", "path": os.path.join(relative_path, "file0.txt")}
+            ],
+        }
+    else:  # Input File
+        remote_path = remote_path / "file1.txt"
+        await remote_path.write_text("StreamFlow")
+        assert await remote_path.exists()
+        relative_path = os.path.relpath(remote_path, remote_workdir)
+        await (remote_path.parent / "file2.txt").write_text("Workflow Manager")
+        assert await (remote_path.parent / "file2.txt").exists()
+        input_dict = {
+            "class": "File",
+            "path": relative_path,
+            "secondaryFiles": [
+                {
+                    "class": "File",
+                    "path": os.path.join(os.path.dirname(relative_path), "file2.txt"),
+                }
+            ],
+        }
 
     # Create input data and call the `CWLTranslator` inject method
     cwl_workflow_path = os.path.dirname(__file__)
     port_name = "model"
     cwl_inputs = cwl_utils.parser.utils.load_inputfile_by_yaml(
         version=CWL_VERSION,
-        yaml={
-            port_name: {
-                "class": "Directory",
-                "path": relative_path,
-                # "listing": [
-                #     {
-                #         "class": "File",
-                #         "path": os.path.join(relative_path,"file1.txt"),
-                #         "secondaryFiles": [{"class": "File", "path": os.path.join(relative_path,"file2.txt"),}],
-                #     }
-                # ],
-            }
-        },
+        yaml={port_name: input_dict},
         uri=__file__,
     )
     streamflow_config = _get_streamflow_config()
@@ -185,7 +199,7 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
     # Check input tokens
     input_tokens = input_injector_step.get_input_port(port_name).token_list
     assert (
-        input_tokens[0].value["class"] == "Directory"
+        input_tokens[0].value["class"] == file_type
         and input_tokens[0].value["path"] == cwl_inputs[port_name].path
     )
     assert isinstance(input_tokens[1], TerminationToken)
@@ -210,20 +224,39 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
     assert len(
         {job.input_directory, job.output_directory, job.tmp_directory}
     ) == 1 and job.input_directory == str(remote_workdir)
-    assert output_tokens[0].value["class"] == "Directory"
+    assert output_tokens[0].value["class"] == file_type
     assert output_tokens[0].value["path"] == str(remote_workdir / relative_path)
 
     # Check output tokens of transfer step
     output_tokens = transfer_step.get_output_port(port_name).token_list
     assert isinstance(output_tokens[0], CWLFileToken)
     assert isinstance(output_tokens[1], TerminationToken)
-    assert output_tokens[0].value["class"] == "Directory"
-    for remote_file, wf_file in zip(
-        sorted(
-            [p async for p in remote_path.glob("*")], key=lambda x: os.path.basename(x)
-        ),
-        sorted(output_tokens[0].value["listing"], key=lambda x: x["basename"]),
-    ):
+    assert output_tokens[0].value["class"] == file_type
+
+    if file_type == "Directory":
+        remote_files = sorted(
+            [p async for p in remote_path.glob("*")],
+            key=lambda x: os.path.basename(x),
+        )
+        assert len(remote_files) == 1
+        wf_files = sorted(
+            output_tokens[0].value["listing"],
+            key=lambda x: x["basename"],
+        )
+        assert len(wf_files) == 1
+    else:
+        remote_files = sorted(
+            [p async for p in remote_path.parent.glob("*")],
+            key=lambda x: os.path.basename(x),
+        )
+        assert len(remote_files) == 2
+        wf_files = sorted(
+            (output_tokens[0].value, *output_tokens[0].value["secondaryFiles"]),
+            key=lambda x: x["basename"],
+        )
+        assert len(wf_files) == 2
+
+    for remote_file, wf_file in zip(remote_files, wf_files):
         assert wf_file["basename"] == os.path.basename(remote_file)
         assert wf_file["checksum"] == f"sha1${await remote_file.checksum()}"
 
