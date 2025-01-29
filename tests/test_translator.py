@@ -24,6 +24,7 @@ from streamflow.cwl.translator import CWLTranslator
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_binding_config
+from streamflow.log_handler import logger
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import DeployStep, ScheduleStep
@@ -90,7 +91,7 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
     assert await (remote_path / "file2.txt").exists()
 
     # Create input data and call the `CWLTranslator` inject method
-    cwl_workflow_path = os.getcwd()
+    cwl_workflow_path = os.path.dirname(__file__)  # os.getcwd()
     port_name = "model"
     cwl_inputs = cwl_utils.parser.utils.load_inputfile_by_yaml(
         version=CWL_VERSION,
@@ -107,7 +108,17 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
                 # ],
             }
         },
-        uri=os.path.abspath(__file__),
+        uri=__file__,
+    )
+    cwl_inputs_str = json.dumps(
+        {
+            key: {"path": value.path, "loc": value.location}
+            for key, value in cwl_inputs.items()
+        },
+        indent=2,
+    )
+    logger.info(
+        f"__file__ {__file__}\ncwd: {os.getcwd()}\ncwl_inputs: {cwl_inputs_str}"
     )
     streamflow_config = _get_streamflow_config()
     streamflow_config["workflows"]["test"].setdefault("bindings", []).append(

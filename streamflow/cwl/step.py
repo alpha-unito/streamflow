@@ -53,7 +53,11 @@ async def _process_file_token(
     path_processor = get_path_processor(connector)
     new_token_value = token_value
     if filepath:
+        logger.info(f"Path {filepath}")
         if not path_processor.isabs(filepath):
+            logger.info(
+                f"Path {filepath} is not an absolute path. Added prefix {job.output_directory}"
+            )
             filepath = path_processor.join(job.output_directory, filepath)
         new_token_value = await get_file_token(
             context=streamflow_context,
@@ -65,6 +69,7 @@ async def _process_file_token(
             file_format=token_value.get("format"),
             basename=token_value.get("basename"),
         )
+        logger.info(f"New path {json.dumps(new_token_value, indent=2)}")
         await register_data(
             context=streamflow_context,
             connector=connector,
