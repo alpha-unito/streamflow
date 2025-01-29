@@ -198,10 +198,8 @@ async def test_inject_remote_input(context: StreamFlowContext, config: str) -> N
 
     # Check input tokens
     input_tokens = input_injector_step.get_input_port(port_name).token_list
-    assert (
-        input_tokens[0].value["class"] == file_type
-        and input_tokens[0].value["path"] == cwl_inputs[port_name].path
-    )
+    assert input_tokens[0].value["class"] == file_type
+    assert input_tokens[0].value["path"] == str(remote_path)
     assert isinstance(input_tokens[1], TerminationToken)
 
     # Execute workflow

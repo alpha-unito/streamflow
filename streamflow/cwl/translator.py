@@ -85,7 +85,7 @@ from streamflow.cwl.utils import (
     LoadListing,
     SecondaryFile,
     process_embedded_tool,
-    remap_file_value,
+    remap_token_value,
     resolve_dependencies,
 )
 from streamflow.cwl.workflow import CWLWorkflow
@@ -1500,9 +1500,11 @@ class CWLTranslator:
             is not None
         ):
             path_processor = os.path if target.deployment.type == "local" else posixpath
-            value = remap_file_value(
-                path_processor, output_directory, target.workdir, value
+            value = remap_token_value(
+                path_processor, output_directory, target.workdir, _inject_value(value)
             )
+        else:
+            value = _inject_value(value)
         # Create a schedule step and connect it to the local DeployStep
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
@@ -1522,7 +1524,7 @@ class CWLTranslator:
         )
         # Create an input port and inject values
         input_port = workflow.create_port()
-        input_port.put(Token(value=_inject_value(value)))
+        input_port.put(Token(value=value))
         input_port.put(TerminationToken())
         # Connect input and output ports to the injector step
         injector_step.add_input_port(port_name, input_port)

@@ -107,15 +107,14 @@ async def _process_file_token(
                 for t in token_value["listing"]
             )
         )
-        if filepath:
-            for file in listing:
-                await register_data(
-                    context=streamflow_context,
-                    connector=connector,
-                    locations=locations,
-                    base_path=job.output_directory,
-                    token_value=file,
-                )
+        for file in listing:
+            await register_data(
+                context=streamflow_context,
+                connector=connector,
+                locations=locations,
+                base_path=job.output_directory,
+                token_value=file,
+            )
         new_token_value |= {"listing": listing}
     return new_token_value
 
@@ -530,23 +529,21 @@ class CWLTransferStep(TransferStep):
         dest_path: StreamFlowPath | None = None,
         src_location: DataLocation | None = None,
     ) -> MutableSequence[MutableMapping[str, Any]]:
-        existing = []
-        tasks = []
+        existing, tasks = [], []
         for element in token_value["listing"]:
             if src_location and self.workflow.context.data_manager.get_data_locations(
                 path=element["path"],
                 deployment=src_location.deployment,
                 location_name=src_location.name,
-                # data_type=DataType.PRIMARY # todo: is this param needed?
             ):
                 # adjust the path
                 existing.append(
-                    utils.remap_file_value(
+                    utils.remap_token_value(
                         path_processor=get_path_processor(
                             self.workflow.context.scheduler.get_connector(job.name)
                         ),
-                        output_directory=token_value["path"],
-                        new_dir=dest_path,
+                        old_dir=token_value["path"],
+                        new_dir=str(dest_path),
                         value=element,
                     )
                 )

@@ -848,8 +848,9 @@ async def register_data(
         elif "listing" in token_value:
             paths.extend(
                 [
-                    t["path"] if "path" in t else t["location"]
+                    t.get("path", t["location"])
                     for t in token_value["listing"]
+                    if "path" in t or "location" in t
                 ]
             )
         if "secondaryFiles" in token_value:
@@ -1101,14 +1102,11 @@ def remap_path(
         )
 
 
-def remap_file_value(
-    path_processor: ModuleType, output_directory: str, new_dir, value: Any
+def remap_token_value(
+    path_processor: ModuleType, old_dir: str, new_dir: str, value: Any
 ) -> Any:
     if isinstance(value, MutableSequence):
-        return [
-            remap_file_value(path_processor, output_directory, new_dir, v)
-            for v in value
-        ]
+        return [remap_token_value(path_processor, old_dir, new_dir, v) for v in value]
     elif isinstance(
         value, (get_args(cwl_utils.parser.File), get_args(cwl_utils.parser.Directory))
     ):
@@ -1116,25 +1114,25 @@ def remap_file_value(
             value.path = remap_path(
                 path_processor=path_processor,
                 path=value.path,
-                old_dir=output_directory,
+                old_dir=old_dir,
                 new_dir=new_dir,
             )
         if value.location:
             value.location = remap_path(
                 path_processor=path_processor,
                 path=value.location,
-                old_dir=output_directory,
+                old_dir=old_dir,
                 new_dir=new_dir,
             )
         if isinstance(value, get_args(cwl_utils.parser.File)):
             if value.secondaryFiles:
                 value.secondaryFiles = [
-                    remap_file_value(path_processor, output_directory, new_dir, sf)
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
                     for sf in value.secondaryFiles
                 ]
         elif value.listing:
             value.listing = [
-                remap_file_value(path_processor, output_directory, new_dir, sf)
+                remap_token_value(path_processor, old_dir, new_dir, sf)
                 for sf in value.listing
             ]
         return value
@@ -1144,30 +1142,30 @@ def remap_file_value(
                 value["location"] = remap_path(
                     path_processor=path_processor,
                     path=value["location"],
-                    old_dir=output_directory,
+                    old_dir=old_dir,
                     new_dir=new_dir,
                 )
             if "path" in value:
                 value["path"] = remap_path(
                     path_processor=path_processor,
                     path=value["path"],
-                    old_dir=output_directory,
+                    old_dir=old_dir,
                     new_dir=new_dir,
                 )
             if "secondaryFiles" in value:
                 value["secondaryFiles"] = [
-                    remap_file_value(path_processor, output_directory, new_dir, sf)
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
                     for sf in value["secondaryFiles"]
                 ]
             if "listing" in value:
                 value["listing"] = [
-                    remap_file_value(path_processor, output_directory, new_dir, sf)
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
                     for sf in value["listing"]
                 ]
             return value
         else:
             return {
-                k: remap_file_value(path_processor, output_directory, new_dir, v)
+                k: remap_token_value(path_processor, old_dir, new_dir, v)
                 for k, v in value.items()
             }
     else:
