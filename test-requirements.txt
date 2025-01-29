@@ -1,6 +1,6 @@
 cwltest==2.5.20241122133319
 cwltool==3.1.20250110105449
 pytest==8.3.4
-pytest-asyncio==0.25.1
+pytest-asyncio==0.25.3
 pytest-cov==6.0.0
 pytest-xdist==3.6.1
