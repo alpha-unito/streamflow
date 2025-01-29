@@ -24,7 +24,6 @@ from streamflow.cwl.translator import CWLTranslator
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_binding_config
-from streamflow.log_handler import logger
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import DeployStep, ScheduleStep
@@ -91,7 +90,7 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
     assert await (remote_path / "file2.txt").exists()
 
     # Create input data and call the `CWLTranslator` inject method
-    cwl_workflow_path = os.path.dirname(__file__)  # os.getcwd()
+    cwl_workflow_path = os.path.dirname(__file__)
     port_name = "model"
     cwl_inputs = cwl_utils.parser.utils.load_inputfile_by_yaml(
         version=CWL_VERSION,
@@ -109,16 +108,6 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
             }
         },
         uri=__file__,
-    )
-    cwl_inputs_str = json.dumps(
-        {
-            key: {"path": value.path, "loc": value.location}
-            for key, value in cwl_inputs.items()
-        },
-        indent=2,
-    )
-    logger.info(
-        f"__file__ {__file__}\ncwd: {os.getcwd()}\ncwl_inputs: {cwl_inputs_str}"
     )
     streamflow_config = _get_streamflow_config()
     streamflow_config["workflows"]["test"].setdefault("bindings", []).append(
@@ -162,7 +151,7 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
 
     # Add a transfer step in the workflow
     injector_schedule_step = workflow.steps[
-        posixpath.join(os.sep, f"{port_name}-injector", "__schedule__")
+        posixpath.join(posixpath.sep, f"{port_name}-injector", "__schedule__")
     ]
     input_injector_step = workflow.steps[f"/{port_name}-injector"]
     binding_config = BindingConfig(
@@ -176,7 +165,7 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
     )
     schedule_step = workflow.create_step(
         cls=ScheduleStep,
-        name=posixpath.join(os.sep, f"{port_name}", "__schedule__"),
+        name=posixpath.join(posixpath.sep, f"{port_name}", "__schedule__"),
         job_prefix=f"{port_name}",
         connector_ports={
             docker_config.name: next(
@@ -187,7 +176,7 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
     )
     transfer_step = workflow.create_step(
         cls=CWLTransferStep,
-        name=posixpath.join(os.sep, port_name, "__transfer__", port_name),
+        name=posixpath.join(posixpath.sep, port_name, "__transfer__", port_name),
         job_port=schedule_step.get_output_port(),
     )
     transfer_step.add_input_port(port_name, input_injector_step.get_output_port())
@@ -226,8 +215,17 @@ async def test_inject_remote_input(context: StreamFlowContext) -> None:
 
     # Check output tokens of transfer step
     output_tokens = transfer_step.get_output_port(port_name).token_list
-    # todo: add the checksum
-    # assert output_tokens[0].value["checksum"] == f"sha1${await remote_path.checksum()}"
+    assert isinstance(output_tokens[0], CWLFileToken)
+    assert isinstance(output_tokens[1], TerminationToken)
+    assert output_tokens[0].value["class"] == "Directory"
+    for remote_file, wf_file in zip(
+        sorted(
+            [p async for p in remote_path.glob("*")], key=lambda x: os.path.basename(x)
+        ),
+        sorted(output_tokens[0].value["listing"], key=lambda x: x["basename"]),
+    ):
+        assert wf_file["basename"] == os.path.basename(remote_file)
+        assert wf_file["checksum"] == f"sha1${await remote_file.checksum()}"
 
 
 def test_workdir_inheritance() -> None:
