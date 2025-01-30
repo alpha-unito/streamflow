@@ -57,19 +57,23 @@ def _get_filename_from_response(response: ClientResponse, url: str):
 
 
 def _get_inner_path(
-    context: StreamFlowContext, location: ExecutionLocation, path: StreamFlowPath
-) -> StreamFlowPath:
-    for mount in sorted(location.mounts.keys(), reverse=True):
-        if path.is_relative_to(mount):
-            return _get_inner_path(
-                context=context,
-                location=location.wraps,
-                path=StreamFlowPath(
-                    location.mounts[mount], context=context, location=location.wraps
+    path: StreamFlowPath, recursive: bool = False
+) -> StreamFlowPath | None:
+    if path and not isinstance(path, LocalStreamFlowPath) and path.location.wraps:
+        path = cast(RemoteStreamFlowPath, path)
+        for mount in sorted(path.location.mounts.keys(), reverse=True):
+            if path.is_relative_to(mount):
+                inner_path = StreamFlowPath(
+                    path.location.mounts[mount],
+                    context=path.context,
+                    location=path.location.wraps,
+                ) / path.relative_to(mount)
+                return (
+                    _get_inner_path(inner_path, recursive) or inner_path
+                    if recursive
+                    else inner_path
                 )
-                / path.relative_to(mount),
-            )
-    return path
+    return None
 
 
 def _get_outer_path(
@@ -444,65 +448,65 @@ class RemoteStreamFlowPath(
         self.location: ExecutionLocation = location
         self._inner_path: StreamFlowPath | None = None
 
-    def _get_primary_data(self) -> StreamFlowPath:
-        return (
-            self._inner_path
-            if next(
-                iter(
-                    self.context.data_manager.get_data_locations(
-                        path=self._inner_path.__str__(),
-                        deployment=(
-                            self._inner_path.connector.deployment_name
-                            if isinstance(self._inner_path, RemoteStreamFlowPath)
-                            else "local"
-                        ),
-                        location_name=(
-                            self._inner_path.location.name
-                            if isinstance(self._inner_path, RemoteStreamFlowPath)
-                            else "local"
-                        ),
-                        data_type=DataType.PRIMARY,
-                    )
-                ),
-                None,
-            )
-            is not None
-            else self
-        )
-
-    async def _get_inner_path(self) -> StreamFlowPath:
+    async def _get_inner_path(self) -> StreamFlowPath | None:
         if self._inner_path is None:
             # Recurse through mount points to find the innermost path (more efficient)
-            self._inner_path = _get_inner_path(
-                context=self.context,
-                location=self.location,
-                path=self,
-            )
-            if isinstance(self._inner_path, LocalStreamFlowPath) or (
-                isinstance(self._inner_path, RemoteStreamFlowPath)
-                and self._inner_path.location != self.location
+            self._inner_path = _get_inner_path(path=self, recursive=True)
+            if self._inner_path and (
+                isinstance(self._inner_path, LocalStreamFlowPath)
+                or (
+                    isinstance(self._inner_path, RemoteStreamFlowPath)
+                    and self._inner_path.location != self.location
+                )
             ):
+                deployments = (
+                    self.connector.deployment_name,
+                    (
+                        self._inner_path.connector.deployment_name
+                        if isinstance(self._inner_path, RemoteStreamFlowPath)
+                        else "local"
+                    ),
+                )
+                execution_locations = (
+                    self.location.name,
+                    (
+                        self._inner_path.location.name
+                        if isinstance(self._inner_path, RemoteStreamFlowPath)
+                        else "local"
+                    ),
+                )
                 path = self._inner_path
                 while path != path.parent:
                     if locations := self.context.data_manager.get_data_locations(
                         path=path.__str__(),
-                        deployment=self.connector.deployment_name,
-                        location_name=self.location.name,
                     ):
-                        for loc in locations:
+                        for loc in (
+                            data_loc
+                            for data_loc in locations
+                            if data_loc.deployment in deployments
+                            and data_loc.name in execution_locations
+                        ):
                             await loc.available.wait()
-                            if loc.data_type == DataType.PRIMARY:
+                            # The file is primary and the inner location has access to it
+                            if loc.data_type == DataType.PRIMARY and _get_inner_path(
+                                StreamFlowPath(
+                                    loc.path,
+                                    context=self.context,
+                                    location=loc.location,
+                                )
+                            ):
                                 break
                         else:
                             self._inner_path = _get_inner_path(
-                                context=self.context,
-                                location=self.location,
                                 path=await self.resolve(),
+                                recursive=True,
                             )
-                        return self._get_primary_data()
+                        return self._inner_path
                     else:
                         path = path.parent
-        return self._get_primary_data()
+                if str(path) == os.sep:
+                    self._inner_path = None
+        return self._inner_path
 
     async def _test(self, command: list[str]) -> bool:
         command = ["test"] + command
@@ -519,7 +523,9 @@ class RemoteStreamFlowPath(
             return not status
 
     async def checksum(self) -> str | None:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             return await inner_path.checksum()
         else:
             command = [
@@ -545,7 +551,9 @@ class RemoteStreamFlowPath(
             return result.strip()
 
     async def exists(self) -> bool:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             return await inner_path.exists()
         else:
             return await self._test(command=(["-e", f"'{self.__str__()}'"]))
@@ -553,7 +561,9 @@ class RemoteStreamFlowPath(
     async def glob(
         self, pattern, *, case_sensitive=None
     ) -> AsyncIterator[RemoteStreamFlowPath]:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             async for path in inner_path.glob(pattern, case_sensitive=case_sensitive):
                 yield _get_outer_path(
                     context=self.context,
@@ -585,13 +595,17 @@ class RemoteStreamFlowPath(
                 yield self.with_segments(path)
 
     async def is_dir(self) -> bool:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             return await inner_path.is_dir()
         else:
             return await self._test(command=["-d", f"'{self.__str__()}'"])
 
     async def is_file(self) -> bool:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             return await inner_path.is_file()
         else:
             return await self._test(command=["-f", f"'{self.__str__()}'"])
@@ -600,7 +614,9 @@ class RemoteStreamFlowPath(
         return await self._test(command=["-L", f"'{self.__str__()}'"])
 
     async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             await inner_path.mkdir(mode=mode, parents=parents, exist_ok=exist_ok)
         else:
             command = ["mkdir", "-m", f"{mode:o}"]
@@ -613,7 +629,9 @@ class RemoteStreamFlowPath(
             _check_status(command, self.location, result, status)
 
     async def read_text(self, n=-1, encoding=None, errors=None) -> str:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             return await inner_path.read_text(n=n, encoding=encoding, errors=errors)
         else:
             command = ["head", "-c", str(n)] if n >= 0 else ["cat"]
@@ -657,7 +675,9 @@ class RemoteStreamFlowPath(
         return self.with_segments(result.strip()) if status == 0 else None
 
     async def rmtree(self) -> None:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             await inner_path.rmtree()
         else:
             command = ["rm", "-rf ", self.__str__()]
@@ -667,7 +687,9 @@ class RemoteStreamFlowPath(
             _check_status(command, self.location, result, status)
 
     async def size(self) -> int:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             return await inner_path.size()
         else:
             command = [
@@ -688,7 +710,9 @@ class RemoteStreamFlowPath(
             return int(result) if result.isdigit() else 0
 
     async def symlink_to(self, target, target_is_directory=False) -> None:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             await inner_path.symlink_to(target, target_is_directory=target_is_directory)
         else:
             command = ["ln", "-snf", str(target), self.__str__()]
@@ -706,7 +730,9 @@ class RemoteStreamFlowPath(
             MutableSequence[str],
         ]
     ]:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             async for path, dirnames, filenames in inner_path.walk(
                 top_down=top_down, on_error=on_error, follow_symlinks=follow_symlinks
             ):
@@ -770,7 +796,9 @@ class RemoteStreamFlowPath(
         return type(self)(*pathsegments, context=self.context, location=self.location)
 
     async def write_text(self, data: str, **kwargs) -> int:
-        if (inner_path := await self._get_inner_path()) != self:
+        if (
+            inner_path := await self._get_inner_path()
+        ) is not None and inner_path != self:
             return await inner_path.write_text(data, **kwargs)
         else:
             if not isinstance(data, str):
