@@ -265,36 +265,42 @@ class DefaultDataManager(DataManager):
         relpath: str | None = None,
         data_type: DataType = DataType.PRIMARY,
     ) -> DataLocation:
-        data_location = DataLocation(
-            location=location,
-            path=path,
-            relpath=relpath or path,
-            data_type=data_type,
-            available=True,
-        )
-        self.path_mapper.put(path=path, data_location=data_location, recursive=True)
-        self.context.checkpoint_manager.register(data_location)
+        data_locations = [
+            DataLocation(
+                location=location,
+                path=path,
+                relpath=relpath or path,
+                data_type=data_type,
+                available=False,
+            )
+        ]
+        self.path_mapper.put(path=path, data_location=data_locations[0], recursive=True)
+        self.context.checkpoint_manager.register(data_locations[0])
         # Process wrapped locations if any
         while (
             path := _get_inner_path(
                 path=StreamFlowPath(path, context=self.context, location=location)
             )
         ) is not None:
-            inner_location = DataLocation(
-                location=location.wraps,
-                path=str(path),
-                relpath=relpath or path,
-                data_type=data_type,
-                available=True,
+            data_locations.append(
+                DataLocation(
+                    location=location.wraps,
+                    path=str(path),
+                    relpath=relpath or str(path),
+                    data_type=data_type,
+                    available=False,
+                )
             )
             self.path_mapper.put(
-                path=str(path), data_location=inner_location, recursive=True
+                path=str(path), data_location=data_locations[-1], recursive=True
             )
             self.register_relation(
-                src_location=data_location, dst_location=inner_location
+                src_location=data_locations[0], dst_location=data_locations[-1]
             )
             location = location.wraps
-        return data_location
+        for loc in data_locations:
+            loc.available.set()
+        return data_locations[0]
 
     def register_relation(
         self, src_location: DataLocation, dst_location: DataLocation

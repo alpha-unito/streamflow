@@ -563,10 +563,10 @@ async def get_file_token(
 ) -> MutableMapping[str, Any]:
     path_processor = get_path_processor(connector)
     basename = basename or path_processor.basename(filepath)
-    location = "".join(["file://", urllib.parse.quote(filepath)])
+    file_location = "".join(["file://", urllib.parse.quote(filepath)])
     token = {
         "class": token_class,
-        "location": location,
+        "location": file_location,
         "basename": basename,
         "path": filepath,
         "dirname": path_processor.dirname(filepath),
@@ -585,9 +585,12 @@ async def get_file_token(
                         token["size"],
                         cwl_version,
                     )
-                token["checksum"] = "sha1${checksum}".format(
-                    checksum=await real_path.checksum()
-                )
+                if (checksum := await real_path.checksum()) is not None:
+                    token["checksum"] = f"sha1${checksum}"
+                else:
+                    raise WorkflowExecutionException(
+                        f"Impossible to retrieve checksum of {real_path} on {location}"
+                    )
                 break
     elif token_class == "Directory" and load_listing != LoadListing.no_listing:  # nosec
         for location in locations:
@@ -1072,11 +1075,25 @@ async def write_remote_file(
                     )
                 )
             await path.write_text(content)
-            context.data_manager.register_path(
-                location=location,
-                path=str(path),
-                relpath=relpath,
-            )
+            for loc in context.data_manager.get_data_locations(
+                path=str(path.parent),
+                deployment=location.deployment,
+                location_name=location.name,
+            ):
+                if loc.path == str(path.parent):
+                    context.data_manager.register_path(
+                        location=location,
+                        path=str(path),
+                        relpath=relpath,
+                        data_type=loc.data_type,
+                    )
+                else:
+                    context.data_manager.register_path(
+                        location=loc.location,
+                        path=os.path.join(loc.path, os.path.basename(path)),
+                        relpath=os.path.join(loc.relpath, os.path.basename(path)),
+                        data_type=loc.data_type,
+                    )
 
 
 def remap_path(

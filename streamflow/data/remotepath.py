@@ -504,8 +504,6 @@ class RemoteStreamFlowPath(
                         return self._inner_path
                     else:
                         path = path.parent
-                if str(path) == os.sep:
-                    self._inner_path = None
         return self._inner_path
 
     async def _test(self, command: list[str]) -> bool:
