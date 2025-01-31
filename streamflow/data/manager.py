@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core.data import DataLocation, DataManager, DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.data.remotepath import StreamFlowPath, _get_inner_path
+from streamflow.data.remotepath import StreamFlowPath, get_inner_path
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
@@ -278,7 +278,7 @@ class DefaultDataManager(DataManager):
         self.context.checkpoint_manager.register(data_locations[0])
         # Process wrapped locations if any
         while (
-            path := _get_inner_path(
+            path := get_inner_path(
                 path=StreamFlowPath(path, context=self.context, location=location)
             )
         ) is not None:
@@ -447,7 +447,7 @@ class DefaultDataManager(DataManager):
             inner_path = data_location.path
             inner_location = data_location.location
             while (
-                inner_path := _get_inner_path(
+                inner_path := get_inner_path(
                     StreamFlowPath(
                         inner_path, context=self.context, location=inner_location
                     )

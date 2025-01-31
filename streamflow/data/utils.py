@@ -35,7 +35,7 @@ async def bind_mount_point(
     storage = {}
     for disk in hardware.storage.values():
         if disk.bind is not None:
-            mount_point = await get_mount_point(context, connector, location, disk.bind)
+            mount_point = await get_mount_point(context, location, disk.bind)
             if mount_point not in storage.keys():
                 storage[mount_point] = Storage(
                     mount_point=mount_point,
@@ -55,7 +55,6 @@ async def bind_mount_point(
 
 async def get_mount_point(
     context: StreamFlowContext,
-    connector: Connector,
     location: AvailableLocation,
     path: str,
 ) -> str:
@@ -63,7 +62,6 @@ async def get_mount_point(
     Get the mount point of a path in the given `location`
 
     :param context: the `StreamFlowContext` object with global application status.
-    :param connector: the `Connector` object to communicate with the location
     :param location: the `AvailableLocation` object with the location information
     :param path: the path whose mount point should be returned
     :return: the mount point containing the given path

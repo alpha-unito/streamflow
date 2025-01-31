@@ -377,7 +377,7 @@ class DefaultScheduler(Scheduler):
                 for key, disk in hardware_requirement.storage.items():
                     for path in disk.paths:
                         mount_point = await utils.get_mount_point(
-                            self.context, connector, location, path
+                            self.context, location, path
                         )
                         storage[key] = Storage(
                             mount_point=mount_point,
