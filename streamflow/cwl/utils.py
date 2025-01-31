@@ -886,6 +886,99 @@ async def register_data(
             )
 
 
+def remap_path(
+    path_processor: ModuleType, path: str, old_dir: str, new_dir: str
+) -> str:
+    if ":/" in path:
+        scheme = urllib.parse.urlsplit(path).scheme
+        if scheme == "file":
+            return "file://{}".format(
+                path_processor.join(
+                    new_dir,
+                    *os.path.relpath(urllib.parse.unquote(path[7:]), old_dir).split(
+                        os.path.sep
+                    ),
+                )
+            )
+        else:
+            return path
+    else:
+        return path_processor.join(
+            new_dir,
+            *os.path.relpath(urllib.parse.unquote(path), old_dir).split(os.path.sep),
+        )
+
+
+def remap_token_value(
+    path_processor: ModuleType, old_dir: str, new_dir: str, value: Any
+) -> Any:
+    if isinstance(value, MutableSequence):
+        return [remap_token_value(path_processor, old_dir, new_dir, v) for v in value]
+    elif isinstance(
+        value, (get_args(cwl_utils.parser.File), get_args(cwl_utils.parser.Directory))
+    ):
+        if value.path:
+            value.path = remap_path(
+                path_processor=path_processor,
+                path=value.path,
+                old_dir=old_dir,
+                new_dir=new_dir,
+            )
+        if value.location:
+            value.location = remap_path(
+                path_processor=path_processor,
+                path=value.location,
+                old_dir=old_dir,
+                new_dir=new_dir,
+            )
+        if isinstance(value, get_args(cwl_utils.parser.File)):
+            if value.secondaryFiles:
+                value.secondaryFiles = [
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
+                    for sf in value.secondaryFiles
+                ]
+        elif value.listing:
+            value.listing = [
+                remap_token_value(path_processor, old_dir, new_dir, sf)
+                for sf in value.listing
+            ]
+        return value
+    elif isinstance(value, MutableMapping):
+        if get_token_class(value) in ["File", "Directory"]:
+            if "location" in value:
+                value["location"] = remap_path(
+                    path_processor=path_processor,
+                    path=value["location"],
+                    old_dir=old_dir,
+                    new_dir=new_dir,
+                )
+            if "path" in value:
+                value["path"] = remap_path(
+                    path_processor=path_processor,
+                    path=value["path"],
+                    old_dir=old_dir,
+                    new_dir=new_dir,
+                )
+            if "secondaryFiles" in value:
+                value["secondaryFiles"] = [
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
+                    for sf in value["secondaryFiles"]
+                ]
+            if "listing" in value:
+                value["listing"] = [
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
+                    for sf in value["listing"]
+                ]
+            return value
+        else:
+            return {
+                k: remap_token_value(path_processor, old_dir, new_dir, v)
+                for k, v in value.items()
+            }
+    else:
+        return value
+
+
 def resolve_dependencies(
     expression: str,
     full_js: bool = False,
@@ -1075,115 +1168,8 @@ async def write_remote_file(
                     )
                 )
             await path.write_text(content)
-            for loc in context.data_manager.get_data_locations(
-                path=str(path.parent),
-                deployment=location.deployment,
-                location_name=location.name,
-            ):
-                if loc.path == str(path.parent):
-                    context.data_manager.register_path(
-                        location=location,
-                        path=str(path),
-                        relpath=relpath,
-                        data_type=loc.data_type,
-                    )
-                else:
-                    context.data_manager.register_path(
-                        location=loc.location,
-                        path=os.path.join(loc.path, os.path.basename(path)),
-                        relpath=os.path.join(loc.relpath, os.path.basename(path)),
-                        data_type=loc.data_type,
-                    )
-
-
-def remap_path(
-    path_processor: ModuleType, path: str, old_dir: str, new_dir: str
-) -> str:
-    if ":/" in path:
-        scheme = urllib.parse.urlsplit(path).scheme
-        if scheme == "file":
-            return "file://{}".format(
-                path_processor.join(
-                    new_dir,
-                    *os.path.relpath(urllib.parse.unquote(path[7:]), old_dir).split(
-                        os.path.sep
-                    ),
-                )
+            context.data_manager.register_path(
+                location=location,
+                path=str(path),
+                relpath=relpath,
             )
-        else:
-            return path
-    else:
-        return path_processor.join(
-            new_dir,
-            *os.path.relpath(urllib.parse.unquote(path), old_dir).split(os.path.sep),
-        )
-
-
-def remap_token_value(
-    path_processor: ModuleType, old_dir: str, new_dir: str, value: Any
-) -> Any:
-    if isinstance(value, MutableSequence):
-        return [remap_token_value(path_processor, old_dir, new_dir, v) for v in value]
-    elif isinstance(
-        value, (get_args(cwl_utils.parser.File), get_args(cwl_utils.parser.Directory))
-    ):
-        if value.path:
-            value.path = remap_path(
-                path_processor=path_processor,
-                path=value.path,
-                old_dir=old_dir,
-                new_dir=new_dir,
-            )
-        if value.location:
-            value.location = remap_path(
-                path_processor=path_processor,
-                path=value.location,
-                old_dir=old_dir,
-                new_dir=new_dir,
-            )
-        if isinstance(value, get_args(cwl_utils.parser.File)):
-            if value.secondaryFiles:
-                value.secondaryFiles = [
-                    remap_token_value(path_processor, old_dir, new_dir, sf)
-                    for sf in value.secondaryFiles
-                ]
-        elif value.listing:
-            value.listing = [
-                remap_token_value(path_processor, old_dir, new_dir, sf)
-                for sf in value.listing
-            ]
-        return value
-    elif isinstance(value, MutableMapping):
-        if get_token_class(value) in ["File", "Directory"]:
-            if "location" in value:
-                value["location"] = remap_path(
-                    path_processor=path_processor,
-                    path=value["location"],
-                    old_dir=old_dir,
-                    new_dir=new_dir,
-                )
-            if "path" in value:
-                value["path"] = remap_path(
-                    path_processor=path_processor,
-                    path=value["path"],
-                    old_dir=old_dir,
-                    new_dir=new_dir,
-                )
-            if "secondaryFiles" in value:
-                value["secondaryFiles"] = [
-                    remap_token_value(path_processor, old_dir, new_dir, sf)
-                    for sf in value["secondaryFiles"]
-                ]
-            if "listing" in value:
-                value["listing"] = [
-                    remap_token_value(path_processor, old_dir, new_dir, sf)
-                    for sf in value["listing"]
-                ]
-            return value
-        else:
-            return {
-                k: remap_token_value(path_processor, old_dir, new_dir, v)
-                for k, v in value.items()
-            }
-    else:
-        return value

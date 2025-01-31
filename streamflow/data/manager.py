@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -204,6 +205,18 @@ class DefaultDataManager(DataManager):
         super().__init__(context)
         self.path_mapper = _RemotePathMapper(context)
 
+    def _get_parent_data_location(
+        self, location: ExecutionLocation, path: str
+    ) -> DataLocation | None:
+        for loc in self.get_data_locations(
+            path=os.path.dirname(path),
+            deployment=location.deployment,
+            location_name=location.name,
+        ):
+            if loc.path == os.path.dirname(path):
+                return loc
+        return None
+
     async def close(self):
         pass
 
@@ -263,8 +276,11 @@ class DefaultDataManager(DataManager):
         location: ExecutionLocation,
         path: str,
         relpath: str | None = None,
-        data_type: DataType = DataType.PRIMARY,
+        data_type: DataType | None = None,
     ) -> DataLocation:
+        if data_type is None:
+            parent_loc = self._get_parent_data_location(location, path)
+            data_type = parent_loc.data_type if parent_loc else DataType.PRIMARY
         data_locations = [
             DataLocation(
                 location=location,
@@ -282,17 +298,19 @@ class DefaultDataManager(DataManager):
                 path=StreamFlowPath(path, context=self.context, location=location)
             )
         ) is not None:
+            path = str(path)
+            parent_loc = self._get_parent_data_location(location, path)
             data_locations.append(
                 DataLocation(
                     location=location.wraps,
-                    path=str(path),
-                    relpath=relpath or str(path),
-                    data_type=data_type,
+                    path=path,
+                    relpath=relpath or path,
+                    data_type=parent_loc.data_type if parent_loc else data_type,
                     available=False,
                 )
             )
             self.path_mapper.put(
-                path=str(path), data_location=data_locations[-1], recursive=True
+                path=path, data_location=data_locations[-1], recursive=True
             )
             self.register_relation(
                 src_location=data_locations[0], dst_location=data_locations[-1]
