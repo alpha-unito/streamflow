@@ -473,6 +473,40 @@ async def build_token_value(
     return token_value
 
 
+async def create_remote_directory(
+    context: StreamFlowContext,
+    locations: MutableSequence[ExecutionLocation],
+    path: str,
+    relpath: str,
+):
+    tasks = []
+    for location in locations:
+        path = StreamFlowPath(path, context=context, location=location)
+        if not await path.exists():
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Creating {path} {location}".format(
+                        path=str(path),
+                        location=(
+                            "on local file-system"
+                            if location.local
+                            else f"on location {location}"
+                        ),
+                    )
+                )
+            tasks.append(
+                asyncio.create_task(path.mkdir(mode=0o777, parents=True, exist_ok=True))
+            )
+            await _register_path(
+                context=context,
+                connector=context.deployment_manager.get_connector(location.deployment),
+                location=location,
+                path=str(path),
+                relpath=relpath,
+            )
+    await asyncio.gather(*tasks)
+
+
 def eval_expression(
     expression: str,
     context: MutableMapping[str, Any],
@@ -1168,7 +1202,9 @@ async def write_remote_file(
                     )
                 )
             await path.write_text(content)
-            context.data_manager.register_path(
+            await _register_path(
+                context=context,
+                connector=context.deployment_manager.get_connector(location.deployment),
                 location=location,
                 path=str(path),
                 relpath=relpath,

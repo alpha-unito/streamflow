@@ -684,17 +684,19 @@ class CWLTransferStep(TransferStep):
             filepath = dest_path or indir
             # If the token contains a directory, simply create it
             if token_class == "Directory":  # nosec
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            StreamFlowPath(
-                                str(filepath),
-                                context=self.workflow.context,
-                                location=location,
-                            ).mkdir(mode=0o777, parents=True, exist_ok=True)
+                await utils.create_remote_directory(
+                    context=self.workflow.context,
+                    locations=dst_locations,
+                    path=str(filepath),
+                    relpath=(
+                        str(filepath.relative_to(job.output_directory))
+                        if filepath.is_relative_to(job.output_directory)
+                        else (
+                            str(filepath.relative_to(indir))
+                            if filepath != indir
+                            else str(indir)
                         )
-                        for location in dst_locations
-                    )
+                    ),
                 )
             # Otherwise, create the parent directories structure and write file contents
             else:

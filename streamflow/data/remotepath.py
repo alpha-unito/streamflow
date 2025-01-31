@@ -479,6 +479,7 @@ class RemoteStreamFlowPath(
                 while path != path.parent:
                     if locations := self.context.data_manager.get_data_locations(
                         path=path.__str__(),
+                        data_type=DataType.PRIMARY,
                     ):
                         for loc in (
                             data_loc
@@ -487,8 +488,8 @@ class RemoteStreamFlowPath(
                             and data_loc.name in execution_locations
                         ):
                             await loc.available.wait()
-                            # The file is primary and the inner location has access to it
-                            if loc.data_type == DataType.PRIMARY and _get_inner_path(
+                            # The inner location has access to the file
+                            if _get_inner_path(
                                 StreamFlowPath(
                                     loc.path,
                                     context=self.context,
@@ -498,12 +499,15 @@ class RemoteStreamFlowPath(
                                 break
                         else:
                             if real_path := await self.resolve():
-                                self._inner_path = _get_inner_path(
-                                    path=real_path,
-                                    recursive=True,
+                                self._inner_path = (
+                                    _get_inner_path(
+                                        path=real_path,
+                                        recursive=True,
+                                    )
+                                    or self
                                 )
                             else:
-                                self._inner_path = None
+                                self._inner_path = self
                         return self._inner_path
                     else:
                         path = path.parent
