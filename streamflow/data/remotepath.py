@@ -59,7 +59,7 @@ def _get_filename_from_response(response: ClientResponse, url: str):
 def _get_inner_path(
     path: StreamFlowPath, recursive: bool = False
 ) -> StreamFlowPath | None:
-    if path and not isinstance(path, LocalStreamFlowPath) and path.location.wraps:
+    if not isinstance(path, LocalStreamFlowPath) and path.location.wraps:
         path = cast(RemoteStreamFlowPath, path)
         for mount in sorted(path.location.mounts.keys(), reverse=True):
             if path.is_relative_to(mount):
@@ -497,10 +497,13 @@ class RemoteStreamFlowPath(
                             ):
                                 break
                         else:
-                            self._inner_path = _get_inner_path(
-                                path=await self.resolve(),
-                                recursive=True,
-                            )
+                            if real_path := await self.resolve():
+                                self._inner_path = _get_inner_path(
+                                    path=real_path,
+                                    recursive=True,
+                                )
+                            else:
+                                self._inner_path = None
                         return self._inner_path
                     else:
                         path = path.parent

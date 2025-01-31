@@ -167,7 +167,9 @@ async def test_inject_remote_input(context: StreamFlowContext, config: str) -> N
     injector_schedule_step = workflow.steps[
         posixpath.join(posixpath.sep, f"{port_name}-injector", "__schedule__")
     ]
-    input_injector_step = workflow.steps[f"/{port_name}-injector"]
+    input_injector_step = workflow.steps[
+        posixpath.join(posixpath.sep, f"{port_name}-injector")
+    ]
     binding_config = BindingConfig(
         targets=[
             Target(
@@ -179,8 +181,8 @@ async def test_inject_remote_input(context: StreamFlowContext, config: str) -> N
     )
     schedule_step = workflow.create_step(
         cls=ScheduleStep,
-        name=posixpath.join(posixpath.sep, f"{port_name}", "__schedule__"),
-        job_prefix=f"{port_name}",
+        name=posixpath.join(posixpath.sep, port_name, "__schedule__"),
+        job_prefix=posixpath.join(posixpath.sep, port_name),
         connector_ports={
             docker_config.name: next(
                 iter(s for s in workflow.steps.values() if isinstance(s, DeployStep))
