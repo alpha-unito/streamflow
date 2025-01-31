@@ -1098,7 +1098,7 @@ def _get_schedule_step(step):
 
 
 def _get_schema_def_types(
-    requirements: MutableMapping[str, Any]
+    requirements: MutableMapping[str, Any],
 ) -> MutableMapping[str, Any]:
     return (
         {sd.name: sd for sd in requirements["SchemaDefRequirement"].types}
@@ -1290,7 +1290,7 @@ def _process_input_value(
 
 
 def _process_javascript_requirement(
-    requirements: MutableMapping[str, Any]
+    requirements: MutableMapping[str, Any],
 ) -> (MutableSequence[Any] | None, bool):
     expression_lib = None
     full_js = False
