@@ -93,7 +93,7 @@ class DataManager(SchemaEntity):
         location: ExecutionLocation,
         path: str,
         relpath: str | None = None,
-        data_type: DataType = DataType.PRIMARY,
+        data_type: DataType | None = None,
     ) -> DataLocation: ...
 
     @abstractmethod

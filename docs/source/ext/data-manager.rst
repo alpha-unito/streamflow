@@ -33,7 +33,7 @@ The ``DataManager`` interface performs data transfers to and from remote executi
         location: ExecutionLocation,
         path: str,
         relpath: str,
-        data_type: DataType = DataType.PRIMARY,
+        data_type: DataType | None = None,
     ) -> DataLocation:
         ...
 
@@ -54,7 +54,7 @@ The ``DataManager`` interface performs data transfers to and from remote executi
 
 The ``transfer_data`` method performs a data transfer from one source location to a set of target locations, called ``src_location`` and ``dst_locations``. The ``src_path`` parameter identifies the position of the data in the source file system, while ``dst_path`` specifies where the data must be transferred in the destination file systems. Note that the destination path is always the same in all destination locations. The ``writable`` parameter states that the data will be modified in place in the destination location. This parameter prevents unattended side effects (e.g., symlink optimizations when source and destination locations are equal).
 
-The ``register_path`` method informs the ``DataManager`` about relevant data in a ``location`` file system at a specific ``path``. Sometimes, a file or directory is identified by a relative path, which filters out implementation-specific file system structures (e.g., the job-specific input directory). The ``relpath`` parameter contains the relevant portion of a path. The ``data_type`` parameter specifies the nature of the registered path. The available ``DataType`` identifiers are: ``PRIMARY`` for actual data; ``SYMBOLIC_LINK`` for links pointing to primary locations; ``INVALID``, which marks a ``DataLocation`` object as unavailable for future usage.
+The ``register_path`` method informs the ``DataManager`` about relevant data in a ``location`` file system at a specific ``path``. Sometimes, a file or directory is identified by a relative path, which filters out implementation-specific file system structures (e.g., the job-specific input directory). The ``relpath`` parameter contains the relevant portion of a path. The ``data_type`` parameter specifies the nature of the registered path. The available ``DataType`` identifiers are: ``PRIMARY`` for actual data; ``SYMBOLIC_LINK`` for links pointing to primary locations; ``INVALID``, which marks a ``DataLocation`` object as unavailable for future usage. If the ``data_type`` is not defined, the data inherits the ``data_type`` of the parent data location. If there is no parent data location, ``Primary`` is set."
 
 The ``register_relation`` method informs the ``DataManager`` that two distinct locations ``src_location`` and ``dst_location`` point to the same data. In other words, if the related data are needed, they can be collected interchangeably from one of the two locations.
 
