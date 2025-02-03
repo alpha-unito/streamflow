@@ -129,7 +129,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           build-args: |
-            HELM_VERSION=v3.7.2
+            HELM_VERSION=v3.17.0
           load: true
           tags: alphaunito/streamflow:latest
       - name: "Run test with Docker"
