@@ -24,6 +24,7 @@ from streamflow.core.exception import WorkflowExecutionException
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
+    from streamflow.core.data import DataLocation
     from streamflow.core.deployment import Connector, ExecutionLocation
     from streamflow.core.scheduling import Hardware
 
@@ -54,22 +55,6 @@ def _get_filename_from_response(response: ClientResponse, url: str):
         if filename := message.get_param("filename", header="content-disposition"):
             return filename
     return url.rsplit("/", 1)[-1]
-
-
-def _get_inner_path(
-    context: StreamFlowContext, location: ExecutionLocation, path: StreamFlowPath
-) -> StreamFlowPath:
-    for mount in sorted(location.mounts.keys(), reverse=True):
-        if path.is_relative_to(mount):
-            return _get_inner_path(
-                context=context,
-                location=location.wraps,
-                path=StreamFlowPath(
-                    location.mounts[mount], context=context, location=location.wraps
-                )
-                / path.relative_to(mount),
-            )
-    return path
 
 
 def _get_outer_path(
@@ -138,6 +123,26 @@ async def _size(
         _check_status(command, location, result, status)
         result = result.strip().strip("'\"")
         return int(result) if result.isdigit() else 0
+
+
+def get_inner_path(
+    path: StreamFlowPath, recursive: bool = False
+) -> StreamFlowPath | None:
+    if not isinstance(path, LocalStreamFlowPath) and path.location.wraps:
+        path = cast(RemoteStreamFlowPath, path)
+        for mount in sorted(path.location.mounts.keys(), reverse=True):
+            if path.is_relative_to(mount):
+                inner_path = StreamFlowPath(
+                    path.location.mounts[mount],
+                    context=path.context,
+                    location=path.location.wraps,
+                ) / path.relative_to(mount)
+                return (
+                    get_inner_path(inner_path, recursive) or inner_path
+                    if recursive
+                    else inner_path
+                )
+    return None
 
 
 class StreamFlowPath(PurePath, ABC):
@@ -444,35 +449,65 @@ class RemoteStreamFlowPath(
         self.location: ExecutionLocation = location
         self._inner_path: StreamFlowPath | None = None
 
-    async def _get_inner_path(self) -> StreamFlowPath:
+    def _is_valid_inner_path(self, location: DataLocation) -> bool:
+        return (
+            # The data is valid in the location
+            (
+                self.connector.deployment_name == location.deployment
+                and self.location == location.location
+            )
+            # The data is valid in the inner location
+            or (
+                isinstance(self._inner_path, RemoteStreamFlowPath)
+                and self._inner_path.connector.deployment_name == location.deployment
+                and self._inner_path.location == location.location
+            )
+            or (
+                isinstance(self._inner_path, LocalStreamFlowPath)
+                and location.location.local
+            )
+        )
+
+    async def _get_inner_path(self) -> StreamFlowPath | None:
         if self._inner_path is None:
             # Recurse through mount points to find the innermost path (more efficient)
-            self._inner_path = _get_inner_path(
-                context=self.context,
-                location=self.location,
-                path=self,
-            )
-            if isinstance(self._inner_path, LocalStreamFlowPath) or (
-                isinstance(self._inner_path, RemoteStreamFlowPath)
-                and self._inner_path.location != self.location
+            self._inner_path = get_inner_path(path=self, recursive=True) or self
+            if self._inner_path and (
+                isinstance(self._inner_path, LocalStreamFlowPath)
+                or (
+                    isinstance(self._inner_path, RemoteStreamFlowPath)
+                    and self._inner_path.location != self.location
+                )
             ):
                 path = self._inner_path
                 while path != path.parent:
                     if locations := self.context.data_manager.get_data_locations(
                         path=path.__str__(),
-                        deployment=self.connector.deployment_name,
-                        location_name=self.location.name,
+                        data_type=DataType.PRIMARY,
                     ):
                         for loc in locations:
-                            await loc.available.wait()
-                            if loc.data_type == DataType.PRIMARY:
-                                break
+                            if self._is_valid_inner_path(loc):
+                                await loc.available.wait()
+                                # The inner location has access to the file
+                                if get_inner_path(
+                                    StreamFlowPath(
+                                        loc.path,
+                                        context=self.context,
+                                        location=loc.location,
+                                    )
+                                ):
+                                    break
                         else:
-                            self._inner_path = _get_inner_path(
-                                context=self.context,
-                                location=self.location,
-                                path=await self.resolve(),
-                            )
+                            if real_path := await self.resolve():
+                                self._inner_path = (
+                                    get_inner_path(
+                                        path=real_path,
+                                        recursive=True,
+                                    )
+                                    or self
+                                )
+                            else:
+                                self._inner_path = self
                         return self._inner_path
                     else:
                         path = path.parent

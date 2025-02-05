@@ -8,7 +8,6 @@ import urllib.parse
 from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from types import ModuleType
 from typing import Any, cast, get_args
 
 import cwl_utils.parser
@@ -86,6 +85,7 @@ from streamflow.cwl.utils import (
     LoadListing,
     SecondaryFile,
     process_embedded_tool,
+    remap_token_value,
     resolve_dependencies,
 )
 from streamflow.cwl.workflow import CWLWorkflow
@@ -1244,51 +1244,6 @@ def _process_docker_requirement(
     )
 
 
-def _process_input_value(
-    path_processor: ModuleType, output_directory: str, target: Target, value: Any
-) -> Any:
-    if isinstance(value, MutableSequence):
-        return [
-            _process_input_value(path_processor, output_directory, target, v)
-            for v in value
-        ]
-    elif isinstance(
-        value, (get_args(cwl_utils.parser.File), get_args(cwl_utils.parser.Directory))
-    ):
-        if value.path:
-            value.path = _remap_path(
-                path_processor=path_processor,
-                path=value.path,
-                old_dir=output_directory,
-                new_dir=target.workdir,
-            )
-        if value.location:
-            value.location = _remap_path(
-                path_processor=path_processor,
-                path=value.location,
-                old_dir=output_directory,
-                new_dir=target.workdir,
-            )
-        if value.secondaryFiles:
-            value.secondaryFiles = [
-                _process_input_value(path_processor, output_directory, target, sf)
-                for sf in value.secondaryFiles
-            ]
-        if isinstance(value, get_args(cwl_utils.parser.Directory)) and value.listing:
-            value.listing = [
-                _process_input_value(path_processor, output_directory, target, sf)
-                for sf in value["listing"]
-            ]
-        return value
-    elif isinstance(value, MutableMapping):
-        return {
-            k: _process_input_value(path_processor, output_directory, target, v)
-            for k, v in value.items()
-        }
-    else:
-        return value
-
-
 def _process_javascript_requirement(
     requirements: MutableMapping[str, Any],
 ) -> (MutableSequence[Any] | None, bool):
@@ -1361,31 +1316,6 @@ def _process_transformers(
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
     return cast(dict[str, Port], input_ports) | new_input_ports
-
-
-def _remap_path(
-    path_processor: ModuleType, path: str, old_dir: str, new_dir: str
-) -> str:
-    if ":/" in path:
-        scheme = urllib.parse.urlsplit(path).scheme
-        if scheme == "file":
-            return "file://{}".format(
-                path_processor.join(
-                    new_dir,
-                    *os.path.relpath(urllib.parse.unquote(path[7:]), old_dir).split(
-                        os.path.sep
-                    ),
-                )
-            )
-        else:
-            return path
-    else:
-        return path_processor.join(
-            new_dir,
-            *os.path.relpath(urllib.parse.unquote(path[7:]), old_dir).split(
-                os.path.sep
-            ),
-        )
 
 
 def _get_source_name(global_name):
@@ -1570,9 +1500,11 @@ class CWLTranslator:
             is not None
         ):
             path_processor = os.path if target.deployment.type == "local" else posixpath
-            value = _process_input_value(
-                path_processor, output_directory, target, value
+            value = remap_token_value(
+                path_processor, output_directory, target.workdir, _inject_value(value)
             )
+        else:
+            value = _inject_value(value)
         # Create a schedule step and connect it to the local DeployStep
         schedule_step = workflow.create_step(
             cls=ScheduleStep,
@@ -1592,7 +1524,7 @@ class CWLTranslator:
         )
         # Create an input port and inject values
         input_port = workflow.create_port()
-        input_port.put(Token(value=_inject_value(value)))
+        input_port.put(Token(value=value))
         input_port.put(TerminationToken())
         # Connect input and output ports to the injector step
         injector_step.add_input_port(port_name, input_port)

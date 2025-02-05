@@ -109,9 +109,7 @@ async def test_bind_volumes(context: StreamFlowContext):
         {"/tmp/streamflow", "/home/output"} - docker_location.hardware.storage.keys()
     )
     path = docker_deployment.workdir
-    mount_point = await utils.get_mount_point(
-        context, docker_connector, docker_location, path
-    )
+    mount_point = await utils.get_mount_point(context, docker_location, path)
     container_hardware = await utils.bind_mount_point(
         context,
         local_connector,
@@ -134,7 +132,7 @@ async def test_bind_volumes(context: StreamFlowContext):
     assert len(container_hardware.storage) == 1 and next(
         iter(container_hardware.storage.values())
     ).mount_point == await utils.get_mount_point(
-        context, local_connector, local_location, local_deployment.workdir
+        context, local_location, local_deployment.workdir
     )
     assert container_hardware <= local_location.hardware
 

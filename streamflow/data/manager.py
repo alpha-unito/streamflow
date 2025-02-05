@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import posixpath
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -11,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core.data import DataLocation, DataManager, DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.data.remotepath import StreamFlowPath
+from streamflow.data.remotepath import StreamFlowPath, get_inner_path
 from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
@@ -53,19 +51,6 @@ async def _copy(
             source_connector=src_connector,
             read_only=not writable,
         )
-
-
-def _get_inner_path(location: ExecutionLocation, path: str) -> str | None:
-    if location.wraps:
-        for mount in sorted(location.mounts.keys(), reverse=True):
-            if path.startswith(mount):
-                return os.path.normpath(
-                    (posixpath if location.wraps.local else os.path).join(
-                        location.mounts[mount],
-                        (posixpath if location.local else os.path).relpath(path, mount),
-                    )
-                )
-    return None
 
 
 class _RemotePathNode:
@@ -280,32 +265,42 @@ class DefaultDataManager(DataManager):
         relpath: str | None = None,
         data_type: DataType = DataType.PRIMARY,
     ) -> DataLocation:
-        data_location = DataLocation(
-            location=location,
-            path=path,
-            relpath=relpath or path,
-            data_type=data_type,
-            available=True,
-        )
-        self.path_mapper.put(path=path, data_location=data_location, recursive=True)
-        self.context.checkpoint_manager.register(data_location)
-        # Process wrapped locations if any
-        while (path := _get_inner_path(location=location, path=path)) is not None:
-            inner_location = DataLocation(
-                location=location.wraps,
+        data_locations = [
+            DataLocation(
+                location=location,
                 path=path,
                 relpath=relpath or path,
                 data_type=data_type,
-                available=True,
+                available=False,
+            )
+        ]
+        self.path_mapper.put(path=path, data_location=data_locations[0], recursive=True)
+        self.context.checkpoint_manager.register(data_locations[0])
+        # Process wrapped locations if any
+        while (
+            path := get_inner_path(
+                path=StreamFlowPath(path, context=self.context, location=location)
+            )
+        ) is not None:
+            data_locations.append(
+                DataLocation(
+                    location=location.wraps,
+                    path=str(path),
+                    relpath=relpath or str(path),
+                    data_type=data_type,
+                    available=False,
+                )
             )
             self.path_mapper.put(
-                path=path, data_location=inner_location, recursive=True
+                path=str(path), data_location=data_locations[-1], recursive=True
             )
             self.register_relation(
-                src_location=data_location, dst_location=inner_location
+                src_location=data_locations[0], dst_location=data_locations[-1]
             )
             location = location.wraps
-        return data_location
+        for loc in data_locations:
+            loc.available.set()
+        return data_locations[0]
 
     def register_relation(
         self, src_location: DataLocation, dst_location: DataLocation
@@ -452,11 +447,15 @@ class DefaultDataManager(DataManager):
             inner_path = data_location.path
             inner_location = data_location.location
             while (
-                inner_path := _get_inner_path(inner_location, inner_path)
+                inner_path := get_inner_path(
+                    StreamFlowPath(
+                        inner_path, context=self.context, location=inner_location
+                    )
+                )
             ) is not None:
                 inner_location = inner_location.wraps
                 if inner_data_locs := self.path_mapper.get(
-                    path=inner_path,
+                    path=str(inner_path),
                     deployment=inner_location.deployment,
                     name=inner_location.name,
                 ):
@@ -464,7 +463,7 @@ class DefaultDataManager(DataManager):
                 else:
                     inner_data_location = DataLocation(
                         location=inner_location,
-                        path=inner_path,
+                        path=str(inner_path),
                         relpath=data_location.relpath,
                         data_type=data_location.data_type,
                         available=True,

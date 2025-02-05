@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import posixpath
 import urllib.parse
 from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import PurePath
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import cwl_utils.expression
 import cwl_utils.parser
@@ -472,6 +473,40 @@ async def build_token_value(
     return token_value
 
 
+async def create_remote_directory(
+    context: StreamFlowContext,
+    locations: MutableSequence[ExecutionLocation],
+    path: str,
+    relpath: str,
+):
+    tasks = []
+    for location in locations:
+        path = StreamFlowPath(path, context=context, location=location)
+        if not await path.exists():
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Creating {path} {location}".format(
+                        path=str(path),
+                        location=(
+                            "on local file-system"
+                            if location.local
+                            else f"on location {location}"
+                        ),
+                    )
+                )
+            tasks.append(
+                asyncio.create_task(path.mkdir(mode=0o777, parents=True, exist_ok=True))
+            )
+            await _register_path(
+                context=context,
+                connector=context.deployment_manager.get_connector(location.deployment),
+                location=location,
+                path=str(path),
+                relpath=relpath,
+            )
+    await asyncio.gather(*tasks)
+
+
 def eval_expression(
     expression: str,
     context: MutableMapping[str, Any],
@@ -562,10 +597,10 @@ async def get_file_token(
 ) -> MutableMapping[str, Any]:
     path_processor = get_path_processor(connector)
     basename = basename or path_processor.basename(filepath)
-    location = "".join(["file://", urllib.parse.quote(filepath)])
+    file_location = "".join(["file://", urllib.parse.quote(filepath)])
     token = {
         "class": token_class,
-        "location": location,
+        "location": file_location,
         "basename": basename,
         "path": filepath,
         "dirname": path_processor.dirname(filepath),
@@ -584,9 +619,12 @@ async def get_file_token(
                         token["size"],
                         cwl_version,
                     )
-                token["checksum"] = "sha1${checksum}".format(
-                    checksum=await real_path.checksum()
-                )
+                if (checksum := await real_path.checksum()) is not None:
+                    token["checksum"] = f"sha1${checksum}"
+                else:
+                    raise WorkflowExecutionException(
+                        f"Impossible to retrieve checksum of {real_path} on {location}"
+                    )
                 break
     elif token_class == "Directory" and load_listing != LoadListing.no_listing:  # nosec
         for location in locations:
@@ -847,8 +885,9 @@ async def register_data(
         elif "listing" in token_value:
             paths.extend(
                 [
-                    t["path"] if "path" in t else t["location"]
+                    t.get("path", t["location"])
                     for t in token_value["listing"]
+                    if "path" in t or "location" in t
                 ]
             )
         if "secondaryFiles" in token_value:
@@ -879,6 +918,99 @@ async def register_data(
                     for location in locations
                 )
             )
+
+
+def remap_path(
+    path_processor: ModuleType, path: str, old_dir: str, new_dir: str
+) -> str:
+    if ":/" in path:
+        scheme = urllib.parse.urlsplit(path).scheme
+        if scheme == "file":
+            return "file://{}".format(
+                path_processor.join(
+                    new_dir,
+                    *os.path.relpath(urllib.parse.unquote(path[7:]), old_dir).split(
+                        os.path.sep
+                    ),
+                )
+            )
+        else:
+            return path
+    else:
+        return path_processor.join(
+            new_dir,
+            *os.path.relpath(urllib.parse.unquote(path), old_dir).split(os.path.sep),
+        )
+
+
+def remap_token_value(
+    path_processor: ModuleType, old_dir: str, new_dir: str, value: Any
+) -> Any:
+    if isinstance(value, MutableSequence):
+        return [remap_token_value(path_processor, old_dir, new_dir, v) for v in value]
+    elif isinstance(
+        value, (get_args(cwl_utils.parser.File), get_args(cwl_utils.parser.Directory))
+    ):
+        if value.path:
+            value.path = remap_path(
+                path_processor=path_processor,
+                path=value.path,
+                old_dir=old_dir,
+                new_dir=new_dir,
+            )
+        if value.location:
+            value.location = remap_path(
+                path_processor=path_processor,
+                path=value.location,
+                old_dir=old_dir,
+                new_dir=new_dir,
+            )
+        if isinstance(value, get_args(cwl_utils.parser.File)):
+            if value.secondaryFiles:
+                value.secondaryFiles = [
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
+                    for sf in value.secondaryFiles
+                ]
+        elif value.listing:
+            value.listing = [
+                remap_token_value(path_processor, old_dir, new_dir, sf)
+                for sf in value.listing
+            ]
+        return value
+    elif isinstance(value, MutableMapping):
+        if get_token_class(value) in ["File", "Directory"]:
+            if "location" in value:
+                value["location"] = remap_path(
+                    path_processor=path_processor,
+                    path=value["location"],
+                    old_dir=old_dir,
+                    new_dir=new_dir,
+                )
+            if "path" in value:
+                value["path"] = remap_path(
+                    path_processor=path_processor,
+                    path=value["path"],
+                    old_dir=old_dir,
+                    new_dir=new_dir,
+                )
+            if "secondaryFiles" in value:
+                value["secondaryFiles"] = [
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
+                    for sf in value["secondaryFiles"]
+                ]
+            if "listing" in value:
+                value["listing"] = [
+                    remap_token_value(path_processor, old_dir, new_dir, sf)
+                    for sf in value["listing"]
+                ]
+            return value
+        else:
+            return {
+                k: remap_token_value(path_processor, old_dir, new_dir, v)
+                for k, v in value.items()
+            }
+    else:
+        return value
 
 
 def resolve_dependencies(
@@ -1070,7 +1202,9 @@ async def write_remote_file(
                     )
                 )
             await path.write_text(content)
-            context.data_manager.register_path(
+            await _register_path(
+                context=context,
+                connector=context.deployment_manager.get_connector(location.deployment),
                 location=location,
                 path=str(path),
                 relpath=relpath,
