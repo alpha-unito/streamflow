@@ -878,6 +878,14 @@ class CWLCommand(TokenizedCommand):
         )
         # Check if file `cwl.output.json` exists either locally on at least one location
         result = await _check_cwl_output(job, self.step, result)
+        if self.stderr:
+            stderr_path = StreamFlowPath(
+                job.output_directory,
+                self.stderr,
+                context=self.step.workflow.context,
+                location=locations[0],
+            )
+            logger.info(f"STDERR file {stderr_path}: {await stderr_path.read_text()}")
         return CWLCommandOutput(value=result, status=status, exit_code=exit_code)
 
 
