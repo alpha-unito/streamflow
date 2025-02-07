@@ -83,7 +83,7 @@ class SSHContext:
             port=port,
             tunnel=await self._get_connection(config.tunnel),
             username=config.username,
-            connect_timeout=config.connect_timeout * (self.connection_attempts + 1),
+            connect_timeout=config.connect_timeout,
         )
 
     def _get_param_from_file(self, file_path: str):
@@ -119,7 +119,7 @@ class SSHContext:
                     await self.close()
                     if isinstance(err, asyncio.TimeoutError):
                         raise asyncio.TimeoutError(
-                            f"The SSH connection attempt to {self.get_hostname()} took too long."
+                            f"SSH connection to {self.get_hostname()} failed: connection timed out"
                         )
                     else:
                         raise
@@ -405,7 +405,7 @@ class SSHConnector(BaseConnector):
                 template_map=services_map,
             )
         self.checkHostKey: bool = checkHostKey
-        self.connect_timeout: int = connectTimeout
+        self.connectTimeout: int = connectTimeout
         self.passwordFile: str | None = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
         self.maxConnections: int = maxConnections
@@ -529,31 +529,21 @@ class SSHConnector(BaseConnector):
             return None
         elif isinstance(node, str):
             node = {"hostname": node}
-        ssh_key = node["sshKey"] if "sshKey" in node else self.sshKey
+        ssh_key = node.get("sshKey", self.sshKey)
         return SSHConfig(
             hostname=node["hostname"],
-            username=node["username"] if "username" in node else self.username,
-            check_host_key=(
-                node["checkHostKey"] if "checkHostKey" in node else self.checkHostKey
-            ),
+            username=node.get("username", self.username),
+            check_host_key=node.get("checkHostKey", self.checkHostKey),
             client_keys=[ssh_key] if ssh_key is not None else [],
-            password_file=(
-                node["passwordFile"] if "passwordFile" in node else self.passwordFile
-            ),
-            ssh_key_passphrase_file=(
-                node["sshKeyPassphraseFile"]
-                if "sshKeyPassphraseFile" in node
-                else self.sshKeyPassphraseFile
+            connect_timeout=node.get("connectTimeout", self.connectTimeout),
+            password_file=node.get("passwordFile", self.passwordFile),
+            ssh_key_passphrase_file=node.get(
+                "sshKeyPassphraseFile", self.sshKeyPassphraseFile
             ),
             tunnel=(
                 self._get_config(node["tunnel"])
                 if "tunnel" in node
                 else self.tunnel if hasattr(self, "tunnel") else None
-            ),
-            connect_timeout=(
-                node["connect_timeout"]
-                if "connect_timeout" in node
-                else self.connect_timeout
             ),
         )
 

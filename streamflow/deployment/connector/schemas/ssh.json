@@ -72,7 +72,7 @@
     },
     "connectTimeout": {
       "type": "integer",
-      "description": "Time (in seconds) to wait for establish the connection. When an attempt fails, the time to wait is increased.",
+      "description": "Max time (in seconds) to wait for establishing an SSH connection.",
       "default": 30
     },
     "dataTransferConnection": {
