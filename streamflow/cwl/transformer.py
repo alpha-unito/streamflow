@@ -30,6 +30,8 @@ class AllNonNullTransformer(OneToOneTransformer):
             )
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
+        elif token.value is None:
+            return token.update(None) # skipped step
         else:
             raise WorkflowExecutionException(f"Invalid value for token {name}")
 
@@ -247,6 +249,8 @@ class FirstNonNullTransformer(OneToOneTransformer):
             raise WorkflowExecutionException(f"All sources are null in token {name}")
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
+        elif token.value is None:
+            raise NotImplementedError
         else:
             raise WorkflowExecutionException(f"Invalid value for token {name}")
 
@@ -273,6 +277,8 @@ class ListToElementTransformer(OneToOneTransformer):
                 return token.update(token.value)
         elif isinstance(token.value, Token):
             return token.update(self._transform(token.value))
+        elif token.value is None:
+            raise NotImplementedError
         else:
             raise WorkflowDefinitionException(
                 f"Invalid token value: Token required, but received {type(token.value)}"
@@ -302,6 +308,8 @@ class OnlyNonNullTransformer(OneToOneTransformer):
             return ret.update(ret.value) if isinstance(ret, Token) else ret
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
+        elif token.value is None:
+            raise NotImplementedError
         else:
             raise WorkflowExecutionException(f"Invalid value for token {name}")
 
