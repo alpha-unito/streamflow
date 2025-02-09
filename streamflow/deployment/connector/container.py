@@ -83,18 +83,17 @@ async def _get_storage_from_binds(
 async def _resolve_bind(
     container_connector: ContainerConnector, binds: MutableSequence[str] | None
 ) -> MutableSequence[str] | None:
-    src_paths, dst_paths = zip(*(v.split(":") for v in binds))
-    return (
-        [
+    if binds is not None:
+        src_paths, dst_paths = zip(*(v.split(":") for v in binds))
+        return [
             f"{src}:{dst}"
             for src, dst in zip(
                 await container_connector._resolve_paths(src_paths),
                 dst_paths,
             )
         ]
-        if binds is not None
-        else None
-    )
+    else:
+        return None
 
 
 async def _resolve_mount(
@@ -1781,7 +1780,8 @@ class SingularityConnector(ContainerConnector):
                 f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
             )
         # Get inner location mount points
-        if False and self._wraps_local():
+        check_proc_pid_mountinfo = True  # TODO: debug variable
+        if not check_proc_pid_mountinfo and self._wraps_local():
             fs_mounts = {
                 disk.device: disk.mountpoint
                 for disk in psutil.disk_partitions(all=True)
@@ -1794,7 +1794,11 @@ class SingularityConnector(ContainerConnector):
                 location=self._inner_location.location,
                 command=[
                     "cat",
-                    "/proc/self/mountinfo",
+                    (
+                        "/proc/self/mountinfo"
+                        if check_proc_pid_mountinfo
+                        else "/proc/1/mountinfo"
+                    ),
                 ],
                 capture_output=True,
             )
@@ -1852,20 +1856,23 @@ class SingularityConnector(ContainerConnector):
                         )
                     if host_mount is not None:
                         # Return `mnt_point` if a `root` is equal to `host_mount` else return `host_mount`
-                        binds[dst] = next(
-                            (
-                                os.path.join(
-                                    mnt_point, os.path.relpath(host_mount, root)
-                                )
-                                for mnt_point, root in sorted(
-                                    fs_host_mounts.items(),
-                                    key=lambda x: len(x[1].split(os.sep)),
-                                    reverse=True,
-                                )
-                                if host_mount.startswith(root)
-                            ),
-                            host_mount,
-                        )
+                        if check_proc_pid_mountinfo:
+                            binds[dst] = next(
+                                (
+                                    os.path.join(
+                                        mnt_point, os.path.relpath(host_mount, root)
+                                    )
+                                    for mnt_point, root in sorted(
+                                        fs_host_mounts.items(),
+                                        key=lambda x: len(x[1].split(os.sep)),
+                                        reverse=True,
+                                    )
+                                    if host_mount.startswith(root)
+                                ),
+                                host_mount,
+                            )
+                        else:
+                            binds[dst] = host_mount
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(f"Host mount of {host_mount} is {binds[dst]}")
 
