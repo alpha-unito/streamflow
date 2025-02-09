@@ -442,7 +442,6 @@ def _create_command_output_processor(
 
 def _create_context(version: str) -> MutableMapping[str, Any]:
     return {
-        "default": {},
         "elements": {},
         "requirements": {},
         "hints": {},
@@ -1580,7 +1579,7 @@ class CWLTranslator:
         cwl_name_prefix: str,
     ):
         # Update context
-        current_context = copy.deepcopy(context)
+        current_context = copy.copy(context)
         for hint in cwl_element.hints or []:
             if not isinstance(hint, MutableMapping):
                 current_context["hints"][hint.class_] = hint

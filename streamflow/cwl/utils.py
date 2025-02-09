@@ -712,9 +712,13 @@ def process_embedded_tool(
 ):
     run_command = cwl_element.run
     inner_context = dict(context)
+    # If the `run` options contains an inline CWL object
     if cwl_utils.parser.is_process(run_command):
+        # Add the CWL version, which is not present by default
         run_command.cwlVersion = context["version"]
+        # Process `stdout` and `stderr` directives
         cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
+        # Compute the prefix of the inner CWL element
         if ":" in run_command.id.split("#")[-1]:
             cwl_step_name = get_name(
                 name_prefix,
@@ -734,19 +738,24 @@ def process_embedded_tool(
                 run_command.id,
                 preserve_cwl_prefix=True,
             )
+    # Otherwise, the `run` options contains an URI
     else:
-        run_command = cwl_element.loadingOptions.fetcher.urljoin(
-            cwl_element.loadingOptions.fileuri, run_command
-        )
+        # Fetch and translare the target file
         run_command = cwl_utils.parser.load_document_by_uri(
-            run_command, loadingOptions=cwl_element.loadingOptions
+            path=cwl_element.loadingOptions.fetcher.urljoin(
+                base_url=cwl_element.loadingOptions.fileuri, url=run_command
+            ),
+            loadingOptions=cwl_element.loadingOptions,
         )
+        # Process `stdout` and `stderr` directives
         cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
+        # Compute the prefix of the inner CWL element
         inner_cwl_name_prefix = (
             get_name(posixpath.sep, posixpath.sep, run_command.id)
             if "#" in run_command.id
             else posixpath.sep
         )
+        # Set the inner CWL version, which may differ from the outer one
         inner_context |= {"version": run_command.cwlVersion}
     return run_command, inner_cwl_name_prefix, inner_context
 
