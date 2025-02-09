@@ -1,4 +1,4 @@
-FROM python:3.13-alpine3.21 AS builder
+FROM python:3.13-slim AS builder
 ARG HELM_VERSION
 
 ENV VIRTUAL_ENV="/opt/streamflow"
@@ -14,18 +14,8 @@ COPY ./requirements.txt           \
 COPY ./docs/requirements.txt /build/docs
 COPY ./streamflow /build/streamflow
 
-RUN apk --no-cache add \
-        bash \
-        cargo \
-        curl \
-        g++ \
-        libffi-dev \
-        libxml2-dev \
-        libxslt-dev \
-        make \
-        musl-dev \
-        openssl \
-        openssl-dev \
+RUN apt update -y \
+    && apt install -y --no-install-recommends curl \
     && curl -fsSL \
           --retry 5 \
           --retry-max-time 60 \
@@ -38,7 +28,7 @@ RUN apk --no-cache add \
     && python -m venv ${VIRTUAL_ENV} \
     && pip install .
 
-FROM python:3.13-alpine3.21
+FROM python:3.13-slim
 LABEL maintainer="iacopo.colonnelli@unito.it"
 
 ENV VIRTUAL_ENV="/opt/streamflow"
@@ -47,11 +37,9 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 COPY --from=builder /usr/local/bin/helm /usr/local/bin/helm
 
-RUN apk --no-cache add \
-        libxml2 \
-        libxslt \
-        nodejs \
-        openssl \
+RUN apt update -y \
+    && apt install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /streamflow/results
 
 WORKDIR /streamflow/results
