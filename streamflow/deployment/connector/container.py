@@ -1794,7 +1794,8 @@ class SingularityConnector(ContainerConnector):
                 location=self._inner_location.location,
                 command=[
                     "cat",
-                    "/proc/self/mountinfo",
+                    # "/proc/self/mountinfo",
+                    "/proc/1/mountinfo",
                 ],
                 capture_output=True,
             )
@@ -1852,20 +1853,21 @@ class SingularityConnector(ContainerConnector):
                         )
                     if host_mount is not None:
                         # Return `mnt_point` if a `root` is equal to `host_mount` else return `host_mount`
-                        binds[dst] = next(
-                            (
-                                os.path.join(
-                                    mnt_point, os.path.relpath(host_mount, root)
-                                )
-                                for mnt_point, root in sorted(
-                                    fs_host_mounts.items(),
-                                    key=lambda x: len(x[1].split(os.sep)),
-                                    reverse=True,
-                                )
-                                if host_mount.startswith(root)
-                            ),
-                            host_mount,
-                        )
+                        # binds[dst] = next(
+                        #     (
+                        #         os.path.join(
+                        #             mnt_point, os.path.relpath(host_mount, root)
+                        #         )
+                        #         for mnt_point, root in sorted(
+                        #             fs_host_mounts.items(),
+                        #             key=lambda x: len(x[1].split(os.sep)),
+                        #             reverse=True,
+                        #         )
+                        #         if host_mount.startswith(root)
+                        #     ),
+                        #     host_mount,
+                        # )
+                        binds[dst] = host_mount
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(f"Host mount of {host_mount} is {binds[dst]}")
 

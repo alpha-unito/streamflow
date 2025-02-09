@@ -440,10 +440,14 @@ class DefaultScheduler(Scheduler):
                                 while locations:
                                     for loc in locations:
                                         if loc.name in self.hardware_locations.keys():
-                                            self.hardware_locations[loc.name] = (
-                                                self.hardware_locations[loc.name]
-                                                - job_hardware
-                                            ) + Hardware(
+                                            _storages = (
+                                                await remotepath.get_storage_usages(
+                                                    self.context,
+                                                    loc,
+                                                    job_hardware,
+                                                )
+                                            )
+                                            _disk_usage = Hardware(
                                                 storage={
                                                     k: Storage(
                                                         mount_point=job_hardware.storage[
@@ -451,14 +455,28 @@ class DefaultScheduler(Scheduler):
                                                         ].mount_point,
                                                         size=size / 2**20,
                                                     )
-                                                    for k, size in (
-                                                        await remotepath.get_storage_usages(
-                                                            self.context,
-                                                            loc,
-                                                            job_hardware,
-                                                        )
-                                                    ).items()
+                                                    for k, size in _storages.items()
                                                 }
+                                            )
+
+                                            logger.info(
+                                                f"Scheduling info.\n"
+                                                f"Location {loc.name} has available {self.hardware_locations[loc.name]}.\n"
+                                                f"Job {job_name} will release {job_hardware} and occupy {_disk_usage}"
+                                            )
+                                            try:
+                                                diff = (
+                                                    self.hardware_locations[loc.name]
+                                                    - job_hardware
+                                                )
+                                            except BaseException:
+                                                logger.error(
+                                                    f"Location {loc.name} has {self.hardware_locations[loc.name]} "
+                                                    f"while job requires {job_hardware}"
+                                                )
+                                                raise
+                                            self.hardware_locations[loc.name] = (
+                                                diff + _disk_usage
                                             )
                                     if locations := [
                                         loc.wraps for loc in locations if loc.stacked

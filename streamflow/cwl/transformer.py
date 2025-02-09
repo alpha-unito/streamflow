@@ -31,7 +31,7 @@ class AllNonNullTransformer(OneToOneTransformer):
         elif isinstance(token.value, Token):
             return token.update(self._transform(name, token.value))
         elif token.value is None:
-            return token.update(None) # skipped step
+            return token.update(None)  # skipped step
         else:
             raise WorkflowExecutionException(f"Invalid value for token {name}")
 
