@@ -488,15 +488,7 @@ class RemoteStreamFlowPath(
                         for loc in locations:
                             if self._is_valid_inner_path(loc):
                                 await loc.available.wait()
-                                # The inner location has access to the file
-                                if get_inner_path(
-                                    StreamFlowPath(
-                                        loc.path,
-                                        context=self.context,
-                                        location=loc.location,
-                                    )
-                                ):
-                                    break
+                                break
                         else:
                             if real_path := await self.resolve():
                                 self._inner_path = (
