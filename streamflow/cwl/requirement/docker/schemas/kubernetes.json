@@ -45,6 +45,11 @@
       "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
       "default": 10
     },
+    "networkPolicy": {
+      "type": "boolean",
+      "description": "Use a NetworkPolicy object to explicitly limit containers' network access when the NetworkAccess requirement is set to false",
+      "default": false
+    },
     "timeout": {
       "type": "integer",
       "description": "Time (in seconds) to wait for any individual Kubernetes operation",
