@@ -70,6 +70,11 @@
       "description": "Perform a strict validation of the host SSH keys (and return exception if key is not recognized as valid)",
       "default": true
     },
+    "connectTimeout": {
+      "type": "integer",
+      "description": "Max time (in seconds) to wait for establishing an SSH connection.",
+      "default": 30
+    },
     "dataTransferConnection": {
       "oneOf": [
         {

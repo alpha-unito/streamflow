@@ -83,6 +83,7 @@ class SSHContext:
             port=port,
             tunnel=await self._get_connection(config.tunnel),
             username=config.username,
+            connect_timeout=config.connect_timeout,
         )
 
     def _get_param_from_file(self, file_path: str):
@@ -114,13 +115,14 @@ class SSHContext:
                 self._connecting = True
                 try:
                     self._ssh_connection = await self._get_connection(self._config)
-                except (ConnectionError, asyncssh.Error) as e:
-                    if logger.isEnabledFor(logging.WARNING):
-                        logger.warning(
-                            f"Connection to {self._config.hostname} failed: {e}."
-                        )
+                except (ConnectionError, asyncssh.Error, asyncio.TimeoutError) as err:
                     await self.close()
-                    raise
+                    if isinstance(err, asyncio.TimeoutError):
+                        raise asyncio.TimeoutError(
+                            f"SSH connection to {self.get_hostname()} failed: connection timed out"
+                        )
+                    else:
+                        raise
                 finally:
                     self._connect_event.set()
             else:
@@ -213,6 +215,7 @@ class SSHContextManager:
                             ConnectionError,
                             ConnectionLost,
                             DisconnectError,
+                            asyncio.TimeoutError,
                         ) as exc:
                             if logger.isEnabledFor(logging.WARNING):
                                 logger.warning(
@@ -336,6 +339,7 @@ class SSHConfig:
         self,
         check_host_key: bool,
         client_keys: MutableSequence[str],
+        connect_timeout: int,
         hostname: str,
         password_file: str | None,
         ssh_key_passphrase_file: str | None,
@@ -344,6 +348,7 @@ class SSHConfig:
     ):
         self.check_host_key: bool = check_host_key
         self.client_keys: MutableSequence[str] = client_keys
+        self.connect_timeout: int = connect_timeout
         self.hostname: str = hostname
         self.password_file: str | None = password_file
         self.ssh_key_passphrase_file: str | None = ssh_key_passphrase_file
@@ -359,6 +364,7 @@ class SSHConnector(BaseConnector):
         nodes: MutableSequence[Any],
         username: str | None = None,
         checkHostKey: bool = True,
+        connectTimeout: int = 30,
         dataTransferConnection: str | MutableMapping[str, Any] | None = None,
         file: str | None = None,
         maxConcurrentSessions: int = 10,
@@ -399,6 +405,7 @@ class SSHConnector(BaseConnector):
                 template_map=services_map,
             )
         self.checkHostKey: bool = checkHostKey
+        self.connectTimeout: int = connectTimeout
         self.passwordFile: str | None = passwordFile
         self.maxConcurrentSessions: int = maxConcurrentSessions
         self.maxConnections: int = maxConnections
@@ -522,21 +529,16 @@ class SSHConnector(BaseConnector):
             return None
         elif isinstance(node, str):
             node = {"hostname": node}
-        ssh_key = node["sshKey"] if "sshKey" in node else self.sshKey
+        ssh_key = node.get("sshKey", self.sshKey)
         return SSHConfig(
             hostname=node["hostname"],
-            username=node["username"] if "username" in node else self.username,
-            check_host_key=(
-                node["checkHostKey"] if "checkHostKey" in node else self.checkHostKey
-            ),
+            username=node.get("username", self.username),
+            check_host_key=node.get("checkHostKey", self.checkHostKey),
             client_keys=[ssh_key] if ssh_key is not None else [],
-            password_file=(
-                node["passwordFile"] if "passwordFile" in node else self.passwordFile
-            ),
-            ssh_key_passphrase_file=(
-                node["sshKeyPassphraseFile"]
-                if "sshKeyPassphraseFile" in node
-                else self.sshKeyPassphraseFile
+            connect_timeout=node.get("connectTimeout", self.connectTimeout),
+            password_file=node.get("passwordFile", self.passwordFile),
+            ssh_key_passphrase_file=node.get(
+                "sshKeyPassphraseFile", self.sshKeyPassphraseFile
             ),
             tunnel=(
                 self._get_config(node["tunnel"])
