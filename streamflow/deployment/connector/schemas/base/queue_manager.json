@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/queue_manager.json",
-  "$$target": "queue_manager.json",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/base/queue_manager.json",
+  "$$target": "base/queue_manager.json",
   "type": "object",
   "properties": {
     "checkHostKey": {

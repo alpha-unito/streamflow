@@ -148,7 +148,7 @@
   },
   "allOf": [
     {
-      "$ref": "queue_manager.json"
+      "$ref": "base/queue_manager.json"
     }
   ],
   "properties": {
