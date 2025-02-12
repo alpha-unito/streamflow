@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -35,7 +36,11 @@ from streamflow.deployment.connector.base import (
     copy_remote_to_remote,
     copy_same_connector,
 )
-from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
+from streamflow.deployment.wrapper import (
+    ConnectorWrapper,
+    get_inner_location,
+    get_inner_locations,
+)
 from streamflow.log_handler import logger
 
 
@@ -97,6 +102,15 @@ def _parse_mount(mount: str) -> tuple[str, str]:
     return source, destination
 
 
+class BindMount:
+    __slots__ = ("src", "dst", "read_only")
+
+    def __init__(self, src: str, dst: str, read_only: bool):
+        self.src: str = src
+        self.dst: str = dst
+        self.read_only: bool = read_only
+
+
 class ContainerInstance:
     __slots__ = ("address", "cores", "current_user", "memory", "volumes")
 
@@ -121,10 +135,11 @@ class ContainerConnector(ConnectorWrapper, ABC):
         deployment_name: str,
         config_dir: str,
         connector: Connector,
+        ephemeral: bool,
         service: str | None,
         transferBufferSize: int,
     ):
-        if isinstance(connector, BatchConnector):
+        if not ephemeral and isinstance(connector, BatchConnector):
             raise WorkflowDefinitionException(
                 f"Deployment {self.deployment_name} of type {self.__class__.__name__} "
                 f"cannot wrap deployment {connector.deployment_name} "
@@ -137,8 +152,10 @@ class ContainerConnector(ConnectorWrapper, ABC):
             service=service,
             transferBufferSize=transferBufferSize,
         )
+        self.ephemeral: bool = ephemeral
         self._inner_location: AvailableLocation | None = None
         self._instances: MutableMapping[str, ContainerInstance] = {}
+        self._mounts: MutableSequence[BindMount] = []
 
     async def _check_effective_location(
         self,
@@ -194,275 +211,24 @@ class ContainerConnector(ConnectorWrapper, ABC):
         if logger.isEnabledFor(logging.INFO):
             logger.info(f"COMPLETED copy from {src} to {dst} on location {location}")
 
-    async def copy_local_to_remote(
-        self,
-        src: str,
-        dst: str,
-        locations: MutableSequence[ExecutionLocation],
-        read_only: bool = False,
-    ) -> None:
-        bind_locations = {}
-        copy_tasks = []
-        dst = await get_local_to_remote_destination(self, locations[0], src, dst)
-        for location in await self._get_effective_locations(locations, dst):
-            instance = await self._get_instance(location.name)
-            # Check if the container user is the current host user
-            # and if the destination path is on a mounted volume
-            if (
-                instance.current_user
-                and (adjusted_dst := self._get_host_path(instance, dst)) is not None
-            ):
-                # If data is read_only, check if the source path is bound to a mounted volume, too
-                if (
-                    read_only
-                    and (adjusted_src := self._get_container_path(instance, src))
-                    is not None
-                ):
-                    # If yes, then create a symbolic link
-                    copy_tasks.append(
-                        asyncio.create_task(
-                            self._local_copy(
-                                src=adjusted_src,
-                                dst=dst,
-                                location=location,
-                                read_only=read_only,
-                            )
-                        )
-                    )
-                # Otherwise, delegate transfer to the inner connector
-                else:
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Delegating the transfer of {src} "
-                            f"to {adjusted_dst} from local file-system "
-                            f"to location {location.name} to the inner connector."
-                        )
-                    bind_locations.setdefault(adjusted_dst, []).append(location)
-            # Otherwise, check if the source path is bound to a mounted volume
-            elif (adjusted_src := self._get_container_path(instance, src)) is not None:
-                # If yes, perform a copy command through the container connector
-                copy_tasks.append(
-                    asyncio.create_task(
-                        self._local_copy(
-                            src=adjusted_src,
-                            dst=dst,
-                            location=location,
-                            read_only=read_only,
-                        )
-                    )
-                )
-            else:
-                # If not, perform a transfer through the container connector
-                copy_tasks.append(
-                    asyncio.create_task(
-                        copy_local_to_remote(
-                            connector=self,
-                            location=location,
-                            src=src,
-                            dst=dst,
-                            writer_command=["tar", "xf", "-", "-C", "/"],
-                        )
-                    )
-                )
-        # Delegate bind transfers to the inner connector, preventing symbolic links
-        for dst, locations in bind_locations.items():
-            copy_tasks.append(
-                asyncio.create_task(
-                    self.connector.copy_local_to_remote(
-                        src=src, dst=dst, locations=locations, read_only=False
-                    )
-                )
-            )
-        await asyncio.gather(*copy_tasks)
-
-    async def copy_remote_to_local(
-        self,
-        src: str,
-        dst: str,
-        location: ExecutionLocation,
-        read_only: bool = False,
-    ) -> None:
-        instance = await self._get_instance(location.name)
-        # Check if the container user is the current host user
-        # and the source path is on a mounted volume in the source location
-        if (
-            instance.current_user
-            and (adjusted_src := self._get_host_path(instance, src)) is not None
-        ):
-            # If data is read_only, check if the destination path is bound to a mounted volume, too
-            if (
-                read_only
-                and self._wraps_local()
-                and not os.path.exists(dst)
-                and self._get_container_path(instance, dst) is not None
-            ):
-                # If yes, then create a symbolic link
-                if logger.isEnabledFor(logging.INFO):
-                    logger.info(
-                        f"COPYING from {adjusted_src} to {dst} on local file-system"
-                    )
-                os.symlink(adjusted_src, dst)
-                if logger.isEnabledFor(logging.INFO):
-                    logger.info(
-                        f"COMPLETED copy from {adjusted_src} to {dst} on local file-system"
-                    )
-            # Otherwise, delegate transfer to the inner connector
-            else:
-                logger.debug(
-                    f"Delegating the transfer of {adjusted_src} "
-                    f"to {dst} from location {location.name} "
-                    f"to the local file-system {location.name} to the inner "
-                    f"{self.connector.__class__.__name__} connector."
-                )
-                await self.connector.copy_remote_to_local(
-                    src=adjusted_src, dst=dst, location=location, read_only=read_only
-                )
-        # Otherwise, check if the destination path is bound to a mounted volume
-        elif (adjusted_dst := self._get_container_path(instance, dst)) is not None:
-            # If yes, perform a copy command through the container connector
-            await self._local_copy(
-                src=src, dst=adjusted_dst, location=location, read_only=read_only
-            )
-        else:
-            # If not, perform a transfer through the container connector
-            await copy_remote_to_local(
-                connector=self,
-                location=location,
-                src=src,
-                dst=dst,
-                reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
-            )
-
-    async def copy_remote_to_remote(
-        self,
-        src: str,
-        dst: str,
-        locations: MutableSequence[ExecutionLocation],
-        source_location: ExecutionLocation,
-        source_connector: Connector | None = None,
-        read_only: bool = False,
-    ) -> None:
-        source_connector = source_connector or self
-        # Check if the source path is on a mounted volume on the source location
-        if (
-            source_connector == self
-            and (
-                host_src := self._get_host_path(
-                    await self._get_instance(source_location.name), src
-                )
-            )
-            is not None
-        ):
-            # If performing a transfer between two containers that wrap a LocalConnector,
-            # then perform a local-to-remote copy
-            if self._wraps_local():
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Performing a local-to-remote copy of {host_src} "
-                        f"to {dst} from location {source_location.name} to "
-                        f"to locations {', '.join(loc.name for loc in locations)} "
-                        f"through the {self.__class__.__name__} copy strategy."
-                    )
-                await self.copy_local_to_remote(
-                    src=host_src, dst=dst, locations=locations, read_only=read_only
-                )
-            # Otherwise, check for optimizations
-            else:
-                effective_locations = await self._get_effective_locations(
-                    locations, dst
-                )
-                bind_locations = {}
-                unbound_locations = []
-                copy_tasks = []
-                for location in effective_locations:
-                    instance = await self._get_instance(location.name)
-                    # Check if the source path is on a mounted volume
-                    if (
-                        adjusted_src := self._get_container_path(instance, host_src)
-                    ) is not None:
-                        # If yes, perform a copy command through the container connector
-                        copy_tasks.append(
-                            asyncio.create_task(
-                                self._local_copy(
-                                    src=adjusted_src,
-                                    dst=dst,
-                                    location=location,
-                                    read_only=read_only,
-                                )
-                            )
-                        )
-                    # Otherwise, check if the container user is the current host user
-                    # and the destination path is on a mounted volume
-                    elif (
-                        instance.current_user
-                        and (adjusted_dst := self._get_host_path(instance, dst))
-                        is not None
-                    ):
-                        # If yes, then delegate transfer to the inner connector
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Delegating the transfer of {src} "
-                                f"to {adjusted_dst} from location {source_location.name} "
-                                f"to location {location.name} to the inner "
-                                f"{self.connector.__class__.__name__} connector."
-                            )
-                        bind_locations.setdefault(adjusted_dst, []).append(location)
-                    # Otherwise, mask the location as not bound
-                    else:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Copying from {src} to {dst} from location {source_location.name} to "
-                                f"location {location.name} through the "
-                                f"{self.__class__.__name__} copy strategy."
-                            )
-                        unbound_locations.append(location)
-                # Delegate bind transfers to the inner connector, preventing symbolic links
-                for host_dst, locs in bind_locations.items():
-                    copy_tasks.append(
-                        asyncio.create_task(
-                            self.connector.copy_local_to_remote(
-                                src=host_src,
-                                dst=host_dst,
-                                locations=locs,
-                                read_only=False,
-                            )
-                        )
-                    )
-                # Perform a standard remote-to-remote copy for unbound locations
-                copy_tasks.append(
-                    asyncio.create_task(
-                        copy_remote_to_remote(
-                            connector=self,
-                            locations=unbound_locations,
-                            src=src,
-                            dst=dst,
-                            source_connector=source_connector,
-                            source_location=source_location,
-                        )
-                    )
-                )
-                # Wait for all copy tasks to finish
-                await asyncio.gather(*copy_tasks)
-        # Otherwise, perform a standard remote-to-remote copy
-        else:
-            if locations := await copy_same_connector(
-                connector=self,
-                locations=await self._get_effective_locations(
-                    locations, dst, source_location
+    async def _get_available_location_from_instance(
+        self, instanceId: str | None = None
+    ) -> MutableMapping[str, AvailableLocation]:
+        instance = self._instances[instanceId]
+        return {
+            instanceId: AvailableLocation(
+                name=instanceId,
+                deployment=self.deployment_name,
+                hostname=instance.address,
+                hardware=Hardware(
+                    cores=instance.cores,
+                    memory=instance.memory,
+                    storage=instance.volumes,
                 ),
-                source_location=source_location,
-                src=src,
-                dst=dst,
-                read_only=read_only,
-            ):
-                await copy_remote_to_remote(
-                    connector=self,
-                    locations=locations,
-                    src=src,
-                    dst=dst,
-                    source_connector=source_connector,
-                    source_location=source_location,
-                )
+                stacked=True,
+                wraps=self._inner_location,
+            )
+        }
 
     async def _get_effective_locations(
         self,
@@ -539,6 +305,341 @@ class ContainerConnector(ConnectorWrapper, ABC):
     def _wraps_local(self) -> bool:
         return self._inner_location.local
 
+    async def copy_local_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[ExecutionLocation],
+        read_only: bool = False,
+    ) -> None:
+        # If container is ephemeral
+        if self.ephemeral:
+            # Delegate the copy to the inner connector
+            await super().copy_local_to_remote(
+                src=src,
+                dst=dst,
+                locations=get_inner_locations(locations=locations),
+                read_only=read_only,
+            )
+            # Add the source path to the mount points
+            self._mounts.append(
+                BindMount(
+                    src=dst,
+                    dst=os.path.realpath(dst) if self._wraps_local() else dst,
+                    read_only=read_only,
+                )
+            )
+        # Otherwise, try to optimise the data movement
+        else:
+            bind_locations = {}
+            copy_tasks = []
+            dst = await get_local_to_remote_destination(self, locations[0], src, dst)
+            for location in await self._get_effective_locations(locations, dst):
+                instance = await self._get_instance(location.name)
+                # Check if the container user is the current host user
+                # and if the destination path is on a mounted volume
+                if (
+                    instance.current_user
+                    and (adjusted_dst := self._get_host_path(instance, dst)) is not None
+                ):
+                    # If data is read_only, check if the source path is bound to a mounted volume, too
+                    if (
+                        read_only
+                        and (adjusted_src := self._get_container_path(instance, src))
+                        is not None
+                    ):
+                        # If yes, then create a symbolic link
+                        copy_tasks.append(
+                            asyncio.create_task(
+                                self._local_copy(
+                                    src=adjusted_src,
+                                    dst=dst,
+                                    location=location,
+                                    read_only=read_only,
+                                )
+                            )
+                        )
+                    # Otherwise, delegate transfer to the inner connector
+                    else:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Delegating the transfer of {src} "
+                                f"to {adjusted_dst} from local file-system "
+                                f"to location {location.name} to the inner connector."
+                            )
+                        bind_locations.setdefault(adjusted_dst, []).append(location)
+                # Otherwise, check if the source path is bound to a mounted volume
+                elif (
+                    adjusted_src := self._get_container_path(instance, src)
+                ) is not None:
+                    # If yes, perform a copy command through the container connector
+                    copy_tasks.append(
+                        asyncio.create_task(
+                            self._local_copy(
+                                src=adjusted_src,
+                                dst=dst,
+                                location=location,
+                                read_only=read_only,
+                            )
+                        )
+                    )
+                else:
+                    # If not, perform a transfer through the container connector
+                    copy_tasks.append(
+                        asyncio.create_task(
+                            copy_local_to_remote(
+                                connector=self,
+                                location=location,
+                                src=src,
+                                dst=dst,
+                                writer_command=["tar", "xf", "-", "-C", "/"],
+                            )
+                        )
+                    )
+            # Delegate bind transfers to the inner connector, preventing symbolic links
+            for dst, locations in bind_locations.items():
+                copy_tasks.append(
+                    asyncio.create_task(
+                        self.connector.copy_local_to_remote(
+                            src=src, dst=dst, locations=locations, read_only=False
+                        )
+                    )
+                )
+            await asyncio.gather(*copy_tasks)
+
+    async def copy_remote_to_local(
+        self,
+        src: str,
+        dst: str,
+        location: ExecutionLocation,
+        read_only: bool = False,
+    ) -> None:
+        # If container is ephemeral, delegate the copy to the inner connector
+        if self.ephemeral:
+            await super().copy_remote_to_local(
+                src=src,
+                dst=dst,
+                location=get_inner_location(location=location),
+                read_only=read_only,
+            )
+        # Otherwise, try to optimise the data movement
+        else:
+            instance = await self._get_instance(location.name)
+            # Check if the container user is the current host user
+            # and the source path is on a mounted volume in the source location
+            if (
+                instance.current_user
+                and (adjusted_src := self._get_host_path(instance, src)) is not None
+            ):
+                # If data is read_only, check if the destination path is bound to a mounted volume, too
+                if (
+                    read_only
+                    and self._wraps_local()
+                    and not os.path.exists(dst)
+                    and self._get_container_path(instance, dst) is not None
+                ):
+                    # If yes, then create a symbolic link
+                    if logger.isEnabledFor(logging.INFO):
+                        logger.info(
+                            f"COPYING from {adjusted_src} to {dst} on local file-system"
+                        )
+                    os.symlink(adjusted_src, dst)
+                    if logger.isEnabledFor(logging.INFO):
+                        logger.info(
+                            f"COMPLETED copy from {adjusted_src} to {dst} on local file-system"
+                        )
+                # Otherwise, delegate transfer to the inner connector
+                else:
+                    logger.debug(
+                        f"Delegating the transfer of {adjusted_src} "
+                        f"to {dst} from location {location.name} "
+                        f"to the local file-system {location.name} to the inner "
+                        f"{self.connector.__class__.__name__} connector."
+                    )
+                    await self.connector.copy_remote_to_local(
+                        src=adjusted_src,
+                        dst=dst,
+                        location=location,
+                        read_only=read_only,
+                    )
+            # Otherwise, check if the destination path is bound to a mounted volume
+            elif (adjusted_dst := self._get_container_path(instance, dst)) is not None:
+                # If yes, perform a copy command through the container connector
+                await self._local_copy(
+                    src=src, dst=adjusted_dst, location=location, read_only=read_only
+                )
+            else:
+                # If not, perform a transfer through the container connector
+                await copy_remote_to_local(
+                    connector=self,
+                    location=location,
+                    src=src,
+                    dst=dst,
+                    reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+                )
+
+    async def copy_remote_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
+        source_connector: Connector | None = None,
+        read_only: bool = False,
+    ) -> None:
+        # If container is ephemeral
+        if self.ephemeral:
+            # Delegate the copy to the inner connector
+            await super().copy_remote_to_remote(
+                src=src,
+                dst=dst,
+                locations=get_inner_locations(locations=locations),
+                source_location=source_location,
+                source_connector=source_connector,
+                read_only=read_only,
+            )
+            # Follow symbolic link in the destination path
+            if self._wraps_local():
+                src = os.path.realpath(dst)
+            else:
+                result, returncode = await self.connector.run(
+                    location=self._inner_location.location,
+                    command=[f'readlink -f "{dst}"'],
+                    capture_output=True,
+                )
+                if returncode == 0:
+                    src = result.strip()
+                else:
+                    raise WorkflowExecutionException(
+                        f"FAILED copy from {src} to {dst} on deployment "
+                        f"{self.deployment_name}: [{returncode}] {result}"
+                    )
+            # Add the destination path to the mount points
+            self._mounts.append(BindMount(src=src, dst=dst, read_only=read_only))
+        # Otherwise, try to optimise the data movement
+        else:
+            source_connector = source_connector or self
+            # Check if the source path is on a mounted volume on the source location
+            if (
+                source_connector == self
+                and (
+                    host_src := self._get_host_path(
+                        await self._get_instance(source_location.name), src
+                    )
+                )
+                is not None
+            ):
+                # If performing a transfer between two containers that wrap a LocalConnector,
+                # then perform a local-to-remote copy
+                if self._wraps_local():
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Performing a local-to-remote copy of {host_src} "
+                            f"to {dst} from location {source_location.name} to "
+                            f"to locations {', '.join(loc.name for loc in locations)} "
+                            f"through the {self.__class__.__name__} copy strategy."
+                        )
+                    await self.copy_local_to_remote(
+                        src=host_src, dst=dst, locations=locations, read_only=read_only
+                    )
+                # Otherwise, check for optimizations
+                else:
+                    effective_locations = await self._get_effective_locations(
+                        locations, dst
+                    )
+                    bind_locations = {}
+                    unbound_locations = []
+                    copy_tasks = []
+                    for location in effective_locations:
+                        instance = await self._get_instance(location.name)
+                        # Check if the source path is on a mounted volume
+                        if (
+                            adjusted_src := self._get_container_path(instance, host_src)
+                        ) is not None:
+                            # If yes, perform a copy command through the container connector
+                            copy_tasks.append(
+                                asyncio.create_task(
+                                    self._local_copy(
+                                        src=adjusted_src,
+                                        dst=dst,
+                                        location=location,
+                                        read_only=read_only,
+                                    )
+                                )
+                            )
+                        # Otherwise, check if the container user is the current host user
+                        # and the destination path is on a mounted volume
+                        elif (
+                            instance.current_user
+                            and (adjusted_dst := self._get_host_path(instance, dst))
+                            is not None
+                        ):
+                            # If yes, then delegate transfer to the inner connector
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.debug(
+                                    f"Delegating the transfer of {src} "
+                                    f"to {adjusted_dst} from location {source_location.name} "
+                                    f"to location {location.name} to the inner "
+                                    f"{self.connector.__class__.__name__} connector."
+                                )
+                            bind_locations.setdefault(adjusted_dst, []).append(location)
+                        # Otherwise, mask the location as not bound
+                        else:
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.debug(
+                                    f"Copying from {src} to {dst} from location {source_location.name} to "
+                                    f"location {location.name} through the "
+                                    f"{self.__class__.__name__} copy strategy."
+                                )
+                            unbound_locations.append(location)
+                    # Delegate bind transfers to the inner connector, preventing symbolic links
+                    for host_dst, locs in bind_locations.items():
+                        copy_tasks.append(
+                            asyncio.create_task(
+                                self.connector.copy_local_to_remote(
+                                    src=host_src,
+                                    dst=host_dst,
+                                    locations=locs,
+                                    read_only=False,
+                                )
+                            )
+                        )
+                    # Perform a standard remote-to-remote copy for unbound locations
+                    copy_tasks.append(
+                        asyncio.create_task(
+                            copy_remote_to_remote(
+                                connector=self,
+                                locations=unbound_locations,
+                                src=src,
+                                dst=dst,
+                                source_connector=source_connector,
+                                source_location=source_location,
+                            )
+                        )
+                    )
+                    # Wait for all copy tasks to finish
+                    await asyncio.gather(*copy_tasks)
+            # Otherwise, perform a standard remote-to-remote copy
+            else:
+                if locations := await copy_same_connector(
+                    connector=self,
+                    locations=await self._get_effective_locations(
+                        locations, dst, source_location
+                    ),
+                    source_location=source_location,
+                    src=src,
+                    dst=dst,
+                    read_only=read_only,
+                ):
+                    await copy_remote_to_remote(
+                        connector=self,
+                        locations=locations,
+                        src=src,
+                        dst=dst,
+                        source_connector=source_connector,
+                        source_location=source_location,
+                    )
+
     async def deploy(self, external: bool) -> None:
         # Retrieve the underlying location
         locations = await self.connector.get_available_locations(service=self.service)
@@ -553,29 +654,41 @@ class ContainerConnector(ConnectorWrapper, ABC):
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager:
-        return await self.connector.get_stream_reader(
-            command=self._get_run_command(
-                command=utils.encode_command(" ".join(command), "sh"),
-                location=location,
-                interactive=False,
-            ),
-            location=get_inner_location(location),
-        )
+        if self.ephemeral:
+            return await super().get_stream_reader(
+                command=command,
+                location=get_inner_location(location=location),
+            )
+        else:
+            return await self.connector.get_stream_reader(
+                command=self._get_run_command(
+                    command=utils.encode_command(" ".join(command), "sh"),
+                    location=location,
+                    interactive=False,
+                ),
+                location=get_inner_location(location),
+            )
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> StreamWrapperContextManager:
-        encoded_command = base64.b64encode(" ".join(command).encode("utf-8")).decode(
-            "utf-8"
-        )
-        return await self.connector.get_stream_writer(
-            command=self._get_run_command(
-                command=f"eval $(echo {encoded_command} | base64 -d)",
-                location=location,
-                interactive=True,
-            ),
-            location=get_inner_location(location),
-        )
+        if self.ephemeral:
+            return await super().get_stream_reader(
+                command=command,
+                location=get_inner_location(location=location),
+            )
+        else:
+            encoded_command = base64.b64encode(
+                " ".join(command).encode("utf-8")
+            ).decode("utf-8")
+            return await self.connector.get_stream_writer(
+                command=self._get_run_command(
+                    command=f"eval $(echo {encoded_command} | base64 -d)",
+                    location=location,
+                    interactive=True,
+                ),
+                location=get_inner_location(location),
+            )
 
     async def run(
         self,
@@ -590,33 +703,47 @@ class ContainerConnector(ConnectorWrapper, ABC):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[Any | None, int] | None:
-        command = utils.create_command(
-            self.__class__.__name__,
-            command,
-            environment,
-            workdir,
-            stdin,
-            stdout,
-            stderr,
-        )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "EXECUTING command {command} on {location} {job}".format(
-                    command=command,
-                    location=location,
-                    job=f"for job {job_name}" if job_name else "",
-                )
+        if not self.ephemeral or job_name is not None:
+            command = utils.create_command(
+                self.__class__.__name__,
+                command,
+                environment,
+                workdir,
+                stdin,
+                stdout,
+                stderr,
             )
-        return await self.connector.run(
-            location=get_inner_location(location),
-            command=self._get_run_command(
-                command=utils.encode_command(command, "sh"),
-                location=location,
-            ),
-            capture_output=capture_output,
-            timeout=timeout,
-            job_name=job_name,
-        )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "EXECUTING command {command} on {location} {job}".format(
+                        command=command,
+                        location=location,
+                        job=f"for job {job_name}" if job_name else "",
+                    )
+                )
+            return await self.connector.run(
+                location=get_inner_location(location),
+                command=self._get_run_command(
+                    command=utils.encode_command(command, "sh"),
+                    location=location,
+                ),
+                capture_output=capture_output,
+                timeout=timeout,
+                job_name=job_name,
+            )
+        else:
+            return await super().run(
+                location=get_inner_location(location=location),
+                command=command,
+                environment=environment,
+                workdir=workdir,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                capture_output=capture_output,
+                timeout=timeout,
+                job_name=job_name,
+            )
 
 
 class DockerBaseConnector(ContainerConnector, ABC):
@@ -625,6 +752,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
         deployment_name: str,
         config_dir: str,
         connector: Connector,
+        ephemeral: bool,
         service: str | None,
         transferBufferSize: int,
     ):
@@ -632,6 +760,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             deployment_name=deployment_name,
             config_dir=config_dir,
             connector=connector,
+            ephemeral=ephemeral,
             service=service,
             transferBufferSize=transferBufferSize,
         )
@@ -883,6 +1012,7 @@ class DockerConnector(DockerBaseConnector):
         entrypoint: str | None = None,
         env: MutableSequence[str] | None = None,
         envFile: MutableSequence[str] | None = None,
+        ephemeral: bool = False,
         expose: MutableSequence[str] | None = None,
         gpus: MutableSequence[str] | None = None,
         groupAdd: MutableSequence[str] | None = None,
@@ -942,10 +1072,16 @@ class DockerConnector(DockerBaseConnector):
         volumesFrom: MutableSequence[str] | None = None,
         workdir: str | None = None,
     ):
+        if ephemeral and command:
+            raise WorkflowDefinitionException(
+                f"Invalid configuration for connector {self.deployment_name}: "
+                "the `command` option is not supported for ephemeral Docker containers."
+            )
         super().__init__(
             deployment_name=deployment_name,
             config_dir=config_dir,
             connector=connector,
+            ephemeral=ephemeral,
             service=service,
             transferBufferSize=transferBufferSize,
         )
@@ -1041,6 +1177,113 @@ class DockerConnector(DockerBaseConnector):
         self.volumesFrom: MutableSequence[str] | None = volumesFrom
         self.workdir: str | None = workdir
 
+    def _build_run_command(
+        self, command: MutableSequence[str], detach: bool, interactive: bool
+    ) -> MutableSequence[str]:
+        run_command = [
+            "docker",
+            "run",
+            get_option("detach", detach),
+            get_option("interactive", interactive),
+            get_option("add-host", self.addHost),
+            get_option("blkio-weight", self.addHost),
+            get_option("blkio-weight-device", self.blkioWeightDevice),
+            get_option("cap-add", self.capAdd),
+            get_option("cap-drop", self.capDrop),
+            get_option("cgroup-parent", self.cgroupParent),
+            get_option("cgroupns", self.cgroupns),
+            get_option("cidfile", self.cidfile),
+            get_option("cpu-period", self.cpuPeriod),
+            get_option("cpu-quota", self.cpuQuota),
+            get_option("cpu-rt-period", self.cpuRTPeriod),
+            get_option("cpu-rt-runtime", self.cpuRTRuntime),
+            get_option("cpu-shares", self.cpuShares),
+            get_option("cpus", self.cpus),
+            get_option("cpuset-cpus", self.cpusetCpus),
+            get_option("cpuset-mems", self.cpusetMems),
+            get_option("detach-keys", self.detachKeys),
+            get_option("device", self.device),
+            get_option("device-cgroup-rule", self.deviceCgroupRule),
+            get_option("device-read-bps", self.deviceReadBps),
+            get_option("device-read-iops", self.deviceReadIops),
+            get_option("device-write-bps", self.deviceWriteBps),
+            get_option("device-write-iops", self.deviceWriteIops),
+            f"--disable-content-trust={'true' if self.disableContentTrust else 'false'}",
+            get_option("dns", self.dns),
+            get_option("dns-option", self.dnsOptions),
+            get_option("dns-search", self.dnsSearch),
+            get_option("domainname", self.domainname),
+            get_option("entrypoint", self.entrypoint),
+            get_option("env", self.env),
+            get_option("env-file", self.envFile),
+            get_option("expose", self.expose),
+            get_option("gpus", self.gpus),
+            get_option("group-add", self.groupAdd),
+            get_option("health-cmd", self.healthCmd),
+            get_option("health-interval", self.healthInterval),
+            get_option("health-retries", self.healthRetries),
+            get_option("health-start-period", self.healthStartPeriod),
+            get_option("health-timeout", self.healthTimeout),
+            get_option("hostname", self.hostname),
+            get_option("init", self.init),
+            get_option("ip", self.ip),
+            get_option("ip6", self.ip6),
+            get_option("ipc", self.ipc),
+            get_option("isolation", self.isolation),
+            get_option("kernel-memory", self.kernelMemory),
+            get_option("label", self.label),
+            get_option("label-file", self.labelFile),
+            get_option("link", self.link),
+            get_option("link-local-ip", self.linkLocalIP),
+            get_option("log-driver", self.logDriver),
+            get_option("log-opt", self.logOpts),
+            get_option("mac-address", self.macAddress),
+            get_option("memory", self.memory),
+            get_option("memory-reservation", self.memoryReservation),
+            get_option("memory-swap", self.memorySwap),
+            get_option("memory-swappiness", self.memorySwappiness),
+            get_option(
+                "mount",
+                (self.mount or [])
+                + [
+                    f"type=bind,src={mount.src},dst={mount.dst}{',readonly' if mount.read_only else ''}"
+                    for mount in self._mounts
+                ],
+            ),
+            get_option("network", self.network),
+            get_option("network-alias", self.networkAlias),
+            get_option("no-healthcheck", self.noHealthcheck),
+            get_option("oom-kill-disable", self.oomKillDisable),
+            get_option("oom-score-adj", self.oomScoreAdj),
+            get_option("pid", self.pid),
+            get_option("pids-limit", self.pidsLimit),
+            get_option("privileged", self.privileged),
+            get_option("publish", self.publish),
+            get_option("publish-all", self.publishAll),
+            get_option("read-only", self.readOnly),
+            get_option("restart", self.restart),
+            get_option("rm", self.rm),
+            get_option("runtime", self.runtime),
+            get_option("security-opt", self.securityOpts),
+            get_option("shm-size", self.shmSize),
+            f"--sig-proxy={'true' if self.sigProxy else 'false'}",
+            get_option("stop-signal", self.stopSignal),
+            get_option("stop-timeout", self.stopTimeout),
+            get_option("storage-opt", self.storageOpts),
+            get_option("sysctl", self.sysctl),
+            get_option("tmpfs", self.tmpfs),
+            get_option("ulimit", self.ulimit),
+            get_option("user", self.user),
+            get_option("userns", self.userns),
+            get_option("uts", self.uts),
+            get_option("volume", self.volume),
+            get_option("volume-driver", self.volumeDriver),
+            get_option("volumes-from", self.volumesFrom),
+            get_option("workdir", self.workdir),
+            self.image,
+        ]
+        return (run_command + list(command)) if command else run_command
+
     async def _get_instance(self, location: str) -> ContainerInstance:
         if location not in self._instances:
             raise WorkflowExecutionException(
@@ -1049,161 +1292,89 @@ class DockerConnector(DockerBaseConnector):
             )
         return self._instances[location]
 
+    def _get_run_command(
+        self, command: str, location: ExecutionLocation, interactive: bool = False
+    ) -> MutableSequence[str]:
+        if self.ephemeral:
+            return self._build_run_command(
+                detach=False,
+                interactive=False,
+                command=["sh", "-c", f"'{command}'"],
+            )
+        else:
+            return super()._get_run_command(
+                command=command, location=location, interactive=interactive
+            )
+
     async def deploy(self, external: bool) -> None:
         await super().deploy(external)
         # Check if Docker is installed in the wrapped connector
         await self._check_docker_installed()
-        # If the deployment is not external, deploy the container
-        if not external:
-            await self._prepare_volumes(self.volume, self.mount)
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Using Docker {await self._get_docker_version()}.")
-            # Pull image if it doesn't exist
-            _, returncode = await self.connector.run(
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Using Docker {await self._get_docker_version()}.")
+        # Prepare volumes
+        await self._prepare_volumes(self.volume, self.mount)
+        # Pull image if it doesn't exist
+        _, returncode = await self.connector.run(
+            location=self._inner_location.location,
+            command=["docker", "image", "inspect", self.image],
+            capture_output=True,
+        )
+        if returncode != 0:
+            await self.connector.run(
                 location=self._inner_location.location,
-                command=["docker", "image", "inspect", self.image],
-                capture_output=True,
+                command=[
+                    "docker",
+                    "pull",
+                    "--quiet",
+                    f"--disable-content-trust={'true' if self.disableContentTrust else 'false'}",
+                    self.image,
+                ],
             )
-            if returncode != 0:
-                await self.connector.run(
+        # If the deployment is not ephemeral
+        if not self.ephemeral:
+            # If the deployment is not external, deploy the container
+            if not external:
+                # Deploy the Docker container
+                deploy_command = self._build_run_command(
+                    command=self.command, detach=True, interactive=True
+                )
+                stdout, returncode = await self.connector.run(
                     location=self._inner_location.location,
-                    command=["docker", "pull", "--quiet", self.image],
+                    command=deploy_command,
+                    capture_output=True,
                 )
-            # Deploy the Docker container
-            deploy_command = [
-                "docker",
-                "run",
-                "--detach",
-                "--interactive",
-                get_option("add-host", self.addHost),
-                get_option("blkio-weight", self.addHost),
-                get_option("blkio-weight-device", self.blkioWeightDevice),
-                get_option("cap-add", self.capAdd),
-                get_option("cap-drop", self.capDrop),
-                get_option("cgroup-parent", self.cgroupParent),
-                get_option("cgroupns", self.cgroupns),
-                get_option("cidfile", self.cidfile),
-                get_option("cpu-period", self.cpuPeriod),
-                get_option("cpu-quota", self.cpuQuota),
-                get_option("cpu-rt-period", self.cpuRTPeriod),
-                get_option("cpu-rt-runtime", self.cpuRTRuntime),
-                get_option("cpu-shares", self.cpuShares),
-                get_option("cpus", self.cpus),
-                get_option("cpuset-cpus", self.cpusetCpus),
-                get_option("cpuset-mems", self.cpusetMems),
-                get_option("detach-keys", self.detachKeys),
-                get_option("device", self.device),
-                get_option("device-cgroup-rule", self.deviceCgroupRule),
-                get_option("device-read-bps", self.deviceReadBps),
-                get_option("device-read-iops", self.deviceReadIops),
-                get_option("device-write-bps", self.deviceWriteBps),
-                get_option("device-write-iops", self.deviceWriteIops),
-                f"--disable-content-trust={'true' if self.disableContentTrust else 'false'}",
-                get_option("dns", self.dns),
-                get_option("dns-option", self.dnsOptions),
-                get_option("dns-search", self.dnsSearch),
-                get_option("domainname", self.domainname),
-                get_option("entrypoint", self.entrypoint),
-                get_option("env", self.env),
-                get_option("env-file", self.envFile),
-                get_option("expose", self.expose),
-                get_option("gpus", self.gpus),
-                get_option("group-add", self.groupAdd),
-                get_option("health-cmd", self.healthCmd),
-                get_option("health-interval", self.healthInterval),
-                get_option("health-retries", self.healthRetries),
-                get_option("health-start-period", self.healthStartPeriod),
-                get_option("health-timeout", self.healthTimeout),
-                get_option("hostname", self.hostname),
-                get_option("init", self.init),
-                get_option("ip", self.ip),
-                get_option("ip6", self.ip6),
-                get_option("ipc", self.ipc),
-                get_option("isolation", self.isolation),
-                get_option("kernel-memory", self.kernelMemory),
-                get_option("label", self.label),
-                get_option("label-file", self.labelFile),
-                get_option("link", self.link),
-                get_option("link-local-ip", self.linkLocalIP),
-                get_option("log-driver", self.logDriver),
-                get_option("log-opt", self.logOpts),
-                get_option("mac-address", self.macAddress),
-                get_option("memory", self.memory),
-                get_option("memory-reservation", self.memoryReservation),
-                get_option("memory-swap", self.memorySwap),
-                get_option("memory-swappiness", self.memorySwappiness),
-                get_option("mount", self.mount),
-                get_option("network", self.network),
-                get_option("network-alias", self.networkAlias),
-                get_option("no-healthcheck", self.noHealthcheck),
-                get_option("oom-kill-disable", self.oomKillDisable),
-                get_option("oom-score-adj", self.oomScoreAdj),
-                get_option("pid", self.pid),
-                get_option("pids-limit", self.pidsLimit),
-                get_option("privileged", self.privileged),
-                get_option("publish", self.publish),
-                get_option("publish-all", self.publishAll),
-                get_option("read-only", self.readOnly),
-                get_option("restart", self.restart),
-                get_option("rm", self.rm),
-                get_option("runtime", self.runtime),
-                get_option("security-opt", self.securityOpts),
-                get_option("shm-size", self.shmSize),
-                f"--sig-proxy={'true' if self.sigProxy else 'false'}",
-                get_option("stop-signal", self.stopSignal),
-                get_option("stop-timeout", self.stopTimeout),
-                get_option("storage-opt", self.storageOpts),
-                get_option("sysctl", self.sysctl),
-                get_option("tmpfs", self.tmpfs),
-                get_option("ulimit", self.ulimit),
-                get_option("user", self.user),
-                get_option("userns", self.userns),
-                get_option("uts", self.uts),
-                get_option("volume", self.volume),
-                get_option("volume-driver", self.volumeDriver),
-                get_option("volumes-from", self.volumesFrom),
-                get_option("workdir", self.workdir),
-                self.image,
-                f"{' '.join(self.command) if self.command else ''}",
-            ]
-            stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
-                command=deploy_command,
-                capture_output=True,
-            )
-            if returncode == 0:
-                self.containerId = stdout
-            else:
-                raise WorkflowExecutionException(
-                    f"FAILED Deployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
+                if returncode == 0:
+                    self.containerId = stdout
+                else:
+                    raise WorkflowExecutionException(
+                        f"FAILED Deployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
+                    )
+            # Otherwise, check if a containerId has been explicitly specified
+            elif self.containerId is None:
+                raise WorkflowDefinitionException(
+                    f"FAILED Deployment of {self.deployment_name} environment:\n\t"
+                    "external Docker deployments must specify the containerId of an existing Docker container"
                 )
-        # Otherwise, check if a containerId has been explicitly specified
-        elif self.containerId is None:
-            raise WorkflowDefinitionException(
-                f"FAILED Deployment of {self.deployment_name} environment:\n\t"
-                "external Docker deployments must specify the containerId of an existing Docker container"
-            )
-        # Populate instance
-        await self._populate_instance(self.containerId)
+            # Populate instance
+            await self._populate_instance(self.containerId)
 
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
-        instance = self._instances[self.containerId]
-        return {
-            self.containerId: AvailableLocation(
-                name=self.containerId,
-                deployment=self.deployment_name,
-                hostname=instance.address,
-                hardware=Hardware(
-                    cores=instance.cores,
-                    memory=instance.memory,
-                    storage=instance.volumes,
-                ),
-                stacked=True,
-                wraps=self._inner_location,
-            )
-        }
+        if self.ephemeral:
+            name = f"{self._inner_location.name}/{self.deployment_name}"
+            return {
+                name: AvailableLocation(
+                    name=name,
+                    deployment=self.deployment_name,
+                    hostname=self._inner_location.hostname,
+                    stacked=True,
+                    wraps=self._inner_location,
+                )
+            }
+        else:
+            return await super()._get_available_location_from_instance(self.containerId)
 
     @classmethod
     def get_schema(cls) -> str:
@@ -1215,7 +1386,7 @@ class DockerConnector(DockerBaseConnector):
         )
 
     async def undeploy(self, external: bool) -> None:
-        if not external:
+        if not (external or self.ephemeral):
             stdout, returncode = await self.connector.run(
                 location=self._inner_location.location,
                 command=["docker", "stop", self.containerId],
@@ -1268,6 +1439,7 @@ class DockerComposeConnector(DockerBaseConnector):
             connector=connector,
             service=service,
             transferBufferSize=transferBufferSize,
+            ephemeral=False,
         )
         self.files = [
             file if os.path.isabs(file) else os.path.join(self.config_dir, file)
@@ -1444,8 +1616,8 @@ class DockerComposeConnector(DockerBaseConnector):
             )
         }
         return {
-            k: AvailableLocation(
-                name=k,
+            name: AvailableLocation(
+                name=name,
                 deployment=self.deployment_name,
                 hostname=instance.address,
                 hardware=Hardware(
@@ -1456,7 +1628,7 @@ class DockerComposeConnector(DockerBaseConnector):
                 stacked=True,
                 wraps=self._inner_location,
             )
-            for k, instance in instances.items()
+            for name, instance in instances.items()
         }
 
     @classmethod
@@ -1493,6 +1665,7 @@ class SingularityConnector(ContainerConnector):
         addCaps: str | None = None,
         allowSetuid: bool = False,
         applyCgroups: str | None = None,
+        arch: str | None = None,
         bind: MutableSequence[str] | None = None,
         blkioWeight: int | None = None,
         blkioWeightDevice: MutableSequence[str] | None = None,
@@ -1512,6 +1685,7 @@ class SingularityConnector(ContainerConnector):
         dropCaps: str | None = None,
         env: MutableSequence[str] | None = None,
         envFile: str | None = None,
+        ephemeral: bool = False,
         fakeroot: bool = False,
         fusemount: MutableSequence[str] | None = None,
         home: str | None = None,
@@ -1540,6 +1714,7 @@ class SingularityConnector(ContainerConnector):
         pemPath: str | None = None,
         pidFile: str | None = None,
         pidsLimit: int | None = None,
+        pullDir: str | None = None,
         rocm: bool = False,
         scratch: MutableSequence[str] | None = None,
         security: MutableSequence[str] | None = None,
@@ -1550,10 +1725,32 @@ class SingularityConnector(ContainerConnector):
         writable: bool = False,
         writableTmpfs: bool = False,
     ):
+        if ephemeral:
+            if boot:
+                raise WorkflowDefinitionException(
+                    f"Invalid configuration for connector {self.deployment_name}: "
+                    "the `boot` option is not supported for ephemeral Docker containers."
+                )
+            if command:
+                raise WorkflowDefinitionException(
+                    f"Invalid configuration for connector {self.deployment_name}: "
+                    "the `command` option is not supported for ephemeral Docker containers."
+                )
+            if dns:
+                raise WorkflowDefinitionException(
+                    f"Invalid configuration for connector {self.deployment_name}: "
+                    "the `dns` option is not supported for ephemeral Docker containers."
+                )
+            if pidFile:
+                raise WorkflowDefinitionException(
+                    f"Invalid configuration for connector {self.deployment_name}: "
+                    "the `pidFile` option is not supported for ephemeral Docker containers."
+                )
         super().__init__(
             deployment_name=deployment_name,
             config_dir=config_dir,
             connector=connector,
+            ephemeral=ephemeral,
             service=service,
             transferBufferSize=transferBufferSize,
         )
@@ -1561,6 +1758,7 @@ class SingularityConnector(ContainerConnector):
         self.addCaps: str | None = addCaps
         self.allowSetuid: bool = allowSetuid
         self.applyCgroups: str | None = applyCgroups
+        self.arch: str | None = arch
         self.bind: MutableSequence[str] | None = bind
         self.blkioWeight: int | None = blkioWeight
         self.blkioWeightDevice: MutableSequence[str] | None = blkioWeightDevice
@@ -1608,6 +1806,7 @@ class SingularityConnector(ContainerConnector):
         self.pemPath: str | None = pemPath
         self.pidFile: str | None = pidFile
         self.pidsLimit: int | None = pidsLimit
+        self.pullDir: str | None = pullDir
         self.rocm: bool = rocm
         self.scratch: MutableSequence[str] | None = scratch
         self.security: MutableSequence[str] | None = security
@@ -1616,6 +1815,81 @@ class SingularityConnector(ContainerConnector):
         self.workdir: str | None = workdir
         self.writable: bool = writable
         self.writableTmpfs: bool = writableTmpfs
+        self._image_file: str | None = None
+
+    def _build_run_command(
+        self,
+        base_command: list[str],
+        command: MutableSequence[str],
+        name: str | None = None,
+    ) -> MutableSequence[str]:
+        run_command = base_command + [
+            get_option("add-caps", self.addCaps),
+            get_option("allow-setuid", self.allowSetuid),
+            get_option("apply-cgroups", self.applyCgroups),
+            get_option("bind", self.bind),
+            get_option("blkio-weight", self.blkioWeight),
+            get_option("blkio-weight-device", self.blkioWeightDevice),
+            get_option("boot", self.boot),
+            get_option("cleanenv", self.cleanenv),
+            get_option("compat", self.compat),
+            get_option("contain", self.contain),
+            get_option("containall", self.containall),
+            get_option("cpu-shares", self.cpuShares),
+            get_option("cpus", self.cpus),
+            get_option("cpuset-cpus", self.cpusetCpus),
+            get_option("cpuset-mems", self.cpusetMems),
+            get_option("disable-cache", self.disableCache),
+            get_option("docker-host", self.dockerHost),
+            get_option("dns", self.dns),
+            get_option("drop-caps", self.dropCaps),
+            get_option("env-file", self.envFile),
+            get_option("fakeroot", self.fakeroot),
+            get_option("fusemount", self.fusemount),
+            get_option("home", self.home),
+            get_option("hostname", self.hostname),
+            get_option("ipc", self.ipc),
+            get_option("keep-privs", self.keepPrivs),
+            get_option("memory", self.memory),
+            get_option("memory-reservation", self.memoryReservation),
+            get_option("memory-swap", self.memorySwap),
+            get_option(
+                "mount",
+                (self.mount or [])
+                + [
+                    f"type=bind,src={mount.src},dst={mount.dst}{',readonly' if mount.read_only else ''}"
+                    for mount in self._mounts
+                ],
+            ),
+            get_option("net", self.net),
+            get_option("network", self.network),
+            get_option("network-args", self.networkArgs),
+            get_option("no-eval", self.noEval),
+            get_option("no-home", self.noHome),
+            get_option("no-https", self.noHttps),
+            get_option("no-init", self.noInit),
+            get_option("no-mount", self.noMount),
+            get_option("no-privs", self.noPrivs),
+            get_option("no-umask", self.noUmask),
+            get_option("nv", self.nv),
+            get_option("nvccli", self.nvccli),
+            get_option("oom-kill-disable", self.oomKillDisable),
+            get_option("overlay", self.overlay),
+            get_option("pem-path", self.pemPath),
+            get_option("pid-file", self.pidFile),
+            get_option("pids-limit", self.pidsLimit),
+            get_option("rocm", self.rocm),
+            get_option("scratch", self.scratch),
+            get_option("security", self.security),
+            get_option("userns", self.userns),
+            get_option("uts", self.uts),
+            get_option("workdir", self.workdir),
+            get_option("writable", self.writable),
+            get_option("writable-tmpfs", self.writableTmpfs),
+            self._image_file,
+            name if name is not None else "",
+        ]
+        return (run_command + list(command)) if command else run_command
 
     async def _check_singularity_installed(self):
         if self._wraps_local():
@@ -1635,15 +1909,21 @@ class SingularityConnector(ContainerConnector):
     def _get_run_command(
         self, command: str, location: ExecutionLocation, interactive: bool = False
     ) -> MutableSequence[str]:
-        return [
-            "singularity",
-            "exec",
-            get_option("cleanenv", self.cleanenv),
-            f"instance://{location.name}",
-            "sh",
-            "-c",
-            f"'{command}'",
-        ]
+        if self.ephemeral:
+            return self._build_run_command(
+                base_command=["singularity", "exec"],
+                command=["sh", "-c", f"'{command}'"],
+            )
+        else:
+            return [
+                "singularity",
+                "exec",
+                get_option("cleanenv", self.cleanenv),
+                f"instance://{location.name}",
+                "sh",
+                "-c",
+                f"'{command}'",
+            ]
 
     async def _get_singularity_version(self) -> str:
         stdout, _ = await self.connector.run(
@@ -1823,113 +2103,139 @@ class SingularityConnector(ContainerConnector):
         await super().deploy(external)
         # Check if Singularity is installed in the wrapped connector
         await self._check_singularity_installed()
-        # If the deployment is not external, deploy the container
-        if not external:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Using {await self._get_singularity_version()}.")
-            await self._prepare_volumes(self.bind, self.mount)
-            instance_name = random_name()
-            deploy_command = [
-                "singularity",
-                "instance",
-                "start",
-                get_option("add-caps", self.addCaps),
-                get_option("allow-setuid", self.allowSetuid),
-                get_option("apply-cgroups", self.applyCgroups),
-                get_option("bind", self.bind),
-                get_option("blkio-weight", self.blkioWeight),
-                get_option("blkio-weight-device", self.blkioWeightDevice),
-                get_option("boot", self.boot),
-                get_option("cleanenv", self.cleanenv),
-                get_option("compat", self.compat),
-                get_option("contain", self.contain),
-                get_option("containall", self.containall),
-                get_option("cpu-shares", self.cpuShares),
-                get_option("cpus", self.cpus),
-                get_option("cpuset-cpus", self.cpusetCpus),
-                get_option("cpuset-mems", self.cpusetMems),
-                get_option("disable-cache", self.disableCache),
-                get_option("docker-host", self.dockerHost),
-                get_option("dns", self.dns),
-                get_option("drop-caps", self.dropCaps),
-                get_option("env-file", self.envFile),
-                get_option("fakeroot", self.fakeroot),
-                get_option("fusemount", self.fusemount),
-                get_option("home", self.home),
-                get_option("hostname", self.hostname),
-                get_option("ipc", self.ipc),
-                get_option("keep-privs", self.keepPrivs),
-                get_option("memory", self.memory),
-                get_option("memory-reservation", self.memoryReservation),
-                get_option("memory-swap", self.memorySwap),
-                get_option("mount", self.mount),
-                get_option("net", self.net),
-                get_option("network", self.network),
-                get_option("network-args", self.networkArgs),
-                get_option("no-eval", self.noEval),
-                get_option("no-home", self.noHome),
-                get_option("no-https", self.noHttps),
-                get_option("no-init", self.noInit),
-                get_option("no-mount", self.noMount),
-                get_option("no-privs", self.noPrivs),
-                get_option("no-umask", self.noUmask),
-                get_option("nv", self.nv),
-                get_option("nvccli", self.nvccli),
-                get_option("oom-kill-disable", self.oomKillDisable),
-                get_option("overlay", self.overlay),
-                get_option("pem-path", self.pemPath),
-                get_option("pid-file", self.pidFile),
-                get_option("pids-limit", self.pidsLimit),
-                get_option("rocm", self.rocm),
-                get_option("scratch", self.scratch),
-                get_option("security", self.security),
-                get_option("userns", self.userns),
-                get_option("uts", self.uts),
-                get_option("workdir", self.workdir),
-                get_option("writable", self.writable),
-                get_option("writable-tmpfs", self.writableTmpfs),
-                self.image,
-                instance_name,
-                " ".join(self.command) if self.command else "",
-            ]
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Using {await self._get_singularity_version()}.")
+        # Prepare volumes
+        await self._prepare_volumes(self.bind, self.mount)
+        # Build remote file name
+        sif_name = (
+            self.image
+            if self.image.endswith(".sif")
+            else f"{hashlib.sha256(self.image.encode('utf-8')).hexdigest()}.sif"
+        )
+        if not self.pullDir:
+            if self._wraps_local():
+                self._image_file = os.path.join(os.getcwd(), os.path.basename(sif_name))
+            else:
+                stdout, returncode = await self.connector.run(
+                    location=self._inner_location.location,
+                    command=["pwd"],
+                    capture_output=True,
+                )
+                if returncode == 0:
+                    self._image_file = posixpath.join(
+                        stdout.strip(), os.path.basename(sif_name)
+                    )
+                else:
+                    raise WorkflowExecutionException(
+                        f"FAILED Deployment of {self.deployment_name} environment:[{returncode}] {stdout}"
+                    )
+        else:
+            self._image_file = (os.path if self._wraps_local() else posixpath).join(
+                self.pullDir, os.path.basename(sif_name)
+            )
+        # Check if file is present on the remote connector
+        if self._wraps_local():
+            sif_exists = os.path.exists(self._image_file)
+        else:
             stdout, returncode = await self.connector.run(
                 location=self._inner_location.location,
-                command=deploy_command,
+                command=[
+                    "test",
+                    "-e",
+                    self._image_file,
+                ],
                 capture_output=True,
             )
-            if returncode == 0:
-                self.instanceName = instance_name
-            else:
+            if returncode > 1:
                 raise WorkflowExecutionException(
-                    f"FAILED Deployment of {self.deployment_name} environment:"
-                    f"[{returncode}] {stdout}"
+                    f"FAILED Deployment of {self.deployment_name} environment:[{returncode}] {stdout}"
                 )
-        elif self.instanceName is None:
-            raise WorkflowDefinitionException(
-                f"FAILED Deployment of {self.deployment_name} environment: "
-                "external Singularity deployments must specify the instanceName of an existing Singularity container"
-            )
-        # Populate instance
-        await self._populate_instance(self.instanceName)
+            sif_exists = returncode == 0
+        # If the file does not exist, transfer it
+        if not sif_exists:
+            # If the image is a .sif file, transfer it
+            if self.image.endswith(".sif"):
+                if self._wraps_local():
+                    os.symlink(self.image, self._image_file)
+                else:
+                    await self.connector.copy_local_to_remote(
+                        src=self.image,
+                        dst=self._image_file,
+                        locations=[self._inner_location.location],
+                        read_only=True,
+                    )
+            # Otherwise, if the image refers to a remote library, pull it
+            else:
+                stdout, returncode = await self.connector.run(
+                    location=self._inner_location.location,
+                    command=[
+                        "singularity",
+                        "pull",
+                        get_option("arch", self.arch),
+                        get_option("dir", self.pullDir),
+                        sif_name,
+                        self.image,
+                    ],
+                    capture_output=True,
+                )
+                if returncode != 0:
+                    raise WorkflowExecutionException(
+                        f"FAILED Deployment of {self.deployment_name} environment:[{returncode}] {stdout}"
+                    )
+        # If the deployment is not ephemeral or external
+        if not self.ephemeral:
+            # If the deployment is not external, deploy the container
+            if not external:
+                instance_name = random_name()
+                deploy_command = self._build_run_command(
+                    base_command=[
+                        "singularity",
+                        "instance",
+                        "start",
+                    ],
+                    command=self.command,
+                    name=instance_name,
+                )
+                stdout, returncode = await self.connector.run(
+                    location=self._inner_location.location,
+                    command=deploy_command,
+                    capture_output=True,
+                )
+                if returncode == 0:
+                    self.instanceName = instance_name
+                else:
+                    raise WorkflowExecutionException(
+                        f"FAILED Deployment of {self.deployment_name} environment:"
+                        f"[{returncode}] {stdout}"
+                    )
+            elif self.instanceName is None:
+                raise WorkflowDefinitionException(
+                    f"FAILED Deployment of {self.deployment_name} environment: "
+                    "external Singularity deployments must specify the instanceName of "
+                    "an existing Singularity container"
+                )
+            # Populate instance
+            await self._populate_instance(self.instanceName)
 
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
-        instance = self._instances[self.instanceName]
-        return {
-            self.instanceName: AvailableLocation(
-                name=self.instanceName,
-                deployment=self.deployment_name,
-                hostname=instance.address,
-                hardware=Hardware(
-                    cores=instance.cores,
-                    memory=instance.memory,
-                    storage=instance.volumes,
-                ),
-                stacked=True,
-                wraps=self._inner_location,
+        if self.ephemeral:
+            name = f"{self._inner_location.name}/{self.deployment_name}"
+            return {
+                name: AvailableLocation(
+                    name=name,
+                    deployment=self.deployment_name,
+                    hostname=self._inner_location.hostname,
+                    stacked=True,
+                    wraps=self._inner_location,
+                )
+            }
+        else:
+            return await super()._get_available_location_from_instance(
+                self.instanceName
             )
-        }
 
     @classmethod
     def get_schema(cls) -> str:
@@ -1941,7 +2247,7 @@ class SingularityConnector(ContainerConnector):
         )
 
     async def undeploy(self, external: bool) -> None:
-        if not external:
+        if not (external or self.ephemeral):
             stdout, returncode = await self.connector.run(
                 location=self._inner_location.location,
                 command=["singularity", "instance", "stop", self.instanceName],

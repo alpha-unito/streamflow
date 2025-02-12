@@ -64,7 +64,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Command to run when deploying the container"
+      "description": "Command to run when deploying the container. Not supported for ephemeral containers"
     },
     "containerId": {
       "type": "string",
@@ -206,6 +206,11 @@
       },
       "uniqueItems": true,
       "description": "Read in a file of environment variables"
+    },
+    "ephemeral": {
+      "type": "boolean",
+      "default": false,
+      "description": "Invoke a fresh container instance for every command in the workflow"
     },
     "expose": {
       "type": "array",

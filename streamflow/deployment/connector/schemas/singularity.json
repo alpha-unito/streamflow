@@ -19,6 +19,10 @@
       "type": "string",
       "description": "Apply cgroups from file for container processes (root only)"
     },
+    "arch": {
+      "type": "string",
+      "description": "architecture to pull from library"
+    },
     "bind": {
       "type": "array",
       "items": {
@@ -40,7 +44,7 @@
     },
     "boot": {
       "type": "boolean",
-      "description": "Execute /sbin/init to boot container (root only)"
+      "description": "Execute /sbin/init to boot container (root only). Not supported for ephemeral containers"
     },
     "cleanenv": {
       "type": "boolean",
@@ -51,7 +55,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Command to run when deploying the container"
+      "description": "Command to run when deploying the container. Not supported for ephemeral containers"
     },
     "compat": {
       "type": "boolean",
@@ -87,7 +91,7 @@
     },
     "dns": {
       "type": "string",
-      "description": "List of DNS server separated by commas to add in resolv.conf"
+      "description": "List of DNS server separated by commas to add in resolv.conf. Not supported for ephemeral containers"
     },
     "dockerHost": {
       "type": "string",
@@ -108,6 +112,11 @@
     "envFile": {
       "type": "string",
       "description": "Pass environment variables from file to contained process"
+    },
+    "ephemeral": {
+      "type": "boolean",
+      "default": false,
+      "description": "Invoke a fresh container instance for every command in the workflow"
     },
     "fakeroot": {
       "type": "boolean",
@@ -236,11 +245,15 @@
     },
     "pidFile": {
       "type": "string",
-      "description": "Write instance PID to the file with the given name"
+      "description": "Write instance PID to the file with the given name. Not supported for ephemeral containers"
     },
     "pidsLimit": {
       "type": "integer",
       "description": "Limit number of container PIDs, use -1 for unlimited"
+    },
+    "pullDir": {
+      "type": "string",
+      "description": "Download images to the specific directory"
     },
     "rocm": {
       "type": "boolean",
