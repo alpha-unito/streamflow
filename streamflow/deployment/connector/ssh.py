@@ -52,21 +52,11 @@ class SSHContext:
         self.connection_attempts: int = 0
 
     async def _get_connection(
-        self, config: SSHConfig
+        self, config: SSHConfig | None
     ) -> asyncssh.SSHClientConnection | None:
         if config is None:
             return None
         (hostname, port) = _parse_hostname(config.hostname)
-        passphrase = (
-            self._get_param_from_file(config.ssh_key_passphrase_file)
-            if config.ssh_key_passphrase_file
-            else None
-        )
-        password = (
-            self._get_param_from_file(config.password_file)
-            if config.password_file
-            else None
-        )
         return await asyncssh.connect(
             client_keys=config.client_keys,
             compression_algs=None,
@@ -78,15 +68,17 @@ class SSHContext:
             ],
             known_hosts=() if config.check_host_key else None,
             host=hostname,
-            passphrase=passphrase,
-            password=password,
+            passphrase=self._get_param_from_file(config.ssh_key_passphrase_file),
+            password=self._get_param_from_file(config.password_file),
             port=port,
             tunnel=await self._get_connection(config.tunnel),
             username=config.username,
             connect_timeout=config.connect_timeout,
         )
 
-    def _get_param_from_file(self, file_path: str):
+    def _get_param_from_file(self, file_path: str | None) -> str | None:
+        if file_path is None:
+            return None
         if not os.path.isabs(file_path):
             file_path = os.path.join(self._streamflow_config_dir, file_path)
         with open(file_path) as f:
@@ -242,6 +234,7 @@ class SSHContextManager:
 class SSHContextFactory:
     def __init__(
         self,
+        cls_context: type[SSHContext],
         streamflow_config_dir: str,
         config: SSHConfig,
         max_concurrent_sessions: int,
@@ -251,7 +244,7 @@ class SSHContextFactory:
     ):
         self._condition: asyncio.Condition = asyncio.Condition()
         self._contexts: MutableSequence[SSHContext] = [
-            SSHContext(
+            cls_context(
                 streamflow_config_dir=streamflow_config_dir,
                 config=config,
                 max_concurrent_sessions=max_concurrent_sessions,
@@ -427,6 +420,7 @@ class SSHConnector(BaseConnector):
             n.hostname: n for n in [self._get_config(n) for n in nodes]
         }
         self.hardware: MutableMapping[str, Hardware] = {}
+        self._cls_context: type[SSHContext] = SSHContext
 
     async def copy_remote_to_remote(
         self,
@@ -524,7 +518,7 @@ class SSHConnector(BaseConnector):
             )
         return utils.encode_command(command)
 
-    def _get_config(self, node: str | MutableMapping[str, Any]):
+    def _get_config(self, node: str | MutableMapping[str, Any]) -> SSHConfig | None:
         if node is None:
             return None
         elif isinstance(node, str):
@@ -559,6 +553,7 @@ class SSHConnector(BaseConnector):
     ) -> SSHContextManager:
         if location not in self.ssh_context_factories:
             self.ssh_context_factories[location] = SSHContextFactory(
+                cls_context=self._cls_context,
                 streamflow_config_dir=self.config_dir,
                 config=self.nodes[location],
                 max_concurrent_sessions=self.maxConcurrentSessions,
@@ -579,6 +574,7 @@ class SSHConnector(BaseConnector):
         if self.dataTransferConfig:
             if location not in self.data_transfer_context_factories:
                 self.data_transfer_context_factories[location.name] = SSHContextFactory(
+                    cls_context=self._cls_context,
                     streamflow_config_dir=self.config_dir,
                     config=self.dataTransferConfig,
                     max_concurrent_sessions=self.maxConcurrentSessions,
@@ -590,6 +586,7 @@ class SSHConnector(BaseConnector):
         else:
             if location not in self.ssh_context_factories:
                 self.ssh_context_factories[location.name] = SSHContextFactory(
+                    cls_context=self._cls_context,
                     streamflow_config_dir=self.config_dir,
                     config=self.nodes[location.name],
                     max_concurrent_sessions=self.maxConcurrentSessions,
