@@ -124,7 +124,7 @@ class SSHContext:
                             f"SSH connection to {self.get_hostname()} failed: connection timed out"
                         )
                     else:
-                        raise
+                        raise err
                 finally:
                     self._connect_event.set()
             else:
