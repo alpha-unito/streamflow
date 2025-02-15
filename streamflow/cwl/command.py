@@ -48,7 +48,6 @@ from streamflow.cwl.processor import (
 from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
-from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.step import ExecuteStep
@@ -779,17 +778,15 @@ class CWLCommand(TokenizedCommand):
             else cmd
         )
         if logger.isEnabledFor(logging.INFO):
-            is_local = isinstance(
-                self.step.workflow.context.deployment_manager.get_connector(
-                    locations[0].deployment
-                ),
-                LocalConnector,
-            )
             logger.info(
                 "EXECUTING step {step} (job {job}) {location} into directory {outdir}:\n{command}".format(
                     step=self.step.name,
                     job=job.name,
-                    location="locally" if is_local else f"on location {locations[0]}",
+                    location=(
+                        "locally"
+                        if locations[0].local
+                        else f"on location {locations[0]}"
+                    ),
                     outdir=job.output_directory,
                     command=cmd_string,
                 )
