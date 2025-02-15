@@ -27,13 +27,24 @@ from streamflow.deployment.template import CommandTemplateMap
 from streamflow.log_handler import logger
 
 
-def _parse_hostname(hostname):
+def parse_hostname(hostname):
     if ":" in hostname:
         hostname, port = hostname.split(":")
         port = int(port)
     else:
         port = 22
     return hostname, port
+
+
+def get_param_from_file(
+    file_path: str | None, workdir: str | None = None
+) -> str | None:
+    if file_path is None:
+        return None
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(workdir, file_path)
+    with open(file_path) as f:
+        return f.read().strip()
 
 
 class SSHContext:
@@ -56,7 +67,7 @@ class SSHContext:
     ) -> asyncssh.SSHClientConnection | None:
         if config is None:
             return None
-        (hostname, port) = _parse_hostname(config.hostname)
+        (hostname, port) = parse_hostname(config.hostname)
         return await asyncssh.connect(
             client_keys=config.client_keys,
             compression_algs=None,
@@ -68,25 +79,24 @@ class SSHContext:
             ],
             known_hosts=() if config.check_host_key else None,
             host=hostname,
-            passphrase=self._get_param_from_file(config.ssh_key_passphrase_file),
-            password=self._get_param_from_file(config.password_file),
+            passphrase=get_param_from_file(
+                config.ssh_key_passphrase_file, self._streamflow_config_dir
+            ),
+            password=get_param_from_file(
+                config.password_file, self._streamflow_config_dir
+            ),
             port=port,
             tunnel=await self._get_connection(config.tunnel),
             username=config.username,
             connect_timeout=config.connect_timeout,
         )
 
-    def _get_param_from_file(self, file_path: str | None) -> str | None:
-        if file_path is None:
-            return None
-        if not os.path.isabs(file_path):
-            file_path = os.path.join(self._streamflow_config_dir, file_path)
-        with open(file_path) as f:
-            return f.read().strip()
-
     async def close(self):
         if self._ssh_connection is not None:
-            if len(self._ssh_connection._channels) > 0:
+            if (
+                logger.isEnabledFor(logging.WARNING)
+                and len(self._ssh_connection._channels) > 0
+            ):
                 logger.warning(
                     f"Channels still open after closing the SSH connection to {self.get_hostname()}. Forcing closing."
                 )
@@ -114,7 +124,7 @@ class SSHContext:
                             f"SSH connection to {self.get_hostname()} failed: connection timed out"
                         )
                     else:
-                        raise
+                        raise err
                 finally:
                     self._connect_event.set()
             else:
@@ -208,13 +218,17 @@ class SSHContextManager:
                             ConnectionLost,
                             DisconnectError,
                             asyncio.TimeoutError,
-                        ) as exc:
+                        ) as err:
                             if logger.isEnabledFor(logging.WARNING):
                                 logger.warning(
-                                    f"Error {type(exc).__name__} opening SSH session to {context.get_hostname()} "
-                                    f"to execute command `{self.command}`: {str(exc)}"
+                                    f"Error {type(err).__name__} opening SSH session to {context.get_hostname()} "
+                                    f"to execute command `{self.command}`: "
+                                    f"{f'({err.code}) ' if isinstance(err, asyncssh.Error) else ''}{str(err)}"
                                 )
-                            if not isinstance(exc, ChannelOpenError):
+                            if (
+                                not isinstance(err, ChannelOpenError)
+                                or ssh_connection.is_closed()
+                            ):
                                 if logger.isEnabledFor(logging.WARNING):
                                     logger.warning(
                                         f"Connection to {context.get_hostname()}: attempt {context.connection_attempts}"

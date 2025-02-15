@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 from collections.abc import Callable, MutableSequence
@@ -14,8 +15,13 @@ from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector import SSHConnector
 from streamflow.deployment.future import FutureConnector
+from streamflow.log_handler import logger
 from tests.conftest import get_class_callables
-from tests.utils.connector import FailureConnector, FailureConnectorException
+from tests.utils.connector import (
+    FailureConnector,
+    FailureConnectorException,
+    SSHChannelErrorConnector,
+)
 from tests.utils.deployment import (
     get_failure_deployment_config,
     get_location,
@@ -127,6 +133,30 @@ async def test_future_connector_multiple_request_fail(
             isinstance(result, WorkflowExecutionException)
             and result.args[0] == f"FAILED deployment of {deployment_config.name}"
         )
+
+
+@pytest.mark.asyncio
+async def test_ssh_connector_channel_open_error(
+    caplog, context: StreamFlowContext
+) -> None:
+    """
+    Test SSHConnector on a channel open error which close the ssh connection.
+    The SSHConnector retry mechanism will retry on a new ssh connection
+    """
+    caplog.set_level(logging.WARNING)
+    caplog_handler = caplog.handler
+    logger.addHandler(caplog_handler)
+    try:
+        deployment_config = await get_ssh_deployment_config(context)
+        connector = SSHChannelErrorConnector(
+            deployment_name=deployment_config.name,
+            config_dir=os.path.dirname(context.config["path"]),
+            **deployment_config.config,
+        )
+        await connector.get_available_locations()
+        assert "Error ChannelOpenError opening SSH session to" in caplog.text
+    finally:
+        logger.removeHandler(caplog_handler)
 
 
 @pytest.mark.asyncio

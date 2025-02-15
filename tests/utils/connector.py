@@ -2,12 +2,21 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any
+from typing import Any, cast
+
+import asyncssh
+from asyncssh import SSHClient, SSHClientConnection
 
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware
-from streamflow.deployment.connector import LocalConnector
+from streamflow.deployment.connector import LocalConnector, SSHConnector
+from streamflow.deployment.connector.ssh import (
+    SSHConfig,
+    SSHContext,
+    get_param_from_file,
+    parse_hostname,
+)
 from streamflow.log_handler import logger
 
 
@@ -111,3 +120,136 @@ class ParameterizableHardwareConnector(LocalConnector):
                 hardware=self.hardware,
             )
         }
+
+
+class SSHChannelErrorClient(SSHClient):
+    def __init__(self, connector: SSHChannelErrorConnector) -> None:
+        self.connector = connector
+
+    def connection_made(self, conn: SSHClientConnection) -> None:
+        if self.connector.counter_err == 0:
+            conn.close()
+            self.connector.counter_err += 1
+
+
+class SSHChannelErrorContext(SSHContext):
+    async def _get_connection(
+        self, config: SSHConfig | None
+    ) -> asyncssh.SSHClientConnection | None:
+        config = cast(SSHChannelErrorConfig, config)
+        if config is None:
+            return None
+        (hostname, port) = parse_hostname(config.hostname)
+
+        def get_client_factory():
+            return SSHChannelErrorClient(config.connector)
+
+        return await asyncssh.connect(
+            client_keys=config.client_keys,
+            compression_algs=None,
+            encryption_algs=[
+                "aes128-gcm@openssh.com",
+                "aes256-ctr",
+                "aes192-ctr",
+                "aes128-ctr",
+            ],
+            known_hosts=() if config.check_host_key else None,
+            host=hostname,
+            passphrase=get_param_from_file(
+                config.ssh_key_passphrase_file, self._streamflow_config_dir
+            ),
+            password=get_param_from_file(
+                config.password_file, self._streamflow_config_dir
+            ),
+            port=port,
+            tunnel=await self._get_connection(config.tunnel),
+            username=config.username,
+            client_factory=get_client_factory,
+        )
+
+
+class SSHChannelErrorConfig(SSHConfig):
+    def __init__(
+        self,
+        check_host_key: bool,
+        client_keys: MutableSequence[str],
+        connect_timeout: int,
+        hostname: str,
+        password_file: str | None,
+        ssh_key_passphrase_file: str | None,
+        tunnel: SSHConfig | None,
+        username: str,
+        connector: SSHChannelErrorConnector,
+    ) -> None:
+        super().__init__(
+            check_host_key=check_host_key,
+            client_keys=client_keys,
+            connect_timeout=connect_timeout,
+            hostname=hostname,
+            password_file=password_file,
+            ssh_key_passphrase_file=ssh_key_passphrase_file,
+            tunnel=tunnel,
+            username=username,
+        )
+        self.connector = connector
+
+
+class SSHChannelErrorConnector(SSHConnector):
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        nodes: MutableSequence[Any],
+        username: str | None = None,
+        checkHostKey: bool = True,
+        dataTransferConnection: str | MutableMapping[str, Any] | None = None,
+        file: str | None = None,
+        maxConcurrentSessions: int = 10,
+        maxConnections: int = 1,
+        retries: int = 3,
+        retryDelay: int = 5,
+        passwordFile: str | None = None,
+        services: MutableMapping[str, str] | None = None,
+        sharedPaths: MutableSequence[str] | None = None,
+        sshKey: str | None = None,
+        sshKeyPassphraseFile: str | None = None,
+        tunnel: MutableMapping[str, Any] | None = None,
+        transferBufferSize: int = 2**16,
+    ):
+        self.counter_err = 0
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            nodes=nodes,
+            username=username,
+            checkHostKey=checkHostKey,
+            dataTransferConnection=dataTransferConnection,
+            file=file,
+            maxConcurrentSessions=maxConcurrentSessions,
+            maxConnections=maxConnections,
+            retries=retries,
+            retryDelay=retryDelay,
+            passwordFile=passwordFile,
+            services=services,
+            sharedPaths=sharedPaths,
+            sshKey=sshKey,
+            sshKeyPassphraseFile=sshKeyPassphraseFile,
+            tunnel=tunnel,
+            transferBufferSize=transferBufferSize,
+        )
+        self._cls_context: type[SSHContext] = SSHChannelErrorContext
+
+    def _get_config(self, node: str | MutableMapping[str, Any]) -> SSHConfig | None:
+        if config := super()._get_config(node):
+            config = SSHChannelErrorConfig(
+                check_host_key=config.check_host_key,
+                client_keys=config.client_keys,
+                connect_timeout=config.connect_timeout,
+                connector=self,
+                hostname=config.hostname,
+                password_file=config.password_file,
+                ssh_key_passphrase_file=config.ssh_key_passphrase_file,
+                tunnel=config.tunnel,
+                username=config.username,
+            )
+        return config
