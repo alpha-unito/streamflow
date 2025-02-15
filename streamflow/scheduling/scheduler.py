@@ -22,7 +22,6 @@ from streamflow.core.scheduling import (
 )
 from streamflow.core.workflow import Job, Status
 from streamflow.data import remotepath, utils
-from streamflow.deployment.connector import LocalConnector
 from streamflow.deployment.filter import binding_filter_classes
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
@@ -74,18 +73,12 @@ class DefaultScheduler(Scheduler):
     ):
         if logger.isEnabledFor(logging.DEBUG):
             if len(selected_locations) == 1:
-                is_local = isinstance(
-                    self.context.deployment_manager.get_connector(
-                        selected_locations[0].location.deployment
-                    ),
-                    LocalConnector,
-                )
                 logger.debug(
                     "Job {name} allocated {location}".format(
                         name=job.name,
                         location=(
                             "locally"
-                            if is_local
+                            if selected_locations[0].local
                             else f"on location {selected_locations[0]}"
                         ),
                     )

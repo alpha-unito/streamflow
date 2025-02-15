@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from streamflow.core.data import DataLocation, DataManager, DataType
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.data.remotepath import StreamFlowPath, get_inner_path
-from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 
@@ -20,22 +19,22 @@ if TYPE_CHECKING:
 
 
 async def _copy(
-    src_connector: Connector | None,
-    src_location: ExecutionLocation | None,
+    src_connector: Connector,
+    src_location: ExecutionLocation,
     src: str,
-    dst_connector: Connector | None,
-    dst_locations: MutableSequence[ExecutionLocation] | None,
+    dst_connector: Connector,
+    dst_locations: MutableSequence[ExecutionLocation],
     dst: str,
     writable: False,
 ) -> None:
-    if isinstance(src_connector, LocalConnector):
+    if src_location.local:
         await dst_connector.copy_local_to_remote(
             src=src,
             dst=dst,
             locations=dst_locations,
             read_only=not writable,
         )
-    elif isinstance(dst_connector, LocalConnector):
+    elif dst_locations[0].local:
         await src_connector.copy_remote_to_local(
             src=src,
             dst=dst,
@@ -242,12 +241,7 @@ class DefaultDataManager(DataManager):
             }:
                 return next(iter(same_connector_locations))
             elif local_locations := {
-                loc
-                for loc in data_locations
-                if isinstance(
-                    self.context.deployment_manager.get_connector(loc.deployment),
-                    LocalConnector,
-                )
+                loc for loc in data_locations if loc.location.local
             }:
                 return next(iter(local_locations))
             else:
@@ -329,7 +323,7 @@ class DefaultDataManager(DataManager):
                 asyncio.create_task(
                     StreamFlowPath(
                         dst_path, context=self.context, location=location
-                    ).parent.mkdir(mode=0o777, exist_ok=True)
+                    ).parent.mkdir(mode=0o777, parents=True, exist_ok=True)
                 )
                 for location in dst_locations
             )

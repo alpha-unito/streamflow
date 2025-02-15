@@ -25,7 +25,7 @@ class CWLWorkflow(Workflow):
         super().__init__(context, config, name)
         self.cwl_version: str = cwl_version
         self.format_graph: Graph | None = format_graph
-        self.type: str | None = "cwl"
+        self.type: str = "cwl"
 
     async def _save_additional_params(
         self, context: StreamFlowContext
