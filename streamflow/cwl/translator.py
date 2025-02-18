@@ -2858,6 +2858,7 @@ class CWLTranslator:
                         cls=CWLTransferStep,
                         name=f"{output_name}-collector",
                         job_port=schedule_step.get_output_port(),
+                        prefix_path=False,
                         writable=True,
                     )
                     transfer_step.add_input_port(

@@ -80,17 +80,17 @@ def _adjust_inputs(
     inputs: MutableSequence[MutableMapping[str, Any]],
     path_processor: ModuleType,
     src_path: str,
-    dest_path: str,
+    dst_path: str,
 ) -> MutableSequence[MutableMapping[str, Any]]:
     for inp in inputs:
         if (token_class := utils.get_token_class(inp)) in ("File", "Directory"):
             path = utils.get_path_from_token(inp)
             if path == src_path:
-                inp["path"] = dest_path
-                dirname, basename = path_processor.split(dest_path)
+                inp["path"] = dst_path
+                dirname, basename = path_processor.split(dst_path)
                 inp["dirname"] = dirname
                 inp["basename"] = basename
-                inp["location"] = f"file://{dest_path}"
+                inp["location"] = f"file://{dst_path}"
                 if token_class == "File":  # nosec
                     nameroot, nameext = path_processor.splitext(basename)
                     inp["nameroot"] = nameroot
@@ -101,7 +101,7 @@ def _adjust_inputs(
                 and "listing" in inp
             ):
                 inp["listing"] = _adjust_inputs(
-                    inp["listing"], path_processor, src_path, dest_path
+                    inp["listing"], path_processor, src_path, dst_path
                 )
     return inputs
 
@@ -286,7 +286,7 @@ async def _prepare_work_dir(
     options: InitialWorkDirOptions,
     element: Any,
     base_path: str | None = None,
-    dest_path: str | None = None,
+    dst_path: str | None = None,
     writable: bool = False,
 ) -> None:
     context = options.step.workflow.context
@@ -337,36 +337,36 @@ async def _prepare_work_dir(
                     options.step.workflow,
                 )
             ):
-                dest_path = dest_path or path_processor.join(
+                dst_path = dst_path or path_processor.join(
                     base_path, path_processor.basename(src_path)
                 )
                 await context.data_manager.transfer_data(
                     src_location=selected_location.location,
                     src_path=selected_location.path,
                     dst_locations=locations,
-                    dst_path=dest_path,
+                    dst_path=dst_path,
                     writable=writable,
                 )
                 _adjust_inputs(
                     inputs=options.context["inputs"].values(),
                     path_processor=path_processor,
                     src_path=src_path,
-                    dest_path=dest_path,
+                    dst_path=dst_path,
                 )
             # Otherwise create a File or a Directory in the remote path
             else:
-                if dest_path is None:
-                    dest_path = base_path
+                if dst_path is None:
+                    dst_path = base_path
                 if src_path is not None:
-                    dest_path = path_processor.join(
-                        dest_path, path_processor.basename(src_path)
+                    dst_path = path_processor.join(
+                        dst_path, path_processor.basename(src_path)
                     )
                 if listing_class == "Directory":
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
                                 StreamFlowPath(
-                                    dest_path, context=context, location=location
+                                    dst_path, context=context, location=location
                                 ).mkdir(mode=0o777, exist_ok=True)
                             )
                             for location in locations
@@ -377,8 +377,8 @@ async def _prepare_work_dir(
                         context=context,
                         locations=locations,
                         content=(listing["contents"] if "contents" in listing else ""),
-                        path=dest_path,
-                        relpath=path_processor.relpath(dest_path, base_path),
+                        path=dst_path,
+                        relpath=path_processor.relpath(dst_path, base_path),
                     )
             # If `listing` is present, recursively process folder contents
             if "listing" in listing:
@@ -395,7 +395,7 @@ async def _prepare_work_dir(
                         )
                     )
                 else:
-                    folder_path = dest_path or base_path
+                    folder_path = dst_path or base_path
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
@@ -434,18 +434,18 @@ async def _prepare_work_dir(
                 strip_whitespace=False,
             )
             if "entryname" in listing:
-                dest_path = utils.eval_expression(
+                dst_path = utils.eval_expression(
                     expression=listing["entryname"],
                     context=options.context,
                     full_js=options.full_js,
                     expression_lib=options.expression_lib,
                 )
-                if not path_processor.isabs(dest_path):
-                    dest_path = posixpath.abspath(
-                        posixpath.join(options.job.output_directory, dest_path)
+                if not path_processor.isabs(dst_path):
+                    dst_path = posixpath.abspath(
+                        posixpath.join(options.job.output_directory, dst_path)
                     )
                 if not (
-                    dest_path.startswith(options.job.output_directory)
+                    dst_path.startswith(options.job.output_directory)
                     or options.absolute_initial_workdir_allowed
                 ):
                     raise WorkflowDefinitionException(
@@ -458,10 +458,10 @@ async def _prepare_work_dir(
                     and "location" not in entry
                     and "basename" in entry
                 ):
-                    entry["basename"] = dest_path
-                if not path_processor.isabs(dest_path):
-                    dest_path = path_processor.join(
-                        options.job.output_directory, dest_path
+                    entry["basename"] = dst_path
+                if not path_processor.isabs(dst_path):
+                    dst_path = path_processor.join(
+                        options.job.output_directory, dst_path
                     )
             writable = (
                 listing["writable"]
@@ -474,10 +474,10 @@ async def _prepare_work_dir(
                     context=context,
                     locations=locations,
                     content=entry,
-                    path=dest_path or base_path,
+                    path=dst_path or base_path,
                     relpath=(
-                        path_processor.relpath(dest_path, base_path)
-                        if dest_path
+                        path_processor.relpath(dst_path, base_path)
+                        if dst_path
                         else base_path
                     ),
                 )
@@ -491,7 +491,7 @@ async def _prepare_work_dir(
                         element=entry,
                         options=options,
                         base_path=base_path,
-                        dest_path=dest_path,
+                        dst_path=dst_path,
                         writable=writable,
                     )
                 # Otherwise, the content should be serialised to JSON
@@ -500,10 +500,10 @@ async def _prepare_work_dir(
                         context=context,
                         locations=locations,
                         content=json.dumps(entry),
-                        path=dest_path or base_path,
+                        path=dst_path or base_path,
                         relpath=(
-                            path_processor.relpath(dest_path, base_path)
-                            if dest_path
+                            path_processor.relpath(dst_path, base_path)
+                            if dst_path
                             else base_path
                         ),
                     )
@@ -515,7 +515,7 @@ async def _prepare_work_dir(
                         element=entry,
                         options=options,
                         base_path=base_path,
-                        dest_path=dest_path,
+                        dst_path=dst_path,
                         writable=writable,
                     )
                 # Otherwise, the content should be serialised to JSON
@@ -524,10 +524,10 @@ async def _prepare_work_dir(
                         context=context,
                         locations=locations,
                         content=json.dumps(entry),
-                        path=dest_path or base_path,
+                        path=dst_path or base_path,
                         relpath=(
-                            path_processor.relpath(dest_path, base_path)
-                            if dest_path
+                            path_processor.relpath(dst_path, base_path)
+                            if dst_path
                             else base_path
                         ),
                     )
@@ -537,10 +537,10 @@ async def _prepare_work_dir(
                     context=context,
                     locations=locations,
                     content=json.dumps(entry),
-                    path=dest_path or base_path,
+                    path=dst_path or base_path,
                     relpath=(
-                        path_processor.relpath(dest_path, base_path)
-                        if dest_path
+                        path_processor.relpath(dst_path, base_path)
+                        if dst_path
                         else base_path
                     ),
                 )

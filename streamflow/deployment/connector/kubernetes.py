@@ -303,7 +303,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
     async def _get_effective_locations(
         self,
         locations: MutableSequence[ExecutionLocation],
-        dest_path: str,
+        dst_path: str,
         source_location: ExecutionLocation | None = None,
     ) -> MutableSequence[ExecutionLocation]:
         # Get containers
@@ -318,8 +318,8 @@ class KubernetesBaseConnector(BaseConnector, ABC):
             container = containers[location.name.split(":")[1]]
             add_location = True
             for volume in container.volume_mounts:
-                if dest_path.startswith(volume.mount_path):
-                    path = ":".join([volume.name, dest_path])
+                if dst_path.startswith(volume.mount_path):
+                    path = ":".join([volume.name, dst_path])
                     if path not in common_paths:
                         common_paths[path] = location
                     elif location.name == source_location.name:
