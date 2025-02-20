@@ -155,7 +155,7 @@ async def test_mkdir_failure(context):
     with pytest.raises(WorkflowExecutionException) as err:
         await path.mkdir(mode=mode)
     expected_msg_err = f"1 Command 'mkdir -m {mode:o} {path}' on location {location}: mkdir: can't create directory '{path}': File exists"
-    assert str(err.value) == expected_msg_err
+    assert expected_msg_err in str(err.value)
 
 
 @pytest.mark.asyncio

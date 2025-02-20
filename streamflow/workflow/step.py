@@ -44,6 +44,25 @@ def _get_directory(path_processor: ModuleType, directory: str | None, target: Ta
     return directory or path_processor.join(target.workdir, utils.random_name())
 
 
+def _get_token_ids(token_list):
+    return [t.persistent_id for t in (token_list or []) if t.persistent_id]
+
+
+def _group_by_tag(
+    inputs: MutableMapping[str, Token],
+    inputs_map: MutableMapping[str, MutableMapping[str, Token]],
+) -> None:
+    for name, token in inputs.items():
+        if token.tag not in inputs_map:
+            inputs_map[token.tag] = {}
+        inputs_map[token.tag][name] = token
+
+
+def _is_parent_tag(tag: str, parent: str) -> bool:
+    parent_idx = parent.split(".")
+    return tag.split(".")[: len(parent_idx)] == parent_idx
+
+
 def _reduce_statuses(statuses: MutableSequence[Status]):
     num_skipped = 0
     for status in statuses:
@@ -57,20 +76,6 @@ def _reduce_statuses(statuses: MutableSequence[Status]):
         return Status.SKIPPED
     else:
         return Status.COMPLETED
-
-
-def _group_by_tag(
-    inputs: MutableMapping[str, Token],
-    inputs_map: MutableMapping[str, MutableMapping[str, Token]],
-) -> None:
-    for name, token in inputs.items():
-        if token.tag not in inputs_map:
-            inputs_map[token.tag] = {}
-        inputs_map[token.tag][name] = token
-
-
-def _get_token_ids(token_list):
-    return [t.persistent_id for t in (token_list or []) if t.persistent_id]
 
 
 class BaseStep(Step, ABC):
@@ -250,9 +255,9 @@ class Combinator(ABC):
         for key in list(self._token_values.keys()):
             if tag == key:
                 continue
-            elif key.startswith(tag):
+            elif _is_parent_tag(key, tag):
                 self._add_to_port(token, self._token_values[key], port_name)
-            elif tag.startswith(key):
+            elif _is_parent_tag(tag, key):
                 if tag not in self._token_values:
                     self._token_values[tag] = {}
                 for p in self._token_values[key]:
