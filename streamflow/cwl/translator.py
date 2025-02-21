@@ -186,6 +186,7 @@ def _create_command_output_processor_base(
     ),
     context: MutableMapping[str, Any],
     optional: bool = False,
+    single: bool = True,
 ) -> CWLCommandOutputProcessor:
     if not isinstance(port_type, MutableSequence):
         port_type = [port_type]
@@ -223,6 +224,7 @@ def _create_command_output_processor_base(
                 cwl_element=getattr(cwl_element, "secondaryFiles", None),
                 default_required=False,
             ),
+            single=single,
             streamable=getattr(cwl_element, "streamable", None),
         )
     else:
@@ -246,6 +248,7 @@ def _create_command_output_processor_base(
                 if getattr(cwl_element, "outputBinding", None)
                 else None
             ),
+            single=single and "Directory" in port_type,
         )
 
 
@@ -272,6 +275,7 @@ def _create_command_output_processor(
     schema_def_types: MutableMapping[str, Any],
     context: MutableMapping[str, Any],
     optional: bool = False,
+    single: bool = True,
 ) -> CommandOutputProcessor:
     # Array type: -> MapCommandOutputProcessor
     if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
@@ -288,6 +292,7 @@ def _create_command_output_processor(
                 schema_def_types=schema_def_types,
                 context=context,
                 optional=True,
+                single=False,
             ),
         )
     # Enum type: -> create command output processor
@@ -373,6 +378,7 @@ def _create_command_output_processor(
                 schema_def_types=schema_def_types,
                 context=context,
                 optional=optional,
+                single=single,
             )
         # List of types: -> UnionOutputProcessor
         else:
@@ -392,6 +398,7 @@ def _create_command_output_processor(
                         schema_def_types=schema_def_types,
                         context=context,
                         optional=optional,
+                        single=single,
                     )
                     for port_type in complex_types
                 ]
@@ -407,6 +414,7 @@ def _create_command_output_processor(
                         cwl_element=cwl_element,
                         context=context,
                         optional=optional,
+                        single=single,
                     )
                 )
             return CWLUnionCommandOutputProcessor(
@@ -426,6 +434,7 @@ def _create_command_output_processor(
             schema_def_types=schema_def_types,
             context=context,
             optional=optional,
+            single=single,
         )
     # Simple type -> Create typed processor
     else:
@@ -437,6 +446,7 @@ def _create_command_output_processor(
             cwl_element=cwl_element,
             context=context,
             optional=optional,
+            single=single,
         )
 
 

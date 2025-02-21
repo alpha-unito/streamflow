@@ -362,6 +362,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         optional: bool = False,
         output_eval: str | None = None,
         secondary_files: MutableSequence[SecondaryFile] | None = None,
+        single: bool = False,
         streamable: bool = False,
     ):
         super().__init__(name, workflow, target)
@@ -376,6 +377,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self.optional: bool = optional
         self.output_eval: str | None = output_eval
         self.secondary_files: MutableSequence[SecondaryFile] = secondary_files or []
+        self.single: bool = single
         self.streamable: bool = streamable
 
     @classmethod
@@ -690,15 +692,31 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             context,
         )
         if isinstance(token_value, MutableSequence):
-            for value in token_value:
-                _check_token_type(
-                    name=self.name,
-                    token_value=value,
-                    token_type=self.token_type,
-                    enum_symbols=self.enum_symbols,
-                    optional=self.optional,
-                    check_file=True,
-                )
+            if self.single:
+                if len(token_value) == 1:
+                    token_value = token_value[0]
+                    _check_token_type(
+                        name=self.name,
+                        token_value=token_value,
+                        token_type=self.token_type,
+                        enum_symbols=self.enum_symbols,
+                        optional=self.optional,
+                        check_file=True,
+                    )
+                else:
+                    raise WorkflowExecutionException(
+                        f"Expected {self.name} token of type {self.token_type}, got list."
+                    )
+            else:
+                for value in token_value:
+                    _check_token_type(
+                        name=self.name,
+                        token_value=value,
+                        token_type=self.token_type,
+                        enum_symbols=self.enum_symbols,
+                        optional=self.optional,
+                        check_file=True,
+                    )
         else:
             _check_token_type(
                 name=self.name,
