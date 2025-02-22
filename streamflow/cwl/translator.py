@@ -6,7 +6,6 @@ import os
 import posixpath
 import urllib.parse
 from collections.abc import MutableMapping, MutableSequence
-from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Any, cast, get_args
 
@@ -2871,8 +2870,3 @@ class CWLTranslator:
                     )
         # Return the final workflow object
         return workflow
-
-
-class LinkMergeMethod(Enum):
-    merge_nested = 1
-    merge_flattened = 2

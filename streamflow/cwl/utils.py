@@ -9,7 +9,7 @@ from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import PurePath
 from types import ModuleType
-from typing import Any, cast, get_args
+from typing import Any, cast
 
 import cwl_utils.expression
 import cwl_utils.parser
@@ -957,35 +957,6 @@ def remap_token_value(
 ) -> Any:
     if isinstance(value, MutableSequence):
         return [remap_token_value(path_processor, old_dir, new_dir, v) for v in value]
-    elif isinstance(
-        value, (get_args(cwl_utils.parser.File), get_args(cwl_utils.parser.Directory))
-    ):
-        if value.path:
-            value.path = remap_path(
-                path_processor=path_processor,
-                path=value.path,
-                old_dir=old_dir,
-                new_dir=new_dir,
-            )
-        if value.location:
-            value.location = remap_path(
-                path_processor=path_processor,
-                path=value.location,
-                old_dir=old_dir,
-                new_dir=new_dir,
-            )
-        if isinstance(value, get_args(cwl_utils.parser.File)):
-            if value.secondaryFiles:
-                value.secondaryFiles = [
-                    remap_token_value(path_processor, old_dir, new_dir, sf)
-                    for sf in value.secondaryFiles
-                ]
-        elif value.listing:
-            value.listing = [
-                remap_token_value(path_processor, old_dir, new_dir, sf)
-                for sf in value.listing
-            ]
-        return value
     elif isinstance(value, MutableMapping):
         if get_token_class(value) in ["File", "Directory"]:
             if "location" in value:
