@@ -709,7 +709,7 @@ def process_embedded_tool(
     step_name: str,
     name_prefix: str,
     context: MutableMapping[str, Any],
-):
+) -> tuple[cwl_utils.parser.Process, str, MutableMapping[str, Any]]:
     run_command = cwl_element.run
     inner_context = dict(context)
     # If the `run` options contains an inline CWL object
@@ -740,7 +740,7 @@ def process_embedded_tool(
             )
     # Otherwise, the `run` options contains an URI
     else:
-        # Fetch and translare the target file
+        # Fetch and translate the target file
         run_command = cwl_utils.parser.load_document_by_uri(
             path=cwl_element.loadingOptions.fetcher.urljoin(
                 base_url=cwl_element.loadingOptions.fileuri, url=run_command
