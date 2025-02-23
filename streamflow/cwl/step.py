@@ -649,14 +649,27 @@ class CWLTransferStep(TransferStep):
                         )
                         checksum = f"sha1${await loc_path.checksum()}"
                         if checksum != original_checksum:
-                            raise WorkflowExecutionException(
-                                "Error transferring file {} in location {} to {} in location {}".format(
-                                    selected_location.path,
-                                    selected_location.name,
-                                    filepath,
-                                    location,
-                                )
+                            # Prevent failures with in-place updates
+                            src_path = StreamFlowPath(
+                                selected_location.path,
+                                context=self.workflow.context,
+                                location=selected_location.location,
                             )
+                            if f"sha1${await src_path.checksum()}" == checksum:
+                                logger.warning(
+                                    f"Path {src_path} has been modified. If this behaviour is unexpected "
+                                    "(e.g., due to a CWL `InplaceUpdate` requirement), subsequent workflow "
+                                    "data may be corrupted."
+                                )
+                            else:
+                                raise WorkflowExecutionException(
+                                    "Error transferring file {} in location {} to {} in location {}".format(
+                                        selected_location.path,
+                                        selected_location.name,
+                                        filepath,
+                                        location,
+                                    )
+                                )
                 # Add size, checksum and format fields
                 new_token_value |= {
                     "nameroot": token_value["nameroot"],
