@@ -448,11 +448,6 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        command = (
-            ["sh", "-c"]
-            + [f"{k}={v}" for k, v in location.environment.items()]
-            + [utils.encode_command(command)]
-        )
         pod, container = location.name.split(":")
         # noinspection PyUnresolvedReferences
         result = await asyncio.wait_for(
@@ -462,7 +457,11 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                     name=pod,
                     namespace=self.namespace or "default",
                     container=container,
-                    command=command,
+                    command=(
+                        ["sh", "-c"]
+                        + [f"{k}={v}" for k, v in location.environment.items()]
+                        + [utils.encode_command(command)]
+                    ),
                     stderr=True,
                     stdin=False,
                     stdout=True,
@@ -487,16 +486,21 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                                 out_buffer.write(data)
                             elif data and channel == ws_client.ERROR_CHANNEL:
                                 err_buffer.write(data)
-                err = yaml.safe_load(err_buffer.getvalue())
-                if err["status"] == "Success":
-                    return out_buffer.getvalue(), 0
-                else:
-                    if "code" in err:
-                        return err["message"], int(err["code"])
+                if err := yaml.safe_load(err_buffer.getvalue()):
+                    if err["status"] == "Success":
+                        return out_buffer.getvalue(), 0
                     else:
-                        return err["message"], int(
-                            err["details"]["causes"][0]["message"]
-                        )
+                        if "code" in err:
+                            return err["message"], int(err["code"])
+                        else:
+                            return err["message"], int(
+                                err["details"]["causes"][0]["message"]
+                            )
+                else:
+                    raise WorkflowExecutionException(
+                        f"Connection to pod {pod} in namespace {self.namespace or 'default'} closed unexpectedly "
+                        f"while executing command {command}"
+                    )
         else:
             return None
 
