@@ -507,25 +507,10 @@ def _create_list_merger(
         transformer = workflow.create_step(
             cls=AllNonNullTransformer, name=name + "-transformer"
         )
-        if link_merge is None:
-            list_to_element = workflow.create_step(
-                cls=ListToElementTransformer, name=name + "-list-to-element"
-            )
-            list_to_element.add_input_port(
-                output_port_name, combinator.get_output_port()
-            )
-            list_to_element.add_output_port(output_port_name, workflow.create_port())
-            transformer.add_input_port(
-                output_port_name, list_to_element.get_output_port()
-            )
-            transformer.add_output_port(
-                output_port_name, output_port or workflow.create_port()
-            )
-        else:
-            transformer.add_input_port(output_port_name, combinator.get_output_port())
-            transformer.add_output_port(
-                output_port_name, output_port or workflow.create_port()
-            )
+        transformer.add_input_port(output_port_name, combinator.get_output_port())
+        transformer.add_output_port(
+            output_port_name, output_port or workflow.create_port()
+        )
         return transformer
     elif link_merge is None:
         combinator.add_output_port(output_port_name, workflow.create_port())
