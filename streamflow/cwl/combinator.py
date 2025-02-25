@@ -69,7 +69,6 @@ class ListMergeCombinator(DotProductCombinator):
         if not isinstance(token, IterationTerminationToken):
             async for schema in super().combine(port_name, token):
                 # If there is only one input, merge its value
-                input_token_ids = []
                 if len(self.input_names) == 1:
                     if isinstance(
                         outputs := schema[self.input_names[0]]["token"], ListToken
