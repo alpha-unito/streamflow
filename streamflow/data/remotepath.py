@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import glob
 import hashlib
 import io
@@ -784,20 +783,13 @@ class RemoteStreamFlowPath(
         else:
             if not isinstance(data, str):
                 raise TypeError("data must be str, not %s" % data.__class__.__name__)
-            command = [
-                "echo",
-                base64.b64encode(data.encode("utf-8")).decode("utf-8"),
-                "|",
-                "base64",
-                "-d",
-            ]
-            result, status = await self.connector.run(
-                location=self.location,
-                command=command,
-                stdout=self.__str__(),
-                capture_output=True,
-            )
-            _check_status(command, self.location, result, status)
+            async with await self.connector.get_stream_writer(
+                command=["tee", str(self), ">", "/dev/null"], location=self.location
+            ) as writer:
+                reader = io.BytesIO(data.encode("utf-8"))
+                while content := reader.read(self.connector.transferBufferSize):
+                    await writer.write(content)
+                reader.close()
             return len(data)
 
 
