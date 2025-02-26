@@ -12,7 +12,7 @@ concurrency:
 jobs:
   code-ql-check:
     name: "StreamFlow CodeQL check"
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       security-events: write
     steps:
@@ -26,7 +26,7 @@ jobs:
     name: "CWL conformance tests"
     strategy:
       matrix:
-        on: [ "ubuntu-22.04" ]
+        on: [ "ubuntu-24.04" ]
         python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
         version: [ "v1.0", "v1.1", "v1.2" ]
         docker: [ "docker" ]
@@ -43,13 +43,13 @@ jobs:
           - docker: "singularity"
             commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
-            on: "ubuntu-22.04"
+            on: "ubuntu-24.04"
             python: "3.13"
             version: "v1.2"
           - docker: "kubernetes"
             commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
             exclude: "docker_entrypoint,modify_file_content"
-            on: "ubuntu-22.04"
+            on: "ubuntu-24.04"
             python: "3.13"
             version: "v1.2"
           - on: "macos-13"
@@ -80,7 +80,7 @@ jobs:
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v2
         with:
-          apptainer-version: 1.3.2
+          apptainer-version: 1.3.6
         if: ${{ matrix.docker == 'singularity' }}
       - name: "Install KinD"
         uses: helm/kind-action@v1.12.0
@@ -120,7 +120,7 @@ jobs:
           if-no-files-found: error
   docker-image:
     name: "StreamFlow Docker image tests"
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -143,7 +143,7 @@ jobs:
             streamflow run /streamflow/project/streamflow.yml
   documentation:
     name: "Build Sphinx documentation"
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -164,7 +164,7 @@ jobs:
           echo "Docs checksum is ${HASH}"
           test "${HASH}" == "${CHECKSUM}"
   test-flux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       packages: read
     strategy:
@@ -202,7 +202,7 @@ jobs:
           flux start streamflow run streamflow.yml
   static-checks:
     name: "StreamFlow static checks"
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         step: [ "bandit", "lint" ]
@@ -228,7 +228,7 @@ jobs:
     name: "StreamFlow unit tests"
     strategy:
       matrix:
-        on: [ "ubuntu-22.04"]
+        on: [ "ubuntu-24.04"]
         python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
         include:
           - on: "macos-13"
@@ -258,7 +258,7 @@ jobs:
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v2
         with:
-          apptainer-version: 1.3.2
+          apptainer-version: 1.3.6
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install KinD"
         uses: helm/kind-action@v1.12.0
@@ -295,7 +295,7 @@ jobs:
   upload-to-codecov:
     name: "Codecov report upload"
     needs: ["cwl-conformance", "unit-tests"]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: "Download conformance tests artifacts"
