@@ -166,12 +166,12 @@ A schema file should follow the `2019-09 <https://json-schema.org/draft/2019-09/
       "additionalProperties": false
     }
 
-Suppose that the ``PostgreSQLStreamFlowPlugin`` class is defined in a ``plugin.py`` file, which is part of a ``streamflow_postgresql`` module. Then, the ``pyproject.toml`` file will contain the following declaration:
+Suppose that the ``PostgreSQLStreamFlowPlugin`` class is defined in a ``plugin.py`` file, which is part of a ``streamflow.plugins.unito.postgresql`` module. Then, the ``pyproject.toml`` file will contain the following declaration:
 
 .. code-block:: toml
 
     [project.entry-points]
-    "unito.streamflow.plugin" = {"unito.postgresql" = "streamflow_postgresql.plugin:PostgreSQLStreamFlowPlugin"}
+    "unito.streamflow.plugin" = {"unito.postgresql" = "streamflow.plugins.unito.postgresql.plugin:PostgreSQLStreamFlowPlugin"}
 
 Imagine now that the code described above has been published in a package called ``streamflow-postgresql``. Then, the plugin can be installed with ``pip`` as a normal package:
 
