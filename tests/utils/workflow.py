@@ -16,10 +16,16 @@ from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
+    LoopCombinator,
     LoopTerminationCombinator,
 )
 from streamflow.workflow.port import ConnectorPort
-from streamflow.workflow.step import DeployStep, ScheduleStep
+from streamflow.workflow.step import (
+    CombinatorStep,
+    DeployStep,
+    LoopCombinatorStep,
+    ScheduleStep,
+)
 from tests.utils.deployment import get_docker_deployment_config
 
 if TYPE_CHECKING:
@@ -94,24 +100,65 @@ async def create_workflow(
     return workflow, tuple(ports)
 
 
-def get_dot_combinator():
-    return DotProductCombinator(name=utils.random_name(), workflow=None)
+def get_cartesian_product_combinator(
+    workflow: Workflow, name: str | None = None
+) -> CartesianProductCombinator:
+    return CartesianProductCombinator(
+        name=name or utils.random_name(), workflow=workflow
+    )
 
 
-def get_cartesian_product_combinator():
-    return CartesianProductCombinator(name=utils.random_name(), workflow=None)
+def get_combinator_step(workflow: Workflow, combinator_type: str) -> CombinatorStep:
+    combinator_step_cls = CombinatorStep
+    name = utils.random_name()
+    if combinator_type == "cartesian_product_combinator":
+        combinator = get_cartesian_product_combinator(workflow, name)
+    elif combinator_type == "dot_combinator":
+        combinator = get_dot_combinator(workflow, name)
+    elif combinator_type == "loop_combinator":
+        combinator_step_cls = LoopCombinatorStep
+        combinator = get_loop_combinator(workflow, name)
+    elif combinator_type == "loop_termination_combinator":
+        combinator = get_loop_terminator_combinator(workflow, name)
+    elif combinator_type == "nested_crossproduct":
+        combinator = get_nested_crossproduct(workflow, name)
+    else:
+        raise ValueError(
+            f"Invalid input combinator type: {combinator_type} is not supported"
+        )
+    return workflow.create_step(
+        cls=combinator_step_cls,
+        name=name + "-combinator",
+        combinator=combinator,
+    )
 
 
-def get_loop_terminator_combinator():
-    c = LoopTerminationCombinator(name=utils.random_name(), workflow=None)
+def get_dot_combinator(
+    workflow: Workflow, name: str | None = None
+) -> DotProductCombinator:
+    return DotProductCombinator(name=name or utils.random_name(), workflow=workflow)
+
+
+def get_loop_combinator(workflow: Workflow, name: str | None = None) -> LoopCombinator:
+    return LoopCombinator(name=name or utils.random_name(), workflow=workflow)
+
+
+def get_loop_terminator_combinator(
+    workflow: Workflow, name: str | None = None
+) -> LoopTerminationCombinator:
+    c = LoopTerminationCombinator(name=name or utils.random_name(), workflow=workflow)
     c.add_output_item("test1")
     c.add_output_item("test2")
     return c
 
 
-def get_nested_crossproduct():
-    combinator = DotProductCombinator(name=utils.random_name(), workflow=None)
-    c1 = CartesianProductCombinator(name=utils.random_name(), workflow=None)
+def get_nested_crossproduct(
+    workflow: Workflow, name: str | None = None
+) -> DotProductCombinator:
+    combinator = DotProductCombinator(
+        name=name or utils.random_name(), workflow=workflow
+    )
+    c1 = CartesianProductCombinator(name=name or utils.random_name(), workflow=workflow)
     c1.add_item("ext")
     c1.add_item("inn")
     items = c1.get_items(False)
