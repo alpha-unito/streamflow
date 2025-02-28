@@ -33,12 +33,12 @@ from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import CombinatorStep
 from tests.conftest import are_equals
-from tests.test_build_wf import (
-    _base_step_test_process,
-    _persistent_id_test,
-    _set_to_none,
-    _set_workflow_in_combinator,
-    _workflow_in_combinator_test,
+from tests.utils.utils import (
+    check_combinators,
+    check_persistent_id,
+    duplicate_and_test,
+    inject_workflow_combinator,
+    set_attributes_to_none,
 )
 from tests.utils.workflow import create_workflow
 
@@ -48,7 +48,7 @@ from tests.utils.workflow import create_workflow
 async def test_cwl_loop_output(context: StreamFlowContext, step_cls: type[Step]):
     """Test saving CWLLoopOutputAllStep on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         step_cls,
         {
@@ -62,7 +62,7 @@ async def test_cwl_loop_output(context: StreamFlowContext, step_cls: type[Step])
 async def test_default_retag_transformer(context: StreamFlowContext):
     """Test saving DefaultRetagTransformer on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         DefaultRetagTransformer,
         {"name": utils.random_name() + "-transformer", "default_port": port},
@@ -74,7 +74,7 @@ async def test_default_retag_transformer(context: StreamFlowContext):
 async def test_default_transformer(context: StreamFlowContext):
     """Test saving DefaultTransformer on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         DefaultTransformer,
         {"name": utils.random_name() + "-transformer", "default_port": port},
@@ -86,7 +86,7 @@ async def test_default_transformer(context: StreamFlowContext):
 async def test_forward_transformer(context: StreamFlowContext):
     """Test saving ForwardTransformer on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         ForwardTransformer,
         {
@@ -100,7 +100,7 @@ async def test_forward_transformer(context: StreamFlowContext):
 async def test_list_merge_combinator(context: StreamFlowContext):
     """Test saving ListMergeCombinator on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
-    step, new_workflow, new_step = await _base_step_test_process(
+    step, new_workflow, new_step = await duplicate_and_test(
         workflow,
         CombinatorStep,
         {
@@ -116,13 +116,13 @@ async def test_list_merge_combinator(context: StreamFlowContext):
         context,
         test_are_eq=False,
     )
-    _persistent_id_test(workflow, new_workflow, step, new_step)
+    check_persistent_id(workflow, new_workflow, step, new_step)
 
-    _set_to_none(step, id_to_none=True, wf_to_none=True)
-    _set_to_none(new_step, id_to_none=True, wf_to_none=True)
-    _workflow_in_combinator_test(step.combinator, new_step.combinator)
-    _set_workflow_in_combinator(step.combinator, None)
-    _set_workflow_in_combinator(new_step.combinator, None)
+    set_attributes_to_none(step, set_id=True, set_wf=True)
+    set_attributes_to_none(new_step, set_id=True, set_wf=True)
+    check_combinators(step.combinator, new_step.combinator)
+    inject_workflow_combinator(step.combinator, None)
+    inject_workflow_combinator(new_step.combinator, None)
     assert are_equals(step, new_step)
 
 
@@ -130,7 +130,7 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 async def test_list_to_element_transformer(context: StreamFlowContext):
     """Test saving ListToElementTransformer on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         ListToElementTransformer,
         {
@@ -145,7 +145,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     """Test saving LoopValueFromTransformer on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
     job_port = workflow.create_port(JobPort)
-    step, new_workflow, new_step = await _base_step_test_process(
+    step, new_workflow, new_step = await duplicate_and_test(
         workflow,
         LoopValueFromTransformer,
         {
@@ -162,16 +162,16 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         context,
         test_are_eq=False,
     )
-    _persistent_id_test(workflow, new_workflow, step, new_step)
+    check_persistent_id(workflow, new_workflow, step, new_step)
 
-    _set_to_none(step, id_to_none=True, wf_to_none=True)
-    _set_to_none(new_step, id_to_none=True, wf_to_none=True)
+    set_attributes_to_none(step, set_id=True, set_wf=True)
+    set_attributes_to_none(new_step, set_id=True, set_wf=True)
     assert (
         step.processor.workflow.persistent_id
         != new_step.processor.workflow.persistent_id
     )
-    _set_to_none(step.processor, id_to_none=True, wf_to_none=True)
-    _set_to_none(new_step.processor, id_to_none=True, wf_to_none=True)
+    set_attributes_to_none(step.processor, set_id=True, set_wf=True)
+    set_attributes_to_none(new_step.processor, set_id=True, set_wf=True)
     assert are_equals(step, new_step)
 
 
@@ -185,7 +185,7 @@ async def test_non_null_transformer(
 ):
     """Test saving All/First/Only NonNullTransformer on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         transformer_cls,
         {
@@ -200,7 +200,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
     """Test saving ValueFromTransformer on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
     job_port = workflow.create_port(JobPort)
-    step, new_workflow, new_step = await _base_step_test_process(
+    step, new_workflow, new_step = await duplicate_and_test(
         workflow,
         ValueFromTransformer,
         {
@@ -217,14 +217,14 @@ async def test_value_from_transformer(context: StreamFlowContext):
         context,
         test_are_eq=False,
     )
-    _set_to_none(step, id_to_none=True, wf_to_none=True)
-    _set_to_none(new_step, id_to_none=True, wf_to_none=True)
+    set_attributes_to_none(step, set_id=True, set_wf=True)
+    set_attributes_to_none(new_step, set_id=True, set_wf=True)
     assert (
         step.processor.workflow.persistent_id
         != new_step.processor.workflow.persistent_id
     )
-    _set_to_none(step.processor, wf_to_none=True)
-    _set_to_none(new_step.processor, wf_to_none=True)
+    set_attributes_to_none(step.processor, set_wf=True)
+    set_attributes_to_none(new_step.processor, set_wf=True)
     assert are_equals(step, new_step)
 
 
@@ -232,7 +232,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
 async def test_cwl_conditional_step(context: StreamFlowContext):
     """Test saving CWLConditionalStep on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         CWLConditionalStep,
         {
@@ -248,7 +248,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
 async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
     """Test saving CWLEmptyScatterConditionalStep on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         CWLEmptyScatterConditionalStep,
         {
@@ -263,7 +263,7 @@ async def test_cwl_empty_scatter_conditional_step(context: StreamFlowContext):
 async def test_cwl_input_injector_step(context: StreamFlowContext):
     """Test saving CWLInputInjectorStep on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         CWLInputInjectorStep,
         {
@@ -278,7 +278,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
 async def test_cwl_loop_conditional_step(context: StreamFlowContext):
     """Test saving CWLLoopConditionalStep on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow,
         CWLLoopConditionalStep,
         {
@@ -295,7 +295,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
     """Test saving CWLTokenTransformer on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
     step_name = utils.random_name()
-    step, new_workflow, new_step = await _base_step_test_process(
+    step, new_workflow, new_step = await duplicate_and_test(
         workflow,
         CWLTokenTransformer,
         {
@@ -309,14 +309,14 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
         context,
         test_are_eq=False,
     )
-    _set_to_none(step, id_to_none=True, wf_to_none=True)
-    _set_to_none(new_step, id_to_none=True, wf_to_none=True)
+    set_attributes_to_none(step, set_id=True, set_wf=True)
+    set_attributes_to_none(new_step, set_id=True, set_wf=True)
     assert (
         step.processor.workflow.persistent_id
         != new_step.processor.workflow.persistent_id
     )
-    _set_to_none(step.processor, id_to_none=True, wf_to_none=True)
-    _set_to_none(new_step.processor, id_to_none=True, wf_to_none=True)
+    set_attributes_to_none(step.processor, set_id=True, set_wf=True)
+    set_attributes_to_none(new_step.processor, set_id=True, set_wf=True)
     assert are_equals(step, new_step)
 
 
@@ -324,7 +324,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
 async def test_cwl_transfer_step(context: StreamFlowContext):
     """Test saving CWLTransferStep on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
-    await _base_step_test_process(
+    await duplicate_and_test(
         workflow=workflow,
         step_cls=CWLTransferStep,
         kwargs_step={

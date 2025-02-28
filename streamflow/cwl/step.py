@@ -16,7 +16,7 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import get_tag, random_name
+from streamflow.core.utils import get_entity_ids, get_tag, random_name
 from streamflow.core.workflow import Job, Port, Token
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
@@ -39,7 +39,6 @@ from streamflow.workflow.step import (
     LoopOutputStep,
     ScheduleStep,
     TransferStep,
-    _get_token_ids,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 
@@ -243,7 +242,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                 await self._persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
-                    input_token_ids=_get_token_ids(inputs.values()),
+                    input_token_ids=get_entity_ids(inputs.values()),
                 )
             )
 
@@ -254,7 +253,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                 await self._persist_token(
                     token=Token(value=None, tag=get_tag(inputs.values())),
                     port=port,
-                    input_token_ids=_get_token_ids(inputs.values()),
+                    input_token_ids=get_entity_ids(inputs.values()),
                 )
             )
 
@@ -326,7 +325,7 @@ class CWLLoopConditionalStep(CWLConditionalStep):
                 await self._persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
-                    input_token_ids=_get_token_ids(inputs.values()),
+                    input_token_ids=get_entity_ids(inputs.values()),
                 )
             )
 
@@ -375,7 +374,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
                 await self._persist_token(
                     token=inputs[port_name].update(inputs[port_name].value),
                     port=port,
-                    input_token_ids=_get_token_ids(inputs.values()),
+                    input_token_ids=get_entity_ids(inputs.values()),
                 )
             )
 
@@ -393,7 +392,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
                 await self._persist_token(
                     token=ListToken(value=token_value, tag=get_tag(inputs.values())),
                     port=port,
-                    input_token_ids=_get_token_ids(inputs.values()),
+                    input_token_ids=get_entity_ids(inputs.values()),
                 )
             )
 
