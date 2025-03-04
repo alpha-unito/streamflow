@@ -1,47 +1,37 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
-from typing import cast
 
 from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import (
     FailureHandlingException,
-    UnrecoverableTokenException,
 )
-from streamflow.core.recovery import FailureManager, ReplayRequest, ReplayResponse
-from streamflow.core.workflow import Job, Status, Step, Token, TokenProcessor
-from streamflow.data.remotepath import StreamFlowPath
+from streamflow.core.recovery import FailureManager
+from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
-from streamflow.recovery.recovery import JobVersion
-from streamflow.workflow.step import ExecuteStep
+from streamflow.recovery.recovery import (
+    PortRecovery,
+    RollbackRecoveryPolicy,
+)
+from streamflow.recovery.utils import _execute_recovered_workflow, _is_token_available
+from streamflow.workflow.token import JobToken, TerminationToken
 
 
-async def _cleanup_dir(
-    context: StreamFlowContext, location: ExecutionLocation, directory: str
-) -> None:
-    path = StreamFlowPath(directory, context=context, location=location)
-    async for dirpath, dirnames, filenames in path.walk():
-        await asyncio.gather(
-            *(
-                asyncio.create_task((dirpath / filename).rmtree())
-                for filename in filenames
-            )
-        )
-        await asyncio.gather(
-            *(asyncio.create_task((dirpath / dirname).rmtree()) for dirname in dirnames)
-        )
-        break
-
-
-async def _replace_token(
-    job: Job, token_processor: TokenProcessor, token: Token, recovered_token: Token
-):
-    pass
+class RetryRequest:
+    def __init__(self):
+        self.version = 1
+        self.job_token: JobToken | None = None
+        self.token_output: MutableMapping[str, Token] = {}
+        self.lock = asyncio.Lock()
+        self.is_running = True
+        # Other workflows can queue to the output port of the step while the job is running.
+        self.queue: MutableSequence[PortRecovery] = []
+        self.workflow = None
 
 
 class DefaultFailureManager(FailureManager):
@@ -52,134 +42,9 @@ class DefaultFailureManager(FailureManager):
         retry_delay: int | None = None,
     ):
         super().__init__(context)
-        self.jobs: MutableMapping[str, JobVersion] = {}
         self.max_retries: int = max_retries
-        self.replay_cache: MutableMapping[str, ReplayResponse] = {}
         self.retry_delay: int | None = retry_delay
-        self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
-
-    async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
-        # Delay rescheduling to manage temporary failures (e.g. connection lost)
-        if self.retry_delay is not None:
-            await asyncio.sleep(self.retry_delay)
-        if job.name not in self.jobs:
-            self.jobs[job.name] = JobVersion(
-                job=Job(
-                    name=job.name,
-                    workflow_id=step.workflow.persistent_id,
-                    inputs=dict(job.inputs),
-                    input_directory=job.input_directory,
-                    output_directory=job.output_directory,
-                    tmp_directory=job.tmp_directory,
-                ),
-                outputs=None,
-                step=step,
-                version=1,
-            )
-        command_output = await self._replay_job(self.jobs[job.name])
-        return command_output
-
-    async def _replay_job(self, job_version: JobVersion) -> CommandOutput:
-        job = job_version.job
-        # Retry job execution until the max number of retries is reached
-        if self.max_retries is None or self.jobs[job.name].version < self.max_retries:
-            # Update version
-            self.jobs[job.name].version += 1
-            try:
-                # Manage job rescheduling
-                allocation = self.context.scheduler.get_allocation(job.name)
-                connector = self.context.scheduler.get_connector(job.name)
-                locations = self.context.scheduler.get_locations(job.name)
-                available_locations = await connector.get_available_locations(
-                    service=allocation.target.service
-                )
-                active_locations = self.context.scheduler.get_locations(
-                    job.name, [Status.RUNNING]
-                )
-                # If there are active locations, the job just failed
-                if active_locations:
-                    # If some locations are dead
-                    if not all(res in available_locations for res in active_locations):
-                        # Notify job failure
-                        await self.context.scheduler.notify_status(
-                            job.name, Status.FAILED
-                        )
-                        # Invalidate locations
-                        for location in set(active_locations) - set(
-                            available_locations
-                        ):
-                            self.context.data_manager.invalidate_location(location, "/")
-                        # TODO
-                    # Otherwise, empty output and tmp folders and re-execute the job
-                    cleanup_tasks = []
-                    for location in locations:
-                        for directory in [job.output_directory, job.tmp_directory]:
-                            cleanup_tasks.append(
-                                asyncio.create_task(
-                                    _cleanup_dir(self.context, location, directory)
-                                )
-                            )
-                            self.context.data_manager.invalidate_location(
-                                location, directory
-                            )
-                    await asyncio.gather(*cleanup_tasks)
-                    # TODO: try to do this in a more general way
-                    return await cast(ExecuteStep, job_version.step).command.execute(
-                        job
-                    )
-                # Otherwise, the job already completed but must be rescheduled
-                else:
-                    # TODO
-                    # Recover input tokens
-                    recovered_tokens = []
-                    for token_name, token in job.inputs.items():
-                        token_processor = job.step.input_token_processors[token_name]
-                        version = 0
-                        while True:
-                            try:
-                                recovered_tokens.append(
-                                    await token_processor.recover_token(
-                                        job, locations, token
-                                    )
-                                )
-                                break
-                            except UnrecoverableTokenException as e:
-                                version += 1
-                                reply_response = await self.replay_job(
-                                    ReplayRequest(job.name, e.token.job, version)
-                                )
-                                input_port = job.step.workflow.ports[
-                                    job.step.input_ports[token.name]
-                                ]
-                                recovered_token = reply_response.outputs[
-                                    input_port.name
-                                ]
-                                token = await _replace_token(
-                                    job, token_processor, token, recovered_token
-                                )
-                                token.name = input_port.name
-                    job.inputs = recovered_tokens
-                    return await cast(ExecuteStep, job_version.step).command.execute(
-                        job
-                    )
-            # When receiving a FailureHandlingException, simply fail
-            except FailureHandlingException as e:
-                logger.exception(e)
-                raise
-            # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-            except KeyboardInterrupt:
-                raise
-            except Exception as e:
-                logger.exception(e)
-                return await self.handle_exception(job, job_version.step, e)
-        else:
-            logger.error(
-                f"FAILED Job {job.name} {self.jobs[job.name].version} times. Execution aborted"
-            )
-            raise FailureHandlingException()
-
-    async def close(self):
-        pass
+        self.retry_requests: MutableMapping[str, RetryRequest] = {}
 
     @classmethod
     def get_schema(cls) -> str:
@@ -190,6 +55,184 @@ class DefaultFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
+    async def is_running_token(self, token: Token, valid_data) -> bool:
+        if (
+            isinstance(token, JobToken)
+            and token.value.name in self.retry_requests.keys()
+        ):
+            async with (self.retry_requests[token.value.name].lock):
+                if self.retry_requests[token.value.name].is_running:
+                    return True
+                # elif self.retry_requests[token.value.name].token_output:
+                #     tasks = [
+                #         asyncio.create_task(
+                #             _is_token_available(t, self.context, valid_data)
+                #         )
+                #         for t in self.retry_requests[
+                #             token.value.name
+                #         ].token_output.values()
+                #     ]
+                #     while tasks:
+                #         finished, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                #         for task in finished:
+                #             if not task.result():
+                #                 for _task in tasks:
+                #                     _task.cancel()
+                #                 return False
+                #     return True
+                elif self.retry_requests[token.value.name].token_output and all(
+                        await _is_token_available(t, self.context, valid_data)
+                        for t in self.retry_requests[
+                            token.value.name
+                        ].token_output.values()
+                ):
+                    return True
+        return False
+
+    def _get_retry_request(self, job_name, default_is_running=True) -> RetryRequest:
+        if job_name not in self.retry_requests.keys():
+            request = RetryRequest()
+            request.is_running = default_is_running
+            return self.retry_requests.setdefault(job_name, request)
+        return self.retry_requests[job_name]
+
+    async def update_job_status(self, job_name):
+        if (
+            self.max_retries is None
+            or self.retry_requests[job_name].version < self.max_retries
+        ):
+            self.retry_requests[job_name].version += 1
+            logger.debug(
+                f"Updated Job {job_name} at {self.retry_requests[job_name].version} times"
+            )
+            # free resources scheduler
+            await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
+        else:
+            logger.error(
+                f"FAILED Job {job_name} {self.retry_requests[job_name].version} times. Execution aborted"
+            )
+            raise FailureHandlingException(
+                f"FAILED Job {job_name} {self.retry_requests[job_name].version} times. Execution aborted"
+            )
+
+    async def _recover_jobs(self, failed_job: Job, failed_step: Step):
+        rrp = RollbackRecoveryPolicy(self.context)
+        # Generate new workflow
+        new_workflow, last_iteration = await rrp.recover_workflow(
+            failed_job, failed_step
+        )
+        # Execute new workflow
+        await _execute_recovered_workflow(
+            new_workflow, failed_step.name, failed_step.output_ports
+        )
+        return new_workflow
+
+    async def close(self): ...
+
+    async def notify_jobs(self, job_token, out_port_name, token):
+        job_name = job_token.value.name
+        logger.debug(f"Notify end job {job_name}")
+        if job_name in self.retry_requests.keys():
+            async with self.retry_requests[job_name].lock:
+                if self.retry_requests[job_name].job_token is None:
+                    self.retry_requests[job_name].job_token = job_token
+                if self.retry_requests[job_name].token_output is None:
+                    self.retry_requests[job_name].token_output = {}
+                self.retry_requests[job_name].token_output.setdefault(
+                    out_port_name, token
+                )
+
+                # todo: fare a tutte le port nella queue la put del token
+                elems = []
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Job {job_name} is notifying on port {out_port_name}. "
+                        f"There are {len(self.retry_requests[job_name].queue)} workflows in waiting"
+                    )
+                if len(self.retry_requests[job_name].queue):
+                    str_port = "".join(
+                        [
+                            (
+                                f"\n\tQueue[{i}]:"
+                                f" port {elem.port.name} (id {elem.port.persistent_id})"
+                                f" the token_list {elem.port.token_list} "
+                                f" of workflow {elem.port.workflow.name}."
+                                f" This port waits other {elem.waiting_token} before to add TerminationToken"
+                                if elem
+                                else f"\n\t\tQueue[{i}]: Elem-None"
+                            )
+                            for i, elem in enumerate(
+                                self.retry_requests[job_name].queue
+                            )
+                        ]
+                    )
+                    logger.debug(f"port in coda: {str_port}")
+
+                for elem in self.retry_requests[job_name].queue:
+                    if elem.port.name == out_port_name:
+                        elem.port.put(token)
+                        # todo: non è giusto, potrebbe dover aspettare altri token
+                        elem.waiting_token -= 1
+                        if elem.waiting_token == 0:
+                            elems.append(elem)
+                            elem.port.put(TerminationToken())
+                        str_t = json.dumps(
+                            {
+                                "p.name": elem.port.name,
+                                "p.id": elem.port.persistent_id,
+                                "wf": elem.port.workflow.name,
+                                "p.token_list_len": len(elem.port.token_list),
+                                "p.queue": list(elem.port.queues.keys()),
+                                "Ha ricevuto token": token.persistent_id,
+                            },
+                            indent=2,
+                        )
+                        msg_pt2 = (
+                            f"Aspetta {elem.waiting_token} tokens prima di mettere il terminationtoken"
+                            if elem.waiting_token
+                            else "Mandato anche termination token"
+                        )
+                        logger.debug(
+                            f"Token added into Port of another wf {str_t}. {msg_pt2}"
+                        )
+
+                for elem in elems:
+                    self.retry_requests[job_name].queue.remove(elem)
+                logger.debug(f"notify - job {job_name} is not running anymore")
+                self.retry_requests[job_name].is_running = False
+                logger.debug(f"Notify end job {job_name} - done")
+
+    async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
+        # Delay rescheduling to manage temporary failures (e.g. connection lost)
+        if self.retry_delay is not None:
+            await asyncio.sleep(self.retry_delay)
+        try:
+            new_workflow = await self._recover_jobs(job, step)
+            command_output = CommandOutput(
+                value=None,
+                status=(
+                    new_workflow.steps[step.name].status
+                    if new_workflow.steps.keys()
+                    else Status.COMPLETED
+                ),
+            )
+            # When receiving a FailureHandlingException, simply fail
+        except FailureHandlingException as e:
+            logger.exception(e)
+            raise
+        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+        except KeyboardInterrupt:
+            raise
+        # except WorkflowTransferException as e:
+        #     logger.exception(e)
+        #     logger.debug("WorkflowTransferException ma stavo gestendo execute job")
+        #     raise
+        except Exception as e:
+            logger.exception(e)
+            # return await self.handle_exception(job, step, e)
+            raise
+        return command_output
+
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
     ) -> CommandOutput:
@@ -197,6 +240,8 @@ class DefaultFailureManager(FailureManager):
             logger.info(
                 f"Handling {type(exception).__name__} failure for job {job.name}"
             )
+        if job.name in self.retry_requests.keys():
+            self.retry_requests[job.name].is_running = False
         return await self._do_handle_failure(job, step)
 
     async def handle_failure(
@@ -204,63 +249,46 @@ class DefaultFailureManager(FailureManager):
     ) -> CommandOutput:
         if logger.isEnabledFor(logging.INFO):
             logger.info(f"Handling command failure for job {job.name}")
+
+        if job.name in self.retry_requests.keys():
+            self.retry_requests[job.name].is_running = False
         return await self._do_handle_failure(job, step)
 
-    async def replay_job(self, replay_request: ReplayRequest) -> ReplayResponse:
-        sender_job = replay_request.sender
-        target_job = replay_request.target
-        if target_job not in self.wait_queues:
-            self.wait_queues[target_job] = asyncio.Condition()
-        wait_queue = self.wait_queues[target_job]
-        async with wait_queue:
-            if (
-                target_job not in self.replay_cache
-                or self.replay_cache[target_job].version < replay_request.version
-            ):
-                # Reschedule job
-                if logger.isEnabledFor(logging.INFO):
-                    logger.info(f"Rescheduling job {target_job}")
-                command_output = CommandOutput(value=None, status=Status.FAILED)
-                self.replay_cache[target_job] = ReplayResponse(
-                    job=target_job,
-                    outputs=None,
-                    version=self.jobs[target_job].version + 1,
+    async def handle_failure_transfer(
+        self, job: Job, step: Step, port_name: str
+    ) -> Token:
+        if job.name in self.retry_requests.keys():
+            logger.info(
+                f"handle_failure_transfer: job {job.name} is not running anymore"
+            )
+            async with self.retry_requests[job.name].lock:
+                self.retry_requests[job.name].is_running = False
+        if self.retry_delay is not None:
+            await asyncio.sleep(self.retry_delay)
+        try:
+            new_workflow = await self._recover_jobs(job, step)
+            token = next(
+                iter(
+                    new_workflow.steps[step.name].get_output_port(port_name).token_list
                 )
-                try:
-                    await self.context.scheduler.notify_status(
-                        sender_job, Status.WAITING
-                    )
-                    command_output = await self._replay_job(self.jobs[target_job])
-                finally:
-                    await self.context.scheduler.notify_status(
-                        target_job, command_output.status
-                    )
-                # Retrieve output
-                output_ports = target_job.step.output_ports
-                output_tasks = []
-                for output_port in output_ports:
-                    output_tasks.append(
-                        asyncio.create_task(
-                            target_job.step.output_token_processors[
-                                output_port
-                            ].compute_token(target_job, command_output)
-                        )
-                    )
-                self.replay_cache[target_job].outputs = {
-                    port.name: token
-                    for (port, token) in zip(
-                        output_ports, await asyncio.gather(*output_tasks)
-                    )
-                }
-                wait_queue.notify_all()
-            elif self.replay_cache[target_job].outputs is None:
-                # Wait for job completion
-                await wait_queue.wait()
-            return self.replay_cache[target_job]
+            )
+        # When receiving a FailureHandlingException, simply fail
+        except FailureHandlingException as e:
+            logger.exception(e)
+            raise
+        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+        except KeyboardInterrupt:
+            raise
+        # except (WorkflowTransferException, WorkflowExecutionException) as e:
+        #     logger.exception(e)
+        #     return await self.handle_failure_transfer(job, step, port_name)
+        except Exception as e:
+            logger.exception(e)
+            raise e
+        return token
 
 
 class DummyFailureManager(FailureManager):
-    async def close(self): ...
 
     @classmethod
     def get_schema(cls) -> str:
@@ -270,6 +298,8 @@ class DummyFailureManager(FailureManager):
             .joinpath("dummy_failure_manager.json")
             .read_text("utf-8")
         )
+
+    async def close(self): ...
 
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
@@ -290,3 +320,8 @@ class DummyFailureManager(FailureManager):
         raise FailureHandlingException(
             f"FAILED Job {job.name} with error:\n\t{command_output.value}"
         )
+
+    async def notify_jobs(self, job_name, out_port_name, token): ...
+
+    async def handle_failure_transfer(self, job: Job, step: Step, port_name: str):
+        return None

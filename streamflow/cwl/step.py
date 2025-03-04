@@ -519,6 +519,7 @@ class CWLExecuteStep(ExecuteStep):
 class CWLInputInjectorStep(InputInjectorStep):
     def __init__(self, name: str, workflow: CWLWorkflow, job_port: JobPort):
         super().__init__(name, workflow, job_port)
+        self.recoverable: bool = True
 
     async def process_input(self, job: Job, token_value: Any) -> Token:
         return await build_token(
