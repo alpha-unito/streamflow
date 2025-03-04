@@ -24,6 +24,7 @@ from streamflow.core.deployment import (
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
+    WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
@@ -93,6 +94,10 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
+        if len(tags := {t.tag for t in inputs.values()}) != 1:
+            raise WorkflowExecutionException(
+                f"Step {self.name} has input tokens with different tags {tags}"
+            )
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs.values()):
                 logger.debug(
@@ -442,6 +447,7 @@ class DeployStep(BaseStep):
     ):
         super().__init__(name, workflow)
         self.deployment_config: DeploymentConfig = deployment_config
+        self.recoverable: bool = True
         self.add_output_port(
             deployment_config.name,
             connector_port or workflow.create_port(cls=ConnectorPort),
@@ -555,6 +561,7 @@ class ExecuteStep(BaseStep):
         self.command: Command | None = None
         self.output_connectors: MutableMapping[str, str] = {}
         self.output_processors: MutableMapping[str, CommandOutputProcessor] = {}
+        self.recoverable: bool = True
         self.add_input_port("__job__", job_port)
 
     async def _check_inputs(
@@ -649,6 +656,10 @@ class ExecuteStep(BaseStep):
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
+            )
+            # TODO update failure manager API
+            await self.workflow.context.failure_manager.notify_jobs(
+                job_token, output_port.name, token
             )
 
     async def _run_job(
@@ -1568,6 +1579,7 @@ class ScatterStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow, size_port: Port | None = None):
         super().__init__(name, workflow)
         self.add_output_port("__size__", size_port or workflow.create_port())
+        # TODO: self.valid_tags
 
     def get_input_port_name(self):
         return next(n for n in self.input_ports)
@@ -1707,6 +1719,7 @@ class TransferStep(BaseStep, ABC):
         if input_ports:
             inputs_map = {}
             try:
+                # TODO: def _transfer
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)

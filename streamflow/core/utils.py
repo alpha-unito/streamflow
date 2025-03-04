@@ -10,6 +10,7 @@ import posixpath
 import shlex
 import uuid
 from collections.abc import Iterable, MutableMapping, MutableSequence
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from streamflow.core.exception import WorkflowExecutionException
@@ -50,8 +51,19 @@ class NamesStack:
         return False
 
 
+def compare_tags(tag1: str, tag2: str) -> int:
+    list1 = tag1.split(".")
+    list2 = tag2.split(".")
+    if (res := (len(list1) - len(list2))) != 0:
+        return res
+    for elem1, elem2 in zip(list1, list2):
+        if (res := (int(elem1) - int(elem2))) != 0:
+            return res
+    return 0
+
 def contains_persistent_id(id_: int, entities: Iterable[PersistableEntity]) -> bool:
     return any(id_ == entity.persistent_id for entity in entities)
+
 
 
 def create_command(
@@ -183,6 +195,14 @@ async def get_local_to_remote_destination(
     else:
         # Keep current dst
         return dst
+
+
+def get_job_step_name(job_name: str) -> str:
+    return PurePosixPath(job_name).parent.name
+
+
+def get_job_tag(job_name: str) -> str:
+    return PurePosixPath(job_name).name
 
 
 def get_option(

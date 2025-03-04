@@ -213,6 +213,7 @@ class Status(IntEnum):
     COMPLETED = 4
     FAILED = 5
     CANCELLED = 6
+    ROLLBACK = 7
 
 
 class Step(PersistableEntity, ABC):
@@ -221,6 +222,7 @@ class Step(PersistableEntity, ABC):
         self.input_ports: MutableMapping[str, str] = {}
         self.name: str = name
         self.output_ports: MutableMapping[str, str] = {}
+        self.recoverable: bool = False
         self.status: Status = Status.WAITING
         self.terminated: bool = False
         self.workflow: Workflow = workflow
@@ -248,7 +250,8 @@ class Step(PersistableEntity, ABC):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {}
+        # TODO: add the column in the SQL table?
+        return {"recoverable": self.recoverable}
 
     async def _set_status(self, status: Status):
         self.status = status

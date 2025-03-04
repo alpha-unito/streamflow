@@ -20,6 +20,7 @@ from streamflow.core.scheduling import (
     Scheduler,
     Storage,
 )
+from streamflow.core.utils import compare_tags, get_job_step_name, get_job_tag
 from streamflow.core.workflow import Job, Status
 from streamflow.data import remotepath, utils
 from streamflow.deployment.filter import binding_filter_classes
@@ -172,7 +173,22 @@ class DefaultScheduler(Scheduler):
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
 
-    def _get_running_jobs(self, location: AvailableLocation):
+    def _get_rollback_jobs(
+        self, job_name: str, running_jobs: MutableSequence[str]
+    ) -> MutableSequence[str]:
+        return list(
+            filter(
+                lambda curr: (
+                    curr != job_name
+                    and get_job_tag(curr) == get_job_step_name(job_name)
+                    and compare_tags(get_job_tag(curr), get_job_tag(job_name)) < 0
+                    and self.job_allocations[curr].status == Status.ROLLBACK
+                ),
+                running_jobs,
+            )
+        )
+
+    def _get_running_jobs(self, location: AvailableLocation) -> MutableSequence[str]:
         if location.name in self.location_allocations.get(location.deployment, {}):
             return list(
                 filter(
@@ -191,6 +207,7 @@ class DefaultScheduler(Scheduler):
         connector: Connector,
         location: AvailableLocation,
         hardware_requirements: MutableMapping[str, Hardware],
+        job_name: str,
     ) -> bool:
         hardware_requirement = hardware_requirements[
             posixpath.join(connector.deployment_name, location.name)
@@ -207,7 +224,14 @@ class DefaultScheduler(Scheduler):
             # Otherwise, simply compute the number of allocated slots
             else:
                 slots = location.slots if location.slots is not None else 1
-                if not len(self._get_running_jobs(location)) < slots:
+                if (
+                    not len(
+                        self._get_rollback_jobs(
+                            job_name, self._get_running_jobs(location)
+                        )
+                    )
+                    < slots
+                ):
                     return False
             # If AvailableLocation is stacked, evaluate also the inner location
             if location := location.wraps if location.stacked else None:
@@ -294,6 +318,7 @@ class DefaultScheduler(Scheduler):
                                 connector=connector,
                                 location=loc,
                                 hardware_requirements=hardware_requirements,
+                                job_name=job.name,
                             )
                         }
                         if len(valid_locations) >= target.locations:
@@ -423,6 +448,9 @@ class DefaultScheduler(Scheduler):
             async with self.wait_queues[connector.deployment_name]:
                 if job_allocation := self.job_allocations.get(job_name):
                     if status != job_allocation.status:
+                        if status == Status.ROLLBACK:
+                            # TODO (job_name)
+                            pass
                         job_allocation.status = status
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
