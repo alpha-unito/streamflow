@@ -50,6 +50,10 @@ class NamesStack:
         return False
 
 
+def contains_persistent_id(id_: int, entities: Iterable[PersistableEntity]) -> bool:
+    return any(id_ == entity.persistent_id for entity in entities)
+
+
 def create_command(
     class_name: str,
     command: MutableSequence[str],

@@ -1487,13 +1487,6 @@ class ScheduleStep(BaseStep):
                     if name.startswith("__connector__")
                 },
             )
-            connectors = await asyncio.gather(
-                *(
-                    asyncio.create_task(port.get_connector(self.name))
-                    for port in connector_ports.values()
-                )
-            )
-            connectors = {c.deployment_name: c for c in connectors}
             # If there are input ports
             input_ports = {
                 k: v

@@ -6,6 +6,7 @@ from typing import Any
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.utils import contains_persistent_id
 from streamflow.core.workflow import Port, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import (
@@ -17,10 +18,6 @@ from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
-
-
-def _contains_token_id(id_: int, token_list: MutableSequence[Token]) -> bool:
-    return any(id_ == t.persistent_id for t in token_list)
 
 
 def check_combinators(original_combinator: Combinator, new_combinator: Combinator):
@@ -183,7 +180,7 @@ async def verify_dependency_tokens(
         )
     assert len(depender_list) == len(expected_depender)
     for t1 in depender_list:
-        assert _contains_token_id(t1.persistent_id, expected_depender)
+        assert contains_persistent_id(t1.persistent_id, expected_depender)
 
     dependee_list = await load_dependee_tokens(
         token.persistent_id, context, loading_context
@@ -198,13 +195,13 @@ async def verify_dependency_tokens(
     try:
         assert len(dependee_list) == len(expected_dependee)
         for t1 in dependee_list:
-            assert _contains_token_id(t1.persistent_id, expected_dependee)
+            assert contains_persistent_id(t1.persistent_id, expected_dependee)
     except AssertionError as err:
         if alternative_expected_dependee is None:
             raise err
         else:
             assert len(dependee_list) == len(alternative_expected_dependee)
             for t1 in dependee_list:
-                assert _contains_token_id(
+                assert contains_persistent_id(
                     t1.persistent_id, alternative_expected_dependee
                 )

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
-from streamflow.core.deployment import Target
+from streamflow.core.deployment import DeploymentConfig, Target
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.workflow import Port, Workflow
 from streamflow.cwl.hardware import CWLHardwareRequirement
@@ -34,9 +34,11 @@ if TYPE_CHECKING:
 CWL_VERSION = "v1.2"
 
 
-def create_deploy_step(workflow, deployment_config=None):
+def create_deploy_step(
+    workflow: Workflow, deployment_config: DeploymentConfig | None = None
+) -> DeployStep:
     connector_port = workflow.create_port(cls=ConnectorPort)
-    if not deployment_config:
+    if deployment_config is None:
         deployment_config = get_docker_deployment_config()
     return workflow.create_step(
         cls=DeployStep,
@@ -51,7 +53,8 @@ def create_schedule_step(
     deploy_steps: MutableSequence[DeployStep],
     binding_config: BindingConfig = None,
     hardware_requirement: HardwareRequirement = None,
-):
+    name_prefix: str | None = None,
+) -> ScheduleStep:
     # It is necessary to pass in the correct order biding_config.targets and deploy_steps for the mapping
     if not binding_config:
         binding_config = BindingConfig(
@@ -62,14 +65,15 @@ def create_schedule_step(
                 for deploy_step in deploy_steps
             ]
         )
+    name_prefix = name_prefix or utils.random_name()
     return workflow.create_step(
         cls=(
             CWLScheduleStep
             if isinstance(hardware_requirement, CWLHardwareRequirement)
             else ScheduleStep
         ),
-        name=posixpath.join(utils.random_name(), "__schedule__"),
-        job_prefix="something",
+        name=posixpath.join(name_prefix, "__schedule__"),
+        job_prefix=name_prefix,
         connector_ports={
             target.deployment.name: deploy_step.get_output_port()
             for target, deploy_step in zip(binding_config.targets, deploy_steps)
@@ -82,9 +86,9 @@ def create_schedule_step(
 async def create_workflow(
     context: StreamFlowContext,
     num_port: int = 2,
-    type: str = "cwl",
+    type_: str = "cwl",
 ) -> tuple[Workflow, tuple[Port, ...]]:
-    if type == "cwl":
+    if type_ == "cwl":
         workflow = CWLWorkflow(
             context=context,
             name=utils.random_name(),
