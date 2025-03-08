@@ -12,26 +12,26 @@ from streamflow.core.exception import (
     FailureHandlingException,
 )
 from streamflow.core.recovery import FailureManager
-from streamflow.core.workflow import Job, Status, Step, Token
+from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import (
     PortRecovery,
     RollbackRecoveryPolicy,
 )
-from streamflow.recovery.utils import _execute_recovered_workflow, _is_token_available
+from streamflow.recovery.utils import _execute_recovered_workflow
 from streamflow.workflow.token import JobToken, TerminationToken
 
 
 class RetryRequest:
     def __init__(self):
-        self.version = 1
+        self.version: int = 1
         self.job_token: JobToken | None = None
         self.token_output: MutableMapping[str, Token] = {}
-        self.lock = asyncio.Lock()
-        self.is_running = True
+        self.lock: asyncio.Lock = asyncio.Lock()
+        self.is_running: bool = True
         # Other workflows can queue to the output port of the step while the job is running.
         self.queue: MutableSequence[PortRecovery] = []
-        self.workflow = None
+        self.workflow: Workflow | None = None
 
 
 class DefaultFailureManager(FailureManager):
@@ -55,12 +55,12 @@ class DefaultFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
-    async def is_running_token(self, token: Token, valid_data) -> bool:
+    async def is_running_token(self, token: Token) -> bool:
         if (
             isinstance(token, JobToken)
             and token.value.name in self.retry_requests.keys()
         ):
-            async with (self.retry_requests[token.value.name].lock):
+            async with self.retry_requests[token.value.name].lock:
                 if self.retry_requests[token.value.name].is_running:
                     return True
                 # elif self.retry_requests[token.value.name].token_output:
@@ -81,10 +81,8 @@ class DefaultFailureManager(FailureManager):
                 #                 return False
                 #     return True
                 elif self.retry_requests[token.value.name].token_output and all(
-                        await _is_token_available(t, self.context, valid_data)
-                        for t in self.retry_requests[
-                            token.value.name
-                        ].token_output.values()
+                    await t.is_available(self.context)
+                    for t in self.retry_requests[token.value.name].token_output.values()
                 ):
                     return True
         return False
@@ -116,9 +114,9 @@ class DefaultFailureManager(FailureManager):
             )
 
     async def _recover_jobs(self, failed_job: Job, failed_step: Step):
-        rrp = RollbackRecoveryPolicy(self.context)
+        rollback = RollbackRecoveryPolicy(self.context)
         # Generate new workflow
-        new_workflow, last_iteration = await rrp.recover_workflow(
+        new_workflow, last_iteration = await rollback.recover_workflow(
             failed_job, failed_step
         )
         # Execute new workflow

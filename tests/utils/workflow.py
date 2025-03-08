@@ -14,14 +14,11 @@ from streamflow.core.deployment import DeploymentConfig, Target
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.workflow import Port, Workflow
 from streamflow.cwl.hardware import CWLHardwareRequirement
-from streamflow.cwl.step import CWLScheduleStep
+from streamflow.cwl.step import CWLInputInjectorStep, CWLScheduleStep, CWLTransferStep
 from streamflow.cwl.utils import get_token_class
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.deployment.utils import get_path_processor
-from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-
-# from streamflow.log_handler import logger
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
@@ -194,7 +191,8 @@ def build_token(job: Job, token_value: Any) -> Token:
         )
     elif isinstance(token_value, MutableMapping):
         if get_token_class(token_value) in ["File", "Directory"]:
-            return FileToken(tag=get_tag(job.inputs.values()), value=None)  # TODO,
+            # return FileToken(tag=get_tag(job.inputs.values()), value=token_value) # TODO
+            raise NotImplementedError
         else:
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
@@ -308,7 +306,6 @@ class InjectorFailureCommand(Command):
                 "status": cmd_out.status,
             },
         )
-        logger.info(f"curr: {curr} max_failures: {max_failures}")
         return cmd_out
 
     async def _save_additional_params(
@@ -371,13 +368,13 @@ class RecoveryTranslator:
         step_name: str,
         workflow: Workflow,
         binding_config: BindingConfig | None = None,
-    ) -> BaseInputInjectorStep:
+    ) -> InputInjectorStep:
         step_name = f"{step_name}-injector"
         schedule_step = self.get_schedule_step(
             binding_config, deployment_names, step_name, workflow
         )
         step = workflow.create_step(
-            cls=BaseInputInjectorStep,
+            cls=CWLInputInjectorStep,
             name=step_name,
             job_port=schedule_step.get_output_port(),
         )
@@ -403,7 +400,7 @@ class RecoveryTranslator:
         for key, port in input_ports.items():
             schedule_step.add_input_port(key, port)
             transfer_step = workflow.create_step(
-                cls=BaseTransferStep,
+                cls=CWLTransferStep,
                 name=posixpath.join(step_name, "__transfer__", key),
                 job_port=schedule_step.get_output_port(),
             )

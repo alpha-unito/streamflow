@@ -1,9 +1,12 @@
 import asyncio
 import json
+import logging
 from collections import deque
-from collections.abc import Iterable, MutableMapping
+from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
 from enum import Enum
+from typing import Any
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import (
     contains_id,
@@ -12,19 +15,10 @@ from streamflow.core.utils import (
     get_tag,
 )
 from streamflow.core.workflow import Token
-
-# from streamflow.cwl.transformer import (
-#     BackPropagationTransformer,
-#     MultiplexerTransformer,
-#     OutputForwardTransformer,
-# )
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-
-# from streamflow.recovery.dev_utils import print_token_val
 from streamflow.recovery.utils import (
-    _is_token_available,
     get_key_by_value,
     get_step_instances_from_output_port,
     load_and_add_ports,
@@ -32,7 +26,7 @@ from streamflow.recovery.utils import (
 )
 from streamflow.workflow.combinator import LoopTerminationCombinator
 from streamflow.workflow.port import ConnectorPort
-from streamflow.workflow.step import (  # DeployStep,
+from streamflow.workflow.step import (
     CombinatorStep,
     ExecuteStep,
     InputInjectorStep,
@@ -65,11 +59,17 @@ class TokenAvailability(Enum):
 
 
 class ProvenanceToken:
-    def __init__(self, token_instance, is_available, port_row, step_rows):
-        self.instance = token_instance
-        self.is_available = is_available
-        self.port_row = port_row
-        self.step_rows = step_rows
+    def __init__(
+        self,
+        token_instance: Token,
+        is_available: TokenAvailability,
+        port_row: MutableMapping[str, Any],
+        step_rows: MutableMapping[str, Any],
+    ):
+        self.instance: Token = token_instance
+        self.is_available: TokenAvailability = is_available
+        self.port_row: MutableMapping[str, Any] = port_row
+        self.step_rows: MutableMapping[str, Any] = step_rows
 
 
 async def get_execute_step_out_token_ids(next_token_ids, context):
@@ -88,41 +88,35 @@ async def get_execute_step_out_token_ids(next_token_ids, context):
     return execute_step_out_token_ids
 
 
-async def evaluate_token_availability(token, step_rows, port_row, context, valid_data):
-    if await _is_token_available(token, context, valid_data):
-        is_available = TokenAvailability.Available
+async def evaluate_token_availability(
+    token: Token,
+    step_rows,
+    port_row: MutableMapping[str, Any],
+    context: StreamFlowContext,
+):
+    if await token.is_available(context):
+        dependency_rows = await context.database.get_input_steps(port_row["id"])
+        for step_row in step_rows:
+            if issubclass(get_class_from_name(port_row["type"]), ConnectorPort):
+                return TokenAvailability.Unavailable
+            # TODO: remove dependency name and set True the `recoverable` attribute in the SizeTransformer classes
+            dependency_name = next(
+                iter(
+                    dep_row["name"]
+                    for dep_row in dependency_rows
+                    if dep_row["step"] == step_row["id"]
+                )
+            )
+            if dependency_name == "__size__":
+                return TokenAvailability.Available
+            elif json.loads(step_row["params"])["recoverable"]:
+                logger.debug(f"Token with id {token.persistent_id} is available")
+                return TokenAvailability.Available
+        logger.debug(f"Token with id {token.persistent_id} is not recoverable")
+        return TokenAvailability.Unavailable
     else:
-        is_available = TokenAvailability.Unavailable
-    dependency_rows = await context.database.get_input_steps(port_row["id"])
-    for step_row in step_rows:
-        if issubclass(get_class_from_name(port_row["type"]), ConnectorPort):
-            return TokenAvailability.Unavailable
-        dependency_name = next(
-            iter(
-                dep_row["name"]
-                for dep_row in dependency_rows
-                if dep_row["step"] == step_row["id"]
-            )
-        )
-        if dependency_name == "__size__":
-            return TokenAvailability.Available
-        # if issubclass(
-        #     get_class_from_name(step_row["type"]),
-        #     (
-        #         # BackPropagationTransformer,
-        #         DeployStep,
-        #         ExecuteStep,
-        #         InputInjectorStep,
-        #         # MultiplexerTransformer,
-        #     ),
-        # ):
-        if json.loads(step_row["params"])["recoverable"]:
-            logger.debug(
-                f"evaluate_token_availability: Token {token.persistent_id} is available? {is_available}. "
-                f"Checking {step_row['name']} step type: {step_row['type']}"
-            )
-            return is_available
-    return TokenAvailability.Unavailable
+        logger.debug(f"Token with id {token.persistent_id} is not available")
+        return TokenAvailability.Unavailable
 
 
 def is_there_step_type(rows, types):
@@ -133,26 +127,36 @@ def is_there_step_type(rows, types):
 
 
 class DirectGraph:
-    INIT_GRAPH_FLAG = "init"
-    LAST_GRAPH_FLAG = "last"
+    ROOT = "root"
+    LEAF = "leaf"
 
-    def __init__(self):
-        self.graph = {}
+    def __init__(self, name: str):
+        self.graph: MutableMapping[Any, MutableSet[Any]] = {}
+        self.name: str = name
 
-    def add(self, src, dst):
+    def add(self, src: int | None, dst: int | None) -> None:
         if src is None:
-            src = DirectGraph.INIT_GRAPH_FLAG
+            src = DirectGraph.ROOT
         if dst is None:
-            dst = DirectGraph.LAST_GRAPH_FLAG
-        logger.debug(f"DG: Added {src} -> {dst}")
+            dst = DirectGraph.LEAF
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"{self.name} Graph: Added {src} -> {dst}")
         self.graph.setdefault(src, set()).add(dst)
-        # if DirectGraph.LAST_GRAPH_FLAG in self.graph[src] and len(self.graph[src]) > 1:
-        #     self.graph[src].remove(DirectGraph.LAST_GRAPH_FLAG)
-        #     logger.debug(
-        #         f"DG: Remove {DirectGraph.LAST_GRAPH_FLAG} from {src} next elems"
-        #     )
 
-    def remove(self, vertex):
+    def empty(self) -> bool:
+        return False if self.graph else True
+
+    def items(self):
+        return self.graph.items()
+
+    def keys(self):
+        return self.graph.keys()
+
+    def prev(self, vertex: int) -> MutableSet[int]:
+        """Return the previous nodes of the vertex."""
+        return {v for v, next_vs in self.graph.items() if vertex in next_vs}
+
+    def remove(self, vertex: int) -> MutableSequence[int]:
         self.graph.pop(vertex, None)
         removed = [vertex]
         vertices_without_next = set()
@@ -164,16 +168,16 @@ class DirectGraph:
         for vert in vertices_without_next:
             removed.extend(self.remove(vert))
 
-        # Assign the INIT node to vertices without parent
+        # Assign the root node to vertices without parent
         to_mv = set()
         for k in self.keys():
-            if k != DirectGraph.INIT_GRAPH_FLAG and not self.prev(k):
+            if k != DirectGraph.ROOT and not self.prev(k):
                 to_mv.add(k)
         for k in to_mv:
             self.add(None, k)
         return removed
 
-    def replace(self, old_vertex, new_vertex):
+    def replace(self, old_vertex: int, new_vertex: int) -> None:
         for values in self.graph.values():
             if old_vertex in values:
                 values.remove(old_vertex)
@@ -181,14 +185,12 @@ class DirectGraph:
         if old_vertex in self.graph.keys():
             self.graph[new_vertex] = self.graph.pop(old_vertex)
 
-    def succ(self, vertex):
+    def succ(self, vertex: int) -> MutableSet[int]:
+        """Return the next nodes of the vertex. A new instance of the list is created"""
         return {t for t in self.graph.get(vertex, [])}
 
-    def prev(self, vertex):
-        return {v for v, next_vs in self.graph.items() if vertex in next_vs}
-
-    def empty(self):
-        return False if self.graph else True
+    def values(self):
+        return self.graph.values()
 
     def __getitem__(self, name):
         return self.graph[name]
@@ -196,46 +198,32 @@ class DirectGraph:
     def __iter__(self):
         return iter(self.graph)
 
-    def keys(self):
-        return self.graph.keys()
-
-    def items(self):
-        return self.graph.items()
-
-    def values(self):
-        return self.graph.values()
-
-    def __str__(self):
+    def __str__(self) -> str:
         # return f"{json.dumps({k : list(v) for k, v in self.graph.items()}, indent=2)}"
-        tmp = {f'"{k}"': [f"{v}" for v in values] for k, values in self.graph.items()}
         return (
             "{\n"
-            + "\n".join([f"{k} : {values}" for k, values in tmp.items()])
+            + "\n".join(
+                [
+                    f"{k} : {[str(v) for v in values]}"
+                    for k, values in self.graph.items()
+                ]
+            )
             + "\n}\n"
         )
 
 
 class RollbackDeterministicWorkflowPolicy:
-    def __init__(self, context):
-        # { port name : [ next port names ] }
-        self.dcg_port = DirectGraph()
-
-        # { token id : [ next token ids ] }
-        self.dag_tokens = DirectGraph()
-
-        # { port name : [ port ids ] }
-        self.port_name_ids = {}
-
-        # { port name : [ token ids ] }
-        self.port_tokens = {}
-
-        # { token id : is_available }
-        self.token_available = {}
-
-        # { token id : token instance }
-        self.token_instances = {}
-
-        self.context = context
+    def __init__(self, context: StreamFlowContext):
+        self.dcg_port: DirectGraph = DirectGraph("Dependencies")
+        self.dag_tokens: DirectGraph = DirectGraph("Provenance")
+        # port name : port ids
+        self.port_name_ids: MutableMapping[str, MutableSequence[int]] = {}
+        # port name : token ids
+        self.port_tokens: MutableMapping[str, MutableSequence[int]] = {}
+        self.token_available: MutableMapping[int, bool] = {}
+        # token id : token instance
+        self.token_instances: MutableMapping[int, Token] = {}
+        self.context: StreamFlowContext = context
 
     def is_present(self, t_id):
         for ts in self.port_tokens.values():
@@ -268,7 +256,7 @@ class RollbackDeterministicWorkflowPolicy:
             logger.debug(
                 f"Token {t_id} è successivo al job_token {job_token.persistent_id}"
             )
-            if t_id in (DirectGraph.INIT_GRAPH_FLAG, DirectGraph.LAST_GRAPH_FLAG):
+            if t_id in (DirectGraph.ROOT, DirectGraph.LEAF):
                 continue
             port_name = get_key_by_value(t_id, self.port_tokens)
             port_id = max(self.port_name_ids[port_name])
@@ -301,10 +289,10 @@ class RollbackDeterministicWorkflowPolicy:
         for prev_t_id in prev_ids:
             self.dag_tokens[prev_t_id].remove(token_id)
             if len(self.dag_tokens[prev_t_id]) == 0 or (
-                prev_t_id != DirectGraph.INIT_GRAPH_FLAG
+                prev_t_id != DirectGraph.ROOT
                 and isinstance(self.token_instances[prev_t_id], JobToken)
             ):
-                if prev_t_id == DirectGraph.INIT_GRAPH_FLAG:
+                if prev_t_id == DirectGraph.ROOT:
                     raise Exception(
                         "Impossible execute a workflow without a INIT token"
                     )
@@ -347,7 +335,7 @@ class RollbackDeterministicWorkflowPolicy:
         )
 
     def remove_token(self, token_id):
-        if token_id == DirectGraph.INIT_GRAPH_FLAG:
+        if token_id == DirectGraph.ROOT:
             return
         if succ_ids := self.dag_tokens.succ(token_id):
             # noop
@@ -509,7 +497,7 @@ class RollbackDeterministicWorkflowPolicy:
     ):
         logger.debug(
             f"populate_workflow: wf {new_workflow.name} dag[INIT] "
-            f"{[ get_key_by_value(t_id, self.port_tokens) for t_id in self.dag_tokens[DirectGraph.INIT_GRAPH_FLAG]]}"
+            f"{[get_key_by_value(t_id, self.port_tokens) for t_id in self.dag_tokens[DirectGraph.ROOT]]}"
         )
         logger.debug(
             f"populate_workflow: wf {new_workflow.name} port {new_workflow.ports.keys()}"
@@ -708,11 +696,11 @@ class RollbackDeterministicWorkflowPolicy:
         return step_name_id
 
 
-class NewProvenanceGraphNavigation:
-    def __init__(self, context):
-        self.dag_tokens = DirectGraph()
+class ProvenanceGraph:
+    def __init__(self, context: StreamFlowContext):
+        self.context: StreamFlowContext = context
+        self.dag_tokens: DirectGraph = DirectGraph("Provenance")
         self.info_tokens: MutableMapping[int, ProvenanceToken] = {}
-        self.context = context
 
     def add(self, src_token: Token | None, dst_token: Token | None):
         self.dag_tokens.add(
@@ -720,46 +708,40 @@ class NewProvenanceGraphNavigation:
             dst_token.persistent_id if dst_token else dst_token,
         )
 
-    async def build_unfold_graph(self, init_tokens, valid_data):
-        token_frontier = deque(init_tokens)
+    async def build_graph(self, job_token: JobToken, inputs: Iterable[Token]):
+        """
+        The provenance graph represent the execution, and is always a DAG.
+        Visit the provenance graph with a breadth-first search and is done
+        backward starting from the input tokens. At the end of the search,
+        we have a tree where at root there are token which data are available
+        in some location and leaves will be the input tokens.
+        """
+        token_frontier = deque(inputs)
         loading_context = DefaultDatabaseLoadingContext()
-        job_token = None
         for t in token_frontier:
-            # if not isinstance(t, JobToken):
-            #     self.add(t, None)
             self.add(t, None)
-            if isinstance(t, JobToken):
-                job_token = t
-        for t in token_frontier:
-            if not isinstance(t, JobToken):
-                self.add(job_token, t)
 
         while token_frontier:
             token = token_frontier.popleft()
             port_row = await self.context.database.get_port_from_token(
                 token.persistent_id
             )
+            # Get steps which has the output port (nb. a port can have multiple steps due to the loop case)
             step_rows = await get_step_instances_from_output_port(
                 port_row["id"], self.context
             )
-            # questa condizione si potrebbe mettere come parametro e utilizzarla come taglio.
-            # Ovvero, dove l'utente vuole che si fermi la ricerca indietro
-            if await self.context.failure_manager.is_running_token(token, valid_data):
+            if await self.context.failure_manager.is_running_token(token):
                 self.add(None, token)
                 is_available = TokenAvailability.Unavailable
-                logger.debug(
-                    f"new_build_dag: Token id: {token.persistent_id} is running. Added in INIT"
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Token with id {token.persistent_id} is running")
             else:
                 if (
                     is_available := await evaluate_token_availability(
-                        token, step_rows, port_row, self.context, valid_data
+                        token, step_rows, port_row, self.context
                     )
                 ) == TokenAvailability.Available:
                     self.add(None, token)
-                    logger.debug(
-                        f"new_build_dag: Token id: {token.persistent_id} is available. Added in INIT"
-                    )
                 else:
                     if prev_tokens := await load_dependee_tokens(
                         token.persistent_id, self.context, loading_context
@@ -773,43 +755,23 @@ class NewProvenanceGraphNavigation:
                                 )
                             ):
                                 token_frontier.append(prev_token)
-                        logger.debug(
-                            f"new_build_dag: Token id: {token.persistent_id} is not available, "
-                            f"it has {[t.persistent_id for t in prev_tokens]} prev tokens "
-                        )
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Token with id {token.persistent_id} is not available. "
+                                f"Its previous tokens are {[t.persistent_id for t in prev_tokens]}"
+                            )
                     elif issubclass(
                         get_class_from_name(port_row["type"]), ConnectorPort
                     ):
-                        logger.debug(
-                            f"Token {token.persistent_id} is in a ConnectorPort"
-                        )
+                        pass  # do nothing
                     else:
                         raise FailureHandlingException(
-                            f"Token {token.persistent_id} is not available and it does not have prev tokens"
+                            f"Token with id {token.persistent_id} is not available and it does not have previous tokens"
                         )
             self.info_tokens.setdefault(
                 token.persistent_id,
                 ProvenanceToken(token, is_available, port_row, step_rows),
             )
-        # for info in self.info_tokens.values():
-        #     logger.debug(
-        #         f"token-info\n\tid: {info.instance.persistent_id}\n\ttype: {type(info.instance)}"
-        #         f"\n\tvalue: {print_token_val(info.instance)}\n\ttag: {info.instance.tag}"
-        #         f"\n\tis_avai: {info.is_available}\n\tport: {dict(info.port_row)}"
-        #         f"\n\tsteps: {[ s['name'] for s in info.step_rows] }"
-        #     )
-        # pass
-
-    # # todo: check if it is still necessary
-    # async def get_execute_token_ids(self, job_token):
-    #     output_token_ids = set()
-    #     for next_t_id in self.dag_tokens.succ(job_token.persistent_id):
-    #         if not isinstance(next_t_id, int):
-    #             continue
-    #         step_rows = self.info_tokens[next_t_id].step_rows
-    #         if is_there_step_type(step_rows, (ExecuteStep,)):
-    #             output_token_ids.add(next_t_id)
-    #     return output_token_ids
 
     async def _refold_graphs(self, output_ports):
         rdwp = RollbackDeterministicWorkflowPolicy(self.context)
@@ -821,7 +783,7 @@ class NewProvenanceGraphNavigation:
         #             self.info_tokens.get(t_id, None),
         #             self.info_tokens.get(next_t_id, None),
         #         )
-        queue = deque((DirectGraph.LAST_GRAPH_FLAG,))
+        queue = deque((DirectGraph.LEAF,))
         visited = set()
         while queue:
             t_id = queue.popleft()
@@ -836,21 +798,19 @@ class NewProvenanceGraphNavigation:
                 )
 
         for out_port in output_ports:
-            rdwp.dcg_port.replace(DirectGraph.LAST_GRAPH_FLAG, out_port.name)
-            rdwp.dcg_port.add(out_port.name, DirectGraph.LAST_GRAPH_FLAG)
+            rdwp.dcg_port.replace(DirectGraph.LEAF, out_port.name)
+            rdwp.dcg_port.add(out_port.name, DirectGraph.LEAF)
             placeholder = Token(
                 None,
                 get_tag(
                     self.info_tokens[t].instance
-                    for t in self.dag_tokens.prev(DirectGraph.LAST_GRAPH_FLAG)
+                    for t in self.dag_tokens.prev(DirectGraph.LEAF)
                     if not isinstance(t, JobToken)
                 ),
             )
             placeholder.persistent_id = -1
-            rdwp.dag_tokens.replace(
-                DirectGraph.LAST_GRAPH_FLAG, placeholder.persistent_id
-            )
-            rdwp.dag_tokens.add(placeholder.persistent_id, DirectGraph.LAST_GRAPH_FLAG)
+            rdwp.dag_tokens.replace(DirectGraph.LEAF, placeholder.persistent_id)
+            rdwp.dag_tokens.add(placeholder.persistent_id, DirectGraph.LEAF)
             rdwp.token_instances[placeholder.persistent_id] = placeholder
             rdwp.token_available[placeholder.persistent_id] = False
             rdwp.port_name_ids.setdefault(out_port.name, set()).add(

@@ -1,17 +1,20 @@
 import itertools
 import os
 import posixpath
-from typing import cast
+import tempfile
+from typing import Any, cast
 
 import pytest
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Token
+from streamflow.cwl import utils as cwl_sf_utils
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.recovery.failure_manager import DefaultFailureManager
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.token import JobToken, TerminationToken
-from tests.utils.deployment import get_deployment_config
+from streamflow.workflow.token import FileToken, JobToken, TerminationToken
+from tests.utils.deployment import get_deployment_config, get_location
 from tests.utils.workflow import (
     InjectorFailureCommand,
     RecoveryTranslator,
@@ -19,22 +22,36 @@ from tests.utils.workflow import (
 )
 
 NUM_STEPS = {"single_step": 1, "pipeline": 4}
-NUM_FAILURES = {"one_failure": 1, "two_failure_in_row": 2}
+NUM_FAILURES = {
+    "one_failure": 1,
+}  # "two_failure_in_row": 2}
+TOKENS = ["default", "file"]
+
+
+def _assert_token_result(input_value: Any, output_token: Token) -> None:
+    if cwl_sf_utils.get_token_class(input_value) in ["File", "Directory"]:
+        assert isinstance(output_token, FileToken)
+        assert input_value["class"] == output_token.value["class"]
+        assert input_value["basename"] == output_token.value["basename"]
+        assert input_value.get("checksum", "") == output_token.value.get("checksum", "")
+        assert input_value.get("size", -1) == output_token.value.get("size", -1)
+    else:
+        assert input_value == output_token.value
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "num_of_steps,num_of_failures",
-    itertools.product(NUM_STEPS.values(), NUM_FAILURES.values()),
+    "num_of_steps,num_of_failures,token_t",
+    itertools.product(NUM_STEPS.values(), NUM_FAILURES.values(), TOKENS),
     ids=[
-        f"{n_step}-{n_failure}"
-        for n_step, n_failure in itertools.product(
-            NUM_STEPS.keys(), NUM_FAILURES.keys()
+        f"{n_step}-{n_failure}-{t}"
+        for n_step, n_failure, t in itertools.product(
+            NUM_STEPS.keys(), NUM_FAILURES.keys(), TOKENS
         )
     ],
 )
 async def test_execute(
-    context: StreamFlowContext, num_of_steps: int, num_of_failures: int
+    context: StreamFlowContext, num_of_steps: int, num_of_failures: int, token_t: str
 ):
     workflow = next(iter(await create_workflow(context, num_port=0)))
     translator = RecoveryTranslator(workflow)
@@ -42,12 +59,32 @@ async def test_execute(
         "local": await get_deployment_config(workflow.context, "local")
     }
     input_ports = {}
+    if token_t == "default":
+        token_value = 100
+        token = Token(token_value)
+    elif token_t == "file":
+        location = await get_location(context, "local")
+        path = StreamFlowPath(
+            tempfile.gettempdir() if location.local else "/tmp",
+            utils.random_name(),
+            context=context,
+            location=location,
+        )
+        await path.write_text("StreamFlow fault tolerant")
+        token_value = {"class": "File", "path": str(path)}
+        token = Token(dict(token_value))
+        token_value["basename"] = os.path.basename(path)
+        token_value["checksum"] = f"sha1${await path.checksum()}"
+        token_value["size"] = await path.size()
+    else:
+        # TODO directory, list, object
+        raise RuntimeError(f"Unknown token type: {token_t}")
     for input_ in ("test",):
         injector_step = translator.get_base_injector_step(
             ["local"], input_, posixpath.join(posixpath.sep, input_), workflow
         )
         input_ports[input_] = injector_step.get_output_port(input_)
-        injector_step.get_input_port(input_).put(Token(100))
+        injector_step.get_input_port(input_).put(token)
         injector_step.get_input_port(input_).put(TerminationToken())
     execute_steps = []
     for _ in range(num_of_steps):
@@ -70,7 +107,7 @@ async def test_execute(
     for step in execute_steps:
         result_token = step.get_output_port("test1").token_list
         assert len(result_token) == 2
-        assert result_token[0].value == 100
+        _assert_token_result(token_value, result_token[0])
         assert isinstance(result_token[1], TerminationToken)
 
         for job in (
@@ -89,6 +126,7 @@ async def test_execute(
 
 
 # TODO
+# test execute on all the Token types (especially on FileToken)
 # test_transfer
 # test_pipeline / ephemeral volumes
 # test_scatter

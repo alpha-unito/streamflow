@@ -13,18 +13,15 @@ from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.rollback_recovery import (
     DirectGraph,
-    NewProvenanceGraphNavigation,
+    ProvenanceGraph,
     ProvenanceToken,
     TokenAvailability,
 )
 from streamflow.recovery.utils import (
-    _is_token_available,
     get_execute_step_out_token_ids,
     get_step_instances_from_output_port,
     increase_tag,
 )
-
-# from streamflow.token_printer import dag_workflow
 from streamflow.workflow.port import (
     ConnectorPort,
     FilterTokenPort,
@@ -92,8 +89,8 @@ class RollbackRecoveryPolicy:
         )
         # new_workflow.name = random_name()
 
+        # Create output port of the failed step in the new workflow
         for port in failed_step.get_output_ports().values():
-            # stop_tag = increase_tag(utils.get_tag(failed_job.inputs.values()))
             stop_tag = utils.get_tag(failed_job.inputs.values())
             logger.info(
                 f"Wf {new_workflow.name} created output port {port.name} of failed job {failed_job.name} "
@@ -104,24 +101,26 @@ class RollbackRecoveryPolicy:
             )
             new_port.add_inter_port(port, stop_tag)
             new_workflow.ports[new_port.name] = new_port
-            logger.debug(
-                f"Added failed port {new_port.name} in the workflow {new_workflow.name}"
-            )
 
         job_token = get_job_token(
             failed_job.name,
             failed_step.get_input_port("__job__").token_list,
         )
-        valid_data = set()
-        npgn = NewProvenanceGraphNavigation(workflow.context)
-        await npgn.build_unfold_graph(
-            (*failed_job.inputs.values(), job_token), valid_data
+        provenance = ProvenanceGraph(workflow.context)
+        # TODO: add a data_manager to store the file checked. Before to check directly a file,
+        #  search in this data manager if the file was already checked and return its availability.
+        #  It is helpful for performance reason but also for consistency. If the first time that the
+        #  file is checked exists, and the second time is lost can create invalid state of the graph
+        await provenance.build_graph(
+            job_token=job_token, inputs=failed_job.inputs.values()
         )
 
         # update class state (attributes) and jobs synchronization
-        inner_graph = await npgn.refold_graphs(failed_step.get_output_ports().values())
+        inner_graph = await provenance.refold_graphs(
+            failed_step.get_output_ports().values()
+        )
         logger.debug("Start sync-rollbacks")
-        await self.sync_running_jobs(inner_graph, new_workflow, valid_data)
+        await self.sync_running_jobs(inner_graph, new_workflow)
 
         logger.debug("End sync-rollbacks")
         ports, steps = await inner_graph.get_port_and_step_ids(
@@ -138,7 +137,7 @@ class RollbackRecoveryPolicy:
 
         last_iteration = await _new_put_tokens(
             new_workflow,
-            inner_graph.dcg_port[DirectGraph.INIT_GRAPH_FLAG],
+            inner_graph.dcg_port[DirectGraph.ROOT],
             inner_graph.port_tokens,
             inner_graph.token_instances,
             inner_graph.token_available,
@@ -180,7 +179,7 @@ class RollbackRecoveryPolicy:
             )
         return port_recovery
 
-    async def sync_running_jobs(self, rdwp, workflow, valid_data):
+    async def sync_running_jobs(self, rdwp, workflow):
         logger.debug(f"INIZIO sync (wf {workflow.name}) RUNNING JOBS")
         map_job_port = {}
         job_token_names = [
@@ -243,7 +242,7 @@ class RollbackRecoveryPolicy:
                             rdwp.remove_token(t_id_dead_path)
                 elif retry_request.token_output and all(
                     [
-                        await _is_token_available(t, self.context, valid_data)
+                        await t.is_available()
                         for t in retry_request.token_output.values()
                     ]
                 ):
@@ -285,7 +284,7 @@ class RollbackRecoveryPolicy:
                     )
                     retry_request.is_running = True
                     retry_request.job_token = None
-                    retry_request.token_output = None
+                    retry_request.token_output = {}
                     retry_request.workflow = workflow
                     await self.context.failure_manager.update_job_status(
                         job_token.value.name

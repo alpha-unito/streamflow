@@ -117,6 +117,9 @@ class JobToken(Token):
             value=await Job.load(context, params["job"], loading_context),
         )
 
+    async def is_available(self, context: StreamFlowContext) -> bool:
+        return False
+
 
 class ListToken(Token):
     __slots__ = ()
