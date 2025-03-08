@@ -130,6 +130,7 @@ class _RemotePathMapper:
         return result
 
     def invalidate_location(self, location: ExecutionLocation, path: str) -> None:
+        # TODO: if the path in the location is primary, invalidate also its SymLink on the location
         path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
         for token in path.parts:

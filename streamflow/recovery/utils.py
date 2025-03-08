@@ -1,53 +1,37 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import posixpath
-from collections.abc import Collection, MutableMapping, MutableSequence, MutableSet
+from collections.abc import Collection, MutableMapping, MutableSequence
 
-from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataType
 from streamflow.core.exception import (
     FailureHandlingException,
 )
 from streamflow.core.utils import get_class_fullname
 from streamflow.core.workflow import Token
-from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
-from streamflow.data import remotepath
 from streamflow.log_handler import logger
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import ConnectorPort, JobPort
-from streamflow.workflow.step import (
-    ExecuteStep,
-    InputInjectorStep,
-)
-from streamflow.workflow.token import (
-    JobToken,
-    ListToken,
-    ObjectToken,
-)
+from streamflow.workflow.step import ExecuteStep, InputInjectorStep
+from streamflow.workflow.token import ListToken, ObjectToken
 
-INIT_DAG_FLAG = "init"
-TOKEN_WAITER = "twaiter"
+# async def get_input_ports(step_id, context):
+#     return await asyncio.gather(
+#         *(
+#             asyncio.create_task(context.database.get_port(dep_row["port"]))
+#             for dep_row in await context.database.get_input_ports(step_id)
+#         )
+#     )
 
 
-async def get_input_ports(step_id, context):
-    return await asyncio.gather(
-        *(
-            asyncio.create_task(context.database.get_port(dep_row["port"]))
-            for dep_row in await context.database.get_input_ports(step_id)
-        )
-    )
-
-
-async def get_output_ports(step_id, context):
-    return await asyncio.gather(
-        *(
-            asyncio.create_task(context.database.get_port(dep_row["port"]))
-            for dep_row in await context.database.get_output_ports(step_id)
-        )
-    )
+# async def get_output_ports(step_id, context):
+#     return await asyncio.gather(
+#         *(
+#             asyncio.create_task(context.database.get_port(dep_row["port"]))
+#             for dep_row in await context.database.get_output_ports(step_id)
+#         )
+#     )
 
 
 def get_files_from_token(token: Token) -> MutableSequence[str]:
@@ -106,54 +90,6 @@ def increase_tag(tag):
     if len(tag_list := tag.rsplit(".", maxsplit=1)) == 2:
         return ".".join((tag_list[0], str(int(tag_list[1]) + 1)))
     return None
-
-
-async def _is_file_available(data_location, context):
-    connector = context.deployment_manager.get_connector(data_location.deployment)
-    if not (
-        res := await remotepath.exists(
-            connector, data_location.location, data_location.path
-        )
-    ):
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"Invalidated location {data_location.deployment} (Lost path {data_location.path})"
-            )
-        context.data_manager.invalidate_location(data_location, "/")
-    return res
-
-
-async def _is_token_available(token: Token, context: StreamFlowContext, token_checked_list: MutableSet[str]) -> bool:
-    if isinstance(token, JobToken):
-        return False
-    elif isinstance(token, CWLFileToken):
-        data_locs = []
-        token_path = utils.get_path_from_token(token.value)
-        for data_loc in context.data_manager.get_data_locations(token_path):
-            if data_loc.data_type == DataType.PRIMARY and token_path not in token_checked_list:
-                data_locs.append(data_loc)
-        for data_loc, is_available in zip(
-            data_locs,
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(_is_file_available(data_loc, context))
-                    for data_loc in data_locs
-                )
-            ),
-        ):
-            if is_available:
-                token_checked_list.add(data_loc.path)
-    elif isinstance(token, ListToken):
-        return all(
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(_is_token_available(t, context, token_checked_list))
-                    for t in token.value
-                )
-            )
-        )
-    # todo ObjectToken and Token.token
-    return await token.is_available(context)
 
 
 def get_port_from_token(token, port_tokens, token_visited):

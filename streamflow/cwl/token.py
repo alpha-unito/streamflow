@@ -1,12 +1,14 @@
 import asyncio
+import logging
 from collections.abc import MutableSequence
 from typing import Any
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.data import DataType
+from streamflow.core.data import DataLocation, DataType
 from streamflow.core.workflow import Token
 from streamflow.cwl import utils
 from streamflow.data.remotepath import StreamFlowPath
+from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken
 
 
@@ -39,20 +41,46 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
     return weight
 
 
-async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
-    if path := utils.get_path_from_token(value):
-        data_locations = context.data_manager.get_data_locations(
-            path=path, data_type=DataType.PRIMARY
+async def _is_file_available(
+    context: StreamFlowContext, data_location: DataLocation
+) -> bool:
+    if not (
+        result := await StreamFlowPath(
+            data_location.path,
+            context=context,
+            location=data_location.location,
+        ).exists()
+    ):
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Invalidated {data_location.path} path on location {data_location.location}"
+            )
+        # Not invalidated all the data on the location because the location can have mounted persistent volumes
+        context.data_manager.invalidate_location(
+            data_location.location, data_location.path
         )
-        return len(data_locations) != 0
-    else:
-        return True
+    return result
+
+
+async def _is_file_token_available(
+    context: StreamFlowContext, paths: MutableSequence[str]
+) -> bool:
+    tasks = []
+    for path in paths:
+        for data_loc in context.data_manager.get_data_locations(
+            path, data_type=DataType.PRIMARY
+        ):
+            tasks.append(asyncio.create_task(_is_file_available(context, data_loc)))
+        # TODO. Improvement. asyncio.wait return_when first finish. check. if false return, otherwise wait the next
+        return any(await asyncio.gather(*tasks))
+    return True
 
 
 class CWLFileToken(FileToken):
     __slots__ = ()
 
     async def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]:
+        # TODO: async is not necessary
         paths = []
         if isinstance(self.value, MutableSequence):
             for value in self.value:
@@ -74,8 +102,10 @@ class CWLFileToken(FileToken):
         else:
             return await _get_file_token_weight(context, self.value)
 
-    async def is_available(self, context: StreamFlowContext):
+    async def is_available(self, context: StreamFlowContext) -> bool:
         if isinstance(self.value, Token):
             return await self.value.is_available(context)
         else:
-            return await _is_file_token_available(context, self.value)
+            return await _is_file_token_available(
+                context, await self.get_paths(context)
+            )
