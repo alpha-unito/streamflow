@@ -63,27 +63,22 @@ class DefaultFailureManager(FailureManager):
             async with self.retry_requests[token.value.name].lock:
                 if self.retry_requests[token.value.name].is_running:
                     return True
-                # elif self.retry_requests[token.value.name].token_output:
-                #     tasks = [
-                #         asyncio.create_task(
-                #             _is_token_available(t, self.context, valid_data)
-                #         )
-                #         for t in self.retry_requests[
-                #             token.value.name
-                #         ].token_output.values()
-                #     ]
-                #     while tasks:
-                #         finished, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                #         for task in finished:
-                #             if not task.result():
-                #                 for _task in tasks:
-                #                     _task.cancel()
-                #                 return False
-                #     return True
-                elif self.retry_requests[token.value.name].token_output and all(
-                    await t.is_available(self.context)
-                    for t in self.retry_requests[token.value.name].token_output.values()
-                ):
+                elif self.retry_requests[token.value.name].token_output:
+                    tasks = [
+                        asyncio.create_task(t.is_available(self.context))
+                        for t in self.retry_requests[
+                            token.value.name
+                        ].token_output.values()
+                    ]
+                    while tasks:
+                        finished, tasks = await asyncio.wait(
+                            tasks, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for task in finished:
+                            if not task.result():
+                                for _task in tasks:
+                                    _task.cancel()
+                                return False
                     return True
         return False
 

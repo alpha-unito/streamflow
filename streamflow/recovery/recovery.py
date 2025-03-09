@@ -16,6 +16,7 @@ from streamflow.recovery.rollback_recovery import (
     ProvenanceGraph,
     ProvenanceToken,
     TokenAvailability,
+    create_graph_homomorphism,
 )
 from streamflow.recovery.utils import (
     get_execute_step_out_token_ids,
@@ -37,7 +38,6 @@ from streamflow.workflow.token import (
     JobToken,
     TerminationToken,
 )
-from streamflow.workflow.utils import get_job_token
 
 
 class PortRecovery:
@@ -102,31 +102,25 @@ class RollbackRecoveryPolicy:
             new_port.add_inter_port(port, stop_tag)
             new_workflow.ports[new_port.name] = new_port
 
-        job_token = get_job_token(
-            failed_job.name,
-            failed_step.get_input_port("__job__").token_list,
-        )
         provenance = ProvenanceGraph(workflow.context)
         # TODO: add a data_manager to store the file checked. Before to check directly a file,
         #  search in this data manager if the file was already checked and return its availability.
         #  It is helpful for performance reason but also for consistency. If the first time that the
         #  file is checked exists, and the second time is lost can create invalid state of the graph
-        await provenance.build_graph(
-            job_token=job_token, inputs=failed_job.inputs.values()
+        await provenance.build_graph(inputs=failed_job.inputs.values())
+        mapper = await create_graph_homomorphism(
+            self.context, provenance, failed_step.get_output_ports().values()
         )
 
-        # update class state (attributes) and jobs synchronization
-        inner_graph = await provenance.refold_graphs(
-            failed_step.get_output_ports().values()
-        )
+        # Update class state (attributes) and jobs synchronization
         logger.debug("Start sync-rollbacks")
-        await self.sync_running_jobs(inner_graph, new_workflow)
+        await self.sync_running_jobs(mapper, new_workflow)
 
         logger.debug("End sync-rollbacks")
-        ports, steps = await inner_graph.get_port_and_step_ids(
+        ports, steps = await mapper.get_port_and_step_ids(
             failed_step.output_ports.values()
         )
-        await inner_graph.populate_workflow(
+        await mapper.populate_workflow(
             ports,
             steps,
             failed_step,
@@ -137,14 +131,14 @@ class RollbackRecoveryPolicy:
 
         last_iteration = await _new_put_tokens(
             new_workflow,
-            inner_graph.dcg_port[DirectGraph.ROOT],
-            inner_graph.port_tokens,
-            inner_graph.token_instances,
-            inner_graph.token_available,
+            mapper.dcg_port[DirectGraph.ROOT],
+            mapper.port_tokens,
+            mapper.token_instances,
+            mapper.token_available,
         )
         logger.debug("end _put_tokens")
 
-        await _new_set_steps_state(new_workflow, inner_graph)
+        await _new_set_steps_state(new_workflow, mapper)
 
         return new_workflow, last_iteration
 
@@ -188,6 +182,8 @@ class RollbackRecoveryPolicy:
             if isinstance(token, JobToken)
         ]
 
+        # TODO: change `is_running_token` method to return three state `TokenAvailable`,
+        #  `FutureTokenAvailable`, `NotAvailable` and use it to remove redundant code
         for job_token in [
             token
             for token in rdwp.token_instances.values()
@@ -242,7 +238,7 @@ class RollbackRecoveryPolicy:
                             rdwp.remove_token(t_id_dead_path)
                 elif retry_request.token_output and all(
                     [
-                        await t.is_available()
+                        await t.is_available(self.context)
                         for t in retry_request.token_output.values()
                     ]
                 ):
