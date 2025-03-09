@@ -57,7 +57,9 @@ async def _is_file_available(
             )
         # Not invalidated all the data on the location because the location can have mounted persistent volumes
         context.data_manager.invalidate_location(
-            data_location.location, data_location.path
+            # todo: fix. You should invalidate on the path
+            data_location.location,
+            "/",  # data_location.path
         )
     return result
 
