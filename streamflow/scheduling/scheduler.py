@@ -173,28 +173,20 @@ class DefaultScheduler(Scheduler):
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
 
-    def _get_rollback_jobs(
-        self, job_name: str, running_jobs: MutableSequence[str]
+    def _get_running_jobs(
+        self, job_name: str, location: AvailableLocation
     ) -> MutableSequence[str]:
-        return list(
-            filter(
-                lambda curr: (
-                    curr != job_name
-                    and get_job_tag(curr) == get_job_step_name(job_name)
-                    and compare_tags(get_job_tag(curr), get_job_tag(job_name)) < 0
-                    and self.job_allocations[curr].status == Status.ROLLBACK
-                ),
-                running_jobs,
-            )
-        )
-
-    def _get_running_jobs(self, location: AvailableLocation) -> MutableSequence[str]:
         if location.name in self.location_allocations.get(location.deployment, {}):
             return list(
                 filter(
                     lambda x: (
                         self.job_allocations[x].status == Status.RUNNING
                         or self.job_allocations[x].status == Status.FIREABLE
+                        or (
+                            self.job_allocations[x].status == Status.ROLLBACK
+                            and get_job_step_name(x) == get_job_step_name(job_name)
+                            and compare_tags(get_job_tag(x), get_job_tag(job_name)) < 0
+                        )
                     ),
                     self.location_allocations[location.deployment][location.name].jobs,
                 )
@@ -224,14 +216,7 @@ class DefaultScheduler(Scheduler):
             # Otherwise, simply compute the number of allocated slots
             else:
                 slots = location.slots if location.slots is not None else 1
-                if (
-                    not len(
-                        self._get_rollback_jobs(
-                            job_name, self._get_running_jobs(location)
-                        )
-                    )
-                    < slots
-                ):
+                if not len(self._get_running_jobs(job_name, location)) < slots:
                     return False
             # If AvailableLocation is stacked, evaluate also the inner location
             if location := location.wraps if location.stacked else None:

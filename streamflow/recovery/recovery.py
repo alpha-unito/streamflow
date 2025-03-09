@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 # import datetime
 from collections.abc import MutableMapping, MutableSet
 from functools import cmp_to_key
@@ -7,12 +9,13 @@ from functools import cmp_to_key
 from streamflow.core import utils
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import compare_tags
-from streamflow.core.workflow import Job, Step, Token, Workflow
+from streamflow.core.workflow import Job, Port, Step, Token, Workflow
 from streamflow.cwl.transformer import ForwardTransformer
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.rollback_recovery import (
     DirectGraph,
+    GraphHomomorphism,
     ProvenanceGraph,
     ProvenanceToken,
     TokenAvailability,
@@ -41,9 +44,9 @@ from streamflow.workflow.token import (
 
 
 class PortRecovery:
-    def __init__(self, port):
-        self.port = port
-        self.waiting_token = 1
+    def __init__(self, port: Port):
+        self.port: Port = port
+        self.waiting_token: int = 1
 
 
 def get_skip_tags(rdwp, port_name, stop_tag):
@@ -83,7 +86,7 @@ class RollbackRecoveryPolicy:
     async def recover_workflow(self, failed_job: Job, failed_step: Step):
         workflow = failed_step.workflow
 
-        loading_context = WorkflowBuilder(workflow)
+        loading_context = WorkflowBuilder(deep_copy=False)
         new_workflow = await loading_context.load_workflow(
             workflow.context, workflow.persistent_id
         )
@@ -163,8 +166,12 @@ class RollbackRecoveryPolicy:
             port = workflow.ports.get(
                 port_name,
                 InterWorkflowPort(
-                    FilterTokenPort(workflow, port_name, [stop_tag], []),
-                    get_skip_tags(rdwp, port_name, stop_tag),
+                    FilterTokenPort(
+                        workflow,
+                        port_name,
+                        [stop_tag],
+                        get_skip_tags(rdwp, port_name, stop_tag),
+                    )
                 ),
             )
             port_recovery = PortRecovery(port)
@@ -173,121 +180,81 @@ class RollbackRecoveryPolicy:
             )
         return port_recovery
 
-    async def sync_running_jobs(self, rdwp, workflow):
-        logger.debug(f"INIZIO sync (wf {workflow.name}) RUNNING JOBS")
+    async def sync_running_jobs(self, mapper: GraphHomomorphism, workflow: Workflow):
         map_job_port = {}
-        job_token_names = [
-            token.value.name
-            for token in rdwp.token_instances.values()
-            if isinstance(token, JobToken)
-        ]
-
-        # TODO: change `is_running_token` method to return three state `TokenAvailable`,
-        #  `FutureTokenAvailable`, `NotAvailable` and use it to remove redundant code
+        logger.debug("Start synchronization")
         for job_token in [
             token
-            for token in rdwp.token_instances.values()
+            for token in mapper.token_instances.values()
             if isinstance(token, JobToken)
         ]:
-            retry_request = self.context.failure_manager._get_retry_request(
-                job_token.value.name, default_is_running=False
+            retry_request = self.context.failure_manager.get_retry_request(
+                job_token.value.name
             )
-            async with retry_request.lock:
-                if retry_request.is_running:
+            if (
+                is_available := await self.context.failure_manager.is_running_token(
+                    job_token
+                )
+            ) == TokenAvailability.FutureAvailable:
+                if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest is running on "
-                        f"wf {retry_request.workflow.name}. Other jobs: {job_token_names}"
+                        f"Synchronize rollbacks: job {job_token.value.name} is running"
                     )
-                    output_port_names = await rdwp.get_execute_output_port_names(
-                        job_token
-                    )
-                    logger.debug(f"Lista output_port_names: {output_port_names}")
-                    for output_port_name in output_port_names:
-                        port_recovery = self.add_waiter(
-                            job_token.value.name,
-                            output_port_name,
-                            workflow,
-                            rdwp,
-                            map_job_port.get(job_token.value.name, None),
-                        )
-                        logger.debug(
-                            f"Created port {port_recovery.port.name} for wf {workflow.name} with "
-                            f"waiting token {port_recovery.waiting_token}"
-                        )
-                        map_job_port.setdefault(job_token.value.name, port_recovery)
-                        workflow.ports[port_recovery.port.name] = port_recovery.port
-                        logger.debug(
-                            f"Added port {port_recovery.port.name} in the workflow {workflow.name}"
-                        )
-                    if len(job_token_names) == 1:
-                        logger.debug(f"New-workflow {workflow.name} will be empty.")
-                        pass
-                        # raise FailureHandlingException(
-                        #     f"There is only job job in this rollback, but it is already running in another workflow."
-                        #     f"Something is wrong."
-                        # )
-                    execute_step_out_token_ids = await get_execute_step_out_token_ids(
-                        rdwp.dag_tokens.succ(job_token.persistent_id),
-                        self.context,
-                    )
-                    logger.debug(
-                        f"Lista execute_step_out_token_ids: {execute_step_out_token_ids}"
-                    )
-                    for t_id in execute_step_out_token_ids:
-                        for t_id_dead_path in rdwp.remove_token_prev_links(t_id):
-                            rdwp.remove_token(t_id_dead_path)
-                elif retry_request.token_output and all(
-                    [
-                        await t.is_available(self.context)
-                        for t in retry_request.token_output.values()
-                    ]
+                for output_port_name in await mapper.get_execute_output_port_names(
+                    job_token
                 ):
-                    # search execute token after job token, replace this token with job_requ token.
-                    # Then remove all the prev tokens
-                    logger.debug(
-                        f"Sync Job {job_token.value.name} (wf {workflow.name}): JobRequest has token_output "
-                        f"{ {k: v.persistent_id for k, v in retry_request.token_output.items()} }"
+                    port_recovery = self.add_waiter(
+                        job_token.value.name,
+                        output_port_name,
+                        workflow,
+                        mapper,
+                        map_job_port.get(job_token.value.name, None),
                     )
-                    for port_name in await rdwp.get_execute_output_port_names(
-                        job_token
-                    ):
-                        new_token = retry_request.token_output[port_name]
-                        port_row = await self.context.database.get_port_from_token(
-                            new_token.persistent_id
-                        )
-                        step_rows = await get_step_instances_from_output_port(
-                            port_row["id"], self.context
-                        )
-                        logger.debug(
-                            f"Sync Job {job_token.value.name} (wf {workflow.name}): "
-                            f"Replace {rdwp.get_equal_token(port_name, new_token)} with {new_token.persistent_id}"
-                        )
-                        await rdwp.replace_token_and_remove(
-                            port_name,
-                            ProvenanceToken(
-                                new_token,
-                                TokenAvailability.Available,
-                                port_row,
-                                step_rows,
-                            ),
-                        )
-                else:
+                    map_job_port.setdefault(job_token.value.name, port_recovery)
+                    workflow.ports[port_recovery.port.name] = port_recovery.port
+                execute_step_out_token_ids = await get_execute_step_out_token_ids(
+                    mapper.dag_tokens.succ(job_token.persistent_id),
+                    self.context,
+                )
+                for t_id in execute_step_out_token_ids:
+                    for t_id_dead_path in mapper.remove_token_prev_links(t_id):
+                        mapper.remove_token(t_id_dead_path)
+            elif is_available == TokenAvailability.Available:
+                if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Sync Job {job_token.value.name} (wf {workflow.name}): "
-                        f"JobRequest set to running and job_token and token_output to None."
-                        f"\n\t- Prev value job_token: {retry_request.job_token}"
-                        f"\n\t- Prev value token_output: {retry_request.token_output}"
+                        f"Synchronize rollbacks: job {job_token.value.name} output available"
                     )
+                # Search execute token after job token, replace this token with job_req token.
+                # Then remove all the prev tokens
+                for port_name in await mapper.get_execute_output_port_names(job_token):
+                    new_token = retry_request.token_output[port_name]
+                    port_row = await self.context.database.get_port_from_token(
+                        new_token.persistent_id
+                    )
+                    step_rows = await get_step_instances_from_output_port(
+                        port_row["id"], self.context
+                    )
+                    await mapper.replace_token_and_remove(
+                        port_name,
+                        ProvenanceToken(
+                            new_token,
+                            TokenAvailability.Available,
+                            port_row,
+                            step_rows,
+                        ),
+                    )
+            else:
+                async with retry_request.lock:
                     retry_request.is_running = True
                     retry_request.job_token = None
                     retry_request.token_output = {}
                     retry_request.workflow = workflow
-                    await self.context.failure_manager.update_job_status(
-                        job_token.value.name
-                    )
-            # end lock
-        # end for job token
-        logger.debug(f"FINE sync (wf {workflow.name}) RUNNING JOBS")
+                await self.context.failure_manager.update_job_status(
+                    job_token.value.name
+                )
+            # End lock
+        # End for job token
+        logger.debug("End synchronization")
 
 
 async def _new_put_tokens(

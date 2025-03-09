@@ -402,7 +402,6 @@ class GraphHomomorphism:
         self.token_instances.pop(old_token_id)
 
         # replace
-        pass
         self.dag_tokens.replace(old_token_id, token.persistent_id)
 
         # add new token
@@ -775,11 +774,20 @@ class ProvenanceGraph:
             step_rows = await get_step_instances_from_output_port(
                 port_row["id"], self.context
             )
-            if await self.context.failure_manager.is_running_token(token):
+            if (
+                isinstance(token, JobToken)
+                and (
+                    is_available := await self.context.failure_manager.is_running_token(
+                        token
+                    )
+                )
+                == TokenAvailability.FutureAvailable
+            ):
                 self.add(None, token)
-                is_available = TokenAvailability.Unavailable
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Token with id {token.persistent_id} is running")
+                    logger.debug(
+                        f"Job token {token.value.name} with id {token.persistent_id} is running"
+                    )
             else:
                 if (
                     is_available := await evaluate_token_availability(
