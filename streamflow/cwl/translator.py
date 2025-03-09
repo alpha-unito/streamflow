@@ -110,6 +110,15 @@ from streamflow.workflow.step import (
 from streamflow.workflow.token import TerminationToken
 
 
+def _copy_context(context: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+    return {
+        "elements": copy.copy(context["elements"]),
+        "requirements": copy.copy(context["requirements"]),
+        "hints": copy.copy(context["hints"]),
+        "version": context["version"],
+    }
+
+
 def _create_command(
     cwl_element: cwl_utils.parser.CommandLineTool,
     cwl_name_prefix: str,
@@ -1573,7 +1582,7 @@ class CWLTranslator:
         cwl_name_prefix: str,
     ):
         # Update context
-        current_context = copy.copy(context)
+        current_context = _copy_context(context)
         for hint in cwl_element.hints or []:
             if not isinstance(hint, MutableMapping):
                 current_context["hints"][hint.class_] = hint
