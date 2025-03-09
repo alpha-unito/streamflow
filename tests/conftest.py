@@ -143,10 +143,6 @@ def all_deployment_types():
 async def context(chosen_deployment_types) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
-            "failureManager": {
-                "type": "default",
-                "config": {"max_retries": 3, "retry_delay": 0},
-            },
             "database": {"type": "default", "config": {"connection": ":memory:"}},
             "path": os.getcwd(),
         },

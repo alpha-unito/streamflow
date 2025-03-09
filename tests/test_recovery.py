@@ -2,15 +2,18 @@ import itertools
 import os
 import posixpath
 import tempfile
+from collections.abc import AsyncGenerator
 from typing import Any, cast
 
 import pytest
+import pytest_asyncio
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Token
 from streamflow.cwl import utils as cwl_sf_utils
 from streamflow.data.remotepath import StreamFlowPath
+from streamflow.main import build_context
 from streamflow.recovery.failure_manager import DefaultFailureManager
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.token import FileToken, JobToken, TerminationToken
@@ -39,6 +42,28 @@ def _assert_token_result(input_value: Any, output_token: Token) -> None:
         assert input_value == output_token.value
 
 
+@pytest_asyncio.fixture(scope="module")
+async def fault_tolerant_context(
+    chosen_deployment_types,
+) -> AsyncGenerator[StreamFlowContext, Any]:
+    _context = build_context(
+        {
+            "failureManager": {
+                "type": "default",
+                "config": {"max_retries": 3, "retry_delay": 0},
+            },
+            "database": {"type": "default", "config": {"connection": ":memory:"}},
+            "path": os.getcwd(),
+        },
+    )
+    for deployment_t in (*chosen_deployment_types, "parameterizable_hardware"):
+        config = await get_deployment_config(_context, deployment_t)
+        await _context.deployment_manager.deploy(config)
+    yield _context
+    await _context.deployment_manager.undeploy_all()
+    await _context.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "num_of_steps,num_of_failures,token_t",
@@ -51,9 +76,12 @@ def _assert_token_result(input_value: Any, output_token: Token) -> None:
     ],
 )
 async def test_execute(
-    context: StreamFlowContext, num_of_steps: int, num_of_failures: int, token_t: str
+    fault_tolerant_context: StreamFlowContext,
+    num_of_steps: int,
+    num_of_failures: int,
+    token_t: str,
 ):
-    workflow = next(iter(await create_workflow(context, num_port=0)))
+    workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
     translator.deployment_configs = {
         "local": await get_deployment_config(workflow.context, "local")
@@ -63,11 +91,11 @@ async def test_execute(
         token_value = 100
         token = Token(token_value)
     elif token_t == "file":
-        location = await get_location(context, "local")
+        location = await get_location(fault_tolerant_context, "local")
         path = StreamFlowPath(
             tempfile.gettempdir() if location.local else "/tmp",
             utils.random_name(),
-            context=context,
+            context=fault_tolerant_context,
             location=location,
         )
         await path.write_text("StreamFlow fault tolerant")
@@ -101,7 +129,7 @@ async def test_execute(
             execute_steps[-1], {"0": num_of_failures}
         )
         input_ports = execute_steps[-1].get_output_ports()
-    await workflow.save(context)
+    await workflow.save(fault_tolerant_context)
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
     for step in execute_steps:
@@ -117,18 +145,20 @@ async def test_execute(
         ):
             assert (
                 job.name
-                in cast(DefaultFailureManager, context.failure_manager).retry_requests
+                in cast(
+                    DefaultFailureManager, fault_tolerant_context.failure_manager
+                ).retry_requests
             )
             retry_request = cast(
-                DefaultFailureManager, context.failure_manager
+                DefaultFailureManager, fault_tolerant_context.failure_manager
             ).retry_requests[job.name]
             assert retry_request.version == num_of_failures + 1
 
 
 # TODO
-# test execute on all the Token types (especially on FileToken)
 # test_transfer
-# test_pipeline / ephemeral volumes
+# test_ephemeral_volumes
 # test_scatter
 # test_loop
 # test_sync
+# test_conditional
