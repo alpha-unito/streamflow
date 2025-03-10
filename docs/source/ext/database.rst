@@ -73,6 +73,7 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         self,
         name: str,
         workflow_id: int,
+        recoverable: bool,
         status: int,
         type: type[Step],
         params: MutableMapping[str, Any],

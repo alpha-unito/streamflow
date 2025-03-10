@@ -221,6 +221,7 @@ class Step(PersistableEntity, ABC):
         self.input_ports: MutableMapping[str, str] = {}
         self.name: str = name
         self.output_ports: MutableMapping[str, str] = {}
+        self.recoverable: bool = False
         self.status: Status = Status.WAITING
         self.terminated: bool = False
         self.workflow: Workflow = workflow
@@ -307,6 +308,7 @@ class Step(PersistableEntity, ABC):
         row = await context.database.get_step(persistent_id)
         type_ = cast(type[Step], utils.get_class_from_name(row["type"]))
         step = await type_._load(context, row, loading_context)
+        step.recoverable = row["recoverable"]
         step.status = Status(row["status"])
         step.terminated = step.status in [
             Status.COMPLETED,
@@ -343,6 +345,7 @@ class Step(PersistableEntity, ABC):
                 self.persistent_id = await context.database.add_step(
                     name=self.name,
                     workflow_id=self.workflow.persistent_id,
+                    recoverable=self.recoverable,
                     status=cast(int, self.status.value),
                     type=type(self),
                     params=await self._save_additional_params(context),

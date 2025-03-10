@@ -11,12 +11,13 @@ CREATE TABLE IF NOT EXISTS workflow
 
 CREATE TABLE IF NOT EXISTS step
 (
-    id       INTEGER PRIMARY KEY,
-    name     TEXT,
-    workflow INTEGER,
-    status   INTEGER,
-    type     TEXT,
-    params   TEXT,
+    id          INTEGER PRIMARY KEY,
+    name        TEXT,
+    workflow    INTEGER,
+    recoverable BOOLEAN,
+    status      INTEGER,
+    type        TEXT,
+    params      TEXT,
     FOREIGN KEY (workflow) REFERENCES workflow (id)
 );
 

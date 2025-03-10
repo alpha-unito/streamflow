@@ -192,17 +192,19 @@ class SqliteDatabase(CachedDatabase):
         self,
         name: str,
         workflow_id: int,
+        recoverable: bool,
         status: int,
         type: type[Step],
         params: MutableMapping[str, Any],
     ) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO step(name, workflow, status, type, params) "
-                "VALUES(:name, :workflow, :status, :type, :params)",
+                "INSERT INTO step(name, workflow, recoverable, status, type, params) "
+                "VALUES(:name, :workflow, :recoverable, :status, :type, :params)",
                 {
                     "name": name,
                     "workflow": workflow_id,
+                    "recoverable": recoverable,
                     "status": status,
                     "type": utils.get_class_fullname(type),
                     "params": json.dumps(params),

@@ -445,6 +445,7 @@ class DeployStep(BaseStep):
     ):
         super().__init__(name, workflow)
         self.deployment_config: DeploymentConfig = deployment_config
+        self.recoverable: bool = True
         self.add_output_port(
             deployment_config.name,
             connector_port or workflow.create_port(cls=ConnectorPort),

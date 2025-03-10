@@ -149,6 +149,7 @@ class Database(SchemaEntity):
         self,
         name: str,
         workflow_id: int,
+        recoverable: bool,
         status: int,
         type: type[Step],
         params: MutableMapping[str, Any],

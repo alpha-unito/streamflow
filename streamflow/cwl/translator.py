@@ -1838,6 +1838,9 @@ class CWLTranslator:
                 context=context,
                 step=step,
             )
+            # Process WorkReuse
+            if "WorkReuse" in requirements:
+                step.recoverable = requirements["WorkReuse"].enableReuse
             # Process ToolTimeLimit
             if "ToolTimeLimit" in requirements:
                 step.command.time_limit = requirements["ToolTimeLimit"].timelimit

@@ -157,6 +157,7 @@ async def test_execute_step(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=port
     )
+    step.recoverable = True
     await save_load_and_test(step, context)
 
 
