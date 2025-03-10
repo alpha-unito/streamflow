@@ -208,7 +208,8 @@ async def test_port(context: StreamFlowContext, port_cls: type[Port]):
 
 
 @pytest.mark.asyncio
-async def test_workflow(context: StreamFlowContext):
+@pytest.mark.parametrize("copy_strategy", ["deep_copy", "copy", "manual-copy"])
+async def test_workflow(context: StreamFlowContext, copy_strategy: str):
     """Test saving Workflow on database and load its elements in a new Workflow"""
     workflow, (job_port, in_port, out_port) = await create_workflow(context, num_port=3)
 
@@ -239,44 +240,51 @@ async def test_workflow(context: StreamFlowContext):
     exec_step.add_input_port(in_port_name, in_port)
     await workflow.save(context)
 
-    new_workflow, _ = await create_workflow(context, num_port=0)
-    loading_context = WorkflowBuilder(new_workflow)
-    new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
+    builder = WorkflowBuilder(workflow if copy_strategy == "deep_copy" else None)
+    new_workflow = await builder.load_workflow(context, workflow.persistent_id)
+    assert new_workflow.name == workflow.name
 
-    assert new_workflow.name != workflow.name
+    if copy_strategy == "manual-copy":
+        assert len(new_workflow.steps) == len(new_workflow.ports) == 0
+        assert exec_step.name not in new_workflow.steps.keys()
+        await builder.load_step(context, exec_step.persistent_id)
+        assert len(new_workflow.ports) == len(exec_step.input_ports) + len(
+            exec_step.output_ports
+        )
 
-    # test every object has the right workflow reference
-    for step in new_workflow.steps.values():
-        assert step.workflow == new_workflow
-    for port in new_workflow.steps.values():
-        assert port.workflow == new_workflow
+    if copy_strategy in ("deep_copy", "manual-copy"):
+        # Test that every object has the correct workflow reference
+        for step in new_workflow.steps.values():
+            assert step.workflow == new_workflow
+        for port in new_workflow.steps.values():
+            assert port.workflow == new_workflow
 
-    for original_processor, new_processor in zip(
-        exec_step.output_processors.values(),
-        cast(
-            ExecuteStep, new_workflow.steps[exec_step.name]
-        ).output_processors.values(),
-    ):
-        assert original_processor.workflow == workflow
-        assert new_processor.workflow == new_workflow
-        set_attributes_to_none(original_processor, set_wf=True)
-        set_attributes_to_none(new_processor, set_wf=True)
 
-    # set to none some attributes in new_workflow
-    new_workflow.name = None
-    new_workflow.persistent_id = None
-    for new_step in new_workflow.steps.values():
-        set_attributes_to_none(new_step, set_id=True, set_wf=True)
-    for new_port in new_workflow.ports.values():
-        set_attributes_to_none(new_port, set_id=True, set_wf=True)
+        for original_processor, new_processor in zip(
+            exec_step.output_processors.values(),
+            cast(
+                ExecuteStep, new_workflow.steps[exec_step.name]
+            ).output_processors.values(),
+        ):
+            assert original_processor.workflow == workflow
+            assert new_processor.workflow == new_workflow
+            set_attributes_to_none(original_processor, set_wf=True)
+            set_attributes_to_none(new_processor, set_wf=True)
 
-    # set to none some attributes in workflow
-    workflow.name = None
-    workflow.persistent_id = None
-    for step in workflow.steps.values():
-        set_attributes_to_none(step, set_id=True, set_wf=True)
-    for port in workflow.ports.values():
-        set_attributes_to_none(port, set_id=True, set_wf=True)
+        # Set some attributes in the `new_workflow` instance to none
+        for new_step in new_workflow.steps.values():
+            set_attributes_to_none(new_step, set_id=True, set_wf=True)
+        for new_port in new_workflow.ports.values():
+            set_attributes_to_none(new_port, set_id=True, set_wf=True)
 
-    # test two workflows are the same (i.e. same steps and ports)
+        # Set some attributes in the `workflow` instance to none
+        for step in workflow.steps.values():
+            set_attributes_to_none(step, set_id=True, set_wf=True)
+        for port in workflow.ports.values():
+            set_attributes_to_none(port, set_id=True, set_wf=True)
+    elif copy_strategy == "copy":
+        workflow.steps = {}
+        workflow.ports = {}
+    # Test two workflows are the same (i.e. same steps and ports)
+    set_attributes_to_none(workflow, set_id=True)
     assert are_equals(workflow, new_workflow)
