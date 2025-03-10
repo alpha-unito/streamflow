@@ -26,7 +26,12 @@ def connector(context, location) -> Connector:
 @pytest.mark.asyncio
 async def test_directory(context, connector, location):
     """Test directory creation and deletion."""
-    path = StreamFlowPath(utils.random_name(), context=context, location=location)
+    path = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
     try:
         await path.mkdir(mode=0o777)
         assert await path.exists()
@@ -63,6 +68,7 @@ async def test_download(context, connector, location):
     ]
     parent_dir = StreamFlowPath(
         tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
         context=context,
         location=location,
     )
@@ -83,8 +89,18 @@ async def test_download(context, connector, location):
 @pytest.mark.asyncio
 async def test_file(context, connector, location):
     """Test file creation, size, checksum and deletion."""
-    path = StreamFlowPath(utils.random_name(), context=context, location=location)
-    path2 = StreamFlowPath(utils.random_name(), context=context, location=location)
+    path = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
+    path2 = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
     try:
         await path.write_text("StreamFlow")
         assert await path.exists()
@@ -106,7 +122,12 @@ async def test_file(context, connector, location):
 @pytest.mark.asyncio
 async def test_glob(context, connector, location):
     """Test glob resolution."""
-    path = StreamFlowPath(utils.random_name(), context=context, location=location)
+    path = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
     await path.mkdir(mode=0o777)
     try:
         # ./
@@ -149,7 +170,12 @@ async def test_mkdir_failure(context):
     location = await get_location(context, deployment_config.type)
 
     # Create a file and try to create a directory with the same name
-    path = StreamFlowPath(utils.random_name(), context=context, location=location)
+    path = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
     mode = 0o777
     await path.write_text("StreamFlow")
     with pytest.raises(WorkflowExecutionException) as err:
@@ -161,15 +187,25 @@ async def test_mkdir_failure(context):
 @pytest.mark.asyncio
 async def test_symlink(context, connector, location):
     """Test symlink creation, resolution and deletion."""
-    src = StreamFlowPath(utils.random_name(), context=context, location=location)
-    path = StreamFlowPath(utils.random_name(), context=context, location=location)
+    src = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
+    path = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
     try:
         # Test symlink to file
         await src.write_text("StreamFlow")
         await path.symlink_to(src)
         assert await path.exists()
         assert await path.is_symlink()
-        assert (await path.resolve()).name == str(src)
+        assert (await path.resolve()).name == str(src.name)
         await path.rmtree()
         assert not await path.exists()
         await src.rmtree()
@@ -178,7 +214,7 @@ async def test_symlink(context, connector, location):
         await path.symlink_to(src, target_is_directory=True)
         assert await path.exists()
         assert await path.is_symlink()
-        assert (await path.resolve()).name == str(src)
+        assert (await path.resolve()).name == str(src.name)
         await path.rmtree()
         assert not await path.exists()
     finally:
