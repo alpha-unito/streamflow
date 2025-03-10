@@ -40,6 +40,15 @@ class AllNonNullTransformer(OneToOneTransformer):
 
 
 class CartesianProductSizeTransformer(ManyToOneTransformer):
+    async def _persist_token(
+        self,
+        token: Token,
+        port: Port,
+        input_token_ids: MutableSequence[int],
+        recoverable: bool = False,
+    ) -> Token:
+        return await super()._persist_token(token, port, input_token_ids, True)
+
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
@@ -176,6 +185,15 @@ class DefaultTransformer(ManyToOneTransformer):
             ),
         )
 
+    async def _persist_token(
+        self,
+        token: Token,
+        port: Port,
+        input_token_ids: MutableSequence[int],
+        recoverable: bool = False,
+    ) -> Token:
+        return await super()._persist_token(token, port, input_token_ids, True)
+
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
@@ -206,6 +224,15 @@ class DefaultTransformer(ManyToOneTransformer):
 
 
 class DefaultRetagTransformer(DefaultTransformer):
+    async def _persist_token(
+        self,
+        token: Token,
+        port: Port,
+        input_token_ids: MutableSequence[int],
+        recoverable: bool = False,
+    ) -> Token:
+        return await super()._persist_token(token, port, input_token_ids, True)
+
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
@@ -222,6 +249,15 @@ class DefaultRetagTransformer(DefaultTransformer):
 
 
 class DotProductSizeTransformer(ManyToOneTransformer):
+    async def _persist_token(
+        self,
+        token: Token,
+        port: Port,
+        input_token_ids: MutableSequence[int],
+        recoverable: bool = False,
+    ) -> Token:
+        return await super()._persist_token(token, port, input_token_ids, True)
+
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 from typing import cast
 
@@ -19,6 +19,7 @@ from streamflow.data.remotepath import StreamFlowPath
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import JobVersion
 from streamflow.workflow.step import ExecuteStep
+from streamflow.workflow.token import JobToken
 
 
 async def _cleanup_dir(
@@ -57,6 +58,7 @@ class DefaultFailureManager(FailureManager):
         self.replay_cache: MutableMapping[str, ReplayResponse] = {}
         self.retry_delay: int | None = retry_delay
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
+        self.recoverable_tokens: MutableSequence[str] = []
 
     async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -190,6 +192,9 @@ class DefaultFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
+    def is_recoverable(self, token: Token) -> bool:
+        return token.persistent_id in self.recoverable_tokens
+
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
     ) -> CommandOutput:
@@ -258,9 +263,20 @@ class DefaultFailureManager(FailureManager):
                 await wait_queue.wait()
             return self.replay_cache[target_job]
 
+    async def notify(
+        self,
+        output_port: str,
+        output_token: Token,
+        recoverable: bool = True,
+        job_token: JobToken | None = None,
+    ) -> None:
+        if recoverable:
+            self.recoverable_tokens.append(output_token.persistent_id)
+
 
 class DummyFailureManager(FailureManager):
-    async def close(self): ...
+    async def close(self) -> None:
+        pass
 
     @classmethod
     def get_schema(cls) -> str:
@@ -271,9 +287,12 @@ class DummyFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
+    def is_recoverable(self, token: Token) -> bool:
+        return False
+
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
-    ) -> CommandOutput:
+    ) -> None:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
                 f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
@@ -282,7 +301,7 @@ class DummyFailureManager(FailureManager):
 
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
-    ) -> CommandOutput:
+    ) -> None:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
                 f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
@@ -290,3 +309,12 @@ class DummyFailureManager(FailureManager):
         raise FailureHandlingException(
             f"FAILED Job {job.name} with error:\n\t{command_output.value}"
         )
+
+    async def notify(
+        self,
+        output_port: str,
+        output_token: Token,
+        recoverable: bool = True,
+        job_token: JobToken | None = None,
+    ) -> None:
+        pass

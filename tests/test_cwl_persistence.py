@@ -33,6 +33,7 @@ from streamflow.cwl.processor import (
 from streamflow.cwl.step import (
     CWLConditionalStep,
     CWLEmptyScatterConditionalStep,
+    CWLExecuteStep,
     CWLInputInjectorStep,
     CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
@@ -216,6 +217,26 @@ async def test_cwl_command_token_processors_nested(context: StreamFlowContext):
                 processor=_create_cwl_command_token_processor(expression="hello")
             ),
         ],
+    )
+    await save_load_and_test(step, context)
+
+
+@pytest.mark.asyncio
+async def test_cwl_execute_step(context: StreamFlowContext):
+    """Test saving and loading CWLExecuteStep from database"""
+    workflow = CWLWorkflow(
+        context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
+    )
+    port = workflow.create_port()
+    await workflow.save(context)
+
+    step = workflow.create_step(
+        cls=CWLExecuteStep,
+        name=utils.random_name(),
+        job_port=port,
+        recoverable="$(inputs.file)",
+        full_js=True,
+        expression_lib=["a", "b"],
     )
     await save_load_and_test(step, context)
 

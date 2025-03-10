@@ -8,6 +8,7 @@ from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
+from streamflow.core.command import Command, CommandOutputProcessor
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
@@ -35,6 +36,7 @@ from streamflow.log_handler import logger
 from streamflow.workflow.port import JobPort
 from streamflow.workflow.step import (
     ConditionalStep,
+    ExecuteStep,
     InputInjectorStep,
     LoopOutputStep,
     ScheduleStep,
@@ -402,6 +404,85 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "scatter_method": self.scatter_method
         }
+
+
+class CWLExecuteStep(ExecuteStep):
+    def __init__(
+        self,
+        name: str,
+        workflow: CWLWorkflow,
+        job_port: JobPort,
+        recoverable: bool | str,
+        expression_lib: MutableSequence[str] | None = None,
+        full_js: bool = False,
+    ):
+        super().__init__(name, workflow, job_port)
+        self.expression_lib: MutableSequence[str] | None = expression_lib
+        self.full_js: bool = full_js
+        self.recoverable: bool | str = recoverable
+
+    def _is_recoverable(self, inputs: MutableMapping[str, Any]) -> bool:
+        if isinstance(self.recoverable, bool):
+            return self.recoverable
+        else:
+            context = utils.build_context(inputs)
+            return utils.eval_expression(
+                expression=self.recoverable,
+                context=context,
+                full_js=self.full_js,
+                expression_lib=self.expression_lib,
+            )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "recoverable": self.recoverable,
+            "expression_lib": self.expression_lib,
+            "full_js": self.full_js,
+        }
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CWLExecuteStep:
+        params = json.loads(row["params"])
+        step = cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            recoverable=params["recoverable"],
+            expression_lib=params["expression_lib"],
+            full_js=params["full_js"],
+            job_port=cast(
+                JobPort, await loading_context.load_port(context, params["job_port"])
+            ),
+        )
+        step.output_connectors = params["output_connectors"]
+        step.output_processors = {
+            k: v
+            for k, v in zip(
+                params["output_processors"].keys(),
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            CommandOutputProcessor.load(context, p, loading_context)
+                        )
+                        for p in params["output_processors"].values()
+                    )
+                ),
+            )
+        }
+        if params["command"]:
+            step.command = await Command.load(
+                context, params["command"], loading_context, step
+            )
+        return step
 
 
 class CWLInputInjectorStep(InputInjectorStep):
