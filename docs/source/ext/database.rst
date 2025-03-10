@@ -339,7 +339,7 @@ The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow 
 In the constructor of the ``WorkflowBuilder``, it is possible to pass the workflow to be copied. If no workflow is provided, when the ``load_workflow`` method is called, it copies the workflow referenced by the ``persistent_id``, but without steps and ports. You will need to manually call ``load_step`` and ``load_port`` to populate this workflow instance.
 
 If the workflow was defined in the ``WorkflowBuilder`` constructor, the builder will fully copy the workflow, including all steps and ports. Otherwise, if the workflow is not defined, the workflow is retrieved using the ``persistent_id`` provided as input to the method, and a new instance of the workflow is returned, but without loading the steps and ports.
-The WorkflowBuilder creates only a single new instance of the workflow. If the workflow has been copied, the ``load_workflow`` method returns the same instance. If a new copy of the workflow is needed, another builder must be instantiated.
+The WorkflowBuilder creates only a single new instance of the workflow. If the workflow has been copied, the ``load_workflow`` method returns the same instance. If another new copy of the workflow is needed, another builder must be instantiated.
 
 Other entities, such as ``deployment`` and ``target`` objects, can be safely shared between the old and the new workflows, as their internal state does not need to be modified. Therefore, they can be loaded following the common path implemented in the ``DefaultDatabaseLoadingContext`` class.
 
