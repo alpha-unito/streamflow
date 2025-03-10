@@ -221,7 +221,7 @@ async def _get_source_location(
         base_path=base_path,
     )
     # Return the best source location ofr the current transfer
-    return workflow.context.data_manager.get_source_location(
+    return await workflow.context.data_manager.get_source_location(
         src_path, connector.deployment_name
     )
 

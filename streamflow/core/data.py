@@ -80,7 +80,7 @@ class DataManager(SchemaEntity):
     ) -> MutableSequence[DataLocation]: ...
 
     @abstractmethod
-    def get_source_location(
+    async def get_source_location(
         self, path: str, dst_deployment: str
     ) -> DataLocation | None: ...
 

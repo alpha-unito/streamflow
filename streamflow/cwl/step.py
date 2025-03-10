@@ -595,7 +595,7 @@ class CWLTransferStep(TransferStep):
             dst_path = (dst_path or dst_dir) / token_value["basename"]
         # If source data exist, get source locations
         if location and (
-            selected_location := self.workflow.context.data_manager.get_source_location(
+            selected_location := await self.workflow.context.data_manager.get_source_location(
                 path=location, dst_deployment=dst_connector.deployment_name
             )
         ):

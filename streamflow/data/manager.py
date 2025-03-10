@@ -230,7 +230,7 @@ class DefaultDataManager(DataManager):
             .read_text("utf-8")
         )
 
-    def get_source_location(
+    async def get_source_location(
         self, path: str, dst_deployment: str
     ) -> DataLocation | None:
         if data_locations := self.get_data_locations(
@@ -239,15 +239,20 @@ class DefaultDataManager(DataManager):
             if same_connector_locations := {
                 loc for loc in data_locations if loc.deployment == dst_deployment
             }:
-                return next(iter(same_connector_locations))
-            elif local_locations := {
-                loc for loc in data_locations if loc.location.local
-            }:
-                return next(iter(local_locations))
-            else:
-                return next(iter(data_locations))
-        else:
-            return None
+                for loc in same_connector_locations:
+                    await loc.available.wait()
+                    if loc.data_type == DataType.PRIMARY:
+                        return loc
+            if local_locations := {loc for loc in data_locations if loc.location.local}:
+                for loc in local_locations:
+                    await loc.available.wait()
+                    if loc.data_type == DataType.PRIMARY:
+                        return loc
+            for loc in data_locations:
+                await loc.available.wait()
+                if loc.data_type == DataType.PRIMARY:
+                    return loc
+        return None
 
     def invalidate_location(self, location: ExecutionLocation, path: str) -> None:
         self.path_mapper.invalidate_location(location, path)

@@ -207,8 +207,10 @@ class CWLTokenProcessor(TokenProcessor):
                 )
             except StopIteration:
                 # If such location does not exist, apply the standard heuristic to select the best one
-                data_location = self.workflow.context.data_manager.get_source_location(
-                    path=filepath, dst_deployment=LocalTarget.deployment_name
+                data_location = (
+                    await self.workflow.context.data_manager.get_source_location(
+                        path=filepath, dst_deployment=LocalTarget.deployment_name
+                    )
                 )
             if data_location:
                 if logger.isEnabledFor(logging.DEBUG):

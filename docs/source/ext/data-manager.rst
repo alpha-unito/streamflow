@@ -18,7 +18,7 @@ The ``DataManager`` interface performs data transfers to and from remote executi
     ) -> MutableSequence[DataLocation]:
         ...
 
-    def get_source_location(
+    await def get_source_location(
         self, path: str, dst_deployment: str
     ) -> DataLocation | None:
         ...
@@ -62,7 +62,7 @@ The ``invalidate_location`` method informs the ``DataManager`` that the data reg
 
 The ``get_data_locations`` method retrieves all the valid  ``DataLocation`` objects related to the ``path`` received in input. Plus, the set of locations can be further filtered by the ``deployment`` to which the location belongs, the name of the location on which the data object resides (``location_name``), or a given ``data_type``. Note that all the ``DataLocation`` objects that are marked ``INVALID`` should not be returned by this method.
 
-The ``get_source_location`` method receives in input a ``path`` and the name of the destination deployment ``dst_deployment``, and it returns the ``DataLocation`` object that is most suitable to act as source location for performing the data transfer. The logic used to identify the best location is implementation-dependent. If no suitable location can be found, the method returns ``None``.
+The ``get_source_location`` method receives in input a ``path`` and the name of the destination deployment ``dst_deployment``, and it returns the ``DataLocation`` object that is most suitable to act as source location for performing the data transfer. The logic used to identify the best location is implementation-dependent. The returned ``DataLocation`` must be ``available``, i.e., the related transfer operation must be already finished. If no suitable location can be found, the method returns ``None``.
 
 The ``close`` method receives no input parameter and does not return anything. It frees stateful resources potentially allocated during the object’s lifetime, e.g., network or database connections.
 
