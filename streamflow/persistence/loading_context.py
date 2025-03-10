@@ -90,9 +90,9 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
 
 
 class WorkflowBuilder(DefaultDatabaseLoadingContext):
-    def __init__(self, workflow: Workflow | None = None) -> None:
+    def __init__(self, deep_copy: bool = True) -> None:
         super().__init__()
-        self.original_workflow: Workflow | None = workflow
+        self.deep_copy: bool = deep_copy
         self.workflow: Workflow | None = None
 
     def add_port(self, persistent_id: int, port: Port) -> None:
@@ -103,7 +103,7 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
 
     def add_workflow(self, persistent_id: int, workflow: Workflow) -> None:
         self._workflows[persistent_id] = workflow
-        if self.original_workflow is not None:
+        if self.deep_copy:
             # Deep copy
             # The `persistent_id` value will be removed in the `load_workflow` method
             workflow.persistent_id = persistent_id
@@ -142,11 +142,11 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
         self, context: StreamFlowContext, persistent_id: int
     ) -> Workflow:
         if persistent_id not in self._workflows.keys():
-            if self.original_workflow is None:
-                # Copy only workflow instance without steps and ports
-                self.workflow = await Workflow.load(context, persistent_id, self)
-            else:
+            if self.deep_copy:
                 # Deep copy
                 self.workflow = await Workflow.load(context, persistent_id, self)
                 self.workflow.persistent_id = None
+            else:
+                # Copy only workflow instance without steps and ports
+                self.workflow = await Workflow.load(context, persistent_id, self)
         return self.workflow

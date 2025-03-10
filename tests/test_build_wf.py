@@ -240,7 +240,7 @@ async def test_workflow(context: StreamFlowContext, copy_strategy: str):
     exec_step.add_input_port(in_port_name, in_port)
     await workflow.save(context)
 
-    builder = WorkflowBuilder(workflow if copy_strategy == "deep_copy" else None)
+    builder = WorkflowBuilder(copy_strategy == "deep_copy")
     new_workflow = await builder.load_workflow(context, workflow.persistent_id)
     assert new_workflow.name == workflow.name
 
