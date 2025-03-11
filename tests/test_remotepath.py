@@ -205,7 +205,7 @@ async def test_symlink(context, connector, location):
         await path.symlink_to(src)
         assert await path.exists()
         assert await path.is_symlink()
-        assert (await path.resolve()).name == str(src.name)
+        assert (await path.resolve()).name == src.name
         await path.rmtree()
         assert not await path.exists()
         await src.rmtree()
@@ -214,7 +214,7 @@ async def test_symlink(context, connector, location):
         await path.symlink_to(src, target_is_directory=True)
         assert await path.exists()
         assert await path.is_symlink()
-        assert (await path.resolve()).name == str(src.name)
+        assert (await path.resolve()).name == src.name
         await path.rmtree()
         assert not await path.exists()
     finally:
