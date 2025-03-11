@@ -27,6 +27,7 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
+from streamflow.core.utils import get_entity_ids
 from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
@@ -42,10 +43,6 @@ from streamflow.workflow.utils import (
 
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
     return directory or path_processor.join(target.workdir, utils.random_name())
-
-
-def _get_token_ids(token_list):
-    return [t.persistent_id for t in (token_list or []) if t.persistent_id]
 
 
 def _group_by_tag(
@@ -522,7 +519,7 @@ class DeployStep(BaseStep):
                                 await self._persist_token(
                                     token=Token(value=self.deployment_config.name),
                                     port=self.get_output_port(),
-                                    input_token_ids=_get_token_ids(inputs.values()),
+                                    input_token_ids=get_entity_ids(inputs.values()),
                                 )
                             )
             else:
@@ -650,7 +647,7 @@ class ExecuteStep(BaseStep):
                 await self._persist_token(
                     token=token,
                     port=output_port,
-                    input_token_ids=_get_token_ids((*job.inputs.values(), job_token)),
+                    input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
             )
 
@@ -879,7 +876,7 @@ class GatherStep(BaseStep):
                     tag=key, value=sorted(self.token_map[key], key=lambda cur: cur.tag)
                 ),
                 port=output_port,
-                input_token_ids=_get_token_ids(input_tokens),
+                input_token_ids=get_entity_ids(input_tokens),
             )
         )
 
@@ -1098,7 +1095,7 @@ class InputInjectorStep(BaseStep, ABC):
                         await self._persist_token(
                             token=await self.process_input(job, token.value),
                             port=self.get_output_port(),
-                            input_token_ids=_get_token_ids(in_list),
+                            input_token_ids=get_entity_ids(in_list),
                         )
                     )
                 finally:
@@ -1277,7 +1274,7 @@ class LoopOutputStep(BaseStep, ABC):
                     await self._persist_token(
                         token=await self._process_output(prefix),
                         port=self.get_output_port(),
-                        input_token_ids=_get_token_ids(self.token_map.get(prefix)),
+                        input_token_ids=get_entity_ids(self.token_map.get(prefix)),
                     )
                 )
             # If all iterations are terminated, terminate the step
@@ -1394,7 +1391,7 @@ class ScheduleStep(BaseStep):
             await self._persist_token(
                 token=JobToken(value=job),
                 port=self.get_output_port(),
-                input_token_ids=_get_token_ids(token_inputs),
+                input_token_ids=get_entity_ids(token_inputs),
             )
         )
 
@@ -1490,13 +1487,6 @@ class ScheduleStep(BaseStep):
                     if name.startswith("__connector__")
                 },
             )
-            connectors = await asyncio.gather(
-                *(
-                    asyncio.create_task(port.get_connector(self.name))
-                    for port in connector_ports.values()
-                )
-            )
-            connectors = {c.deployment_name: c for c in connectors}
             # If there are input ports
             input_ports = {
                 k: v
@@ -1617,7 +1607,7 @@ class ScatterStep(BaseStep):
                     await self._persist_token(
                         token=t.retag(token.tag + "." + str(i)),
                         port=output_port,
-                        input_token_ids=_get_token_ids([token]),
+                        input_token_ids=get_entity_ids([token]),
                     )
                 )
             size_token = Token(len(token.value), tag=token.tag)
@@ -1626,7 +1616,7 @@ class ScatterStep(BaseStep):
                 await self._persist_token(
                     token=size_token,
                     port=size_port,
-                    input_token_ids=_get_token_ids([token]),
+                    input_token_ids=get_entity_ids([token]),
                 )
             )
         else:
@@ -1742,7 +1732,7 @@ class TransferStep(BaseStep, ABC):
                                     await self._persist_token(
                                         token=await self.transfer(job, token),
                                         port=self.get_output_port(port_name),
-                                        input_token_ids=_get_token_ids(
+                                        input_token_ids=get_entity_ids(
                                             list(inputs.values())
                                             + [
                                                 get_job_token(
@@ -1802,7 +1792,7 @@ class Transformer(BaseStep, ABC):
                                         await self._persist_token(
                                             token=token.update(token.value),
                                             port=self.get_output_port(port_name),
-                                            input_token_ids=_get_token_ids(
+                                            input_token_ids=get_entity_ids(
                                                 inputs.values()
                                             ),
                                         )
@@ -1819,7 +1809,7 @@ class Transformer(BaseStep, ABC):
                                             await self._persist_token(
                                                 token=t,
                                                 port=self.get_output_port(port_name),
-                                                input_token_ids=_get_token_ids(
+                                                input_token_ids=get_entity_ids(
                                                     inputs.values()
                                                 ),
                                             )

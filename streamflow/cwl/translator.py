@@ -182,84 +182,6 @@ def _create_command(
     return command
 
 
-def _create_command_output_processor_base(
-    port_name: str,
-    workflow: CWLWorkflow,
-    port_target: Target | None,
-    port_type: str | MutableSequence[str],
-    cwl_element: (
-        cwl_utils.parser.CommandOutputParameter
-        | cwl_utils.parser.OutputRecordField
-        | cwl_utils.parser.ExpressionToolOutputParameter
-    ),
-    context: MutableMapping[str, Any],
-    optional: bool = False,
-    single: bool = True,
-) -> CWLCommandOutputProcessor:
-    if not isinstance(port_type, MutableSequence):
-        port_type = [port_type]
-    # Normalize port type (Python does not distinguish among all CWL number types)
-    port_type = [
-        "long" if t == "int" else "double" if t == "float" else t for t in port_type
-    ]
-    # Process InlineJavascriptRequirement
-    requirements = context["hints"] | context["requirements"]
-    expression_lib, full_js = _process_javascript_requirement(requirements)
-    # Create OutputProcessor
-    if "File" in port_type:
-        return CWLCommandOutputProcessor(
-            name=port_name,
-            workflow=workflow,
-            target=port_target,
-            token_type=port_type[0] if len(port_type) == 1 else port_type,
-            expression_lib=expression_lib,
-            file_format=getattr(cwl_element, "format", None),
-            full_js=full_js,
-            glob=(
-                cwl_element.outputBinding.glob
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
-            load_contents=_get_load_contents(cwl_element),
-            load_listing=_get_load_listing(cwl_element, context),
-            optional=optional,
-            output_eval=(
-                cwl_element.outputBinding.outputEval
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
-            secondary_files=_get_secondary_files(
-                cwl_element=getattr(cwl_element, "secondaryFiles", None),
-                default_required=False,
-            ),
-            single=single,
-            streamable=getattr(cwl_element, "streamable", None),
-        )
-    else:
-        return CWLCommandOutputProcessor(
-            name=port_name,
-            workflow=workflow,
-            target=port_target,
-            token_type=port_type[0] if len(port_type) == 1 else port_type,
-            expression_lib=expression_lib,
-            full_js=full_js,
-            glob=(
-                cwl_element.outputBinding.glob
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
-            load_contents=_get_load_contents(cwl_element),
-            load_listing=_get_load_listing(cwl_element, context),
-            optional=optional,
-            output_eval=(
-                cwl_element.outputBinding.outputEval
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
-            single=single and "Directory" in port_type,
-        )
-
-
 def _create_command_output_processor(
     port_name: str,
     workflow: CWLWorkflow,
@@ -414,7 +336,7 @@ def _create_command_output_processor(
                 processors = []
             if simple_types := [t for t in types if isinstance(t, str)]:
                 processors.append(
-                    _create_command_output_processor_base(
+                    create_command_output_processor_base(
                         port_name=port_name,
                         workflow=workflow,
                         port_target=port_target,
@@ -446,7 +368,7 @@ def _create_command_output_processor(
         )
     # Simple type -> Create typed processor
     else:
-        return _create_command_output_processor_base(
+        return create_command_output_processor_base(
             port_name=port_name,
             workflow=workflow,
             port_target=port_target,
@@ -1322,6 +1244,84 @@ def _process_transformers(
 
 def _get_source_name(global_name):
     return posixpath.relpath(global_name, PurePosixPath(global_name).parent.parent)
+
+
+def create_command_output_processor_base(
+    port_name: str,
+    workflow: CWLWorkflow,
+    port_target: Target | None,
+    port_type: str | MutableSequence[str],
+    cwl_element: (
+        cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.OutputRecordField
+        | cwl_utils.parser.ExpressionToolOutputParameter
+    ),
+    context: MutableMapping[str, Any],
+    optional: bool = False,
+    single: bool = True,
+) -> CWLCommandOutputProcessor:
+    if not isinstance(port_type, MutableSequence):
+        port_type = [port_type]
+    # Normalize port type (Python does not distinguish among all CWL number types)
+    port_type = [
+        "long" if t == "int" else "double" if t == "float" else t for t in port_type
+    ]
+    # Process InlineJavascriptRequirement
+    requirements = context["hints"] | context["requirements"]
+    expression_lib, full_js = _process_javascript_requirement(requirements)
+    # Create OutputProcessor
+    if "File" in port_type:
+        return CWLCommandOutputProcessor(
+            name=port_name,
+            workflow=workflow,
+            target=port_target,
+            token_type=port_type[0] if len(port_type) == 1 else port_type,
+            expression_lib=expression_lib,
+            file_format=getattr(cwl_element, "format", None),
+            full_js=full_js,
+            glob=(
+                cwl_element.outputBinding.glob
+                if getattr(cwl_element, "outputBinding", None)
+                else None
+            ),
+            load_contents=_get_load_contents(cwl_element),
+            load_listing=_get_load_listing(cwl_element, context),
+            optional=optional,
+            output_eval=(
+                cwl_element.outputBinding.outputEval
+                if getattr(cwl_element, "outputBinding", None)
+                else None
+            ),
+            secondary_files=_get_secondary_files(
+                cwl_element=getattr(cwl_element, "secondaryFiles", None),
+                default_required=False,
+            ),
+            single=single,
+            streamable=getattr(cwl_element, "streamable", None),
+        )
+    else:
+        return CWLCommandOutputProcessor(
+            name=port_name,
+            workflow=workflow,
+            target=port_target,
+            token_type=port_type[0] if len(port_type) == 1 else port_type,
+            expression_lib=expression_lib,
+            full_js=full_js,
+            glob=(
+                cwl_element.outputBinding.glob
+                if getattr(cwl_element, "outputBinding", None)
+                else None
+            ),
+            load_contents=_get_load_contents(cwl_element),
+            load_listing=_get_load_listing(cwl_element, context),
+            optional=optional,
+            output_eval=(
+                cwl_element.outputBinding.outputEval
+                if getattr(cwl_element, "outputBinding", None)
+                else None
+            ),
+            single=single and "Directory" in port_type,
+        )
 
 
 class CWLTranslator:

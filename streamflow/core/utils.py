@@ -13,6 +13,7 @@ from collections.abc import Iterable, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any
 
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
     from streamflow.core.deployment import Connector, ExecutionLocation
@@ -47,6 +48,10 @@ class NamesStack:
             if name in scope:
                 return True
         return False
+
+
+def contains_persistent_id(id_: int, entities: Iterable[PersistableEntity]) -> bool:
+    return any(id_ == entity.persistent_id for entity in entities)
 
 
 def create_command(
@@ -152,6 +157,12 @@ def get_date_from_ns(timestamp: int) -> str:
     base = datetime.datetime(1970, 1, 1)
     delta = datetime.timedelta(microseconds=round(timestamp / 1000))
     return (base + delta).replace(tzinfo=datetime.timezone.utc).isoformat()
+
+
+def get_entity_ids(
+    persistable_entities: Iterable[PersistableEntity] | None,
+) -> MutableSequence[int]:
+    return [pe.persistent_id for pe in (persistable_entities or []) if pe.persistent_id]
 
 
 async def get_local_to_remote_destination(

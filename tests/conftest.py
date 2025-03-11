@@ -4,7 +4,7 @@ import argparse
 import os
 import platform
 from asyncio.locks import Lock
-from collections.abc import Callable, Collection, MutableSequence
+from collections.abc import AsyncGenerator, Callable, Collection, MutableSequence
 from typing import Any
 
 import pytest
@@ -140,7 +140,7 @@ def all_deployment_types():
 
 
 @pytest_asyncio.fixture(scope="module")
-async def context(chosen_deployment_types) -> StreamFlowContext:
+async def context(chosen_deployment_types) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
             "database": {"type": "default", "config": {"connection": ":memory:"}},
