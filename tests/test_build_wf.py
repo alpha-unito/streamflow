@@ -6,7 +6,7 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import FilterConfig, LocalTarget
-from streamflow.core.workflow import Port, Workflow
+from streamflow.core.workflow import Port
 from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.translator import create_command_output_processor_base
 from streamflow.cwl.workflow import CWLWorkflow
@@ -195,9 +195,8 @@ async def test_port(context: StreamFlowContext, port_cls: type[Port]):
     assert workflow.persistent_id
     assert port.persistent_id
 
-    new_workflow = Workflow(context=context, name=utils.random_name(), config={})
-    loading_context = WorkflowBuilder(new_workflow)
-
+    loading_context = WorkflowBuilder(deep_copy=False)
+    new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
     new_port = await loading_context.load_port(context, port.persistent_id)
     await new_workflow.save(context)
     assert len(new_workflow.ports) == 1
@@ -246,8 +245,8 @@ async def test_workflow(context: StreamFlowContext, copy_strategy: str):
 
     if copy_strategy == "manual-copy":
         assert len(new_workflow.steps) == len(new_workflow.ports) == 0
-        assert exec_step.name not in new_workflow.steps.keys()
         await builder.load_step(context, exec_step.persistent_id)
+        assert len(new_workflow.steps) == 1 and exec_step.name in new_workflow.steps
         assert len(new_workflow.ports) == len(exec_step.input_ports) + len(
             exec_step.output_ports
         )
@@ -258,7 +257,6 @@ async def test_workflow(context: StreamFlowContext, copy_strategy: str):
             assert step.workflow == new_workflow
         for port in new_workflow.steps.values():
             assert port.workflow == new_workflow
-
 
         for original_processor, new_processor in zip(
             exec_step.output_processors.values(),

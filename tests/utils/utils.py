@@ -4,7 +4,6 @@ import logging
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any
 
-from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.utils import contains_persistent_id
 from streamflow.core.workflow import Port, Step, Token, Workflow
@@ -20,7 +19,10 @@ from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
 
 
-def check_combinators(original_combinator: Combinator, new_combinator: Combinator):
+def check_combinators(
+    original_combinator: Combinator, new_combinator: Combinator
+) -> None:
+    assert type(original_combinator) is type(new_combinator)
     assert (
         original_combinator.workflow.persistent_id
         != new_combinator.workflow.persistent_id
@@ -36,7 +38,7 @@ def check_persistent_id(
     new_workflow: Workflow,
     original_elem: Step | Port,
     new_elem: Step | Port,
-):
+) -> None:
     """This method asserts that the original entities and the new entities have different persistent ids."""
     assert original_workflow.persistent_id is not None
     assert new_workflow.persistent_id is not None
@@ -85,21 +87,20 @@ async def duplicate_and_test(
     kwargs_step: MutableMapping[str, Any],
     context: StreamFlowContext,
     test_are_eq: bool = True,
-):
+) -> tuple[Step, Workflow, Step] | tuple[None, None, None]:
     step = workflow.create_step(cls=step_cls, **kwargs_step)
     await workflow.save(context)
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
     check_persistent_id(workflow, new_workflow, step, new_step)
     if test_are_eq:
         for p1, p2 in zip(workflow.ports.values(), new_workflow.ports.values()):
+            assert type(p1) is type(p2)
             assert p1.persistent_id != p2.persistent_id
-            assert p1.workflow.name != p2.workflow.name
+            assert p1.workflow.name == p2.workflow.name
         for p in workflow.ports.values():
-            p.persistent_id = None
-            p.workflow = None
+            set_attributes_to_none(p, set_id=True, set_wf=True)
         for p in new_workflow.ports.values():
-            p.persistent_id = None
-            p.workflow = None
+            set_attributes_to_none(p, set_id=True, set_wf=True)
         set_attributes_to_none(step, set_id=True, set_wf=True)
         set_attributes_to_none(new_step, set_id=True, set_wf=True)
         assert are_equals(step, new_step)
@@ -110,9 +111,9 @@ async def duplicate_and_test(
 
 async def duplicate_elements(
     step: Step, workflow: Workflow, context: StreamFlowContext
-):
-    new_workflow = Workflow(context=context, name=utils.random_name(), config={})
-    loading_context = WorkflowBuilder(workflow=new_workflow)
+) -> tuple[Workflow, Step]:
+    loading_context = WorkflowBuilder(deep_copy=False)
+    new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
     new_step = await loading_context.load_step(context, step.persistent_id)
     new_workflow.steps[new_step.name] = new_step
 
@@ -137,7 +138,9 @@ async def inject_tokens(
     in_port.put(TerminationToken())
 
 
-def inject_workflow_combinator(combinator: Combinator, new_workflow: Workflow | None):
+def inject_workflow_combinator(
+    combinator: Combinator, new_workflow: Workflow | None
+) -> None:
     """Replace in the combinator the value of the `workflow` attribute with `new_workflow`."""
     combinator.workflow = new_workflow
     for c in combinator.combinators.values():
@@ -145,8 +148,8 @@ def inject_workflow_combinator(combinator: Combinator, new_workflow: Workflow | 
 
 
 def set_attributes_to_none(
-    elem: Step | Port, set_id: bool = False, set_wf: bool = False
-):
+    elem: Any, set_id: bool = False, set_wf: bool = False
+) -> None:
     if set_id:
         elem.persistent_id = None
     if set_wf:
@@ -160,7 +163,7 @@ async def verify_dependency_tokens(
     expected_depender: MutableSequence[Token] | None = None,
     expected_dependee: MutableSequence[Token] | None = None,
     alternative_expected_dependee: MutableSequence[Token] | None = None,
-):
+) -> None:
     loading_context = DefaultDatabaseLoadingContext()
     expected_depender = expected_depender or []
     expected_dependee = expected_dependee or []
