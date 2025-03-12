@@ -1,57 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import posixpath
-from collections.abc import Collection, MutableMapping, MutableSequence
+from collections.abc import Iterable, MutableMapping, MutableSet
 
-from streamflow.core.exception import (
-    FailureHandlingException,
-)
+from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import get_class_fullname
-from streamflow.core.workflow import Token
-from streamflow.cwl.token import CWLFileToken
+from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
+from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import ExecuteStep, InputInjectorStep
-from streamflow.workflow.token import ListToken, ObjectToken
-
-# async def get_input_ports(step_id, context):
-#     return await asyncio.gather(
-#         *(
-#             asyncio.create_task(context.database.get_port(dep_row["port"]))
-#             for dep_row in await context.database.get_input_ports(step_id)
-#         )
-#     )
-
-
-# async def get_output_ports(step_id, context):
-#     return await asyncio.gather(
-#         *(
-#             asyncio.create_task(context.database.get_port(dep_row["port"]))
-#             for dep_row in await context.database.get_output_ports(step_id)
-#         )
-#     )
-
-
-def get_files_from_token(token: Token) -> MutableSequence[str]:
-    if isinstance(token, CWLFileToken):
-        return [token.value["path"]]
-    if isinstance(token, ListToken):
-        return [
-            file
-            for inner_token in token.value
-            for file in get_files_from_token(inner_token)
-        ]
-    if isinstance(token, ObjectToken):
-        return [
-            file
-            for inner_token in token.value.values()
-            for file in get_files_from_token(inner_token)
-        ]
-    if isinstance(token.value, Token):
-        return get_files_from_token(token.value)
-    return []
 
 
 async def get_step_instances_from_output_port(port_id, context):
@@ -64,17 +24,17 @@ async def get_step_instances_from_output_port(port_id, context):
     )
 
 
-async def get_execute_step_out_token_ids(next_token_ids, context):
+async def get_execute_step_out_token_ids(next_token_ids, context) -> MutableSet[int]:
     execute_step_out_token_ids = set()
-    for t_id in next_token_ids:
-        if t_id > 0:
-            port_row = await context.database.get_port_from_token(t_id)
+    for token_id in next_token_ids:
+        if token_id > 0:
+            port_row = await context.database.get_port_from_token(token_id)
             for step_id_row in await context.database.get_input_steps(port_row["id"]):
                 step_row = await context.database.get_step(step_id_row["step"])
                 if step_row["type"] == get_class_fullname(ExecuteStep):
-                    execute_step_out_token_ids.add(t_id)
+                    execute_step_out_token_ids.add(token_id)
         else:
-            execute_step_out_token_ids.add(t_id)
+            execute_step_out_token_ids.add(token_id)
     return execute_step_out_token_ids
 
 
@@ -92,65 +52,46 @@ def increase_tag(tag):
     return None
 
 
-def get_port_from_token(token, port_tokens, token_visited):
+def get_port_from_token(token: Token, port_tokens, token_visited):
     for port_name, token_ids in port_tokens.items():
         if token.tag in (token_visited[t_id][0].tag for t_id in token_ids):
             return port_name
-    raise FailureHandlingException("Token assente")
+    raise FailureHandlingException(f"Token id {token.persistent_id} is missing")
 
 
-def get_key_by_value(
-    searched_value: int, dictionary: MutableMapping[str, Collection[int]]
-):
-    for key, values in dictionary.items():
-        if searched_value in values:
-            return key
-    raise FailureHandlingException(
-        f"Searched value {searched_value} not found in {dictionary}"
-    )
-
-
-def get_value(elem, dictionary):
-    for k, v in dictionary.items():
-        if v == elem:
-            return k
-    raise Exception("Value not found in dictionary")
-
-
-async def _execute_recovered_workflow(new_workflow, step_name, output_ports):
+async def execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -> None:
     if not new_workflow.steps.keys():
         logger.info(
             f"Workflow {new_workflow.name} is empty. "
-            f"Waiting output ports "
-            f"{[p.name for p in new_workflow.ports.values() if not isinstance(p, (JobPort, ConnectorPort))]}"
+            f"Waiting output ports {list(failed_step.output_ports.values())}"
         )
-
-        # for debug. Versione corretta quella con la gather
-        for p in new_workflow.ports.values():
-            if not isinstance(p, (JobPort, ConnectorPort)):
-                await p.get(posixpath.join(step_name, get_value(p.name, output_ports)))
-        # await asyncio.gather(
-        #     *(
-        #         asyncio.create_task(
-        #             p.get(posixpath.join(step_name, get_value(p.name, output_ports)))
-        #         )
-        #         for p in new_workflow.ports.values()
-        #         if not isinstance(p, (JobPort, ConnectorPort))
-        #     )
-        # )
-        logger.info(f"Workflow {new_workflow.name}: Port terminated")
+        assert set(new_workflow.ports.keys()) == set(failed_step.output_ports.values())
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    new_workflow.ports[name].get(
+                        posixpath.join(failed_step.name, dependency)
+                    )
+                )
+                for name, dependency in failed_step.output_ports.items()
+            )
+        )
     else:
         await new_workflow.save(new_workflow.context)
         executor = StreamFlowExecutor(new_workflow)
         await executor.run()
-        logger.info(f"COMPLETED Workflow execution {new_workflow.name}")
 
 
-async def load_and_add_ports(port_ids, new_workflow, loading_context):
+async def load_and_add_ports(
+    port_ids: Iterable[int],
+    new_workflow: Workflow,
+    workflow_builder: WorkflowBuilder,
+    failed_job: Job,
+) -> None:
     for port in await asyncio.gather(
         *(
             asyncio.create_task(
-                loading_context.load_port(
+                workflow_builder.load_port(
                     new_workflow.context,
                     port_id,
                 )
@@ -159,28 +100,32 @@ async def load_and_add_ports(port_ids, new_workflow, loading_context):
         )
     ):
         if port.name not in new_workflow.ports.keys():
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Port {port.name} loaded in the recovery workflow of failed job {failed_job.name}"
+                )
             new_workflow.ports[port.name] = port
+        elif logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"populate_workflow: wf {new_workflow.name} add_1 port {port.name}"
+                f"Port {port.name} exists in the recovery workflow of failed job {failed_job.name}"
             )
-        else:
-            logger.debug(
-                f"populate_workflow: La port {port.name} è già presente nel workflow {new_workflow.name}"
-            )
-    logger.debug("populate_workflow: Port loaded")
 
 
 def _missing_dependency_ports(
-    dependencies: MutableMapping[str, str], port_names: MutableSequence[str]
-):
-    dependency_ports = set()
-    for dep_name, port_name in dependencies.items():
-        if port_name not in port_names:
-            dependency_ports.add(dep_name)
-    return dependency_ports
+    dependencies: MutableMapping[str, str], port_names: Iterable[str]
+) -> MutableSet[str]:
+    return {
+        dependency
+        for dependency, port_name in dependencies.items()
+        if port_name not in port_names
+    }
 
 
-async def load_missing_ports(new_workflow, step_name_id, loading_context):
+async def load_missing_ports(
+    new_workflow: Workflow,
+    step_name_id: MutableMapping[str, int],
+    workflow_builder: WorkflowBuilder,
+) -> None:
     missing_ports = set()
     for step in new_workflow.steps.values():
         if isinstance(step, InputInjectorStep):
@@ -193,17 +138,13 @@ async def load_missing_ports(new_workflow, step_name_id, loading_context):
             ):
                 if dependency_row["name"] in missing_dependency_ports:
                     logger.debug(
-                        f"populate_workflow: Aggiungo port {step.output_ports[dependency_row['name']]} al "
-                        f"wf {new_workflow.name} perché è un output port dello step {step.name}"
+                        f"Added port {step.output_ports[dependency_row['name']]} because needed in the step {step.name}"
                     )
                     missing_ports.add(dependency_row["port"])
     for port in await asyncio.gather(
         *(
-            asyncio.create_task(loading_context.load_port(new_workflow.context, p_id))
+            asyncio.create_task(workflow_builder.load_port(new_workflow.context, p_id))
             for p_id in missing_ports
         )
     ):
-        logger.debug(
-            f"populate_workflow: wf {new_workflow.name} add_2 port {port.name}"
-        )
         new_workflow.ports[port.name] = port

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import logging
-
-# import datetime
 from collections.abc import MutableMapping, MutableSet
 from functools import cmp_to_key
 
-from streamflow.core import utils
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import compare_tags
 from streamflow.core.workflow import Job, Port, Step, Token, Workflow
@@ -85,25 +82,10 @@ class RollbackRecoveryPolicy:
 
     async def recover_workflow(self, failed_job: Job, failed_step: Step):
         workflow = failed_step.workflow
-
-        loading_context = WorkflowBuilder(deep_copy=False)
-        new_workflow = await loading_context.load_workflow(
+        workflow_builder = WorkflowBuilder(deep_copy=False)
+        new_workflow = await workflow_builder.load_workflow(
             workflow.context, workflow.persistent_id
         )
-        # new_workflow.name = random_name()
-
-        # Create output port of the failed step in the new workflow
-        for port in failed_step.get_output_ports().values():
-            stop_tag = utils.get_tag(failed_job.inputs.values())
-            logger.info(
-                f"Wf {new_workflow.name} created output port {port.name} of failed job {failed_job.name} "
-                f"(wf {workflow.name}) and stop_tag: {stop_tag}"
-            )
-            new_port = InterWorkflowPort(
-                FilterTokenPort(new_workflow, port.name, [stop_tag], [])
-            )
-            new_port.add_inter_port(port, stop_tag)
-            new_workflow.ports[new_port.name] = new_port
 
         provenance = ProvenanceGraph(workflow.context)
         # TODO: add a data_manager to store the file checked. Before to check directly a file,
@@ -124,11 +106,7 @@ class RollbackRecoveryPolicy:
             failed_step.output_ports.values()
         )
         await mapper.populate_workflow(
-            ports,
-            steps,
-            failed_step,
-            new_workflow,
-            loading_context,
+            ports, steps, failed_step, new_workflow, workflow_builder, failed_job
         )
         logger.debug("end populate")
 
@@ -200,6 +178,7 @@ class RollbackRecoveryPolicy:
                     logger.debug(
                         f"Synchronize rollbacks: job {job_token.value.name} is running"
                     )
+                # todo: create a unit test for this case and check if it works well
                 for output_port_name in await mapper.get_execute_output_port_names(
                     job_token
                 ):
@@ -224,6 +203,7 @@ class RollbackRecoveryPolicy:
                     logger.debug(
                         f"Synchronize rollbacks: job {job_token.value.name} output available"
                     )
+                # todo: create a unit test for this case and check if it works well
                 # Search execute token after job token, replace this token with job_req token.
                 # Then remove all the prev tokens
                 for port_name in await mapper.get_execute_output_port_names(job_token):
