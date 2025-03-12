@@ -10,7 +10,11 @@ from typing import Any
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.utils import contains_id, get_class_from_name, get_class_fullname
+from streamflow.core.utils import (
+    contains_persistent_id,
+    get_class_from_name,
+    get_class_fullname,
+)
 from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
@@ -803,7 +807,7 @@ class ProvenanceGraph:
                             self.add(prev_token, token)
                             if (
                                 prev_token.persistent_id not in self.info_tokens.keys()
-                                and not contains_id(
+                                and not contains_persistent_id(
                                     prev_token.persistent_id, token_frontier
                                 )
                             ):

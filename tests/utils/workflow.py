@@ -10,9 +10,11 @@ from typing import TYPE_CHECKING, Any, cast
 from streamflow.core import utils
 from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
 from streamflow.core.config import BindingConfig
-from streamflow.core.deployment import DeploymentConfig, Target
+from streamflow.core.deployment import Connector, DeploymentConfig, Target
+from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.workflow import Port, Workflow
+from streamflow.core.utils import flatten_list, get_job_tag, get_tag
+from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.step import CWLInputInjectorStep, CWLScheduleStep, CWLTransferStep
 from streamflow.cwl.utils import get_token_class
@@ -25,13 +27,18 @@ from streamflow.workflow.combinator import (
     LoopCombinator,
     LoopTerminationCombinator,
 )
-from streamflow.workflow.port import ConnectorPort
+from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
     DeployStep,
+    ExecuteStep,
+    InputInjectorStep,
     LoopCombinatorStep,
     ScheduleStep,
+    TransferStep,
 )
+from streamflow.workflow.token import FileToken, ListToken, ObjectToken
+from streamflow.workflow.utils import get_token_value
 from tests.utils.deployment import get_docker_deployment_config
 
 if TYPE_CHECKING:
