@@ -36,11 +36,11 @@ class FilterTokenPort(Port):
         workflow: Workflow,
         name: str,
         stop_tags: MutableSequence[str],
-        skip_tags: MutableSequence[str],
+        skip_tags: MutableSequence[str] | None = None,
     ):
         super().__init__(workflow, name)
         self.stop_tags = stop_tags
-        self.skip_tags = skip_tags
+        self.skip_tags = skip_tags or []
 
     def put(self, token: Token):
         if token.tag in self.stop_tags:

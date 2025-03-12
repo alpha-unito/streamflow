@@ -19,7 +19,7 @@ from streamflow.recovery.recovery import (
     RollbackRecoveryPolicy,
 )
 from streamflow.recovery.rollback_recovery import TokenAvailability
-from streamflow.recovery.utils import _execute_recovered_workflow
+from streamflow.recovery.utils import execute_recover_workflow
 from streamflow.workflow.token import JobToken, TerminationToken
 
 
@@ -108,9 +108,9 @@ class DefaultFailureManager(FailureManager):
             failed_job, failed_step
         )
         # Execute new workflow
-        await _execute_recovered_workflow(
-            new_workflow, failed_step.name, failed_step.output_ports
-        )
+        await execute_recover_workflow(new_workflow, failed_step)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"COMPLETED Recovery execution of failed job {failed_job.name}")
         return new_workflow
 
     async def close(self): ...

@@ -10,47 +10,27 @@ from typing import Any
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.utils import (
-    contains_persistent_id,
-    get_class_from_name,
-    get_class_fullname,
-)
-from streamflow.core.workflow import Token
+from streamflow.core.utils import contains_persistent_id, get_class_from_name, get_tag
+from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
-from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.persistence.loading_context import (
+    DefaultDatabaseLoadingContext,
+    WorkflowBuilder,
+)
 from streamflow.persistence.utils import load_dependee_tokens
 from streamflow.recovery.utils import (
-    get_key_by_value,
     get_step_instances_from_output_port,
     load_and_add_ports,
     load_missing_ports,
 )
 from streamflow.workflow.combinator import LoopTerminationCombinator
-from streamflow.workflow.port import ConnectorPort
+from streamflow.workflow.port import ConnectorPort, FilterTokenPort, InterWorkflowPort
 from streamflow.workflow.step import (
     CombinatorStep,
     ExecuteStep,
-    InputInjectorStep,
     LoopOutputStep,
 )
 from streamflow.workflow.token import JobToken
-
-#                               t_a 0  t_b 0 t_c 0
-#                                 |     |    |
-#                                   t_a 0.0
-
-
-#       sum...      combinator
-#           \       /
-#            merge 0.0
-#               |
-#            combinator
-#               |
-#           split 0.1
-#       /       |       \
-# sum 0.1.0     ...      sum 0.1.x
-#       \       |       /
-#           merge 0.1
 
 
 async def create_graph_homomorphism(
@@ -69,31 +49,6 @@ async def create_graph_homomorphism(
                 provenance.info_tokens.get(prev_token_id, None),
                 provenance.info_tokens.get(token_id, None),
             )
-
-    # for out_port in output_ports:
-    #     mapper.dcg_port.replace(DirectGraph.LEAF, out_port.name)
-    #     mapper.dcg_port.add(out_port.name, DirectGraph.LEAF)
-    #     # Add a token to emulate the token not produced in the failed step
-    #     placeholder = Token(
-    #         None,
-    #         get_tag(
-    #             provenance.info_tokens[t].instance
-    #             for t in provenance.dag_tokens.prev(DirectGraph.LEAF)
-    #             if not isinstance(t, JobToken)
-    #         ),
-    #     )
-    #     placeholder.persistent_id = -1
-    #
-    #     mapper.dag_tokens.replace(DirectGraph.LEAF, placeholder.persistent_id)
-    #     mapper.dag_tokens.add(placeholder.persistent_id, DirectGraph.LEAF)
-    #     mapper.token_instances[placeholder.persistent_id] = placeholder
-    #     mapper.token_available[placeholder.persistent_id] = False
-    #     mapper.port_name_ids.setdefault(out_port.name, set()).add(
-    #         out_port.persistent_id
-    #     )
-    #     mapper.port_tokens.setdefault(out_port.name, set()).add(
-    #         placeholder.persistent_id
-    #     )
     return mapper
 
 
@@ -115,22 +70,6 @@ class ProvenanceToken:
         self.is_available: TokenAvailability = is_available
         self.port_row: MutableMapping[str, Any] = port_row
         self.step_rows: MutableMapping[str, Any] = step_rows
-
-
-async def get_execute_step_out_token_ids(next_token_ids, context):
-    execute_step_out_token_ids = set()
-    for t_id in next_token_ids:
-        if t_id > 0:
-            port_row = await context.database.get_port_from_token(t_id)
-            for step_id_row in await context.database.get_input_steps(port_row["id"]):
-                step_row = await context.database.get_step(step_id_row["step"])
-                if step_row["type"] == get_class_fullname(ExecuteStep):
-                    execute_step_out_token_ids.add(t_id)
-        elif t_id == -1:
-            return [t_id]
-        else:
-            raise Exception(f"Token {t_id} not valid")
-    return execute_step_out_token_ids
 
 
 async def evaluate_token_availability(
@@ -309,14 +248,8 @@ class GraphHomomorphism:
         )
         self.dag_tokens.add(token_a_id, token_b_id)
 
-    def is_present(self, t_id):
-        for ts in self.port_tokens.values():
-            if t_id in ts:
-                return True
-        return False
-
     def _remove_port_names(self, port_names):
-        orphan_tokens = set()  # probably a orphan token
+        orphan_tokens = set()  # probably an orphan token
         for port_name in port_names:
             logger.debug(f"_remove_port_names: remove port {port_name}")
             for t_id in self.port_tokens.pop(port_name, []):
@@ -325,7 +258,7 @@ class GraphHomomorphism:
         for t_id in orphan_tokens:
             logger.debug(f"_remove_port_names: remove orphan token {t_id}")
             self.remove_token(t_id)
-            # if not self.is_present(t_id):
+            # if not any(t_id in ts for ts in self.port_tokens.values()):
             #     logger.debug(f"Remove orphan token {t_id}")
             #     self.token_available.pop(t_id, None)
             #     self.token_instances.pop(t_id, None)
@@ -334,22 +267,26 @@ class GraphHomomorphism:
         logger.debug(f"remove_port {port_name}")
         self._remove_port_names(self.dcg_port.remove(port_name))
 
-    async def get_execute_output_port_names(self, job_token: JobToken):
+    async def get_execute_output_port_names(
+        self, job_token: JobToken
+    ) -> MutableSequence[str]:
         port_names = set()
-        for t_id in self.dag_tokens.succ(job_token.persistent_id):
-            logger.debug(
-                f"Token {t_id} è successivo al job_token {job_token.persistent_id}"
-            )
-            if t_id in (DirectGraph.ROOT, DirectGraph.LEAF):
+        for token_id in self.dag_tokens.succ(job_token.persistent_id):
+            if token_id in (DirectGraph.ROOT, DirectGraph.LEAF):
                 continue
-            port_name = get_key_by_value(t_id, self.port_tokens)
+            port_name = next(
+                port_name
+                for port_name, out_token_id in self.port_tokens
+                if token_id == out_token_id
+            )
+            # Get newest port
             port_id = max(self.port_name_ids[port_name])
 
             step_rows = await self.context.database.get_input_steps(port_id)
             for step_row in await asyncio.gather(
                 *(
-                    asyncio.create_task(self.context.database.get_step(sr["step"]))
-                    for sr in step_rows
+                    asyncio.create_task(self.context.database.get_step(row["step"]))
+                    for row in step_rows
                 )
             ):
                 if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
@@ -484,161 +421,83 @@ class GraphHomomorphism:
         self.token_available[token.persistent_id] = is_available
         return token.persistent_id
 
-    async def get_port_and_step_ids(self, exclude_ports):
-        steps = set()
-        ports = {
+    async def get_port_and_step_ids(
+        self, output_port_names: Iterable[str]
+    ) -> tuple[MutableSet[int], MutableSet[int]]:
+        port_ids = {
             min(self.port_name_ids[port_name])
             for port_name in self.port_tokens.keys()
-            if port_name not in exclude_ports
+            if port_name not in output_port_names
         }
-        for row_dependencies in await asyncio.gather(
-            *(
-                asyncio.create_task(self.context.database.get_input_steps(port_id))
-                for port_id in ports
-            )
-        ):
-            for row_dependency in row_dependencies:
-                step_name = (
-                    await self.context.database.get_step(row_dependency["step"])
-                )["name"]
-                logger.debug(
-                    f"get_port_and_step_ids: Step {step_name} (id {row_dependency['step']}) "
-                    f"rescued from the port {get_key_by_value(row_dependency['port'], self.port_name_ids)} "
-                    f"(id {row_dependency['port']})"
+        step_ids = {
+            dependency_row["step"]
+            for dependency_rows in await asyncio.gather(
+                *(
+                    asyncio.create_task(self.context.database.get_input_steps(port_id))
+                    for port_id in port_ids
                 )
-                steps.add(row_dependency["step"])
-        rows_dependencies = await asyncio.gather(
-            *(
-                asyncio.create_task(self.context.database.get_input_ports(step_id))
-                for step_id in steps
             )
-        )
+            for dependency_row in dependency_rows
+        }
+
+        # Remove steps with some missing input ports
+        # A port can have multiple input steps. It is necessary to load only the needed steps
         step_to_remove = set()
-        for step_id, row_dependencies in zip(steps, rows_dependencies):
+        for step_id, dependency_rows in zip(
+            step_ids,
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(self.context.database.get_input_ports(step_id))
+                    for step_id in step_ids
+                )
+            ),
+        ):
             for row_port in await asyncio.gather(
                 *(
                     asyncio.create_task(
                         self.context.database.get_port(row_dependency["port"])
                     )
-                    for row_dependency in row_dependencies
+                    for row_dependency in dependency_rows
                 )
             ):
                 if row_port["name"] not in self.port_tokens.keys():
-                    step_name = (await self.context.database.get_step(step_id))["name"]
-                    logger.debug(
-                        f"get_port_and_step_ids: Step {step_name} (id {step_id}) removed because "
-                        f"port {row_port['name']} is not present in port_tokens. "
-                        f"Is it present in ports to load? {row_port['id'] in ports}"
-                    )
                     step_to_remove.add(step_id)
-        for s_id in step_to_remove:
-            steps.remove(s_id)
-        return ports, steps
+        for step_id in step_to_remove:
+            step_ids.remove(step_id)
+        return port_ids, step_ids
 
     async def populate_workflow(
         self,
         port_ids: Iterable[int],
         step_ids: Iterable[int],
-        failed_step,
-        new_workflow,
-        loading_context,
-    ):
-        logger.debug(
-            f"populate_workflow: wf {new_workflow.name} dag[INIT] "
-            f"{[get_key_by_value(t_id, self.port_tokens) for t_id in self.dag_tokens[DirectGraph.ROOT]]}"
-        )
-        logger.debug(
-            f"populate_workflow: wf {new_workflow.name} port {new_workflow.ports.keys()}"
-        )
-        await load_and_add_ports(port_ids, new_workflow, loading_context)
-
+        failed_step: Step,
+        new_workflow: Workflow,
+        workflow_builder: WorkflowBuilder,
+        failed_job: Job,
+    ) -> None:
+        await load_and_add_ports(port_ids, new_workflow, workflow_builder, failed_job)
         step_name_id = await self.load_and_add_steps(
-            step_ids, new_workflow, loading_context
+            step_ids, new_workflow, workflow_builder
         )
+        await load_missing_ports(new_workflow, step_name_id, workflow_builder)
 
-        await load_missing_ports(new_workflow, step_name_id, loading_context)
-
-        # add failed step into new_workflow
-        logger.debug(
-            f"populate_workflow: wf {new_workflow.name} add_3.0 step {failed_step.name}"
-        )
-        new_step = await loading_context.load_step(
+        # Add failed step into new_workflow
+        new_step = await workflow_builder.load_step(
             new_workflow.context,
             failed_step.persistent_id,
         )
         new_workflow.steps[new_step.name] = new_step
-        for port in await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    loading_context.load_port(new_workflow.context, p.persistent_id)
-                )
-                for p in failed_step.get_output_ports().values()
-                if p.name not in new_workflow.ports.keys()
+        # Create output port of the failed step in the new workflow
+        for port in failed_step.get_output_ports().values():
+            stop_tag = get_tag(failed_job.inputs.values())
+            new_port = InterWorkflowPort(
+                FilterTokenPort(new_workflow, port.name, stop_tags=[stop_tag])
             )
-        ):
-            logger.debug(
-                f"populate_workflow: wf {new_workflow.name} add_3 port {port.name}"
-            )
-            new_workflow.ports[port.name] = port
-
-        # fixing skip ports in loop-terminator
-        for step in new_workflow.steps.values():
-            if isinstance(step, CombinatorStep) and isinstance(
-                step.combinator, LoopTerminationCombinator
-            ):
-                dependency_names = set()
-                for dep_name, port_name in step.input_ports.items():
-                    # Some data are available so added directly in the LoopCombinatorStep inputs.
-                    # In this case, LoopTerminationCombinator must not wait on ports where these data are created.
-                    if port_name not in new_workflow.ports.keys():
-                        dependency_names.add(dep_name)
-                for name in dependency_names:
-                    step.input_ports.pop(name)
-                    step.combinator.items.remove(name)
-
-        # remove steps which have not input ports loaded in new workflow
-        steps_to_remove = set()
-        for step in new_workflow.steps.values():
-            if isinstance(step, InputInjectorStep):
-                continue
-            for p_name in step.input_ports.values():
-                if p_name not in new_workflow.ports.keys():
-                    # problema nato dai loop. Vengono caricati nel new_workflow tutti gli step che hanno come output
-                    # le port nel grafo. Però nei loop, più step hanno stessa porta di output
-                    # (forward, backprop, loop-term). per capire se lo step sia necessario controlliamo che anche
-                    # le sue port di input siano state caricate
-                    logger.debug(
-                        f"populate_workflow: Remove step {step.name} from wf {new_workflow.name} "
-                        f"because input port {p_name} is missing"
-                    )
-                    steps_to_remove.add(step.name)
-            if step.name not in steps_to_remove and isinstance(
-                step, type(None)  # TODO BackPropagationTransformer
-            ):
-                loop_terminator = False
-                for port in step.get_output_ports().values():
-                    for prev_step in port.get_input_steps():
-                        if isinstance(prev_step, CombinatorStep) and isinstance(
-                            prev_step.combinator, LoopTerminationCombinator
-                        ):
-                            loop_terminator = True
-                            break
-                    if loop_terminator:
-                        break
-                if not loop_terminator:
-                    logger.debug(
-                        f"populate_workflow: Remove step {step.name} from wf {new_workflow.name} because "
-                        f"it is missing a prev step like LoopTerminationCombinator"
-                    )
-                    steps_to_remove.add(step.name)
-        for step_name in steps_to_remove:
-            logger.debug(
-                f"populate_workflow: Rimozione (2) definitiva step {step_name} dal new_workflow {new_workflow.name}"
-            )
-            new_workflow.steps.pop(step_name)
-        logger.debug("populate_workflow: Finish")
+            new_port.add_inter_port(port, stop_tag)
+            new_workflow.ports[new_port.name] = new_port
 
     async def load_and_add_steps(self, step_ids, new_workflow, loading_context):
+        # todo: refactor this method
         new_step_ids = set()
         step_name_id = {}
         for sid, step in zip(
