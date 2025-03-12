@@ -341,8 +341,8 @@ def test_workdir_inheritance() -> None:
     assert binding_config.targets[2].deployment.workdir == workdir_deployment_1
     assert binding_config.targets[2].workdir == workdir_deployment_1
 
-    # The `wrapper_4` deployment does NOT has a `workdir` and wraps the `awesome` deployment
-    # Get default `workdir` because `handsome` deployment does NOT has a `workdir` either
+    # The `wrapper_4` deployment does NOT have a `workdir` and wraps the `awesome` deployment
+    # Get default `workdir` because `handsome` deployment does NOT have a `workdir` either
     assert binding_config.targets[3].deployment.name == "wrapper_4"
     assert binding_config.targets[3].deployment.workdir is None
     assert binding_config.targets[3].workdir == (

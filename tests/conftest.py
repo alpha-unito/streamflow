@@ -186,7 +186,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     """
     obj_compared = obj_compared if obj_compared else []
 
-    # if the objects are of different types, they are definitely not the same
+    # If the objects are of different types, they are definitely not the same
     if type(elem1) is not type(elem2):
         return False
 
@@ -215,7 +215,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     if dict1.keys() != dict2.keys():
         return False
 
-    # if their references are in the obj_compared list there is a circular reference to break
+    # If their references are in the obj_compared list there is a circular reference to break
     if elem1 in obj_compared:
         return True
     else:
@@ -226,7 +226,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     else:
         obj_compared.append(elem2)
 
-    # save the different values on the same attribute in the two dicts in a list:
+    # Save the different values on the same attribute in the two dicts in a list:
     #   - if we find objects in the list, they must be checked recursively on their attributes
     #   - if we find elems of primitive types, their values are actually different
     differences = [
@@ -235,7 +235,7 @@ def are_equals(elem1, elem2, obj_compared=None):
         if dict1[attr] != dict2[attr]
     ]
     for value1, value2 in differences:
-        # check recursively the elements
+        # Check recursively the elements
         if not are_equals(value1, value2, obj_compared):
             return False
     return True
@@ -246,7 +246,7 @@ async def save_load_and_test(elem: PersistableEntity, context):
     await elem.save(context)
     assert elem.persistent_id is not None
 
-    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # Created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
     # (and not take their reference saved in the attributes)
     loading_context = DefaultDatabaseLoadingContext()
     loaded = await type(elem).load(context, elem.persistent_id, loading_context)
