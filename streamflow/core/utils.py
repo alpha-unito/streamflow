@@ -61,9 +61,9 @@ def compare_tags(tag1: str, tag2: str) -> int:
             return res
     return 0
 
+
 def contains_persistent_id(id_: int, entities: Iterable[PersistableEntity]) -> bool:
     return any(id_ == entity.persistent_id for entity in entities)
-
 
 
 def create_command(

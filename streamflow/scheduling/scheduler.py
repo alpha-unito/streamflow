@@ -434,14 +434,23 @@ class DefaultScheduler(Scheduler):
                 if job_allocation := self.job_allocations.get(job_name):
                     if status != job_allocation.status:
                         if status == Status.ROLLBACK:
-                            # TODO (job_name)
-                            pass
+                            for loc in job_allocation.locations:
+                                if (
+                                    job_name
+                                    in self.location_allocations[loc.deployment][
+                                        loc.name
+                                    ].jobs
+                                ):
+                                    self.location_allocations[loc.deployment][
+                                        loc.name
+                                    ].jobs.remove(job_name)
+                            job_allocation.locations.clear()
                         job_allocation.status = status
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 f"Job {job_name} changed status to {status.name}"
                             )
-                    if status in [Status.COMPLETED, Status.FAILED]:
+                    if status in [Status.ROLLBACK, Status.COMPLETED, Status.FAILED]:
                         if job_hardware := job_allocation.hardware:
                             async with contextlib.AsyncExitStack() as exit_stack:
                                 for conn in _get_connector_stack(connector):
