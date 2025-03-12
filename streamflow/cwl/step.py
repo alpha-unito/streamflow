@@ -684,7 +684,7 @@ class CWLTransferStep(TransferStep):
             # If token contains a directory, propagate listing if present
             elif token_class == "Directory" and "listing" in token_value:  # nosec
                 new_token_value["listing"] = await self._update_listing(
-                    job, token_value, dst_path, selected_location
+                    job, token_value, filepath, selected_location
                 )
             return new_token_value
         # Otherwise, create elements remotely
@@ -767,7 +767,7 @@ class CWLTransferStep(TransferStep):
             # If listing is specified, recursively process its contents
             if "listing" in token_value:
                 new_token_value["listing"] = await self._update_listing(
-                    job, token_value, dst_path
+                    job, token_value, filepath
                 )
             # Return the new token value
             return new_token_value
