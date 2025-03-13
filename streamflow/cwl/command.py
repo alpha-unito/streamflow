@@ -327,9 +327,8 @@ async def _prepare_work_dir(
             "File",
             "Directory",
         ]:
-            src_path = utils.get_path_from_token(listing)
             # If a compatible source location exists, simply transfer data
-            if src_path is not None and (
+            if (src_path := utils.get_path_from_token(listing)) is not None and (
                 selected_location := await _get_source_location(
                     src_path,
                     options.job.input_directory,

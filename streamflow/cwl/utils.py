@@ -343,16 +343,12 @@ async def build_token_value(
     ) in ["File", "Directory"]:
         path_processor = get_path_processor(connector)
         # Get filepath
-        filepath = get_path_from_token(token_value)
-        if filepath is not None:
+        if (filepath := get_path_from_token(token_value)) is not None:
             # Process secondary files in token value
             sf_map = {}
             if "secondaryFiles" in token_value:
                 sf_tasks = []
                 for sf in token_value.get("secondaryFiles", []):
-                    sf_path = get_path_from_token(sf)
-                    if not path_processor.isabs(sf_path):
-                        path_processor.join(path_processor.dirname(filepath), sf_path)
                     sf_tasks.append(
                         asyncio.create_task(
                             get_file_token(
@@ -361,7 +357,7 @@ async def build_token_value(
                                 cwl_version=cwl_version,
                                 locations=locations,
                                 token_class=get_token_class(sf),
-                                filepath=sf_path,
+                                filepath=get_path_from_token(sf),
                                 file_format=sf.get("format"),
                                 basename=sf.get("basename"),
                                 load_contents=load_contents,
@@ -412,7 +408,6 @@ async def build_token_value(
                 js_context["runtime"]["outdir"],
                 token_value.get("basename", random_name()),
             )
-            contents = token_value["contents"]
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
@@ -423,8 +418,8 @@ async def build_token_value(
                 file_format=token_value.get("format"),
                 basename=token_value.get("basename"),
                 load_listing=load_listing,
+                contents=token_value.get("contents"),
             )
-            token_value["contents"] = contents
         # If there is only a 'listing' field, build a folder token and process all the listing entries recursively
         elif "listing" in token_value:
             filepath = js_context["runtime"]["outdir"]
@@ -590,8 +585,10 @@ async def get_file_token(
     locations: MutableSequence[ExecutionLocation],
     token_class: str,
     filepath: str,
-    file_format: str | None = None,
     basename: str | None = None,
+    check_content: bool = False,
+    contents: str | None = None,
+    file_format: str | None = None,
     load_contents: bool = False,
     load_listing: LoadListing | None = None,
 ) -> MutableMapping[str, Any]:
@@ -626,6 +623,11 @@ async def get_file_token(
                         f"Impossible to retrieve checksum of {real_path} on {location}"
                     )
                 break
+        else:
+            if check_content and contents is None:
+                raise WorkflowExecutionException(f"File {filepath} does not exist")
+        if contents and not load_contents:
+            token["contents"] = contents
     elif token_class == "Directory" and load_listing != LoadListing.no_listing:  # nosec
         for location in locations:
             path = StreamFlowPath(filepath, context=context, location=location)
@@ -900,8 +902,11 @@ async def register_data(
                 ]
             )
         if "secondaryFiles" in token_value:
-            for sf in token_value["secondaryFiles"]:
-                paths.append(get_path_from_token(sf))
+            paths.extend(
+                sf_path
+                for sf in token_value["secondaryFiles"]
+                if (sf_path := get_path_from_token(sf))
+            )
         # Remove `file` protocol if present
         paths = [
             urllib.parse.unquote(p[7:]) if p.startswith("file://") else p for p in paths
@@ -1114,49 +1119,54 @@ async def update_file_token(
     token_value: MutableMapping[str, Any],
     load_contents: bool | None,
     load_listing: LoadListing | None = None,
-):
-    filepath = StreamFlowPath(
-        get_path_from_token(token_value), context=context, location=location
-    )
-    # Process contents
-    if get_token_class(token_value) == "File" and load_contents is not None:
-        if load_contents and "contents" not in token_value:
-            token_value |= {
-                "contents": await _get_contents(
-                    filepath,
-                    token_value["size"],
-                    cwl_version,
-                )
-            }
-        elif not load_contents and "contents" in token_value:
-            token_value = {k: token_value[k] for k in token_value if k != "contents"}
-    # Process listings
-    if get_token_class(token_value) == "Directory" and load_listing is not None:
-        # If load listing is set to `no_listing`, remove the listing entries in present
-        if load_listing == LoadListing.no_listing:
-            if "listing" in token_value:
-                token_value = {k: token_value[k] for k in token_value if k != "listing"}
-        # If listing is not present or if the token needs a deep listing, process directory contents
-        elif "listing" not in token_value or load_listing == LoadListing.deep_listing:
-            token_value |= {
-                "listing": await _get_listing(
-                    context=context,
-                    connector=connector,
-                    cwl_version=cwl_version,
-                    locations=[location],
-                    dirpath=filepath,
-                    load_contents=False,
-                    recursive=load_listing == LoadListing.deep_listing,
-                )
-            }
-        # If load listing is set to `shallow_listing`, remove the deep listing entries if present
-        elif load_listing == LoadListing.shallow_listing:
-            token_value |= {
-                "listing": [
-                    {k: v[k] for k in v if k != "listing"}
-                    for v in token_value["listing"]
-                ]
-            }
+) -> MutableMapping[str, Any]:
+    if path := get_path_from_token(token_value):
+        filepath = StreamFlowPath(path, context=context, location=location)
+        # Process contents
+        if get_token_class(token_value) == "File" and load_contents is not None:
+            if load_contents and "contents" not in token_value:
+                token_value |= {
+                    "contents": await _get_contents(
+                        filepath,
+                        token_value["size"],
+                        cwl_version,
+                    )
+                }
+            elif not load_contents and "contents" in token_value:
+                token_value = {
+                    k: token_value[k] for k in token_value if k != "contents"
+                }
+        # Process listings
+        if get_token_class(token_value) == "Directory" and load_listing is not None:
+            # If load listing is set to `no_listing`, remove the listing entries in present
+            if load_listing == LoadListing.no_listing:
+                if "listing" in token_value:
+                    token_value = {
+                        k: token_value[k] for k in token_value if k != "listing"
+                    }
+            # If listing is not present or if the token needs a deep listing, process directory contents
+            elif (
+                "listing" not in token_value or load_listing == LoadListing.deep_listing
+            ):
+                token_value |= {
+                    "listing": await _get_listing(
+                        context=context,
+                        connector=connector,
+                        cwl_version=cwl_version,
+                        locations=[location],
+                        dirpath=filepath,
+                        load_contents=False,
+                        recursive=load_listing == LoadListing.deep_listing,
+                    )
+                }
+            # If load listing is set to `shallow_listing`, remove the deep listing entries if present
+            elif load_listing == LoadListing.shallow_listing:
+                token_value |= {
+                    "listing": [
+                        {k: v[k] for k in v if k != "listing"}
+                        for v in token_value["listing"]
+                    ]
+                }
     return token_value
 
 

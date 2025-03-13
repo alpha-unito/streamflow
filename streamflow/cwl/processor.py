@@ -173,11 +173,9 @@ class CWLTokenProcessor(TokenProcessor):
 
     async def _process_file_token(
         self, inputs: MutableMapping[str, Token], token_value: Any
-    ):
+    ) -> Any:
         # Build context
         context = utils.build_context(inputs)
-        # Get path
-        filepath = utils.get_path_from_token(token_value)
         # Check file format if present
         if self.file_format:
             context |= {"self": token_value}
@@ -196,7 +194,7 @@ class CWLTokenProcessor(TokenProcessor):
             except ValidationException as e:
                 raise WorkflowExecutionException(e.message) from e
         # If file exists, get coordinates
-        if filepath:
+        if filepath := utils.get_path_from_token(token_value):
             try:
                 # Privilege locations on the destination connector to ensure existence of secondaryFiles
                 data_locations = self.workflow.context.data_manager.get_data_locations(
@@ -292,7 +290,6 @@ class CWLTokenProcessor(TokenProcessor):
                     token_value=token_value,
                     base_path=base_path,
                 )
-        # Return token value
         return token_value
 
     async def _save_additional_params(
