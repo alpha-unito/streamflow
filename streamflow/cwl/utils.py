@@ -350,9 +350,6 @@ async def build_token_value(
             if "secondaryFiles" in token_value:
                 sf_tasks = []
                 for sf in token_value.get("secondaryFiles", []):
-                    sf_path = get_path_from_token(sf)
-                    if not path_processor.isabs(sf_path):
-                        path_processor.join(path_processor.dirname(filepath), sf_path)
                     sf_tasks.append(
                         asyncio.create_task(
                             get_file_token(
@@ -361,7 +358,7 @@ async def build_token_value(
                                 cwl_version=cwl_version,
                                 locations=locations,
                                 token_class=get_token_class(sf),
-                                filepath=sf_path,
+                                filepath=get_path_from_token(sf),
                                 file_format=sf.get("format"),
                                 basename=sf.get("basename"),
                                 load_contents=load_contents,
@@ -412,7 +409,6 @@ async def build_token_value(
                 js_context["runtime"]["outdir"],
                 token_value.get("basename", random_name()),
             )
-            contents = token_value["contents"]
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
@@ -423,8 +419,8 @@ async def build_token_value(
                 file_format=token_value.get("format"),
                 basename=token_value.get("basename"),
                 load_listing=load_listing,
+                contents=token_value.get("contents"),
             )
-            token_value["contents"] = contents
         # If there is only a 'listing' field, build a folder token and process all the listing entries recursively
         elif "listing" in token_value:
             filepath = js_context["runtime"]["outdir"]
@@ -590,8 +586,9 @@ async def get_file_token(
     locations: MutableSequence[ExecutionLocation],
     token_class: str,
     filepath: str,
-    file_format: str | None = None,
     basename: str | None = None,
+    contents: str | None = None,
+    file_format: str | None = None,
     load_contents: bool = False,
     load_listing: LoadListing | None = None,
 ) -> MutableMapping[str, Any]:
@@ -626,6 +623,11 @@ async def get_file_token(
                         f"Impossible to retrieve checksum of {real_path} on {location}"
                     )
                 break
+        else:
+            if contents is None:
+                raise WorkflowExecutionException(f"File {filepath} does not exist")
+        if contents is not None and not load_contents:
+            token["contents"] = contents
     elif token_class == "Directory" and load_listing != LoadListing.no_listing:  # nosec
         for location in locations:
             path = StreamFlowPath(filepath, context=context, location=location)
