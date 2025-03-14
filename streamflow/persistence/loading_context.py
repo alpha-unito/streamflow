@@ -131,7 +131,7 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
                 self.add_workflow(step_row["workflow"], self.workflow)
                 step = await Step.load(context, persistent_id, self)
 
-                # restore initial step state
+                # Restore initial step state
                 step.status = Status.WAITING
                 step.terminated = False
 

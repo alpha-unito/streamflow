@@ -69,12 +69,19 @@ async def _is_file_token_available(
 ) -> bool:
     tasks = []
     for path in paths:
-        for data_loc in context.data_manager.get_data_locations(
-            path, data_type=DataType.PRIMARY
+        if (
+            len(
+                data_locations := context.data_manager.get_data_locations(
+                    path, data_type=DataType.PRIMARY
+                )
+            )
+            == 0
         ):
-            tasks.append(asyncio.create_task(_is_file_available(context, data_loc)))
-        # TODO. Improvement. asyncio.wait return_when first finish. check. if false return, otherwise wait the next
-        return any(await asyncio.gather(*tasks))
+            return False
+        else:
+            for data_loc in data_locations:
+                tasks.append(asyncio.create_task(_is_file_available(context, data_loc)))
+            return any(await asyncio.gather(*tasks))
     return True
 
 

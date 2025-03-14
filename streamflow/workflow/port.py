@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import MutableSequence
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.workflow import Job, Port, Step, Token, Workflow
+from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
 
@@ -35,18 +38,37 @@ class FilterTokenPort(Port):
         self,
         workflow: Workflow,
         name: str,
-        stop_tags: MutableSequence[str],
-        skip_tags: MutableSequence[str] | None = None,
+        valid_tags: MutableSequence[str] | None = None,
+        invalid_tags: MutableSequence[str] | None = None,
+        stop_tags: MutableSequence[str] | None = None,
     ):
         super().__init__(workflow, name)
-        self.stop_tags = stop_tags
-        self.skip_tags = skip_tags or []
+        self.invalid_tags = invalid_tags or []
+        self.stop_tags = stop_tags or []
+        self.valid_tags: MutableSequence[str] = valid_tags or []
 
     def put(self, token: Token):
         if token.tag in self.stop_tags:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Port {self.name} forces termination token on {token.tag} tag"
+                )
             super().put(TerminationToken())
-        else:
+        elif isinstance(token, TerminationToken) or (
+            token.tag not in self.invalid_tags
+            and (len(self.valid_tags) == 0 or token.tag in self.valid_tags)
+        ):
             super().put(token)
+        elif logger.isEnabledFor(logging.DEBUG):
+            if token.tag not in self.invalid_tags:
+                reason = "is an rejected tag"
+            elif len(self.valid_tags) > 0 and token.tag not in self.valid_tags:
+                reason = "is an not accepted tag"
+            else:
+                raise WorkflowExecutionException(
+                    f"Port {self.name} did not accept the {token.tag} tag"
+                )
+            logger.debug(f"Port {self.name} skipping {token.tag} for {reason}")
 
     async def save(self, context: StreamFlowContext) -> None:
         async with self.persistence_lock:
