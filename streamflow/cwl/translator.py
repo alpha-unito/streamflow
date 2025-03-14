@@ -1524,6 +1524,7 @@ class CWLTranslator:
             name=global_name + "-injector",
             job_port=schedule_step.get_output_port(),
         )
+        injector_step.recoverable = True
         # Create an input port and inject values
         input_port = workflow.create_port()
         input_port.put(Token(value=value))

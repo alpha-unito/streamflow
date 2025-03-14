@@ -10,26 +10,14 @@ from typing import Any
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.utils import contains_persistent_id, get_class_from_name, get_tag
-from streamflow.core.workflow import Job, Step, Token, Workflow
+from streamflow.core.utils import contains_persistent_id, get_class_from_name
+from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
-from streamflow.persistence.loading_context import (
-    DefaultDatabaseLoadingContext,
-    WorkflowBuilder,
-)
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.recovery.utils import (
-    get_step_instances_from_output_port,
-    load_and_add_ports,
-    load_missing_ports,
-)
-from streamflow.workflow.combinator import LoopTerminationCombinator
-from streamflow.workflow.port import ConnectorPort, FilterTokenPort, InterWorkflowPort
-from streamflow.workflow.step import (
-    CombinatorStep,
-    ExecuteStep,
-    LoopOutputStep,
-)
+from streamflow.recovery.utils import get_step_instances_from_output_port
+from streamflow.workflow.port import ConnectorPort
+from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.token import JobToken
 
 
@@ -52,32 +40,12 @@ async def create_graph_homomorphism(
     return mapper
 
 
-class TokenAvailability(Enum):
-    Unavailable = 0
-    Available = 1
-    FutureAvailable = 2
-
-
-class ProvenanceToken:
-    def __init__(
-        self,
-        token_instance: Token,
-        is_available: TokenAvailability,
-        port_row: MutableMapping[str, Any],
-        step_rows: MutableMapping[str, Any],
-    ):
-        self.instance: Token = token_instance
-        self.is_available: TokenAvailability = is_available
-        self.port_row: MutableMapping[str, Any] = port_row
-        self.step_rows: MutableMapping[str, Any] = step_rows
-
-
 async def evaluate_token_availability(
     token: Token,
     step_rows,
     port_row: MutableMapping[str, Any],
     context: StreamFlowContext,
-):
+) -> TokenAvailability:
     if await token.is_available(context):
         dependency_rows = await context.database.get_input_steps(port_row["id"])
         for step_row in step_rows:
@@ -103,11 +71,24 @@ async def evaluate_token_availability(
         return TokenAvailability.Unavailable
 
 
-def is_there_step_type(rows, types):
-    for step_row in rows:
-        if issubclass(get_class_from_name(step_row["type"]), types):
-            return True
-    return False
+class TokenAvailability(Enum):
+    Unavailable = 0
+    Available = 1
+    FutureAvailable = 2
+
+
+class ProvenanceToken:
+    def __init__(
+        self,
+        token_instance: Token,
+        is_available: TokenAvailability,
+        port_row: MutableMapping[str, Any],
+        step_rows: MutableMapping[str, Any],
+    ):
+        self.instance: Token = token_instance
+        self.is_available: TokenAvailability = is_available
+        self.port_row: MutableMapping[str, Any] = port_row
+        self.step_rows: MutableMapping[str, Any] = step_rows
 
 
 class DirectGraph:
@@ -276,12 +257,11 @@ class GraphHomomorphism:
                 continue
             port_name = next(
                 port_name
-                for port_name, out_token_id in self.port_tokens
+                for port_name, out_token_id in self.port_tokens.items()
                 if token_id == out_token_id
             )
             # Get newest port
             port_id = max(self.port_name_ids[port_name])
-
             step_rows = await self.context.database.get_input_steps(port_id)
             for step_row in await asyncio.gather(
                 *(
@@ -465,142 +445,6 @@ class GraphHomomorphism:
         for step_id in step_to_remove:
             step_ids.remove(step_id)
         return port_ids, step_ids
-
-    async def populate_workflow(
-        self,
-        port_ids: Iterable[int],
-        step_ids: Iterable[int],
-        failed_step: Step,
-        new_workflow: Workflow,
-        workflow_builder: WorkflowBuilder,
-        failed_job: Job,
-    ) -> None:
-        await load_and_add_ports(port_ids, new_workflow, workflow_builder, failed_job)
-        step_name_id = await self.load_and_add_steps(
-            step_ids, new_workflow, workflow_builder
-        )
-        await load_missing_ports(new_workflow, step_name_id, workflow_builder)
-
-        # Add failed step into new_workflow
-        new_step = await workflow_builder.load_step(
-            new_workflow.context,
-            failed_step.persistent_id,
-        )
-        new_workflow.steps[new_step.name] = new_step
-        # Create output port of the failed step in the new workflow
-        for port in failed_step.get_output_ports().values():
-            stop_tag = get_tag(failed_job.inputs.values())
-            new_port = InterWorkflowPort(
-                FilterTokenPort(new_workflow, port.name, stop_tags=[stop_tag])
-            )
-            new_port.add_inter_port(port, stop_tag)
-            new_workflow.ports[new_port.name] = new_port
-
-    async def load_and_add_steps(self, step_ids, new_workflow, loading_context):
-        # todo: refactor this method
-        new_step_ids = set()
-        step_name_id = {}
-        for sid, step in zip(
-            step_ids,
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        loading_context.load_step(new_workflow.context, step_id)
-                    )
-                    for step_id in step_ids
-                )
-            ),
-        ):
-            logger.debug(f"Loaded step {step.name} (id {sid})")
-            step_name_id[step.name] = sid
-
-            # if there are not the input ports in the workflow, the step is not added
-            if not (set(step.input_ports.values()) - set(new_workflow.ports.keys())):
-                if isinstance(step, type(None)):  # OutputForwardTransformer):
-                    port_id = min(self.port_name_ids[step.get_output_port().name])
-                    for (
-                        step_dep_row
-                    ) in await new_workflow.context.database.get_output_steps(port_id):
-                        step_row = await new_workflow.context.database.get_step(
-                            step_dep_row["step"]
-                        )
-                        if step_row[
-                            "name"
-                        ] not in new_workflow.steps.keys() and issubclass(
-                            get_class_from_name(step_row["type"]), LoopOutputStep
-                        ):
-                            logger.debug(
-                                f"Step {step_row['name']} from id {step_row['id']} will be added soon (2)"
-                            )
-                            new_step_ids.add(step_row["id"])
-                elif isinstance(step, type(None)):  # BackPropagationTransformer):
-                    # for port_name in step.output_ports.values(): # potrebbe sostituire questo for
-                    for (
-                        port_dep_row
-                    ) in await new_workflow.context.database.get_output_ports(
-                        step_name_id[step.name]
-                    ):
-                        # if there are more iterations
-                        if (
-                            len(
-                                self.port_tokens[
-                                    step.output_ports[port_dep_row["name"]]
-                                ]
-                            )
-                            > 1
-                        ):
-                            for (
-                                step_dep_row
-                            ) in await new_workflow.context.database.get_input_steps(
-                                port_dep_row["port"]
-                            ):
-                                step_row = await new_workflow.context.database.get_step(
-                                    step_dep_row["step"]
-                                )
-                                if issubclass(
-                                    get_class_from_name(step_row["type"]),
-                                    CombinatorStep,
-                                ) and issubclass(
-                                    get_class_from_name(
-                                        json.loads(step_row["params"])["combinator"][
-                                            "type"
-                                        ]
-                                    ),
-                                    LoopTerminationCombinator,
-                                ):
-                                    logger.debug(
-                                        f"Step {step_row['name']} from id {step_row['id']} will be added soon (1)"
-                                    )
-                                    new_step_ids.add(step_row["id"])
-                logger.debug(
-                    f"populate_workflow: (1) Step {step.name} loaded in the wf {new_workflow.name}"
-                )
-                new_workflow.steps[step.name] = step
-            else:
-                logger.debug(
-                    f"populate_workflow: Step {step.name} is not loaded because in the wf {new_workflow.name}"
-                    f"the ports {set(step.input_ports.values()) - set(new_workflow.ports.keys())} are missing."
-                    f"It is present in the workflow: {step.name in new_workflow.steps.keys()}"
-                )
-        for sid, other_step in zip(
-            new_step_ids,
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        loading_context.load_step(new_workflow.context, step_id)
-                    )
-                    for step_id in new_step_ids
-                )
-            ),
-        ):
-            logger.debug(
-                f"populate_workflow: (2) Step {other_step.name} (from step id {sid}) loaded "
-                f"in the wf {new_workflow.name}"
-            )
-            step_name_id[other_step.name] = sid
-            new_workflow.steps[other_step.name] = other_step
-        logger.debug("populate_workflow: Step caricati")
-        return step_name_id
 
 
 class ProvenanceGraph:

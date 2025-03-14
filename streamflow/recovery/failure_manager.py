@@ -104,9 +104,7 @@ class DefaultFailureManager(FailureManager):
     async def _recover_jobs(self, failed_job: Job, failed_step: Step):
         rollback = RollbackRecoveryPolicy(self.context)
         # Generate new workflow
-        new_workflow, last_iteration = await rollback.recover_workflow(
-            failed_job, failed_step
-        )
+        new_workflow = await rollback.recover_workflow(failed_job, failed_step)
         # Execute new workflow
         await execute_recover_workflow(new_workflow, failed_step)
         if logger.isEnabledFor(logging.INFO):

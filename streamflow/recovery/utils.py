@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import posixpath
-from collections.abc import Iterable, MutableMapping, MutableSet
+from collections.abc import Iterable, MutableSet
 
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.utils import get_class_fullname
+from streamflow.core.utils import get_class_fullname, get_tag
 from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.step import ExecuteStep, InputInjectorStep
+from streamflow.workflow.port import FilterTokenPort, InterWorkflowPort
+from streamflow.workflow.step import ExecuteStep
 
 
 async def get_step_instances_from_output_port(port_id, context):
@@ -82,69 +82,84 @@ async def execute_recover_workflow(new_workflow: Workflow, failed_step: Step) ->
         await executor.run()
 
 
-async def load_and_add_ports(
-    port_ids: Iterable[int],
+# async def _load_and_add_ports(
+#     port_ids: Iterable[int],
+#     new_workflow: Workflow,
+#     workflow_builder: WorkflowBuilder,
+#     failed_job: Job,
+# ) -> None:
+#     """Loads a new instance of the ports into the new workflow"""
+#     for port in await asyncio.gather(
+#         *(
+#             asyncio.create_task(
+#                 workflow_builder.load_port(
+#                     new_workflow.context,
+#                     port_id,
+#                 )
+#             )
+#             for port_id in port_ids
+#         )
+#     ):
+#         if port.name not in new_workflow.ports.keys():
+#             if logger.isEnabledFor(logging.DEBUG):
+#                 logger.debug(
+#                     f"Port {port.name} loaded in the recovery workflow of failed job {failed_job.name}"
+#                 )
+#             new_workflow.ports[port.name] = port
+#         elif logger.isEnabledFor(logging.DEBUG):
+#             logger.debug(
+#                 f"Port {port.name} exists in the recovery workflow of failed job {failed_job.name}"
+#             )
+#
+#
+# async def _load_and_add_steps(
+#     step_ids: Iterable[int], new_workflow: Workflow, builder: WorkflowBuilder
+# ) -> MutableMapping[str, int]:
+#     """Loads a new instance of the steps into the new workflow and returns a dictionary with step name and persistent id of the original step"""
+#     step_name_id = {}
+#     for step_id, step in zip(
+#         step_ids,
+#         await asyncio.gather(
+#             *(
+#                 asyncio.create_task(builder.load_step(new_workflow.context, step_id))
+#                 for step_id in step_ids
+#             )
+#         ),
+#     ):
+#         step_name_id[step.name] = step_id
+#         new_workflow.steps[step.name] = step
+#     return step_name_id
+
+
+async def populate_workflow(
+    step_ids: Iterable[int],
+    failed_step: Step,
     new_workflow: Workflow,
     workflow_builder: WorkflowBuilder,
     failed_job: Job,
 ) -> None:
-    for port in await asyncio.gather(
+    # await _load_and_add_ports(port_ids, new_workflow, workflow_builder, failed_job)
+    # await _load_and_add_steps(step_ids, new_workflow, workflow_builder)
+    await asyncio.gather(
         *(
             asyncio.create_task(
-                workflow_builder.load_port(
-                    new_workflow.context,
-                    port_id,
-                )
+                workflow_builder.load_step(new_workflow.context, step_id)
             )
-            for port_id in port_ids
+            for step_id in step_ids
         )
-    ):
-        if port.name not in new_workflow.ports.keys():
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Port {port.name} loaded in the recovery workflow of failed job {failed_job.name}"
-                )
-            new_workflow.ports[port.name] = port
-        elif logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"Port {port.name} exists in the recovery workflow of failed job {failed_job.name}"
-            )
+    )
 
-
-def _missing_dependency_ports(
-    dependencies: MutableMapping[str, str], port_names: Iterable[str]
-) -> MutableSet[str]:
-    return {
-        dependency
-        for dependency, port_name in dependencies.items()
-        if port_name not in port_names
-    }
-
-
-async def load_missing_ports(
-    new_workflow: Workflow,
-    step_name_id: MutableMapping[str, int],
-    workflow_builder: WorkflowBuilder,
-) -> None:
-    missing_ports = set()
-    for step in new_workflow.steps.values():
-        if isinstance(step, InputInjectorStep):
-            continue
-        if missing_dependency_ports := _missing_dependency_ports(
-            step.output_ports, new_workflow.ports.keys()
-        ):
-            for dependency_row in await new_workflow.context.database.get_output_ports(
-                step_name_id[step.name]
-            ):
-                if dependency_row["name"] in missing_dependency_ports:
-                    logger.debug(
-                        f"Added port {step.output_ports[dependency_row['name']]} because needed in the step {step.name}"
-                    )
-                    missing_ports.add(dependency_row["port"])
-    for port in await asyncio.gather(
-        *(
-            asyncio.create_task(workflow_builder.load_port(new_workflow.context, p_id))
-            for p_id in missing_ports
+    # Add failed step into new_workflow
+    await workflow_builder.load_step(
+        new_workflow.context,
+        failed_step.persistent_id,
+    )
+    # Create output port of the failed step in the new workflow
+    for port in failed_step.get_output_ports().values():
+        stop_tag = get_tag(failed_job.inputs.values())
+        new_port = InterWorkflowPort(
+            FilterTokenPort(new_workflow, port.name, stop_tags=[stop_tag])
         )
-    ):
-        new_workflow.ports[port.name] = port
+        new_port.add_inter_port(port, stop_tag)
+        # todo: make an abstract class of Port and change the type hint of the workflow ports attribute
+        new_workflow.ports[new_port.name] = new_port

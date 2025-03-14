@@ -7,7 +7,6 @@ from functools import cmp_to_key
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import compare_tags
 from streamflow.core.workflow import Job, Port, Step, Token, Workflow
-from streamflow.cwl.transformer import ForwardTransformer
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.rollback_recovery import (
@@ -22,17 +21,10 @@ from streamflow.recovery.utils import (
     get_execute_step_out_token_ids,
     get_step_instances_from_output_port,
     increase_tag,
+    populate_workflow,
 )
-from streamflow.workflow.port import (
-    ConnectorPort,
-    FilterTokenPort,
-    InterWorkflowPort,
-    JobPort,
-)
-from streamflow.workflow.step import (
-    LoopCombinatorStep,
-    ScatterStep,
-)
+from streamflow.workflow.port import FilterTokenPort, InterWorkflowPort
+from streamflow.workflow.step import ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -80,7 +72,7 @@ class RollbackRecoveryPolicy:
     def __init__(self, context):
         self.context = context
 
-    async def recover_workflow(self, failed_job: Job, failed_step: Step):
+    async def recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
         workflow = failed_step.workflow
         workflow_builder = WorkflowBuilder(deep_copy=False)
         new_workflow = await workflow_builder.load_workflow(
@@ -97,31 +89,24 @@ class RollbackRecoveryPolicy:
             self.context, provenance, failed_step.get_output_ports().values()
         )
 
-        # Update class state (attributes) and jobs synchronization
-        logger.debug("Start sync-rollbacks")
+        # Synchronize across multiple recovery workflows
         await self.sync_running_jobs(mapper, new_workflow)
-
-        logger.debug("End sync-rollbacks")
+        # Populate new workflow
         ports, steps = await mapper.get_port_and_step_ids(
             failed_step.output_ports.values()
         )
-        await mapper.populate_workflow(
-            ports, steps, failed_step, new_workflow, workflow_builder, failed_job
+        await populate_workflow(
+            steps, failed_step, new_workflow, workflow_builder, failed_job
         )
-        logger.debug("end populate")
-
-        last_iteration = await _new_put_tokens(
+        await _inject_tokens(
             new_workflow,
             mapper.dcg_port[DirectGraph.ROOT],
             mapper.port_tokens,
             mapper.token_instances,
             mapper.token_available,
         )
-        logger.debug("end _put_tokens")
-
-        await _new_set_steps_state(new_workflow, mapper)
-
-        return new_workflow, last_iteration
+        await _set_step_states(new_workflow, mapper)
+        return new_workflow
 
     def add_waiter(self, job_name, port_name, workflow, rdwp, port_recovery=None):
         if port_recovery:
@@ -237,186 +222,61 @@ class RollbackRecoveryPolicy:
         logger.debug("End synchronization")
 
 
-async def _new_put_tokens(
+async def _inject_tokens(
     new_workflow: Workflow,
     init_ports: MutableSet[str],
     port_tokens: MutableMapping[str, MutableSet[int]],
     token_instances: MutableMapping[int, Token],
     token_available: MutableMapping[int, bool],
-):
+) -> None:
     for port_name in init_ports:
         token_list = [
-            token_instances[t_id]
-            for t_id in port_tokens[port_name]
-            if isinstance(t_id, int) and token_available[t_id]
+            token_instances[token_id]
+            for token_id in port_tokens[port_name]
+            if token_id not in (DirectGraph.ROOT, DirectGraph.LEAF)
+            and token_available[token_id]
         ]
         token_list.sort(key=lambda x: x.tag, reverse=False)
-        for i, t in enumerate(token_list):
-            for t1 in token_list[i:]:
-                if t.persistent_id != t1.persistent_id and t.tag == t1.tag:
-                    raise FailureHandlingException(
-                        f"Port {port_name} has tag {t.tag} ripetuto - id_a: {t.persistent_id} id_b: {t1.persistent_id}"
-                    )
-        port = new_workflow.ports[port_name]
-        is_back_prop_output_port = any(
-            s
-            for s in port.get_input_steps()
-            if isinstance(s, ForwardTransformer)  # TODO
-            # BackPropagationTransformer)
-        )
-        loop_combinator_input = any(
-            s for s in port.get_output_steps() if isinstance(s, LoopCombinatorStep)
-        )
-
-        for t in token_list:
-            if isinstance(t, (TerminationToken, IterationTerminationToken)):
-                raise FailureHandlingException(
-                    f"Added {type(t)} into port {port.name} but it is wrong"
-                )
-            port.put(t)
-            if is_back_prop_output_port:
-                logger.debug(
-                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, "
-                    f"insert termination token (it is output port of a Back-prop)"
-                )
-                port.put(TerminationToken())
-                break
-
-        len_port_token_list = len(port.token_list)
-        len_port_tokens = len(port_tokens[port_name])
-
-        if len_port_token_list > 0 and len_port_token_list == len_port_tokens:
-            if loop_combinator_input and not is_back_prop_output_port:
-                if port.token_list[-1].tag != "0":
-                    increased_tag = increase_tag(port.token_list[-1].tag)
-                    # increased_tag = ".".join(
-                    #     (
-                    #         *port.token_list[-1].tag.split(".")[:-1],
-                    #         str(int(port.token_list[-1].tag.split(".")[-1]) + 1),
-                    #     )
-                    # )
-                    port.put(Token(value=None, tag=increased_tag))
-                logger.debug(
-                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, "
-                    f"inserts IterationTerminationToken with tag {port.token_list[-1].tag}"
-                )
-                port.put(IterationTerminationToken(port.token_list[-1].tag))
-                logger.debug(
-                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, "
-                    f"inserts IterationTerminationToken with tag {port.token_list[0].tag}"
-                )
-                port.put(IterationTerminationToken(port.token_list[0].tag))
-            if not any(t for t in port.token_list if isinstance(t, TerminationToken)):
-                logger.debug(
-                    f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, insert termination token"
-                )
-                port.put(TerminationToken())
-        else:
-            logger.debug(
-                f"put_tokens: Port {port.name}, with {len(port.token_list)} tokens, does NOT insert "
-                f"manually TerminationToken. Is there Termination? "
-                f"{any(isinstance(t, TerminationToken) for t in port.token_list )}"
+        if len(
+            tags := {(token.persistent_id, token.tag) for token in token_list}
+        ) != len(token_list):
+            raise FailureHandlingException(
+                f"Port {port_name} has multiple tokens with same tag (id, tag): {tags}"
             )
-    return None
+        if any(
+            isinstance(token, (TerminationToken, IterationTerminationToken))
+            for token in token_list
+        ):
+            raise FailureHandlingException("Impossible to load a TerminationToken")
+        port = new_workflow.ports[port_name]
+        for token in token_list:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Injecting token {token.persistent_id}: {token.tag} of port {port.name}"
+                )
+            port.put(token)
+        if len(port.token_list) > 0 and len(port.token_list) == len(
+            port_tokens[port_name]
+        ):
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Injecting termination token on port {port.name}")
+            port.put(TerminationToken())
 
 
-async def _new_set_steps_state(new_workflow, rdwp):
-    # dt = str(datetime.datetime.now()).replace(" ", "_").replace(":", ".")
-    # dir_path = f"graphs/set_steps_state/{dt}-{new_workflow.name}"
-    # dag_workflow(new_workflow, dir_path + "/new-wf")
+async def _set_step_states(new_workflow: Workflow, mapper: GraphHomomorphism):
     for step in new_workflow.steps.values():
         if isinstance(step, ScatterStep):
             port = step.get_output_port()
-            str_t = [
-                (t_id, rdwp.token_instances[t_id].tag, rdwp.token_available[t_id])
-                for t_id in rdwp.port_tokens[port.name]
-            ]
-            logger.debug(
-                f"_set_scatter_inner_state: wf {new_workflow.name} -> "
-                f"port_tokens[{step.get_output_port().name}]: {str_t}"
+            new_workflow.ports[port.name] = FilterTokenPort(
+                new_workflow,
+                port.name,
+                valid_tags=[
+                    mapper.token_instances[token_id].tag
+                    for token_id in mapper.port_tokens[port.name]
+                    if not mapper.token_available[token_id]
+                ],
             )
-            for t_id in rdwp.port_tokens[port.name]:
-                logger.debug(
-                    f"_set_scatter_inner_state: Token {t_id} is necessary to rollback the scatter on port {port.name} "
-                    f"(wf {new_workflow.name}). It is {'' if rdwp.token_available[t_id] else 'NOT '}available"
-                )
-                # a possible control can be if not token_visited[t_id][1]: then add in valid tags
-                if step.valid_tags is None:
-                    step.valid_tags = {rdwp.token_instances[t_id].tag}
-                else:
-                    step.valid_tags.add(rdwp.token_instances[t_id].tag)
-        elif isinstance(step, LoopCombinatorStep):
-            port = list(step.get_input_ports().values()).pop()
-            token = port.token_list[0]
-
-            prefix = ".".join(token.tag.split(".")[:-1])
-            if prefix != "":
-                step.combinator.iteration_map[prefix] = int(token.tag.split(".")[-1])
-                logger.debug(
-                    f"recover_jobs-last_iteration: Step {step.name} combinator updated "
-                    f"map[{prefix}] = {step.combinator.iteration_map[prefix]}"
-                )
-        # if not isinstance(
-        #     step, (BackPropagationTransformer, CombinatorStep, ConditionalStep)
-        # ):
-        #     max_tag = "0"
-        #     for port_name in step.input_ports.values():
-        #         curr_tag = get_max_tag(
-        #             {
-        #                 rdwp.token_instances[t_id]
-        #                 for t_id in rdwp.port_tokens.get(port_name, [])
-        #                 if t_id > 0
-        #             }
-        #         )
-        #         if curr_tag and compare_tags(curr_tag, max_tag) == 1:
-        #             max_tag = curr_tag
-        #     if max_tag != "0":
-        #         step.token_tag_stop = ".".join(
-        #             (*max_tag.split(".")[:-1], str(int(max_tag.split(".")[-1]) + 1))
-        #         )
-        #         logger.info(
-        #             f"wf {new_workflow.name}. Step {step.name}. token tag stop {step.token_tag_stop}"
-        #         )
-        #     pass
-        # max_tag = "0"
-        # for port_name in step.input_ports.values():
-        #     curr_tag = get_max_tag(
-        #         {
-        #             rdwp.token_instances[t_id]
-        #             for t_id in rdwp.port_tokens.get(port_name, [])
-        #             if t_id > 0
-        #         }
-        #     )
-        #     if curr_tag and compare_tags(curr_tag, max_tag) == 1:
-        #         max_tag = curr_tag
-        for port_name, port in new_workflow.ports.items():
-            if not isinstance(
-                port, (ConnectorPort, JobPort, FilterTokenPort, InterWorkflowPort)
-            ):
-                max_tag = get_max_tag(
-                    {
-                        rdwp.token_instances[t_id]
-                        for t_id in rdwp.port_tokens.get(port_name, [])
-                        if t_id > 0
-                    }
-                )
-                if max_tag is None:
-                    max_tag = "0"
-                stop_tag = increase_tag(max_tag)
-                new_workflow.ports[port_name] = FilterTokenPort(
-                    new_workflow,
-                    port_name,
-                    [stop_tag] if stop_tag else [],
-                    get_skip_tags(rdwp, port.name, stop_tag),
-                )
-                new_workflow.ports[port_name].token_list = port.token_list
-                logger.info(
-                    f"wf {new_workflow.name}. "
-                    f"Port {port.name}. "
-                    f"token tag stop {stop_tag}. "
-                    f"token tag skip {new_workflow.ports[port_name].skip_tags}"
-                )
-    logger.info("end _new_set_steps_state")
+            new_workflow.ports[port.name].token_list = port.token_list
 
 
 def get_max_tag(token_list):
