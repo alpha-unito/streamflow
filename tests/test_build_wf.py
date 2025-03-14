@@ -207,7 +207,7 @@ async def test_port(context: StreamFlowContext, port_cls: type[Port]):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("copy_strategy", ["deep_copy", "copy", "manual-copy"])
+@pytest.mark.parametrize("copy_strategy", ["deep_copy", "copy", "manual_copy"])
 async def test_workflow(context: StreamFlowContext, copy_strategy: str):
     """Test saving Workflow on database and load its elements in a new Workflow"""
     workflow, (job_port, in_port, out_port) = await create_workflow(context, num_port=3)
@@ -243,7 +243,7 @@ async def test_workflow(context: StreamFlowContext, copy_strategy: str):
     new_workflow = await builder.load_workflow(context, workflow.persistent_id)
     assert new_workflow.name == workflow.name
 
-    if copy_strategy == "manual-copy":
+    if copy_strategy == "manual_copy":
         assert len(new_workflow.steps) == len(new_workflow.ports) == 0
         await builder.load_step(context, exec_step.persistent_id)
         assert len(new_workflow.steps) == 1 and exec_step.name in new_workflow.steps
@@ -251,7 +251,7 @@ async def test_workflow(context: StreamFlowContext, copy_strategy: str):
             exec_step.output_ports
         )
 
-    if copy_strategy in ("deep_copy", "manual-copy"):
+    if copy_strategy in ("deep_copy", "manual_copy"):
         # Test that every object has the correct workflow reference
         for step in new_workflow.steps.values():
             assert step.workflow == new_workflow
