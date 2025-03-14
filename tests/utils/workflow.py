@@ -87,6 +87,7 @@ async def create_workflow(
     context: StreamFlowContext,
     num_port: int = 2,
     type_: str = "cwl",
+    save: bool = True,
 ) -> tuple[Workflow, tuple[Port, ...]]:
     if type_ == "cwl":
         workflow = CWLWorkflow(
@@ -100,7 +101,8 @@ async def create_workflow(
     ports = []
     for _ in range(num_port):
         ports.append(workflow.create_port())
-    await workflow.save(context)
+    if save:
+        await workflow.save(context)
     return workflow, tuple(ports)
 
 

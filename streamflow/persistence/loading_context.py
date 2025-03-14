@@ -90,9 +90,10 @@ class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
 
 
 class WorkflowBuilder(DefaultDatabaseLoadingContext):
-    def __init__(self, workflow: Workflow):
+    def __init__(self, deep_copy: bool = True) -> None:
         super().__init__()
-        self.workflow: Workflow = workflow
+        self.deep_copy: bool = deep_copy
+        self.workflow: Workflow | None = None
 
     def add_port(self, persistent_id: int, port: Port) -> None:
         self._ports[persistent_id] = port
@@ -101,7 +102,12 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
         self._steps[persistent_id] = step
 
     def add_workflow(self, persistent_id: int, workflow: Workflow) -> None:
-        self._workflows[persistent_id] = self.workflow
+        self._workflows[persistent_id] = workflow
+        if self.deep_copy:
+            # Deep copy
+            # The `persistent_id` value will be removed in the `load_workflow` method
+            workflow.persistent_id = persistent_id
+            self.workflow = workflow
 
     async def load_port(self, context: StreamFlowContext, persistent_id: int) -> Port:
         if persistent_id in self._ports.keys():
@@ -125,7 +131,7 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
                 self.add_workflow(step_row["workflow"], self.workflow)
                 step = await Step.load(context, persistent_id, self)
 
-                # restore initial step state
+                # Restore initial step state
                 step.status = Status.WAITING
                 step.terminated = False
 
@@ -136,5 +142,11 @@ class WorkflowBuilder(DefaultDatabaseLoadingContext):
         self, context: StreamFlowContext, persistent_id: int
     ) -> Workflow:
         if persistent_id not in self._workflows.keys():
-            await Workflow.load(context, persistent_id, self)
+            if self.deep_copy:
+                # Deep copy
+                self.workflow = await Workflow.load(context, persistent_id, self)
+                self.workflow.persistent_id = None
+            else:
+                # Copy only workflow instance without steps and ports
+                self.workflow = await Workflow.load(context, persistent_id, self)
         return self.workflow

@@ -561,6 +561,8 @@ class Workflow(PersistableEntity):
         type_ = cast(type[Workflow], utils.get_class_from_name(row["type"]))
         workflow = await type_._load(context, row, loading_context)
         loading_context.add_workflow(persistent_id, workflow)
+        if workflow.persistent_id is None:
+            return workflow
         rows = await context.database.get_workflow_ports(persistent_id)
         params = json.loads(row["params"])
         workflow.ports = {
