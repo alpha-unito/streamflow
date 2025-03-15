@@ -134,13 +134,11 @@ class _RemotePathMapper:
         node = self._filesystem
         for token in path.parts:
             node = node.children[token]
-        # Not invalidate the root
-        nodes = (
+        for node_child in (
             [node] + list(node.children.values())
             if node not in self._filesystem.children.values()
-            else list(node.children.values())
-        )
-        for node_child in nodes:
+            else node.children.values()
+        ):
             for data_loc in node_child.locations.setdefault(
                 location.deployment, {}
             ).get(location.name, []):
