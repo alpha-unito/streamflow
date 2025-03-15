@@ -1367,6 +1367,7 @@ class CWLTranslator:
                 name=posixpath.join("__deploy__", deployment_config.name),
                 deployment_config=deployment_config,
             )
+            self.deployment_map[deployment_config.name].recoverable = True
         return self.deployment_map[deployment_config.name]
 
     def _get_input_port(

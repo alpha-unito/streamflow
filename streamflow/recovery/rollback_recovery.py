@@ -45,29 +45,29 @@ async def evaluate_token_availability(
     port_row: MutableMapping[str, Any],
     context: StreamFlowContext,
 ) -> TokenAvailability:
-    if await token.is_available(context):
-        dependency_rows = await context.database.get_input_steps(port_row["id"])
-        for step_row in step_rows:
-            if issubclass(get_class_from_name(port_row["type"]), ConnectorPort):
-                return TokenAvailability.Unavailable
-            # TODO: remove dependency name and set True the `recoverable` attribute in the SizeTransformer classes
-            dependency_name = next(
-                iter(
-                    dep_row["name"]
-                    for dep_row in dependency_rows
-                    if dep_row["step"] == step_row["id"]
-                )
+    dependency_rows = await context.database.get_input_steps(port_row["id"])
+    for step_row in step_rows:
+        # TODO: remove dependency name and set True the `recoverable` attribute in the SizeTransformer classes
+        dependency_name = next(
+            iter(
+                dep_row["name"]
+                for dep_row in dependency_rows
+                if dep_row["step"] == step_row["id"]
             )
-            if dependency_name == "__size__":
-                return TokenAvailability.Available
-            elif json.loads(step_row["params"])["recoverable"]:
+        )
+        if dependency_name == "__size__":
+            return TokenAvailability.Available
+        elif json.loads(step_row["params"])["recoverable"]:
+            if await token.is_available(context):
                 logger.debug(f"Token with id {token.persistent_id} is available")
                 return TokenAvailability.Available
-        logger.debug(f"Token with id {token.persistent_id} is not recoverable")
-        return TokenAvailability.Unavailable
-    else:
-        logger.debug(f"Token with id {token.persistent_id} is not available")
-        return TokenAvailability.Unavailable
+            else:
+                logger.debug(f"Token with id {token.persistent_id} is not available")
+                return TokenAvailability.Unavailable
+        else:
+            logger.debug(f"Token with id {token.persistent_id} is not recoverable")
+            return TokenAvailability.Unavailable
+    return TokenAvailability.Unavailable
 
 
 class TokenAvailability(Enum):
@@ -187,6 +187,26 @@ class GraphHomomorphism:
         self.token_instances: MutableMapping[int, Token] = {}
         self.context: StreamFlowContext = context
 
+    def _update_token(self, port_name: str, token: Token, is_available: bool) -> int:
+        # Check if there is the same token in the port
+        if equal_token_id := self.get_equal_token(port_name, token):
+            # Check if the token is newer or available
+            if self.token_available[equal_token_id]:
+                return equal_token_id
+            elif is_available:
+                self.replace_token(port_name, token, is_available)
+                self.remove_token(token.persistent_id, preserve_token=True)
+                return token.persistent_id
+            else:
+                return equal_token_id
+        else:
+            # Add port and token relation
+            if port_name not in (DirectGraph.ROOT, DirectGraph.LEAF):
+                self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
+            self.token_instances[token.persistent_id] = token
+            self.token_available[token.persistent_id] = is_available
+            return token.persistent_id
+
     def add(
         self, token_info_a: ProvenanceToken | None, token_info_b: ProvenanceToken | None
     ) -> None:
@@ -228,24 +248,19 @@ class GraphHomomorphism:
         )
         self.dag_tokens.add(token_a_id, token_b_id)
 
-    def _remove_port_names(self, port_names):
-        orphan_tokens = set()  # probably an orphan token
-        for port_name in port_names:
-            logger.debug(f"_remove_port_names: remove port {port_name}")
-            for t_id in self.port_tokens.pop(port_name, []):
-                orphan_tokens.add(t_id)
-            self.port_name_ids.pop(port_name, None)
-        for t_id in orphan_tokens:
-            logger.debug(f"_remove_port_names: remove orphan token {t_id}")
-            self.remove_token(t_id)
-            # if not any(t_id in ts for ts in self.port_tokens.values()):
-            #     logger.debug(f"Remove orphan token {t_id}")
-            #     self.token_available.pop(t_id, None)
-            #     self.token_instances.pop(t_id, None)
-
-    def remove_port(self, port_name):
-        logger.debug(f"remove_port {port_name}")
-        self._remove_port_names(self.dcg_port.remove(port_name))
+    def get_equal_token(self, port_name: str, token: Token) -> int | None:
+        """
+        This method returns the token id of the corresponding Token present inside the port.
+        Two tokens are equal if there are in the same port and having same tag.
+        Special case are the JobToken, in this case there are equals if their jobs have the same name
+        """
+        for token_id in self.port_tokens.get(port_name, []):
+            if isinstance(token, JobToken):
+                if self.token_instances[token_id].value.name == token.value.name:
+                    return token_id
+            elif self.token_instances[token_id].tag == token.tag:
+                return token_id
+        return None
 
     async def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
         port_names = set()
@@ -269,134 +284,6 @@ class GraphHomomorphism:
                 if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
                     port_names.add(port_name)
         return list(port_names)
-
-    def get_equal_token(self, port_name: str, token: Token) -> int | None:
-        """
-        This method returns the token id of the corresponding Token present inside the port.
-        Two tokens are equal if there are in the same port and having same tag.
-        Special case are the JobToken, in this case there are equals if their jobs have the same name
-        """
-        for token_id in self.port_tokens.get(port_name, []):
-            if isinstance(token, JobToken):
-                if self.token_instances[token_id].value.name == token.value.name:
-                    return token_id
-            elif self.token_instances[token_id].tag == token.tag:
-                return token_id
-        return None
-
-    def remove_token_prev_links(self, token_id):
-        prev_ids = self.dag_tokens.prev(token_id)
-        logger.info(f"Remove token link from {token_id} to {prev_ids}")
-        token_without_successors = set()
-        for prev_token_id in prev_ids:
-            self.dag_tokens[prev_token_id].remove(token_id)
-            if len(self.dag_tokens[prev_token_id]) == 0 or (
-                isinstance(self.token_instances.get(prev_token_id, None), JobToken)
-            ):
-                if prev_token_id == DirectGraph.ROOT:
-                    raise FailureHandlingException(
-                        "Impossible execute a workflow without a ROOT"
-                    )
-                token_without_successors.add(prev_token_id)
-        logger.info(
-            f"Remove token link: token {token_id} found token_without_successors: {token_without_successors}"
-        )
-        return token_without_successors
-
-    async def replace_token_and_remove(self, port_name, provenance_token):
-        # todo : vedere di unire con update_token perché fanno praticamente la stessa cosa
-        token = provenance_token.instance
-        old_token_id = self.get_equal_token(port_name, token)
-        # if token.persistent_id == old_token_id:
-        #     return
-        logger.info(f"Replacing {old_token_id} with {token.persistent_id}")
-        token_without_successors = self.remove_token_prev_links(old_token_id)
-        for t_id in token_without_successors:
-            self.remove_token(t_id)
-
-        # remove old token
-        self.port_tokens[port_name].remove(old_token_id)
-        self.token_available.pop(old_token_id)
-        self.token_instances.pop(old_token_id)
-
-        # replace
-        self.dag_tokens.replace(old_token_id, token.persistent_id)
-
-        # add new token
-        self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
-        self.token_instances[token.persistent_id] = token
-        self.token_available[token.persistent_id] = (
-            provenance_token.is_available == TokenAvailability.Available
-        )
-
-        logger.debug(
-            f"replace_token_and_remove: token id: {token.persistent_id} "
-            f"is_available: {provenance_token.is_available == TokenAvailability.Available}"
-        )
-
-    def remove_token(self, token_id):
-        if token_id == DirectGraph.ROOT:
-            return
-        if succ_ids := self.dag_tokens.succ(token_id):
-            # noop
-            logger.info(f"WARN. Deleting {token_id} but it has successors: {succ_ids}")
-            # raise Exception(
-            #     f"Impossible remove token {token_id} because it has successors: {succ_ids}"
-            # )
-        logger.info(f"Remove token: token {token_id}")
-        self.token_available.pop(token_id, None)
-        self.token_instances.pop(token_id, None)
-        token_without_successors = self.remove_token_prev_links(token_id)
-        self.dag_tokens.remove(token_id)
-        for t_id in token_without_successors:
-            self.remove_token(t_id)
-        empty_ports = set()
-        for port_name, token_list in self.port_tokens.items():
-            if token_id in token_list:
-                self.port_tokens[port_name].remove(token_id)
-            if len(self.port_tokens[port_name]) == 0:
-                empty_ports.add(port_name)
-        for port_name in empty_ports:
-            logger.info(
-                f"Remove token: token {token_id} found to remove port {port_name}"
-            )
-            self.remove_port(port_name)
-
-    def _update_token(self, port_name: str, token: Token, is_available: bool) -> int:
-        # Check if there is the same token in the port
-        if equal_token_id := self.get_equal_token(port_name, token):
-            # Check if the token is newer or available
-            if (
-                equal_token_id > token.persistent_id
-                or self.token_available[equal_token_id]
-            ):
-                # Current saved token (`equal_token_id`) is available, thus
-                # it is not necessary to substitute with the new token
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Current token: {equal_token_id} is chosen on port {port_name}. "
-                        f"Discarded token {token.persistent_id}"
-                    )
-                return equal_token_id
-            if is_available:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Replaced token {equal_token_id} with {token.persistent_id} on port {port_name}"
-                    )
-                self.remove_token(equal_token_id)
-                # for t_id in self.remove_token_prev_links(equal_token_id):
-                #     self.remove_token(t_id)
-                self.dag_tokens.add(None, equal_token_id)
-            self.port_tokens[port_name].remove(equal_token_id)
-            self.token_instances.pop(equal_token_id)
-            self.token_available.pop(equal_token_id)
-            self.dag_tokens.replace(equal_token_id, token.persistent_id)
-        # Add port and token relation
-        if port_name:  # port name can be None (ROOT or LEAF)
-            self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
-        self.token_instances[token.persistent_id] = token
-        self.token_available[token.persistent_id] = is_available
-        return token.persistent_id
 
     async def get_port_and_step_ids(
         self, output_port_names: Iterable[str]
@@ -429,7 +316,7 @@ class GraphHomomorphism:
                 )
             ),
         ):
-            for row_port in await asyncio.gather(
+            for port_row in await asyncio.gather(
                 *(
                     asyncio.create_task(
                         self.context.database.get_port(row_dependency["port"])
@@ -437,11 +324,82 @@ class GraphHomomorphism:
                     for row_dependency in dependency_rows
                 )
             ):
-                if row_port["name"] not in self.port_tokens.keys():
+                if port_row["name"] not in self.port_tokens.keys():
                     step_to_remove.add(step_id)
         for step_id in step_to_remove:
+            logger.info(f"Removing step {step_id}")
             step_ids.remove(step_id)
         return port_ids, step_ids
+
+    def remove_port(self, port_name: str) -> None:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"Remove port {port_name}")
+        orphan_tokens = set()
+        for next_port_name in self.dcg_port.remove(port_name):
+            for token_id in self.port_tokens.pop(next_port_name, []):
+                orphan_tokens.add(token_id)
+            self.port_name_ids.pop(next_port_name, None)
+        for token_id in orphan_tokens:
+            self.remove_token(token_id)
+
+    def remove_token(self, token_id: int, preserve_token: bool = True):
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"Remove token id {token_id}")
+        if token_id == DirectGraph.ROOT:
+            return
+        # Remove previous links
+        token_leaves = set()
+        for prev_token_id in self.dag_tokens.prev(token_id):
+            self.dag_tokens[prev_token_id].remove(token_id)
+            if len(self.dag_tokens[prev_token_id]) == 0 or (
+                isinstance(self.token_instances.get(prev_token_id, None), JobToken)
+            ):
+                if prev_token_id == DirectGraph.ROOT:
+                    raise FailureHandlingException(
+                        "Impossible execute a workflow without a ROOT"
+                    )
+                token_leaves.add(prev_token_id)
+        # Delete token (if needed)
+        if not preserve_token:
+            self.token_available.pop(token_id, None)
+            self.token_instances.pop(token_id, None)
+            self.dag_tokens.remove(token_id)
+        # Delete end-road branches
+        for leaf_id in token_leaves:
+            self.remove_token(leaf_id)
+        empty_ports = set()
+        for port_name, token_list in self.port_tokens.items():
+            if token_id in token_list:
+                self.port_tokens[port_name].remove(token_id)
+            if len(self.port_tokens[port_name]) == 0:
+                empty_ports.add(port_name)
+        for port_name in empty_ports:
+            self.remove_port(port_name)
+
+    async def replace_token(
+        self, port_name: str, token: Token, is_available: bool
+    ) -> None:
+        old_token_id = self.get_equal_token(port_name, token)
+        if old_token_id is None:
+            raise FailureHandlingException("Impossible replace token")
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"Replacing {old_token_id} with {token.persistent_id}")
+        self.remove_token(old_token_id, preserve_token=True)
+
+        # Remove old token
+        self.port_tokens[port_name].remove(
+            old_token_id,
+        )
+        self.token_available.pop(old_token_id)
+        self.token_instances.pop(old_token_id)
+
+        # Replace
+        self.dag_tokens.replace(old_token_id, token.persistent_id)
+
+        # Add new token
+        self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
+        self.token_instances[token.persistent_id] = token
+        self.token_available[token.persistent_id] = is_available
 
 
 class ProvenanceGraph:
@@ -519,6 +477,9 @@ class ProvenanceGraph:
                         get_class_from_name(port_row["type"]), ConnectorPort
                     ):
                         pass  # do nothing
+                    # If the port is an empty unbound input ports
+                    elif await token.is_available(self.context):
+                        self.add(None, token)
                     else:
                         raise FailureHandlingException(
                             f"Token with id {token.persistent_id} is not available and it does not have previous tokens"

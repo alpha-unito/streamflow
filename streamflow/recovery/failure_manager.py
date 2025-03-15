@@ -7,11 +7,7 @@ from importlib.resources import files
 
 from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.exception import (
-    FailureHandlingException,
-    WorkflowExecutionException,
-    WorkflowTransferException,
-)
+from streamflow.core.exception import FailureHandlingException, WorkflowException
 from streamflow.core.recovery import FailureManager
 from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
@@ -33,74 +29,32 @@ class DefaultFailureManager(FailureManager):
         self.retry_delay: int | None = retry_delay
         self.retry_requests: MutableMapping[str, RetryRequest] = {}
 
-    async def _do_handle_failure(self, job: Job, step: Step) -> CommandOutput:
+    async def _do_handle_failure(self, job: Job, step: Step) -> None:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
         try:
-            new_workflow = await self._recover_jobs(job, step)
-            command_output = CommandOutput(
-                value=None,
-                status=(
-                    new_workflow.steps[step.name].status
-                    if new_workflow.steps.keys()
-                    else Status.COMPLETED
-                ),
-            )
-            # When receiving a FailureHandlingException, simply fail
-        except FailureHandlingException as e:
-            logger.exception(e)
-            raise
-        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-        except KeyboardInterrupt:
-            raise
-        except WorkflowTransferException as e:
-            logger.exception(e)
-            raise
-        except Exception as e:
-            logger.exception(e)
-            raise
-        return command_output
-
-    async def _handle_failure_transfer(
-        self, job: Job, step: Step, port_name: str
-    ) -> Token:
-        if job.name in self.retry_requests.keys():
-            async with self.retry_requests[job.name].lock:
-                self.retry_requests[job.name].is_running = False
-        if self.retry_delay is not None:
-            await asyncio.sleep(self.retry_delay)
-        try:
-            new_workflow = await self._recover_jobs(job, step)
-            token = next(
-                iter(
-                    new_workflow.steps[step.name].get_output_port(port_name).token_list
-                )
-            )
+            rollback = RollbackRecoveryPolicy(self.context)
+            # Generate new workflow
+            new_workflow = await rollback.recover_workflow(job, step)
+            # Execute new workflow
+            await execute_recover_workflow(new_workflow, step)
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
         # When receiving a FailureHandlingException, simply fail
         except FailureHandlingException as e:
             logger.exception(e)
             raise
+        # Recovery exceptions
+        except WorkflowException as e:
+            logger.exception(e)
+            await self.handle_exception(job, step, e)
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
-        except (WorkflowTransferException, WorkflowExecutionException) as e:
-            logger.exception(e)
-            return await self.handle_exception(job, step, e)
         except Exception as e:
             logger.exception(e)
-            raise e
-        return token
-
-    async def _recover_jobs(self, failed_job: Job, failed_step: Step):
-        rollback = RollbackRecoveryPolicy(self.context)
-        # Generate new workflow
-        new_workflow = await rollback.recover_workflow(failed_job, failed_step)
-        # Execute new workflow
-        await execute_recover_workflow(new_workflow, failed_step)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f"COMPLETED Recovery execution of failed job {failed_job.name}")
-        return new_workflow
+            raise
 
     async def close(self):
         pass
@@ -116,33 +70,31 @@ class DefaultFailureManager(FailureManager):
 
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
-    ) -> CommandOutput:
+    ) -> None:
         if logger.isEnabledFor(logging.INFO):
             logger.info(
                 f"Handling {type(exception).__name__} failure for job {job.name}"
             )
         if job.name in self.retry_requests.keys():
             self.retry_requests[job.name].is_running = False
-        if isinstance(exception, WorkflowTransferException):
-            return await self._handle_failure_transfer(job, step, exception)
-        else:
-            return await self._do_handle_failure(job, step)
+        await self._do_handle_failure(job, step)
 
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
-    ) -> CommandOutput:
+    ) -> None:
         if logger.isEnabledFor(logging.INFO):
             logger.info(f"Handling command failure for job {job.name}")
-
         if job.name in self.retry_requests.keys():
             self.retry_requests[job.name].is_running = False
-        return await self._do_handle_failure(job, step)
+        await self._do_handle_failure(job, step)
 
     async def is_running_token(self, token: Token) -> TokenAvailability:
         if request := self.retry_requests.get(token.value.name):
             async with request.lock:
                 if request.is_running:
-                    return TokenAvailability.FutureAvailable
+                    # todo: fix
+                    # return TokenAvailability.FutureAvailable
+                    return TokenAvailability.Unavailable
                 elif len(request.token_output) > 0 and all(
                     await asyncio.gather(
                         *(
@@ -151,7 +103,9 @@ class DefaultFailureManager(FailureManager):
                         )
                     )
                 ):
-                    return TokenAvailability.Available
+                    # todo: fix
+                    # return TokenAvailability.Available
+                    return TokenAvailability.Unavailable
         return TokenAvailability.Unavailable
 
     async def notify_jobs(
@@ -218,7 +172,7 @@ class DummyFailureManager(FailureManager):
 
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
-    ) -> CommandOutput:
+    ) -> None:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
                 f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
@@ -227,7 +181,7 @@ class DummyFailureManager(FailureManager):
 
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
-    ) -> CommandOutput:
+    ) -> None:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
                 f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
@@ -238,7 +192,7 @@ class DummyFailureManager(FailureManager):
 
     async def notify_jobs(
         self, job_token: JobToken, output_port: str, output_token: Token
-    ):
+    ) -> None:
         pass
 
     async def update_job_status(self, job_name: str) -> None:

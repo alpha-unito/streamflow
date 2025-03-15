@@ -10,15 +10,23 @@ from typing import TYPE_CHECKING, Any, cast
 from streamflow.core import utils
 from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
 from streamflow.core.config import BindingConfig
-from streamflow.core.deployment import Connector, DeploymentConfig, Target
+from streamflow.core.data import DataLocation, DataType
+from streamflow.core.deployment import (
+    Connector,
+    DeploymentConfig,
+    ExecutionLocation,
+    Target,
+)
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import flatten_list, get_job_tag, get_tag
 from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
 from streamflow.cwl.hardware import CWLHardwareRequirement
-from streamflow.cwl.step import CWLInputInjectorStep, CWLScheduleStep, CWLTransferStep
-from streamflow.cwl.utils import get_token_class
+from streamflow.cwl.step import CWLScheduleStep
+from streamflow.cwl.utils import get_token_class, search_in_parent_locations
 from streamflow.cwl.workflow import CWLWorkflow
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.workflow.combinator import (
@@ -38,7 +46,6 @@ from streamflow.workflow.step import (
     TransferStep,
 )
 from streamflow.workflow.token import FileToken, ListToken, ObjectToken
-from streamflow.workflow.utils import get_token_value
 from tests.utils.deployment import get_docker_deployment_config
 
 if TYPE_CHECKING:
@@ -190,23 +197,89 @@ def random_job_name(step_name: str | None = None):
     return os.path.join(posixpath.sep, step_name, "0.0")
 
 
-def build_token(job: Job, token_value: Any) -> Token:
+async def _register_path(
+    context: StreamFlowContext,
+    connector: Connector,
+    location: ExecutionLocation,
+    path: str,
+    relpath: str,
+    data_type: DataType = DataType.PRIMARY,
+) -> DataLocation | None:
+    path = StreamFlowPath(path, context=context, location=location)
+    if real_path := await path.resolve():
+        if real_path != path:
+            if data_locations := context.data_manager.get_data_locations(
+                path=str(real_path), deployment=connector.deployment_name
+            ):
+                data_location = next(iter(data_locations))
+            else:
+                base_path = StreamFlowPath(
+                    str(path).removesuffix(str(relpath)),
+                    context=context,
+                    location=location,
+                )
+                if real_path.is_relative_to(base_path):
+                    data_location = context.data_manager.register_path(
+                        location=location,
+                        path=str(real_path),
+                        relpath=str(real_path.relative_to(base_path)),
+                    )
+                elif data_locations := await search_in_parent_locations(
+                    context=context,
+                    connector=connector,
+                    path=str(real_path),
+                    relpath=real_path.name,
+                ):
+                    data_location = data_locations[0]
+                else:
+                    return None
+            link_location = context.data_manager.register_path(
+                location=location,
+                path=str(path),
+                relpath=relpath,
+                data_type=DataType.SYMBOLIC_LINK,
+            )
+            context.data_manager.register_relation(data_location, link_location)
+            return data_location
+        else:
+            return context.data_manager.register_path(
+                location=location, path=str(path), relpath=relpath, data_type=data_type
+            )
+    return None
+
+
+async def build_token(job: Job, token_value: Any, context: StreamFlowContext) -> Token:
     if isinstance(token_value, MutableSequence):
         return ListToken(
             tag=get_tag(job.inputs.values()),
-            value=[build_token(job, v) for v in token_value],
+            value=[build_token(job, v, context) for v in token_value],
         )
     elif isinstance(token_value, MutableMapping):
         if get_token_class(token_value) in ["File", "Directory"]:
-            # return FileToken(tag=get_tag(job.inputs.values()), value=token_value) # TODO
-            raise NotImplementedError
+            connector = context.scheduler.get_connector(job.name)
+            locations = context.scheduler.get_locations(job.name)
+            await _register_path(
+                context,
+                connector,
+                next(iter(locations)),
+                token_value["path"],
+                token_value["path"],
+            )
+            return BaseFileToken(
+                tag=get_tag(job.inputs.values()), value=token_value["path"]
+            )
         else:
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
-                value={k: build_token(job, v) for k, v in token_value.items()},
+                value={k: build_token(job, v, context) for k, v in token_value.items()},
             )
     else:
         return Token(tag=get_tag(job.inputs.values()), value=token_value)
+
+
+class BaseFileToken(FileToken):
+    async def get_paths(self, context: StreamFlowContext) -> MutableSequence[str]:
+        return [self.value]
 
 
 class BaseInputInjectorStep(InputInjectorStep):
@@ -215,39 +288,11 @@ class BaseInputInjectorStep(InputInjectorStep):
         self.recoverable = True
 
     async def process_input(self, job: Job, token_value: Any) -> Token:
-        return build_token(job, token_value)
-
-
-class BaseTransferStep(TransferStep):
-    async def _transfer(self, job: Job, path: str):
-        dst_connector = self.workflow.context.scheduler.get_connector(job.name)
-        dst_path_processor = get_path_processor(dst_connector)
-        dst_locations = self.workflow.context.scheduler.get_locations(job.name)
-        source_location = self.workflow.context.data_manager.get_source_location(
-            path=path, dst_deployment=dst_connector.deployment_name
+        return await build_token(
+            job=job,
+            token_value=token_value,
+            context=self.workflow.context,
         )
-        dst_path = dst_path_processor.join(job.input_directory, source_location.relpath)
-        await self.workflow.context.data_manager.transfer_data(
-            src_location=source_location.location,
-            src_path=source_location.path,
-            dst_locations=dst_locations,
-            dst_path=dst_path,
-        )
-        return dst_path
-
-    async def transfer(self, job: Job, token: Token) -> Token:
-        if isinstance(token, ListToken):
-            return token.update(
-                await asyncio.gather(
-                    *(asyncio.create_task(self.transfer(job, t)) for t in token.value)
-                )
-            )
-        elif isinstance(token, FileToken):
-            token_value = get_token_value(token)
-            dst_path = await self._transfer(job, token_value)
-            return token.update(dst_path)
-        else:
-            return token.update(token.value)
 
 
 class ForwardProcessor(CommandOutputProcessor):
@@ -262,15 +307,14 @@ class ForwardProcessor(CommandOutputProcessor):
 
 
 class InjectorFailureCommand(Command):
-    def __init__(self, step: Step, inject_failure: MutableMapping[str, int]):
+    def __init__(
+        self, step: Step, inject_failure: MutableMapping[str, int] | None = None
+    ):
         super().__init__(step)
-        self.inject_failure: MutableMapping[str, int] = inject_failure
-        self.cmd: str = ""
+        self.inject_failure: MutableMapping[str, int] = inject_failure or {}
 
     async def execute(self, job: Job) -> CommandOutput:
-        tag = get_job_tag(job.name)
-
-        # counts all the execution of the step in the different workflows
+        # Counts all the execution of the step in the different workflows
         loading_context = DefaultDatabaseLoadingContext()
         workflows = await asyncio.gather(
             *(
@@ -299,15 +343,18 @@ class InjectorFailureCommand(Command):
                 for s in steps
             )
         )
-        curr = len(flatten_list(executions))
+        num_executions = len(flatten_list(executions))
 
-        if (max_failures := self.inject_failure.get(tag, None)) and curr < max_failures:
+        tag = get_job_tag(job.name)
+        if (
+            max_failures := self.inject_failure.get(tag, None)
+        ) and num_executions < max_failures:
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
             cmd_out = CommandOutput("Injected success", Status.COMPLETED)
         await self.step.workflow.context.database.update_execution(
             await self.step.workflow.context.database.add_execution(
-                self.step.persistent_id, tag, self.cmd
+                self.step.persistent_id, tag, "true"
             ),
             {
                 "status": cmd_out.status,
@@ -331,6 +378,103 @@ class InjectorFailureCommand(Command):
         step: Step,
     ) -> InjectorFailureCommand:
         return cls(step=step, inject_failure=json.loads(row["inject_failure"]))
+
+
+class InjectorFailureTransferStep(TransferStep):
+    def __init__(
+        self, name: str, workflow: Workflow, job_port: JobPort, num_failures: int = 0
+    ):
+        super().__init__(name, workflow, job_port)
+        self.num_failures: int = num_failures
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> InjectorFailureTransferStep:
+        params = json.loads(row["params"])
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            job_port=cast(
+                JobPort, await loading_context.load_port(context, params["job_port"])
+            ),
+            num_failures=params["num_failures"],
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "num_failures": self.num_failures
+        }
+
+    async def _transfer_path(self, job: Job, path: str) -> str:
+        dst_connector = self.workflow.context.scheduler.get_connector(job.name)
+        dst_path_processor = get_path_processor(dst_connector)
+        dst_locations = self.workflow.context.scheduler.get_locations(job.name)
+        source_location = await self.workflow.context.data_manager.get_source_location(
+            path=path, dst_deployment=dst_connector.deployment_name
+        )
+        dst_path = dst_path_processor.join(job.input_directory, source_location.relpath)
+        await self.workflow.context.data_manager.transfer_data(
+            src_location=source_location.location,
+            src_path=source_location.path,
+            dst_locations=dst_locations,
+            dst_path=dst_path,
+        )
+        return dst_path
+
+    async def transfer(self, job: Job, token: Token) -> Token:
+        # Counts the number of rollback of the workflow
+        loading_context = DefaultDatabaseLoadingContext()
+        workflows = await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    Workflow.load(
+                        context=self.workflow.context,
+                        persistent_id=w["id"],
+                        loading_context=loading_context,
+                    )
+                )
+                for w in await self.workflow.context.database.get_workflows_by_name(
+                    self.workflow.name
+                )
+            )
+        )
+        if (
+            len([w.steps[self.name] for w in workflows if self.name in w.steps]) - 1
+            < self.num_failures
+        ):
+            raise WorkflowExecutionException(f"Injected error into {self.name} step")
+        # Execute the transfer
+        if isinstance(token, ListToken):
+            return token.update(
+                await asyncio.gather(
+                    *(asyncio.create_task(self.transfer(job, t)) for t in token.value)
+                )
+            )
+        elif isinstance(token, ObjectToken):
+            return token.update(
+                {
+                    k: v
+                    for k, v in zip(
+                        token.value.keys(),
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(self.transfer(job, t))
+                                for t in token.value.values()
+                            )
+                        ),
+                    )
+                }
+            )
+        elif isinstance(token, FileToken):
+            return token.update(await self._transfer_path(job, token.value))
+        else:
+            return token.update(token.value)
 
 
 class RecoveryTranslator:
@@ -381,7 +525,7 @@ class RecoveryTranslator:
             binding_config, deployment_names, step_name, workflow
         )
         step = workflow.create_step(
-            cls=CWLInputInjectorStep,
+            cls=BaseInputInjectorStep,
             name=step_name,
             job_port=schedule_step.get_output_port(),
         )
@@ -389,7 +533,7 @@ class RecoveryTranslator:
         step.add_output_port(port_name, workflow.create_port())
         return step
 
-    def get_exec_sub_workflow(
+    def get_execute_pipeline(
         self,
         workflow: Workflow,
         step_name: str,
@@ -397,6 +541,7 @@ class RecoveryTranslator:
         input_ports: MutableMapping[str, Port],
         outputs: MutableSequence[str],
         binding_config: BindingConfig | None = None,
+        transfer_failures: int = 0,
     ) -> ExecuteStep:
         schedule_step = self.get_schedule_step(
             binding_config, deployment_names, step_name, workflow
@@ -407,9 +552,10 @@ class RecoveryTranslator:
         for key, port in input_ports.items():
             schedule_step.add_input_port(key, port)
             transfer_step = workflow.create_step(
-                cls=CWLTransferStep,
+                cls=InjectorFailureTransferStep,
                 name=posixpath.join(step_name, "__transfer__", key),
                 job_port=schedule_step.get_output_port(),
+                num_failures=transfer_failures,
             )
             transfer_step.add_input_port(key, port)
             transfer_step.add_output_port(key, workflow.create_port())

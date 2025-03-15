@@ -86,7 +86,6 @@ async def populate_workflow(
             for step_id in step_ids
         )
     )
-
     # Add failed step into new_workflow
     await workflow_builder.load_step(
         new_workflow.context,

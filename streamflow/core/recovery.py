@@ -38,12 +38,12 @@ class FailureManager(SchemaEntity):
     @abstractmethod
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
-    ) -> CommandOutput: ...
+    ) -> None: ...
 
     @abstractmethod
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
-    ) -> CommandOutput: ...
+    ) -> None: ...
 
     @abstractmethod
     async def notify_jobs(

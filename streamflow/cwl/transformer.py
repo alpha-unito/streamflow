@@ -165,6 +165,7 @@ class DefaultTransformer(ManyToOneTransformer):
         super().__init__(name, workflow)
         self.default_port: Port = default_port
         self.default_token: Token | None = None
+        self.recoverable: bool = True
 
     @classmethod
     async def _load(

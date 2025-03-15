@@ -8,12 +8,10 @@ from streamflow.core.utils import get_max_tag, increase_tag
 from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
-from streamflow.persistence.utils import get_step_rows
 from streamflow.recovery.rollback_recovery import (
     DirectGraph,
     GraphHomomorphism,
     ProvenanceGraph,
-    ProvenanceToken,
     TokenAvailability,
     create_graph_homomorphism,
 )
@@ -30,6 +28,7 @@ from streamflow.workflow.token import (
     JobToken,
     TerminationToken,
 )
+from streamflow.workflow.utils import get_job_token
 
 
 class RollbackRecoveryPolicy:
@@ -44,11 +43,15 @@ class RollbackRecoveryPolicy:
         )
         # Retrieve tokens
         provenance = ProvenanceGraph(workflow.context)
-        # TODO: add a data_manager to store the file checked. Before to check directly a file,
-        #  search in this data manager if the file was already checked and return its availability.
-        #  It is helpful for performance reason but also for consistency. If the first time that the
-        #  file is checked exists, and the second time is lost can create invalid state of the graph
-        await provenance.build_graph(inputs=failed_job.inputs.values())
+        job_token = get_job_token(
+            failed_job.name, failed_step.get_input_port("__job__").token_list
+        )
+        await provenance.build_graph(
+            inputs=(
+                job_token,
+                *failed_job.inputs.values(),
+            )
+        )
         mapper = await create_graph_homomorphism(
             self.context, provenance, failed_step.get_output_ports().values()
         )
@@ -144,8 +147,7 @@ class RollbackRecoveryPolicy:
                     mapper.dag_tokens.succ(job_token.persistent_id),
                     self.context,
                 ):
-                    for t_id_dead_path in mapper.remove_token_prev_links(token_id):
-                        mapper.remove_token(t_id_dead_path)
+                    mapper.remove_token(token_id, preserve_token=True)
             elif is_available == TokenAvailability.Available:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
@@ -156,19 +158,17 @@ class RollbackRecoveryPolicy:
                 # Then remove all the prev tokens
                 for port_name in await mapper.get_output_ports(job_token):
                     new_token = retry_request.token_output[port_name]
-                    port_row = await self.context.database.get_port_from_token(
-                        new_token.persistent_id
-                    )
-                    step_rows = await get_step_rows(port_row["id"], self.context)
-                    await mapper.replace_token_and_remove(
+                    # port_row = await self.context.database.get_port_from_token(
+                    #     new_token.persistent_id
+                    # )
+                    # step_rows = await get_step_rows(port_row["id"], self.context)
+                    await mapper.replace_token(
                         port_name,
-                        ProvenanceToken(
-                            new_token,
-                            TokenAvailability.Available,
-                            port_row,
-                            step_rows,
-                        ),
+                        new_token,
+                        True,
                     )
+                    mapper.remove_token(new_token.persistent_id, preserve_token=True)
+
             else:
                 async with retry_request.lock:
                     retry_request.is_running = True
@@ -211,9 +211,7 @@ async def _inject_tokens(
         port = new_workflow.ports[port_name]
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Injecting token {token.persistent_id}: {token.tag} of port {port.name}"
-                )
+                logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
         if len(port.token_list) > 0 and len(port.token_list) == len(
             port_tokens[port_name]

@@ -61,14 +61,14 @@ class FilterTokenPort(Port):
             super().put(token)
         elif logger.isEnabledFor(logging.DEBUG):
             if token.tag not in self.invalid_tags:
-                reason = "is an rejected tag"
+                reason = "it is a rejected tag"
             elif len(self.valid_tags) > 0 and token.tag not in self.valid_tags:
-                reason = "is an not accepted tag"
+                reason = "it is a not accepted tag"
             else:
                 raise WorkflowExecutionException(
                     f"Port {self.name} did not accept the {token.tag} tag"
                 )
-            logger.debug(f"Port {self.name} skipping {token.tag} for {reason}")
+            logger.debug(f"Port {self.name} skips {token.tag} because {reason}")
 
     async def save(self, context: StreamFlowContext) -> None:
         async with self.persistence_lock:
