@@ -201,7 +201,7 @@ async def test_invalidate_location(
 
     # Check data manager has invalidated the location
     path = StreamFlowPath(context=context, location=src_location)
-    num_valid_data_loc = 1 if depth == "from_root" else level // 2 - 1
+    num_valid_data_loc = 0 if depth == "from_root" else level // 2 - 1
     for i, part in enumerate(src_path.parts):
         path /= part
         data_locs = context.data_manager.get_data_locations(

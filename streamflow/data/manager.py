@@ -134,20 +134,18 @@ class _RemotePathMapper:
         node = self._filesystem
         for token in path.parts:
             node = node.children[token]
-        # Not invalidate the root
-        nodes = (
-            [node] + list(node.children.values())
-            if node not in self._filesystem.children.values()
-            else list(node.children.values())
-        )
-        for node_child in nodes:
+        # Invalidate node
+        for data_loc in node.locations.setdefault(location.deployment, {}).get(
+            location.name, []
+        ):
+            data_loc.data_type = DataType.INVALID
+        # Propagate
+        for node_child in node.children.values():
             for data_loc in node_child.locations.setdefault(
                 location.deployment, {}
             ).get(location.name, []):
                 if data_loc.data_type != DataType.INVALID:
-                    if node_child != node:
-                        self.invalidate_location(data_loc.location, data_loc.path)
-                    data_loc.data_type = DataType.INVALID
+                    self.invalidate_location(data_loc.location, data_loc.path)
 
     def put(
         self, path: str, data_location: DataLocation, recursive: bool = False
