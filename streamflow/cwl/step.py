@@ -69,7 +69,7 @@ async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
 
 async def _process_file_token(
     job: Job, token_value: Any, cwl_version: str, streamflow_context: StreamFlowContext
-):
+) -> MutableMapping[str, Any]:
     filepath = get_path_from_token(token_value)
     connector = streamflow_context.scheduler.get_connector(job.name)
     locations = streamflow_context.scheduler.get_locations(job.name)
@@ -87,6 +87,7 @@ async def _process_file_token(
             filepath=filepath,
             file_format=token_value.get("format"),
             basename=token_value.get("basename"),
+            contents=token_value.get("contents"),
         )
         await register_data(
             context=streamflow_context,
@@ -105,9 +106,10 @@ async def _process_file_token(
                             cwl_version=cwl_version,
                             locations=locations,
                             token_class=get_token_class(sf),
-                            filepath=get_path_from_token(sf),
+                            filepath=get_path_from_token(sf) or sf.get("basename"),
                             file_format=sf.get("format"),
                             basename=sf.get("basename"),
+                            contents=sf.get("contents"),
                         )
                     )
                     for sf in token_value["secondaryFiles"]
@@ -122,14 +124,15 @@ async def _process_file_token(
                     token_value=sf,
                 )
     if "listing" in token_value:
-        listing = await asyncio.gather(
-            *(
+        tasks = []
+        for t in token_value["listing"]:
+            t.setdefault("contents", "")
+            tasks.append(
                 asyncio.create_task(
                     _process_file_token(job, t, cwl_version, streamflow_context)
                 )
-                for t in token_value["listing"]
             )
-        )
+        listing = await asyncio.gather(*tasks)
         for file in listing:
             await register_data(
                 context=streamflow_context,
