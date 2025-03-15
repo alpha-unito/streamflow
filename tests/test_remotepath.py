@@ -76,14 +76,15 @@ async def test_download(context, connector, location):
         parent_dir / "LICENSE",
         parent_dir / "streamflow-0.1.6.zip",
     ]
-    path = None
     for i, url in enumerate(urls):
+        path = None
         try:
             path = await remotepath.download(context, location, url, str(parent_dir))
             assert path == paths[i]
             assert await path.exists()
         finally:
-            await path.rmtree()
+            if path is not None:
+                await path.rmtree()
 
 
 @pytest.mark.asyncio
@@ -128,8 +129,8 @@ async def test_glob(context, connector, location):
         context=context,
         location=location,
     )
-    await path.mkdir(mode=0o777)
     try:
+        await path.mkdir(mode=0o777)
         # ./
         #   file1.txt
         #   file2.csv
