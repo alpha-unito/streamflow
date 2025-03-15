@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import MutableMapping
 from importlib.resources import files
 
 from streamflow.core.command import CommandOutput
@@ -12,27 +12,12 @@ from streamflow.core.exception import (
     FailureHandlingException,
 )
 from streamflow.core.recovery import FailureManager
-from streamflow.core.workflow import Job, Status, Step, Token, Workflow
+from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
-from streamflow.recovery.recovery import (
-    PortRecovery,
-    RollbackRecoveryPolicy,
-)
+from streamflow.recovery.recovery import RollbackRecoveryPolicy
 from streamflow.recovery.rollback_recovery import TokenAvailability
-from streamflow.recovery.utils import execute_recover_workflow
-from streamflow.workflow.token import JobToken, TerminationToken
-
-
-class RetryRequest:
-    def __init__(self):
-        self.version: int = 1
-        self.job_token: JobToken | None = None
-        self.token_output: MutableMapping[str, Token] = {}
-        self.lock: asyncio.Lock = asyncio.Lock()
-        self.is_running: bool = False
-        # Other workflows can queue to the output port of the step while the job is running.
-        self.queue: MutableSequence[PortRecovery] = []
-        self.workflow: Workflow | None = None
+from streamflow.recovery.utils import RetryRequest, execute_recover_workflow
+from streamflow.workflow.token import TerminationToken
 
 
 class DefaultFailureManager(FailureManager):
@@ -61,26 +46,16 @@ class DefaultFailureManager(FailureManager):
             async with request.lock:
                 if request.is_running:
                     return TokenAvailability.FutureAvailable
-                elif request.token_output:
-                    tasks = [
-                        asyncio.create_task(t.is_available(self.context))
-                        for t in request.token_output.values()
-                    ]
-                    while tasks:
-                        finished, tasks = await asyncio.wait(
-                            tasks, return_when=asyncio.FIRST_COMPLETED
+                elif len(request.token_output) > 0 and all(
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(t.is_available(self.context))
+                            for t in request.token_output.values()
                         )
-                        for task in finished:
-                            if not task.result():
-                                for _task in tasks:
-                                    _task.cancel()
-                                return TokenAvailability.Unavailable
+                    )
+                ):
                     return TokenAvailability.Available
         return TokenAvailability.Unavailable
-
-    def get_retry_request(self, job_name: str) -> RetryRequest:
-        # TODO: remove this method?
-        return self.retry_requests.setdefault(job_name, RetryRequest())
 
     async def update_job_status(self, job_name):
         if (

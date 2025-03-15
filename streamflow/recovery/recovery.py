@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import MutableMapping, MutableSet
-from functools import cmp_to_key
 
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.utils import compare_tags
-from streamflow.core.workflow import Job, Port, Step, Token, Workflow
+from streamflow.core.utils import get_max_tag, increase_tag
+from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
+from streamflow.persistence.utils import get_step_rows
 from streamflow.recovery.rollback_recovery import (
     DirectGraph,
     GraphHomomorphism,
@@ -18,9 +18,9 @@ from streamflow.recovery.rollback_recovery import (
     create_graph_homomorphism,
 )
 from streamflow.recovery.utils import (
-    get_execute_step_out_token_ids,
-    get_step_instances_from_output_port,
-    increase_tag,
+    PortRecovery,
+    RetryRequest,
+    get_output_tokens,
     populate_workflow,
 )
 from streamflow.workflow.port import FilterTokenPort, InterWorkflowPort
@@ -30,42 +30,6 @@ from streamflow.workflow.token import (
     JobToken,
     TerminationToken,
 )
-
-
-class PortRecovery:
-    def __init__(self, port: Port):
-        self.port: Port = port
-        self.waiting_token: int = 1
-
-
-def get_skip_tags(rdwp, port_name, stop_tag):
-    if stop_tag and (
-        valid_tokens := (
-            rdwp.port_tokens[port_name] if port_name in rdwp.port_tokens else []
-        )
-    ):
-        valid_tags = [rdwp.token_instances[t].tag for t in valid_tokens]
-        sorted_tags = sorted(valid_tags, key=cmp_to_key(compare_tags))
-        curr_tag = ".".join(stop_tag.split(".")[:-1])
-        skip_tags = [curr_tag] if curr_tag not in sorted_tags else []
-        curr_tag += ".0"
-        i = 0
-        while True:
-            if i == 30:
-                raise Exception("Stop tag too long")
-            i += 1
-            if curr_tag == stop_tag:
-                break
-            elif (
-                compare_tags(curr_tag, sorted_tags[0]) < 0
-            ):  # curr_tag not in sorted_tags:
-                skip_tags.append(curr_tag)
-            curr_tag = increase_tag(curr_tag)
-            if curr_tag is None:
-                raise Exception("Curr tar is None")
-    else:
-        skip_tags = []
-    return skip_tags
 
 
 class RollbackRecoveryPolicy:
@@ -108,51 +72,53 @@ class RollbackRecoveryPolicy:
         await _set_step_states(new_workflow, mapper)
         return new_workflow
 
-    def add_waiter(self, job_name, port_name, workflow, rdwp, port_recovery=None):
-        if port_recovery:
-            port_recovery.waiting_token += 1
-        else:
-            max_tag = get_max_tag(
-                {
-                    rdwp.token_instances[t_id]
-                    for t_id in rdwp.port_tokens.get(port_name, [])
-                    if t_id > 0
-                }
-            )
-            if max_tag is None:
-                max_tag = "0"
-            stop_tag = increase_tag(max_tag)
-            logger.info(
-                f"Wf {workflow.name} added PortRecovery on port {port_name} with stop_tag: {stop_tag}. "
-                f"Is Port created? {port_name not in workflow.ports.keys()}"
-            )
-            port = workflow.ports.get(
-                port_name,
-                InterWorkflowPort(
+    def add_waiter(
+        self,
+        job_name: str,
+        port_name: str,
+        workflow: Workflow,
+        mapper: GraphHomomorphism,
+        port_recovery: PortRecovery | None = None,
+    ) -> PortRecovery:
+        if port_recovery is None:
+            if (port := workflow.ports.get(port_name)) is not None:
+                # todo: to check
+                max_tag = (
+                    get_max_tag(
+                        {
+                            mapper.token_instances[t_id]
+                            for t_id in mapper.port_tokens.get(port_name, [])
+                            if t_id > 0
+                        }
+                    )
+                    or "0"
+                )
+                stop_tag = increase_tag(max_tag)
+                port = InterWorkflowPort(
                     FilterTokenPort(
                         workflow,
                         port_name,
-                        [stop_tag],
-                        get_skip_tags(rdwp, port_name, stop_tag),
+                        stop_tags=[stop_tag],
                     )
-                ),
-            )
+                )
             port_recovery = PortRecovery(port)
             self.context.failure_manager.retry_requests[job_name].queue.append(
                 port_recovery
             )
+        port_recovery.waiting_token += 1
         return port_recovery
 
-    async def sync_running_jobs(self, mapper: GraphHomomorphism, workflow: Workflow):
+    async def sync_running_jobs(
+        self, mapper: GraphHomomorphism, workflow: Workflow
+    ) -> None:
         map_job_port = {}
-        logger.debug("Start synchronization")
         for job_token in [
             token
             for token in mapper.token_instances.values()
             if isinstance(token, JobToken)
         ]:
-            retry_request = self.context.failure_manager.get_retry_request(
-                job_token.value.name
+            retry_request = self.context.failure_manager.retry_requests.setdefault(
+                job_token.value.name, RetryRequest()
             )
             if (
                 is_available := await self.context.failure_manager.is_running_token(
@@ -164,9 +130,7 @@ class RollbackRecoveryPolicy:
                         f"Synchronize rollbacks: job {job_token.value.name} is running"
                     )
                 # todo: create a unit test for this case and check if it works well
-                for output_port_name in await mapper.get_execute_output_port_names(
-                    job_token
-                ):
+                for output_port_name in await mapper.get_output_ports(job_token):
                     port_recovery = self.add_waiter(
                         job_token.value.name,
                         output_port_name,
@@ -176,12 +140,12 @@ class RollbackRecoveryPolicy:
                     )
                     map_job_port.setdefault(job_token.value.name, port_recovery)
                     workflow.ports[port_recovery.port.name] = port_recovery.port
-                execute_step_out_token_ids = await get_execute_step_out_token_ids(
+                # Remove tokens recovered in other workflows
+                for token_id in await get_output_tokens(
                     mapper.dag_tokens.succ(job_token.persistent_id),
                     self.context,
-                )
-                for t_id in execute_step_out_token_ids:
-                    for t_id_dead_path in mapper.remove_token_prev_links(t_id):
+                ):
+                    for t_id_dead_path in mapper.remove_token_prev_links(token_id):
                         mapper.remove_token(t_id_dead_path)
             elif is_available == TokenAvailability.Available:
                 if logger.isEnabledFor(logging.DEBUG):
@@ -191,14 +155,12 @@ class RollbackRecoveryPolicy:
                 # todo: create a unit test for this case and check if it works well
                 # Search execute token after job token, replace this token with job_req token.
                 # Then remove all the prev tokens
-                for port_name in await mapper.get_execute_output_port_names(job_token):
+                for port_name in await mapper.get_output_ports(job_token):
                     new_token = retry_request.token_output[port_name]
                     port_row = await self.context.database.get_port_from_token(
                         new_token.persistent_id
                     )
-                    step_rows = await get_step_instances_from_output_port(
-                        port_row["id"], self.context
-                    )
+                    step_rows = await get_step_rows(port_row["id"], self.context)
                     await mapper.replace_token_and_remove(
                         port_name,
                         ProvenanceToken(
@@ -219,7 +181,6 @@ class RollbackRecoveryPolicy:
                 )
             # End lock
         # End for job token
-        logger.debug("End synchronization")
 
 
 async def _inject_tokens(
@@ -277,14 +238,6 @@ async def _set_step_states(new_workflow: Workflow, mapper: GraphHomomorphism):
                 ],
             )
             new_workflow.ports[port.name].token_list = port.token_list
-
-
-def get_max_tag(token_list):
-    max_tag = None
-    for t in token_list:
-        if max_tag is None or compare_tags(t.tag, max_tag) == 1:
-            max_tag = t.tag
-    return max_tag
 
 
 class JobVersion:
