@@ -131,7 +131,7 @@ async def test_directory_to_directory(
                     lvl=f"{i}-0",
                 )
         src_path = await src_path.resolve()
-
+        assert src_path is not None
         # Transfer from `src_path` on `src_location` to `dst_path` directory on `dst_location`
         dst_path = StreamFlowPath(
             tempfile.gettempdir() if dst_location.local else "/tmp",
@@ -190,9 +190,9 @@ async def test_file_to_entity(
         context=context,
         location=dst_location,
     )
-    if dst_t == "directory":
-        await dst_path.mkdir(mode=0o777, exist_ok=True)
     try:
+        if dst_t == "directory":
+            await dst_path.mkdir(mode=0o777, exist_ok=True)
         await src_path.write_text("StreamFlow")
         src_path = await src_path.resolve()
         assert src_path is not None
@@ -213,8 +213,10 @@ async def test_file_to_entity(
         assert await dst_file.exists()
         assert await src_path.checksum() == await dst_file.checksum()
     finally:
-        await src_path.rmtree()
-        await dst_path.rmtree()
+        if src_path is not None:
+            await src_path.rmtree()
+        if dst_path is not None:
+            await dst_path.rmtree()
 
 
 @pytest.mark.asyncio

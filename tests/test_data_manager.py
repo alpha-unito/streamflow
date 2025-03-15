@@ -71,14 +71,14 @@ async def test_data_locations(
         context=context,
         location=dst_location,
     )
-
-    # Create working directories in src and dst locations
-    await src_path.parent.mkdir(mode=0o777, exist_ok=True)
-    await dst_path.mkdir(mode=0o777, parents=True)
-
     try:
+        # Create working directories in src and dst locations
+        await src_path.parent.mkdir(mode=0o777, exist_ok=True)
+        await dst_path.mkdir(mode=0o777, parents=True)
+
         await src_path.write_text("StreamFlow")
         src_path = await src_path.resolve()
+        assert src_path is not None
         context.data_manager.register_path(
             location=src_location,
             path=str(src_path),
@@ -144,8 +144,10 @@ async def test_data_locations(
                     == 1
                 )
     finally:
-        await src_path.rmtree()
-        await dst_path.rmtree()
+        if src_path is not None:
+            await src_path.rmtree()
+        if dst_path is not None:
+            await dst_path.rmtree()
 
 
 @pytest.mark.asyncio
