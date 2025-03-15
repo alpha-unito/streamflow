@@ -663,7 +663,6 @@ class ExecuteStep(BaseStep):
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
             )
-            # TODO update failure manager API
             await self.workflow.context.failure_manager.notify_jobs(
                 job_token, output_port.name, token
             )
