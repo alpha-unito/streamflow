@@ -205,6 +205,14 @@ def get_job_tag(job_name: str) -> str:
     return PurePosixPath(job_name).name
 
 
+def get_max_tag(token_list: Iterable[Token]) -> str | None:
+    max_tag = None
+    for t in token_list:
+        if max_tag is None or compare_tags(t.tag, max_tag) > 0:
+            max_tag = t.tag
+    return max_tag
+
+
 def get_option(
     name: str,
     value: Any,
@@ -279,6 +287,12 @@ def get_tag(tokens: Iterable[Token]) -> str:
         if len(tag) > len(output_tag):
             output_tag = tag
     return output_tag
+
+
+def increase_tag(tag: str) -> str | None:
+    if len(tag_list := tag.rsplit(".", maxsplit=1)) == 2:
+        return ".".join((tag_list[0], str(int(tag_list[1]) + 1)))
+    return None
 
 
 def random_name() -> str:

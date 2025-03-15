@@ -14,8 +14,7 @@ from streamflow.core.utils import contains_persistent_id, get_class_from_name
 from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.recovery.utils import get_step_instances_from_output_port
+from streamflow.persistence.utils import get_step_rows, load_dependee_tokens
 from streamflow.workflow.port import ConnectorPort
 from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.token import JobToken
@@ -42,7 +41,7 @@ async def create_graph_homomorphism(
 
 async def evaluate_token_availability(
     token: Token,
-    step_rows,
+    step_rows: MutableSequence[MutableMapping[str, Any]],
     port_row: MutableMapping[str, Any],
     context: StreamFlowContext,
 ) -> TokenAvailability:
@@ -83,12 +82,12 @@ class ProvenanceToken:
         token_instance: Token,
         is_available: TokenAvailability,
         port_row: MutableMapping[str, Any],
-        step_rows: MutableMapping[str, Any],
+        step_rows: MutableSequence[MutableMapping[str, Any]],
     ):
         self.instance: Token = token_instance
         self.is_available: TokenAvailability = is_available
         self.port_row: MutableMapping[str, Any] = port_row
-        self.step_rows: MutableMapping[str, Any] = step_rows
+        self.step_rows: MutableSequence[MutableMapping[str, Any]] = step_rows
 
 
 class DirectGraph:
@@ -248,9 +247,7 @@ class GraphHomomorphism:
         logger.debug(f"remove_port {port_name}")
         self._remove_port_names(self.dcg_port.remove(port_name))
 
-    async def get_execute_output_port_names(
-        self, job_token: JobToken
-    ) -> MutableSequence[str]:
+    async def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
         port_names = set()
         for token_id in self.dag_tokens.succ(job_token.persistent_id):
             if token_id in (DirectGraph.ROOT, DirectGraph.LEAF):
@@ -478,9 +475,7 @@ class ProvenanceGraph:
                 token.persistent_id
             )
             # Get steps which has the output port (nb. a port can have multiple steps due to the loop case)
-            step_rows = await get_step_instances_from_output_port(
-                port_row["id"], self.context
-            )
+            step_rows = await get_step_rows(port_row["id"], self.context)
             if (
                 isinstance(token, JobToken)
                 and (

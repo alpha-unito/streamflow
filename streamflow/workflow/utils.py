@@ -46,7 +46,7 @@ def get_token_value(token: Token) -> Any:
         return token.value
 
 
-def get_job_token(job_name: str, token_list: MutableSequence[Token]):
+def get_job_token(job_name: str, token_list: MutableSequence[Token]) -> JobToken:
     for token in token_list:
         if isinstance(token, JobToken) and token.value.name == job_name:
             return token

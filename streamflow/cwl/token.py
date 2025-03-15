@@ -67,7 +67,6 @@ async def _is_file_available(
 async def _is_file_token_available(
     context: StreamFlowContext, paths: MutableSequence[str]
 ) -> bool:
-    tasks = []
     for path in paths:
         if (
             len(
@@ -79,9 +78,14 @@ async def _is_file_token_available(
         ):
             return False
         else:
-            for data_loc in data_locations:
-                tasks.append(asyncio.create_task(_is_file_available(context, data_loc)))
-            return any(await asyncio.gather(*tasks))
+            return any(
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(_is_file_available(context, data_loc))
+                        for data_loc in data_locations
+                    )
+                )
+            )
     return True
 
 
