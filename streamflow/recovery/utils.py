@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import posixpath
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
 
@@ -47,11 +48,12 @@ def get_port_from_token(
 
 
 async def execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -> None:
-    if not new_workflow.steps.keys():
-        logger.info(
-            f"Workflow {new_workflow.name} is empty. "
-            f"Waiting output ports {list(failed_step.output_ports.values())}"
-        )
+    if len(new_workflow.steps) == 0:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                f"Workflow {new_workflow.name} is empty. "
+                f"Waiting output ports {list(failed_step.output_ports.values())}"
+            )
         assert set(new_workflow.ports.keys()) == set(failed_step.output_ports.values())
         await asyncio.gather(
             *(

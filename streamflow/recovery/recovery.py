@@ -42,7 +42,7 @@ class RollbackRecoveryPolicy:
         new_workflow = await workflow_builder.load_workflow(
             workflow.context, workflow.persistent_id
         )
-
+        # Retrieve tokens
         provenance = ProvenanceGraph(workflow.context)
         # TODO: add a data_manager to store the file checked. Before to check directly a file,
         #  search in this data manager if the file was already checked and return its availability.
@@ -52,7 +52,6 @@ class RollbackRecoveryPolicy:
         mapper = await create_graph_homomorphism(
             self.context, provenance, failed_step.get_output_ports().values()
         )
-
         # Synchronize across multiple recovery workflows
         await self.sync_running_jobs(mapper, new_workflow)
         # Populate new workflow
@@ -238,19 +237,3 @@ async def _set_step_states(new_workflow: Workflow, mapper: GraphHomomorphism):
                 ],
             )
             new_workflow.ports[port.name].token_list = port.token_list
-
-
-class JobVersion:
-    __slots__ = ("job", "outputs", "step", "version")
-
-    def __init__(
-        self,
-        job: Job = None,
-        outputs: MutableMapping[str, Token] | None = None,
-        step: Step = None,
-        version: int = 1,
-    ):
-        self.job: Job = job
-        self.outputs: MutableMapping[str, Token] | None = outputs
-        self.step: Step = step
-        self.version: int = version

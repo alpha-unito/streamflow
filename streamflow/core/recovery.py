@@ -5,13 +5,14 @@ from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
+from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
     from typing import Any
 
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step
+    from streamflow.core.workflow import CommandOutput, Job, Step, Token
 
 
 class CheckpointManager(SchemaEntity):
@@ -29,6 +30,8 @@ class FailureManager(SchemaEntity):
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
 
+    # TODO update documentation
+
     @abstractmethod
     async def close(self): ...
 
@@ -41,6 +44,14 @@ class FailureManager(SchemaEntity):
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> CommandOutput: ...
+
+    @abstractmethod
+    async def notify_jobs(
+        self, job_token: JobToken, output_port: str, output_token: Token
+    ) -> None: ...
+
+    @abstractmethod
+    async def update_job_status(self, job_name: str) -> None: ...
 
 
 class ReplayRequest:
