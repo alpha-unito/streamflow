@@ -43,6 +43,7 @@ class FilterTokenPort(Port):
         stop_tags: MutableSequence[str] | None = None,
     ):
         super().__init__(workflow, name)
+        # todo: takes a function: input a token and return a boolean
         self.invalid_tags = invalid_tags or []
         self.stop_tags = stop_tags or []
         self.valid_tags: MutableSequence[str] = valid_tags or []

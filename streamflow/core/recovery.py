@@ -5,6 +5,7 @@ from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
+from streamflow.recovery.rollback_recovery import GraphMapper, TokenAvailability
 from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
 
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step, Token
+    from streamflow.core.workflow import CommandOutput, Job, Step, Token, Workflow
 
 
 class CheckpointManager(SchemaEntity):
@@ -45,6 +46,8 @@ class FailureManager(SchemaEntity):
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> None: ...
 
+    async def is_recovered(self, token: JobToken) -> TokenAvailability: ...
+
     @abstractmethod
     async def notify(
         self,
@@ -55,7 +58,7 @@ class FailureManager(SchemaEntity):
     ) -> None: ...
 
     @abstractmethod
-    async def update_job_status(self, job_name: str) -> None: ...
+    async def sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None: ...
 
 
 class ReplayRequest:

@@ -18,10 +18,10 @@ from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.token import JobToken
 
 
-async def create_graph_homomorphism(
+async def create_graph_mapper(
     context: StreamFlowContext, provenance: ProvenanceGraph, output_ports
-) -> GraphHomomorphism:
-    mapper = GraphHomomorphism(context)
+) -> GraphMapper:
+    mapper = GraphMapper(context)
     queue = deque((DirectGraph.LEAF,))
     visited = set()
     while queue:
@@ -174,7 +174,7 @@ class DirectGraph:
         )
 
 
-class GraphHomomorphism:
+class GraphMapper:
     def __init__(self, context: StreamFlowContext):
         self.dcg_port: DirectGraph = DirectGraph("Dependencies")
         self.dag_tokens: DirectGraph = DirectGraph("Provenance")
@@ -437,7 +437,7 @@ class ProvenanceGraph:
             if (
                 isinstance(token, JobToken)
                 and (
-                    is_available := await self.context.failure_manager.is_running_token(
+                    is_available := await self.context.failure_manager.is_recovered(
                         token
                     )
                 )

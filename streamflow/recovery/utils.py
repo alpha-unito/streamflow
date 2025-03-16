@@ -54,7 +54,8 @@ async def execute_recover_workflow(new_workflow: Workflow, failed_step: Step) ->
                 f"Workflow {new_workflow.name} is empty. "
                 f"Waiting output ports {list(failed_step.output_ports.values())}"
             )
-        assert set(new_workflow.ports.keys()) == set(failed_step.output_ports.values())
+        if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
+            raise FailureHandlingException("Recovered workflow construction invalid")
         await asyncio.gather(
             *(
                 asyncio.create_task(
