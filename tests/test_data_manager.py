@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 import tempfile
 
 import pytest
 import pytest_asyncio
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.data.remotepath import StreamFlowPath
@@ -151,15 +153,21 @@ async def test_data_locations(
 
 
 @pytest.mark.asyncio
-async def test_invalidate_location(context, src_connector, src_location):
+@pytest.mark.parametrize("depth", ["from_root", "half_path"])
+async def test_invalidate_location(
+    context: StreamFlowContext,
+    src_connector: Connector,
+    src_location: ExecutionLocation,
+    depth: str,
+):
     """Test the invalidation of a location"""
     src_path = StreamFlowPath(
         tempfile.gettempdir() if src_location.local else "/tmp",
-        utils.random_name(),
-        utils.random_name(),
+        *(utils.random_name() for _ in range(5)),
         context=context,
         location=src_location,
     )
+    level = len(src_path.parts)
     context.data_manager.register_path(
         location=src_location,
         path=str(src_path),
@@ -179,21 +187,26 @@ async def test_invalidate_location(context, src_connector, src_location):
         assert data_locs[0].deployment == src_connector.deployment_name
 
     # Invalidate location
-    root_data_loc = next(
+    data_loc = next(
         iter(
             context.data_manager.get_data_locations(
-                path.root, src_connector.deployment_name
+                (
+                    path.root
+                    if depth == "from_root"
+                    else str(os.path.join(*path.parts[: level // 2]))
+                ),
+                src_connector.deployment_name,
             )
         )
     )
-    context.data_manager.invalidate_location(root_data_loc.location, root_data_loc.path)
+    context.data_manager.invalidate_location(data_loc.location, data_loc.path)
 
     # Check data manager has invalidated the location
     path = StreamFlowPath(context=context, location=src_location)
-    for part in src_path.parts:
+    num_valid_data_loc = 0 if depth == "from_root" else level // 2 - 1
+    for i, part in enumerate(src_path.parts):
         path /= part
         data_locs = context.data_manager.get_data_locations(
             str(path), src_connector.deployment_name
         )
-        # The data location of the root is not invalidated
-        assert len(data_locs) == (1 if path == path.parent else 0)
+        assert len(data_locs) == (1 if i < num_valid_data_loc else 0)
