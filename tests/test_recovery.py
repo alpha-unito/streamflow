@@ -168,6 +168,96 @@ async def test_execute(
             assert retry_request.version == num_of_failures + 1
 
 
+@pytest.mark.asyncio
+async def test_synchro(fault_tolerant_context: StreamFlowContext):
+    step_t = "execute"
+    num_of_steps = 1
+    num_of_failures = 1
+    token_t = "file"
+    deployment_t = "local"
+    workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
+    translator = RecoveryTranslator(workflow)
+    translator.deployment_configs = {
+        "local": await get_deployment_config(fault_tolerant_context, deployment_t)
+    }
+    input_ports = {}
+    if token_t == "default":
+        token_value = 100
+        token = Token(token_value)
+    elif token_t == "file":
+        location = await get_location(fault_tolerant_context, deployment_t)
+        path = StreamFlowPath(
+            tempfile.gettempdir() if location.local else "/tmp",
+            utils.random_name(),
+            context=fault_tolerant_context,
+            location=location,
+        )
+        await path.write_text("StreamFlow fault tolerance")
+        token_value = {"class": "File", "path": str(path)}
+        token = Token(dict(token_value))
+        token_value["basename"] = os.path.basename(path)
+        token_value["checksum"] = f"sha1${await path.checksum()}"
+        token_value["size"] = await path.size()
+    else:
+        # TODO list, object
+        raise RuntimeError(f"Unknown token type: {token_t}")
+    for input_ in ("test",):
+        injector_step = translator.get_base_injector_step(
+            ["local"], input_, posixpath.join(posixpath.sep, input_), workflow
+        )
+        injector_step.recoverable = True
+        input_ports[input_] = injector_step.get_output_port(input_)
+        injector_step.get_input_port(input_).put(token)
+        injector_step.get_input_port(input_).put(TerminationToken())
+    execute_steps = []
+    for _ in range(num_of_steps):
+        execute_steps.append(
+            translator.get_execute_pipeline(
+                workflow,
+                os.path.join(posixpath.sep, utils.random_name()),
+                ["local"],
+                input_ports,
+                ["test1"],
+                transfer_failures=num_of_failures if step_t == "transfer" else 0,
+            )
+        )
+        execute_steps[-1].command = InjectorFailureCommand(
+            execute_steps[-1],
+            {"0": num_of_failures} if step_t == "execute" else {},
+            failure_t="synchro",
+        )
+        input_ports = execute_steps[-1].get_output_ports()
+    await workflow.save(fault_tolerant_context)
+    executor = StreamFlowExecutor(workflow)
+    _ = await executor.run()
+    for step in execute_steps:
+        result_token = step.get_output_port("test1").token_list
+        assert len(result_token) == 2
+        await _assert_token_result(
+            input_value=token_value,
+            output_token=result_token[0],
+            context=fault_tolerant_context,
+            location=await get_location(fault_tolerant_context, deployment_t),
+        )
+        assert isinstance(result_token[1], TerminationToken)
+
+        for job in (
+            t.value
+            for t in step.get_input_port("__job__").token_list
+            if isinstance(t, JobToken)
+        ):
+            assert (
+                job.name
+                in cast(
+                    DefaultFailureManager, fault_tolerant_context.failure_manager
+                ).retry_requests
+            )
+            retry_request = cast(
+                DefaultFailureManager, fault_tolerant_context.failure_manager
+            ).retry_requests[job.name]
+            assert retry_request.version == num_of_failures
+
+
 # TODO
 # test_ephemeral_volumes
 # test_scatter

@@ -104,8 +104,8 @@ class DefaultFailureManager(FailureManager):
                     )
                 ):
                     # todo: fix
-                    # return TokenAvailability.Available
-                    return TokenAvailability.Unavailable
+                    return TokenAvailability.Available
+                    # return TokenAvailability.Unavailable
         return TokenAvailability.Unavailable
 
     async def notify_jobs(

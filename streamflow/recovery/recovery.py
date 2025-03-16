@@ -158,17 +158,12 @@ class RollbackRecoveryPolicy:
                 # Then remove all the prev tokens
                 for port_name in await mapper.get_output_ports(job_token):
                     new_token = retry_request.token_output[port_name]
-                    # port_row = await self.context.database.get_port_from_token(
-                    #     new_token.persistent_id
-                    # )
-                    # step_rows = await get_step_rows(port_row["id"], self.context)
                     await mapper.replace_token(
                         port_name,
                         new_token,
                         True,
                     )
                     mapper.remove_token(new_token.persistent_id, preserve_token=True)
-
             else:
                 async with retry_request.lock:
                     retry_request.is_running = True

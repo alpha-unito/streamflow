@@ -29,6 +29,8 @@ from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.recovery.failure_manager import DefaultFailureManager
+from streamflow.recovery.utils import RetryRequest
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
@@ -308,10 +310,14 @@ class ForwardProcessor(CommandOutputProcessor):
 
 class InjectorFailureCommand(Command):
     def __init__(
-        self, step: Step, inject_failure: MutableMapping[str, int] | None = None
+        self,
+        step: Step,
+        inject_failure: MutableMapping[str, int] | None = None,
+        failure_t: str | None = None,
     ):
         super().__init__(step)
         self.inject_failure: MutableMapping[str, int] = inject_failure or {}
+        self.failure_t: str | None = failure_t
 
     async def execute(self, job: Job) -> CommandOutput:
         # Counts all the execution of the step in the different workflows
@@ -349,6 +355,13 @@ class InjectorFailureCommand(Command):
         if (
             max_failures := self.inject_failure.get(tag, None)
         ) and num_executions < max_failures:
+            if self.failure_t == "synchro":
+                request = cast(
+                    DefaultFailureManager, self.step.workflow.context.failure_manager
+                ).retry_requests[job.name] = RetryRequest()
+                request.token_output = {
+                    k: t.update(t.value) for k, t in job.inputs.items()
+                }
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
             cmd_out = CommandOutput("Injected success", Status.COMPLETED)
