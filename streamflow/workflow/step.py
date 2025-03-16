@@ -663,8 +663,8 @@ class ExecuteStep(BaseStep):
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
             )
-            await self.workflow.context.failure_manager.notify_jobs(
-                job_token, output_port.name, token
+            await self.workflow.context.failure_manager.notify(
+                output_port.name, token, self.recoverable, job_token
             )
 
     async def _run_job(

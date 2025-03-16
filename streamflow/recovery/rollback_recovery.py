@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections import deque
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
@@ -45,6 +44,7 @@ async def evaluate_token_availability(
     context: StreamFlowContext,
 ) -> TokenAvailability:
     dependency_rows = await context.database.get_input_steps(port_row["id"])
+    # todo: remove step_rows?
     for step_row in step_rows:
         # TODO: remove dependency name and set True the `recoverable` attribute in the SizeTransformer classes
         dependency_name = next(
@@ -56,7 +56,8 @@ async def evaluate_token_availability(
         )
         if dependency_name == "__size__":
             return TokenAvailability.Available
-        elif json.loads(step_row["params"])["recoverable"]:
+        # todo: refactor? class method?
+        elif token.persistent_id in context.failure_manager.recoverable_tokens:
             if await token.is_available(context):
                 logger.debug(f"Token with id {token.persistent_id} is available")
                 return TokenAvailability.Available

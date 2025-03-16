@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 
 from streamflow.core.command import CommandOutput
@@ -28,6 +28,7 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
         self.retry_requests: MutableMapping[str, RetryRequest] = {}
+        self.recoverable_tokens: MutableSequence[int] = []
 
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -108,32 +109,39 @@ class DefaultFailureManager(FailureManager):
                     # return TokenAvailability.Unavailable
         return TokenAvailability.Unavailable
 
-    async def notify_jobs(
-        self, job_token: JobToken, output_port: str, output_token: Token
+    async def notify(
+        self,
+        output_port: str,
+        output_token: Token,
+        recoverable: bool,
+        job_token: JobToken | None = None,
     ) -> None:
-        job_name = job_token.value.name
-        if job_name in self.retry_requests.keys():
-            async with self.retry_requests[job_name].lock:
-                self.retry_requests[job_name].job_token = job_token
-                self.retry_requests[job_name].token_output.setdefault(
-                    output_port, output_token
-                )
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Job {job_name} is notifying on port {output_port}. "
-                        f"There are {len(self.retry_requests[job_name].queue)} workflows in waiting"
+        if recoverable:
+            self.recoverable_tokens.append(output_token.persistent_id)
+        if job_token is not None:
+            job_name = job_token.value.name
+            if job_name in self.retry_requests.keys():
+                async with self.retry_requests[job_name].lock:
+                    self.retry_requests[job_name].job_token = job_token
+                    self.retry_requests[job_name].token_output.setdefault(
+                        output_port, output_token
                     )
-                elems = []
-                for elem in self.retry_requests[job_name].queue:
-                    if elem.port.name == output_port:
-                        elem.port.put(output_token)
-                        elem.waiting_token -= 1
-                        if elem.waiting_token == 0:
-                            elems.append(elem)
-                            elem.port.put(TerminationToken())
-                for elem in elems:
-                    self.retry_requests[job_name].queue.remove(elem)
-                self.retry_requests[job_name].is_running = False
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Job {job_name} is notifying on port {output_port}. "
+                            f"There are {len(self.retry_requests[job_name].queue)} workflows in waiting"
+                        )
+                    elems = []
+                    for elem in self.retry_requests[job_name].queue:
+                        if elem.port.name == output_port:
+                            elem.port.put(output_token)
+                            elem.waiting_token -= 1
+                            if elem.waiting_token == 0:
+                                elems.append(elem)
+                                elem.port.put(TerminationToken())
+                    for elem in elems:
+                        self.retry_requests[job_name].queue.remove(elem)
+                    self.retry_requests[job_name].is_running = False
 
     async def update_job_status(self, job_name: str) -> None:
         if (
@@ -190,8 +198,12 @@ class DummyFailureManager(FailureManager):
             f"FAILED Job {job.name} with error:\n\t{command_output.value}"
         )
 
-    async def notify_jobs(
-        self, job_token: JobToken, output_port: str, output_token: Token
+    async def notify(
+        self,
+        output_port: str,
+        output_token: Token,
+        recoverable: bool,
+        job_token: JobToken | None = None,
     ) -> None:
         pass
 

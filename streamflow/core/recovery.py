@@ -46,8 +46,12 @@ class FailureManager(SchemaEntity):
     ) -> None: ...
 
     @abstractmethod
-    async def notify_jobs(
-        self, job_token: JobToken, output_port: str, output_token: Token
+    async def notify(
+        self,
+        output_port: str,
+        output_token: Token,
+        recoverable: bool,
+        job_token: JobToken | None = None,
     ) -> None: ...
 
     @abstractmethod
