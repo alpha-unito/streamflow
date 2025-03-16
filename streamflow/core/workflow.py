@@ -424,7 +424,7 @@ class Token(PersistableEntity):
         loading_context.add_token(persistent_id, token)
         return token
 
-    async def is_available(self, context: StreamFlowContext):
+    async def is_available(self, context: StreamFlowContext) -> bool:
         if isinstance(self.value, Token):
             return await self.value.is_available(context)
         else:

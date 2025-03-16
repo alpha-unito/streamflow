@@ -39,16 +39,6 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
     return weight
 
 
-async def _is_file_token_available(context: StreamFlowContext, value: Any) -> bool:
-    if path := utils.get_path_from_token(value):
-        data_locations = context.data_manager.get_data_locations(
-            path=path, data_type=DataType.PRIMARY
-        )
-        return len(data_locations) != 0
-    else:
-        return True
-
-
 class CWLFileToken(FileToken):
     __slots__ = ()
 
@@ -73,9 +63,3 @@ class CWLFileToken(FileToken):
             return await self.value.get_weight(context)
         else:
             return await _get_file_token_weight(context, self.value)
-
-    async def is_available(self, context: StreamFlowContext):
-        if isinstance(self.value, Token):
-            return await self.value.is_available(context)
-        else:
-            return await _is_file_token_available(context, self.value)
