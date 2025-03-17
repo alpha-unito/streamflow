@@ -287,7 +287,6 @@ class BaseFileToken(FileToken):
 class BaseInputInjectorStep(InputInjectorStep):
     def __init__(self, name: str, workflow: Workflow, job_port: JobPort):
         super().__init__(name, workflow, job_port)
-        self.recoverable = True
 
     async def process_input(self, job: Job, token_value: Any) -> Token:
         return await build_token(

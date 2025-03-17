@@ -214,7 +214,7 @@ class DefaultTransformer(ManyToOneTransformer):
             )
         primary_token = next(iter(inputs[k] for k in inputs))
         if get_token_value(primary_token) is not None:
-            output = {self.get_output_name(): primary_token.update(primary_token.value)}
+            return {self.get_output_name(): primary_token.update(primary_token.value)}
         else:
             if not self.default_token:
                 self.default_token = (

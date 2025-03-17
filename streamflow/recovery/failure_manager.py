@@ -201,8 +201,7 @@ class DefaultFailureManager(FailureManager):
                         )
                     )
                 ):
-                    # todo: check it in Available
-                    return TokenAvailability.Unavailable
+                    return TokenAvailability.Available
         return TokenAvailability.Unavailable
 
     def is_recoverable(self, token: Token) -> bool:

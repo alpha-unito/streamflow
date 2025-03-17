@@ -200,6 +200,70 @@ class DefaultScheduler(Scheduler):
             )
         return self.binding_filter_map[config.name]
 
+    async def _free_resources(
+        self, connector: Connector, job_allocation: JobAllocation, status: Status
+    ) -> None:
+        async with contextlib.AsyncExitStack() as exit_stack:
+            for conn in _get_connector_stack(connector):
+                await exit_stack.enter_async_context(self.locks[conn.deployment_name])
+            conn = connector
+            locations = job_allocation.locations
+            job_hardware = job_allocation.hardware
+            while locations:
+                for loc in locations:
+                    if loc.name in self.hardware_locations.keys():
+                        try:
+                            storage_usage = Hardware(
+                                storage=(
+                                    {
+                                        k: Storage(
+                                            mount_point=job_hardware.storage[
+                                                k
+                                            ].mount_point,
+                                            size=size / 2**20,
+                                        )
+                                        for k, size in (
+                                            await remotepath.get_storage_usages(
+                                                self.context,
+                                                loc,
+                                                job_hardware,
+                                            )
+                                        ).items()
+                                    }
+                                    if status != Status.RUNNING
+                                    else {}
+                                )
+                            )
+                        except WorkflowExecutionException as err:
+                            if status == Status.ROLLBACK:
+                                logger.warning(
+                                    f"Impossible to retrieval actual storage usage in "
+                                    f"the {job_allocation.job} job working directories: {err}"
+                                )
+                                storage_usage = Hardware()
+                            else:
+                                raise
+                        self.hardware_locations[loc.name] = (
+                            self.hardware_locations[loc.name] - job_hardware
+                        ) + storage_usage
+                if locations := [loc.wraps for loc in locations if loc.stacked]:
+                    conn = cast(ConnectorWrapper, conn).connector
+                    for execution_loc in locations:
+                        job_hardware = await utils.bind_mount_point(
+                            self.context,
+                            conn,
+                            next(
+                                available_loc
+                                for available_loc in (
+                                    await conn.get_available_locations(
+                                        execution_loc.service
+                                    )
+                                ).values()
+                                if available_loc.name == execution_loc.name
+                            ),
+                            job_hardware,
+                        )
+
     async def _get_locations(
         self,
         job: Job,

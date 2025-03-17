@@ -664,7 +664,11 @@ class ExecuteStep(BaseStep):
                 )
             )
             await self.workflow.context.failure_manager.notify(
-                output_port.name, token, self.recoverable, job_token
+                # todo: fix extending the executestep with cwlexecutestep
+                output_port.name,
+                token,
+                True,
+                job_token,
             )
 
     async def _run_job(

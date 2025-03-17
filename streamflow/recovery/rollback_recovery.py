@@ -268,7 +268,7 @@ class GraphMapper:
 
     async def get_port_and_step_ids(
         self, output_port_names: Iterable[str]
-    ) -> tuple[MutableSet[int], MutableSet[int]]:
+    ) -> MutableSet[int]:
         port_ids = {
             min(self.port_name_ids[port_name])
             for port_name in self.port_tokens.keys()
@@ -284,7 +284,6 @@ class GraphMapper:
             )
             for dependency_row in dependency_rows
         }
-
         # Remove steps with some missing input ports
         # A port can have multiple input steps. It is necessary to load only the needed steps
         step_to_remove = set()
@@ -312,7 +311,7 @@ class GraphMapper:
                 step_name = (await self.context.database.get_step(step_id))["name"]
                 logger.debug(f"Removing step {step_name}")
             step_ids.remove(step_id)
-        return port_ids, step_ids
+        return step_ids
 
     def remove_port(self, port_name: str) -> None:
         if logger.isEnabledFor(logging.INFO):

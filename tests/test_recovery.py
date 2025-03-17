@@ -117,7 +117,6 @@ async def test_execute(
         injector_step = translator.get_base_injector_step(
             ["local"], input_, posixpath.join(posixpath.sep, input_), workflow
         )
-        injector_step.recoverable = True
         input_ports[input_] = injector_step.get_output_port(input_)
         injector_step.get_input_port(input_).put(token)
         injector_step.get_input_port(input_).put(TerminationToken())
@@ -205,7 +204,6 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
         injector_step = translator.get_base_injector_step(
             ["local"], input_, posixpath.join(posixpath.sep, input_), workflow
         )
-        injector_step.recoverable = True
         input_ports[input_] = injector_step.get_output_port(input_)
         injector_step.get_input_port(input_).put(token)
         injector_step.get_input_port(input_).put(TerminationToken())

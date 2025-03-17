@@ -1861,7 +1861,8 @@ class CWLTranslator:
                 step.command.time_limit = requirements["ToolTimeLimit"].timelimit
             # Process WorkReuse
             if "WorkReuse" in requirements:
-                step.recoverable = requirements["WorkReuse"].enableReuse
+                # todo: fix
+                _ = requirements["WorkReuse"].enableReuse
         elif isinstance(cwl_element, get_args(cwl_utils.parser.ExpressionTool)):
             step.command = CWLExpressionCommand(step, cwl_element.expression)
         # Add JS requirements
