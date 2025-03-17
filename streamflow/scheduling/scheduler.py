@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.deployment import BindingFilter, Connector, FilterConfig, Target
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import (
     Hardware,
     HardwareRequirement,
@@ -20,6 +21,7 @@ from streamflow.core.scheduling import (
     Scheduler,
     Storage,
 )
+from streamflow.core.utils import compare_tags, get_job_step_name, get_job_tag
 from streamflow.core.workflow import Job, Status
 from streamflow.data import remotepath, utils
 from streamflow.deployment.filter import binding_filter_classes
@@ -127,6 +129,70 @@ class DefaultScheduler(Scheduler):
                 if loc := loc.wraps if loc.stacked else None:
                     conn = cast(ConnectorWrapper, conn).connector
 
+    async def _free_resources(
+        self, connector: Connector, job_allocation: JobAllocation, status: Status
+    ) -> None:
+        async with contextlib.AsyncExitStack() as exit_stack:
+            for conn in _get_connector_stack(connector):
+                await exit_stack.enter_async_context(self.locks[conn.deployment_name])
+            conn = connector
+            locations = job_allocation.locations
+            job_hardware = job_allocation.hardware
+            while locations:
+                for loc in locations:
+                    if loc.name in self.hardware_locations.keys():
+                        try:
+                            storage_usage = Hardware(
+                                storage=(
+                                    {
+                                        k: Storage(
+                                            mount_point=job_hardware.storage[
+                                                k
+                                            ].mount_point,
+                                            size=size / 2**20,
+                                        )
+                                        for k, size in (
+                                            await remotepath.get_storage_usages(
+                                                self.context,
+                                                loc,
+                                                job_hardware,
+                                            )
+                                        ).items()
+                                    }
+                                    if status != Status.RUNNING
+                                    else {}
+                                )
+                            )
+                        except WorkflowExecutionException as err:
+                            if status == Status.ROLLBACK:
+                                logger.warning(
+                                    f"Impossible to retrieve the actual storage usage in "
+                                    f"the {job_allocation.job} job working directories: {err}"
+                                )
+                                storage_usage = Hardware()
+                            else:
+                                raise err
+                        self.hardware_locations[loc.name] = (
+                            self.hardware_locations[loc.name] - job_hardware
+                        ) + storage_usage
+                if locations := [loc.wraps for loc in locations if loc.stacked]:
+                    conn = cast(ConnectorWrapper, conn).connector
+                    for execution_loc in locations:
+                        job_hardware = await utils.bind_mount_point(
+                            self.context,
+                            conn,
+                            next(
+                                available_loc
+                                for available_loc in (
+                                    await conn.get_available_locations(
+                                        execution_loc.service
+                                    )
+                                ).values()
+                                if available_loc.name == execution_loc.name
+                            ),
+                            job_hardware,
+                        )
+
     def _get_binding_filter(self, config: FilterConfig):
         if config.name not in self.binding_filter_map:
             self.binding_filter_map[config.name] = binding_filter_classes[config.type](
@@ -172,13 +238,20 @@ class DefaultScheduler(Scheduler):
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
 
-    def _get_running_jobs(self, location: AvailableLocation):
+    def _get_running_jobs(
+        self, job_name: str, location: AvailableLocation
+    ) -> MutableSequence[str]:
         if location.name in self.location_allocations.get(location.deployment, {}):
             return list(
                 filter(
                     lambda x: (
                         self.job_allocations[x].status == Status.RUNNING
                         or self.job_allocations[x].status == Status.FIREABLE
+                        or (
+                            self.job_allocations[x].status == Status.ROLLBACK
+                            and get_job_step_name(x) == get_job_step_name(job_name)
+                            and compare_tags(get_job_tag(x), get_job_tag(job_name)) < 0
+                        )
                     ),
                     self.location_allocations[location.deployment][location.name].jobs,
                 )
@@ -191,6 +264,7 @@ class DefaultScheduler(Scheduler):
         connector: Connector,
         location: AvailableLocation,
         hardware_requirements: MutableMapping[str, Hardware],
+        job_name: str,
     ) -> bool:
         hardware_requirement = hardware_requirements[
             posixpath.join(connector.deployment_name, location.name)
@@ -207,7 +281,7 @@ class DefaultScheduler(Scheduler):
             # Otherwise, simply compute the number of allocated slots
             else:
                 slots = location.slots if location.slots is not None else 1
-                if not len(self._get_running_jobs(location)) < slots:
+                if not len(self._get_running_jobs(job_name, location)) < slots:
                     return False
             # If AvailableLocation is stacked, evaluate also the inner location
             if location := location.wraps if location.stacked else None:
@@ -294,6 +368,7 @@ class DefaultScheduler(Scheduler):
                                 connector=connector,
                                 location=loc,
                                 hardware_requirements=hardware_requirements,
+                                job_name=job.name,
                             )
                         }
                         if len(valid_locations) >= target.locations:
@@ -422,64 +497,28 @@ class DefaultScheduler(Scheduler):
         ) and connector.deployment_name in self.wait_queues:
             async with self.wait_queues[connector.deployment_name]:
                 if job_allocation := self.job_allocations.get(job_name):
-                    if status != job_allocation.status:
+                    if status != (previous_status := job_allocation.status):
                         job_allocation.status = status
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 f"Job {job_name} changed status to {status.name}"
                             )
-                    if status in [Status.COMPLETED, Status.FAILED]:
-                        if job_hardware := job_allocation.hardware:
-                            async with contextlib.AsyncExitStack() as exit_stack:
-                                for conn in _get_connector_stack(connector):
-                                    await exit_stack.enter_async_context(
-                                        self.locks[conn.deployment_name]
-                                    )
-                                locations = job_allocation.locations
-                                conn = connector
-                                while locations:
-                                    for loc in locations:
-                                        if loc.name in self.hardware_locations.keys():
-                                            self.hardware_locations[loc.name] = (
-                                                self.hardware_locations[loc.name]
-                                                - job_hardware
-                                            ) + Hardware(
-                                                storage={
-                                                    k: Storage(
-                                                        mount_point=job_hardware.storage[
-                                                            k
-                                                        ].mount_point,
-                                                        size=size / 2**20,
-                                                    )
-                                                    for k, size in (
-                                                        await remotepath.get_storage_usages(
-                                                            self.context,
-                                                            loc,
-                                                            job_hardware,
-                                                        )
-                                                    ).items()
-                                                }
-                                            )
-                                    if locations := [
-                                        loc.wraps for loc in locations if loc.stacked
-                                    ]:
-                                        conn = cast(ConnectorWrapper, conn).connector
-                                        for execution_loc in locations:
-                                            job_hardware = await utils.bind_mount_point(
-                                                self.context,
-                                                conn,
-                                                next(
-                                                    available_loc
-                                                    for available_loc in (
-                                                        await conn.get_available_locations(
-                                                            execution_loc.service
-                                                        )
-                                                    ).values()
-                                                    if available_loc.name
-                                                    == execution_loc.name
-                                                ),
-                                                job_hardware,
-                                            )
+                    if status in [Status.COMPLETED, Status.FAILED] or (
+                        status == Status.ROLLBACK and previous_status == Status.RUNNING
+                    ):
+                        await self._free_resources(connector, job_allocation, status)
+                        if status == Status.ROLLBACK:
+                            for loc in job_allocation.locations:
+                                if (
+                                    job_name
+                                    in self.location_allocations[loc.deployment][
+                                        loc.name
+                                    ].jobs
+                                ):
+                                    self.location_allocations[loc.deployment][
+                                        loc.name
+                                    ].jobs.remove(job_name)
+                            job_allocation.locations.clear()
                         self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
