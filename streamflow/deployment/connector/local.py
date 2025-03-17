@@ -54,7 +54,7 @@ class LocalConnector(BaseConnector):
                     )
                 except PermissionError as pe:
                     logger.warning(
-                        f"Skippping Storage on partition {disk.device} on {disk.mountpoint} "
+                        f"Skipping Storage on partition {disk.device} on {disk.mountpoint} "
                         f"for deployment {self.deployment_name}: {pe}"
                     )
         self._hardware: Hardware = Hardware(
