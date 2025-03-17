@@ -254,7 +254,7 @@ async def build_token(job: Job, token_value: Any, context: StreamFlowContext) ->
     if isinstance(token_value, MutableSequence):
         return ListToken(
             tag=get_tag(job.inputs.values()),
-            value=[build_token(job, v, context) for v in token_value],
+            value=[await build_token(job, v, context) for v in token_value],
         )
     elif isinstance(token_value, MutableMapping):
         if get_token_class(token_value) in ["File", "Directory"]:
@@ -273,8 +273,13 @@ async def build_token(job: Job, token_value: Any, context: StreamFlowContext) ->
         else:
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
-                value={k: build_token(job, v, context) for k, v in token_value.items()},
+                value={
+                    k: await build_token(job, v, context)
+                    for k, v in token_value.items()
+                },
             )
+    elif isinstance(token_value, FileToken):
+        return token_value.update(token_value.value)
     else:
         return Token(tag=get_tag(job.inputs.values()), value=token_value)
 
@@ -296,7 +301,7 @@ class BaseInputInjectorStep(InputInjectorStep):
         )
 
 
-class ForwardProcessor(CommandOutputProcessor):
+class ForwardFirstInputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
@@ -304,10 +309,32 @@ class ForwardProcessor(CommandOutputProcessor):
         connector: Connector | None = None,
     ) -> Token | None:
         token = next(iter(job.inputs.values()))
-        return token.update(token.value)
+        if isinstance(token, FileToken):
+            return token.update(token.value)
+        else:
+            return await build_token(job, token.value, self.workflow.context)
+
+
+async def _invalidate_token(context: StreamFlowContext, job: Job, token: Token) -> None:
+    if isinstance(token, FileToken):
+        for loc in context.scheduler.get_locations(job.name):
+            for path in await token.get_paths(context):
+                context.data_manager.invalidate_location(loc, path)
+    elif isinstance(token, ListToken):
+        for t in token.value:
+            await _invalidate_token(context, job, t)
+    elif isinstance(token, ObjectToken):
+        for t in token.value.value():
+            await _invalidate_token(context, job, t)
+    elif isinstance(token.value, Token):
+        await _invalidate_token(context, job, token.value)
 
 
 class InjectorFailureCommand(Command):
+    SOFT_ERROR = "soft_error"
+    FAIL_STOP = "fail_stop"
+    INJECT_TOKEN = "inject_error"
+
     def __init__(
         self,
         step: Step,
@@ -316,21 +343,22 @@ class InjectorFailureCommand(Command):
     ):
         super().__init__(step)
         self.inject_failure: MutableMapping[str, int] = inject_failure or {}
-        self.failure_t: str | None = failure_t
+        self.failure_t: int | None = failure_t
 
     async def execute(self, job: Job) -> CommandOutput:
         # Counts all the execution of the step in the different workflows
+        context = self.step.workflow.context
         loading_context = DefaultDatabaseLoadingContext()
         workflows = await asyncio.gather(
             *(
                 asyncio.create_task(
                     Workflow.load(
-                        context=self.step.workflow.context,
+                        context=context,
                         persistent_id=w["id"],
                         loading_context=loading_context,
                     )
                 )
-                for w in await self.step.workflow.context.database.get_workflows_by_name(
+                for w in await context.database.get_workflows_by_name(
                     self.step.workflow.name
                 )
             )
@@ -341,9 +369,7 @@ class InjectorFailureCommand(Command):
         executions = await asyncio.gather(
             *(
                 asyncio.create_task(
-                    self.step.workflow.context.database.get_executions_by_step(
-                        s.persistent_id
-                    )
+                    context.database.get_executions_by_step(s.persistent_id)
                 )
                 for s in steps
             )
@@ -354,20 +380,21 @@ class InjectorFailureCommand(Command):
         if (
             max_failures := self.inject_failure.get(tag, None)
         ) and num_executions < max_failures:
-            if self.failure_t == "synchro":
+            if self.failure_t == InjectorFailureCommand.INJECT_TOKEN:
                 request = cast(
-                    DefaultFailureManager, self.step.workflow.context.failure_manager
+                    DefaultFailureManager, context.failure_manager
                 ).retry_requests[job.name] = RetryRequest()
                 request.token_output = {
                     k: t.update(t.value) for k, t in job.inputs.items()
                 }
+            elif self.failure_t == InjectorFailureCommand.FAIL_STOP:
+                for t in job.inputs.values():
+                    await _invalidate_token(context, job, t)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
             cmd_out = CommandOutput("Injected success", Status.COMPLETED)
-        await self.step.workflow.context.database.update_execution(
-            await self.step.workflow.context.database.add_execution(
-                self.step.persistent_id, tag, "true"
-            ),
+        await context.database.update_execution(
+            await context.database.add_execution(self.step.persistent_id, tag, "true"),
             {
                 "status": cmd_out.status,
             },
@@ -394,10 +421,16 @@ class InjectorFailureCommand(Command):
 
 class InjectorFailureTransferStep(TransferStep):
     def __init__(
-        self, name: str, workflow: Workflow, job_port: JobPort, num_failures: int = 0
+        self,
+        name: str,
+        workflow: Workflow,
+        job_port: JobPort,
+        num_failures: int = 0,
+        failure_t: str | None = None,
     ):
         super().__init__(name, workflow, job_port)
         self.num_failures: int = num_failures
+        self.failure_t: str | None = failure_t
 
     @classmethod
     async def _load(
@@ -460,6 +493,9 @@ class InjectorFailureTransferStep(TransferStep):
             len([w.steps[self.name] for w in workflows if self.name in w.steps]) - 1
             < self.num_failures
         ):
+            if self.failure_t == InjectorFailureCommand.FAIL_STOP:
+                for t in job.inputs.values():
+                    await _invalidate_token(self.workflow.context, job, t)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         # Execute the transfer
         if isinstance(token, ListToken):
@@ -554,6 +590,7 @@ class RecoveryTranslator:
         outputs: MutableSequence[str],
         binding_config: BindingConfig | None = None,
         transfer_failures: int = 0,
+        failure_t: str | None = None,
     ) -> ExecuteStep:
         schedule_step = self.get_schedule_step(
             binding_config, deployment_names, step_name, workflow
@@ -568,12 +605,15 @@ class RecoveryTranslator:
                 name=posixpath.join(step_name, "__transfer__", key),
                 job_port=schedule_step.get_output_port(),
                 num_failures=transfer_failures,
+                failure_t=failure_t,
             )
             transfer_step.add_input_port(key, port)
             transfer_step.add_output_port(key, workflow.create_port())
             execute_step.add_input_port(key, transfer_step.get_output_port(key))
         for output in outputs:
             execute_step.add_output_port(
-                output, workflow.create_port(), ForwardProcessor(output, workflow)
+                output,
+                workflow.create_port(),
+                ForwardFirstInputProcessor(output, workflow),
             )
         return execute_step

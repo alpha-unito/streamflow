@@ -452,6 +452,7 @@ class ProvenanceGraph:
                             )
                     # If the port is an empty unbound input ports
                     elif await token.is_available(self.context):
+                        is_available = TokenAvailability.Available
                         self.add(None, token)
                     else:
                         raise FailureHandlingException(
