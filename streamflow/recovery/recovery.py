@@ -104,17 +104,18 @@ async def _inject_tokens(
             port.put(TerminationToken())
 
 
-async def _set_step_states(new_workflow: Workflow, mapper: GraphMapper):
+async def _set_step_states(new_workflow: Workflow, mapper: GraphMapper) -> None:
     for step in new_workflow.steps.values():
         if isinstance(step, ScatterStep):
             port = step.get_output_port()
+            missing_tokens = tuple(
+                mapper.token_instances[token_id].tag
+                for token_id in mapper.port_tokens[port.name]
+                if not mapper.token_available[token_id]
+            )
             new_workflow.ports[port.name] = FilterTokenPort(
                 new_workflow,
                 port.name,
-                valid_tags=[
-                    mapper.token_instances[token_id].tag
-                    for token_id in mapper.port_tokens[port.name]
-                    if not mapper.token_available[token_id]
-                ],
+                filter_function=lambda t, tokens=missing_tokens: t.tag in tokens,
             )
             new_workflow.ports[port.name].token_list = port.token_list

@@ -39,6 +39,11 @@ async def _is_path_available(
         context.data_manager.invalidate_location(
             data_location.location, data_location.path
         )
+    elif logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            f"Available {data_location.path} path on location {data_location.location}"
+        )
+
     return result
 
 

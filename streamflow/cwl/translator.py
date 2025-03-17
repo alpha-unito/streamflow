@@ -1367,7 +1367,6 @@ class CWLTranslator:
                 name=posixpath.join("__deploy__", deployment_config.name),
                 deployment_config=deployment_config,
             )
-            self.deployment_map[deployment_config.name].recoverable = True
         return self.deployment_map[deployment_config.name]
 
     def _get_input_port(
@@ -1525,7 +1524,6 @@ class CWLTranslator:
             name=global_name + "-injector",
             job_port=schedule_step.get_output_port(),
         )
-        injector_step.recoverable = True
         # Create an input port and inject values
         input_port = workflow.create_port()
         input_port.put(Token(value=value))

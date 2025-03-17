@@ -165,7 +165,6 @@ class DefaultTransformer(ManyToOneTransformer):
         super().__init__(name, workflow)
         self.default_port: Port = default_port
         self.default_token: Token | None = None
-        self.recoverable: bool = True
 
     @classmethod
     async def _load(
@@ -215,7 +214,7 @@ class DefaultTransformer(ManyToOneTransformer):
             )
         primary_token = next(iter(inputs[k] for k in inputs))
         if get_token_value(primary_token) is not None:
-            return {self.get_output_name(): primary_token.update(primary_token.value)}
+            output = {self.get_output_name(): primary_token.update(primary_token.value)}
         else:
             if not self.default_token:
                 self.default_token = (

@@ -13,7 +13,7 @@ from streamflow.core.utils import contains_persistent_id, get_class_from_name
 from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.persistence.utils import get_step_rows, load_dependee_tokens
+from streamflow.persistence.utils import load_dependee_tokens
 from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.token import JobToken
 
@@ -38,36 +38,18 @@ async def create_graph_mapper(
 
 
 async def evaluate_token_availability(
-    token: Token,
-    step_rows: MutableSequence[MutableMapping[str, Any]],
-    port_row: MutableMapping[str, Any],
-    context: StreamFlowContext,
+    token: Token, context: StreamFlowContext
 ) -> TokenAvailability:
-    dependency_rows = await context.database.get_input_steps(port_row["id"])
-    # todo: remove step_rows?
-    for step_row in step_rows:
-        # TODO: remove dependency name and set True the `recoverable` attribute in the SizeTransformer classes
-        dependency_name = next(
-            iter(
-                dep_row["name"]
-                for dep_row in dependency_rows
-                if dep_row["step"] == step_row["id"]
-            )
-        )
-        if dependency_name == "__size__":
+    if context.failure_manager.is_recoverable(token):
+        if await token.is_available(context):
+            logger.debug(f"Token with id {token.persistent_id} is available")
             return TokenAvailability.Available
-        # todo: refactor? class method?
-        elif token.persistent_id in context.failure_manager.recoverable_tokens:
-            if await token.is_available(context):
-                logger.debug(f"Token with id {token.persistent_id} is available")
-                return TokenAvailability.Available
-            else:
-                logger.debug(f"Token with id {token.persistent_id} is not available")
-                return TokenAvailability.Unavailable
         else:
-            logger.debug(f"Token with id {token.persistent_id} is not recoverable")
+            logger.debug(f"Token with id {token.persistent_id} is not available")
             return TokenAvailability.Unavailable
-    return TokenAvailability.Unavailable
+    else:
+        logger.debug(f"Token with id {token.persistent_id} is not recoverable")
+        return TokenAvailability.Unavailable
 
 
 class TokenAvailability(Enum):
@@ -82,12 +64,10 @@ class ProvenanceToken:
         token_instance: Token,
         is_available: TokenAvailability,
         port_row: MutableMapping[str, Any],
-        step_rows: MutableSequence[MutableMapping[str, Any]],
     ):
         self.instance: Token = token_instance
         self.is_available: TokenAvailability = is_available
         self.port_row: MutableMapping[str, Any] = port_row
-        self.step_rows: MutableSequence[MutableMapping[str, Any]] = step_rows
 
 
 class DirectGraph:
@@ -432,8 +412,6 @@ class ProvenanceGraph:
             port_row = await self.context.database.get_port_from_token(
                 token.persistent_id
             )
-            # Get steps which has the output port (nb. a port can have multiple steps due to the loop case)
-            step_rows = await get_step_rows(port_row["id"], self.context)
             if (
                 isinstance(token, JobToken)
                 and (
@@ -451,7 +429,7 @@ class ProvenanceGraph:
             else:
                 if (
                     is_available := await evaluate_token_availability(
-                        token, step_rows, port_row, self.context
+                        token, self.context
                     )
                 ) == TokenAvailability.Available:
                     self.add(None, token)
@@ -482,5 +460,5 @@ class ProvenanceGraph:
                         )
             self.info_tokens.setdefault(
                 token.persistent_id,
-                ProvenanceToken(token, is_available, port_row, step_rows),
+                ProvenanceToken(token, is_available, port_row),
             )

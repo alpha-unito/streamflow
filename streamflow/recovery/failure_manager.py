@@ -154,7 +154,7 @@ class DefaultFailureManager(FailureManager):
         ):
             mapper.remove_token(token_id, preserve_token=True)
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
     @classmethod
@@ -201,14 +201,18 @@ class DefaultFailureManager(FailureManager):
                         )
                     )
                 ):
-                    return TokenAvailability.Available
+                    # todo: check it in Available
+                    return TokenAvailability.Unavailable
         return TokenAvailability.Unavailable
+
+    def is_recoverable(self, token: Token) -> bool:
+        return token.persistent_id in self.recoverable_tokens
 
     async def notify(
         self,
         output_port: str,
         output_token: Token,
-        recoverable: bool,
+        recoverable: bool = True,
         job_token: JobToken | None = None,
     ) -> None:
         if recoverable:
@@ -237,8 +241,9 @@ class DefaultFailureManager(FailureManager):
 
     async def sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
         job_ports = {}
-        for job_token in filter(
-            lambda t: isinstance(t, JobToken), mapper.token_instances.values()
+        for job_token in list(
+            # todo: visit the jobtoken bottom-up in the graph
+            filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         ):
             job_name = job_token.value.name
             retry_request = self.retry_requests.setdefault(job_name, RetryRequest())
@@ -251,7 +256,7 @@ class DefaultFailureManager(FailureManager):
                     logger.debug(
                         f"Synchronize rollbacks: job {job_token.value.name} output available"
                     )
-                # todo: create a unit test for this case and check if it works well
+                # todo: create a unit test with a complex graph where the nodes are removed
                 # Search execute token after job token, replace this token with job_req token.
                 # Then remove all the prev tokens
                 for port_name in await mapper.get_output_ports(job_token):
@@ -277,7 +282,7 @@ class DummyFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
     async def handle_exception(
@@ -301,13 +306,16 @@ class DummyFailureManager(FailureManager):
         )
 
     async def is_recovered(self, token: JobToken) -> TokenAvailability:
-        pass
+        return TokenAvailability.Unavailable
+
+    def is_recoverable(self, token: Token) -> bool:
+        return False
 
     async def notify(
         self,
         output_port: str,
         output_token: Token,
-        recoverable: bool,
+        recoverable: bool = True,
         job_token: JobToken | None = None,
     ) -> None:
         pass

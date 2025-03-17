@@ -34,7 +34,7 @@ class FailureManager(SchemaEntity):
     # TODO update documentation
 
     @abstractmethod
-    async def close(self): ...
+    async def close(self) -> None: ...
 
     @abstractmethod
     async def handle_exception(
@@ -46,14 +46,18 @@ class FailureManager(SchemaEntity):
         self, job: Job, step: Step, command_output: CommandOutput
     ) -> None: ...
 
+    @abstractmethod
     async def is_recovered(self, token: JobToken) -> TokenAvailability: ...
+
+    @abstractmethod
+    def is_recoverable(self, token: Token) -> bool: ...
 
     @abstractmethod
     async def notify(
         self,
         output_port: str,
         output_token: Token,
-        recoverable: bool,
+        recoverable: bool = True,
         job_token: JobToken | None = None,
     ) -> None: ...
 
