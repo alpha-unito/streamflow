@@ -378,10 +378,11 @@ class Step(PersistableEntity, ABC):
 
 
 class Token(PersistableEntity):
-    __slots__ = ("persistent_id", "value", "tag")
+    __slots__ = ("persistent_id", "recoverable", "value", "tag")
 
-    def __init__(self, value: Any, tag: str = "0"):
+    def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
+        self.recoverable: bool = recoverable
         self.value: Any = value
         self.tag: str = tag
 
@@ -395,7 +396,7 @@ class Token(PersistableEntity):
         value = json.loads(row["value"])
         if isinstance(value, MutableMapping) and "token" in value:
             value = await loading_context.load_token(context, value["token"])
-        return cls(tag=row["tag"], value=value)
+        return cls(tag=row["tag"], value=value, recoverable=row["recoverable"])
 
     async def _save_value(self, context: StreamFlowContext):
         if isinstance(self.value, Token) and not self.value.persistent_id:
@@ -431,8 +432,8 @@ class Token(PersistableEntity):
         else:
             return True
 
-    def retag(self, tag: str) -> Token:
-        return self.__class__(tag=tag, value=self.value)
+    def retag(self, tag: str, recoverable: bool = False) -> Token:
+        return self.__class__(tag=tag, value=self.value, recoverable=recoverable)
 
     async def save(self, context: StreamFlowContext, port_id: int | None = None):
         async with self.persistence_lock:
@@ -440,6 +441,7 @@ class Token(PersistableEntity):
                 try:
                     self.persistent_id = await context.database.add_token(
                         port=port_id,
+                        recoverable=self.recoverable,
                         tag=self.tag,
                         type=type(self),
                         value=json.dumps(await self._save_value(context)),
@@ -447,8 +449,8 @@ class Token(PersistableEntity):
                 except TypeError as e:
                     raise WorkflowExecutionException from e
 
-    def update(self, value: Any) -> Token:
-        return self.__class__(tag=self.tag, value=value)
+    def update(self, value: Any, recoverable: bool = False) -> Token:
+        return self.__class__(tag=self.tag, value=value, recoverable=recoverable)
 
 
 class TokenProcessor(ABC):

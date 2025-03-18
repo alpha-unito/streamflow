@@ -40,15 +40,6 @@ class AllNonNullTransformer(OneToOneTransformer):
 
 
 class CartesianProductSizeTransformer(ManyToOneTransformer):
-    async def _persist_token(
-        self,
-        token: Token,
-        port: Port,
-        input_token_ids: MutableSequence[int],
-        recoverable: bool = False,
-    ) -> Token:
-        return await super()._persist_token(token, port, input_token_ids, True)
-
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
@@ -61,7 +52,7 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
         value = functools.reduce(
             lambda x, y: x * y, (token.value for token in inputs.values())
         )
-        return {self.get_output_name(): Token(value, tag=tag)}
+        return {self.get_output_name(): Token(value, tag=tag, recoverable=True)}
 
 
 class CloneTransformer(ManyToOneTransformer):
@@ -185,15 +176,6 @@ class DefaultTransformer(ManyToOneTransformer):
             ),
         )
 
-    async def _persist_token(
-        self,
-        token: Token,
-        port: Port,
-        input_token_ids: MutableSequence[int],
-        recoverable: bool = False,
-    ) -> Token:
-        return await super()._persist_token(token, port, input_token_ids, True)
-
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
@@ -220,19 +202,14 @@ class DefaultTransformer(ManyToOneTransformer):
                 self.default_token = (
                     await self._get_inputs({"__default__": self.default_port})
                 )["__default__"]
-            return {self.get_output_name(): self.default_token.retag(primary_token.tag)}
+            return {
+                self.get_output_name(): self.default_token.retag(
+                    primary_token.tag, recoverable=True
+                )
+            }
 
 
 class DefaultRetagTransformer(DefaultTransformer):
-    async def _persist_token(
-        self,
-        token: Token,
-        port: Port,
-        input_token_ids: MutableSequence[int],
-        recoverable: bool = False,
-    ) -> Token:
-        return await super()._persist_token(token, port, input_token_ids, True)
-
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
@@ -245,19 +222,10 @@ class DefaultRetagTransformer(DefaultTransformer):
             self.default_token = (
                 await self._get_inputs({"__default__": self.default_port})
             )["__default__"]
-        return {self.get_output_name(): self.default_token.retag(tag)}
+        return {self.get_output_name(): self.default_token.retag(tag, recoverable=True)}
 
 
 class DotProductSizeTransformer(ManyToOneTransformer):
-    async def _persist_token(
-        self,
-        token: Token,
-        port: Port,
-        input_token_ids: MutableSequence[int],
-        recoverable: bool = False,
-    ) -> Token:
-        return await super()._persist_token(token, port, input_token_ids, True)
-
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
@@ -271,7 +239,11 @@ class DotProductSizeTransformer(ManyToOneTransformer):
             raise WorkflowExecutionException(
                 f"Step {self.name} received {input_token.value}, but it must be a positive integer"
             )
-        return {self.get_output_name(): input_token.update(input_token.value)}
+        return {
+            self.get_output_name(): input_token.update(
+                input_token.value, recoverable=True
+            )
+        }
 
 
 class FirstNonNullTransformer(OneToOneTransformer):

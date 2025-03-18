@@ -252,9 +252,12 @@ async def test_local_target(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_token(context: StreamFlowContext):
+@pytest.mark.parametrize("recoverable", ["recoverable", "unrecoverable"])
+async def test_token(context: StreamFlowContext, recoverable: str):
     """Test saving and loading Token from database"""
-    token = Token(value=["test", "token"])
+    token = Token(
+        value=["test", "token"], tag="0.0", recoverable=recoverable == "recoverable"
+    )
     await save_load_and_test(token, context)
 
 

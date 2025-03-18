@@ -121,11 +121,7 @@ class BaseStep(Step, ABC):
             return status
 
     async def _persist_token(
-        self,
-        token: Token,
-        port: Port,
-        input_token_ids: MutableSequence[int],
-        recoverable: bool = False,
+        self, token: Token, port: Port, input_token_ids: MutableSequence[int]
     ) -> Token:
         if token.persistent_id:
             raise WorkflowDefinitionException(
@@ -136,8 +132,6 @@ class BaseStep(Step, ABC):
             await self.workflow.context.database.add_provenance(
                 inputs=input_token_ids, token=token.persistent_id
             )
-        if recoverable:
-            await self.workflow.context.failure_manager.notify(port.name, token)
         return token
 
     async def terminate(self, status: Status):
@@ -531,10 +525,12 @@ class DeployStep(BaseStep):
                             # Propagate the connector in the output port
                             self.get_output_port().put(
                                 await self._persist_token(
-                                    token=Token(value=self.deployment_config.name),
+                                    token=Token(
+                                        value=self.deployment_config.name,
+                                        recoverable=True,
+                                    ),
                                     port=self.get_output_port(),
                                     input_token_ids=get_entity_ids(inputs.values()),
-                                    recoverable=True,
                                 )
                             )
             else:
@@ -545,10 +541,11 @@ class DeployStep(BaseStep):
                 # Propagate the connector in the output port
                 self.get_output_port().put(
                     await self._persist_token(
-                        token=Token(value=self.deployment_config.name),
+                        token=Token(
+                            value=self.deployment_config.name, recoverable=True
+                        ),
                         port=self.get_output_port(),
                         input_token_ids=[],
-                        recoverable=True,
                     )
                 )
                 status = Status.COMPLETED
@@ -606,9 +603,6 @@ class ExecuteStep(BaseStep):
                     self._get_inputs(input_ports), name="retrieve_inputs"
                 )
             )
-
-    def _is_recoverable(self, inputs: MutableMapping[str, Any]) -> bool:
-        return True
 
     @classmethod
     async def _load(
@@ -668,12 +662,6 @@ class ExecuteStep(BaseStep):
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
-            )
-            await self.workflow.context.failure_manager.notify(
-                output_port.name,
-                token,
-                self._is_recoverable(job_token.value.inputs),
-                job_token,
             )
 
     async def _run_job(
@@ -1116,12 +1104,12 @@ class InputInjectorStep(BaseStep, ABC):
                         token,
                     ]
                     # Process value and inject token in the output port
+                    token = await self.process_input(job, token.value)
                     self.get_output_port().put(
                         await self._persist_token(
-                            token=await self.process_input(job, token.value),
+                            token=token.update(token.value, recoverable=True),
                             port=self.get_output_port(),
                             input_token_ids=get_entity_ids(in_list),
-                            recoverable=True,
                         )
                     )
                 finally:
@@ -1639,10 +1627,9 @@ class ScatterStep(BaseStep):
             size_port = self.get_size_port()
             size_port.put(
                 await self._persist_token(
-                    token=Token(len(token.value), tag=token.tag),
+                    token=Token(len(token.value), tag=token.tag, recoverable=True),
                     port=size_port,
                     input_token_ids=get_entity_ids([token]),
-                    recoverable=True,
                 )
             )
         else:

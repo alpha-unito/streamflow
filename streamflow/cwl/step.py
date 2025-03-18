@@ -8,7 +8,7 @@ from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
-from streamflow.core.command import Command, CommandOutputProcessor
+from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
@@ -43,6 +43,7 @@ from streamflow.workflow.step import (
     TransferStep,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
+from streamflow.workflow.utils import get_job_token
 
 
 async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
@@ -420,17 +421,47 @@ class CWLExecuteStep(ExecuteStep):
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
         self.recoverable: bool | str = recoverable
+        self._recoverable_map: MutableMapping[str, bool] = {}
 
-    def _is_recoverable(self, inputs: MutableMapping[str, Any]) -> bool:
-        if isinstance(self.recoverable, bool):
-            return self.recoverable
-        else:
-            context = utils.build_context(inputs)
-            return utils.eval_expression(
-                expression=self.recoverable,
-                context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib,
+    def _is_recoverable(self, job: Job) -> bool:
+        if (recoverable_ := self._recoverable_map.get(job.name)) is None:
+            if isinstance(self.recoverable, bool):
+                recoverable_ = self.recoverable
+            else:
+                context = utils.build_context(job.inputs)
+                recoverable_ = utils.eval_expression(
+                    expression=self.recoverable,
+                    context=context,
+                    full_js=self.full_js,
+                    expression_lib=self.expression_lib,
+                )
+            self._recoverable_map[job.name] = recoverable_
+        return recoverable_
+
+    async def _retrieve_output(
+        self,
+        job: Job,
+        output_name: str,
+        output_port: Port,
+        command_output: CommandOutput,
+        connector: Connector | None = None,
+    ) -> None:
+        if (
+            token := await self.output_processors[output_name].process(
+                job, command_output, connector
+            )
+        ) is not None:
+            job_token = get_job_token(
+                job.name, self.get_input_port("__job__").token_list
+            )
+            output_port.put(
+                await self._persist_token(
+                    token=token.update(
+                        token.value, recoverable=self._is_recoverable(job)
+                    ),
+                    port=output_port,
+                    input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
+                )
             )
 
     async def _save_additional_params(
