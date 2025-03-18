@@ -24,6 +24,8 @@ from streamflow.core.deployment import (
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
+    WorkflowException,
+    WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
@@ -80,7 +82,9 @@ class BaseStep(Step, ABC):
         super().__init__(name, workflow)
         self._log_level: int = logging.DEBUG
 
-    async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
+    async def _get_inputs(
+        self, input_ports: MutableMapping[str, Port]
+    ) -> MutableMapping[str, Token]:
         inputs = {
             k: v
             for k, v in zip(
@@ -93,6 +97,10 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
+        if len(tags := {t.tag for t in inputs.values()}) != 1:
+            raise WorkflowExecutionException(
+                f"Step {self.name} has input tokens with different tags {tags}"
+            )
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs.values()):
                 logger.debug(
@@ -813,8 +821,10 @@ class ExecuteStep(BaseStep):
                     if cast(asyncio.Task, task).get_name() == "retrieve_inputs":
                         inputs = task.result()
                         # Check for termination
-                        if check_termination(inputs):
-                            statuses.append(_reduce_statuses([t.value for t in inputs]))
+                        if check_termination(inputs.values()):
+                            statuses.append(
+                                _reduce_statuses([t.value for t in inputs.values()])
+                            )
                             if statuses[-1] in (Status.CANCELLED, Status.FAILED):
                                 for t in unfinished:
                                     t.cancel()
@@ -1690,6 +1700,46 @@ class TransferStep(BaseStep, ABC):
             ),
         )
 
+    async def _run_transfer(
+        self, job: Job, inputs: MutableMapping[str, Token]
+    ) -> Status:
+        try:
+            for port_name, token in inputs.items():
+                try:
+                    self.get_output_port(port_name).put(
+                        await self._persist_token(
+                            token=await self.transfer(job, token),
+                            port=self.get_output_port(port_name),
+                            input_token_ids=get_entity_ids(
+                                [
+                                    get_job_token(
+                                        job.name,
+                                        self.get_input_port("__job__").token_list,
+                                    ),
+                                    *inputs.values(),
+                                ]
+                            ),
+                        )
+                    )
+                except WorkflowException as err:
+                    logger.exception(err)
+                    await self.workflow.context.failure_manager.handle_exception(
+                        job, self, err
+                    )
+            status = Status.COMPLETED
+        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+        except KeyboardInterrupt:
+            raise
+        # When receiving a CancelledError, mark the step as Cancelled
+        except asyncio.CancelledError:
+            await self.terminate(Status.CANCELLED)
+            status = Status.CANCELLED
+        except Exception as e:
+            logger.exception(e)
+            await self.terminate(Status.FAILED)
+            status = Status.FAILED
+        return status
+
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
@@ -1706,54 +1756,30 @@ class TransferStep(BaseStep, ABC):
         }
         if input_ports:
             inputs_map = {}
-            try:
-                while True:
-                    # Retrieve input tokens
-                    inputs = await self._get_inputs(input_ports)
-                    # Retrieve job
-                    job = await cast(JobPort, self.get_input_port("__job__")).get_job(
-                        self.name
+            while status not in (Status.FAILED, Status.CANCELLED):
+                # Retrieve input tokens
+                inputs = await self._get_inputs(input_ports)
+                # Retrieve job
+                job = await cast(JobPort, self.get_input_port("__job__")).get_job(
+                    self.name
+                )
+                # Check for termination
+                if check_termination(inputs.values()) or job is None:
+                    status = _reduce_statuses(
+                        [status, *(t.value for t in inputs.values())]
                     )
-                    # Check for termination
-                    if check_termination(inputs.values()) or job is None:
-                        status = _reduce_statuses([t.value for t in inputs.values()])
-                        break
-                    # Group inputs by tag
-                    _group_by_tag(inputs, inputs_map)
-                    # Process tags
-                    for tag in list(inputs_map.keys()):
-                        if len(inputs_map[tag]) == len(input_ports):
-                            inputs = inputs_map.pop(tag)
-                            # Change default status to COMPLETED
-                            status = Status.COMPLETED
-                            # Transfer token
-                            for port_name, token in inputs.items():
-                                self.get_output_port(port_name).put(
-                                    await self._persist_token(
-                                        token=await self.transfer(job, token),
-                                        port=self.get_output_port(port_name),
-                                        input_token_ids=get_entity_ids(
-                                            list(inputs.values())
-                                            + [
-                                                get_job_token(
-                                                    job.name,
-                                                    self.get_input_port(
-                                                        "__job__"
-                                                    ).token_list,
-                                                )
-                                            ]
-                                        ),
-                                    )
-                                )
-            # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-            except KeyboardInterrupt:
-                raise
-            # When receiving a CancelledError, mark the step as Cancelled
-            except asyncio.CancelledError:
-                await self.terminate(Status.CANCELLED)
-            except Exception as e:
-                logger.exception(e)
-                await self.terminate(Status.FAILED)
+                    break
+                # Group inputs by tag
+                _group_by_tag(inputs, inputs_map)
+                # Process tags
+                for tag in list(inputs_map.keys()):
+                    if len(inputs_map[tag]) == len(input_ports):
+                        inputs = inputs_map.pop(tag)
+                        if (status := await self._run_transfer(job, inputs)) in (
+                            Status.FAILED,
+                            Status.CANCELLED,
+                        ):
+                            break
         # Terminate step
         await self.terminate(self._get_status(status))
 
