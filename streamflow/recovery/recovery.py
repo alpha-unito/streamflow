@@ -45,7 +45,6 @@ class RollbackRecoveryPolicy:
         mapper = await create_graph_mapper(
             self.context, provenance, failed_step.get_output_ports().values()
         )
-
         # Synchronize across multiple recovery workflows
         await self.context.failure_manager.sync_workflows(mapper, new_workflow)
         # Populate new workflow

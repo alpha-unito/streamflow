@@ -5,6 +5,7 @@ import logging
 import posixpath
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
 
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import get_class_fullname, get_tag
 from streamflow.core.workflow import Job, Port, Step, Token, Workflow
@@ -16,7 +17,9 @@ from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.token import JobToken
 
 
-async def get_output_tokens(next_token_ids, context) -> MutableSet[int]:
+async def get_output_tokens(
+    next_token_ids: MutableSequence[int], context: StreamFlowContext
+) -> MutableSet[int]:
     execute_step_out_token_ids = set()
     for token_id in next_token_ids:
         if token_id > 0:
@@ -94,11 +97,8 @@ async def populate_workflow(
     )
     # Create output port of the failed step in the new workflow
     for port in failed_step.get_output_ports().values():
-        stop_tag = get_tag(failed_job.inputs.values())
-        new_port = InterWorkflowPort(
-            FilterTokenPort(new_workflow, port.name, stop_tags=[stop_tag])
-        )
-        new_port.add_inter_port(port, stop_tag)
+        new_port = InterWorkflowPort(FilterTokenPort(new_workflow, port.name))
+        new_port.add_inter_port(port, border_tag=get_tag(failed_job.inputs.values()))
         # todo: make an abstract class of Port and change the type hint of the workflow ports attribute
         new_workflow.ports[new_port.name] = new_port
 
@@ -113,9 +113,8 @@ class RetryRequest:
     def __init__(self):
         self.version: int = 1
         self.job_token: JobToken | None = None
-        self.token_output: MutableMapping[str, Token] = {}
+        self.output_tokens: MutableMapping[str, Token] = {}
         self.lock: asyncio.Lock = asyncio.Lock()
-        self.is_running: bool = False
         # Other workflows can queue to the output port of the step while the job is running.
         self.queue: MutableSequence[PortRecovery] = []
         self.workflow: Workflow | None = None

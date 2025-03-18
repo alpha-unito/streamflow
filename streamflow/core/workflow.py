@@ -214,6 +214,7 @@ class Status(IntEnum):
     FAILED = 5
     CANCELLED = 6
     ROLLBACK = 7
+    RECOVERY = 8
 
 
 class Step(PersistableEntity, ABC):

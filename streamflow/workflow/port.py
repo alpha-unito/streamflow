@@ -39,20 +39,12 @@ class FilterTokenPort(Port):
         workflow: Workflow,
         name: str,
         filter_function: Callable | None = None,
-        stop_tags: MutableSequence[str] | None = None,
     ):
         super().__init__(workflow, name)
         self.filter_function: Callable = filter_function or (lambda _: True)
-        self.stop_tags = stop_tags or []
 
     def put(self, token: Token):
-        if token.tag in self.stop_tags:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Port {self.name} forces termination token on {token.tag} tag"
-                )
-            super().put(TerminationToken())
-        elif isinstance(token, TerminationToken) or self.filter_function(token):
+        if isinstance(token, TerminationToken) or self.filter_function(token):
             super().put(token)
         elif logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Port {self.name} skips {token.tag}")

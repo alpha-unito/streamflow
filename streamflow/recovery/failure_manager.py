@@ -9,11 +9,14 @@ from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, WorkflowException
 from streamflow.core.recovery import FailureManager
-from streamflow.core.utils import get_max_tag, increase_tag
 from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import RollbackRecoveryPolicy
-from streamflow.recovery.rollback_recovery import GraphMapper, TokenAvailability
+from streamflow.recovery.rollback_recovery import (
+    DirectGraph,
+    GraphMapper,
+    TokenAvailability,
+)
 from streamflow.recovery.utils import (
     PortRecovery,
     RetryRequest,
@@ -42,32 +45,27 @@ class DefaultFailureManager(FailureManager):
         job_name: str,
         port_name: str,
         workflow: Workflow,
-        mapper: GraphMapper,
         port_recovery: PortRecovery | None = None,
     ) -> PortRecovery:
         if port_recovery is None:
-            if (port := workflow.ports.get(port_name)) is not None:
-                # todo: to check
-                max_tag = (
-                    get_max_tag(
-                        {
-                            mapper.token_instances[t_id]
-                            for t_id in mapper.port_tokens.get(port_name, [])
-                            if t_id > 0
-                        }
-                    )
-                    or "0"
-                )
-                stop_tag = increase_tag(max_tag)
+            if (port := workflow.ports.get(port_name)) is None:
                 port = InterWorkflowPort(
                     FilterTokenPort(
                         workflow,
                         port_name,
-                        stop_tags=[stop_tag],
                     )
                 )
-            port_recovery = PortRecovery(port)
-            self.retry_requests[job_name].queue.append(port_recovery)
+                port_recovery = PortRecovery(port)
+                self.retry_requests[job_name].queue.append(port_recovery)
+            elif not isinstance(port, InterWorkflowPort):
+                raise FailureHandlingException(
+                    f"Port {port} must be a InterWorkflowPort"
+                )
+            elif (port_recovery := next(
+                (p.port.workflow == port.workflow
+                for p in self.retry_requests[job_name].queue), None
+            )) is None:
+                raise FailureHandlingException(f"Port {port} is not in the queue")
         port_recovery.waiting_token += 1
         return port_recovery
 
@@ -103,9 +101,8 @@ class DefaultFailureManager(FailureManager):
     ) -> None:
         job_name = job_token.value.name
         async with retry_request.lock:
-            retry_request.is_running = True
             retry_request.job_token = None
-            retry_request.token_output = {}
+            retry_request.output_tokens = {}
             retry_request.workflow = workflow
         if (
             self.max_retries is None
@@ -142,14 +139,17 @@ class DefaultFailureManager(FailureManager):
                 job_name,
                 output_port_name,
                 workflow,
-                mapper,
                 job_ports.get(job_name, None),
             )
             job_ports.setdefault(job_name, port_recovery)
             workflow.ports[port_recovery.port.name] = port_recovery.port
         # Remove tokens recovered in other workflows
         for token_id in await get_output_tokens(
-            mapper.dag_tokens.succ(job_token.persistent_id),
+            [
+                t
+                for t in mapper.dag_tokens.succ(job_token.persistent_id)
+                if t not in (DirectGraph.ROOT, DirectGraph.LEAF)
+            ],
             self.context,
         ):
             mapper.remove_token(token_id, preserve_token=True)
@@ -173,8 +173,7 @@ class DefaultFailureManager(FailureManager):
             logger.info(
                 f"Handling {type(exception).__name__} failure for job {job.name}"
             )
-        if job.name in self.retry_requests.keys():
-            self.retry_requests[job.name].is_running = False
+        await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)
 
     async def handle_failure(
@@ -182,22 +181,23 @@ class DefaultFailureManager(FailureManager):
     ) -> None:
         if logger.isEnabledFor(logging.INFO):
             logger.info(f"Handling command failure for job {job.name}")
-        if job.name in self.retry_requests.keys():
-            self.retry_requests[job.name].is_running = False
+        await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)
 
     async def is_recovered(self, token: JobToken) -> TokenAvailability:
         if request := self.retry_requests.get(token.value.name):
             async with request.lock:
-                if request.is_running:
-                    # todo: fix
-                    # return TokenAvailability.FutureAvailable
-                    return TokenAvailability.Unavailable
-                elif len(request.token_output) > 0 and all(
+                if self.context.scheduler.get_allocation(token.value.name).status in (
+                    Status.ROLLBACK,
+                    Status.RUNNING,
+                    Status.FIREABLE,
+                ):
+                    return TokenAvailability.FutureAvailable
+                elif len(request.output_tokens) > 0 and all(
                     await asyncio.gather(
                         *(
                             asyncio.create_task(t.is_available(self.context))
-                            for t in request.token_output.values()
+                            for t in request.output_tokens.values()
                         )
                     )
                 ):
@@ -221,7 +221,7 @@ class DefaultFailureManager(FailureManager):
             if job_name in self.retry_requests.keys():
                 async with self.retry_requests[job_name].lock:
                     self.retry_requests[job_name].job_token = job_token
-                    self.retry_requests[job_name].token_output.setdefault(
+                    self.retry_requests[job_name].output_tokens.setdefault(
                         output_port, output_token
                     )
                     if logger.isEnabledFor(logging.DEBUG):
@@ -229,14 +229,13 @@ class DefaultFailureManager(FailureManager):
                             f"Job {job_name} is notifying on port {output_port}. "
                             f"There are {len(self.retry_requests[job_name].queue)} workflows in waiting"
                         )
-                    for elem in list(self.retry_requests[job_name].queue):
-                        if elem.port.name == output_port:
-                            elem.port.put(output_token)
-                            elem.waiting_token -= 1
-                            if elem.waiting_token == 0:
-                                elem.port.put(TerminationToken())
-                                self.retry_requests[job_name].queue.remove(elem)
-                    self.retry_requests[job_name].is_running = False
+                    for waiting_port in list(self.retry_requests[job_name].queue):
+                        if waiting_port.port.name == output_port:
+                            waiting_port.port.put(output_token)
+                            waiting_port.waiting_token -= 1
+                            if waiting_port.waiting_token == 0:
+                                waiting_port.port.put(TerminationToken())
+                                self.retry_requests[job_name].queue.remove(waiting_port)
 
     async def sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
         job_ports = {}
@@ -259,7 +258,7 @@ class DefaultFailureManager(FailureManager):
                 # Search execute token after job token, replace this token with job_req token.
                 # Then remove all the prev tokens
                 for port_name in await mapper.get_output_ports(job_token):
-                    new_token = retry_request.token_output[port_name]
+                    new_token = retry_request.output_tokens[port_name]
                     await mapper.replace_token(
                         port_name,
                         new_token,
