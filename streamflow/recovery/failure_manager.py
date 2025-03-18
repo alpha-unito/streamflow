@@ -8,22 +8,11 @@ from importlib.resources import files
 from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, WorkflowException
-from streamflow.core.recovery import FailureManager
-from streamflow.core.workflow import Job, Status, Step, Token, Workflow
+from streamflow.core.recovery import FailureManager, RetryRequest, TokenAvailability
+from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import RollbackRecoveryPolicy
-from streamflow.recovery.rollback_recovery import (
-    DirectGraph,
-    GraphMapper,
-    TokenAvailability,
-)
-from streamflow.recovery.utils import (
-    PortRecovery,
-    RetryRequest,
-    execute_recover_workflow,
-    get_output_tokens,
-)
-from streamflow.workflow.port import FilterTokenPort, InterWorkflowPort
+from streamflow.recovery.utils import execute_recover_workflow
 from streamflow.workflow.token import JobToken, TerminationToken
 
 
@@ -39,35 +28,6 @@ class DefaultFailureManager(FailureManager):
         self.retry_delay: int | None = retry_delay
         self.retry_requests: MutableMapping[str, RetryRequest] = {}
         self.recoverable_tokens: MutableSequence[int] = []
-
-    def _add_wait(
-        self,
-        job_name: str,
-        port_name: str,
-        workflow: Workflow,
-        port_recovery: PortRecovery | None = None,
-    ) -> PortRecovery:
-        if port_recovery is None:
-            if (port := workflow.ports.get(port_name)) is None:
-                port = InterWorkflowPort(
-                    FilterTokenPort(
-                        workflow,
-                        port_name,
-                    )
-                )
-                port_recovery = PortRecovery(port)
-                self.retry_requests[job_name].queue.append(port_recovery)
-            elif not isinstance(port, InterWorkflowPort):
-                raise FailureHandlingException(
-                    f"Port {port} must be a InterWorkflowPort"
-                )
-            elif (port_recovery := next(
-                (p.port.workflow == port.workflow
-                for p in self.retry_requests[job_name].queue), None
-            )) is None:
-                raise FailureHandlingException(f"Port {port} is not in the queue")
-        port_recovery.waiting_token += 1
-        return port_recovery
 
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -96,66 +56,14 @@ class DefaultFailureManager(FailureManager):
             logger.exception(e)
             raise
 
-    async def _increase_request(
-        self, retry_request: RetryRequest, job_token: JobToken, workflow: Workflow
-    ) -> None:
-        job_name = job_token.value.name
-        async with retry_request.lock:
-            retry_request.job_token = None
-            retry_request.output_tokens = {}
-            retry_request.workflow = workflow
-        if (
-            self.max_retries is None
-            or self.retry_requests[job_token.value.name].version < self.max_retries
-        ):
-            self.retry_requests[job_name].version += 1
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Updated Job {job_name} at {self.retry_requests[job_name].version} times"
-                )
-            # Free resources scheduler
-            await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
-        else:
-            logger.error(
-                f"FAILED Job {job_name} {self.retry_requests[job_name].version} times. Execution aborted"
-            )
-            raise FailureHandlingException(
-                f"FAILED Job {job_name} {self.retry_requests[job_name].version} times. Execution aborted"
-            )
-
-    async def _sync_running_jobs(
-        self,
-        job_token: JobToken,
-        mapper: GraphMapper,
-        workflow: Workflow,
-        job_ports: MutableMapping[str, PortRecovery],
-    ) -> None:
-        job_name = job_token.value.name
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Synchronize rollbacks: job {job_name} is running")
-        # todo: create a unit test for this case and check if it works well
-        for output_port_name in await mapper.get_output_ports(job_token):
-            port_recovery = self._add_wait(
-                job_name,
-                output_port_name,
-                workflow,
-                job_ports.get(job_name, None),
-            )
-            job_ports.setdefault(job_name, port_recovery)
-            workflow.ports[port_recovery.port.name] = port_recovery.port
-        # Remove tokens recovered in other workflows
-        for token_id in await get_output_tokens(
-            [
-                t
-                for t in mapper.dag_tokens.succ(job_token.persistent_id)
-                if t not in (DirectGraph.ROOT, DirectGraph.LEAF)
-            ],
-            self.context,
-        ):
-            mapper.remove_token(token_id, preserve_token=True)
-
     async def close(self) -> None:
         pass
+
+    def get_request(self, job_name: str) -> RetryRequest:
+        if job_name in self.retry_requests.keys():
+            return self.retry_requests[job_name]
+        else:
+            return self.retry_requests.setdefault(job_name, RetryRequest())
 
     @classmethod
     def get_schema(cls) -> str:
@@ -184,15 +92,16 @@ class DefaultFailureManager(FailureManager):
         await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)
 
-    async def is_recovered(self, token: JobToken) -> TokenAvailability:
-        if request := self.retry_requests.get(token.value.name):
+    async def is_recovered(self, job_name: str) -> TokenAvailability:
+        if request := self.retry_requests.get(job_name):
             async with request.lock:
-                if self.context.scheduler.get_allocation(token.value.name).status in (
+                if self.context.scheduler.get_allocation(job_name).status in (
                     Status.ROLLBACK,
                     Status.RUNNING,
                     Status.FIREABLE,
                 ):
-                    return TokenAvailability.FutureAvailable
+                    return TokenAvailability.Unavailable
+                    # return TokenAvailability.FutureAvailable
                 elif len(request.output_tokens) > 0 and all(
                     await asyncio.gather(
                         *(
@@ -237,36 +146,24 @@ class DefaultFailureManager(FailureManager):
                                 waiting_port.port.put(TerminationToken())
                                 self.retry_requests[job_name].queue.remove(waiting_port)
 
-    async def sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
-        job_ports = {}
-        for job_token in list(
-            # todo: visit the jobtoken bottom-up in the graph
-            filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
-        ):
-            job_name = job_token.value.name
-            retry_request = self.retry_requests.setdefault(job_name, RetryRequest())
-            if (
-                is_available := await self.is_recovered(job_token)
-            ) == TokenAvailability.FutureAvailable:
-                await self._sync_running_jobs(job_token, mapper, workflow, job_ports)
-            elif is_available == TokenAvailability.Available:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Synchronize rollbacks: job {job_token.value.name} output available"
-                    )
-                # todo: create a unit test with a complex graph where the nodes are removed
-                # Search execute token after job token, replace this token with job_req token.
-                # Then remove all the prev tokens
-                for port_name in await mapper.get_output_ports(job_token):
-                    new_token = retry_request.output_tokens[port_name]
-                    await mapper.replace_token(
-                        port_name,
-                        new_token,
-                        True,
-                    )
-                    mapper.remove_token(new_token.persistent_id, preserve_token=True)
-            else:
-                await self._increase_request(retry_request, job_token, workflow)
+    async def update_request(self, job_name: str) -> None:
+        retry_request = self.retry_requests[job_name]
+        async with retry_request.lock:
+            retry_request.job_token = None
+            retry_request.output_tokens = {}
+        if self.max_retries is None or retry_request.version < self.max_retries:
+            retry_request.version += 1
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Updated Job {job_name} at {retry_request.version} times")
+            # Free resources scheduler
+            await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
+        else:
+            logger.error(
+                f"FAILED Job {job_name} {retry_request.version} times. Execution aborted"
+            )
+            raise FailureHandlingException(
+                f"FAILED Job {job_name} {retry_request.version} times. Execution aborted"
+            )
 
 
 class DummyFailureManager(FailureManager):
@@ -281,6 +178,9 @@ class DummyFailureManager(FailureManager):
         )
 
     async def close(self) -> None:
+        pass
+
+    def get_request(self, job_name: str) -> RetryRequest:
         pass
 
     async def handle_exception(
@@ -303,7 +203,7 @@ class DummyFailureManager(FailureManager):
             f"FAILED Job {job.name} with error:\n\t{command_output.value}"
         )
 
-    async def is_recovered(self, token: JobToken) -> TokenAvailability:
+    async def is_recovered(self, job_name: str) -> TokenAvailability:
         return TokenAvailability.Unavailable
 
     def is_recoverable(self, token: Token) -> bool:
@@ -318,5 +218,5 @@ class DummyFailureManager(FailureManager):
     ) -> None:
         pass
 
-    async def sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
+    async def update_request(self, job_name: str) -> None:
         pass

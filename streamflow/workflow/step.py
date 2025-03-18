@@ -1757,7 +1757,6 @@ class TransferStep(BaseStep, ABC):
             "job_port": self.get_input_port("__job__").persistent_id
         }
 
-
     async def run(self):
         # Set default status as SKIPPED
         status = Status.SKIPPED

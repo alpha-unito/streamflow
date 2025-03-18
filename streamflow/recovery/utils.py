@@ -8,13 +8,12 @@ from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSe
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import get_class_fullname, get_tag
-from streamflow.core.workflow import Job, Port, Step, Token, Workflow
+from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import FilterTokenPort, InterWorkflowPort
 from streamflow.workflow.step import ExecuteStep
-from streamflow.workflow.token import JobToken
 
 
 async def get_output_tokens(
@@ -31,14 +30,6 @@ async def get_output_tokens(
         else:
             execute_step_out_token_ids.add(token_id)
     return execute_step_out_token_ids
-
-
-# async def _cleanup_dir(
-#     connector: Connector, location: Location, directory: str
-# ) -> None:
-#     await remotepath.rm(
-#         connector, location, await remotepath.listdir(connector, location, directory)
-#     )
 
 
 def get_port_from_token(
@@ -101,20 +92,3 @@ async def populate_workflow(
         new_port.add_inter_port(port, border_tag=get_tag(failed_job.inputs.values()))
         # todo: make an abstract class of Port and change the type hint of the workflow ports attribute
         new_workflow.ports[new_port.name] = new_port
-
-
-class PortRecovery:
-    def __init__(self, port: Port):
-        self.port: Port = port
-        self.waiting_token: int = 0
-
-
-class RetryRequest:
-    def __init__(self):
-        self.version: int = 1
-        self.job_token: JobToken | None = None
-        self.output_tokens: MutableMapping[str, Token] = {}
-        self.lock: asyncio.Lock = asyncio.Lock()
-        # Other workflows can queue to the output port of the step while the job is running.
-        self.queue: MutableSequence[PortRecovery] = []
-        self.workflow: Workflow | None = None

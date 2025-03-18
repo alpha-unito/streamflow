@@ -4,11 +4,11 @@ import asyncio
 import logging
 from collections import deque
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
-from enum import Enum
 from typing import Any
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
+from streamflow.core.recovery import TokenAvailability
 from streamflow.core.utils import contains_persistent_id, get_class_from_name
 from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
@@ -50,12 +50,6 @@ async def evaluate_token_availability(
     else:
         logger.debug(f"Token with id {token.persistent_id} is not recoverable")
         return TokenAvailability.Unavailable
-
-
-class TokenAvailability(Enum):
-    Unavailable = 0
-    Available = 1
-    FutureAvailable = 2
 
 
 class ProvenanceToken:

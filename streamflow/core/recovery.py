@@ -1,19 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from abc import abstractmethod
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, MutableSequence
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
-from streamflow.recovery.rollback_recovery import GraphMapper, TokenAvailability
 from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
-    from typing import Any
-
+    from streamflow.core.command import CommandOutput
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step, Token, Workflow
+    from streamflow.core.workflow import Job, Port, Step, Token, Workflow
 
 
 class CheckpointManager(SchemaEntity):
@@ -37,6 +37,9 @@ class FailureManager(SchemaEntity):
     async def close(self) -> None: ...
 
     @abstractmethod
+    def get_request(self, job_name: str) -> RetryRequest: ...
+
+    @abstractmethod
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
     ) -> None: ...
@@ -47,7 +50,7 @@ class FailureManager(SchemaEntity):
     ) -> None: ...
 
     @abstractmethod
-    async def is_recovered(self, token: JobToken) -> TokenAvailability: ...
+    async def is_recovered(self, job_name: str) -> TokenAvailability: ...
 
     @abstractmethod
     def is_recoverable(self, token: Token) -> bool: ...
@@ -62,24 +65,31 @@ class FailureManager(SchemaEntity):
     ) -> None: ...
 
     @abstractmethod
-    async def sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None: ...
+    async def update_request(self, job_name: str) -> None: ...
 
 
-class ReplayRequest:
-    __slots__ = ("sender", "target", "version")
+class PortRecovery:
+    __slots__ = ("port", "waiting_token")
 
-    def __init__(self, sender: str, target: str, version: int = 1):
-        self.sender: str = sender
-        self.target: str = target
-        self.version: int = version
+    def __init__(self, port: Port):
+        self.port: Port = port
+        self.waiting_token: int = 0
 
 
-class ReplayResponse:
-    __slots__ = ("job", "outputs", "version")
+class RetryRequest:
+    __slots__ = ("job_token", "output_tokens", "lock", "queue", "version", "workflow")
 
-    def __init__(
-        self, job: str, outputs: MutableMapping[str, Any] | None, version: int = 1
-    ):
-        self.job: str = job
-        self.outputs: MutableMapping[str, Any] = outputs
-        self.version: int = version
+    def __init__(self):
+        self.job_token: JobToken | None = None
+        self.output_tokens: MutableMapping[str, Token] = {}
+        self.lock: asyncio.Lock = asyncio.Lock()
+        # Other workflows can queue to the output port of the step while the job is running.
+        self.queue: MutableSequence[PortRecovery] = []
+        self.version: int = 1
+        self.workflow: Workflow | None = None
+
+
+class TokenAvailability(IntEnum):
+    Unavailable = 0
+    Available = 1
+    FutureAvailable = 2

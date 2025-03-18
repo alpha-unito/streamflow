@@ -19,6 +19,7 @@ from streamflow.core.deployment import (
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.recovery import RetryRequest
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import flatten_list, get_job_tag, get_tag
 from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
@@ -30,7 +31,6 @@ from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.recovery.failure_manager import DefaultFailureManager
-from streamflow.recovery.utils import RetryRequest
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
