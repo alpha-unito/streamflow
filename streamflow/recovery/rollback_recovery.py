@@ -40,7 +40,7 @@ async def create_graph_mapper(
 async def evaluate_token_availability(
     token: Token, context: StreamFlowContext
 ) -> TokenAvailability:
-    if context.failure_manager.is_recoverable(token):
+    if token.recoverable:
         if await token.is_available(context):
             logger.debug(f"Token with id {token.persistent_id} is available")
             return TokenAvailability.Available
@@ -409,7 +409,7 @@ class ProvenanceGraph:
                 isinstance(token, JobToken)
                 and (
                     is_available := await self.context.failure_manager.is_recovered(
-                        token
+                        token.value.name
                     )
                 )
                 == TokenAvailability.FutureAvailable

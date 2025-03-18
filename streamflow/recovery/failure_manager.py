@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import MutableMapping
 from importlib.resources import files
 
 from streamflow.core.command import CommandOutput
@@ -27,7 +27,6 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
         self.retry_requests: MutableMapping[str, RetryRequest] = {}
-        self.recoverable_tokens: MutableSequence[int] = []
 
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
@@ -113,18 +112,12 @@ class DefaultFailureManager(FailureManager):
                     return TokenAvailability.Available
         return TokenAvailability.Unavailable
 
-    def is_recoverable(self, token: Token) -> bool:
-        return token.persistent_id in self.recoverable_tokens
-
     async def notify(
         self,
         output_port: str,
         output_token: Token,
-        recoverable: bool = True,
         job_token: JobToken | None = None,
     ) -> None:
-        if recoverable:
-            self.recoverable_tokens.append(output_token.persistent_id)
         if job_token is not None:
             job_name = job_token.value.name
             if job_name in self.retry_requests.keys():
@@ -206,14 +199,10 @@ class DummyFailureManager(FailureManager):
     async def is_recovered(self, job_name: str) -> TokenAvailability:
         return TokenAvailability.Unavailable
 
-    def is_recoverable(self, token: Token) -> bool:
-        return False
-
     async def notify(
         self,
         output_port: str,
         output_token: Token,
-        recoverable: bool = True,
         job_token: JobToken | None = None,
     ) -> None:
         pass

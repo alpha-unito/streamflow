@@ -1859,10 +1859,6 @@ class CWLTranslator:
             # Process ToolTimeLimit
             if "ToolTimeLimit" in requirements:
                 step.command.time_limit = requirements["ToolTimeLimit"].timelimit
-            # Process WorkReuse
-            if "WorkReuse" in requirements:
-                # todo: fix
-                _ = requirements["WorkReuse"].enableReuse
         elif isinstance(cwl_element, get_args(cwl_utils.parser.ExpressionTool)):
             step.command = CWLExpressionCommand(step, cwl_element.expression)
         # Add JS requirements

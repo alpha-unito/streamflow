@@ -53,14 +53,10 @@ class FailureManager(SchemaEntity):
     async def is_recovered(self, job_name: str) -> TokenAvailability: ...
 
     @abstractmethod
-    def is_recoverable(self, token: Token) -> bool: ...
-
-    @abstractmethod
     async def notify(
         self,
         output_port: str,
         output_token: Token,
-        recoverable: bool = True,
         job_token: JobToken | None = None,
     ) -> None: ...
 
