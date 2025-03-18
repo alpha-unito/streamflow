@@ -167,7 +167,12 @@ class Database(SchemaEntity):
 
     @abstractmethod
     async def add_token(
-        self, tag: str, type: type[Token], value: Any, port: int | None = None
+        self,
+        tag: str,
+        type: type[Token],
+        value: Any,
+        port: int | None = None,
+        recoverable: bool = False,
     ) -> int: ...
 
     @abstractmethod

@@ -58,6 +58,7 @@ from streamflow.cwl.requirement.docker.translator import (
 from streamflow.cwl.step import (
     CWLConditionalStep,
     CWLEmptyScatterConditionalStep,
+    CWLExecuteStep,
     CWLInputInjectorStep,
     CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
@@ -100,7 +101,6 @@ from streamflow.workflow.step import (
     Combinator,
     CombinatorStep,
     DeployStep,
-    ExecuteStep,
     GatherStep,
     LoopCombinatorStep,
     ScatterStep,
@@ -1728,7 +1728,16 @@ class CWLTranslator:
         )
         # Create the ExecuteStep and connect it to the ScheduleStep
         step = workflow.create_step(
-            cls=ExecuteStep, name=name_prefix, job_port=schedule_step.get_output_port()
+            cls=CWLExecuteStep,
+            name=name_prefix,
+            job_port=schedule_step.get_output_port(),
+            recoverable=(
+                requirements["WorkReuse"].enableReuse
+                if "WorkReuse" in requirements
+                else True
+            ),
+            expression_lib=expression_lib,
+            full_js=full_js,
         )
         # Process inputs
         input_ports = {}

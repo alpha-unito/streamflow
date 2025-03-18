@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS token
     FOREIGN KEY (port) REFERENCES port (id)
 );
 
+CREATE TABLE IF NOT EXISTS recoverable
+(
+    id    INTEGER PRIMARY KEY,
+    FOREIGN KEY (id) REFERENCES token (id)
+);
+
 
 CREATE TABLE IF NOT EXISTS provenance
 (

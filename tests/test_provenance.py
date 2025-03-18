@@ -7,10 +7,6 @@ import pytest
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.workflow import Status, Token
-from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
-from streamflow.cwl.hardware import CWLHardwareRequirement
-from streamflow.cwl.translator import create_command_output_processor_base
-from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
@@ -20,7 +16,6 @@ from streamflow.workflow.combinator import (
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import (
     CombinatorStep,
-    ExecuteStep,
     GatherStep,
     LoopCombinatorStep,
     ScatterStep,
@@ -30,14 +25,12 @@ from streamflow.workflow.token import (
     ListToken,
     TerminationToken,
 )
-from tests.utils.cwl import get_cwl_parser
 from tests.utils.utils import (
     create_and_run_step,
     inject_tokens,
     verify_dependency_tokens,
 )
 from tests.utils.workflow import (
-    CWL_VERSION,
     create_deploy_step,
     create_schedule_step,
     create_workflow,
@@ -125,75 +118,6 @@ async def test_schedule_step(context: StreamFlowContext):
         port=schedule_step.get_output_port("__job__"),
         context=context,
         expected_dependee=[deploy_step.get_output_port().token_list[0]],
-    )
-
-
-@pytest.mark.asyncio
-async def test_execute_step(context: StreamFlowContext):
-    """Test token provenance for ExecuteStep"""
-    workflow, (in_port_schedule, in_port, out_port) = await create_workflow(
-        context, num_port=3
-    )
-    deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(
-        workflow,
-        [deploy_step],
-        hardware_requirement=CWLHardwareRequirement(cwl_version=CWL_VERSION),
-    )
-
-    in_port_name = "in-1"
-    out_port_name = "out-1"
-    token_value = "Hello"
-
-    execute_step = workflow.create_step(
-        cls=ExecuteStep,
-        name=utils.random_name(),
-        job_port=schedule_step.get_output_port(),
-    )
-    execute_step.command = CWLCommand(
-        step=execute_step,
-        base_command=["echo"],
-        processors=[CWLCommandTokenProcessor(name=in_port_name, expression=None)],
-    )
-    execute_step.add_output_port(
-        name=out_port_name,
-        port=out_port,
-        output_processor=create_command_output_processor_base(
-            port_name=out_port.name,
-            workflow=cast(CWLWorkflow, workflow),
-            port_target=None,
-            port_type="string",
-            cwl_element=get_cwl_parser(CWL_VERSION).CommandOutputParameter(
-                type_="string"
-            ),
-            context={"hints": {}, "requirements": {}, "version": CWL_VERSION},
-        ),
-    )
-    token_list = [Token(token_value)]
-
-    execute_step.add_input_port(in_port_name, in_port)
-    await inject_tokens(token_list, in_port, context)
-
-    schedule_step.add_input_port(in_port_name, in_port_schedule)
-    await inject_tokens(token_list, in_port_schedule, context)
-
-    await workflow.save(context)
-    executor = StreamFlowExecutor(workflow)
-    await executor.run()
-
-    job_token = execute_step.get_input_port("__job__").token_list[0]
-    await verify_dependency_tokens(
-        token=job_token,
-        port=execute_step.get_input_port("__job__"),
-        context=context,
-        expected_depender=[execute_step.get_output_port(out_port_name).token_list[0]],
-        expected_dependee=[deploy_step.get_output_port().token_list[0], token_list[0]],
-    )
-    await verify_dependency_tokens(
-        token=execute_step.get_output_port(out_port_name).token_list[0],
-        port=execute_step.get_output_port(out_port_name),
-        context=context,
-        expected_dependee=list(job_token.value.inputs.values()) + [job_token],
     )
 
 

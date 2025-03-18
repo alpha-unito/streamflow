@@ -52,7 +52,7 @@ class CartesianProductSizeTransformer(ManyToOneTransformer):
         value = functools.reduce(
             lambda x, y: x * y, (token.value for token in inputs.values())
         )
-        return {self.get_output_name(): Token(value, tag=tag)}
+        return {self.get_output_name(): Token(value, tag=tag, recoverable=True)}
 
 
 class CloneTransformer(ManyToOneTransformer):
@@ -202,7 +202,11 @@ class DefaultTransformer(ManyToOneTransformer):
                 self.default_token = (
                     await self._get_inputs({"__default__": self.default_port})
                 )["__default__"]
-            return {self.get_output_name(): self.default_token.retag(primary_token.tag)}
+            return {
+                self.get_output_name(): self.default_token.retag(
+                    primary_token.tag, recoverable=True
+                )
+            }
 
 
 class DefaultRetagTransformer(DefaultTransformer):
@@ -218,7 +222,7 @@ class DefaultRetagTransformer(DefaultTransformer):
             self.default_token = (
                 await self._get_inputs({"__default__": self.default_port})
             )["__default__"]
-        return {self.get_output_name(): self.default_token.retag(tag)}
+        return {self.get_output_name(): self.default_token.retag(tag, recoverable=True)}
 
 
 class DotProductSizeTransformer(ManyToOneTransformer):
@@ -235,7 +239,11 @@ class DotProductSizeTransformer(ManyToOneTransformer):
             raise WorkflowExecutionException(
                 f"Step {self.name} received {input_token.value}, but it must be a positive integer"
             )
-        return {self.get_output_name(): input_token.update(input_token.value)}
+        return {
+            self.get_output_name(): input_token.update(
+                input_token.value, recoverable=True
+            )
+        }
 
 
 class FirstNonNullTransformer(OneToOneTransformer):

@@ -235,7 +235,12 @@ class SqliteDatabase(CachedDatabase):
                 return cursor.lastrowid
 
     async def add_token(
-        self, tag: str, type: type[Token], value: Any, port: int | None = None
+        self,
+        tag: str,
+        type: type[Token],
+        value: Any,
+        port: int | None = None,
+        recoverable: bool = False,
     ):
         async with self.connection as db:
             async with db.execute(
@@ -248,7 +253,15 @@ class SqliteDatabase(CachedDatabase):
                     "value": value,
                 },
             ) as cursor:
-                return cursor.lastrowid
+                token_id = cursor.lastrowid
+            if recoverable:
+                await db.execute(
+                    "INSERT INTO recoverable(id) VALUES(:id)",
+                    {
+                        "id": token_id,
+                    },
+                )
+            return token_id
 
     async def add_workflow(
         self,
@@ -436,7 +449,11 @@ class SqliteDatabase(CachedDatabase):
     async def get_token(self, token_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
-                "SELECT * FROM token WHERE id = :id", {"id": token_id}
+                "SELECT *, "
+                "EXISTS(SELECT 1 FROM recoverable AS r WHERE r.id =:id) AS recoverable "
+                "FROM token "
+                "WHERE id =:id",
+                {"id": token_id},
             ) as cursor:
                 return await cursor.fetchone()
 

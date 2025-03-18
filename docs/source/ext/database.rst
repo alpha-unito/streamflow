@@ -91,7 +91,12 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         ...
 
     async def add_token(
-        self, tag: str, type: type[Token], value: Any, port: int | None = None
+        self,
+        tag: str,
+        type: type[Token],
+        value: Any,
+        port: int | None = None,
+        recoverable: bool = False
     ) -> int:
         ...
 

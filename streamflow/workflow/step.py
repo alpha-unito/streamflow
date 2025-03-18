@@ -525,7 +525,10 @@ class DeployStep(BaseStep):
                             # Propagate the connector in the output port
                             self.get_output_port().put(
                                 await self._persist_token(
-                                    token=Token(value=self.deployment_config.name),
+                                    token=Token(
+                                        value=self.deployment_config.name,
+                                        recoverable=True,
+                                    ),
                                     port=self.get_output_port(),
                                     input_token_ids=get_entity_ids(inputs.values()),
                                 )
@@ -538,7 +541,9 @@ class DeployStep(BaseStep):
                 # Propagate the connector in the output port
                 self.get_output_port().put(
                     await self._persist_token(
-                        token=Token(value=self.deployment_config.name),
+                        token=Token(
+                            value=self.deployment_config.name, recoverable=True
+                        ),
                         port=self.get_output_port(),
                         input_token_ids=[],
                     )
@@ -691,11 +696,10 @@ class ExecuteStep(BaseStep):
                 logger.error(
                     f"FAILED Job {job.name} with error:\n\t{command_output.value}"
                 )
-                command_output = (
-                    await self.workflow.context.failure_manager.handle_failure(
-                        job, self, command_output
-                    )
+                await self.workflow.context.failure_manager.handle_failure(
+                    job, self, command_output
                 )
+                command_output.status = Status.COMPLETED
             elif command_output.status != Status.CANCELLED:
                 # Retrieve output tokens
                 if not self.terminated:
@@ -726,11 +730,10 @@ class ExecuteStep(BaseStep):
         except Exception as e:
             logger.exception(e)
             try:
-                command_output = (
-                    await self.workflow.context.failure_manager.handle_exception(
-                        job, self, e
-                    )
+                await self.workflow.context.failure_manager.handle_exception(
+                    job, self, e
                 )
+                command_output.status = Status.COMPLETED
             # If failure cannot be recovered, simply fail
             except Exception as ie:
                 if ie != e:
@@ -1101,9 +1104,10 @@ class InputInjectorStep(BaseStep, ABC):
                         token,
                     ]
                     # Process value and inject token in the output port
+                    token = await self.process_input(job, token.value)
                     self.get_output_port().put(
                         await self._persist_token(
-                            token=await self.process_input(job, token.value),
+                            token=token.update(token.value, recoverable=True),
                             port=self.get_output_port(),
                             input_token_ids=get_entity_ids(in_list),
                         )
@@ -1620,11 +1624,10 @@ class ScatterStep(BaseStep):
                         input_token_ids=get_entity_ids([token]),
                     )
                 )
-            size_token = Token(len(token.value), tag=token.tag)
             size_port = self.get_size_port()
             size_port.put(
                 await self._persist_token(
-                    token=size_token,
+                    token=Token(len(token.value), tag=token.tag, recoverable=True),
                     port=size_port,
                     input_token_ids=get_entity_ids([token]),
                 )
