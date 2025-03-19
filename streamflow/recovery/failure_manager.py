@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import posixpath
 from collections.abc import MutableMapping
 from importlib.resources import files
 
@@ -10,36 +9,10 @@ from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, WorkflowException
 from streamflow.core.recovery import FailureManager, RetryRequest, TokenAvailability
-from streamflow.core.workflow import Job, Status, Step, Token, Workflow
+from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import RollbackRecoveryPolicy
-from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.token import JobToken
-
-
-async def execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -> None:
-    if len(new_workflow.steps) == 0:
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(
-                f"Workflow {new_workflow.name} is empty. "
-                f"Waiting output ports {list(failed_step.output_ports.values())}"
-            )
-        if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
-            raise FailureHandlingException("Recovered workflow construction invalid")
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    new_workflow.ports[name].get(
-                        posixpath.join(failed_step.name, dependency)
-                    )
-                )
-                for name, dependency in failed_step.output_ports.items()
-            )
-        )
-    else:
-        await new_workflow.save(new_workflow.context)
-        executor = StreamFlowExecutor(new_workflow)
-        await executor.run()
 
 
 class DefaultFailureManager(FailureManager):
@@ -52,18 +25,14 @@ class DefaultFailureManager(FailureManager):
         super().__init__(context)
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
-        self.retry_requests: MutableMapping[str, RetryRequest] = {}
+        self._retry_requests: MutableMapping[str, RetryRequest] = {}
 
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
         try:
-            rollback = RollbackRecoveryPolicy(self.context)
-            # Generate recover workflow
-            new_workflow = await rollback.recover_workflow(job, step)
-            # Execute new workflow
-            await execute_recover_workflow(new_workflow, step)
+            await RollbackRecoveryPolicy(self.context).recover(job, step)
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
         # When receiving a FailureHandlingException, simply fail
@@ -85,10 +54,10 @@ class DefaultFailureManager(FailureManager):
         pass
 
     def get_request(self, job_name: str) -> RetryRequest:
-        if job_name in self.retry_requests.keys():
-            return self.retry_requests[job_name]
+        if job_name in self._retry_requests.keys():
+            return self._retry_requests[job_name]
         else:
-            return self.retry_requests.setdefault(job_name, RetryRequest())
+            return self._retry_requests.setdefault(job_name, RetryRequest())
 
     @classmethod
     def get_schema(cls) -> str:
@@ -118,7 +87,7 @@ class DefaultFailureManager(FailureManager):
         await self._do_handle_failure(job, step)
 
     async def is_recovered(self, job_name: str) -> TokenAvailability:
-        if request := self.retry_requests.get(job_name):
+        if request := self._retry_requests.get(job_name):
             async with request.lock:
                 if self.context.scheduler.get_allocation(job_name).status in (
                     Status.ROLLBACK,
@@ -145,15 +114,15 @@ class DefaultFailureManager(FailureManager):
     ) -> None:
         if job_token is not None:
             job_name = job_token.value.name
-            if job_name in self.retry_requests.keys():
-                async with self.retry_requests[job_name].lock:
-                    self.retry_requests[job_name].job_token = job_token
-                    self.retry_requests[job_name].output_tokens.setdefault(
+            if job_name in self._retry_requests.keys():
+                async with self._retry_requests[job_name].lock:
+                    self._retry_requests[job_name].job_token = job_token
+                    self._retry_requests[job_name].output_tokens.setdefault(
                         output_port, output_token
                     )
 
     async def update_request(self, job_name: str) -> None:
-        retry_request = self.retry_requests[job_name]
+        retry_request = self._retry_requests[job_name]
         async with retry_request.lock:
             retry_request.job_token = None
             retry_request.output_tokens = {}

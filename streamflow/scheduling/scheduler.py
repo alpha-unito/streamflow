@@ -500,10 +500,12 @@ class DefaultScheduler(Scheduler):
                             )
                     # Job was running and changed status, or the job was ready to
                     # run (i.e., fireable) but changed to a status different from the running one.
-                    if (
-                        previous_status == Status.RUNNING and status != previous_status
-                    ) or (
-                        previous_status == Status.FIREABLE and status != Status.RUNNING
+                    if status != previous_status and (
+                        previous_status == Status.RUNNING
+                        or (
+                            previous_status == Status.FIREABLE
+                            and status != Status.RUNNING
+                        )
                     ):
                         await self._free_resources(connector, job_allocation, status)
                     if status == Status.ROLLBACK:

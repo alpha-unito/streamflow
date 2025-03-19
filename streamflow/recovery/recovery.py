@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import posixpath
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
 from typing import cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
+from streamflow.core.recovery import RecoveryPolicy
 from streamflow.core.utils import get_class_from_name, get_tag
 from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
@@ -18,6 +20,7 @@ from streamflow.recovery.rollback_recovery import (
     TokenAvailability,
     create_graph_mapper,
 )
+from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
     FilterTokenPort,
@@ -31,6 +34,31 @@ from streamflow.workflow.token import (
     TerminationToken,
 )
 from streamflow.workflow.utils import get_job_token
+
+
+async def execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -> None:
+    if len(new_workflow.steps) == 0:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                f"Workflow {new_workflow.name} is empty. "
+                f"Waiting output ports {list(failed_step.output_ports.values())}"
+            )
+        if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
+            raise FailureHandlingException("Recovered workflow construction invalid")
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    new_workflow.ports[name].get(
+                        posixpath.join(failed_step.name, dependency)
+                    )
+                )
+                for name, dependency in failed_step.output_ports.items()
+            )
+        )
+    else:
+        await new_workflow.save(new_workflow.context)
+        executor = StreamFlowExecutor(new_workflow)
+        await executor.run()
 
 
 async def _get_output_tokens(
@@ -134,11 +162,9 @@ async def _set_step_states(new_workflow: Workflow, mapper: GraphMapper) -> None:
             new_workflow.ports[port.name].token_list = port.token_list
 
 
-class RollbackRecoveryPolicy:
-    def __init__(self, context: StreamFlowContext):
-        self.context: StreamFlowContext = context
+class RollbackRecoveryPolicy(RecoveryPolicy):
 
-    async def recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
+    async def _recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
         workflow = failed_step.workflow
         workflow_builder = WorkflowBuilder(deep_copy=False)
         new_workflow = await workflow_builder.load_workflow(
@@ -157,7 +183,7 @@ class RollbackRecoveryPolicy:
         )
         mapper = await create_graph_mapper(self.context, provenance)
         # Synchronize across multiple recovery workflows
-        await self.sync_workflows(mapper, new_workflow)
+        await self._sync_workflows(mapper, new_workflow)
         # Populate new workflow
         steps = await mapper.get_port_and_step_ids(failed_step.output_ports.values())
         await _populate_workflow(
@@ -173,7 +199,7 @@ class RollbackRecoveryPolicy:
         await _set_step_states(new_workflow, mapper)
         return new_workflow
 
-    async def sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
+    async def _sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
         for job_token in list(
             # todo: visit the jobtoken bottom-up in the graph
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
@@ -223,7 +249,15 @@ class RollbackRecoveryPolicy:
                             new_token,
                             True,
                         )
-                        mapper.remove_token(new_token.persistent_id, preserve_token=True)
+                        mapper.remove_token(
+                            new_token.persistent_id, preserve_token=True
+                        )
             else:
                 await self.context.failure_manager.update_request(job_name)
                 retry_request.workflow = workflow
+
+    async def recover(self, failed_job: Job, failed_step: Step) -> None:
+        # Create recover workflow
+        new_workflow = await self._recover_workflow(failed_job, failed_step)
+        # Execute new workflow
+        await execute_recover_workflow(new_workflow, failed_step)
