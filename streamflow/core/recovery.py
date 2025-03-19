@@ -31,8 +31,6 @@ class FailureManager(SchemaEntity):
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
 
-    # TODO update documentation
-
     @abstractmethod
     async def close(self) -> None: ...
 

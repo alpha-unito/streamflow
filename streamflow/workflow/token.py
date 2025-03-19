@@ -80,27 +80,30 @@ class FileToken(Token, ABC):
 
     async def is_available(self, context: StreamFlowContext) -> bool:
         """The `FileToken` is available if all its paths exist in at least one location."""
-        for path in await self.get_paths(context):
-            if (
-                len(
-                    data_locations := context.data_manager.get_data_locations(
-                        path, data_type=DataType.PRIMARY
-                    )
-                )
-                == 0
-            ):
-                return False
-            else:
-                if not any(
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(_is_path_available(context, data_loc))
-                            for data_loc in data_locations
+        if not self.recoverable:
+            return False
+        else:
+            for path in await self.get_paths(context):
+                if (
+                    len(
+                        data_locations := context.data_manager.get_data_locations(
+                            path, data_type=DataType.PRIMARY
                         )
                     )
+                    == 0
                 ):
                     return False
-        return True
+                else:
+                    if not any(
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(_is_path_available(context, data_loc))
+                                for data_loc in data_locations
+                            )
+                        )
+                    ):
+                        return False
+            return True
 
 
 class JobToken(Token):
@@ -158,7 +161,7 @@ class ListToken(Token):
         )
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return all(
+        return self.recoverable and all(
             await asyncio.gather(
                 *(asyncio.create_task(t.is_available(context)) for t in self.value)
             )
@@ -209,7 +212,7 @@ class ObjectToken(Token):
         )
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return all(
+        return self.recoverable and all(
             await asyncio.gather(
                 *(
                     asyncio.create_task(t.is_available(context))

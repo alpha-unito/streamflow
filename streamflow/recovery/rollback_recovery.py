@@ -19,7 +19,7 @@ from streamflow.workflow.token import JobToken
 
 
 async def create_graph_mapper(
-    context: StreamFlowContext, provenance: ProvenanceGraph, output_ports
+    context: StreamFlowContext, provenance: ProvenanceGraph
 ) -> GraphMapper:
     mapper = GraphMapper(context)
     queue = deque((DirectGraph.LEAF,))
@@ -35,21 +35,6 @@ async def create_graph_mapper(
                 provenance.info_tokens.get(token_id, None),
             )
     return mapper
-
-
-async def evaluate_token_availability(
-    token: Token, context: StreamFlowContext
-) -> TokenAvailability:
-    if token.recoverable:
-        if await token.is_available(context):
-            logger.debug(f"Token with id {token.persistent_id} is available")
-            return TokenAvailability.Available
-        else:
-            logger.debug(f"Token with id {token.persistent_id} is not available")
-            return TokenAvailability.Unavailable
-    else:
-        logger.debug(f"Token with id {token.persistent_id} is not recoverable")
-        return TokenAvailability.Unavailable
 
 
 class ProvenanceToken:
@@ -419,39 +404,34 @@ class ProvenanceGraph:
                     logger.debug(
                         f"Job token {token.value.name} with id {token.persistent_id} is running"
                     )
+            elif await token.is_available(context=self.context):
+                is_available = TokenAvailability.Available
+                self.add(None, token)
             else:
-                if (
-                    is_available := await evaluate_token_availability(
-                        token, self.context
-                    )
-                ) == TokenAvailability.Available:
-                    self.add(None, token)
-                else:
-                    if prev_tokens := await load_dependee_tokens(
-                        token.persistent_id, self.context, loading_context
-                    ):
-                        for prev_token in prev_tokens:
-                            self.add(prev_token, token)
-                            if (
-                                prev_token.persistent_id not in self.info_tokens.keys()
-                                and not contains_persistent_id(
-                                    prev_token.persistent_id, token_frontier
-                                )
-                            ):
-                                token_frontier.append(prev_token)
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Token with id {token.persistent_id} is not available, "
-                                f"its previous tokens are {[t.persistent_id for t in prev_tokens]}"
+                is_available = TokenAvailability.Unavailable
+                # Get previous tokens
+                if prev_tokens := await load_dependee_tokens(
+                    token.persistent_id, self.context, loading_context
+                ):
+                    for prev_token in prev_tokens:
+                        self.add(prev_token, token)
+                        # Check if the token has already been visited
+                        if (
+                            prev_token.persistent_id not in self.info_tokens.keys()
+                            and not contains_persistent_id(
+                                prev_token.persistent_id, token_frontier
                             )
-                    # If the port is an empty unbound input ports
-                    elif await token.is_available(self.context):
-                        is_available = TokenAvailability.Available
-                        self.add(None, token)
-                    else:
-                        raise FailureHandlingException(
-                            f"Token with id {token.persistent_id} is not available and it does not have previous tokens"
+                        ):
+                            token_frontier.append(prev_token)
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Token with id {token.persistent_id} is not available, "
+                            f"its previous tokens are {[t.persistent_id for t in prev_tokens]}"
                         )
+                else:
+                    raise FailureHandlingException(
+                        f"Token with id {token.persistent_id} is not available and it does not have previous tokens"
+                    )
             self.info_tokens.setdefault(
                 token.persistent_id,
                 ProvenanceToken(token, is_available, port_row),

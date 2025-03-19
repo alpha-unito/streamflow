@@ -90,5 +90,4 @@ async def populate_workflow(
     for port in failed_step.get_output_ports().values():
         new_port = InterWorkflowPort(FilterTokenPort(new_workflow, port.name))
         new_port.add_inter_port(port, border_tag=get_tag(failed_job.inputs.values()))
-        # todo: make an abstract class of Port and change the type hint of the workflow ports attribute
         new_workflow.ports[new_port.name] = new_port

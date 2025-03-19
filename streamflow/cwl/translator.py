@@ -1565,7 +1565,7 @@ class CWLTranslator:
         # Search empty unbound input ports
         for input_port in workflow.ports.values():
             if input_port.empty() and not input_port.get_input_steps():
-                input_port.put(Token(value=None))
+                input_port.put(Token(value=None, recoverable=True))
                 input_port.put(TerminationToken())
 
     def _recursive_translate(
