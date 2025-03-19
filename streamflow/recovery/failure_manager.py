@@ -14,7 +14,7 @@ from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import RollbackRecoveryPolicy
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.token import JobToken, TerminationToken
+from streamflow.workflow.token import JobToken
 
 
 async def execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -> None:
@@ -60,7 +60,7 @@ class DefaultFailureManager(FailureManager):
             await asyncio.sleep(self.retry_delay)
         try:
             rollback = RollbackRecoveryPolicy(self.context)
-            # Generate new workflow
+            # Generate recover workflow
             new_workflow = await rollback.recover_workflow(job, step)
             # Execute new workflow
             await execute_recover_workflow(new_workflow, step)
@@ -151,16 +151,6 @@ class DefaultFailureManager(FailureManager):
                     self.retry_requests[job_name].output_tokens.setdefault(
                         output_port, output_token
                     )
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Job {job_name} is notifying on port {output_port}. "
-                            f"There are {len(self.retry_requests[job_name].queue)} workflows in waiting"
-                        )
-                    for waiting_port in list(self.retry_requests[job_name].queue):
-                        if waiting_port.name == output_port:
-                            waiting_port.put(output_token)
-                            waiting_port.put(TerminationToken())
-                            self.retry_requests[job_name].queue.remove(waiting_port)
 
     async def update_request(self, job_name: str) -> None:
         retry_request = self.retry_requests[job_name]

@@ -45,7 +45,10 @@ async def _assert_token_result(
     location: ExecutionLocation,
 ) -> None:
     if isinstance(output_token, FileToken):
-        path = StreamFlowPath(output_token.value, context=context, location=location)
+        path = await StreamFlowPath(
+            output_token.value, context=context, location=location
+        ).resolve()
+        assert path is not None
         assert await path.is_file()
         assert input_value["basename"] == path.parts[-1]
         assert input_value.get("checksum") == f"sha1${await path.checksum()}"
