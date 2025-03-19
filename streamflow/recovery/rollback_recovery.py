@@ -22,7 +22,7 @@ async def create_graph_mapper(
     context: StreamFlowContext, provenance: ProvenanceGraph
 ) -> GraphMapper:
     mapper = GraphMapper(context)
-    queue = deque((DirectGraph.LEAF,))
+    queue = deque(provenance.dag_tokens.prev(DirectGraph.LEAF))
     visited = set()
     while queue:
         token_id = queue.popleft()
@@ -38,15 +38,19 @@ async def create_graph_mapper(
 
 
 class ProvenanceToken:
+    __slots__ = ("instance", "is_available", "port_id", "port_name")
+
     def __init__(
         self,
         token_instance: Token,
-        is_available: TokenAvailability,
-        port_row: MutableMapping[str, Any],
+        is_available: bool,
+        port_id: int,
+        port_name: str,
     ):
         self.instance: Token = token_instance
-        self.is_available: TokenAvailability = is_available
-        self.port_row: MutableMapping[str, Any] = port_row
+        self.is_available: bool = is_available
+        self.port_id: int = port_id
+        self.port_name: str = port_name
 
 
 class DirectGraph:
@@ -80,22 +84,23 @@ class DirectGraph:
     def remove(self, vertex: Any) -> MutableSequence[Any]:
         self.graph.pop(vertex, None)
         removed = [vertex]
-        vertices_without_next = set()
-        for k, values in self.graph.items():
+        # Delete nodes which are not connected to the leaves nodes
+        dead_end_nodes = set()
+        for node, values in self.graph.items():
             if vertex in values:
                 values.remove(vertex)
-            if not values:
-                vertices_without_next.add(k)
-        for vert in vertices_without_next:
-            removed.extend(self.remove(vert))
+            if len(values) == 0:
+                dead_end_nodes.add(node)
+        for node in dead_end_nodes:
+            removed.extend(self.remove(node))
 
         # Assign the root node to vertices without parent
-        to_mv = set()
-        for k in self.keys():
-            if k != DirectGraph.ROOT and not self.prev(k):
-                to_mv.add(k)
-        for k in to_mv:
-            self.add(None, k)
+        orphan_nodes = set()
+        for node in self.keys():
+            if node != DirectGraph.ROOT and not self.prev(node):
+                orphan_nodes.add(node)
+        for node in orphan_nodes:
+            self.add(None, node)
         return removed
 
     def replace(self, old_vertex: Any, new_vertex: Any) -> None:
@@ -171,17 +176,13 @@ class GraphMapper:
     ) -> None:
         # Add ports into the dependency graph
         if token_info_a:
-            port_name_a = token_info_a.port_row["name"]
-            self.port_name_ids.setdefault(port_name_a, set()).add(
-                token_info_a.port_row["id"]
-            )
+            port_name_a = token_info_a.port_name
+            self.port_name_ids.setdefault(port_name_a, set()).add(token_info_a.port_id)
         else:
             port_name_a = None
         if token_info_b:
-            port_name_b = token_info_b.port_row["name"]
-            self.port_name_ids.setdefault(port_name_b, set()).add(
-                token_info_b.port_row["id"]
-            )
+            port_name_b = token_info_b.port_name
+            self.port_name_ids.setdefault(port_name_b, set()).add(token_info_b.port_id)
         else:
             port_name_b = None
         self.dcg_port.add(port_name_a, port_name_b)
@@ -191,7 +192,7 @@ class GraphMapper:
             self._update_token(
                 port_name_a,
                 token_info_a.instance,
-                token_info_a.is_available == TokenAvailability.Available,
+                token_info_a.is_available,
             )
             if token_info_a
             else None
@@ -200,7 +201,7 @@ class GraphMapper:
             self._update_token(
                 port_name_b,
                 token_info_b.instance,
-                token_info_b.is_available == TokenAvailability.Available,
+                token_info_b.is_available,
             )
             if token_info_b
             else None
@@ -392,23 +393,18 @@ class ProvenanceGraph:
             )
             if (
                 isinstance(token, JobToken)
-                and (
-                    is_available := await self.context.failure_manager.is_recovered(
-                        token.value.name
-                    )
-                )
+                and (await self.context.failure_manager.is_recovered(token.value.name))
                 == TokenAvailability.FutureAvailable
             ):
+                is_available = True
                 self.add(None, token)
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
                         f"Job token {token.value.name} with id {token.persistent_id} is running"
                     )
-            elif await token.is_available(context=self.context):
-                is_available = TokenAvailability.Available
+            elif is_available := await token.is_available(context=self.context):
                 self.add(None, token)
             else:
-                is_available = TokenAvailability.Unavailable
                 # Get previous tokens
                 if prev_tokens := await load_dependee_tokens(
                     token.persistent_id, self.context, loading_context
@@ -434,9 +430,14 @@ class ProvenanceGraph:
                     )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
-                    f"Token id {token.persistent_id} is {'' if is_available == TokenAvailability.Available else 'not '}available"
+                    f"Token id {token.persistent_id} is {'' if is_available else 'not '}available"
                 )
             self.info_tokens.setdefault(
                 token.persistent_id,
-                ProvenanceToken(token, is_available, port_row),
+                ProvenanceToken(
+                    token_instance=token,
+                    is_available=is_available,
+                    port_id=port_row["id"],
+                    port_name=port_row["name"],
+                ),
             )

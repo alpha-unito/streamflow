@@ -99,8 +99,7 @@ class DefaultFailureManager(FailureManager):
                     Status.RUNNING,
                     Status.FIREABLE,
                 ):
-                    return TokenAvailability.Unavailable
-                    # return TokenAvailability.FutureAvailable
+                    return TokenAvailability.FutureAvailable
                 elif len(request.output_tokens) > 0 and all(
                     await asyncio.gather(
                         *(

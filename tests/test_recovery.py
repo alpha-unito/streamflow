@@ -231,7 +231,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     injector_step = translator.get_base_injector_step(
         ["local"], input_, posixpath.join(posixpath.sep, input_), workflow
     )
-    injector_step.get_input_port(input_).put(Token(files))
+    injector_step.get_input_port(input_).put(Token(files, recoverable=True))
     injector_step.get_input_port(input_).put(TerminationToken())
     # ExecuteStep
     step = translator.get_execute_pipeline(
@@ -346,7 +346,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
             ["local"], input_, posixpath.join(posixpath.sep, input_), workflow
         )
         input_ports[input_] = injector_step.get_output_port(input_)
-        injector_step.get_input_port(input_).put(Token(token_value))
+        injector_step.get_input_port(input_).put(Token(token_value, recoverable=True))
         injector_step.get_input_port(input_).put(TerminationToken())
     execute_steps = []
     for _ in range(num_of_steps):
