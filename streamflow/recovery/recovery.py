@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
+from typing import cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.utils import get_class_from_name, get_tag
-from streamflow.core.workflow import Job, Port, Step, Token, Workflow
+from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.rollback_recovery import (
@@ -17,7 +18,12 @@ from streamflow.recovery.rollback_recovery import (
     TokenAvailability,
     create_graph_mapper,
 )
-from streamflow.workflow.port import FilterTokenPort, InterWorkflowPort
+from streamflow.workflow.port import (
+    ConnectorPort,
+    FilterTokenPort,
+    InterWorkflowPort,
+    JobPort,
+)
 from streamflow.workflow.step import ExecuteStep, ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
@@ -101,11 +107,14 @@ async def _populate_workflow(
         new_workflow.context,
         failed_step.persistent_id,
     )
-    # Create output port of the failed step in the new workflow
+    # Instantiate ports capable of moving tokens across workflows
+    for port in new_workflow.ports.values():
+        if not isinstance(port, (JobPort, ConnectorPort)):
+            new_workflow.create_port(InterWorkflowPort, port.name)
     for port in failed_step.get_output_ports().values():
-        new_port = InterWorkflowPort(new_workflow, port.name)
-        new_port.add_inter_port(port, border_tag=get_tag(failed_job.inputs.values()))
-        new_workflow.ports[new_port.name] = new_port
+        cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
+            port, border_tag=get_tag(failed_job.inputs.values())
+        )
 
 
 async def _set_step_states(new_workflow: Workflow, mapper: GraphMapper) -> None:
@@ -183,12 +192,12 @@ class RollbackRecoveryPolicy:
                     logger.debug(f"Synchronize rollbacks: job {job_name} is running")
                 # todo: create a unit test for this case
                 for port_name in await mapper.get_output_ports(job_token):
-                    if (
-                        port := workflow.ports.get(port_name)
-                    ) and port not in retry_request.queue:
-                        retry_request.queue.append(port)
-                    else:
-                        workflow.ports[port_name] = Port(workflow, port_name)
+                    if port_name in retry_request.workflow.ports.keys():
+                        cast(
+                            InterWorkflowPort, retry_request.workflow.ports[port_name]
+                        ).add_inter_port(
+                            workflow.create_port(cls=InterWorkflowPort, name=port_name)
+                        )
                 # Remove tokens recovered in other workflows
                 for token_id in await _get_output_tokens(
                     [
@@ -207,13 +216,16 @@ class RollbackRecoveryPolicy:
                 # Search execute token after job token, replace this token with job_req token.
                 # Then remove all the prev tokens
                 for port_name in await mapper.get_output_ports(job_token):
-                    new_token = retry_request.output_tokens[port_name]
-                    await mapper.replace_token(
-                        port_name,
-                        new_token,
-                        True,
-                    )
-                    mapper.remove_token(new_token.persistent_id, preserve_token=True)
+                    if port_name in retry_request.output_tokens.keys():
+                        new_token = retry_request.output_tokens[port_name]
+                        await mapper.replace_token(
+                            port_name,
+                            new_token,
+                            True,
+                        )
+                        mapper.remove_token(
+                            new_token.persistent_id, preserve_token=True
+                        )
             else:
                 await self.context.failure_manager.update_request(job_name)
                 retry_request.workflow = workflow

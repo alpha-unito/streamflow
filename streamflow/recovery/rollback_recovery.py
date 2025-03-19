@@ -14,7 +14,7 @@ from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.workflow.step import ExecuteStep
+from streamflow.workflow.step import ExecuteStep, TransferStep
 from streamflow.workflow.token import JobToken
 
 
@@ -242,7 +242,9 @@ class GraphMapper:
                     for row in step_rows
                 )
             ):
-                if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
+                if issubclass(
+                    get_class_from_name(step_row["type"]), (ExecuteStep, TransferStep)
+                ):
                     port_names.add(port_name)
         return list(port_names)
 
