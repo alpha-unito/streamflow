@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from abc import abstractmethod
+from collections.abc import MutableMapping, MutableSequence
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
 from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
+    from streamflow.core.command import CommandOutput
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import Job, CommandOutput, Step, Token
-    from typing import MutableMapping, Any
+    from streamflow.core.workflow import Job, Port, Step, Token, Workflow
 
 
 class CheckpointManager(SchemaEntity):
@@ -18,12 +21,10 @@ class CheckpointManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self):
-        ...
+    async def close(self): ...
 
     @abstractmethod
-    def register(self, data_location: DataLocation) -> None:
-        ...
+    def register(self, data_location: DataLocation) -> None: ...
 
 
 class FailureManager(SchemaEntity):
@@ -31,45 +32,50 @@ class FailureManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self):
-        ...
+    async def close(self) -> None: ...
+
+    @abstractmethod
+    def get_request(self, job_name: str) -> RetryRequest: ...
 
     @abstractmethod
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
-    ) -> CommandOutput:
-        ...
+    ) -> None: ...
 
     @abstractmethod
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
-    ) -> CommandOutput:
-        ...
+    ) -> None: ...
 
     @abstractmethod
-    async def notify_jobs(
-        self, job_token: JobToken, out_port_name: str, token: Token
-    ): ...
+    async def is_recovered(self, job_name: str) -> TokenAvailability: ...
 
     @abstractmethod
-    async def handle_failure_transfer(self, job: Job, step: Step, port_name: str): ...
+    async def notify(
+        self,
+        output_port: str,
+        output_token: Token,
+        job_token: JobToken | None = None,
+    ) -> None: ...
+
+    @abstractmethod
+    async def update_request(self, job_name: str) -> None: ...
 
 
-class ReplayRequest:
-    __slots__ = ("sender", "target", "version")
+class RetryRequest:
+    __slots__ = ("job_token", "output_tokens", "lock", "queue", "version", "workflow")
 
-    def __init__(self, sender: str, target: str, version: int = 1):
-        self.sender: str = sender
-        self.target: str = target
-        self.version: int = version
+    def __init__(self):
+        self.job_token: JobToken | None = None
+        self.output_tokens: MutableMapping[str, Token] = {}
+        self.lock: asyncio.Lock = asyncio.Lock()
+        # Other workflows can queue to the output port of the step while the job is running.
+        self.queue: MutableSequence[Port] = []
+        self.version: int = 1
+        self.workflow: Workflow | None = None
 
 
-class ReplayResponse:
-    __slots__ = ("job", "outputs", "version")
-
-    def __init__(
-        self, job: str, outputs: MutableMapping[str, Any] | None, version: int = 1
-    ):
-        self.job: str = job
-        self.outputs: MutableMapping[str, Any] = outputs
-        self.version: int = version
+class TokenAvailability(IntEnum):
+    Unavailable = 0
+    Available = 1
+    FutureAvailable = 2

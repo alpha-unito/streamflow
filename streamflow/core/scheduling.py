@@ -1,27 +1,36 @@
 from __future__ import annotations
 
+import copy
 import os
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Type, cast
-
+from collections.abc import (
+    Callable,
+    Iterable,
+    MutableMapping,
+    MutableSequence,
+    MutableSet,
+)
+from typing import TYPE_CHECKING, cast
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
-from streamflow.core.deployment import Connector, ExecutionLocation, Target
+from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
+    from typing import Any
+
+    from streamflow.core.deployment import Connector, Target
     from streamflow.core.workflow import Job, Status
-    from typing import (
-        Any,
-        Callable,
-        Iterable,
-        MutableMapping,
-        MutableSequence,
-        MutableSet,
-    )
+
+
+def _check_storages(hardware_a: Hardware, hardware_b: Hardware) -> None:
+    if set(hardware_b.get_mount_points()) - set(hardware_a.get_mount_points()):
+        raise WorkflowExecutionException(
+            f"Invalid `Hardware` comparison: {hardware_a} should contain all the storage included in {hardware_b}."
+        )
 
 
 def _reduce_storages(
@@ -32,7 +41,11 @@ def _reduce_storages(
         if disk.mount_point in storage.keys():
             storage[disk.mount_point] = operator(storage[disk.mount_point], disk)
         else:
-            storage[disk.mount_point] = Storage(disk.mount_point, disk.size)
+            storage[disk.mount_point] = Storage(
+                mount_point=disk.mount_point,
+                size=disk.size,
+                bind=disk.bind,
+            )
     return storage
 
 
@@ -52,9 +65,11 @@ class Hardware:
         the `key` as a fast entry point to the `Storage`. When an operation (arithmetic or comparison) is done,
         a new `Hardware` instance is created following a normalized form. In the normalized form, the `key` is equal
         to the storage's mount point, and there is only one (aggregated) `Storage` object for each mount point.
+        Instead, the merge operators preserve the existing storage keys, but pretend that all `Storage` objects
+        under the same key expose the same mount point. Conversely, the operation throws an exception.
 
         :param cores: total number of cores
-        :param memory: total number of memory
+        :param memory: total amount of memory (in MB)
         :param storage: a map with string keys and `Storage` values
         """
         self.cores: float = cores
@@ -70,7 +85,7 @@ class Hardware:
         return self.get_storage(path).mount_point
 
     def get_mount_points(self) -> MutableSequence[str]:
-        return [storage.mount_point for storage in self.storage.values()]
+        return list({storage.mount_point for storage in self.storage.values()})
 
     def get_size(self, path: str) -> float:
         return self.get_storage(path).size
@@ -80,6 +95,9 @@ class Hardware:
             if path == disk.mount_point or path in disk.paths:
                 return disk
         raise KeyError(path)
+
+    def __repr__(self):
+        return f"Hardware(cores={self.cores}, memory={self.memory}, storage={self.storage})"
 
     def __add__(self, other: Any) -> Hardware:
         if not isinstance(other, Hardware):
@@ -95,6 +113,24 @@ class Hardware:
                 Storage.__add__.__call__,
             ),
         )
+
+    def __ior__(self, other) -> None:
+        if not isinstance(other, Hardware):
+            raise NotImplementedError
+        self.cores += other.cores
+        self.memory += other.memory
+        for key, disk in other.storage.items():
+            if key not in self.storage.keys():
+                self.storage[key] = disk
+            else:
+                self.storage[key] |= disk
+
+    def __or__(self, other) -> Hardware:
+        if not isinstance(other, Hardware):
+            raise NotImplementedError
+        hardware = copy.deepcopy(self)
+        hardware |= other
+        return hardware
 
     def __sub__(self, other: Any) -> Hardware:
         if not isinstance(other, Hardware):
@@ -115,10 +151,11 @@ class Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores >= other.cores and self.memory >= other.memory:
-            normalized_storages = self._normalize_storage()
+            _check_storages(self, other)
+            self_norm = self._normalize_storage()
             return all(
-                normalized_storages[disk.mount_point] >= disk
-                for disk in other._normalize_storage().values()
+                self_norm[other_disk.mount_point] >= other_disk
+                for other_disk in other._normalize_storage().values()
             )
         else:
             return False
@@ -127,10 +164,11 @@ class Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores > other.cores and self.memory > other.memory:
-            normalized_storages = self._normalize_storage()
+            _check_storages(self, other)
+            self_norm = self._normalize_storage()
             return all(
-                normalized_storages[disk.mount_point] > disk
-                for disk in other._normalize_storage().values()
+                self_norm[other_disk.mount_point] > other_disk
+                for other_disk in other._normalize_storage().values()
             )
         else:
             return False
@@ -139,10 +177,11 @@ class Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores <= other.cores and self.memory <= other.memory:
-            normalized_storages = self._normalize_storage()
+            _check_storages(other, self)
+            other_norm = other._normalize_storage()
             return all(
-                normalized_storages[disk.mount_point] <= disk
-                for disk in other._normalize_storage().values()
+                self_disk <= other_norm[self_disk.mount_point]
+                for self_disk in self._normalize_storage().values()
             )
         else:
             return False
@@ -151,10 +190,11 @@ class Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores < other.cores and self.memory < other.memory:
-            normalized_storages = self._normalize_storage()
+            _check_storages(other, self)
+            other_norm = other._normalize_storage()
             return all(
-                normalized_storages[disk.mount_point] < disk
-                for disk in other._normalize_storage().values()
+                self_disk < other_norm[self_disk.mount_point]
+                for self_disk in self._normalize_storage().values()
             )
         else:
             return False
@@ -185,10 +225,8 @@ class HardwareRequirement(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        type = utils.get_class_from_name(row["type"])
-        return await cast(Type[HardwareRequirement], type)._load(
-            context, row["params"], loading_context
-        )
+        type_ = cast(type[HardwareRequirement], utils.get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
         return {
@@ -229,6 +267,7 @@ class AvailableLocation:
         name: str,
         deployment: str,
         hostname: str,
+        local: bool | None = False,
         service: str | None = None,
         slots: int | None = None,
         stacked: bool = False,
@@ -239,8 +278,19 @@ class AvailableLocation:
         self.location: ExecutionLocation = ExecutionLocation(
             deployment=deployment,
             hostname=hostname,
+            local=local,
+            mounts=(
+                {
+                    storage.mount_point: storage.bind
+                    for storage in self.hardware.storage.values()
+                    if storage.bind is not None
+                }
+                if hardware is not None
+                else {}
+            ),
             name=name,
             service=service,
+            stacked=stacked,
             wraps=wraps.location if wraps else None,
         )
         self.slots: int | None = slots
@@ -256,12 +306,19 @@ class AvailableLocation:
         return self.location.hostname
 
     @property
+    def local(self) -> bool:
+        return self.location.local
+
+    @property
     def name(self) -> str:
         return self.location.name
 
     @property
     def service(self) -> str | None:
         return self.location.service
+
+    def __str__(self):
+        return self.location.__str__()
 
 
 class LocationAllocation:
@@ -348,8 +405,14 @@ class Scheduler(SchemaEntity):
 
 
 class Storage:
+    __slots__ = ("mount_point", "size", "paths", "bind")
+
     def __init__(
-        self, mount_point: str, size: float, paths: MutableSet[str] | None = None
+        self,
+        mount_point: str,
+        size: float,
+        paths: MutableSet[str] | None = None,
+        bind: str | None = None,
     ):
         """
         The `Storage` class represents a persistent volume
@@ -357,6 +420,7 @@ class Storage:
         :param mount_point: the path of the volume's mount point
         :param size: the total size of the volume, expressed in Kilobyte
         :param paths: a list of paths inside the volume
+        :param bind: the path bound by the volume, if any
         """
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
@@ -365,9 +429,13 @@ class Storage:
                 f"Storage {mount_point} with {paths} paths cannot have negative size: {size}"
             )
         self.size: float = size
+        self.bind: str | None = bind
 
     def add_path(self, path: str):
         self.paths.add(path)
+
+    def __repr__(self):
+        return f"Storage(mount_point={self.mount_point}, size={self.size}, bind={self.bind}, paths={self.paths})"
 
     def __add__(self, other: Any) -> Storage:
         if not isinstance(other, Storage):
@@ -380,6 +448,31 @@ class Storage:
             mount_point=self.mount_point,
             size=self.size + other.size,
             paths=self.paths | other.paths,
+            bind=self.bind,
+        )
+
+    def __ior__(self, other) -> None:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        self.size = max(self.size, other.size)
+        self.paths |= other.paths
+
+    def __or__(self, other) -> Storage:
+        if not isinstance(other, Storage):
+            raise NotImplementedError
+        if self.mount_point != other.mount_point:
+            raise WorkflowExecutionException(
+                f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
+            )
+        return Storage(
+            mount_point=self.mount_point,
+            size=max(self.size, other.size),
+            paths=self.paths | other.paths,
+            bind=self.bind,
         )
 
     def __sub__(self, other: Any) -> Storage:
@@ -393,9 +486,10 @@ class Storage:
             mount_point=self.mount_point,
             size=self.size - other.size,
             paths=self.paths | other.paths,
+            bind=self.bind,
         )
 
-    def __ge__(self, other: Storage) -> bool:
+    def __ge__(self, other: Any) -> bool:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
@@ -404,7 +498,7 @@ class Storage:
             )
         return self.size >= other.size
 
-    def __gt__(self, other: Storage) -> bool:
+    def __gt__(self, other: Any) -> bool:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
@@ -413,7 +507,7 @@ class Storage:
             )
         return self.size > other.size
 
-    def __le__(self, other: Storage) -> bool:
+    def __le__(self, other: Any) -> bool:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
@@ -422,7 +516,7 @@ class Storage:
             )
         return self.size <= other.size
 
-    def __lt__(self, other: Storage) -> bool:
+    def __lt__(self, other: Any) -> bool:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:

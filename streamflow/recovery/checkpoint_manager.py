@@ -3,19 +3,18 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from collections.abc import MutableSequence
+from importlib.resources import files
 from typing import TYPE_CHECKING
-
-import pkg_resources
 
 from streamflow.core import utils
 from streamflow.core.data import DataLocation
-from streamflow.core.deployment import LOCAL_LOCATION, Location
+from streamflow.core.deployment import ExecutionLocation, LocalTarget
 from streamflow.core.recovery import CheckpointManager
 from streamflow.core.utils import random_name
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
-    from typing import MutableSequence
 
 
 class DefaultCheckpointManager(CheckpointManager):
@@ -33,9 +32,15 @@ class DefaultCheckpointManager(CheckpointManager):
         parent_directory = os.path.join(self.checkpoint_dir, random_name())
         local_path = os.path.join(parent_directory, data_location.relpath)
         await self.context.data_manager.transfer_data(
-            src_locations=[data_location],
+            src_location=data_location.location,
             src_path=data_location.path,
-            dst_locations=[Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)],
+            dst_locations=[
+                ExecutionLocation(
+                    deployment=LocalTarget.deployment_name,
+                    local=True,
+                    name="__LOCAL__",
+                )
+            ],
             dst_path=local_path,
         )
 
@@ -44,8 +49,11 @@ class DefaultCheckpointManager(CheckpointManager):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "default_checkpoint_manager.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("default_checkpoint_manager.json")
+            .read_text("utf-8")
         )
 
     def register(self, data_location: DataLocation) -> None:
@@ -60,8 +68,11 @@ class DummyCheckpointManager(CheckpointManager):
 
     @classmethod
     def get_schema(cls) -> str:
-        return pkg_resources.resource_filename(
-            __name__, os.path.join("schemas", "dummy_checkpoint_manager.json")
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("dummy_checkpoint_manager.json")
+            .read_text("utf-8")
         )
 
     def register(self, data_location: DataLocation) -> None:

@@ -4,17 +4,13 @@ import logging
 import os
 from pathlib import PurePosixPath
 
-import cwltool.context
-import cwltool.load_tool
-import cwltool.loghandler
-import cwltool.main
-import cwltool.utils
+import cwl_utils.parser
+import cwl_utils.parser.utils
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.requirement.docker.translator import CWLDockerTranslatorConfig
 from streamflow.cwl.translator import CWLTranslator
-from streamflow.cwl.utils import load_cwl_inputs, load_cwl_workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.executor import StreamFlowExecutor
 
@@ -60,14 +56,14 @@ async def main(
 ):
     # Parse input arguments
     cwl_args = _parse_args(workflow_config, context)
-    # Configure log level
-    if args.quiet:
-        # noinspection PyProtectedMember
-        cwltool.loghandler._logger.setLevel(logging.WARNING)
     # Load CWL workflow definition
-    cwl_definition, loading_context = load_cwl_workflow(cwl_args[0])
+    cwl_definition = cwl_utils.parser.load_document_by_uri(cwl_args[0])
     if len(cwl_args) == 2:
-        cwl_inputs = load_cwl_inputs(loading_context, cwl_definition, cwl_args[1])
+        cwl_inputs = cwl_utils.parser.utils.load_inputfile_by_uri(
+            version=cwl_definition.cwlVersion,
+            path=cwl_args[1],
+            loadingOptions=cwl_definition.loadingOptions,
+        )
     else:
         cwl_inputs = {}
     # Transpile CWL workflow to the StreamFlow representation
@@ -79,8 +75,8 @@ async def main(
         output_directory=args.outdir,
         cwl_definition=cwl_definition,
         cwl_inputs=cwl_inputs,
+        cwl_inputs_path=cwl_args[1] if len(cwl_args) == 2 else None,
         workflow_config=workflow_config,
-        loading_context=loading_context,
     )
     if logger.isEnabledFor(logging.INFO):
         logger.info("Building workflow execution plan")
@@ -89,14 +85,11 @@ async def main(
         return
     await workflow.save(context)
     if logger.isEnabledFor(logging.INFO):
-        logger.info("COMPLETED Building of workflow execution plan")
-    from streamflow.token_printer import dag_workflow
-
-    dag_workflow(workflow)
+        logger.info("COMPLETED building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)
     if logger.isEnabledFor(logging.INFO):
-        logger.info(f"Running workflow {args.name}")
+        logger.info(f"EXECUTING workflow {args.name}")
     output_tokens = await executor.run()
     if logger.isEnabledFor(logging.INFO):
-        logger.info("COMPLETED Workflow execution")
+        logger.info("COMPLETED workflow execution")
     print(json.dumps(output_tokens, sort_keys=True, indent=4))

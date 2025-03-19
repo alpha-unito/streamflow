@@ -1,155 +1,196 @@
-import asyncio
+from __future__ import annotations
+
+import argparse
 import os
 import platform
-import tempfile
 from asyncio.locks import Lock
-from typing import Collection
+from collections.abc import AsyncGenerator, Callable, Collection, MutableSequence
+from typing import Any
 
-import pkg_resources
 import pytest
 import pytest_asyncio
-from jinja2 import Template
+from pytest_asyncio import is_async_test
 
-from streamflow.core import utils
-from streamflow.core.config import Config
+import streamflow.deployment.connector
+import streamflow.deployment.filter
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.deployment import (
-    DeploymentConfig,
-    LOCAL_LOCATION,
-    Location,
-    Target,
-)
 from streamflow.core.persistence import PersistableEntity
-from streamflow.core.utils import object_to_dict
-from streamflow.core.workflow import Port, Step, Token, Workflow
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
+from tests.utils.deployment import ReverseTargetsBindingFilter, get_deployment_config
 
 
-def deployment_types():
-    deplyoments_ = ["local", "docker"]
+def csvtype(choices):
+    """Return a function that splits and checks comma-separated values."""
+
+    def splitarg(arg):
+        values = arg.split(",")
+        for value in values:
+            if value not in choices:
+                raise argparse.ArgumentTypeError(
+                    "invalid choice: {!r} (choose from {})".format(
+                        value, ", ".join(map(repr, choices))
+                    )
+                )
+        return values
+
+    return splitarg
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--deploys",
+        type=csvtype(all_deployment_types()),
+        default=all_deployment_types(),
+        help="List of deployments to deploy. Use the comma as delimiter e.g. --deploys "
+        f"local,docker. (default: {all_deployment_types()})",
+    )
+
+
+def pytest_collection_modifyitems(items):
+    for async_test in (item for item in items if is_async_test(item)):
+        async_test.add_marker(pytest.mark.asyncio(loop_scope="session"), append=False)
+
+
+def pytest_configure(config):
+    streamflow.deployment.connector.connector_classes.update(
+        {
+            "failure": FailureConnector,
+            "parameterizable_hardware": ParameterizableHardwareConnector,
+        }
+    )
+    streamflow.deployment.filter.binding_filter_classes.update(
+        {"reverse": ReverseTargetsBindingFilter}
+    )
+
+
+@pytest.fixture(scope="module")
+def chosen_deployment_types(request):
+    return request.config.getoption("--deploys")
+
+
+def pytest_generate_tests(metafunc):
+    if "deployment" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "deployment", metafunc.config.getoption("deploys"), scope="module"
+        )
+    if "deployment_src" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "deployment_src",
+            metafunc.config.getoption("deploys"),
+            scope="module",
+        )
+    if "deployment_dst" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "deployment_dst",
+            metafunc.config.getoption("deploys"),
+            scope="module",
+        )
+    if "communication_pattern" in metafunc.fixturenames:
+        fst_remote = next(
+            d for d in metafunc.config.getoption("deploys") if d != "local"
+        )
+        test_local = "local" in metafunc.config.getoption("deploys")
+        comm_pattern = [
+            # Local to Remote (and Local to Local)
+            *(
+                (("local", d) for d in metafunc.config.getoption("deploys"))
+                if test_local
+                else ()
+            ),
+            # Remote to Local
+            *(
+                (
+                    (d, "local")
+                    for d in metafunc.config.getoption("deploys")
+                    if d != "local"
+                )
+                if test_local
+                else ()
+            ),
+            # Remote to Remote in the same location
+            *((d, d) for d in metafunc.config.getoption("deploys") if d != "local"),
+            # Remote to Remote testing the data receiving
+            *(
+                (fst_remote, d)
+                for d in metafunc.config.getoption("deploys")
+                if d != fst_remote and d != "local"
+            ),
+            # Remote to Remote testing the data sending
+            *(
+                (d, fst_remote)
+                for d in metafunc.config.getoption("deploys")
+                if d != fst_remote and d != "local"
+            ),
+        ]
+        metafunc.parametrize(
+            "communication_pattern",
+            comm_pattern,
+            ids=["-".join(locs) for locs in comm_pattern],
+            scope="module",
+        )
+
+
+def all_deployment_types():
+    deployments_ = ["local", "docker", "docker-compose", "docker-wrapper", "slurm"]
     if platform.system() == "Linux":
-        deplyoments_.extend(["kubernetes", "singularity"])
-    return deplyoments_
+        deployments_.extend(["kubernetes", "singularity", "ssh"])
+    return deployments_
 
 
-async def get_location(
-    _context: StreamFlowContext, request: pytest.FixtureRequest
-) -> Location:
-    if request.param == "local":
-        return Location(deployment=LOCAL_LOCATION, name=LOCAL_LOCATION)
-    elif request.param == "docker":
-        connector = _context.deployment_manager.get_connector("alpine-docker")
-        locations = await connector.get_available_locations()
-        return Location(deployment="alpine-docker", name=next(iter(locations.keys())))
-    elif request.param == "kubernetes":
-        connector = _context.deployment_manager.get_connector("alpine-kubernetes")
-        locations = await connector.get_available_locations(service="sf-test")
-        return Location(
-            deployment="alpine-kubernetes",
-            service="sf-test",
-            name=next(iter(locations.keys())),
-        )
-    elif request.param == "singularity":
-        connector = _context.deployment_manager.get_connector("alpine-singularity")
-        locations = await connector.get_available_locations()
-        return Location(
-            deployment="alpine-singularity", name=next(iter(locations.keys()))
-        )
-    else:
-        raise Exception(f"{request.param} location type not supported")
-
-
-def get_docker_deployment_config():
-    return DeploymentConfig(
-        name="alpine-docker",
-        type="docker",
-        config={"image": "alpine:3.16.2"},
-        external=False,
-        lazy=False,
-    )
-
-
-def get_kubernetes_deployment_config():
-    with open(pkg_resources.resource_filename(__name__, "pod.jinja2")) as t:
-        template = Template(t.read())
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        template.stream(name=utils.random_name()).dump(f.name)
-    return DeploymentConfig(
-        name="alpine-kubernetes",
-        type="kubernetes",
-        config={"files": [f.name]},
-        external=False,
-        lazy=False,
-    )
-
-
-def get_singularity_deployment_config():
-    return DeploymentConfig(
-        name="alpine-singularity",
-        type="singularity",
-        config={"image": "docker://alpine:3.16.2"},
-        external=False,
-        lazy=False,
-    )
-
-
-@pytest_asyncio.fixture(scope="session")
-async def context() -> StreamFlowContext:
+@pytest_asyncio.fixture(scope="module")
+async def context(chosen_deployment_types) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
-        {"database": {"type": "default", "config": {"connection": ":memory:"}}},
+        {
+            "database": {"type": "default", "config": {"connection": ":memory:"}},
+            "path": os.getcwd(),
+        },
     )
-    await _context.deployment_manager.deploy(
-        DeploymentConfig(
-            name=LOCAL_LOCATION,
-            type="local",
-            config={},
-            external=True,
-            lazy=False,
-            workdir=os.path.realpath(tempfile.gettempdir()),
-        )
-    )
-    await _context.deployment_manager.deploy(get_docker_deployment_config())
-    if platform.system() == "Linux":
-        await _context.deployment_manager.deploy(get_kubernetes_deployment_config())
-        await _context.deployment_manager.deploy(get_singularity_deployment_config())
+    for deployment_t in (*chosen_deployment_types, "parameterizable_hardware"):
+        config = await get_deployment_config(_context, deployment_t)
+        await _context.deployment_manager.deploy(config)
     yield _context
     await _context.deployment_manager.undeploy_all()
-    # Close the database connection
-    await _context.database.close()
+    await _context.close()
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
-
-
-def random_dir_path(depth=3):
-    return os.path.join(" ", *(utils.random_name() for _ in range(depth)))
-
-
-def random_job_names(n_jobs=1):
-    return [os.path.join(random_dir_path(1), str(i)) for i in range(n_jobs)]
-
-
-def is_primitive_type(elem):
+def is_primitive_type(elem: Any) -> bool:
+    """The function given in input an object returns True if it has a primitive types (i.e. int, float, str or bool)"""
     return type(elem) in (int, float, str, bool)
 
 
-# The function return True if the elems are the same, otherwise False
-# The param obj_compared is useful to break a circul reference inside the objects
-# remembering the objects already encountered
+def get_class_callables(class_type) -> MutableSequence[Callable]:
+    """The function given in input a class type returns a list of strings with the method names"""
+    return [
+        getattr(class_type, func)
+        for func in dir(class_type)
+        if callable(getattr(class_type, func)) and not func.startswith("__")
+    ]
+
+
+def object_to_dict(obj):
+    """The function given in input an object returns a dictionary with attribute:value"""
+    return {
+        attr: getattr(obj, attr)
+        for attr in dir(obj)
+        if not attr.startswith("__") and not callable(getattr(obj, attr))
+    }
+
+
 def are_equals(elem1, elem2, obj_compared=None):
+    """
+    The function return True if the elems are the same, otherwise False
+    The param obj_compared is useful to break a circul reference inside the objects
+    remembering the objects already encountered
+    """
     obj_compared = obj_compared if obj_compared else []
 
-    # if the objects are of different types, they are definitely not the same
-    if type(elem1) != type(elem2):
+    # If the objects are of different types, they are definitely not the same
+    if type(elem1) is not type(elem2):
         return False
 
-    if type(elem1) == Lock:
+    if isinstance(elem1, Lock):
         return True
 
     if is_primitive_type(elem1):
@@ -174,7 +215,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     if dict1.keys() != dict2.keys():
         return False
 
-    # if their references are in the obj_compared list there is a circular reference to break
+    # If their references are in the obj_compared list there is a circular reference to break
     if elem1 in obj_compared:
         return True
     else:
@@ -185,7 +226,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     else:
         obj_compared.append(elem2)
 
-    # save the different values on the same attribute in the two dicts in a list:
+    # Save the different values on the same attribute in the two dicts in a list:
     #   - if we find objects in the list, they must be checked recursively on their attributes
     #   - if we find elems of primitive types, their values are actually different
     differences = [
@@ -194,7 +235,7 @@ def are_equals(elem1, elem2, obj_compared=None):
         if dict1[attr] != dict2[attr]
     ]
     for value1, value2 in differences:
-        # check recursively the elements
+        # Check recursively the elements
         if not are_equals(value1, value2, obj_compared):
             return False
     return True
@@ -205,20 +246,8 @@ async def save_load_and_test(elem: PersistableEntity, context):
     await elem.save(context)
     assert elem.persistent_id is not None
 
-    # created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
+    # Created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
     # (and not take their reference saved in the attributes)
     loading_context = DefaultDatabaseLoadingContext()
-    loaded = None
-    if isinstance(elem, Step):
-        loaded = await loading_context.load_step(context, elem.persistent_id)
-    elif isinstance(elem, Port):
-        loaded = await loading_context.load_port(context, elem.persistent_id)
-    elif isinstance(elem, Token):
-        loaded = await loading_context.load_token(context, elem.persistent_id)
-    elif isinstance(elem, Workflow):
-        loaded = await loading_context.load_workflow(context, elem.persistent_id)
-    elif isinstance(elem, Target):
-        loaded = await loading_context.load_target(context, elem.persistent_id)
-    elif isinstance(elem, Config):
-        loaded = await loading_context.load_deployment(context, elem.persistent_id)
+    loaded = await type(elem).load(context, elem.persistent_id, loading_context)
     assert are_equals(elem, loaded)

@@ -8,9 +8,10 @@ import posixpath
 import shlex
 import time
 from asyncio.subprocess import STDOUT
+from collections.abc import MutableMapping, MutableSequence
 from decimal import Decimal
 from types import ModuleType
-from typing import Any, IO, MutableMapping, MutableSequence, cast
+from typing import IO, Any, cast
 
 from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
@@ -34,17 +35,8 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import (
-    flatten_list,
-    get_tag,
-)
-from streamflow.core.workflow import (
-    Job,
-    Status,
-    Step,
-    Token,
-    Workflow,
-)
+from streamflow.core.utils import flatten_list, get_tag
+from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.cwl import utils
 from streamflow.cwl.processor import (
     CWLCommandOutput,
@@ -53,22 +45,25 @@ from streamflow.cwl.processor import (
     CWLObjectCommandOutputProcessor,
     CWLUnionCommandOutputProcessor,
 )
-from streamflow.data import remotepath
-from streamflow.deployment.connector import LocalConnector
+from streamflow.cwl.step import build_token
+from streamflow.cwl.workflow import CWLWorkflow
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.utils import get_token_value
 
 
-def _adjust_cwl_output(base_path: str, path_processor: ModuleType, value: Any) -> Any:
+def _adjust_cwl_output(
+    base_path: StreamFlowPath, path_processor: ModuleType, value: Any
+) -> Any:
     if isinstance(value, MutableSequence):
         return [_adjust_cwl_output(base_path, path_processor, v) for v in value]
     elif isinstance(value, MutableMapping):
         if utils.get_token_class(value) in ["File", "Directory"]:
             path = utils.get_path_from_token(value)
             if not path_processor.isabs(path):
-                path = path_processor.join(base_path, path)
+                path = base_path / path
                 value["path"] = path
                 value["location"] = f"file://{path}"
             return value
@@ -85,16 +80,17 @@ def _adjust_inputs(
     inputs: MutableSequence[MutableMapping[str, Any]],
     path_processor: ModuleType,
     src_path: str,
-    dest_path: str,
+    dst_path: str,
 ) -> MutableSequence[MutableMapping[str, Any]]:
     for inp in inputs:
         if (token_class := utils.get_token_class(inp)) in ("File", "Directory"):
             path = utils.get_path_from_token(inp)
             if path == src_path:
-                inp["path"] = dest_path
-                dirname, basename = path_processor.split(dest_path)
+                inp["path"] = dst_path
+                dirname, basename = path_processor.split(dst_path)
                 inp["dirname"] = dirname
                 inp["basename"] = basename
+                inp["location"] = f"file://{dst_path}"
                 if token_class == "File":  # nosec
                     nameroot, nameext = path_processor.splitext(basename)
                     inp["nameroot"] = nameroot
@@ -105,7 +101,7 @@ def _adjust_inputs(
                 and "listing" in inp
             ):
                 inp["listing"] = _adjust_inputs(
-                    inp["listing"], path_processor, src_path, dest_path
+                    inp["listing"], path_processor, src_path, dst_path
                 )
     return inputs
 
@@ -114,10 +110,10 @@ def _build_command_output_processor(name: str, step: Step, value: Any):
     if isinstance(value, MutableSequence):
         return CWLMapCommandOutputProcessor(
             name=name,
-            workflow=step.workflow,
+            workflow=cast(CWLWorkflow, step.workflow),
             processor=CWLUnionCommandOutputProcessor(
                 name=name,
-                workflow=step.workflow,
+                workflow=cast(CWLWorkflow, step.workflow),
                 processors=[
                     _build_command_output_processor(name=name, step=step, value=v)
                     for v in value
@@ -127,12 +123,14 @@ def _build_command_output_processor(name: str, step: Step, value: Any):
     elif isinstance(value, MutableMapping):
         if (token_type := utils.get_token_class(value)) in ["File", "Directory"]:
             return CWLCommandOutputProcessor(
-                name=name, workflow=step.workflow, token_type=token_type  # nosec
+                name=name,
+                workflow=cast(CWLWorkflow, step.workflow),
+                token_type=token_type,  # nosec
             )
         else:
             return CWLObjectCommandOutputProcessor(
                 name=name,
-                workflow=step.workflow,
+                workflow=cast(CWLWorkflow, step.workflow),
                 processors={
                     k: _build_command_output_processor(name=name, step=step, value=v)
                     for k, v in value.items()
@@ -140,7 +138,7 @@ def _build_command_output_processor(name: str, step: Step, value: Any):
             )
     else:
         return CWLCommandOutputProcessor(  # nosec
-            name=name, workflow=step.workflow, token_type="Any"
+            name=name, workflow=cast(CWLWorkflow, step.workflow), token_type="Any"
         )
 
 
@@ -148,18 +146,25 @@ async def _check_cwl_output(job: Job, step: Step, result: Any) -> Any:
     connector = step.workflow.context.scheduler.get_connector(job.name)
     locations = step.workflow.context.scheduler.get_locations(job.name)
     path_processor = get_path_processor(connector)
-    cwl_output_path = path_processor.join(job.output_directory, "cwl.output.json")
     for location in locations:
-        if await remotepath.exists(connector, location, cwl_output_path):
+        cwl_output_path = StreamFlowPath(
+            job.output_directory,
+            "cwl.output.json",
+            context=step.workflow.context,
+            location=location,
+        )
+        if await cwl_output_path.exists():
             # If file exists, use its contents as token value
-            result = json.loads(
-                await remotepath.read(connector, location, cwl_output_path)
-            )
+            result = json.loads(await cwl_output_path.read_text())
             # Update step output ports at runtime if needed
             if isinstance(result, MutableMapping):
                 for out_name, out in result.items():
                     out = _adjust_cwl_output(
-                        base_path=job.output_directory,
+                        base_path=StreamFlowPath(
+                            job.output_directory,
+                            context=step.workflow.context,
+                            location=location,
+                        ),
                         path_processor=path_processor,
                         value=out,
                     )
@@ -216,7 +221,7 @@ async def _get_source_location(
         base_path=base_path,
     )
     # Return the best source location ofr the current transfer
-    return workflow.context.data_manager.get_source_location(
+    return await workflow.context.data_manager.get_source_location(
         src_path, connector.deployment_name
     )
 
@@ -256,14 +261,17 @@ def _merge_tokens(token: CommandToken) -> Any:
         return [_merge_tokens(t) for t in token.value if t is not None]
     elif isinstance(token, ObjectCommandToken):
         tokens = sorted(
-            flatten_list(
-                [_merge_tokens(t) for t in token.value.values() if t is not None]
+            filter(
+                lambda t: t.position is not None,
+                flatten_list(
+                    [_merge_tokens(t) for t in token.value.values() if t is not None]
+                ),
             ),
             key=lambda t: (
                 [t.position, t.name] if t.name is not None else [t.position]
             ),
         )
-        return [t for t in tokens if t.position is not None] or [
+        return tokens or [
             CommandToken(name=token.name, position=token.position, value="")
         ]
     elif token is None:
@@ -278,12 +286,12 @@ async def _prepare_work_dir(
     options: InitialWorkDirOptions,
     element: Any,
     base_path: str | None = None,
-    dest_path: str | None = None,
+    dst_path: str | None = None,
     writable: bool = False,
 ) -> None:
-    streamflow_context = options.step.workflow.context
-    connector = streamflow_context.scheduler.get_connector(options.job.name)
-    locations = streamflow_context.scheduler.get_locations(options.job.name)
+    context = options.step.workflow.context
+    connector = context.scheduler.get_connector(options.job.name)
+    locations = context.scheduler.get_locations(options.job.name)
     path_processor = get_path_processor(connector)
     # Initialize base path to job output directory if present
     base_path = base_path or options.job.output_directory
@@ -329,46 +337,65 @@ async def _prepare_work_dir(
                     options.step.workflow,
                 )
             ):
-                dest_path = dest_path or path_processor.join(
+                dst_path = dst_path or path_processor.join(
                     base_path, path_processor.basename(src_path)
                 )
-                await streamflow_context.data_manager.transfer_data(
+                await context.data_manager.transfer_data(
                     src_location=selected_location.location,
-                    src_path=src_path,
+                    src_path=selected_location.path,
                     dst_locations=locations,
-                    dst_path=dest_path,
+                    dst_path=dst_path,
                     writable=writable,
                 )
                 _adjust_inputs(
                     inputs=options.context["inputs"].values(),
                     path_processor=path_processor,
                     src_path=src_path,
-                    dest_path=dest_path,
+                    dst_path=dst_path,
                 )
             # Otherwise create a File or a Directory in the remote path
             else:
-                if dest_path is None:
-                    dest_path = base_path
+                if dst_path is None:
+                    dst_path = base_path
                 if src_path is not None:
-                    dest_path = path_processor.join(
-                        dest_path, path_processor.basename(src_path)
+                    dst_path = path_processor.join(
+                        dst_path, path_processor.basename(src_path)
                     )
                 if listing_class == "Directory":
-                    await remotepath.mkdir(connector, locations, dest_path)
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                StreamFlowPath(
+                                    dst_path, context=context, location=location
+                                ).mkdir(mode=0o777, exist_ok=True)
+                            )
+                            for location in locations
+                        )
+                    )
                 else:
                     await utils.write_remote_file(
-                        context=streamflow_context,
-                        job=options.job,
+                        context=context,
+                        locations=locations,
                         content=(listing["contents"] if "contents" in listing else ""),
-                        path=dest_path,
+                        path=dst_path,
+                        relpath=path_processor.relpath(dst_path, base_path),
                     )
             # If `listing` is present, recursively process folder contents
             if "listing" in listing:
                 if "basename" in listing:
                     folder_path = path_processor.join(base_path, listing["basename"])
-                    await remotepath.mkdir(connector, locations, folder_path)
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                StreamFlowPath(
+                                    folder_path, context=context, location=location
+                                ).mkdir(mode=0o777, exist_ok=True)
+                            )
+                            for location in locations
+                        )
+                    )
                 else:
-                    folder_path = dest_path or base_path
+                    folder_path = dst_path or base_path
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
@@ -407,18 +434,18 @@ async def _prepare_work_dir(
                 strip_whitespace=False,
             )
             if "entryname" in listing:
-                dest_path = utils.eval_expression(
+                dst_path = utils.eval_expression(
                     expression=listing["entryname"],
                     context=options.context,
                     full_js=options.full_js,
                     expression_lib=options.expression_lib,
                 )
-                if not path_processor.isabs(dest_path):
-                    dest_path = posixpath.abspath(
-                        posixpath.join(options.job.output_directory, dest_path)
+                if not path_processor.isabs(dst_path):
+                    dst_path = posixpath.abspath(
+                        posixpath.join(options.job.output_directory, dst_path)
                     )
                 if not (
-                    dest_path.startswith(options.job.output_directory)
+                    dst_path.startswith(options.job.output_directory)
                     or options.absolute_initial_workdir_allowed
                 ):
                     raise WorkflowDefinitionException(
@@ -431,10 +458,10 @@ async def _prepare_work_dir(
                     and "location" not in entry
                     and "basename" in entry
                 ):
-                    entry["basename"] = dest_path
-                if not path_processor.isabs(dest_path):
-                    dest_path = path_processor.join(
-                        options.job.output_directory, dest_path
+                    entry["basename"] = dst_path
+                if not path_processor.isabs(dst_path):
+                    dst_path = path_processor.join(
+                        options.job.output_directory, dst_path
                     )
             writable = (
                 listing["writable"]
@@ -444,10 +471,15 @@ async def _prepare_work_dir(
             # If entry is a string, a new text file must be created with the string as the file contents
             if isinstance(entry, str):
                 await utils.write_remote_file(
-                    context=streamflow_context,
-                    job=options.job,
+                    context=context,
+                    locations=locations,
                     content=entry,
-                    path=dest_path or base_path,
+                    path=dst_path or base_path,
+                    relpath=(
+                        path_processor.relpath(dst_path, base_path)
+                        if dst_path
+                        else base_path
+                    ),
                 )
             # If entry is a list
             elif isinstance(entry, MutableSequence):
@@ -459,16 +491,21 @@ async def _prepare_work_dir(
                         element=entry,
                         options=options,
                         base_path=base_path,
-                        dest_path=dest_path,
+                        dst_path=dst_path,
                         writable=writable,
                     )
                 # Otherwise, the content should be serialised to JSON
                 else:
                     await utils.write_remote_file(
-                        context=streamflow_context,
-                        job=options.job,
+                        context=context,
+                        locations=locations,
                         content=json.dumps(entry),
-                        path=dest_path or base_path,
+                        path=dst_path or base_path,
+                        relpath=(
+                            path_processor.relpath(dst_path, base_path)
+                            if dst_path
+                            else base_path
+                        ),
                     )
             # If entry is a dict
             elif isinstance(entry, MutableMapping):
@@ -478,24 +515,34 @@ async def _prepare_work_dir(
                         element=entry,
                         options=options,
                         base_path=base_path,
-                        dest_path=dest_path,
+                        dst_path=dst_path,
                         writable=writable,
                     )
                 # Otherwise, the content should be serialised to JSON
                 else:
                     await utils.write_remote_file(
-                        context=streamflow_context,
-                        job=options.job,
+                        context=context,
+                        locations=locations,
                         content=json.dumps(entry),
-                        path=dest_path or base_path,
+                        path=dst_path or base_path,
+                        relpath=(
+                            path_processor.relpath(dst_path, base_path)
+                            if dst_path
+                            else base_path
+                        ),
                     )
             # Every object different from a string should be serialised to JSON
             elif entry is not None:
                 await utils.write_remote_file(
-                    context=streamflow_context,
-                    job=options.job,
+                    context=context,
+                    locations=locations,
                     content=json.dumps(entry),
-                    path=dest_path or base_path,
+                    path=dst_path or base_path,
+                    relpath=(
+                        path_processor.relpath(dst_path, base_path)
+                        if dst_path
+                        else base_path
+                    ),
                 )
 
 
@@ -565,24 +612,21 @@ class CWLCommand(TokenizedCommand):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
-                "base_command": self.base_command,
-                "environment": self.environment,
-                "expression_lib": self.expression_lib,
-                "failure_codes": self.failure_codes,
-                "full_js": self.full_js,
-                "initial_work_dir": self.initial_work_dir,
-                "inplace_update": self.inplace_update,
-                "is_shell_command": self.is_shell_command,
-                "success_codes": self.success_codes,
-                "stderr": self.stderr,  # TODO: manage when is IO type
-                "stdin": self.stdin,  # TODO: manage when is IO type
-                "stdout": self.stdout,  # TODO: manage when is IO type
-                "time_limit": self.time_limit,
-            },
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
+            "base_command": self.base_command,
+            "environment": self.environment,
+            "expression_lib": self.expression_lib,
+            "failure_codes": self.failure_codes,
+            "full_js": self.full_js,
+            "initial_work_dir": self.initial_work_dir,
+            "inplace_update": self.inplace_update,
+            "is_shell_command": self.is_shell_command,
+            "success_codes": self.success_codes,
+            "stderr": self.stderr,  # TODO: manage when is IO type
+            "stdin": self.stdin,  # TODO: manage when is IO type
+            "stdout": self.stdout,  # TODO: manage when is IO type
+            "time_limit": self.time_limit,
         }
 
     @classmethod
@@ -687,8 +731,28 @@ class CWLCommand(TokenizedCommand):
                     step=self.step,
                 ),
             )
+            inputs = dict(
+                zip(
+                    job.inputs.keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                build_token(
+                                    job,
+                                    context["inputs"][key],
+                                    cast(CWLWorkflow, self.step.workflow).cwl_version,
+                                    self.step.workflow.context,
+                                )
+                            )
+                            for key in job.inputs.keys()
+                        )
+                    ),
+                )
+            )
+        else:
+            inputs = job.inputs
         # Build command string
-        cmd = self._get_executable_command(context, job.inputs)
+        cmd = self._get_executable_command(context, inputs)
         # Build environment variables
         parsed_env = {
             k: str(
@@ -714,18 +778,15 @@ class CWLCommand(TokenizedCommand):
             else cmd
         )
         if logger.isEnabledFor(logging.INFO):
-            is_local = isinstance(
-                self.step.workflow.context.deployment_manager.get_connector(
-                    locations[0].deployment
-                ),
-                LocalConnector,
-            )
             logger.info(
-                "EXECUTING step {step} (job {job}) of workflow {wf} in {location} into directory {outdir}:\n{command}".format(
+                "EXECUTING step {step} (job {job}) {location} into directory {outdir}:\n{command}".format(
                     step=self.step.name,
                     job=job.name,
-                    wf=self.step.workflow.name,
-                    location="locally" if is_local else f"on location {locations[0]}",
+                    location=(
+                        "locally"
+                        if locations[0].local
+                        else f"on location {locations[0]}"
+                    ),
                     outdir=job.output_directory,
                     command=cmd_string,
                 )
@@ -918,10 +979,8 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
                 if isinstance(self.position, str) and not self.position.isnumeric():
                     position = utils.eval_expression(
                         expression=self.position,
-                        context={
-                            **options.context,
-                            **{"self": get_token_value(token) if token else None},
-                        },
+                        context=cast(dict[str, Any], options.context)
+                        | {"self": get_token_value(token) if token else None},
                         full_js=options.full_js,
                         expression_lib=options.expression_lib,
                     )
@@ -979,28 +1038,24 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "expression": self.expression,
-                "processor": (
-                    await self.processor.save(context)
-                    if self.processor is not None
-                    else None
-                ),
-                "token_type": self.token_type,
-                "is_shell_command": self.is_shell_command,
-                "item_separator": self.item_separator,
-                "position": self.position,
-                "prefix": self.prefix,
-                "separate": self.separate,
-                "shell_quote": self.shell_quote,
-            },
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "expression": self.expression,
+            "processor": (
+                await self.processor.save(context)
+                if self.processor is not None
+                else None
+            ),
+            "token_type": self.token_type,
+            "is_shell_command": self.is_shell_command,
+            "item_separator": self.item_separator,
+            "position": self.position,
+            "prefix": self.prefix,
+            "separate": self.separate,
+            "shell_quote": self.shell_quote,
         }
 
 
 class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
-
     def __init__(
         self,
         name: str,
@@ -1024,9 +1079,8 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"token_type": self.token_type},
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "token_type": self.token_type
         }
 
     def bind(
@@ -1044,31 +1098,25 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
 
 
 class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
-
     def _update_options(
         self, options: CWLCommandOptions, token: Token
     ) -> CWLCommandOptions:
         return CWLCommandOptions(
-            context={
-                **options.context,
-                **{"inputs": {self.name: get_token_value(token)}},
-            },
+            context=cast(dict[str, Any], options.context)
+            | {"inputs": {self.name: get_token_value(token)}},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
 
 
 class CWLMapCommandTokenProcessor(MapCommandTokenProcessor):
-
     def _update_options(
         self, options: CWLCommandOptions, token: Token
     ) -> CWLCommandOptions:
         value = get_token_value(token)
         return CWLCommandOptions(
-            context={
-                **options.context,
-                **{"inputs": {self.name: value}, "self": value},
-            },
+            context=cast(dict[str, Any], options.context)
+            | {"inputs": {self.name: value}, "self": value},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
@@ -1149,17 +1197,14 @@ class CWLExpressionCommand(Command):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
-                "expression": self.expression,
-                "expression_lib": self.expression_lib,
-                "initial_work_dir": self.initial_work_dir,
-                "inplace_update": self.inplace_update,
-                "full_js": self.full_js,
-                "time_limit": self.time_limit,
-            },
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
+            "expression": self.expression,
+            "expression_lib": self.expression_lib,
+            "initial_work_dir": self.initial_work_dir,
+            "inplace_update": self.inplace_update,
+            "full_js": self.full_js,
+            "time_limit": self.time_limit,
         }
 
     @classmethod

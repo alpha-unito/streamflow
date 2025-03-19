@@ -2,58 +2,75 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from asyncio import Lock
+from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
-from typing import Any, MutableMapping, MutableSequence, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import DeploymentConfig, Target, FilterConfig
+    from streamflow.core.deployment import DeploymentConfig, FilterConfig, Target
     from streamflow.core.workflow import Port, Step, Token, Workflow
 
 
 class DatabaseLoadingContext(ABC):
     @abstractmethod
-    def add_deployment(self, persistent_id: int, deployment: DeploymentConfig): ...
+    def add_deployment(
+        self, persistent_id: int, deployment: DeploymentConfig
+    ) -> None: ...
 
     @abstractmethod
-    def add_filter(self, persistent_id: int, filter_config: FilterConfig): ...
+    def add_filter(self, persistent_id: int, filter_config: FilterConfig) -> None: ...
 
     @abstractmethod
-    def add_port(self, persistent_id: int, port: Port): ...
+    def add_port(self, persistent_id: int, port: Port) -> None: ...
 
     @abstractmethod
-    def add_step(self, persistent_id: int, step: Step): ...
+    def add_step(self, persistent_id: int, step: Step) -> None: ...
 
     @abstractmethod
-    def add_target(self, persistent_id: int, target: Target): ...
+    def add_target(self, persistent_id: int, target: Target) -> None: ...
 
     @abstractmethod
-    def add_token(self, persistent_id: int, token: Token): ...
+    def add_token(self, persistent_id: int, token: Token) -> None: ...
 
     @abstractmethod
-    def add_workflow(self, persistent_id: int, workflow: Workflow): ...
+    def add_workflow(self, persistent_id: int, workflow: Workflow) -> None: ...
 
     @abstractmethod
-    async def load_deployment(self, context: StreamFlowContext, persistent_id: int): ...
+    async def load_deployment(
+        self, context: StreamFlowContext, persistent_id: int
+    ) -> DeploymentConfig: ...
 
     @abstractmethod
-    async def load_filter(self, context: StreamFlowContext, persistent_id: int): ...
+    async def load_filter(
+        self, context: StreamFlowContext, persistent_id: int
+    ) -> FilterConfig: ...
 
     @abstractmethod
-    async def load_port(self, context: StreamFlowContext, persistent_id: int): ...
+    async def load_port(
+        self, context: StreamFlowContext, persistent_id: int
+    ) -> Port: ...
 
     @abstractmethod
-    async def load_step(self, context: StreamFlowContext, persistent_id: int): ...
+    async def load_step(
+        self, context: StreamFlowContext, persistent_id: int
+    ) -> Step: ...
 
     @abstractmethod
-    async def load_target(self, context: StreamFlowContext, persistent_id: int): ...
+    async def load_target(
+        self, context: StreamFlowContext, persistent_id: int
+    ) -> Target: ...
 
     @abstractmethod
-    async def load_token(self, context: StreamFlowContext, persistent_id: int): ...
+    async def load_token(
+        self, context: StreamFlowContext, persistent_id: int
+    ) -> Token: ...
 
     @abstractmethod
-    async def load_workflow(self, context: StreamFlowContext, persistent_id: int): ...
+    async def load_workflow(
+        self, context: StreamFlowContext, persistent_id: int
+    ) -> Workflow: ...
 
 
 class PersistableEntity:
@@ -150,12 +167,21 @@ class Database(SchemaEntity):
 
     @abstractmethod
     async def add_token(
-        self, tag: str, type: type[Token], value: Any, port: int | None = None
+        self,
+        tag: str,
+        type: type[Token],
+        value: Any,
+        port: int | None = None,
+        recoverable: bool = False,
     ) -> int: ...
 
     @abstractmethod
     async def add_workflow(
-        self, name: str, params: MutableMapping[str, Any], status: int, type: str
+        self,
+        name: str,
+        params: MutableMapping[str, Any],
+        status: int,
+        type: type[Workflow],
     ) -> int: ...
 
     @abstractmethod

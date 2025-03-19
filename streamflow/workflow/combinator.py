@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, AsyncIterable, MutableMapping, MutableSequence, cast
+from collections.abc import AsyncIterable, MutableMapping, MutableSequence
+from typing import Any, cast
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
@@ -16,9 +17,6 @@ class CartesianProductCombinator(Combinator):
     def __init__(self, name: str, workflow: Workflow, depth: int = 1):
         super().__init__(name, workflow)
         self.depth: int = depth
-        self.token_values: MutableMapping[
-            str, MutableMapping[str, MutableSequence[Any]]
-        ] = {}
 
     @classmethod
     async def _load(
@@ -40,11 +38,11 @@ class CartesianProductCombinator(Combinator):
     ) -> AsyncIterable[MutableMapping[str, Token]]:
         # Get all combinations of the new element with the others
         tag = ".".join(token.tag.split(".")[: -self.depth])
-        if len(self.token_values[tag]) == len(self.items):
+        if len(self._token_values[tag]) == len(self.items):
             cartesian_product = utils.dict_product(
                 **{
                     k: [token] if k == port_name else v
-                    for k, v in self.token_values[tag].items()
+                    for k, v in self._token_values[tag].items()
                 }
             )
             # Return all combination schemas
@@ -52,7 +50,7 @@ class CartesianProductCombinator(Combinator):
                 schema = {}
                 for key in self.items:
                     if key in self.combinators:
-                        schema = {**schema, **config[key]}
+                        schema |= config[key]
                     else:
                         schema[key] = config[key]
                 suffix = [t.tag.split(".")[-1] for t in schema.values()]
@@ -64,10 +62,11 @@ class CartesianProductCombinator(Combinator):
                     for k, t in schema.items()
                 }
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{"depth": self.depth},
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "depth": self.depth
         }
 
     async def combine(
@@ -112,22 +111,19 @@ class CartesianProductCombinator(Combinator):
 class DotProductCombinator(Combinator):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
-        self.token_values: MutableMapping[
-            str, MutableMapping[str, MutableSequence[Any]]
-        ] = {}
 
     async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
         # Check if some complete input sets are available
-        for tag in list(self.token_values):
-            if len(self.token_values[tag]) == len(self.items):
-                num_items = min(len(i) for i in self.token_values[tag].values())
+        for tag in list(self._token_values):
+            if len(self._token_values[tag]) == len(self.items):
+                num_items = min(len(i) for i in self._token_values[tag].values())
                 for _ in range(num_items):
                     # Return the relative combination schema
                     schema = {}
-                    for key, elements in self.token_values[tag].items():
+                    for key, elements in self._token_values[tag].items():
                         element = elements.pop()
                         if key in self.combinators:
-                            schema = {**schema, **element}
+                            schema |= element
                         else:
                             schema[key] = {
                                 "token": element,
@@ -193,9 +189,6 @@ class LoopTerminationCombinator(DotProductCombinator):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
         self.output_items: MutableSequence[str] = []
-        self.token_values: MutableMapping[
-            str, MutableMapping[str, MutableSequence[Any]]
-        ] = {}
 
     def add_output_item(self, item: str) -> None:
         self.output_items.append(item)
@@ -226,9 +219,10 @@ class LoopTerminationCombinator(DotProductCombinator):
             combinator.add_output_item(item)
         return combinator
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        # self.token_values is not saved because it is always empty at the beginning of execution
-        return {
-            **await super()._save_additional_params(context),
-            **{"output_items": self.output_items},
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        # self._token_values is not saved because it is always empty at the beginning of execution
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "output_items": self.output_items
         }

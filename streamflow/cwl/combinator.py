@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, AsyncIterable, MutableMapping, MutableSequence
+from collections.abc import AsyncIterable, MutableMapping, MutableSequence
+from typing import Any, cast
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
-from streamflow.core.workflow import Token, Workflow
+from streamflow.core.workflow import Token
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.combinator import DotProductCombinator
 from streamflow.workflow.token import IterationTerminationToken, ListToken
 
@@ -24,7 +26,7 @@ class ListMergeCombinator(DotProductCombinator):
     def __init__(
         self,
         name: str,
-        workflow: Workflow,
+        workflow: CWLWorkflow,
         input_names: MutableSequence[str],
         output_name: str,
         flatten: bool = False,
@@ -33,7 +35,6 @@ class ListMergeCombinator(DotProductCombinator):
         self.flatten: bool = flatten
         self.input_names: MutableSequence[str] = input_names
         self.output_name: str = output_name
-        self.token_values: MutableMapping[str, MutableMapping[str, Any]] = {}
 
     @classmethod
     async def _load(
@@ -44,20 +45,22 @@ class ListMergeCombinator(DotProductCombinator):
     ) -> ListMergeCombinator:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
             input_names=row["input_names"],
             output_name=row["output_name"],
             flatten=row["flatten"],
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "input_names": self.input_names,
-                "output_name": self.output_name,
-                "flatten": self.flatten,
-            },
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "input_names": self.input_names,
+            "output_name": self.output_name,
+            "flatten": self.flatten,
         }
 
     async def combine(
@@ -67,16 +70,29 @@ class ListMergeCombinator(DotProductCombinator):
             async for schema in super().combine(port_name, token):
                 # If there is only one input, merge its value
                 if len(self.input_names) == 1:
-                    if isinstance(outputs := schema[self.input_names[0]], ListToken):
+                    if isinstance(
+                        outputs := schema[self.input_names[0]]["token"], ListToken
+                    ):
                         outputs = outputs.value
                     else:
                         outputs = [outputs]
-                    tag = schema[self.input_names[0]].tag
+                    tag = schema[self.input_names[0]]["token"].tag
+                    input_token_ids = schema[self.input_names[0]]["input_ids"]
                 # Otherwise, merge multiple inputs in a single list
                 else:
-                    outputs = [schema[name] for name in self.input_names]
+                    outputs = [schema[name]["token"] for name in self.input_names]
+                    input_token_ids = [
+                        id
+                        for name in self.input_names
+                        for id in schema[name]["input_ids"]
+                    ]
                     tag = get_tag(outputs)
                 # Flatten if needed
                 if self.flatten:
                     outputs = _flatten_token_list(outputs)
-                yield {self.output_name: ListToken(value=outputs, tag=tag)}
+                yield {
+                    self.output_name: {
+                        "token": ListToken(value=outputs, tag=tag),
+                        "input_ids": input_token_ids,
+                    }
+                }

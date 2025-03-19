@@ -6,8 +6,9 @@ import logging
 import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import AsyncIterable, MutableMapping, MutableSequence, MutableSet
 from types import ModuleType
-from typing import Any, AsyncIterable, MutableMapping, MutableSequence, MutableSet, cast
+from typing import Any, cast
 
 from streamflow.core import utils
 from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
@@ -23,19 +24,14 @@ from streamflow.core.deployment import (
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
-    WorkflowTransferException,
+    WorkflowException,
+    WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.workflow import (
-    Job,
-    Port,
-    Status,
-    Step,
-    Token,
-    Workflow,
-)
-from streamflow.data import remotepath
+from streamflow.core.utils import get_entity_ids
+from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -49,6 +45,21 @@ from streamflow.workflow.utils import (
 
 def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
     return directory or path_processor.join(target.workdir, utils.random_name())
+
+
+def _group_by_tag(
+    inputs: MutableMapping[str, Token],
+    inputs_map: MutableMapping[str, MutableMapping[str, Token]],
+) -> None:
+    for name, token in inputs.items():
+        if token.tag not in inputs_map:
+            inputs_map[token.tag] = {}
+        inputs_map[token.tag][name] = token
+
+
+def _is_parent_tag(tag: str, parent: str) -> bool:
+    parent_idx = parent.split(".")
+    return tag.split(".")[: len(parent_idx)] == parent_idx
 
 
 def _reduce_statuses(statuses: MutableSequence[Status]):
@@ -66,26 +77,14 @@ def _reduce_statuses(statuses: MutableSequence[Status]):
         return Status.COMPLETED
 
 
-def _group_by_tag(
-    inputs: MutableMapping[str, Token],
-    inputs_map: MutableMapping[str, MutableMapping[str, Token]],
-) -> None:
-    for name, token in inputs.items():
-        if token.tag not in inputs_map:
-            inputs_map[token.tag] = {}
-        inputs_map[token.tag][name] = token
-
-
-def _get_token_ids(token_list):
-    return [t.persistent_id for t in (token_list or []) if t.persistent_id]
-
-
 class BaseStep(Step, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
         self._log_level: int = logging.DEBUG
 
-    async def _get_inputs(self, input_ports: MutableMapping[str, Port]):
+    async def _get_inputs(
+        self, input_ports: MutableMapping[str, Port]
+    ) -> MutableMapping[str, Token]:
         inputs = {
             k: v
             for k, v in zip(
@@ -98,13 +97,10 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
-        # fixme: debug
-        if len({t.tag for t in inputs.values()}) != 1:
-            tags = {t.tag for t in inputs.values()}
-            raise Exception(
+        if len(tags := {t.tag for t in inputs.values()}) != 1:
+            raise WorkflowExecutionException(
                 f"Step {self.name} has input tokens with different tags {tags}"
             )
-
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs.values()):
                 logger.debug(
@@ -148,17 +144,12 @@ class BaseStep(Step, ABC):
             # Add a TerminationToken to each output port
             for port in self.get_output_ports().values():
                 port.put(TerminationToken(status))
-                logger.debug(
-                    f"Step {self.name} inserts termination token into port {[k for k, v in self.output_ports.items() if v == port.name].pop()} {port.name}"
-                )
             # Set termination status
             await self._set_status(status)
             logger.log(
                 self._log_level,
-                f"{status.name} Step {self.name} (wf {self.workflow.name})",
+                f"{status.name} Step {self.name}",
             )
-        else:
-            logger.debug(f"Step {self.name} is already terminated")
 
 
 class Combinator(ABC):
@@ -184,7 +175,9 @@ class Combinator(ABC):
             workflow=await loading_context.load_workflow(context, row["workflow"]),
         )
 
-    async def _save_additional_params(self, context: StreamFlowContext):
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
         return {
             "name": self.name,
             "combinators": {
@@ -207,10 +200,7 @@ class Combinator(ABC):
     def add_combinator(self, combinator: Combinator, items: set[str]) -> None:
         self.combinators[combinator.name] = combinator
         self.items.append(combinator.name)
-        self.combinators_map = {
-            **self.combinators_map,
-            **{p: combinator.name for p in items},
-        }
+        self.combinators_map |= {p: combinator.name for p in items}
 
     def add_item(self, item: str) -> None:
         self.items.append(item)
@@ -237,8 +227,8 @@ class Combinator(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Combinator:
-        type = cast(Combinator, utils.get_class_from_name(row["type"]))
-        combinator = await type._load(context, row["params"], loading_context)
+        type_ = cast(type[Combinator], utils.get_class_from_name(row["type"]))
+        combinator = await type_._load(context, row["params"], loading_context)
         combinator.items = row["params"]["items"]
         combinator.combinators_map = row["params"]["combinators_map"]
         combinator.combinators = {}
@@ -270,9 +260,9 @@ class Combinator(ABC):
         for key in list(self._token_values.keys()):
             if tag == key:
                 continue
-            elif key.startswith(tag):
+            elif _is_parent_tag(key, tag):
                 self._add_to_port(token, self._token_values[key], port_name)
-            elif tag.startswith(key):
+            elif _is_parent_tag(tag, key):
                 if tag not in self._token_values:
                     self._token_values[tag] = {}
                 for p in self._token_values[key]:
@@ -317,9 +307,8 @@ class CombinatorStep(BaseStep):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"combinator": await self.combinator.save(context)},
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "combinator": await self.combinator.save(context)
         }
 
     async def run(self):
@@ -490,14 +479,11 @@ class DeployStep(BaseStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         await self.deployment_config.save(context)
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "deployment_config": self.deployment_config.persistent_id,
-                "connector_port": self.get_output_port(
-                    self.deployment_config.name
-                ).persistent_id,
-            },
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "deployment_config": self.deployment_config.persistent_id,
+            "connector_port": self.get_output_port(
+                self.deployment_config.name
+            ).persistent_id,
         }
 
     def add_output_port(self, name: str, port: ConnectorPort) -> None:
@@ -539,9 +525,12 @@ class DeployStep(BaseStep):
                             # Propagate the connector in the output port
                             self.get_output_port().put(
                                 await self._persist_token(
-                                    token=Token(value=self.deployment_config.name),
+                                    token=Token(
+                                        value=self.deployment_config.name,
+                                        recoverable=True,
+                                    ),
                                     port=self.get_output_port(),
-                                    input_token_ids=_get_token_ids(inputs.values()),
+                                    input_token_ids=get_entity_ids(inputs.values()),
                                 )
                             )
             else:
@@ -552,7 +541,9 @@ class DeployStep(BaseStep):
                 # Propagate the connector in the output port
                 self.get_output_port().put(
                     await self._persist_token(
-                        token=Token(value=self.deployment_config.name),
+                        token=Token(
+                            value=self.deployment_config.name, recoverable=True
+                        ),
                         port=self.get_output_port(),
                         input_token_ids=[],
                     )
@@ -662,19 +653,20 @@ class ExecuteStep(BaseStep):
                 job, command_output, connector
             )
         ) is not None:
-            job_token = JobToken(job)
-            job_token.persistent_id = get_job_token(
+            job_token = get_job_token(
                 job.name, self.get_input_port("__job__").token_list
-            ).persistent_id
+            )
             output_port.put(
                 await self._persist_token(
-                    token=token,
+                    token=token.update(token.value, recoverable=True),
                     port=output_port,
-                    input_token_ids=_get_token_ids((*job.inputs.values(), job_token)),
+                    input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
             )
-            await self.workflow.context.failure_manager.notify_jobs(
-                job_token, output_port.name, token
+            await self.workflow.context.failure_manager.notify(
+                output_port.name,
+                token,
+                job_token,
             )
 
     async def _run_job(
@@ -707,13 +699,12 @@ class ExecuteStep(BaseStep):
             command_output = await self.command.execute(job)
             if command_output.status == Status.FAILED:
                 logger.error(
-                    f"FAILED Job {job.name} of workflow {self.workflow.name} with error:\n\t{command_output.value}"
+                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
                 )
-                command_output = (
-                    await self.workflow.context.failure_manager.handle_failure(
-                        job, self, command_output
-                    )
+                await self.workflow.context.failure_manager.handle_failure(
+                    job, self, command_output
                 )
+                command_output.status = Status.COMPLETED
             elif command_output.status != Status.CANCELLED:
                 # Retrieve output tokens
                 if not self.terminated:
@@ -744,11 +735,10 @@ class ExecuteStep(BaseStep):
         except Exception as e:
             logger.exception(e)
             try:
-                command_output = (
-                    await self.workflow.context.failure_manager.handle_exception(
-                        job, self, e
-                    )
+                await self.workflow.context.failure_manager.handle_exception(
+                    job, self, e
                 )
+                command_output.status = Status.COMPLETED
             # If failure cannot be recovered, simply fail
             except Exception as ie:
                 if ie != e:
@@ -761,33 +751,28 @@ class ExecuteStep(BaseStep):
             )
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"{command_output.status.name} Job {job.name} of workflow {self.workflow.name} terminated"
-            )
+            logger.debug(f"{command_output.status.name} Job {job.name} terminated")
         return command_output.status
 
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{
-                "job_port": self.get_input_port("__job__").persistent_id,
-                "output_connectors": self.output_connectors,
-                "output_processors": {
-                    k: v
-                    for k, v in zip(
-                        self.output_processors.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(p.save(context))
-                                for p in self.output_processors.values()
-                            )
-                        ),
-                    )
-                },
-                "command": await self.command.save(context) if self.command else None,
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "job_port": self.get_input_port("__job__").persistent_id,
+            "output_connectors": self.output_connectors,
+            "output_processors": {
+                k: v
+                for k, v in zip(
+                    self.output_processors.keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(p.save(context))
+                            for p in self.output_processors.values()
+                        )
+                    ),
+                )
             },
+            "command": await self.command.save(context) if self.command else None,
         }
 
     def add_output_port(
@@ -844,8 +829,10 @@ class ExecuteStep(BaseStep):
                     if cast(asyncio.Task, task).get_name() == "retrieve_inputs":
                         inputs = task.result()
                         # Check for termination
-                        if check_termination(inputs):
-                            statuses.append(_reduce_statuses([t.value for t in inputs]))
+                        if check_termination(inputs.values()):
+                            statuses.append(
+                                _reduce_statuses([t.value for t in inputs.values()])
+                            )
                             if statuses[-1] in (Status.CANCELLED, Status.FAILED):
                                 for t in unfinished:
                                     t.cancel()
@@ -907,7 +894,7 @@ class GatherStep(BaseStep):
                     tag=key, value=sorted(self.token_map[key], key=lambda cur: cur.tag)
                 ),
                 port=output_port,
-                input_token_ids=_get_token_ids(input_tokens),
+                input_token_ids=get_entity_ids(input_tokens),
             )
         )
 
@@ -930,9 +917,9 @@ class GatherStep(BaseStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         await self.get_size_port().save(context)
-        return {
-            **await super()._save_additional_params(context),
-            **{"depth": self.depth, "size_port": self.get_size_port().persistent_id},
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "depth": self.depth,
+            "size_port": self.get_size_port().persistent_id,
         }
 
     def add_input_port(self, name: str, port: Port) -> None:
@@ -1063,9 +1050,8 @@ class InputInjectorStep(BaseStep, ABC):
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"job_port": self.get_input_port("__job__").persistent_id},
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "job_port": self.get_input_port("__job__").persistent_id
         }
 
     def add_output_port(self, name: str, port: Port) -> None:
@@ -1123,11 +1109,12 @@ class InputInjectorStep(BaseStep, ABC):
                         token,
                     ]
                     # Process value and inject token in the output port
+                    new_token = await self.process_input(job, token.value)
                     self.get_output_port().put(
                         await self._persist_token(
-                            token=await self.process_input(job, token.value),
+                            token=new_token.update(new_token.value, recoverable=True),
                             port=self.get_output_port(),
-                            input_token_ids=_get_token_ids(in_list),
+                            input_token_ids=get_entity_ids(in_list),
                         )
                     )
                 finally:
@@ -1306,14 +1293,11 @@ class LoopOutputStep(BaseStep, ABC):
                     await self._persist_token(
                         token=await self._process_output(prefix),
                         port=self.get_output_port(),
-                        input_token_ids=_get_token_ids(self.token_map.get(prefix)),
+                        input_token_ids=get_entity_ids(self.token_map.get(prefix)),
                     )
                 )
             # If all iterations are terminated, terminate the step
             if self.termination_map and all(self.termination_map):
-                logger.debug(
-                    f"Step {self.name} (wf {self.workflow.name}) terminates iteration."
-                )
                 break
         # Terminate step
         await self.terminate(self._get_status(status))
@@ -1394,14 +1378,14 @@ class ScheduleStep(BaseStep):
                 if not self.workflow.context.data_manager.get_data_locations(
                     directory, location.deployment, location.name
                 ):
-                    realpath = await remotepath.follow_symlink(
-                        self.workflow.context, connector, location, directory
-                    )
-                    if realpath != directory:
+                    realpath = await StreamFlowPath(
+                        directory, context=self.workflow.context, location=location
+                    ).resolve()
+                    if str(realpath) != directory:
                         self.workflow.context.data_manager.register_path(
                             location=location,
-                            path=realpath,
-                            relpath=realpath,
+                            path=str(realpath),
+                            relpath=str(realpath),
                         )
                     self.workflow.context.data_manager.register_path(
                         location=location,
@@ -1409,7 +1393,7 @@ class ScheduleStep(BaseStep):
                         relpath=directory,
                         data_type=(
                             DataType.PRIMARY
-                            if realpath == directory
+                            if str(realpath) == directory
                             else DataType.SYMBOLIC_LINK
                         ),
                     )
@@ -1426,7 +1410,7 @@ class ScheduleStep(BaseStep):
             await self._persist_token(
                 token=JobToken(value=job),
                 port=self.get_output_port(),
-                input_token_ids=_get_token_ids(token_inputs),
+                input_token_ids=get_entity_ids(token_inputs),
             )
         )
 
@@ -1434,21 +1418,20 @@ class ScheduleStep(BaseStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         await self.get_output_port("__job__").save(context)
-        params = {
-            **await super()._save_additional_params(context),
-            **{
-                "connector_ports": {
-                    name: self.get_input_port(name).persistent_id
-                    for name in self.input_ports
-                    if name.startswith("__connector__")
-                },
-                "job_port": self.get_output_port("__job__").persistent_id,
-                "binding_config": await self.binding_config.save(context),
-                "job_prefix": self.job_prefix,
-                "input_directory": self.input_directory,
-                "output_directory": self.output_directory,
-                "tmp_directory": self.tmp_directory,
+        params = cast(
+            dict[str, Any], await super()._save_additional_params(context)
+        ) | {
+            "connector_ports": {
+                name: self.get_input_port(name).persistent_id
+                for name in self.input_ports
+                if name.startswith("__connector__")
             },
+            "job_port": self.get_output_port("__job__").persistent_id,
+            "binding_config": await self.binding_config.save(context),
+            "job_prefix": self.job_prefix,
+            "input_directory": self.input_directory,
+            "output_directory": self.output_directory,
+            "tmp_directory": self.tmp_directory,
         }
         if self.hardware_requirement:
             params["hardware_requirement"] = await self.hardware_requirement.save(
@@ -1474,19 +1457,39 @@ class ScheduleStep(BaseStep):
             path_processor, job.tmp_directory, allocation.target
         )
         # Create directories
-        await remotepath.mkdirs(
-            connector=connector,
-            locations=locations,
-            paths=[job.input_directory, job.output_directory, job.tmp_directory],
-        )
-        job.input_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.input_directory
-        )
-        job.output_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.output_directory
-        )
-        job.tmp_directory = await remotepath.follow_symlink(
-            self.workflow.context, connector, locations[0], job.tmp_directory
+        create_tasks = []
+        for location in locations:
+            for directory in [
+                job.input_directory,
+                job.output_directory,
+                job.tmp_directory,
+            ]:
+                create_tasks.append(
+                    asyncio.create_task(
+                        StreamFlowPath(
+                            directory, context=self.workflow.context, location=location
+                        ).mkdir(mode=0o777, parents=True, exist_ok=True)
+                    )
+                )
+        await asyncio.gather(*create_tasks)
+        job.input_directory, job.output_directory, job.tmp_directory = (
+            str(p)
+            for p in await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        StreamFlowPath(
+                            directory,
+                            context=self.workflow.context,
+                            location=next(iter(locations)),
+                        ).resolve()
+                    )
+                    for directory in (
+                        job.input_directory,
+                        job.output_directory,
+                        job.tmp_directory,
+                    )
+                )
+            )
         )
 
     def get_output_port(self, name: str | None = None) -> JobPort:
@@ -1503,19 +1506,18 @@ class ScheduleStep(BaseStep):
                     if name.startswith("__connector__")
                 },
             )
-            connectors = await asyncio.gather(
-                *(
-                    asyncio.create_task(port.get_connector(self.name))
-                    for port in connector_ports.values()
-                )
-            )
-            connectors = {c.deployment_name: c for c in connectors}
             # If there are input ports
             input_ports = {
                 k: v
                 for k, v in self.get_input_ports().items()
                 if k not in connector_ports
             }
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(port.get(posixpath.join(self.name, name)))
+                    for name, port in connector_ports.items()
+                )
+            )
             if input_ports:
                 inputs_map = {}
                 while True:
@@ -1531,16 +1533,6 @@ class ScheduleStep(BaseStep):
                     for tag in list(inputs_map.keys()):
                         if len(inputs_map[tag]) == len(input_ports):
                             inputs = inputs_map.pop(tag)
-                            # fixme: debug
-                            job_name = posixpath.join(self.job_prefix, tag)
-                            if (
-                                job_alloc := self.workflow.context.scheduler.get_allocation(
-                                    job_name
-                                )
-                            ) and job_alloc.status != Status.ROLLBACK:
-                                raise FailureHandlingException(
-                                    f"Step {self.name} (wf {self.workflow.name}) cannot schedule the job {job_name} because it has status finished. Status: {job_alloc.status}"
-                                )
                             # Create Job
                             job = Job(
                                 name=posixpath.join(self.job_prefix, tag),
@@ -1554,11 +1546,14 @@ class ScheduleStep(BaseStep):
                             await self.workflow.context.scheduler.schedule(
                                 job, self.binding_config, self.hardware_requirement
                             )
-                            locations = self.workflow.context.scheduler.get_locations(
-                                job.name
-                            )
                             await self._propagate_job(
-                                connectors[locations[0].deployment], locations, job
+                                connector=self.workflow.context.scheduler.get_connector(
+                                    job.name
+                                ),
+                                locations=self.workflow.context.scheduler.get_locations(
+                                    job.name
+                                ),
+                                job=job,
                             )
             else:
                 # Create Job
@@ -1576,9 +1571,10 @@ class ScheduleStep(BaseStep):
                     self.binding_config,
                     self.hardware_requirement,
                 )
-                locations = self.workflow.context.scheduler.get_locations(job.name)
                 await self._propagate_job(
-                    connectors[locations[0].deployment], locations, job
+                    connector=self.workflow.context.scheduler.get_connector(job.name),
+                    locations=self.workflow.context.scheduler.get_locations(job.name),
+                    job=job,
                 )
                 status = Status.COMPLETED
             await self.terminate(self._get_status(status))
@@ -1597,10 +1593,6 @@ class ScatterStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow, size_port: Port | None = None):
         super().__init__(name, workflow)
         self.add_output_port("__size__", size_port or workflow.create_port())
-        # valid tags filters the data with not valid tags
-        # None: any tags is valid
-        # set of tags: only these tags are used, other tags are discarded
-        self.valid_tags = None
 
     def get_input_port_name(self):
         return next(n for n in self.input_ports)
@@ -1626,9 +1618,8 @@ class ScatterStep(BaseStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         await self.get_size_port().save(context)
-        return {
-            **await super()._save_additional_params(context),
-            **{"size_port": self.get_size_port().persistent_id},
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "size_port": self.get_size_port().persistent_id
         }
 
     async def _scatter(self, token: Token):
@@ -1637,29 +1628,19 @@ class ScatterStep(BaseStep):
         elif isinstance(token, ListToken):
             output_port = self.get_output_port()
             for i, t in enumerate(token.value):
-                tag = token.tag + "." + str(i)
-                if self.valid_tags is None or tag in self.valid_tags:
-                    logger.debug(
-                        f"Step {self.name} (wf {self.workflow.name}) generated token retag {token.tag + '.' + str(i)}"
+                output_port.put(
+                    await self._persist_token(
+                        token=t.retag(token.tag + "." + str(i)),
+                        port=output_port,
+                        input_token_ids=get_entity_ids([token]),
                     )
-                    output_port.put(
-                        await self._persist_token(
-                            token=t.retag(tag),
-                            port=output_port,
-                            input_token_ids=_get_token_ids([token]),
-                        )
-                    )
-                else:
-                    logger.debug(
-                        f"Step {self.name} (wf {self.workflow.name}) skipped token retag {token.tag + '.' + str(i)}"
-                    )
-            size_token = Token(len(token.value), tag=token.tag)
+                )
             size_port = self.get_size_port()
             size_port.put(
                 await self._persist_token(
-                    token=size_token,
+                    token=Token(len(token.value), tag=token.tag, recoverable=True),
                     port=size_port,
-                    input_token_ids=_get_token_ids([token]),
+                    input_token_ids=get_entity_ids([token]),
                 )
             )
         else:
@@ -1733,42 +1714,32 @@ class TransferStep(BaseStep, ABC):
             ),
         )
 
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {
-            **await super()._save_additional_params(context),
-            **{"job_port": self.get_input_port("__job__").persistent_id},
-        }
-
-    async def _transfer(self, job: Job, inputs: MutableMapping[str, Token]) -> Status:
+    async def _run_transfer(
+        self, job: Job, inputs: MutableMapping[str, Token]
+    ) -> Status:
         try:
-            job_token = get_job_token(
-                job.name,
-                self.get_input_port("__job__").token_list,
-            )
             for port_name, token in inputs.items():
                 try:
-                    transferred_token = await self._persist_token(
-                        token=await self.transfer(job, token),
-                        port=self.get_output_port(port_name),
-                        input_token_ids=_get_token_ids([*inputs.values(), job_token]),
-                    )
-                    self.get_output_port(port_name).put(transferred_token)
-                except WorkflowTransferException as e:
-                    logger.exception(e)
-                    transferred_token = await self.workflow.context.failure_manager.handle_failure_transfer(
-                        job, self, port_name
-                    )
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Job {job.name} on port {port_name} managed WorkflowTransferException, it received token {transferred_token.tag}"
+                    self.get_output_port(port_name).put(
+                        await self._persist_token(
+                            token=await self.transfer(job, token),
+                            port=self.get_output_port(port_name),
+                            input_token_ids=get_entity_ids(
+                                [
+                                    get_job_token(
+                                        job.name,
+                                        self.get_input_port("__job__").token_list,
+                                    ),
+                                    *inputs.values(),
+                                ]
+                            ),
                         )
-                    if transferred_token is None:
-                        print(
-                            f"Ho fallito nel gestire WorkflowTransferException {job.name} {port_name} {token.tag}"
-                        )
-                        raise e
+                    )
+                except WorkflowException as err:
+                    logger.exception(err)
+                    await self.workflow.context.failure_manager.handle_exception(
+                        job, self, err
+                    )
             status = Status.COMPLETED
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
@@ -1783,15 +1754,23 @@ class TransferStep(BaseStep, ABC):
             status = Status.FAILED
         return status
 
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "job_port": self.get_input_port("__job__").persistent_id
+        }
+
     async def run(self):
-        jobs = []
+        # Set default status as SKIPPED
+        status = Status.SKIPPED
         # Retrieve input ports
         input_ports = {
             k: v for k, v in self.get_input_ports().items() if k != "__job__"
         }
         if input_ports:
             inputs_map = {}
-            while True:
+            while status not in (Status.FAILED, Status.CANCELLED):
                 # Retrieve input tokens
                 inputs = await self._get_inputs(input_ports)
                 # Retrieve job
@@ -1800,7 +1779,9 @@ class TransferStep(BaseStep, ABC):
                 )
                 # Check for termination
                 if check_termination(inputs.values()) or job is None:
-                    jobs.append(_reduce_statuses([t.value for t in inputs.values()]))
+                    status = _reduce_statuses(
+                        [status, *(t.value for t in inputs.values())]
+                    )
                     break
                 # Group inputs by tag
                 _group_by_tag(inputs, inputs_map)
@@ -1808,13 +1789,13 @@ class TransferStep(BaseStep, ABC):
                 for tag in list(inputs_map.keys()):
                     if len(inputs_map[tag]) == len(input_ports):
                         inputs = inputs_map.pop(tag)
-                        # Change default status to COMPLETED
-                        # Transfer token
-                        jobs.append(await self._transfer(job, inputs))
-        # Wait for jobs termination
-        statuses = cast(MutableSequence[Status], jobs)
+                        if (status := await self._run_transfer(job, inputs)) in (
+                            Status.FAILED,
+                            Status.CANCELLED,
+                        ):
+                            break
         # Terminate step
-        await self.terminate(_reduce_statuses(statuses))
+        await self.terminate(self._get_status(status))
 
     @abstractmethod
     async def transfer(self, job: Job, token: Token) -> Token: ...
@@ -1847,16 +1828,11 @@ class Transformer(BaseStep, ABC):
                             # Check for iteration termination and propagate
                             if check_iteration_termination(inputs.values()):
                                 for port_name, token in inputs.items():
-                                    if not (p := self.get_output_port(port_name)):
-                                        # for debug
-                                        raise Exception(
-                                            f"Step {self.name} non ha output port {port_name}: {p.name}"
-                                        )
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
                                             token=token.update(token.value),
                                             port=self.get_output_port(port_name),
-                                            input_token_ids=_get_token_ids(
+                                            input_token_ids=get_entity_ids(
                                                 inputs.values()
                                             ),
                                         )
@@ -1873,7 +1849,7 @@ class Transformer(BaseStep, ABC):
                                             await self._persist_token(
                                                 token=t,
                                                 port=self.get_output_port(port_name),
-                                                input_token_ids=_get_token_ids(
+                                                input_token_ids=get_entity_ids(
                                                     inputs.values()
                                                 ),
                                             )
