@@ -12,7 +12,7 @@ from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.port import FilterTokenPort, InterWorkflowPort
+from streamflow.workflow.port import InterWorkflowPort
 from streamflow.workflow.step import ExecuteStep
 
 
@@ -88,6 +88,6 @@ async def populate_workflow(
     )
     # Create output port of the failed step in the new workflow
     for port in failed_step.get_output_ports().values():
-        new_port = InterWorkflowPort(FilterTokenPort(new_workflow, port.name))
+        new_port = InterWorkflowPort(new_workflow, port.name)
         new_port.add_inter_port(port, border_tag=get_tag(failed_job.inputs.values()))
         new_workflow.ports[new_port.name] = new_port

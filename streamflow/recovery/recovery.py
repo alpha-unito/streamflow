@@ -35,13 +35,7 @@ def _add_wait(
 ) -> PortRecovery:
     if port_recovery is None:
         if (port := workflow.ports.get(port_name)) is None:
-            port = InterWorkflowPort(
-                FilterTokenPort(
-                    workflow,
-                    port_name,
-                )
-            )
-            port_recovery = PortRecovery(port)
+            port_recovery = PortRecovery(InterWorkflowPort(workflow, port_name))
             retry_request.queue.append(port_recovery)
         elif not isinstance(port, InterWorkflowPort):
             raise FailureHandlingException(f"Port {port} must be a InterWorkflowPort")

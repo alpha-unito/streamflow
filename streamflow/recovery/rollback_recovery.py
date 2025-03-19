@@ -432,6 +432,10 @@ class ProvenanceGraph:
                     raise FailureHandlingException(
                         f"Token with id {token.persistent_id} is not available and it does not have previous tokens"
                     )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Token id {token.persistent_id} is {'' if is_available == TokenAvailability.Available else 'not '}available"
+                )
             self.info_tokens.setdefault(
                 token.persistent_id,
                 ProvenanceToken(token, is_available, port_row),
