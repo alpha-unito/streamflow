@@ -387,7 +387,8 @@ class InjectorFailureCommand(Command):
                     DefaultFailureManager, context.failure_manager
                 ).retry_requests[job.name] = RetryRequest()
                 request.output_tokens = {
-                    k: t.update(t.value) for k, t in job.inputs.items()
+                    k: t.update(t.value, recoverable=True)
+                    for k, t in job.inputs.items()
                 }
             elif self.failure_t == InjectorFailureCommand.FAIL_STOP:
                 for t in job.inputs.values():

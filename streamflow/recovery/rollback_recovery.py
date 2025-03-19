@@ -42,12 +42,12 @@ class ProvenanceToken:
 
     def __init__(
         self,
-        token_instance: Token,
+        instance: Token,
         is_available: bool,
         port_id: int,
         port_name: str,
     ):
-        self.instance: Token = token_instance
+        self.instance: Token = instance
         self.is_available: bool = is_available
         self.port_id: int = port_id
         self.port_name: str = port_name
@@ -432,7 +432,7 @@ class ProvenanceGraph:
             self.info_tokens.setdefault(
                 token.persistent_id,
                 ProvenanceToken(
-                    token_instance=token,
+                    instance=token,
                     is_available=is_available,
                     port_id=port_row["id"],
                     port_name=port_row["name"],

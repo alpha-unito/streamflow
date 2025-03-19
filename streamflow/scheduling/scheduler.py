@@ -499,7 +499,7 @@ class DefaultScheduler(Scheduler):
                                 f"Job {job_name} changed status to {status.name}"
                             )
                     # Job was running and changed status, or the job was ready to
-                    # run (i.e. fireable) but changed in status different from the running one
+                    # run (i.e., fireable) but changed to a status different from the running one.
                     if (
                         previous_status == Status.RUNNING and status != previous_status
                     ) or (

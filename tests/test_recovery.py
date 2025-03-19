@@ -128,7 +128,6 @@ async def test_execute(
             "size": await path.size(),
         }
     else:
-        # TODO list, object
         raise RuntimeError(f"Unknown token type: {token_t}")
     for input_ in ("test",):
         injector_step = translator.get_base_injector_step(
@@ -339,7 +338,6 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
             "size": await path.size(),
         }
     else:
-        # TODO list, object
         raise RuntimeError(f"Unknown token type: {token_t}")
     for input_ in ("test",):
         injector_step = translator.get_base_injector_step(
@@ -396,11 +394,3 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
             ).retry_requests[job.name]
             # The job is not restarted, so it has number of version = 1
             assert retry_request.version == 1
-
-
-# TODO
-# test_ephemeral_volumes
-# test_scatter
-# test_loop
-# test_sync
-# test_conditional

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import posixpath
 from collections.abc import MutableMapping
 from importlib.resources import files
 
@@ -9,11 +10,36 @@ from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, WorkflowException
 from streamflow.core.recovery import FailureManager, RetryRequest, TokenAvailability
-from streamflow.core.workflow import Job, Status, Step, Token
+from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.recovery.recovery import RollbackRecoveryPolicy
-from streamflow.recovery.utils import execute_recover_workflow
+from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.token import JobToken, TerminationToken
+
+
+async def execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -> None:
+    if len(new_workflow.steps) == 0:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                f"Workflow {new_workflow.name} is empty. "
+                f"Waiting output ports {list(failed_step.output_ports.values())}"
+            )
+        if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
+            raise FailureHandlingException("Recovered workflow construction invalid")
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    new_workflow.ports[name].get(
+                        posixpath.join(failed_step.name, dependency)
+                    )
+                )
+                for name, dependency in failed_step.output_ports.items()
+            )
+        )
+    else:
+        await new_workflow.save(new_workflow.context)
+        executor = StreamFlowExecutor(new_workflow)
+        await executor.run()
 
 
 class DefaultFailureManager(FailureManager):
