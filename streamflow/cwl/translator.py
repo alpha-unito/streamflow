@@ -1526,7 +1526,7 @@ class CWLTranslator:
         )
         # Create an input port and inject values
         input_port = workflow.create_port()
-        input_port.put(Token(value=value))
+        input_port.put(Token(value=value, recoverable=True))
         input_port.put(TerminationToken())
         # Connect input and output ports to the injector step
         injector_step.add_input_port(port_name, input_port)

@@ -97,7 +97,9 @@ class FileToken(Token, ABC):
                     if not any(
                         await asyncio.gather(
                             *(
-                                asyncio.create_task(_is_path_available(context, data_loc))
+                                asyncio.create_task(
+                                    _is_path_available(context, data_loc)
+                                )
                                 for data_loc in data_locations
                             )
                         )

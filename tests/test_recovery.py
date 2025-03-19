@@ -135,7 +135,7 @@ async def test_execute(
             ["local"], input_, posixpath.join(posixpath.sep, input_), workflow
         )
         input_ports[input_] = injector_step.get_output_port(input_)
-        injector_step.get_input_port(input_).put(Token(token_value))
+        injector_step.get_input_port(input_).put(Token(token_value, recoverable=True))
         injector_step.get_input_port(input_).put(TerminationToken())
     execute_steps = []
     for i in range(num_of_steps):

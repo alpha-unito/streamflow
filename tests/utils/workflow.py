@@ -56,6 +56,72 @@ if TYPE_CHECKING:
 CWL_VERSION = "v1.2"
 
 
+async def _invalidate_token(context: StreamFlowContext, job: Job, token: Token) -> None:
+    if isinstance(token, FileToken):
+        for loc in context.scheduler.get_locations(job.name):
+            for path in await token.get_paths(context):
+                context.data_manager.invalidate_location(loc, path)
+    elif isinstance(token, ListToken):
+        for t in token.value:
+            await _invalidate_token(context, job, t)
+    elif isinstance(token, ObjectToken):
+        for t in token.value.value():
+            await _invalidate_token(context, job, t)
+    elif isinstance(token.value, Token):
+        await _invalidate_token(context, job, token.value)
+
+
+async def _register_path(
+    context: StreamFlowContext,
+    connector: Connector,
+    location: ExecutionLocation,
+    path: str,
+    relpath: str,
+    data_type: DataType = DataType.PRIMARY,
+) -> DataLocation | None:
+    path = StreamFlowPath(path, context=context, location=location)
+    if real_path := await path.resolve():
+        if real_path != path:
+            if data_locations := context.data_manager.get_data_locations(
+                path=str(real_path), deployment=connector.deployment_name
+            ):
+                data_location = next(iter(data_locations))
+            else:
+                base_path = StreamFlowPath(
+                    str(path).removesuffix(str(relpath)),
+                    context=context,
+                    location=location,
+                )
+                if real_path.is_relative_to(base_path):
+                    data_location = context.data_manager.register_path(
+                        location=location,
+                        path=str(real_path),
+                        relpath=str(real_path.relative_to(base_path)),
+                    )
+                elif data_locations := await search_in_parent_locations(
+                    context=context,
+                    connector=connector,
+                    path=str(real_path),
+                    relpath=real_path.name,
+                ):
+                    data_location = data_locations[0]
+                else:
+                    return None
+            link_location = context.data_manager.register_path(
+                location=location,
+                path=str(path),
+                relpath=relpath,
+                data_type=DataType.SYMBOLIC_LINK,
+            )
+            context.data_manager.register_relation(data_location, link_location)
+            return data_location
+        else:
+            return context.data_manager.register_path(
+                location=location, path=str(path), relpath=relpath, data_type=data_type
+            )
+    return None
+
+
 def create_deploy_step(
     workflow: Workflow, deployment_config: DeploymentConfig | None = None
 ) -> DeployStep:
@@ -199,57 +265,6 @@ def random_job_name(step_name: str | None = None):
     return os.path.join(posixpath.sep, step_name, "0.0")
 
 
-async def _register_path(
-    context: StreamFlowContext,
-    connector: Connector,
-    location: ExecutionLocation,
-    path: str,
-    relpath: str,
-    data_type: DataType = DataType.PRIMARY,
-) -> DataLocation | None:
-    path = StreamFlowPath(path, context=context, location=location)
-    if real_path := await path.resolve():
-        if real_path != path:
-            if data_locations := context.data_manager.get_data_locations(
-                path=str(real_path), deployment=connector.deployment_name
-            ):
-                data_location = next(iter(data_locations))
-            else:
-                base_path = StreamFlowPath(
-                    str(path).removesuffix(str(relpath)),
-                    context=context,
-                    location=location,
-                )
-                if real_path.is_relative_to(base_path):
-                    data_location = context.data_manager.register_path(
-                        location=location,
-                        path=str(real_path),
-                        relpath=str(real_path.relative_to(base_path)),
-                    )
-                elif data_locations := await search_in_parent_locations(
-                    context=context,
-                    connector=connector,
-                    path=str(real_path),
-                    relpath=real_path.name,
-                ):
-                    data_location = data_locations[0]
-                else:
-                    return None
-            link_location = context.data_manager.register_path(
-                location=location,
-                path=str(path),
-                relpath=relpath,
-                data_type=DataType.SYMBOLIC_LINK,
-            )
-            context.data_manager.register_relation(data_location, link_location)
-            return data_location
-        else:
-            return context.data_manager.register_path(
-                location=location, path=str(path), relpath=relpath, data_type=data_type
-            )
-    return None
-
-
 async def build_token(job: Job, token_value: Any, context: StreamFlowContext) -> Token:
     if isinstance(token_value, MutableSequence):
         return ListToken(
@@ -279,6 +294,8 @@ async def build_token(job: Job, token_value: Any, context: StreamFlowContext) ->
                 },
             )
     elif isinstance(token_value, FileToken):
+        return token_value.update(token_value.value)
+    elif isinstance(token_value, Token):
         return token_value.update(token_value.value)
     else:
         return Token(tag=get_tag(job.inputs.values()), value=token_value)
@@ -313,21 +330,6 @@ class ForwardFirstInputProcessor(CommandOutputProcessor):
             return token.update(token.value)
         else:
             return await build_token(job, token.value, self.workflow.context)
-
-
-async def _invalidate_token(context: StreamFlowContext, job: Job, token: Token) -> None:
-    if isinstance(token, FileToken):
-        for loc in context.scheduler.get_locations(job.name):
-            for path in await token.get_paths(context):
-                context.data_manager.invalidate_location(loc, path)
-    elif isinstance(token, ListToken):
-        for t in token.value:
-            await _invalidate_token(context, job, t)
-    elif isinstance(token, ObjectToken):
-        for t in token.value.value():
-            await _invalidate_token(context, job, t)
-    elif isinstance(token.value, Token):
-        await _invalidate_token(context, job, token.value)
 
 
 class InjectorFailureCommand(Command):
