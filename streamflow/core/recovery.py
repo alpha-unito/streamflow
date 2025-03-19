@@ -62,14 +62,6 @@ class FailureManager(SchemaEntity):
     async def update_request(self, job_name: str) -> None: ...
 
 
-class PortRecovery:
-    __slots__ = ("port", "waiting_token")
-
-    def __init__(self, port: Port):
-        self.port: Port = port
-        self.waiting_token: int = 0
-
-
 class RetryRequest:
     __slots__ = ("job_token", "output_tokens", "lock", "queue", "version", "workflow")
 
@@ -78,7 +70,7 @@ class RetryRequest:
         self.output_tokens: MutableMapping[str, Token] = {}
         self.lock: asyncio.Lock = asyncio.Lock()
         # Other workflows can queue to the output port of the step while the job is running.
-        self.queue: MutableSequence[PortRecovery] = []
+        self.queue: MutableSequence[Port] = []
         self.version: int = 1
         self.workflow: Workflow | None = None
 

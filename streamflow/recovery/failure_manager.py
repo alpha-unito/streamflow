@@ -131,12 +131,10 @@ class DefaultFailureManager(FailureManager):
                             f"There are {len(self.retry_requests[job_name].queue)} workflows in waiting"
                         )
                     for waiting_port in list(self.retry_requests[job_name].queue):
-                        if waiting_port.port.name == output_port:
-                            waiting_port.port.put(output_token)
-                            waiting_port.waiting_token -= 1
-                            if waiting_port.waiting_token == 0:
-                                waiting_port.port.put(TerminationToken())
-                                self.retry_requests[job_name].queue.remove(waiting_port)
+                        if waiting_port.name == output_port:
+                            waiting_port.put(output_token)
+                            waiting_port.put(TerminationToken())
+                            self.retry_requests[job_name].queue.remove(waiting_port)
 
     async def update_request(self, job_name: str) -> None:
         retry_request = self.retry_requests[job_name]
@@ -147,7 +145,6 @@ class DefaultFailureManager(FailureManager):
             retry_request.version += 1
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Updated Job {job_name} at {retry_request.version} times")
-            # Free resources scheduler
             await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
         else:
             logger.error(

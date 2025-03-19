@@ -391,21 +391,18 @@ class ProvenanceGraph:
             port_row = await self.context.database.get_port_from_token(
                 token.persistent_id
             )
+            # The token is a `JobToken` and its job is running on another recovered workflow
             if (
                 isinstance(token, JobToken)
                 and (await self.context.failure_manager.is_recovered(token.value.name))
                 == TokenAvailability.FutureAvailable
             ):
-                is_available = True
+                is_available = False
                 self.add(None, token)
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Job token {token.value.name} with id {token.persistent_id} is running"
-                    )
             elif is_available := await token.is_available(context=self.context):
                 self.add(None, token)
             else:
-                # Get previous tokens
+                # Token is not available, get previous tokens
                 if prev_tokens := await load_dependee_tokens(
                     token.persistent_id, self.context, loading_context
                 ):
