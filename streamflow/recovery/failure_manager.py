@@ -160,6 +160,8 @@ class DefaultFailureManager(FailureManager):
 
 
 class DummyFailureManager(FailureManager):
+    async def close(self) -> None:
+        pass
 
     @classmethod
     def get_schema(cls) -> str:
@@ -169,9 +171,6 @@ class DummyFailureManager(FailureManager):
             .joinpath("dummy_failure_manager.json")
             .read_text("utf-8")
         )
-
-    async def close(self) -> None:
-        pass
 
     def get_request(self, job_name: str) -> RetryRequest:
         pass

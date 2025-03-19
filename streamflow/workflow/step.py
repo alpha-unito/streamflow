@@ -1512,6 +1512,12 @@ class ScheduleStep(BaseStep):
                 for k, v in self.get_input_ports().items()
                 if k not in connector_ports
             }
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(port.get(posixpath.join(self.name, name)))
+                    for name, port in connector_ports.items()
+                )
+            )
             if input_ports:
                 inputs_map = {}
                 while True:
