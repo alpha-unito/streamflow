@@ -2,29 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
+import posixpath
+from collections.abc import Iterable
 from typing import cast
 
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.utils import get_class_from_name, get_tag
-from streamflow.core.workflow import Job, Step, Token, Workflow
+from streamflow.core.recovery import RecoveryPolicy
+from streamflow.core.utils import get_tag
+from streamflow.core.workflow import Job, Step, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
-from streamflow.recovery.rollback_recovery import (
+from streamflow.recovery.utils import (
     DirectGraph,
     GraphMapper,
     ProvenanceGraph,
     TokenAvailability,
     create_graph_mapper,
 )
+from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
     FilterTokenPort,
     InterWorkflowPort,
     JobPort,
 )
-from streamflow.workflow.step import ExecuteStep, ScatterStep
+from streamflow.workflow.step import ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -33,33 +35,39 @@ from streamflow.workflow.token import (
 from streamflow.workflow.utils import get_job_token
 
 
-async def _get_output_tokens(
-    next_token_ids: MutableSequence[int], context: StreamFlowContext
-) -> MutableSet[int]:
-    execute_step_out_token_ids = set()
-    for token_id in next_token_ids:
-        port_row = await context.database.get_port_from_token(token_id)
-        for step_id_row in await context.database.get_input_steps(port_row["id"]):
-            step_row = await context.database.get_step(step_id_row["step"])
-            if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
-                execute_step_out_token_ids.add(token_id)
-    return execute_step_out_token_ids
+async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -> None:
+    if len(new_workflow.steps) == 0:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                f"Workflow {new_workflow.name} is empty. "
+                f"Waiting output ports {list(failed_step.output_ports.values())}"
+            )
+        if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
+            raise FailureHandlingException("Recovered workflow construction invalid")
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    new_workflow.ports[name].get(
+                        posixpath.join(failed_step.name, dependency)
+                    )
+                )
+                for name, dependency in failed_step.output_ports.items()
+            )
+        )
+    else:
+        await new_workflow.save(new_workflow.context)
+        executor = StreamFlowExecutor(new_workflow)
+        await executor.run()
 
 
-async def _inject_tokens(
-    new_workflow: Workflow,
-    init_ports: MutableSet[str],
-    port_tokens: MutableMapping[str, MutableSet[int]],
-    token_instances: MutableMapping[int, Token],
-    token_available: MutableMapping[int, bool],
-) -> None:
-    for port_name in init_ports:
+async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
+    for port_name in mapper.dcg_port[DirectGraph.ROOT]:
         token_list = sorted(
             [
-                token_instances[token_id]
-                for token_id in port_tokens[port_name]
+                mapper.token_instances[token_id]
+                for token_id in mapper.port_tokens[port_name]
                 if token_id not in (DirectGraph.ROOT, DirectGraph.LEAF)
-                and token_available[token_id]
+                and mapper.token_available[token_id]
             ],
             key=lambda x: x.tag,
         )
@@ -80,7 +88,7 @@ async def _inject_tokens(
                 logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
         if len(port.token_list) > 0 and len(port.token_list) == len(
-            port_tokens[port_name]
+            mapper.port_tokens[port_name]
         ):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
@@ -117,7 +125,7 @@ async def _populate_workflow(
         )
 
 
-async def _set_step_states(new_workflow: Workflow, mapper: GraphMapper) -> None:
+async def _set_step_states(mapper: GraphMapper, new_workflow: Workflow) -> None:
     for step in new_workflow.steps.values():
         if isinstance(step, ScatterStep):
             port = step.get_output_port()
@@ -134,11 +142,8 @@ async def _set_step_states(new_workflow: Workflow, mapper: GraphMapper) -> None:
             new_workflow.ports[port.name].token_list = port.token_list
 
 
-class RollbackRecoveryPolicy:
-    def __init__(self, context: StreamFlowContext):
-        self.context: StreamFlowContext = context
-
-    async def recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
+class RollbackRecoveryPolicy(RecoveryPolicy):
+    async def _recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
         workflow = failed_step.workflow
         workflow_builder = WorkflowBuilder(deep_copy=False)
         new_workflow = await workflow_builder.load_workflow(
@@ -157,23 +162,17 @@ class RollbackRecoveryPolicy:
         )
         mapper = await create_graph_mapper(self.context, provenance)
         # Synchronize across multiple recovery workflows
-        await self.sync_workflows(mapper, new_workflow)
+        await self._sync_workflows(mapper, new_workflow)
         # Populate new workflow
         steps = await mapper.get_port_and_step_ids(failed_step.output_ports.values())
         await _populate_workflow(
             steps, failed_step, new_workflow, workflow_builder, failed_job
         )
-        await _inject_tokens(
-            new_workflow,
-            mapper.dcg_port[DirectGraph.ROOT],
-            mapper.port_tokens,
-            mapper.token_instances,
-            mapper.token_available,
-        )
-        await _set_step_states(new_workflow, mapper)
+        await _inject_tokens(mapper, new_workflow)
+        await _set_step_states(mapper, new_workflow)
         return new_workflow
 
-    async def sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
+    async def _sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
         for job_token in list(
             # todo: visit the jobtoken bottom-up in the graph
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
@@ -199,14 +198,7 @@ class RollbackRecoveryPolicy:
                             workflow.create_port(cls=InterWorkflowPort, name=port_name)
                         )
                 # Remove tokens recovered in other workflows
-                for token_id in await _get_output_tokens(
-                    [
-                        t
-                        for t in mapper.dag_tokens.succ(job_token.persistent_id)
-                        if t not in (DirectGraph.ROOT, DirectGraph.LEAF)
-                    ],
-                    self.context,
-                ):
+                for token_id in await mapper.get_output_tokens(job_token.persistent_id):
                     mapper.remove_token(token_id, preserve_token=True)
             elif is_available == TokenAvailability.Available:
                 if logger.isEnabledFor(logging.DEBUG):
@@ -229,3 +221,9 @@ class RollbackRecoveryPolicy:
             else:
                 await self.context.failure_manager.update_request(job_name)
                 retry_request.workflow = workflow
+
+    async def recover(self, failed_job: Job, failed_step: Step) -> None:
+        # Create recover workflow
+        new_workflow = await self._recover_workflow(failed_job, failed_step)
+        # Execute new workflow
+        await _execute_recover_workflow(new_workflow, failed_step)

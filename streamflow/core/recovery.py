@@ -62,6 +62,14 @@ class FailureManager(SchemaEntity):
     async def update_request(self, job_name: str) -> None: ...
 
 
+class RecoveryPolicy:
+    def __init__(self, context: StreamFlowContext):
+        self.context: StreamFlowContext = context
+
+    @abstractmethod
+    async def recover(self, failed_job: Job, failed_step: Step) -> None: ...
+
+
 class RetryRequest:
     __slots__ = ("job_token", "lock", "output_tokens", "version", "workflow")
 

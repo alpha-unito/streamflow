@@ -385,7 +385,7 @@ class InjectorFailureCommand(Command):
             if self.failure_t == InjectorFailureCommand.INJECT_TOKEN:
                 request = cast(
                     DefaultFailureManager, context.failure_manager
-                ).retry_requests[job.name] = RetryRequest()
+                )._retry_requests[job.name] = RetryRequest()
                 request.output_tokens = {
                     k: t.update(t.value, recoverable=True)
                     for k, t in job.inputs.items()

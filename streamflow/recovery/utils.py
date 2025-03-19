@@ -37,22 +37,6 @@ async def create_graph_mapper(
     return mapper
 
 
-class ProvenanceToken:
-    __slots__ = ("instance", "is_available", "port_id", "port_name")
-
-    def __init__(
-        self,
-        instance: Token,
-        is_available: bool,
-        port_id: int,
-        port_name: str,
-    ):
-        self.instance: Token = instance
-        self.is_available: bool = is_available
-        self.port_id: int = port_id
-        self.port_name: str = port_name
-
-
 class DirectGraph:
     ROOT = "root"
     LEAF = "leaf"
@@ -221,6 +205,22 @@ class GraphMapper:
             elif self.token_instances[token_id].tag == token.tag:
                 return token_id
         return None
+
+    async def get_output_tokens(self, job_token_id: int) -> Iterable[int]:
+        execute_step_out_token_ids = set()
+        for token_id in [
+            t
+            for t in self.dag_tokens.succ(job_token_id)
+            if t not in (DirectGraph.ROOT, DirectGraph.LEAF)
+        ]:
+            port_row = await self.context.database.get_port_from_token(token_id)
+            for step_id_row in await self.context.database.get_input_steps(
+                port_row["id"]
+            ):
+                step_row = await self.context.database.get_step(step_id_row["step"])
+                if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
+                    execute_step_out_token_ids.add(token_id)
+        return execute_step_out_token_ids
 
     async def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
         port_names = set()
@@ -440,3 +440,19 @@ class ProvenanceGraph:
                     port_name=port_row["name"],
                 ),
             )
+
+
+class ProvenanceToken:
+    __slots__ = ("instance", "is_available", "port_id", "port_name")
+
+    def __init__(
+        self,
+        instance: Token,
+        is_available: bool,
+        port_id: int,
+        port_name: str,
+    ):
+        self.instance: Token = instance
+        self.is_available: bool = is_available
+        self.port_id: int = port_id
+        self.port_name: str = port_name

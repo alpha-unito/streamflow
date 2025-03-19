@@ -4,7 +4,6 @@ import logging
 from collections.abc import MutableSequence
 from typing import Callable
 
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector
 from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.log_handler import logger
@@ -47,16 +46,6 @@ class FilterTokenPort(Port):
             super().put(token)
         elif logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Port {self.name} skips {token.tag}")
-
-    async def save(self, context: StreamFlowContext) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                self.persistent_id = await context.database.add_port(
-                    name=self.name,
-                    workflow_id=self.workflow.persistent_id,
-                    type=Port,
-                    params=await self._save_additional_params(context),
-                )
 
 
 class InterWorkflowPort(Port):
