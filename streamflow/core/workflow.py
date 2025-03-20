@@ -214,6 +214,7 @@ class Status(IntEnum):
     FAILED = 5
     CANCELLED = 6
     ROLLBACK = 7
+    RECOVERY = 8
 
 
 class Step(PersistableEntity, ABC):
@@ -428,9 +429,9 @@ class Token(PersistableEntity):
 
     async def is_available(self, context: StreamFlowContext) -> bool:
         if isinstance(self.value, Token):
-            return await self.value.is_available(context)
+            return self.recoverable and await self.value.is_available(context)
         else:
-            return True
+            return self.recoverable
 
     def retag(self, tag: str, recoverable: bool = False) -> Token:
         return self.__class__(tag=tag, value=self.value, recoverable=recoverable)

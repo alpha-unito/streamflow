@@ -658,10 +658,15 @@ class ExecuteStep(BaseStep):
             )
             output_port.put(
                 await self._persist_token(
-                    token=token,
+                    token=token.update(token.value, recoverable=True),
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
+            )
+            await self.workflow.context.failure_manager.notify(
+                output_port.name,
+                token,
+                job_token,
             )
 
     async def _run_job(
@@ -1104,10 +1109,10 @@ class InputInjectorStep(BaseStep, ABC):
                         token,
                     ]
                     # Process value and inject token in the output port
-                    token = await self.process_input(job, token.value)
+                    new_token = await self.process_input(job, token.value)
                     self.get_output_port().put(
                         await self._persist_token(
-                            token=token.update(token.value, recoverable=True),
+                            token=new_token.update(new_token.value, recoverable=True),
                             port=self.get_output_port(),
                             input_token_ids=get_entity_ids(in_list),
                         )
@@ -1507,6 +1512,12 @@ class ScheduleStep(BaseStep):
                 for k, v in self.get_input_ports().items()
                 if k not in connector_ports
             }
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(port.get(posixpath.join(self.name, name)))
+                    for name, port in connector_ports.items()
+                )
+            )
             if input_ports:
                 inputs_map = {}
                 while True:

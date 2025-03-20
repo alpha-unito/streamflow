@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from abc import abstractmethod
 from collections.abc import MutableMapping
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
+from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
-    from typing import Any
-
+    from streamflow.core.command import CommandOutput
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step
+    from streamflow.core.workflow import Job, Step, Token, Workflow
 
 
 class CheckpointManager(SchemaEntity):
@@ -30,34 +32,56 @@ class FailureManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self): ...
+    async def close(self) -> None: ...
+
+    @abstractmethod
+    def get_request(self, job_name: str) -> RetryRequest: ...
 
     @abstractmethod
     async def handle_exception(
         self, job: Job, step: Step, exception: BaseException
-    ) -> CommandOutput: ...
+    ) -> None: ...
 
     @abstractmethod
     async def handle_failure(
         self, job: Job, step: Step, command_output: CommandOutput
-    ) -> CommandOutput: ...
+    ) -> None: ...
+
+    @abstractmethod
+    async def is_recovered(self, job_name: str) -> TokenAvailability: ...
+
+    @abstractmethod
+    async def notify(
+        self,
+        output_port: str,
+        output_token: Token,
+        job_token: JobToken | None = None,
+    ) -> None: ...
+
+    @abstractmethod
+    async def update_request(self, job_name: str) -> None: ...
 
 
-class ReplayRequest:
-    __slots__ = ("sender", "target", "version")
+class RecoveryPolicy:
+    def __init__(self, context: StreamFlowContext):
+        self.context: StreamFlowContext = context
 
-    def __init__(self, sender: str, target: str, version: int = 1):
-        self.sender: str = sender
-        self.target: str = target
-        self.version: int = version
+    @abstractmethod
+    async def recover(self, failed_job: Job, failed_step: Step) -> None: ...
 
 
-class ReplayResponse:
-    __slots__ = ("job", "outputs", "version")
+class RetryRequest:
+    __slots__ = ("job_token", "lock", "output_tokens", "version", "workflow")
 
-    def __init__(
-        self, job: str, outputs: MutableMapping[str, Any] | None, version: int = 1
-    ):
-        self.job: str = job
-        self.outputs: MutableMapping[str, Any] = outputs
-        self.version: int = version
+    def __init__(self):
+        self.job_token: JobToken | None = None
+        self.lock: asyncio.Lock = asyncio.Lock()
+        self.output_tokens: MutableMapping[str, Token] = {}
+        self.version: int = 1
+        self.workflow: Workflow | None = None
+
+
+class TokenAvailability(IntEnum):
+    Unavailable = 0
+    Available = 1
+    FutureAvailable = 2

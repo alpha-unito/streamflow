@@ -57,6 +57,7 @@ packages = [
     "streamflow.persistence",
     "streamflow.provenance",
     "streamflow.recovery",
+    "streamflow.recovery.policy",
     "streamflow.scheduling",
     "streamflow.scheduling.policy",
     "streamflow.workflow"

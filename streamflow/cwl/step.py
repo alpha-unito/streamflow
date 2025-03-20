@@ -463,6 +463,11 @@ class CWLExecuteStep(ExecuteStep):
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
             )
+            await self.workflow.context.failure_manager.notify(
+                output_port.name,
+                token,
+                job_token,
+            )
 
     async def _save_additional_params(
         self, context: StreamFlowContext

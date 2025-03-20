@@ -159,19 +159,14 @@ class DefaultScheduler(Scheduler):
                                             )
                                         ).items()
                                     }
-                                    if status != Status.RUNNING
-                                    else {}
                                 )
                             )
                         except WorkflowExecutionException as err:
-                            if status == Status.ROLLBACK:
-                                logger.warning(
-                                    f"Impossible to retrieve the actual storage usage in "
-                                    f"the {job_allocation.job} job working directories: {err}"
-                                )
-                                storage_usage = Hardware()
-                            else:
-                                raise err
+                            logger.warning(
+                                f"Impossible to retrieve the actual storage usage in "
+                                f"the {job_allocation.job} job working directories: {err}"
+                            )
+                            storage_usage = Hardware()
                         self.hardware_locations[loc.name] = (
                             self.hardware_locations[loc.name] - job_hardware
                         ) + storage_usage
@@ -503,23 +498,29 @@ class DefaultScheduler(Scheduler):
                             logger.debug(
                                 f"Job {job_name} changed status to {status.name}"
                             )
-                    if status in [Status.COMPLETED, Status.FAILED] or (
-                        status == Status.ROLLBACK and previous_status == Status.RUNNING
+                    # Job was running and changed status, or the job was ready to
+                    # run (i.e., fireable) but changed to a status different from the running one.
+                    if status != previous_status and (
+                        previous_status == Status.RUNNING
+                        or (
+                            previous_status == Status.FIREABLE
+                            and status != Status.RUNNING
+                        )
                     ):
                         await self._free_resources(connector, job_allocation, status)
-                        if status == Status.ROLLBACK:
-                            for loc in job_allocation.locations:
-                                if (
-                                    job_name
-                                    in self.location_allocations[loc.deployment][
-                                        loc.name
-                                    ].jobs
-                                ):
-                                    self.location_allocations[loc.deployment][
-                                        loc.name
-                                    ].jobs.remove(job_name)
-                            job_allocation.locations.clear()
-                        self.wait_queues[connector.deployment_name].notify_all()
+                    if status == Status.ROLLBACK:
+                        for loc in job_allocation.locations:
+                            if (
+                                job_name
+                                in self.location_allocations[loc.deployment][
+                                    loc.name
+                                ].jobs
+                            ):
+                                self.location_allocations[loc.deployment][
+                                    loc.name
+                                ].jobs.remove(job_name)
+                        job_allocation.locations.clear()
+                    self.wait_queues[connector.deployment_name].notify_all()
 
     async def schedule(
         self,
