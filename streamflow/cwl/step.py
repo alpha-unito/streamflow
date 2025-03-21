@@ -731,7 +731,14 @@ class CWLTransferStep(TransferStep):
                     writable=self.writable,
                 )
             except FileExistsError:
+                # Error thrown in the `get_unique_output_path` method
                 filepath = dst_path or (dst_dir / selected_location.relpath)
+                for loc in self.workflow.context.data_manager.get_data_locations(
+                    filepath,
+                    selected_location.deployment,
+                    selected_location.location.name,
+                ):
+                    await loc.available.wait()
             # Transform token value
             new_token_value = {
                 "class": token_class,

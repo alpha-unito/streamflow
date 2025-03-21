@@ -311,6 +311,7 @@ class LocalStreamFlowPath(
         else:
             super().__init__(*args)
         self.context: StreamFlowContext = context
+        self.location: ExecutionLocation = location
 
     async def checksum(self) -> str | None:
         if await self.is_file():
@@ -378,6 +379,14 @@ class LocalStreamFlowPath(
             return f.read(n)
 
     async def resolve(self, strict=False) -> LocalStreamFlowPath | None:
+        for loc in self.context.data_manager.get_data_locations(
+            path=self.__str__(),
+            deployment=self.location.deployment,
+            location_name=self.location.name,
+        ):
+            await loc.available.wait()
+            if loc.data_type == DataType.PRIMARY:
+                return self.with_segments(loc.path)
         if await self.exists():
             return self.with_segments(super().resolve(strict=strict))
         else:
@@ -424,7 +433,7 @@ class LocalStreamFlowPath(
             yield dirpath, dirnames, filenames
 
     def with_segments(self, *pathsegments):
-        return type(self)(*pathsegments, context=self.context)
+        return type(self)(*pathsegments, context=self.context, location=self.location)
 
     async def write_text(self, data: str, **kwargs) -> int:
         return cast(Path, super()).write_text(data=data, **kwargs)
@@ -634,15 +643,14 @@ class RemoteStreamFlowPath(
 
     async def resolve(self, strict=False) -> RemoteStreamFlowPath | None:
         # If at least one primary location is present on the site, return its path
-        if locations := self.context.data_manager.get_data_locations(
+        for loc in self.context.data_manager.get_data_locations(
             path=self.__str__(),
             deployment=self.connector.deployment_name,
             location_name=self.location.name,
         ):
-            for loc in locations:
-                await loc.available.wait()
-                if loc.data_type == DataType.PRIMARY:
-                    return self.with_segments(loc.path)
+            await loc.available.wait()
+            if loc.data_type == DataType.PRIMARY:
+                return self.with_segments(loc.path)
         # Otherwise, analyse the remote path
         command = [
             "test",
