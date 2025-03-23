@@ -47,6 +47,19 @@ def _file_checksum_local(path: str) -> str:
         return sha1_checksum.hexdigest()
 
 
+async def _get_data_location(
+    context: StreamFlowContext, location: ExecutionLocation, path: str
+) -> MutableSequence[DataLocation]:
+    """Get data locations and wait on the data availability needed"""
+    if locations := context.data_manager.get_data_locations(
+        path=path, deployment=location.deployment, location_name=location.name
+    ):
+        await asyncio.gather(
+            *(asyncio.create_task(loc.available.wait()) for loc in locations)
+        )
+    return locations
+
+
 def _get_filename_from_response(response: ClientResponse, url: str):
     if cd_header := response.headers.get("Content-Disposition"):
         message = Message()
@@ -146,7 +159,12 @@ def get_inner_path(
 
 class StreamFlowPath(PurePath, ABC):
     def __new__(
-        cls, *args, context: StreamFlowContext, location: ExecutionLocation, **kwargs
+        cls,
+        *args,
+        context: StreamFlowContext,
+        location: ExecutionLocation,
+        is_available: bool = False,
+        **kwargs,
     ):
         if cls is StreamFlowPath:
             cls = LocalStreamFlowPath if location.local else RemoteStreamFlowPath
@@ -304,6 +322,7 @@ class LocalStreamFlowPath(
         self,
         *args,
         context: StreamFlowContext,
+        is_available: bool = False,
         location: ExecutionLocation | None = None,
     ):
         if sys.version_info < (3, 12):
@@ -311,7 +330,15 @@ class LocalStreamFlowPath(
         else:
             super().__init__(*args)
         self.context: StreamFlowContext = context
+        self.is_available: bool = is_available
         self.location: ExecutionLocation = location
+
+    async def _check_availability(self) -> None:
+        if not self.is_available:
+            await _get_data_location(
+                context=self.context, location=self.location, path=self.__str__()
+            )
+            self.is_available = True
 
     async def checksum(self) -> str | None:
         if await self.is_file():
@@ -323,6 +350,7 @@ class LocalStreamFlowPath(
             return None
 
     async def exists(self) -> bool:
+        await self._check_availability()
         return cast(Path, super()).exists()
 
     async def glob(
@@ -332,12 +360,15 @@ class LocalStreamFlowPath(
             yield self.with_segments(path)
 
     async def is_dir(self) -> bool:
+        await self._check_availability()
         return cast(Path, super()).is_dir()
 
     async def is_file(self) -> bool:
+        await self._check_availability()
         return cast(Path, super()).is_file()
 
     async def is_symlink(self) -> bool:
+        await self._check_availability()
         return cast(Path, super()).is_symlink()
 
     async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None:
@@ -375,6 +406,7 @@ class LocalStreamFlowPath(
     async def read_text(self, n=-1, encoding=None, errors=None) -> str:
         if sys.version_info >= (3, 10):
             encoding = io.text_encoding(encoding)
+        await self._check_availability()
         with self.open(mode="r", encoding=encoding, errors=errors) as f:
             return f.read(n)
 
@@ -433,7 +465,12 @@ class LocalStreamFlowPath(
             yield dirpath, dirnames, filenames
 
     def with_segments(self, *pathsegments):
-        return type(self)(*pathsegments, context=self.context, location=self.location)
+        return type(self)(
+            *pathsegments,
+            context=self.context,
+            is_available=self.is_available,
+            location=self.location,
+        )
 
     async def write_text(self, data: str, **kwargs) -> int:
         return cast(Path, super()).write_text(data=data, **kwargs)
@@ -445,7 +482,13 @@ class RemoteStreamFlowPath(
 ):
     __slots__ = ("context", "connector", "location")
 
-    def __init__(self, *args, context: StreamFlowContext, location: ExecutionLocation):
+    def __init__(
+        self,
+        *args,
+        context: StreamFlowContext,
+        location: ExecutionLocation,
+        is_available: bool = False,
+    ):
         if sys.version_info < (3, 12):
             super().__init__()
         else:
@@ -454,8 +497,16 @@ class RemoteStreamFlowPath(
         self.connector: Connector = self.context.deployment_manager.get_connector(
             location.deployment
         )
+        self.is_available: bool = is_available
         self.location: ExecutionLocation = location
         self._inner_path: StreamFlowPath | None = None
+
+    async def _check_availability(self) -> None:
+        if not self.is_available:
+            await _get_data_location(
+                context=self.context, location=self.location, path=self.__str__()
+            )
+            self.is_available = True
 
     def _is_valid_inner_path(self, location: DataLocation) -> bool:
         return (
@@ -539,6 +590,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.checksum()
         else:
+            await self._check_availability()
             command = [
                 "test",
                 "-f",
@@ -565,6 +617,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.exists()
         else:
+            await self._check_availability()
             return await self._test(command=(["-e", f"'{self.__str__()}'"]))
 
     async def glob(
@@ -580,6 +633,7 @@ class RemoteStreamFlowPath(
         else:
             if not pattern:
                 raise ValueError(f"Unacceptable pattern: {pattern!r}")
+            await self._check_availability()
             command = [
                 "printf",
                 '"%s\\0"',
@@ -605,15 +659,18 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.is_dir()
         else:
+            await self._check_availability()
             return await self._test(command=["-d", f"'{self.__str__()}'"])
 
     async def is_file(self) -> bool:
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.is_file()
         else:
+            await self._check_availability()
             return await self._test(command=["-f", f"'{self.__str__()}'"])
 
     async def is_symlink(self) -> bool:
+        await self._check_availability()
         return await self._test(command=["-L", f"'{self.__str__()}'"])
 
     async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None:
@@ -633,6 +690,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.read_text(n=n, encoding=encoding, errors=errors)
         else:
+            await self._check_availability()
             command = ["head", "-c", str(n)] if n >= 0 else ["cat"]
             command.append(self.__str__())
             result, status = await self.connector.run(
@@ -652,6 +710,7 @@ class RemoteStreamFlowPath(
             if loc.data_type == DataType.PRIMARY:
                 return self.with_segments(loc.path)
         # Otherwise, analyse the remote path
+        await self._check_availability()
         command = [
             "test",
             "-e",
@@ -676,6 +735,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.rmtree()
         else:
+            await self._check_availability()
             command = ["rm", "-rf ", self.__str__()]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
@@ -686,6 +746,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.size()
         else:
+            await self._check_availability()
             command = [
                 "".join(
                     [
@@ -783,7 +844,12 @@ class RemoteStreamFlowPath(
                 paths += [path._make_child_relpath(d) for d in reversed(dirnames)]
 
     def with_segments(self, *pathsegments):
-        return type(self)(*pathsegments, context=self.context, location=self.location)
+        return type(self)(
+            *pathsegments,
+            context=self.context,
+            is_available=self.is_available,
+            location=self.location,
+        )
 
     async def write_text(self, data: str, **kwargs) -> int:
         if (inner_path := await self._get_inner_path()) != self:
