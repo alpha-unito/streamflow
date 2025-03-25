@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from pytest_asyncio import is_async_test
 
 import streamflow.deployment.connector
 import streamflow.deployment.filter
@@ -46,11 +45,6 @@ def pytest_addoption(parser):
         help="List of deployments to deploy. Use the comma as delimiter e.g. --deploys "
         f"local,docker. (default: {all_deployment_types()})",
     )
-
-
-def pytest_collection_modifyitems(items):
-    for async_test in (item for item in items if is_async_test(item)):
-        async_test.add_marker(pytest.mark.asyncio(loop_scope="session"), append=False)
 
 
 def pytest_configure(config):
