@@ -648,8 +648,9 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
         for job_id, location in self._scheduled_jobs.items():
             inner_location = get_inner_location(location)
             jobs_map.setdefault(inner_location.name, []).append(job_id)
-        for location, jobs in jobs_map.items():
-            await self._remove_jobs(location, jobs)
+        for location in self._scheduled_jobs.values():
+            if jobs := jobs_map.get(location.name):
+                await self._remove_jobs(location, jobs)
         self._scheduled_jobs = {}
         if self._inner_ssh_connector:
             if logger.isEnabledFor(logging.INFO):

@@ -173,7 +173,7 @@ class CWLTokenProcessor(TokenProcessor):
 
     async def _process_file_token(
         self, inputs: MutableMapping[str, Token], token_value: Any
-    ):
+    ) -> Any:
         # Build context
         context = utils.build_context(inputs)
         # Get path
@@ -247,15 +247,7 @@ class CWLTokenProcessor(TokenProcessor):
                             await asyncio.gather(
                                 *(
                                     asyncio.create_task(
-                                        utils.update_file_token(
-                                            context=self.workflow.context,
-                                            connector=connector,
-                                            cwl_version=cwl_workflow.cwl_version,
-                                            location=data_location.location,
-                                            token_value=sf,
-                                            load_contents=self.load_contents,
-                                            load_listing=self.load_listing,
-                                        )
+                                        self._process_file_token(inputs, sf)
                                     )
                                     for sf in token_value["secondaryFiles"]
                                 )
@@ -292,7 +284,6 @@ class CWLTokenProcessor(TokenProcessor):
                     token_value=token_value,
                     base_path=base_path,
                 )
-        # Return token value
         return token_value
 
     async def _save_additional_params(
