@@ -17,6 +17,7 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
+from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.cwl.runner import main
 from streamflow.cwl.step import CWLTransferStep
 from streamflow.cwl.token import CWLFileToken
@@ -259,6 +260,36 @@ async def test_inject_remote_input(context: StreamFlowContext, config: str) -> N
     for remote_file, wf_file in zip(remote_files, wf_files):
         assert wf_file["basename"] == os.path.basename(remote_file)
         assert wf_file["checksum"] == f"sha1${await remote_file.checksum()}"
+
+
+@pytest.mark.parametrize("stack", ["self", "cycle"])
+def test_recursive_deployments(stack: str) -> None:
+    """Test if the cyclic deployment definition are detected"""
+    streamflow_config = _get_streamflow_config()
+    streamflow_config.setdefault("deployments", {})
+    streamflow_config["deployments"] |= {
+        "awesome": {
+            "type": "docker",
+            "config": {"image": "busybox"},
+        },
+        "handsome": {
+            "type": "docker",
+            "config": {"image": "busybox"},
+            "workdir": "/remote/workdir",
+            "wraps": "handsome" if stack == "self" else "wrapper_1",
+        },
+        "wrapper_1": {
+            "type": "docker",
+            "config": {"image": "busybox"},
+            "wraps": {"deployment": "handsome", "service": "boost"},
+        },
+    }
+    with pytest.raises(WorkflowDefinitionException) as err:
+        _ = _get_workflow_config(streamflow_config)
+    assert (
+        "The deployment `handsome` leads to a circular reference: Recursive deployment definitions are not allowed."
+        == str(err.value)
+    )
 
 
 def test_workdir_inheritance() -> None:
