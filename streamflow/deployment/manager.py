@@ -35,9 +35,7 @@ class DefaultDeploymentManager(DeploymentManager):
         self.deployments_map: MutableMapping[str, Connector] = {}
         self.dependency_graph: MutableMapping[str, set[str]] = {}
 
-    async def _deploy(
-        self, deployment_config: DeploymentConfig, wrappers_stack: set[str]
-    ) -> None:
+    async def _deploy(self, deployment_config: DeploymentConfig) -> None:
         deployment_name = deployment_config.name
         while True:
             if deployment_name not in self.config_map:
@@ -48,7 +46,6 @@ class DefaultDeploymentManager(DeploymentManager):
                 deployment_config = await self._inner_deploy(
                     connector_type=connector_type,
                     deployment_config=deployment_config,
-                    wrappers_stack=wrappers_stack,
                 )
                 if deployment_config.lazy:
                     connector = FutureConnector(
@@ -91,10 +88,7 @@ class DefaultDeploymentManager(DeploymentManager):
                     break
 
     async def _inner_deploy(
-        self,
-        connector_type: type[Connector],
-        deployment_config: DeploymentConfig,
-        wrappers_stack: set[str],
+        self, connector_type: type[Connector], deployment_config: DeploymentConfig
     ) -> DeploymentConfig:
         # If it is a ConnectorWrapper
         if issubclass(connector_type, ConnectorWrapper):
@@ -103,31 +97,21 @@ class DefaultDeploymentManager(DeploymentManager):
                 deployment_name = LocalTarget.deployment_name
                 service = None
                 if deployment_name not in self.config_map:
-                    local_target = LocalTarget()
-                    await self._deploy(local_target.deployment, wrappers_stack)
+                    await self._deploy(LocalTarget().deployment)
             else:
                 deployment_name = deployment_config.wraps.deployment
                 service = deployment_config.wraps.service
-            # If it has already been processed, there is a recursive definition
-            if deployment_name in wrappers_stack:
-                raise WorkflowDefinitionException(
-                    "Recursive connector definitions are not allowed."
-                )
             # If it has already been processed by the DeploymentManager
             if deployment_name in self.config_map:
                 # If the DeploymentManager is creating the environment, wait for it to finish
                 if deployment_name not in self.deployments_map:
                     await self.events_map[deployment_name].wait()
-                # Check for recursive definitions
-                wrappers_stack.update(deployment_name)
                 await self._inner_deploy(
                     connector_type=type(self.deployments_map[deployment_name]),
                     deployment_config=self.config_map[deployment_name],
-                    wrappers_stack=wrappers_stack,
                 )
-            # Otherwise, if it exists and it points to a new connector, deploy it
+            # Otherwise, if it exists, and it points to a new connector, deploy it
             elif deployment_name in self.context.config["deployments"]:
-                wrappers_stack.update(deployment_name)
                 inner_config = self.context.config["deployments"][deployment_name]
                 inner_config = DeploymentConfig(
                     name=deployment_name,
@@ -139,7 +123,7 @@ class DefaultDeploymentManager(DeploymentManager):
                     workdir=inner_config.get("workdir"),
                     wraps=get_wraps_config(inner_config.get("wraps")),
                 )
-                await self._deploy(inner_config, wrappers_stack)
+                await self._deploy(inner_config)
             # Otherwise, the workflow is badly specified
             else:
                 raise WorkflowDefinitionException(
@@ -177,7 +161,7 @@ class DefaultDeploymentManager(DeploymentManager):
 
     async def deploy(self, deployment_config: DeploymentConfig) -> None:
         deployment_name = deployment_config.name
-        await self._deploy(deployment_config, {deployment_name})
+        await self._deploy(deployment_config)
         self.dependency_graph[deployment_name].add(deployment_name)
 
     def get_connector(self, deployment_name: str) -> Connector | None:

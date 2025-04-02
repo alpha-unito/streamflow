@@ -24,7 +24,9 @@ if TYPE_CHECKING:
     from streamflow.core.deployment import Connector
 
 
-def _get_workdir(deployment, workflow_config) -> None:
+def _get_workdir(
+    deployment: MutableMapping[str, Any], workflow_config: WorkflowConfig
+) -> str:
     while (workdir := deployment.get("workdir")) is None and (
         wraps := deployment.get("wraps")
     ) is not None:

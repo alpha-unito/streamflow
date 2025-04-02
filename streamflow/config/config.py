@@ -54,6 +54,21 @@ class WorkflowConfig(Config):
         for binding in workflow_config.get("bindings", []):
             self._process_binding(binding)
         set_targets(self.filesystem, None)
+        self._check_stacked_deployments()
+
+    def _check_stacked_deployments(self) -> None:
+        for deployment in self.deployments.values():
+            deployments = {deployment["name"]}
+            while (wraps := deployment.get("wraps")) is not None:
+                # Get parent deployment
+                deployment = self.deployments[
+                    wraps if isinstance(wraps, str) else wraps["deployment"]
+                ]
+                if deployment["name"] in deployments:
+                    raise WorkflowDefinitionException(
+                        f"The deployment `{deployment['name']}` leads to a circular reference: "
+                        f"Recursive deployment definitions are not allowed."
+                    )
 
     def _process_binding(self, binding: MutableMapping[str, Any]):
         targets = (
