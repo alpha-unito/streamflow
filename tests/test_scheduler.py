@@ -186,8 +186,145 @@ async def test_binding_filter(context: StreamFlowContext):
     await _notify_status_and_test(context, job, Status.COMPLETED)
 
 
+def test_hardware1():
+
+    location_hardware = Hardware(
+        cores=8.0,
+        memory=30073.26953125,
+        storage={
+            "/sys/firmware/efi/efivars": Storage(
+                mount_point="/sys/firmware/efi/efivars",
+                size=0.22668075561523438,
+                bind=None,
+                paths=set(),
+            ),
+            "/": Storage(
+                mount_point="/",
+                size=34625.1953125,
+                bind=None,
+                paths={"/tmp/streamflow"},
+            ),
+            "/proc/sys/fs/binfmt_misc": Storage(
+                mount_point="/ proc / sys / fs / binfmt_misc",
+                size=0.0,
+                bind=None,
+                paths=set(),
+            ),
+            "/software": Storage(
+                mount_point="/ software", size=9641972.0, bind=None, paths=set()
+            ),
+            "/snap/bare/5": Storage(
+                mount_point="/ snap / bare / 5", size=0.0, bind=None, paths=set()
+            ),
+            "/snap/core22/1748": Storage(
+                mount_point="/ snap / core22 / 1748", size=0.0, bind=None, paths=set()
+            ),
+            "/snap/gnome-42-2204/202": Storage(
+                mount_point="/ snap / gnome - 42 - 2204 / 202",
+                size=0.0,
+                bind=None,
+                paths=set(),
+            ),
+            "/snap/gtk-common-themes/1535": Storage(
+                mount_point="/ snap / gtk - common - themes / 1535",
+                size=0.0,
+                bind=None,
+                paths=set(),
+            ),
+            "/snap/snapd/23545": Storage(
+                mount_point="/ snap / snapd / 23545", size=0.0, bind=None, paths=set()
+            ),
+            "/boot": Storage(
+                mount_point="/ boot", size=638.39453125, bind=None, paths=set()
+            ),
+        },
+    )
+
+    used_hardware = Hardware(
+        cores=8.0,
+        memory=1024.0,
+        storage={
+            "/": Storage(
+                mount_point="/", size=8192.0, bind=None, paths={"/tmp/streamflow"}
+            )
+        },
+    )
+
+    expected_diff = Hardware(
+        cores=0.0,
+        memory=29049.26953125,
+        storage={
+            "/sys/firmware/efi/efivars": Storage(
+                mount_point="/sys/firmware/efi/efivars",
+                size=0.22668075561523438,
+                bind=None,
+                paths=set(),
+            ),
+            "/": Storage(mount_point="/", size=26433.1953125, bind=None, paths=set()),
+            "/proc/sys/fs/binfmt_misc": Storage(
+                mount_point="/ proc / sys / fs / binfmt_misc",
+                size=0.0,
+                bind=None,
+                paths=set(),
+            ),
+            "/software": Storage(
+                mount_point="/ software", size=9641972.0, bind=None, paths=set()
+            ),
+            "/snap/bare/5": Storage(
+                mount_point="/ snap / bare / 5", size=0.0, bind=None, paths=set()
+            ),
+            "/snap/core22/1748": Storage(
+                mount_point="/ snap / core22 / 1748", size=0.0, bind=None, paths=set()
+            ),
+            "/snap/gnome-42-2204/202": Storage(
+                mount_point="/ snap / gnome - 42 - 2204 / 202",
+                size=0.0,
+                bind=None,
+                paths=set(),
+            ),
+            "/snap/gtk-common-themes/1535": Storage(
+                mount_point="/ snap / gtk - common - themes / 1535",
+                size=0.0,
+                bind=None,
+                paths=set(),
+            ),
+            "/snap/snapd/23545": Storage(
+                mount_point="/ snap / snapd / 23545", size=0.0, bind=None, paths=set()
+            ),
+            "/boot": Storage(
+                mount_point="/ boot", size=638.39453125, bind=None, paths=set()
+            ),
+        },
+    )
+
+    diff = location_hardware - used_hardware
+    assert diff.cores == expected_diff.cores
+    assert diff.memory == expected_diff.memory
+    for s1, s2 in zip(diff.storage.values(), expected_diff.storage.values()):
+        assert s1.mount_point == s2.mount_point
+        assert s1.paths == s2.paths
+        assert s1.bind == s2.bind
+        assert s1.size == s2.size
+
+    hardware_requirement = Hardware(
+        cores=2,
+        memory=256,
+        storage={
+            "__outdir__": Storage(
+                mount_point="/", size=1024, bind=None, paths={"/tmp/streamflow"}
+            ),
+            "__tmpdir__": Storage(
+                mount_point="/", size=1024, bind=None, paths={"/tmp/streamflow"}
+            ),
+        },
+    )
+    assert diff < hardware_requirement
+
+
 def test_hardware():
     """Test Hardware arithmetic and comparison operations"""
+    # TODO: create dedicated tests for each operation arithmetic and comparison
+    #  for each comparison op the tests must cover all the cases: less/equal/more in cores, memory and storage
     main_hardware = Hardware(
         cores=float(2**4),
         memory=float(2**10),
@@ -233,18 +370,20 @@ def test_hardware():
     assert main_hardware <= secondary_hardware
     assert secondary_hardware >= main_hardware
 
-    # Hardware must have the same `mount_point` to execute comparison operations.
-    # The "bigger" hardware must have at least all the mount_point values of the "smaller" one;
-    # otherwise, an error must be raised.
-    # If this check is not performed, for example, if the two hardware have different
-    # `mount_point` values at scheduling time, the scheduling process may enter an infinite loop.
-    main_hardware.storage.pop("placeholder_3")
-    with pytest.raises(WorkflowExecutionException) as err:
-        _ = secondary_hardware <= main_hardware
-    assert (
-        str(err.value) == f"Invalid `Hardware` comparison: {main_hardware} should "
-        f"contain all the storage included in {secondary_hardware}."
+    bigger_main_hw = Hardware(
+        cores=main_hardware.cores + 1,
+        memory=main_hardware.memory + 1,
+        storage={
+            "placeholder_5": Storage(os.path.join(os.sep, "tmp", "streamflow"), size=10)
+        },
     )
+    with pytest.raises(WorkflowExecutionException) as err:
+        _ = bigger_main_hw <= main_hardware
+    assert (
+        str(err.value) == f"Invalid `Hardware` comparison: {bigger_main_hw} should "
+        f"contain all the storage included in {main_hardware}."
+    )
+    main_hardware.storage.pop("placeholder_3")
     with pytest.raises(WorkflowExecutionException) as err:
         _ = main_hardware >= secondary_hardware
     assert (
