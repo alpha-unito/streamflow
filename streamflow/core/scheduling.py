@@ -176,30 +176,28 @@ class Hardware:
     def __le__(self, other: Any) -> bool:
         if not isinstance(other, Hardware):
             raise NotImplementedError
-        if self.cores <= other.cores or self.memory <= other.memory:
-            return True
-        else:
-            _check_storages(self, other)
+        if self.cores <= other.cores and self.memory <= other.memory:
+            _check_storages(other, self)
             other_norm = other._normalize_storage()
-            return any(
+            return all(
                 self_disk <= other_norm[self_disk.mount_point]
                 for self_disk in self._normalize_storage().values()
-                if self_disk.mount_point in other_norm
             )
+        else:
+            return False
 
     def __lt__(self, other: Any) -> bool:
         if not isinstance(other, Hardware):
             raise NotImplementedError
-        if self.cores < other.cores or self.memory < other.memory:
-            return True
-        else:
-            _check_storages(self, other)
+        if self.cores < other.cores and self.memory < other.memory:
+            _check_storages(other, self)
             other_norm = other._normalize_storage()
-            return any(
+            return all(
                 self_disk < other_norm[self_disk.mount_point]
                 for self_disk in self._normalize_storage().values()
-                if self_disk.mount_point in other_norm
             )
+        else:
+            return False
 
 
 class HardwareRequirement(ABC):
