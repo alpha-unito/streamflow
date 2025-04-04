@@ -272,8 +272,7 @@ class DefaultScheduler(Scheduler):
                     (
                         location.hardware
                         - self.hardware_locations.get(location.name, Hardware())
-                    )
-                    >= hardware_requirement
+                    ).can_host(hardware_requirement)
                 ):
                     return False
             # Otherwise, simply compute the number of allocated slots
