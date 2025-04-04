@@ -3,8 +3,9 @@ import os
 import posixpath
 import tempfile
 from collections.abc import AsyncGenerator
-from typing import Any, cast
+from typing import Any
 
+import graphviz
 import pytest
 import pytest_asyncio
 
@@ -14,7 +15,6 @@ from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.workflow import Token
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.main import build_context
-from streamflow.recovery.failure_manager import DefaultFailureManager
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import GatherStep, ScatterStep
 from streamflow.workflow.token import (
@@ -26,6 +26,7 @@ from streamflow.workflow.token import (
 )
 from tests.utils.deployment import get_deployment_config, get_location
 from tests.utils.workflow import (
+    BaseCommand,
     InjectorFailureCommand,
     RecoveryTranslator,
     create_workflow,
@@ -148,8 +149,9 @@ async def test_execute(
                 ["local"],
                 input_ports,
                 ["test1"],
-                transfer_failures=num_of_failures if task == "transfer" else 0,
+                default_processor=False,
                 failure_t=error_t,
+                transfer_failures=num_of_failures if task == "transfer" else 0,
             )
         )
         execute_steps[-1].command = InjectorFailureCommand(
@@ -179,15 +181,6 @@ async def test_execute(
                 step.get_input_port("__job__").token_list,
             ),
         ):
-            assert (
-                job_name
-                in cast(
-                    DefaultFailureManager, fault_tolerant_context.failure_manager
-                )._retry_requests
-            )
-            retry_request = cast(
-                DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests[job_name]
             expected_failures = num_of_failures
             if error_t == InjectorFailureCommand.FAIL_STOP:
                 if token_t != "primitive":
@@ -202,7 +195,101 @@ async def test_execute(
                             step.name.split(os.sep)[1]
                         )
             # Version starts from 1
-            assert retry_request.version == expected_failures + 1
+            assert (
+                fault_tolerant_context.failure_manager.get_request(job_name).version
+                == expected_failures + 1
+            )
+
+
+def graph_figure_bipartite(graph, steps, ports, title):
+    dot = graphviz.Digraph(title)
+    for vertex, neighbors in graph.items():
+        shape = "ellipse" if vertex in steps else "box"
+        dot.node(str(vertex), shape=shape, color="black" if neighbors else "red")
+        for n in neighbors:
+            dot.edge(str(vertex), str(n))
+    filepath = title + ".gv"
+    dot.render(filepath)
+    os.system("rm " + filepath)
+
+
+def dag_workflow(workflow, title="wf"):
+    dag = {}
+    ports = set()
+    steps = set()
+    for step in workflow.steps.values():
+        steps.add(step.name)
+        for port_name in step.output_ports.values():
+            dag.setdefault(step.name, set()).add(port_name)
+            ports.add(port_name)
+        for port_name in step.input_ports.values():
+            dag.setdefault(port_name, set()).add(step.name)
+            ports.add(port_name)
+    graph_figure_bipartite(dag, steps, ports, title + "-bipartite")
+
+
+@pytest.mark.asyncio
+async def test_loop(fault_tolerant_context: StreamFlowContext):
+    num_of_failures = 2
+    task = "execute"
+    error_t = InjectorFailureCommand.FAIL_STOP
+    deployment_t = "local"
+    workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
+    translator = RecoveryTranslator(workflow)
+    translator.deployment_configs = {
+        "local": await get_deployment_config(fault_tolerant_context, deployment_t)
+    }
+    input_ports = {}
+    token_value = 100
+    for input_name, value in {"test": token_value, "counter": 0, "limit": 3}.items():
+        injector_step = translator.get_base_injector_step(
+            ["local"], input_name, posixpath.join(posixpath.sep, input_name), workflow
+        )
+        input_ports[input_name] = injector_step.get_output_port(input_name)
+        injector_step.get_input_port(input_name).put(Token(value, recoverable=True))
+        injector_step.get_input_port(input_name).put(TerminationToken())
+        workflow.input_ports[input_name] = injector_step.get_input_port(input_name)
+
+    step_name = os.path.join(posixpath.sep, "0", utils.random_name())
+    loop_input_ports = translator.get_input_loop(
+        step_name,
+        input_ports,
+        'lambda x: x["counter"].value < x["limit"].value',
+    )
+    counter = translator.get_execute_pipeline(
+        workflow,
+        os.path.join(posixpath.sep, "increment", utils.random_name()),
+        ["local"],
+        {"counter": loop_input_ports["counter"]},
+        ["counter"],
+    )
+    counter.command = BaseCommand(counter, 'lambda x: x["counter"].value + 1')
+    execute_step = translator.get_execute_pipeline(
+        workflow,
+        step_name,
+        ["local"],
+        loop_input_ports,
+        ["test1"],
+        failure_t=error_t,
+    )
+    execute_step.command = InjectorFailureCommand(
+        execute_step,
+        {"0.1": num_of_failures} if task == "execute" else {},
+        failure_t=error_t,
+    )
+    _ = translator.get_output_loop(
+        step_name,
+        {
+            "test": execute_step.get_output_port("test1"),
+            "counter": counter.get_output_port("counter"),
+            "limit": loop_input_ports["limit"],
+        },
+        {"test"},
+    )
+    await workflow.save(fault_tolerant_context)
+    dag_workflow(workflow)
+    executor = StreamFlowExecutor(workflow)
+    _ = await executor.run()
 
 
 @pytest.mark.asyncio
@@ -242,6 +329,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         ["local"],
         {input_: injector_step.get_output_port(input_)},
         [output_port],
+        default_processor=True,
     )
     step.command = InjectorFailureCommand(step)
     # ScatterStep
@@ -257,6 +345,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         ["local"],
         {output_port: scatter_step.get_output_port(output_port)},
         [output_port],
+        default_processor=True,
     )
     step.command = InjectorFailureCommand(step)
     # GatherStep
@@ -274,6 +363,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         ["local"],
         gather_step.get_output_ports(),
         [output_port],
+        default_processor=True,
     )
     step.command = InjectorFailureCommand(
         step, {"0": num_of_failures}, failure_t=InjectorFailureCommand.FAIL_STOP
@@ -298,15 +388,9 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         if isinstance(t, JobToken)
     ):
         assert (
-            job.name
-            in cast(
-                DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests
+            fault_tolerant_context.failure_manager.get_request(job.name).version
+            == num_of_failures + 1
         )
-        retry_request = cast(
-            DefaultFailureManager, fault_tolerant_context.failure_manager
-        )._retry_requests[job.name]
-        assert retry_request.version == num_of_failures + 1
 
 
 @pytest.mark.asyncio
@@ -358,6 +442,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
                 ["local"],
                 input_ports,
                 ["test1"],
+                default_processor=True,
                 transfer_failures=num_of_failures if step_t == "transfer" else 0,
             )
         )
@@ -386,14 +471,8 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
             for t in step.get_input_port("__job__").token_list
             if isinstance(t, JobToken)
         ):
-            assert (
-                job.name
-                in cast(
-                    DefaultFailureManager, fault_tolerant_context.failure_manager
-                )._retry_requests
-            )
-            retry_request = cast(
-                DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests[job.name]
             # The job is not restarted, so it has number of version = 1
-            assert retry_request.version == 1
+            assert (
+                fault_tolerant_context.failure_manager.get_request(job.name).version
+                == 1
+            )
