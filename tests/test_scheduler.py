@@ -44,8 +44,8 @@ async def _notify_status_and_test(
 
 def _prepare_connector(
     context: StreamFlowContext,
-    num_jobs: int = 1,
     location_memory: Callable[float, float] | None = None,
+    num_jobs: int = 1,
 ) -> tuple[CWLHardwareRequirement, Target]:
     # Inject custom hardware to manipulate available resources
     hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
@@ -142,7 +142,7 @@ async def test_bind_volumes(context: StreamFlowContext):
     ).mount_point == await utils.get_mount_point(
         context, local_location, local_deployment.workdir
     )
-    assert container_hardware <= local_location.hardware
+    assert local_location.hardware.can_host(container_hardware)
 
 
 @pytest.mark.asyncio
@@ -195,7 +195,8 @@ async def test_binding_filter(context: StreamFlowContext):
 
 
 def test_hardware():
-    """Test Hardware arithmetic and comparison operations"""
+    """Test Hardware arithmetic operations"""
+    testing_mount_point = os.path.join(os.sep, "tmp")
     main_hardware = Hardware(
         cores=float(2**4),
         memory=float(2**10),
@@ -209,52 +210,53 @@ def test_hardware():
                 size=float(2**12),
             ),
             "placeholder_3": Storage(
-                mount_point=os.path.join(os.sep, "tmp"),
+                mount_point=testing_mount_point,
                 size=float(2**15),
             ),
         },
     )
-    additional_storage_size = float(2**10)
-    secondary_hardware = main_hardware + Hardware(
+    extra_hardware = Hardware(
+        cores=float(5),
         storage={
-            "placeholder_4": Storage(
-                mount_point=os.path.join(os.sep, "tmp"), size=additional_storage_size
-            )
-        }
+            "placeholder_4": Storage(mount_point=testing_mount_point, size=float(2**10))
+        },
     )
+    secondary_hardware = main_hardware + extra_hardware
+    assert secondary_hardware.cores == main_hardware.cores + extra_hardware.cores
+    assert secondary_hardware.memory == main_hardware.memory
     # Secondary hardware after the sum operation has the storage keys in the normalized form
-    assert secondary_hardware.storage.keys() == {os.sep, os.path.join(os.sep, "tmp")}
+    assert secondary_hardware.storage.keys() == {os.sep, testing_mount_point}
     assert (
-        secondary_hardware.get_storage(os.path.join(os.sep, "tmp")).size
-        == main_hardware.storage["placeholder_3"].size + additional_storage_size
+        secondary_hardware.get_storage(testing_mount_point).size
+        == main_hardware.get_storage(testing_mount_point).size
+        + extra_hardware.get_storage(testing_mount_point).size
     )
 
-    # Changing storage keys and the number of storages to evaluate whether operations are independent of them.
-    # The `placeholder_1` and `placeholder_2` storages collapse into the `other_name_1` storage during the
-    # previous addition operation because they share the same mount point.
+    # Changing storage keys and the number of storages to evaluate whether operations are independent of them
     secondary_hardware.storage["other_name_1.1"] = secondary_hardware.storage.pop(
         main_hardware.storage["placeholder_1"].mount_point
     )
     secondary_hardware.storage["other_name_2.1"] = secondary_hardware.storage.pop(
         main_hardware.storage["placeholder_3"].mount_point
     )
-    assert main_hardware <= secondary_hardware
-    assert secondary_hardware >= main_hardware
+    # The `secondary_hardware` has more cores and disk space in the `/tmp` storage than `main_hardware`
+    assert secondary_hardware.can_host(main_hardware)
+    assert not main_hardware.can_host(secondary_hardware)
 
-    # Hardware must have the same `mount_point` to execute comparison operations.
-    # The "bigger" hardware must have at least all the mount_point values of the "smaller" one;
-    # otherwise, an error must be raised.
-    # If this check is not performed, for example, if the two hardware have different
-    # `mount_point` values at scheduling time, the scheduling process may enter an infinite loop.
+    # Testing difference operation
+    secondary_hardware -= extra_hardware
+    assert secondary_hardware.cores == main_hardware.cores
+    assert secondary_hardware.memory == main_hardware.memory
+    assert secondary_hardware.storage.keys() == {os.sep, testing_mount_point}
+    assert (
+        secondary_hardware.get_storage(testing_mount_point).size
+        == main_hardware.get_storage(testing_mount_point).size
+    )
+    assert main_hardware.can_host(secondary_hardware)
+    # Testing the validity of the storage comparison
     main_hardware.storage.pop("placeholder_3")
     with pytest.raises(WorkflowExecutionException) as err:
-        _ = secondary_hardware <= main_hardware
-    assert (
-        str(err.value) == f"Invalid `Hardware` comparison: {main_hardware} should "
-        f"contain all the storage included in {secondary_hardware}."
-    )
-    with pytest.raises(WorkflowExecutionException) as err:
-        _ = main_hardware >= secondary_hardware
+        _ = main_hardware.can_host(secondary_hardware)
     assert (
         str(err.value) == f"Invalid `Hardware` comparison: {main_hardware} should "
         f"contain all the storage included in {secondary_hardware}."
