@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import MutableSequence
+from collections.abc import Callable, MutableSequence
 from typing import cast
 
 import pytest
@@ -42,7 +42,11 @@ async def _notify_status_and_test(
         assert context.scheduler.get_allocation(j.name).status == status
 
 
-def _prepare_connector(context: StreamFlowContext, num_jobs: int = 1):
+def _prepare_connector(
+    context: StreamFlowContext,
+    num_jobs: int = 1,
+    location_memory: Callable[float, float] | None = None,
+) -> tuple[CWLHardwareRequirement, Target]:
     # Inject custom hardware to manipulate available resources
     hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     conn = cast(
@@ -52,7 +56,11 @@ def _prepare_connector(context: StreamFlowContext, num_jobs: int = 1):
     conn.set_hardware(
         hardware=Hardware(
             cores=hardware_requirement.cores * num_jobs,
-            memory=hardware_requirement.memory * num_jobs * 3,
+            memory=(
+                location_memory(hardware_requirement.memory)
+                if location_memory
+                else hardware_requirement.memory * num_jobs
+            ),
             storage={
                 os.sep: Storage(
                     os.sep,
@@ -486,7 +494,10 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_single_env_few_resources(context: StreamFlowContext):
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
-    hardware_requirement, target = _prepare_connector(context)
+    num_jobs = 2
+    hardware_requirement, target = _prepare_connector(
+        context, location_memory=lambda x: x * num_jobs * 3
+    )
     # Create fake jobs and schedule them
     jobs = [
         Job(
@@ -497,7 +508,7 @@ async def test_single_env_few_resources(context: StreamFlowContext):
             output_directory=None,
             tmp_directory=None,
         )
-        for _ in range(2)
+        for _ in range(num_jobs)
     ]
 
     binding_config = BindingConfig(targets=[target])
