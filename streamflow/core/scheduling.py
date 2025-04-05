@@ -140,8 +140,8 @@ class Hardware:
             ),
         )
 
-    def can_host(self, other: Any) -> bool:
-        """The hardware is enough to host the other hardware"""
+    def satisfies(self, other: Any) -> bool:
+        """Check if this hardware has enough resources to satisfy the requirement."""
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores >= other.cores and self.memory >= other.memory:
