@@ -13,7 +13,7 @@ import cwl_utils.parser
 import cwl_utils.parser.utils
 from schema_salad.exceptions import ValidationException
 
-from streamflow.config.config import WorkflowConfig
+from streamflow.config.config import WorkflowConfig, check_bindings
 from streamflow.core.command import (
     CommandOutputProcessor,
     CommandTokenProcessor,
@@ -2787,6 +2787,7 @@ class CWLTranslator:
         )
         # Inject initial inputs
         self._inject_inputs(workflow)
+        check_bindings(self.workflow_config, workflow)
         # Extract requirements
         for hint in self.cwl_definition.hints or []:
             if not isinstance(hint, MutableMapping):
