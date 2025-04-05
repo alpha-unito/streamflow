@@ -10,10 +10,9 @@ from streamflow.core.context import SchemaEntity
 from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
-    from streamflow.core.command import CommandOutput
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import Job, Step, Token, Workflow
+    from streamflow.core.workflow import CommandOutput, Job, Step, Token, Workflow
 
 
 class CheckpointManager(SchemaEntity):

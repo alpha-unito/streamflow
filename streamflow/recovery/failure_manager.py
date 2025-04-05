@@ -5,11 +5,10 @@ import logging
 from collections.abc import MutableMapping
 from importlib.resources import files
 
-from streamflow.core.command import CommandOutput
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, WorkflowException
 from streamflow.core.recovery import FailureManager, RetryRequest, TokenAvailability
-from streamflow.core.workflow import Job, Status, Step, Token
+from streamflow.core.workflow import CommandOutput, Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
 from streamflow.workflow.token import JobToken

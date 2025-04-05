@@ -10,17 +10,205 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from streamflow.core import utils
+from streamflow.core.deployment import Connector, ExecutionLocation, Target
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import (
     DatabaseLoadingContext,
     DependencyType,
     PersistableEntity,
 )
+from streamflow.core.utils import get_class_from_name, get_class_fullname
 
 if TYPE_CHECKING:
     from typing import Any
 
     from streamflow.core.context import StreamFlowContext
+
+
+class Command(ABC):
+    def __init__(self, step: Step):
+        super().__init__()
+        self.step: Step = step
+
+    @abstractmethod
+    async def execute(self, job: Job) -> CommandOutput: ...
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+        step: Step,
+    ) -> Command:
+        type_ = cast(type[Command], utils.get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context, step)
+
+    async def save(self, context: StreamFlowContext):
+        return {
+            "type": utils.get_class_fullname(type(self)),
+            "params": await self._save_additional_params(context),
+        }
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+        step: Step,
+    ):
+        return cls(step=step)
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {}
+
+
+class CommandOptions(ABC):
+    pass
+
+
+class CommandOutput:
+    __slots__ = ("value", "status")
+
+    def __init__(self, value: Any, status: Status):
+        self.value: Any = value
+        self.status: Status = status
+
+    def update(self, value: Any):
+        return CommandOutput(value=value, status=self.status)
+
+
+class CommandOutputProcessor(ABC):
+    def __init__(self, name: str, workflow: Workflow, target: Target | None = None):
+        self.name: str = name
+        self.workflow: Workflow = workflow
+        self.target: Target | None = target
+
+    def _get_connector(self, connector: Connector | None, job: Job) -> Connector:
+        return connector or self.workflow.context.scheduler.get_connector(job.name)
+
+    async def _get_locations(
+        self, connector: Connector | None, job: Job
+    ) -> MutableSequence[ExecutionLocation]:
+        if self.target:
+            available_locations = await connector.get_available_locations(
+                service=self.target.service
+            )
+            return [loc.location for loc in available_locations.values()]
+        else:
+            return self.workflow.context.scheduler.get_locations(job.name)
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CommandOutputProcessor:
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            target=(
+                (await loading_context.load_target(context, row["workflow"]))
+                if row["target"]
+                else None
+            ),
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        if self.target:
+            await self.target.save(context)
+        return {
+            "name": self.name,
+            "workflow": self.workflow.persistent_id,
+            "target": self.target.persistent_id if self.target else None,
+        }
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CommandOutputProcessor:
+        type_ = cast(
+            type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
+        )
+        return await type_._load(context, row["params"], loading_context)
+
+    @abstractmethod
+    async def process(
+        self,
+        job: Job,
+        command_output: CommandOutput,
+        connector: Connector | None = None,
+    ) -> Token | None: ...
+
+    async def save(self, context: StreamFlowContext):
+        return {
+            "type": utils.get_class_fullname(type(self)),
+            "params": await self._save_additional_params(context),
+        }
+
+
+class CommandToken:
+    __slots__ = ("name", "position", "value")
+
+    def __init__(self, name: str | None, position: int | None, value: Any):
+        self.name: str | None = name
+        self.position: int | None = position
+        self.value: Any = value
+
+
+class CommandTokenProcessor(ABC):
+    def __init__(self, name: str):
+        self.name: str = name
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        return cls(name=row["name"])
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {"name": self.name}
+
+    @abstractmethod
+    def bind(
+        self,
+        token: Token | None,
+        position: int | None,
+        options: CommandOptions,
+    ) -> CommandToken: ...
+
+    @abstractmethod
+    def check_type(self, token: Token) -> bool: ...
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> CommandTokenProcessor:
+        type_ = cast(type[CommandTokenProcessor], get_class_from_name(row["type"]))
+        return await type_._load(context, row["params"], loading_context)
+
+    async def save(self, context: StreamFlowContext):
+        return {
+            "type": get_class_fullname(type(self)),
+            "params": await self._save_additional_params(context),
+        }
 
 
 class Executor(ABC):
@@ -514,6 +702,7 @@ class Workflow(PersistableEntity):
         self.context: StreamFlowContext = context
         self.config: MutableMapping[str, Any] = config
         self.name: str = name if name is not None else str(uuid.uuid4())
+        self.input_ports: MutableMapping[str, str] = {}
         self.output_ports: MutableMapping[str, str] = {}
         self.ports: MutableMapping[str, Port] = {}
         self.steps: MutableMapping[str, Step] = {}
@@ -547,6 +736,12 @@ class Workflow(PersistableEntity):
         step = cls(name=name, workflow=self, **kwargs)
         self.steps[name] = step
         return step
+
+    def get_input_port(self, name: str) -> Port:
+        return self.ports[self.input_ports[name]]
+
+    def get_input_ports(self) -> MutableMapping[str, Port]:
+        return {name: self.ports[p] for name, p in self.input_ports.items()}
 
     def get_output_port(self, name: str) -> Port:
         return self.ports[self.output_ports[name]]

@@ -8,7 +8,6 @@ from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any, cast
 
 from streamflow.core import utils
-from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
 from streamflow.core.config import BindingConfig
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import (
@@ -22,7 +21,17 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.recovery import RetryRequest
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import flatten_list, get_job_tag, get_tag
-from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
+from streamflow.core.workflow import (
+    Command,
+    CommandOutput,
+    CommandOutputProcessor,
+    Job,
+    Port,
+    Status,
+    Step,
+    Token,
+    Workflow,
+)
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.step import CWLScheduleStep
 from streamflow.cwl.utils import get_token_class, search_in_parent_locations

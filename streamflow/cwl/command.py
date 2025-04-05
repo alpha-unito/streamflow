@@ -16,17 +16,6 @@ from typing import IO, Any, cast
 from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
 
-from streamflow.core.command import (
-    Command,
-    CommandOptions,
-    CommandToken,
-    CommandTokenProcessor,
-    ListCommandToken,
-    MapCommandTokenProcessor,
-    ObjectCommandToken,
-    ObjectCommandTokenProcessor,
-    TokenizedCommand,
-)
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation
 from streamflow.core.deployment import Connector
@@ -36,7 +25,17 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import flatten_list, get_tag
-from streamflow.core.workflow import Job, Status, Step, Token, Workflow
+from streamflow.core.workflow import (
+    Command,
+    CommandOptions,
+    CommandToken,
+    CommandTokenProcessor,
+    Job,
+    Status,
+    Step,
+    Token,
+    Workflow,
+)
 from streamflow.cwl import utils
 from streamflow.cwl.processor import (
     CWLCommandOutput,
@@ -50,6 +49,13 @@ from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
+from streamflow.workflow.command import (
+    ListCommandToken,
+    MapCommandTokenProcessor,
+    ObjectCommandToken,
+    ObjectCommandTokenProcessor,
+    TokenizedCommand,
+)
 from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.utils import get_token_value
 

@@ -1,64 +1,21 @@
 from __future__ import annotations
 
 import logging
-import posixpath
 from collections.abc import MutableMapping, MutableSequence
 from pathlib import PurePosixPath
 from typing import Any
 
 from streamflow.core.config import Config
 from streamflow.core.exception import WorkflowDefinitionException
-from streamflow.core.workflow import Workflow
 from streamflow.log_handler import logger
-from streamflow.workflow.step import InputInjectorStep
-
-
-def _check_bindings(
-    current_node: MutableMapping[str, Any], workflow: Workflow, path: str
-) -> None:
-    if logger.isEnabledFor(logging.WARNING):
-        if "step" in current_node and not current_node.get("inherited_target", False):
-            if not any(step.startswith(path) for step in workflow.steps.keys()):
-                # The `step` bind check if there is a step named /parent/step_name
-                #   (it includes also sub-workflow bindings)
-                logger.warning(
-                    f"Binding {path}, defined in the StreamFlow file, does not match any steps in the workflow"
-                )
-        if "port" in current_node:
-            if not (
-                (
-                    # The port is an input port of the workflow
-                    posixpath.dirname(path) == posixpath.sep
-                    and any(
-                        posixpath.basename(path) in s.input_ports
-                        for s in workflow.steps.values()
-                        if isinstance(s, InputInjectorStep)
-                    )
-                )
-                or (
-                    # The port is an output port of a step
-                    posixpath.dirname(path) in workflow.steps
-                    and posixpath.basename(path)
-                    in workflow.steps[posixpath.dirname(path)].output_ports
-                )
-            ):
-                logger.warning(
-                    f"Binding {path}, defined in the StreamFlow file, does not match any ports in the workflow"
-                )
-        for key, node in current_node["children"].items():
-            _check_bindings(node, workflow, posixpath.join(path, key))
-
-
-def check_bindings(workflow_config: WorkflowConfig, workflow: Workflow) -> None:
-    if len(node := workflow_config.filesystem["children"]) == 1:
-        _check_bindings(node[posixpath.sep], workflow, posixpath.sep)
 
 
 def set_targets(current_node, target):
     for node in current_node["children"].values():
+        if "port" in node:
+            continue
         if "step" not in node:
             node["step"] = target
-            node["inherited_target"] = True
         set_targets(node, node["step"])
 
 
@@ -114,6 +71,8 @@ class WorkflowConfig(Config):
                         f"The deployment `{deployment['name']}` leads to a circular reference: "
                         f"Recursive deployment definitions are not allowed."
                     )
+                else:
+                    deployments.add(deployment["name"])
 
     def _process_binding(self, binding: MutableMapping[str, Any]):
         targets = (
