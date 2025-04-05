@@ -645,11 +645,17 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
 
     async def undeploy(self, external: bool) -> None:
         jobs_map = {}
+        loc_map = {}
         for job_id, location in self._scheduled_jobs.items():
             inner_location = get_inner_location(location)
             jobs_map.setdefault(inner_location.name, []).append(job_id)
-        for location, jobs in jobs_map.items():
-            await self._remove_jobs(location, jobs)
+            loc_map.setdefault(inner_location.name, inner_location)
+        await asyncio.gather(
+            *(
+                asyncio.create_task(self._remove_jobs(loc_map[location], jobs))
+                for location, jobs in jobs_map.items()
+            )
+        )
         self._scheduled_jobs = {}
         if self._inner_ssh_connector:
             if logger.isEnabledFor(logging.INFO):

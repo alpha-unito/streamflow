@@ -71,14 +71,17 @@ async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
 
 
 async def _process_file_token(
-    job: Job, token_value: Any, cwl_version: str, streamflow_context: StreamFlowContext
-):
-    filepath = get_path_from_token(token_value)
+    job: Job,
+    token_value: Any,
+    cwl_version: str,
+    streamflow_context: StreamFlowContext,
+    check_contents: bool = False,
+) -> MutableMapping[str, Any]:
     connector = streamflow_context.scheduler.get_connector(job.name)
     locations = streamflow_context.scheduler.get_locations(job.name)
     path_processor = get_path_processor(connector)
     new_token_value = token_value
-    if filepath:
+    if filepath := get_path_from_token(token_value):
         if not path_processor.isabs(filepath):
             filepath = path_processor.join(job.output_directory, filepath)
         new_token_value = await get_file_token(
@@ -90,58 +93,53 @@ async def _process_file_token(
             filepath=filepath,
             file_format=token_value.get("format"),
             basename=token_value.get("basename"),
-        )
-        await register_data(
-            context=streamflow_context,
-            connector=connector,
-            locations=locations,
-            base_path=job.output_directory,
-            token_value=new_token_value,
+            check_content=check_contents,
+            contents=token_value.get("contents"),
         )
         if "secondaryFiles" in token_value:
             new_token_value["secondaryFiles"] = await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        get_file_token(
-                            context=streamflow_context,
-                            connector=connector,
+                        _process_file_token(
+                            job=job,
+                            token_value=sf,
                             cwl_version=cwl_version,
-                            locations=locations,
-                            token_class=get_token_class(sf),
-                            filepath=get_path_from_token(sf),
-                            file_format=sf.get("format"),
-                            basename=sf.get("basename"),
+                            streamflow_context=streamflow_context,
+                            check_contents=check_contents,
                         )
                     )
                     for sf in token_value["secondaryFiles"]
                 )
             )
-            for sf in new_token_value["secondaryFiles"]:
-                await register_data(
-                    context=streamflow_context,
-                    connector=connector,
-                    locations=locations,
-                    base_path=job.output_directory,
-                    token_value=sf,
-                )
-    if "listing" in token_value:
-        listing = await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    _process_file_token(job, t, cwl_version, streamflow_context)
-                )
-                for t in token_value["listing"]
-            )
+    elif (
+        get_token_class(token_value) == "File"
+        and check_contents
+        and (
+            token_value.get("basename") is not None
+            and token_value.get("contents") is None
         )
-        for file in listing:
-            await register_data(
-                context=streamflow_context,
-                connector=connector,
-                locations=locations,
-                base_path=job.output_directory,
-                token_value=file,
+    ):
+        raise WorkflowExecutionException(
+            f"Job {job.name} cannot process file. Anonymous file object must have 'contents' and 'basename' fields."
+        )
+    if "listing" in token_value:
+        new_token_value |= {
+            "listing": await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        _process_file_token(job, t, cwl_version, streamflow_context)
+                    )
+                    for t in token_value["listing"]
+                )
             )
-        new_token_value |= {"listing": listing}
+        }
+    await register_data(
+        context=streamflow_context,
+        connector=connector,
+        locations=locations,
+        base_path=job.output_directory,
+        token_value=new_token_value,
+    )
     return new_token_value
 
 
@@ -165,7 +163,11 @@ async def build_token(
             return CWLFileToken(
                 tag=get_tag(job.inputs.values()),
                 value=await _process_file_token(
-                    job, token_value, cwl_version, streamflow_context
+                    job,
+                    token_value,
+                    cwl_version,
+                    streamflow_context,
+                    check_contents=True,
                 ),
             )
         else:
