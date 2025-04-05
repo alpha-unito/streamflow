@@ -142,7 +142,7 @@ async def test_bind_volumes(context: StreamFlowContext):
     ).mount_point == await utils.get_mount_point(
         context, local_location, local_deployment.workdir
     )
-    assert local_location.hardware.can_host(container_hardware)
+    assert local_location.hardware.satisfies(container_hardware)
 
 
 @pytest.mark.asyncio
@@ -240,8 +240,8 @@ def test_hardware():
         main_hardware.storage["placeholder_3"].mount_point
     )
     # The `secondary_hardware` has more cores and disk space in the `/tmp` storage than `main_hardware`
-    assert secondary_hardware.can_host(main_hardware)
-    assert not main_hardware.can_host(secondary_hardware)
+    assert secondary_hardware.satisfies(main_hardware)
+    assert not main_hardware.satisfies(secondary_hardware)
 
     # Testing difference operation
     secondary_hardware -= extra_hardware
@@ -252,11 +252,11 @@ def test_hardware():
         secondary_hardware.get_storage(testing_mount_point).size
         == main_hardware.get_storage(testing_mount_point).size
     )
-    assert main_hardware.can_host(secondary_hardware)
+    assert main_hardware.satisfies(secondary_hardware)
     # Testing the validity of the storage comparison
     main_hardware.storage.pop("placeholder_3")
     with pytest.raises(WorkflowExecutionException) as err:
-        _ = main_hardware.can_host(secondary_hardware)
+        _ = main_hardware.satisfies(secondary_hardware)
     assert (
         str(err.value) == f"Invalid `Hardware` comparison: {main_hardware} should "
         f"contain all the storage included in {secondary_hardware}."
