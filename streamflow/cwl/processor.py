@@ -9,7 +9,6 @@ from typing import Any, cast
 import cwl_utils.file_formats
 from schema_salad.exceptions import ValidationException
 
-from streamflow.core.command import CommandOutput, CommandOutputProcessor
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, LocalTarget, Target
 from streamflow.core.exception import (
@@ -18,7 +17,14 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import flatten_list, get_tag
-from streamflow.core.workflow import Job, Status, Token, TokenProcessor
+from streamflow.core.workflow import (
+    CommandOutput,
+    CommandOutputProcessor,
+    Job,
+    Status,
+    Token,
+    TokenProcessor,
+)
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import LoadListing, SecondaryFile

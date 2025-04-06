@@ -8,7 +8,6 @@ from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
-from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
@@ -18,7 +17,14 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_entity_ids, get_tag, random_name
-from streamflow.core.workflow import Job, Port, Token
+from streamflow.core.workflow import (
+    Command,
+    CommandOutput,
+    CommandOutputProcessor,
+    Job,
+    Port,
+    Token,
+)
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import (

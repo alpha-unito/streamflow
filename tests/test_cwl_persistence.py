@@ -9,11 +9,10 @@ from rdflib import Graph
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString, LiteralScalarString
 
 from streamflow.core import utils
-from streamflow.core.command import CommandTokenProcessor, UnionCommandTokenProcessor
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import FilterConfig, LocalTarget
-from streamflow.core.workflow import Step
+from streamflow.core.workflow import CommandTokenProcessor, Step
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
     CWLCommand,
@@ -55,6 +54,7 @@ from streamflow.cwl.transformer import (
 )
 from streamflow.cwl.utils import LoadListing, SecondaryFile
 from streamflow.cwl.workflow import CWLWorkflow
+from streamflow.workflow.command import UnionCommandTokenProcessor
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import CombinatorStep, ExecuteStep
 from tests.conftest import save_load_and_test

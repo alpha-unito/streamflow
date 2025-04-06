@@ -14,11 +14,6 @@ import cwl_utils.parser.utils
 from schema_salad.exceptions import ValidationException
 
 from streamflow.config.config import WorkflowConfig
-from streamflow.core.command import (
-    CommandOutputProcessor,
-    CommandTokenProcessor,
-    UnionCommandTokenProcessor,
-)
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
@@ -28,7 +23,15 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.exception import WorkflowDefinitionException
-from streamflow.core.workflow import Port, Step, Token, TokenProcessor, Workflow
+from streamflow.core.workflow import (
+    CommandOutputProcessor,
+    CommandTokenProcessor,
+    Port,
+    Step,
+    Token,
+    TokenProcessor,
+    Workflow,
+)
 from streamflow.cwl import utils
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
@@ -97,6 +100,7 @@ from streamflow.workflow.combinator import (
     LoopCombinator,
     LoopTerminationCombinator,
 )
+from streamflow.workflow.command import UnionCommandTokenProcessor
 from streamflow.workflow.step import (
     Combinator,
     CombinatorStep,
@@ -108,6 +112,7 @@ from streamflow.workflow.step import (
     Transformer,
 )
 from streamflow.workflow.token import TerminationToken
+from streamflow.workflow.utils import check_bindings
 
 
 def _copy_context(context: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
@@ -1531,6 +1536,8 @@ class CWLTranslator:
         # Connect input and output ports to the injector step
         injector_step.add_input_port(port_name, input_port)
         injector_step.add_output_port(port_name, port)
+        # Add the input port of the InputInjectorStep to the workflow input ports
+        workflow.input_ports[port_name] = input_port.name
 
     def _inject_inputs(self, workflow: Workflow):
         output_directory = None
@@ -2787,6 +2794,7 @@ class CWLTranslator:
         )
         # Inject initial inputs
         self._inject_inputs(workflow)
+        check_bindings(self.workflow_config, workflow)
         # Extract requirements
         for hint in self.cwl_definition.hints or []:
             if not isinstance(hint, MutableMapping):

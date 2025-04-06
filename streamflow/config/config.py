@@ -12,6 +12,8 @@ from streamflow.log_handler import logger
 
 def set_targets(current_node, target):
     for node in current_node["children"].values():
+        if "port" in node:
+            continue
         if "step" not in node:
             node["step"] = target
         set_targets(node, node["step"])
@@ -69,6 +71,8 @@ class WorkflowConfig(Config):
                         f"The deployment `{deployment['name']}` leads to a circular reference: "
                         f"Recursive deployment definitions are not allowed."
                     )
+                else:
+                    deployments.add(deployment["name"])
 
     def _process_binding(self, binding: MutableMapping[str, Any]):
         targets = (
@@ -88,6 +92,11 @@ class WorkflowConfig(Config):
             else:
                 raise WorkflowDefinitionException(f"Binding filter {f} is not defined")
         path = PurePosixPath(binding["step"] if "step" in binding else binding["port"])
+        if not path.is_absolute():
+            raise WorkflowDefinitionException(
+                f"Binding {path.as_posix()} is not well-defined in the StreamFlow file. "
+                f"It must be an absolute POSIX path"
+            )
         self.put(path, target_type, config)
 
     def get(

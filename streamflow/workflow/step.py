@@ -11,7 +11,6 @@ from types import ModuleType
 from typing import Any, cast
 
 from streamflow.core import utils
-from streamflow.core.command import Command, CommandOutput, CommandOutputProcessor
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
@@ -30,7 +29,17 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import get_entity_ids
-from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
+from streamflow.core.workflow import (
+    Command,
+    CommandOutput,
+    CommandOutputProcessor,
+    Job,
+    Port,
+    Status,
+    Step,
+    Token,
+    Workflow,
+)
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
