@@ -9,6 +9,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement, Storage
 from streamflow.cwl.utils import eval_expression
+from streamflow.log_handler import logger
 from streamflow.workflow.utils import get_token_value
 
 if TYPE_CHECKING:
@@ -92,6 +93,7 @@ class CWLHardwareRequirement(HardwareRequirement):
         context = {
             "inputs": {name: get_token_value(t) for name, t in job.inputs.items()}
         }
+        logger.info(f"HW: {job.name} {self.get_cores(context)}")
         return Hardware(
             cores=self.get_cores(context),
             memory=self.get_memory(context),
