@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import MutableSequence
+from collections.abc import Callable, MutableSequence
 from typing import cast
 
 import pytest
@@ -42,7 +42,11 @@ async def _notify_status_and_test(
         assert context.scheduler.get_allocation(j.name).status == status
 
 
-def _prepare_connector(context: StreamFlowContext, num_jobs: int = 1):
+def _prepare_connector(
+    context: StreamFlowContext,
+    location_memory: Callable[float, float] | None = None,
+    num_jobs: int = 1,
+) -> tuple[CWLHardwareRequirement, Target]:
     # Inject custom hardware to manipulate available resources
     hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     conn = cast(
@@ -50,9 +54,13 @@ def _prepare_connector(context: StreamFlowContext, num_jobs: int = 1):
         context.deployment_manager.get_connector("custom-hardware"),
     )
     conn.set_hardware(
-        Hardware(
+        hardware=Hardware(
             cores=hardware_requirement.cores * num_jobs,
-            memory=hardware_requirement.memory * num_jobs,
+            memory=(
+                location_memory(hardware_requirement.memory)
+                if location_memory
+                else hardware_requirement.memory * num_jobs
+            ),
             storage={
                 os.sep: Storage(
                     os.sep,
@@ -134,7 +142,7 @@ async def test_bind_volumes(context: StreamFlowContext):
     ).mount_point == await utils.get_mount_point(
         context, local_location, local_deployment.workdir
     )
-    assert container_hardware <= local_location.hardware
+    assert local_location.hardware.satisfies(container_hardware)
 
 
 @pytest.mark.asyncio
@@ -187,7 +195,8 @@ async def test_binding_filter(context: StreamFlowContext):
 
 
 def test_hardware():
-    """Test Hardware arithmetic and comparison operations"""
+    """Test Hardware arithmetic operations"""
+    testing_mount_point = os.path.join(os.sep, "tmp")
     main_hardware = Hardware(
         cores=float(2**4),
         memory=float(2**10),
@@ -201,52 +210,53 @@ def test_hardware():
                 size=float(2**12),
             ),
             "placeholder_3": Storage(
-                mount_point=os.path.join(os.sep, "tmp"),
+                mount_point=testing_mount_point,
                 size=float(2**15),
             ),
         },
     )
-    additional_storage_size = float(2**10)
-    secondary_hardware = main_hardware + Hardware(
+    extra_hardware = Hardware(
+        cores=float(5),
         storage={
-            "placeholder_4": Storage(
-                mount_point=os.path.join(os.sep, "tmp"), size=additional_storage_size
-            )
-        }
+            "placeholder_4": Storage(mount_point=testing_mount_point, size=float(2**10))
+        },
     )
+    secondary_hardware = main_hardware + extra_hardware
+    assert secondary_hardware.cores == main_hardware.cores + extra_hardware.cores
+    assert secondary_hardware.memory == main_hardware.memory
     # Secondary hardware after the sum operation has the storage keys in the normalized form
-    assert secondary_hardware.storage.keys() == {os.sep, os.path.join(os.sep, "tmp")}
+    assert secondary_hardware.storage.keys() == {os.sep, testing_mount_point}
     assert (
-        secondary_hardware.get_storage(os.path.join(os.sep, "tmp")).size
-        == main_hardware.storage["placeholder_3"].size + additional_storage_size
+        secondary_hardware.get_storage(testing_mount_point).size
+        == main_hardware.get_storage(testing_mount_point).size
+        + extra_hardware.get_storage(testing_mount_point).size
     )
 
-    # Changing storage keys and the number of storages to evaluate whether operations are independent of them.
-    # The `placeholder_1` and `placeholder_2` storages collapse into the `other_name_1` storage during the
-    # previous addition operation because they share the same mount point.
+    # Changing storage keys and the number of storages to evaluate whether operations are independent of them
     secondary_hardware.storage["other_name_1.1"] = secondary_hardware.storage.pop(
         main_hardware.storage["placeholder_1"].mount_point
     )
     secondary_hardware.storage["other_name_2.1"] = secondary_hardware.storage.pop(
         main_hardware.storage["placeholder_3"].mount_point
     )
-    assert main_hardware <= secondary_hardware
-    assert secondary_hardware >= main_hardware
+    # The `secondary_hardware` has more cores and disk space in the `/tmp` storage than `main_hardware`
+    assert secondary_hardware.satisfies(main_hardware)
+    assert not main_hardware.satisfies(secondary_hardware)
 
-    # Hardware must have the same `mount_point` to execute comparison operations.
-    # The "bigger" hardware must have at least all the mount_point values of the "smaller" one;
-    # otherwise, an error must be raised.
-    # If this check is not performed, for example, if the two hardware have different
-    # `mount_point` values at scheduling time, the scheduling process may enter an infinite loop.
+    # Testing difference operation
+    secondary_hardware -= extra_hardware
+    assert secondary_hardware.cores == main_hardware.cores
+    assert secondary_hardware.memory == main_hardware.memory
+    assert secondary_hardware.storage.keys() == {os.sep, testing_mount_point}
+    assert (
+        secondary_hardware.get_storage(testing_mount_point).size
+        == main_hardware.get_storage(testing_mount_point).size
+    )
+    assert main_hardware.satisfies(secondary_hardware)
+    # Testing the validity of the storage comparison
     main_hardware.storage.pop("placeholder_3")
     with pytest.raises(WorkflowExecutionException) as err:
-        _ = secondary_hardware <= main_hardware
-    assert (
-        str(err.value) == f"Invalid `Hardware` comparison: {main_hardware} should "
-        f"contain all the storage included in {secondary_hardware}."
-    )
-    with pytest.raises(WorkflowExecutionException) as err:
-        _ = main_hardware >= secondary_hardware
+        _ = main_hardware.satisfies(secondary_hardware)
     assert (
         str(err.value) == f"Invalid `Hardware` comparison: {main_hardware} should "
         f"contain all the storage included in {secondary_hardware}."
@@ -448,32 +458,48 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
     ]
 
     binding_config = BindingConfig(targets=[target])
-    task_pending = [
-        asyncio.create_task(
-            context.scheduler.schedule(job, binding_config, hardware_requirement)
+    try:
+        task_pending = [
+            asyncio.create_task(
+                context.scheduler.schedule(job, binding_config, hardware_requirement)
+            )
+            for job in jobs
+        ]
+        assert len(task_pending) == num_jobs
+
+        # Available resources to schedule all the jobs (timeout parameter useful if a deadlock occurs)
+        task_completed, task_pending = await asyncio.wait(
+            task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
         )
-        for job in jobs
-    ]
-    assert len(task_pending) == num_jobs
+        assert len(task_pending) == 0
+        # Test errors were raised
+        for t in task_completed:
+            assert t.result() is None
+        for j in jobs:
+            assert context.scheduler.get_allocation(j.name).status == Status.FIREABLE
 
-    # Available resources to schedule all the jobs (timeout parameter useful if a deadlock occurs)
-    _, task_pending = await asyncio.wait(
-        task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
-    )
-    assert len(task_pending) == 0
-    for j in jobs:
-        assert context.scheduler.get_allocation(j.name).status == Status.FIREABLE
-
-    # Jobs change status to RUNNING
-    await _notify_status_and_test(context, jobs, Status.RUNNING)
-    # Jobs change status to COMPLETED
-    await _notify_status_and_test(context, jobs, Status.COMPLETED)
+        # Jobs change status to RUNNING
+        await _notify_status_and_test(context, jobs, Status.RUNNING)
+        # Jobs change status to COMPLETED
+        await _notify_status_and_test(context, jobs, Status.COMPLETED)
+    finally:
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    context.scheduler.notify_status(j.name, Status.COMPLETED)
+                )
+                for j in jobs
+            )
+        )
 
 
 @pytest.mark.asyncio
 async def test_single_env_few_resources(context: StreamFlowContext):
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
-    hardware_requirement, target = _prepare_connector(context)
+    num_jobs = 2
+    hardware_requirement, target = _prepare_connector(
+        context, location_memory=lambda x: x * num_jobs * 3
+    )
     # Create fake jobs and schedule them
     jobs = [
         Job(
@@ -484,44 +510,57 @@ async def test_single_env_few_resources(context: StreamFlowContext):
             output_directory=None,
             tmp_directory=None,
         )
-        for _ in range(2)
+        for _ in range(num_jobs)
     ]
 
     binding_config = BindingConfig(targets=[target])
-    task_pending = [
-        asyncio.create_task(
-            context.scheduler.schedule(job, binding_config, hardware_requirement)
+    try:
+        task_pending = [
+            asyncio.create_task(
+                context.scheduler.schedule(job, binding_config, hardware_requirement)
+            )
+            for job in jobs
+        ]
+        assert len(task_pending) == 2
+
+        # Available resources to schedule only one job (timeout parameter useful if a deadlock occurs)
+        task_completed, task_pending = await asyncio.wait(
+            task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
         )
-        for job in jobs
-    ]
-    assert len(task_pending) == 2
+        assert len(task_pending) == 1
+        # Test errors were raised
+        for t in task_completed:
+            assert t.result() is None
+        assert context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
+        assert context.scheduler.get_allocation(jobs[1].name) is None
 
-    # Available resources to schedule only one job (timeout parameter useful if a deadlock occurs)
-    _, task_pending = await asyncio.wait(
-        task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
-    )
-    assert len(task_pending) == 1
-    assert context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
-    assert context.scheduler.get_allocation(jobs[1].name) is None
+        # First job changes status to RUNNING and continue to keep all resources
+        # Testing that second job is not scheduled (timeout parameter necessary)
+        await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
+        _, task_pending = await asyncio.wait(task_pending, timeout=2)
 
-    # First job changes status to RUNNING and continue to keep all resources
-    # Testing that second job is not scheduled (timeout parameter necessary)
-    await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
-    _, task_pending = await asyncio.wait(task_pending, timeout=2)
+        assert len(task_pending) == 1
+        assert context.scheduler.get_allocation(jobs[0].name).status == Status.RUNNING
+        assert context.scheduler.get_allocation(jobs[1].name) is None
 
-    assert len(task_pending) == 1
-    assert context.scheduler.get_allocation(jobs[0].name).status == Status.RUNNING
-    assert context.scheduler.get_allocation(jobs[1].name) is None
+        # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
+        await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
+        _, task_pending = await asyncio.wait(
+            task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
+        )
+        assert len(task_pending) == 0
+        assert context.scheduler.get_allocation(jobs[0].name).status == Status.COMPLETED
+        assert context.scheduler.get_allocation(jobs[1].name).status == Status.FIREABLE
 
-    # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
-    await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
-    _, task_pending = await asyncio.wait(
-        task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
-    )
-    assert len(task_pending) == 0
-    assert context.scheduler.get_allocation(jobs[0].name).status == Status.COMPLETED
-    assert context.scheduler.get_allocation(jobs[1].name).status == Status.FIREABLE
-
-    # Second job completed
-    await _notify_status_and_test(context, jobs[1], Status.RUNNING)
-    await _notify_status_and_test(context, jobs[1], Status.COMPLETED)
+        # Second job completed
+        await _notify_status_and_test(context, jobs[1], Status.RUNNING)
+        await _notify_status_and_test(context, jobs[1], Status.COMPLETED)
+    finally:
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    context.scheduler.notify_status(j.name, Status.COMPLETED)
+                )
+                for j in jobs
+            )
+        )

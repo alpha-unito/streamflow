@@ -26,13 +26,6 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Job, Status
 
 
-def _check_storages(hardware_a: Hardware, hardware_b: Hardware) -> None:
-    if set(hardware_b.get_mount_points()) - set(hardware_a.get_mount_points()):
-        raise WorkflowExecutionException(
-            f"Invalid `Hardware` comparison: {hardware_a} should contain all the storage included in {hardware_b}."
-        )
-
-
 def _reduce_storages(
     storages: Iterable[Storage], operator: Callable[[Storage, Any], Storage]
 ) -> MutableMapping[str, Storage]:
@@ -147,54 +140,20 @@ class Hardware:
             ),
         )
 
-    def __ge__(self, other: Any) -> bool:
+    def satisfies(self, other: Any) -> bool:
+        """Check if this hardware has enough resources to satisfy the requirement."""
         if not isinstance(other, Hardware):
             raise NotImplementedError
         if self.cores >= other.cores and self.memory >= other.memory:
-            _check_storages(self, other)
-            self_norm = self._normalize_storage()
+            if set((other_norm := other._normalize_storage()).keys()) - set(
+                (self_norm := self._normalize_storage()).keys()
+            ):
+                raise WorkflowExecutionException(
+                    f"Invalid `Hardware` comparison: {self} should contain all the storage included in {other}."
+                )
             return all(
-                self_norm[other_disk.mount_point] >= other_disk
-                for other_disk in other._normalize_storage().values()
-            )
-        else:
-            return False
-
-    def __gt__(self, other: Any) -> bool:
-        if not isinstance(other, Hardware):
-            raise NotImplementedError
-        if self.cores > other.cores and self.memory > other.memory:
-            _check_storages(self, other)
-            self_norm = self._normalize_storage()
-            return all(
-                self_norm[other_disk.mount_point] > other_disk
-                for other_disk in other._normalize_storage().values()
-            )
-        else:
-            return False
-
-    def __le__(self, other: Any) -> bool:
-        if not isinstance(other, Hardware):
-            raise NotImplementedError
-        if self.cores <= other.cores and self.memory <= other.memory:
-            _check_storages(other, self)
-            other_norm = other._normalize_storage()
-            return all(
-                self_disk <= other_norm[self_disk.mount_point]
-                for self_disk in self._normalize_storage().values()
-            )
-        else:
-            return False
-
-    def __lt__(self, other: Any) -> bool:
-        if not isinstance(other, Hardware):
-            raise NotImplementedError
-        if self.cores < other.cores and self.memory < other.memory:
-            _check_storages(other, self)
-            other_norm = other._normalize_storage()
-            return all(
-                self_disk < other_norm[self_disk.mount_point]
-                for self_disk in self._normalize_storage().values()
+                self_norm[other_disk.mount_point].size >= other_disk.size
+                for other_disk in other_norm.values()
             )
         else:
             return False
@@ -488,39 +447,3 @@ class Storage:
             paths=self.paths | other.paths,
             bind=self.bind,
         )
-
-    def __ge__(self, other: Any) -> bool:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise KeyError(
-                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return self.size >= other.size
-
-    def __gt__(self, other: Any) -> bool:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise KeyError(
-                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return self.size > other.size
-
-    def __le__(self, other: Any) -> bool:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise KeyError(
-                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return self.size <= other.size
-
-    def __lt__(self, other: Any) -> bool:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise KeyError(
-                f"Cannot compare two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return self.size < other.size

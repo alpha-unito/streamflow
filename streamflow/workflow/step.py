@@ -24,7 +24,6 @@ from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
     WorkflowException,
-    WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
@@ -106,10 +105,6 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
-        if len(tags := {t.tag for t in inputs.values()}) != 1:
-            raise WorkflowExecutionException(
-                f"Step {self.name} has input tokens with different tags {tags}"
-            )
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs.values()):
                 logger.debug(
