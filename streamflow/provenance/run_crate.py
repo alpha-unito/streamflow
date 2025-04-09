@@ -12,6 +12,7 @@ import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
+from importlib.resources import files
 from typing import Any, cast, get_args
 from zipfile import ZipFile
 
@@ -1423,6 +1424,16 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                         {"@id": connection["@id"]}
                     )
         return main_entity
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("run_crate")
+            .joinpath("cwl.json")
+            .read_text("utf-8")
+        )
 
     async def get_property_value(
         self, name: str, token: Token

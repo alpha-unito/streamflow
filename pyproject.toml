@@ -72,6 +72,7 @@ zip-safe = true
 "streamflow.deployment.connector" = ["schemas/base/*.json", "schemas/*.json"]
 "streamflow.deployment.filter" = ["schemas/*.json"]
 "streamflow.persistence" = ["schemas/*.sql", "schemas/*.json"]
+"streamflow.provenance" = ["schemas/**/*.json"]
 "streamflow.recovery" = ["schemas/*.json"]
 "streamflow.scheduling" = ["schemas/*.json"]
 "streamflow.scheduling.policy" = ["schemas/*.json"]
