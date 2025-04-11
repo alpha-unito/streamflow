@@ -558,7 +558,7 @@ class InjectorFailureCommand(Command):
                 val = eval(self.command)(job.inputs)
                 cmd_out = CommandOutput(val, Status.COMPLETED)
             except Exception as err:
-                logger.error(err)
+                logger.error(f"Failed command evaluation: {err}")
                 raise FailureHandlingException(err)
         await context.database.update_execution(
             await context.database.add_execution(

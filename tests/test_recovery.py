@@ -31,10 +31,10 @@ from tests.utils.workflow import (
     create_workflow,
 )
 
-TASK_FAILURE = ["execute", "transfer"]
+FAILURE_STEP = ["execute", "transfer"]
 NUM_STEPS = {"single_step": 1, "pipeline": 4}
 NUM_FAILURES = {"one_failure": 1, "two_failures_in_row": 2}
-ERROR_TYPE = [InjectorFailureCommand.SOFT_ERROR, InjectorFailureCommand.FAIL_STOP]
+FAILURE_TYPE = [InjectorFailureCommand.SOFT_ERROR, InjectorFailureCommand.FAIL_STOP]
 TOKEN_TYPE = ["primitive", "file"]
 
 
@@ -86,24 +86,24 @@ async def fault_tolerant_context(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "num_of_steps,task,error_t,num_of_failures,token_t",
+    "num_of_steps,failure_step,failure_type,num_of_failures,token_type",
     itertools.product(
-        NUM_STEPS.values(), TASK_FAILURE, ERROR_TYPE, NUM_FAILURES.values(), TOKEN_TYPE
+        NUM_STEPS.values(), FAILURE_STEP, FAILURE_TYPE, NUM_FAILURES.values(), TOKEN_TYPE
     ),
     ids=[
         f"{n_step}_{step_t}_{error_t}_{n_failure}_{token_t}"
         for n_step, step_t, error_t, n_failure, token_t in itertools.product(
-            NUM_STEPS.keys(), TASK_FAILURE, ERROR_TYPE, NUM_FAILURES.keys(), TOKEN_TYPE
+            NUM_STEPS.keys(), FAILURE_STEP, FAILURE_TYPE, NUM_FAILURES.keys(), TOKEN_TYPE
         )
     ],
 )
 async def test_execute(
     fault_tolerant_context: StreamFlowContext,
-    task: str,
-    num_of_steps: int,
-    error_t: str,
+    failure_step: str,
+    failure_type: str,
     num_of_failures: int,
-    token_t: str,
+    num_of_steps: int,
+    token_type: str,
 ):
     deployment_t = "local"
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
@@ -112,9 +112,9 @@ async def test_execute(
         "local": await get_deployment_config(fault_tolerant_context, deployment_t)
     }
     input_ports = {}
-    if token_t == "primitive":
+    if token_type == "primitive":
         token_value = 100
-    elif token_t == "file":
+    elif token_type == "file":
         location = await get_location(fault_tolerant_context, deployment_t)
         path = StreamFlowPath(
             tempfile.gettempdir() if location.local else "/tmp",
@@ -131,7 +131,7 @@ async def test_execute(
             "size": await path.size(),
         }
     else:
-        raise RuntimeError(f"Unknown token type: {token_t}")
+        raise RuntimeError(f"Unknown token type: {token_type}")
     for input_ in ("test",):
         injector_step = translator.get_base_injector_step(
             ["local"], input_, posixpath.join(posixpath.sep, input_), workflow
@@ -147,12 +147,12 @@ async def test_execute(
                 command=f"lambda x : x['{input_port}'].value",
                 deployment_names=["local"],
                 input_ports=input_ports,
-                outputs={"test1": token_t},
+                outputs={"test1": token_type},
                 step_name=os.path.join(posixpath.sep, str(i), utils.random_name()),
                 workflow=workflow,
-                failure_type=error_t,
+                failure_type=failure_type,
                 failure_tags={"0": num_of_failures},
-                failure_step=task,
+                failure_step=failure_step,
             )
         )
         input_ports = execute_steps[-1].get_output_ports()
@@ -178,8 +178,8 @@ async def test_execute(
             ),
         ):
             expected_failures = num_of_failures
-            if error_t == InjectorFailureCommand.FAIL_STOP:
-                if token_t != "primitive":
+            if failure_type == InjectorFailureCommand.FAIL_STOP:
+                if token_type != "primitive":
                     if num_of_steps > 1 and num_of_failures > 1:
                         # The failure of a step involves only the previous step
                         expected_failures += (
