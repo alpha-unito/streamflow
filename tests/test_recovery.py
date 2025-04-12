@@ -88,12 +88,20 @@ async def fault_tolerant_context(
 @pytest.mark.parametrize(
     "num_of_steps,failure_step,failure_type,num_of_failures,token_type",
     itertools.product(
-        NUM_STEPS.values(), FAILURE_STEP, FAILURE_TYPE, NUM_FAILURES.values(), TOKEN_TYPE
+        NUM_STEPS.values(),
+        FAILURE_STEP,
+        FAILURE_TYPE,
+        NUM_FAILURES.values(),
+        TOKEN_TYPE,
     ),
     ids=[
-        f"{n_step}_{step_t}_{error_t}_{n_failure}_{token_t}"
-        for n_step, step_t, error_t, n_failure, token_t in itertools.product(
-            NUM_STEPS.keys(), FAILURE_STEP, FAILURE_TYPE, NUM_FAILURES.keys(), TOKEN_TYPE
+        f"{n_step}_{step_t}_{failure_t}_{n_failure}_{token_t}"
+        for n_step, step_t, failure_t, n_failure, token_t in itertools.product(
+            NUM_STEPS.keys(),
+            FAILURE_STEP,
+            FAILURE_TYPE,
+            NUM_FAILURES.keys(),
+            TOKEN_TYPE,
         )
     ],
 )
@@ -226,7 +234,7 @@ def dag_workflow(workflow, title="wf"):
 
 @pytest.mark.asyncio
 async def test_loop(fault_tolerant_context: StreamFlowContext):
-    num_of_failures = 0
+    num_of_failures = 1
     task = "execute"
     token_t = "primitive"
     error_t = InjectorFailureCommand.FAIL_STOP
@@ -270,7 +278,7 @@ async def test_loop(fault_tolerant_context: StreamFlowContext):
         workflow=workflow,
         failure_type=error_t,
         failure_step=task,
-        failure_tags={"0.1": num_of_failures},
+        failure_tags={"0.0": num_of_failures},
     )
     _ = translator.get_output_loop(
         step_name,
