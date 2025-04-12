@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import posixpath
 from collections.abc import Iterable
 from typing import cast
+
+import graphviz
 
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
@@ -33,6 +36,33 @@ from streamflow.workflow.token import (
     TerminationToken,
 )
 from streamflow.workflow.utils import get_job_token
+
+
+def graph_figure_bipartite(graph, steps, ports, title):
+    dot = graphviz.Digraph(title)
+    for vertex, neighbors in graph.items():
+        shape = "ellipse" if vertex in steps else "box"
+        dot.node(str(vertex), shape=shape, color="black" if neighbors else "red")
+        for n in neighbors:
+            dot.edge(str(vertex), str(n))
+    filepath = title + ".gv"
+    dot.render(filepath)
+    os.system("rm " + filepath)
+
+
+def dag_workflow(workflow, title="wf"):
+    dag = {}
+    ports = set()
+    steps = set()
+    for step in workflow.steps.values():
+        steps.add(step.name)
+        for port_name in step.output_ports.values():
+            dag.setdefault(step.name, set()).add(port_name)
+            ports.add(port_name)
+        for port_name in step.input_ports.values():
+            dag.setdefault(port_name, set()).add(step.name)
+            ports.add(port_name)
+    graph_figure_bipartite(dag, steps, ports, title + "-recovery-bipartite")
 
 
 async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -> None:
@@ -225,5 +255,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
         # Create recover workflow
         new_workflow = await self._recover_workflow(failed_job, failed_step)
+        dag_workflow(new_workflow)
         # Execute new workflow
         await _execute_recover_workflow(new_workflow, failed_step)

@@ -49,7 +49,7 @@ def dag_workflow(workflow, title="wf"):
         for port_name in step.input_ports.values():
             dag.setdefault(port_name, set()).add(step.name)
             ports.add(port_name)
-    graph_figure_bipartite(dag, steps, ports, title + "-bipartite1")
+    graph_figure_bipartite(dag, steps, ports, title + "-bipartite")
 
 
 def _parse_args(
