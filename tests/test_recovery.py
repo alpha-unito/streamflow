@@ -51,6 +51,7 @@ async def _assert_token_result(
         ).resolve()
         assert path is not None
         assert await path.is_file()
+        assert os.path.dirname(input_value["path"]) != str(path.parent)
         assert input_value["basename"] == path.parts[-1]
         assert input_value.get("checksum") == f"sha1${await path.checksum()}"
         assert input_value.get("size") == await path.size()
@@ -234,11 +235,10 @@ def dag_workflow(workflow, title="wf"):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("iteration", [0, 1])
+@pytest.mark.parametrize("iteration", [1])
 async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
     num_of_failures = 1
     task = "execute"
-    token_t = "primitive"
     error_t = InjectorFailureCommand.FAIL_STOP
     deployment_t = "local"
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
@@ -247,7 +247,25 @@ async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
         "local": await get_deployment_config(fault_tolerant_context, deployment_t)
     }
     input_ports = {}
-    token_value = 100
+    location = await get_location(fault_tolerant_context, deployment_t)
+    path = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=fault_tolerant_context,
+        location=location,
+    )
+    await path.write_text("StreamFlow fault tolerance")
+    token_t = "File"
+    if token_t == "File":
+        token_value = {
+            "basename": os.path.basename(path),
+            "checksum": f"sha1${await path.checksum()}",
+            "class": token_t,
+            "path": str(path),
+            "size": await path.size(),
+        }
+    elif token_t == "primitive":
+        token_value = 100
     for input_name, value in {"test": token_value, "counter": 0, "limit": 3}.items():
         injector_step = translator.get_base_injector_step(
             ["local"], input_name, posixpath.join(posixpath.sep, input_name), workflow

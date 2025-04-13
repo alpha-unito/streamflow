@@ -45,8 +45,11 @@ def graph_figure(graph, title):
         for n in neighbors:
             dot.edge(str(vertex), str(n))
     filepath = title + ".gv"
-    dot.render(filepath)
-    os.system("rm " + filepath)
+    try:
+        dot.render(filepath)
+    finally:
+        if os.path.exists(filepath):
+            os.system("rm " + filepath)
 
 
 def graph_figure_bipartite(graph, steps, ports, title):
@@ -128,7 +131,11 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
-        if any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()):
+        # The port is the input port of a loop and there is no input steps before the loop
+        # nb. why three input steps? input loop step, back propagation step and loop-termination step
+        if any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()) and not len(
+            port.get_input_steps()
+        ) < 3:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
             port.put(TerminationToken(Status.SKIPPED))
@@ -163,7 +170,7 @@ async def _populate_workflow(
     # Instantiate ports capable of moving tokens across workflows
     for port in new_workflow.ports.values():
         if not isinstance(port, (JobPort, ConnectorPort)):
-            new_workflow.create_port(InterWorkflowPort, port.name)
+            new_workflow.create_port(InterWorkflowPort, port.name, interrupt=True)
     for port in failed_step.get_output_ports().values():
         cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
             port, border_tag=get_tag(failed_job.inputs.values())
@@ -226,15 +233,15 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             if x not in provenance.info_tokens:
                 return x
             else:
-                return f"{x} ({provenance.info_tokens[x].instance.tag}, {provenance.info_tokens[x].instance.recoverable}, {provenance.info_tokens[x].instance.value})\n{provenance.info_tokens[x].port_name}"
+                return f"{x} ({provenance.info_tokens[x].instance.tag}, {provenance.info_tokens[x].instance.recoverable}, {provenance.info_tokens[x].instance.value}) {provenance.info_tokens[x].port_name}"
 
-        graph_figure(
-            {
-                myfunc(k): [myfunc(v) for v in vs]
-                for k, vs in provenance.dag_tokens.items()
-            },
-            "wf-tokens",
-        )
+        # graph_figure(
+        #     {
+        #         myfunc(k): [myfunc(v) for v in vs]
+        #         for k, vs in provenance.dag_tokens.items()
+        #     },
+        #     "wf-tokens",
+        # )
         # Synchronize across multiple recovery workflows
         await self._sync_workflows(mapper, new_workflow)
         # Populate new workflow

@@ -430,7 +430,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
         target: Target | None = None,
     ):
         super().__init__(name, workflow, target)
-        self.value_type: str = value_type
+        self.value_type: str = value_type.lower()
 
     @classmethod
     async def _load(
@@ -556,6 +556,17 @@ class InjectorFailureCommand(Command):
         else:
             try:
                 val = eval(self.command)(job.inputs)
+                import os
+                import shutil
+                from pathlib import Path
+                def mycopy(workdir, x):
+                    if isinstance(x, (str, Path)) and Path(x).exists():
+                        value = os.path.join(workdir, os.path.basename(x))
+                        shutil.copy(x, value)
+                    else:
+                        value = x
+                    return value
+                val = mycopy(job.output_directory, val)
                 cmd_out = CommandOutput(val, Status.COMPLETED)
             except Exception as err:
                 logger.error(f"Failed command evaluation: {err}")
