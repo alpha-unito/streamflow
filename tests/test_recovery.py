@@ -12,6 +12,7 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ExecutionLocation
+from streamflow.core.utils import get_job_tag
 from streamflow.core.workflow import Token
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.main import build_context
@@ -233,7 +234,8 @@ def dag_workflow(workflow, title="wf"):
 
 
 @pytest.mark.asyncio
-async def test_loop(fault_tolerant_context: StreamFlowContext):
+@pytest.mark.parametrize("iteration", [0, 1])
+async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
     num_of_failures = 1
     task = "execute"
     token_t = "primitive"
@@ -278,9 +280,9 @@ async def test_loop(fault_tolerant_context: StreamFlowContext):
         workflow=workflow,
         failure_type=error_t,
         failure_step=task,
-        failure_tags={"0.0": num_of_failures},
+        failure_tags={f"0.{iteration}": num_of_failures + iteration},
     )
-    _ = translator.get_output_loop(
+    output_ports = translator.get_output_loop(
         step_name,
         {
             "test": execute_step.get_output_port("test1"),
@@ -293,6 +295,31 @@ async def test_loop(fault_tolerant_context: StreamFlowContext):
     dag_workflow(workflow)
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
+    assert len(output_ports) == 1
+    result_token = next(iter(output_ports.values())).token_list
+    assert len(result_token) == 2
+    assert isinstance(result_token[0].value, Token)
+    await _assert_token_result(
+        input_value=token_value,
+        output_token=result_token[0].value,
+        context=fault_tolerant_context,
+        location=await get_location(fault_tolerant_context, deployment_t),
+    )
+    assert isinstance(result_token[1], TerminationToken)
+
+    for job in (
+        t.value
+        for t in execute_step.get_input_port("__job__").token_list
+        if isinstance(t, JobToken)
+    ):
+        # One job was recovered, the others did not raise any failure
+        attempts = 1 + (
+            num_of_failures if get_job_tag(job.name) == f"0.{iteration}" else 0
+        )
+        assert (
+            fault_tolerant_context.failure_manager.get_request(job.name).version
+            == attempts
+        )
 
 
 @pytest.mark.asyncio

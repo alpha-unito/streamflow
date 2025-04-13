@@ -883,6 +883,9 @@ class RecoveryTranslator:
                 port_name, loop_forwarder.get_output_port()
             )
             loop_output_step.add_output_port(port_name, self.workflow.create_port())
+            external_output_ports[port_name] = loop_output_step.get_output_port(
+                port_name
+            )
             loop_terminator_step.add_input_port(
                 port_name, loop_output_step.get_output_port(port_name)
             )
