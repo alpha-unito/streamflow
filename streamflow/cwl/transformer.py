@@ -269,7 +269,12 @@ class ForwardTransformer(OneToOneTransformer):
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         token = next(iter(inputs.values()))
-        return {self.get_output_name(): token.update(token.value)}
+        token.recoverable = True
+        return {
+            self.get_output_name(): token.update(
+                token.value, recoverable=token.recoverable
+            )
+        }
 
 
 class ListToElementTransformer(OneToOneTransformer):

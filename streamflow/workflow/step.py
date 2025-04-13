@@ -708,7 +708,7 @@ class ExecuteStep(BaseStep):
                 await self.workflow.context.failure_manager.handle_failure(
                     job, self, command_output
                 )
-                command_output.status = Status.COMPLETED
+                command_output = CommandOutput(None, Status.COMPLETED)
             elif command_output.status != Status.CANCELLED:
                 # Retrieve output tokens
                 if not self.terminated:
@@ -742,7 +742,7 @@ class ExecuteStep(BaseStep):
                 await self.workflow.context.failure_manager.handle_exception(
                     job, self, e
                 )
-                command_output.status = Status.COMPLETED
+                command_output = CommandOutput(None, Status.COMPLETED)
             # If failure cannot be recovered, simply fail
             except Exception as ie:
                 if ie != e:
@@ -1220,6 +1220,26 @@ class LoopCombinatorStep(CombinatorStep):
                         )
         # Terminate step
         await self.terminate(self._get_status(status))
+
+    async def set_iteration(self, tag: str) -> None:
+        # 0 -> internal status [], input 0
+        if ".".join(prefix := ".".join(tag.split(".")[:-1])) != "":
+            # 0.0 -> previous input [0], current input 0
+            # 0.1 -> previous input [0], current input 0.0
+            # 0.2 -> previous input [0, 0.0], current input 0.1
+            for curr_tag in [
+                prefix,
+                *(f"{prefix}.{i}" for i in range(int(tag.split(".")[-1]) - 1)),
+            ]:
+                for port_name in self.input_ports.keys():
+                    async for _ in cast(
+                        AsyncIterable,
+                        self.combinator.combine(
+                            port_name=port_name,
+                            token=Token(value=None, tag=curr_tag),
+                        ),
+                    ):
+                        pass
 
 
 class LoopOutputStep(BaseStep, ABC):
