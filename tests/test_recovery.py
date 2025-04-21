@@ -5,7 +5,6 @@ import tempfile
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import graphviz
 import pytest
 import pytest_asyncio
 
@@ -207,33 +206,6 @@ async def test_execute(
             )
 
 
-def graph_figure_bipartite(graph, steps, ports, title):
-    dot = graphviz.Digraph(title)
-    for vertex, neighbors in graph.items():
-        shape = "ellipse" if vertex in steps else "box"
-        dot.node(str(vertex), shape=shape, color="black" if neighbors else "red")
-        for n in neighbors:
-            dot.edge(str(vertex), str(n))
-    filepath = title + ".gv"
-    dot.render(filepath)
-    os.system("rm " + filepath)
-
-
-def dag_workflow(workflow, title="wf"):
-    dag = {}
-    ports = set()
-    steps = set()
-    for step in workflow.steps.values():
-        steps.add(step.name)
-        for port_name in step.output_ports.values():
-            dag.setdefault(step.name, set()).add(port_name)
-            ports.add(port_name)
-        for port_name in step.input_ports.values():
-            dag.setdefault(port_name, set()).add(step.name)
-            ports.add(port_name)
-    graph_figure_bipartite(dag, steps, ports, title + "-bipartite")
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("iteration", [1])
 async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
@@ -310,7 +282,6 @@ async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
         {"test"},
     )
     await workflow.save(fault_tolerant_context)
-    dag_workflow(workflow)
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
     assert len(output_ports) == 1

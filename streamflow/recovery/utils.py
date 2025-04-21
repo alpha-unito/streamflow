@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections import deque
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
@@ -135,6 +134,7 @@ class GraphMapper:
         # token id : token instance
         self.token_instances: MutableMapping[int, Token] = {}
         self.context: StreamFlowContext = context
+        self.sync_ports: MutableSequence[str] = []
 
     def _update_token(self, port_name: str, token: Token, is_available: bool) -> int:
         # Check if there is the same token in the port
@@ -219,7 +219,9 @@ class GraphMapper:
                 port_row["id"]
             ):
                 step_row = await self.context.database.get_step(step_id_row["step"])
-                if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
+                if issubclass(
+                    get_class_from_name(step_row["type"]), (ExecuteStep, TransferStep)
+                ):
                     execute_step_out_token_ids.add(token_id)
         return execute_step_out_token_ids
 
@@ -268,7 +270,7 @@ class GraphMapper:
             for dependency_row in dependency_rows
         }
         # Remove steps with some missing input ports
-        # A port can have multiple input steps. It is necessary to load only the needed steps
+        # A port can have multiple input steps. It is necessary to load only the necessary steps
         step_to_remove = set()
         for step_id, dependency_rows in zip(
             step_ids,
@@ -279,16 +281,20 @@ class GraphMapper:
                 )
             ),
         ):
-            for port_row in await asyncio.gather(
+            port_rows = await asyncio.gather(
                 *(
                     asyncio.create_task(
                         self.context.database.get_port(row_dependency["port"])
                     )
                     for row_dependency in dependency_rows
                 )
-            ):
+            )
+            for port_row in port_rows:
                 if port_row["name"] not in self.port_tokens.keys():
                     step_to_remove.add(step_id)
+            # if step_id in step_to_remove:
+            #     for port_row in port_rows:
+            #         self.remove_port(port_row["name"])
         for step_id in step_to_remove:
             if logger.isEnabledFor(logging.DEBUG):
                 step_name = (await self.context.database.get_step(step_id))["name"]
@@ -441,31 +447,6 @@ class ProvenanceGraph:
                     port_name=port_row["name"],
                 ),
             )
-        for it in self.info_tokens.values():
-            try:
-                value = (
-                    it.instance.value["path"]
-                    if isinstance(it.instance.value, dict)
-                    else it.instance.value.name
-                )
-            except Exception:
-                value = it.instance.value
-            elem = {
-                "id": it.instance.persistent_id,
-                "tag": it.instance.tag,
-                "value": value,
-                "port": it.port_name,
-                "is_available": (
-                    "future_available"
-                    if it.is_available == TokenAvailability.FutureAvailable
-                    else (
-                        "available"
-                        if it.is_available == TokenAvailability.Available
-                        else "unavailable"
-                    )
-                ),
-            }
-            logger.info(f"Token: {json.dumps(elem, indent=2)}")
 
 
 class ProvenanceToken:
