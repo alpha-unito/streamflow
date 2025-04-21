@@ -559,6 +559,7 @@ class InjectorFailureCommand(Command):
                 import os
                 import shutil
                 from pathlib import Path
+
                 def mycopy(workdir, x):
                     if isinstance(x, (str, Path)) and Path(x).exists():
                         value = os.path.join(workdir, os.path.basename(x))
@@ -566,6 +567,7 @@ class InjectorFailureCommand(Command):
                     else:
                         value = x
                     return value
+
                 val = mycopy(job.output_directory, val)
                 cmd_out = CommandOutput(val, Status.COMPLETED)
             except Exception as err:

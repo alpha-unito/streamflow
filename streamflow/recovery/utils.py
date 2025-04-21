@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections import deque
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
@@ -440,6 +441,31 @@ class ProvenanceGraph:
                     port_name=port_row["name"],
                 ),
             )
+        for it in self.info_tokens.values():
+            try:
+                value = (
+                    it.instance.value["path"]
+                    if isinstance(it.instance.value, dict)
+                    else it.instance.value.name
+                )
+            except Exception:
+                value = it.instance.value
+            elem = {
+                "id": it.instance.persistent_id,
+                "tag": it.instance.tag,
+                "value": value,
+                "port": it.port_name,
+                "is_available": (
+                    "future_available"
+                    if it.is_available == TokenAvailability.FutureAvailable
+                    else (
+                        "available"
+                        if it.is_available == TokenAvailability.Available
+                        else "unavailable"
+                    )
+                ),
+            }
+            logger.info(f"Token: {json.dumps(elem, indent=2)}")
 
 
 class ProvenanceToken:

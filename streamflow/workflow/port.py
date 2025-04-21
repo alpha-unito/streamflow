@@ -5,7 +5,7 @@ from collections.abc import MutableSequence
 from typing import Callable
 
 from streamflow.core.deployment import Connector
-from streamflow.core.workflow import Job, Port, Token, Workflow, Status
+from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
@@ -56,6 +56,12 @@ class InterWorkflowPort(Port):
 
     def add_inter_port(self, port: Port, border_tag: str | None = None) -> None:
         self.inter_ports.append((port, border_tag))
+        for token in self.token_list:
+            if border_tag is None or border_tag == token.tag:
+                port.put(token)
+                if self.interrupt:
+                    super().put(TerminationToken(value=Status.SKIPPED))
+                    return
 
     def put(self, token: Token) -> None:
         if not isinstance(token, TerminationToken):

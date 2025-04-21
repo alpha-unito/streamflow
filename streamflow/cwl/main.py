@@ -112,7 +112,7 @@ async def main(
     if getattr(args, "validate", False):
         return
     await workflow.save(context)
-    dag_workflow(workflow)
+    # dag_workflow(workflow)
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)

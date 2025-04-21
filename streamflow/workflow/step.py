@@ -105,6 +105,10 @@ class BaseStep(Step, ABC):
                 ),
             )
         }
+        if len(set((tags := {k: t.tag for k, t in inputs.items()}).values())) != 1:
+            logger.debug(
+                f"Step {self.name} has input tokens with different tags: {tags}"
+            )
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs.values()):
                 logger.debug(

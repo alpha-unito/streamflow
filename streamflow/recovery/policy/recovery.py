@@ -5,6 +5,7 @@ import logging
 import os
 import posixpath
 from collections.abc import Iterable
+from datetime import datetime
 from typing import cast
 
 import graphviz
@@ -29,7 +30,7 @@ from streamflow.workflow.port import (
     InterWorkflowPort,
     JobPort,
 )
-from streamflow.workflow.step import LoopCombinatorStep, ScatterStep
+from streamflow.workflow.step import ConditionalStep, LoopCombinatorStep, ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -44,6 +45,7 @@ def graph_figure(graph, title):
         dot.node(str(vertex), color="black" if neighbors else "red")
         for n in neighbors:
             dot.edge(str(vertex), str(n))
+    title += datetime.now().strftime("_%Y_%m_%d_%H_%M_%S")
     filepath = title + ".gv"
     try:
         dot.render(filepath)
@@ -59,6 +61,7 @@ def graph_figure_bipartite(graph, steps, ports, title):
         dot.node(str(vertex), shape=shape, color="black" if neighbors else "red")
         for n in neighbors:
             dot.edge(str(vertex), str(n))
+    title += datetime.now().strftime("_%Y_%m_%d_%H_%M_%S")
     filepath = title + ".gv"
     dot.render(filepath)
     os.system("rm " + filepath)
@@ -132,10 +135,11 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
                 logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
         # The port is the input port of a loop and there is no input steps before the loop
-        # nb. why three input steps? input loop step, back propagation step and loop-termination step
-        if any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()) and not len(
-            port.get_input_steps()
-        ) < 3:
+        # nb. Why three input steps? Input loop step, back propagation step and loop-termination step
+        if (
+            any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps())
+            and not len(port.get_input_steps()) < 3
+        ):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
             port.put(TerminationToken(Status.SKIPPED))
@@ -145,6 +149,15 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
             port.put(TerminationToken(Status.SKIPPED))
+    for port_ in new_workflow.ports.values():
+        if (
+            len(port_.get_input_steps()) == 0
+            and not any(isinstance(t, TerminationToken) for t in port_.token_list)
+            and len(port_.get_input_steps()) > 0
+        ):
+            raise FailureHandlingException(
+                f"Port {port_.name} is an input but have not a termination token"
+            )
 
 
 async def _populate_workflow(
@@ -162,13 +175,25 @@ async def _populate_workflow(
             for step_id in step_ids
         )
     )
-    # Add failed step into new_workflow
+    # Add the failed step into new_workflow
     await workflow_builder.load_step(
         new_workflow.context,
         failed_step.persistent_id,
     )
     # Instantiate ports capable of moving tokens across workflows
-    for port in new_workflow.ports.values():
+    for port in list(new_workflow.ports.values()):
+        if len(port.get_input_steps()) == 0 and len(port.get_output_steps()) == 0:
+            attached = False
+            for s in new_workflow.steps.values():
+                if isinstance(s, ConditionalStep):
+                    if attached := port.name in (
+                        p.name for p in s.get_skip_ports().values()
+                    ):
+                        break
+            if not attached:
+                logger.debug(f"Removing port {port.name}")
+                new_workflow.ports.pop(port.name)
+                continue
         if not isinstance(port, (JobPort, ConnectorPort)):
             new_workflow.create_port(InterWorkflowPort, port.name, interrupt=True)
     for port in failed_step.get_output_ports().values():
@@ -207,6 +232,9 @@ async def _set_step_states(mapper: GraphMapper, new_workflow: Workflow) -> None:
             await cast(LoopCombinatorStep, step).set_iteration(
                 tag=get_tag(p.token_list[0] for p in step.get_input_ports().values())
             )
+            logger.info(
+                f"iteration_termination_checklist: {step.combinator.iteration_map}"
+            )
 
 
 class RollbackRecoveryPolicy(RecoveryPolicy):
@@ -229,19 +257,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         mapper = await create_graph_mapper(self.context, provenance)
 
-        def myfunc(x):
-            if x not in provenance.info_tokens:
-                return x
-            else:
-                return f"{x} ({provenance.info_tokens[x].instance.tag}, {provenance.info_tokens[x].instance.recoverable}, {provenance.info_tokens[x].instance.value}) {provenance.info_tokens[x].port_name}"
-
-        # graph_figure(
-        #     {
-        #         myfunc(k): [myfunc(v) for v in vs]
-        #         for k, vs in provenance.dag_tokens.items()
-        #     },
-        #     "wf-tokens",
-        # )
+        # graph_figure(provenance.dag_tokens, "wf-tokens")
         # Synchronize across multiple recovery workflows
         await self._sync_workflows(mapper, new_workflow)
         # Populate new workflow
@@ -249,7 +265,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         await _populate_workflow(
             steps, failed_step, new_workflow, workflow_builder, failed_job
         )
-        dag_workflow(new_workflow)
+        # dag_workflow(new_workflow)
         await _inject_tokens(mapper, new_workflow)
         await _set_step_states(mapper, new_workflow)
         return new_workflow
@@ -278,7 +294,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                             retry_request.workflow.ports[port_name], InterWorkflowPort
                         ):
                             raise FailureHandlingException(
-                                f"Port {port_name} is not an InterWorkflowPort"
+                                f"Port {port_name} is not an InterWorkflowPort: {type(retry_request.workflow.ports[port_name])}"
                             )
                         cast(
                             InterWorkflowPort, retry_request.workflow.ports[port_name]
