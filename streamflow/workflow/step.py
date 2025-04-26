@@ -1485,36 +1485,55 @@ class ScheduleStep(BaseStep):
             path_processor, job.tmp_directory, allocation.target
         )
         # Create directories
-        for i in range(5):
-            create_tasks = []
-            try:
-                for location in locations:
-                    for directory in [
-                        job.input_directory,
-                        job.output_directory,
-                        job.tmp_directory,
-                    ]:
-                        create_tasks.append(
-                            asyncio.create_task(
-                                StreamFlowPath(
-                                    directory,
-                                    context=self.workflow.context,
-                                    location=location,
-                                ).mkdir(mode=0o777, parents=True, exist_ok=True)
-                            )
-                        )
-                await asyncio.gather(*create_tasks)
-                break
-            except Exception as err:
-                await asyncio.sleep(1)
-                logging.exception(
-                    f"Job {job.name} failed to create working directories on location {[l.name for l in locations]}. "
-                    f"Error in the {i} attempt: {err}"
+        # for i in range(5):
+        #     create_tasks = []
+        #     try:
+        #         for location in locations:
+        #             for directory in [
+        #                 job.input_directory,
+        #                 job.output_directory,
+        #                 job.tmp_directory,
+        #             ]:
+        #                 create_tasks.append(
+        #                     asyncio.create_task(
+        #                         StreamFlowPath(
+        #                             directory,
+        #                             context=self.workflow.context,
+        #                             location=location,
+        #                         ).mkdir(mode=0o777, parents=True, exist_ok=True)
+        #                     )
+        #                 )
+        #         await asyncio.gather(*create_tasks)
+        #         break
+        #     except Exception as err:
+        #         await asyncio.sleep(2)
+        #         logging.warning(
+        #             f"Job {job.name} failed to create working directories on location {[l.name for l in locations]}. "
+        #             f"Error in the {i} attempt: {err}"
+        #         )
+        # else:
+        #     raise FailureHandlingException(
+        #         f"Job {job.name} impossible to create working directories on location {[l.name for l in locations]}"
+        #     )
+
+        create_tasks = []
+        for location in locations:
+            for directory in [
+                job.input_directory,
+                job.output_directory,
+                job.tmp_directory,
+            ]:
+                create_tasks.append(
+                    asyncio.create_task(
+                        StreamFlowPath(
+                            directory,
+                            context=self.workflow.context,
+                            location=location,
+                        ).mkdir(mode=0o777, parents=True, exist_ok=True)
+                    )
                 )
-        else:
-            raise FailureHandlingException(
-                f"Job {job.name} impossible to create working directories on location {[l.name for l in locations]}"
-            )
+        await asyncio.gather(*create_tasks)
+
         job.input_directory, job.output_directory, job.tmp_directory = (
             str(p)
             for p in await asyncio.gather(
@@ -1586,18 +1605,29 @@ class ScheduleStep(BaseStep):
                                 tmp_directory=self.tmp_directory,
                             )
                             # Schedule
-                            await self.workflow.context.scheduler.schedule(
-                                job, self.binding_config, self.hardware_requirement
-                            )
-                            await self._propagate_job(
-                                connector=self.workflow.context.scheduler.get_connector(
-                                    job.name
-                                ),
-                                locations=self.workflow.context.scheduler.get_locations(
-                                    job.name
-                                ),
-                                job=job,
-                            )
+                            try:
+                                await self.workflow.context.scheduler.schedule(
+                                    job, self.binding_config, self.hardware_requirement
+                                )
+                                await self._propagate_job(
+                                    connector=self.workflow.context.scheduler.get_connector(
+                                        job.name
+                                    ),
+                                    locations=self.workflow.context.scheduler.get_locations(
+                                        job.name
+                                    ),
+                                    job=job,
+                                )
+                            except Exception as err:
+                                logger.exception(err)
+                                try:
+                                    await self.workflow.context.failure_manager.handle_exception(
+                                        job, self, err
+                                    )
+                                # If failure cannot be recovered, simply fail
+                                except Exception as ie:
+                                    if ie != err:
+                                        logger.exception(ie)
             else:
                 # Create Job
                 job = Job(
@@ -1609,16 +1639,31 @@ class ScheduleStep(BaseStep):
                     tmp_directory=self.tmp_directory,
                 )
                 # Schedule
-                await self.workflow.context.scheduler.schedule(
-                    job,
-                    self.binding_config,
-                    self.hardware_requirement,
-                )
-                await self._propagate_job(
-                    connector=self.workflow.context.scheduler.get_connector(job.name),
-                    locations=self.workflow.context.scheduler.get_locations(job.name),
-                    job=job,
-                )
+                try:
+                    await self.workflow.context.scheduler.schedule(
+                        job,
+                        self.binding_config,
+                        self.hardware_requirement,
+                    )
+                    await self._propagate_job(
+                        connector=self.workflow.context.scheduler.get_connector(
+                            job.name
+                        ),
+                        locations=self.workflow.context.scheduler.get_locations(
+                            job.name
+                        ),
+                        job=job,
+                    )
+                except Exception as err:
+                    logger.exception(err)
+                    try:
+                        await self.workflow.context.failure_manager.handle_exception(
+                            job, self, err
+                        )
+                    # If failure cannot be recovered, simply fail
+                    except Exception as ie:
+                        if ie != err:
+                            logger.exception(ie)
                 status = Status.COMPLETED
             await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)

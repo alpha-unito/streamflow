@@ -72,7 +72,7 @@ class DefaultFailureManager(FailureManager):
     ) -> None:
         if logger.isEnabledFor(logging.INFO):
             logger.info(
-                f"Handling {type(exception).__name__} failure for job {job.name}"
+                f"Handling {type(exception).__name__} failure for job {job.name} on step {step.name}"
             )
         await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)

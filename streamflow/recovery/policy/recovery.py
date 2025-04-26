@@ -199,15 +199,14 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         # Retrieve tokens
         provenance = ProvenanceGraph(workflow.context)
-        job_token = get_job_token(
-            failed_job.name, failed_step.get_input_port("__job__").token_list
-        )
-        await provenance.build_graph(
-            inputs=(
-                job_token,
+        if job_port := failed_step.get_input_port("__job__"):
+            inputs = (
+                get_job_token(failed_job.name, job_port.token_list),
                 *failed_job.inputs.values(),
             )
-        )
+        else:
+            inputs = failed_job.inputs.values()
+        await provenance.build_graph(inputs=inputs)
         mapper = await create_graph_mapper(self.context, provenance)
 
         # graph_figure(provenance.dag_tokens, "wf-tokens")
