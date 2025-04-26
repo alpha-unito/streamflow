@@ -125,11 +125,23 @@ class JobToken(Token):
         return cls(
             tag=row["tag"],
             value=await Job.load(context, params["job"], loading_context),
+            recoverable=row["recoverable"],
         )
 
 
 class ListToken(Token):
     __slots__ = ()
+
+    def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
+        super().__init__(
+            value=(
+                [t.update(t.value, recoverable) for t in value]
+                if recoverable
+                else value
+            ),
+            tag=tag,
+            recoverable=recoverable,
+        )
 
     @classmethod
     async def _load(
@@ -147,6 +159,7 @@ class ListToken(Token):
                     for t in value
                 )
             ),
+            recoverable=row["recoverable"],
         )
 
     async def _save_value(self, context: StreamFlowContext):
@@ -173,6 +186,17 @@ class ListToken(Token):
 class ObjectToken(Token):
     __slots__ = ()
 
+    def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
+        super().__init__(
+            value=(
+                {k: t.update(t.value, recoverable) for k, t in value.items()}
+                if recoverable
+                else value
+            ),
+            tag=tag,
+            recoverable=recoverable,
+        )
+
     @classmethod
     async def _load(
         cls,
@@ -195,6 +219,7 @@ class ObjectToken(Token):
                     ),
                 )
             },
+            recoverable=row["recoverable"],
         )
 
     async def _save_value(self, context: StreamFlowContext):

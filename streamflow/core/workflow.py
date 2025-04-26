@@ -572,7 +572,11 @@ class Token(PersistableEntity):
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
         self.recoverable: bool = recoverable
-        self.value: Any = value
+        self.value: Any = (
+            value.update(value=value, recoverable=self.recoverable)
+            if self.recoverable and isinstance(value, Token)
+            else value
+        )
         self.tag: str = tag
 
     @classmethod
