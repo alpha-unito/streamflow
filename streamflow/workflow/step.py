@@ -1485,21 +1485,36 @@ class ScheduleStep(BaseStep):
             path_processor, job.tmp_directory, allocation.target
         )
         # Create directories
-        create_tasks = []
-        for location in locations:
-            for directory in [
-                job.input_directory,
-                job.output_directory,
-                job.tmp_directory,
-            ]:
-                create_tasks.append(
-                    asyncio.create_task(
-                        StreamFlowPath(
-                            directory, context=self.workflow.context, location=location
-                        ).mkdir(mode=0o777, parents=True, exist_ok=True)
-                    )
+        for i in range(5):
+            create_tasks = []
+            try:
+                for location in locations:
+                    for directory in [
+                        job.input_directory,
+                        job.output_directory,
+                        job.tmp_directory,
+                    ]:
+                        create_tasks.append(
+                            asyncio.create_task(
+                                StreamFlowPath(
+                                    directory,
+                                    context=self.workflow.context,
+                                    location=location,
+                                ).mkdir(mode=0o777, parents=True, exist_ok=True)
+                            )
+                        )
+                await asyncio.gather(*create_tasks)
+                break
+            except Exception as err:
+                await asyncio.sleep(1)
+                logging.exception(
+                    f"Job {job.name} failed to create working directories on location {[l.name for l in locations]}. "
+                    f"Error in the {i} attempt: {err}"
                 )
-        await asyncio.gather(*create_tasks)
+        else:
+            raise FailureHandlingException(
+                f"Job {job.name} impossible to create working directories on location {[l.name for l in locations]}"
+            )
         job.input_directory, job.output_directory, job.tmp_directory = (
             str(p)
             for p in await asyncio.gather(
