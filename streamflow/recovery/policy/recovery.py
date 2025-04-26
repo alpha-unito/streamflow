@@ -271,25 +271,35 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     if port_name in retry_request.workflow.ports.keys():
                         num_ports_used += 1
                         missing_tag = get_job_tag(job_name)
-                        if not isinstance(
-                            port := retry_request.workflow.ports[port_name],
-                            InterWorkflowPort,
-                        ):
-                            for t in port.token_list:
-                                if t.tag == missing_tag:
-                                    workflow.ports[port_name].put(t)
-                                    break
+                        port = retry_request.workflow.ports[port_name]
+                        for t in port.token_list:
+                            if t.tag == missing_tag:
+                                workflow.ports[port_name].put(t)
+                                break
                         else:
-                            if logger.isEnabledFor(logging.DEBUG):
-                                logger.debug(
-                                    f"job {job_name} is running. Waiting on the port {port_name}"
-                                )
-                            cast(InterWorkflowPort, port).add_inter_port(
-                                workflow.create_port(
-                                    cls=InterWorkflowPort, name=port_name
-                                ),
-                                border_tag=missing_tag,
-                            )
+                            retry_request.waiting_ports.setdefault(
+                                port_name, []
+                            ).append((missing_tag, workflow.ports[port_name]))
+
+                        # if not isinstance(
+                        #     port := retry_request.workflow.ports[port_name],
+                        #     InterWorkflowPort,
+                        # ):
+                        #     for t in port.token_list:
+                        #         if t.tag == missing_tag:
+                        #             workflow.ports[port_name].put(t)
+                        #             break
+                        # else:
+                        #     if logger.isEnabledFor(logging.DEBUG):
+                        #         logger.debug(
+                        #             f"job {job_name} is running. Waiting on the port {port_name}"
+                        #         )
+                        #     cast(InterWorkflowPort, port).add_inter_port(
+                        #         workflow.create_port(
+                        #             cls=InterWorkflowPort, name=port_name
+                        #         ),
+                        #         border_tag=missing_tag,
+                        #     )
                         mapper.sync_ports.append(port_name)
                 steps = [
                     (type(s), s.name)

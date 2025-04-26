@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
@@ -12,7 +12,7 @@ from streamflow.workflow.token import JobToken
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step, Token, Workflow
+    from streamflow.core.workflow import CommandOutput, Job, Port, Step, Token, Workflow
 
 
 class CheckpointManager(SchemaEntity):
@@ -70,13 +70,21 @@ class RecoveryPolicy:
 
 
 class RetryRequest:
-    __slots__ = ("job_token", "lock", "output_tokens", "version", "workflow")
+    __slots__ = (
+        "job_token",
+        "lock",
+        "output_tokens",
+        "version",
+        "waiting_ports",
+        "workflow",
+    )
 
     def __init__(self):
         self.job_token: JobToken | None = None
         self.lock: asyncio.Lock = asyncio.Lock()
         self.output_tokens: MutableMapping[str, Token] = {}
         self.version: int = 1
+        self.waiting_ports: MutableMapping[str, MutableSequence[tuple[str, Port]]] = {}
         self.workflow: Workflow | None = None
 
 
