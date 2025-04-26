@@ -1024,7 +1024,9 @@ class GatherStep(BaseStep):
                     logger.debug(f"Step {self.name} forces gather on key {key}")
 
                 # Update size_map with the current size
-                self.size_map[key] = Token(value=len(self.token_map[key]), tag=key)
+                self.size_map[key] = Token(
+                    value=len(self.token_map[key]), tag=key, recoverable=True
+                )
                 await self.size_map[key].save(
                     self.workflow.context, size_port.persistent_id
                 )
@@ -1918,7 +1920,10 @@ class Transformer(BaseStep, ABC):
                                 for port_name, token in inputs.items():
                                     self.get_output_port(port_name).put(
                                         await self._persist_token(
-                                            token=token.update(token.value),
+                                            token=token.update(
+                                                value=token.value,
+                                                recoverable=token.recoverable,
+                                            ),
                                             port=self.get_output_port(port_name),
                                             input_token_ids=get_entity_ids(
                                                 inputs.values()

@@ -72,3 +72,9 @@ class InterWorkflowPort(Port):
                         super().put(TerminationToken(value=Status.SKIPPED))
                         return
         super().put(token)
+
+    async def get_job(self, consumer: str) -> Job | None:
+        return await super().get_job(consumer)
+
+    def put_job(self, job: Job):
+        super().put_job(job)

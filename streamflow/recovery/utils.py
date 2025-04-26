@@ -397,9 +397,20 @@ class ProvenanceGraph:
 
         while token_frontier:
             token = token_frontier.popleft()
-            port_row = await self.context.database.get_port_from_token(
-                token.persistent_id
+            port_row = dict(
+                await self.context.database.get_port_from_token(token.persistent_id)
             )
+            _ = [
+                dict(s)
+                for s in await asyncio.gather(
+                    *(
+                        asyncio.create_task(self.context.database.get_step(d["step"]))
+                        for d in await self.context.database.get_input_steps(
+                            port_row["id"]
+                        )
+                    )
+                )
+            ]
             # The token is a `JobToken` and its job is running on another recovered workflow
             if (
                 isinstance(token, JobToken)
@@ -434,19 +445,10 @@ class ProvenanceGraph:
                     raise FailureHandlingException(
                         f"Token with id {token.persistent_id} is not available and it does not have previous tokens"
                     )
-            # step_rows = await asyncio.gather(
-            #     *(
-            #         asyncio.create_task(self.context.database.get_step(d["step"]))
-            #         for d in await self.context.database.get_input_steps(port_row["id"])
-            #     )
-            # )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
                     f"Token id {token.persistent_id} is {'' if is_available else 'not '}available"
                 )
-                # logger.debug(
-                #     f"Token id: {token.persistent_id} is output of steps {[(s['id'], s['name']) for s in step_rows]}"
-                # )
             self.info_tokens.setdefault(
                 token.persistent_id,
                 ProvenanceToken(

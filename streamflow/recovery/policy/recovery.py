@@ -20,12 +20,7 @@ from streamflow.recovery.utils import (
     create_graph_mapper,
 )
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.port import (
-    ConnectorPort,
-    FilterTokenPort,
-    InterWorkflowPort,
-    JobPort,
-)
+from streamflow.workflow.port import ConnectorPort, FilterTokenPort, InterWorkflowPort
 from streamflow.workflow.step import ConditionalStep, LoopCombinatorStep, ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
@@ -147,7 +142,7 @@ async def _populate_workflow(
                 logger.debug(f"Removing port {port.name}")
                 new_workflow.ports.pop(port.name)
                 continue
-        if not isinstance(port, (JobPort, ConnectorPort)):
+        if not isinstance(port, ConnectorPort):
             new_workflow.create_port(InterWorkflowPort, port.name, interrupt=True)
     for port in failed_step.get_output_ports().values():
         cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
