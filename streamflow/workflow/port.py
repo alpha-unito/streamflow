@@ -73,6 +73,32 @@ class InterWorkflowPort(Port):
                         return
         super().put(token)
 
+
+class InterWorkflowJobPort(JobPort):
+    def __init__(self, workflow: Workflow, name: str, interrupt: bool = False):
+        super().__init__(workflow, name)
+        self.inter_ports: MutableSequence[tuple[Port, str | None]] = []
+        self.interrupt: bool = interrupt
+
+    def add_inter_port(self, port: Port, border_tag: str | None = None) -> None:
+        self.inter_ports.append((port, border_tag))
+        for token in self.token_list:
+            if border_tag is None or border_tag == token.tag:
+                port.put(token)
+                if self.interrupt:
+                    super().put(TerminationToken(value=Status.SKIPPED))
+                    return
+
+    def put(self, token: Token) -> None:
+        if not isinstance(token, TerminationToken):
+            for port, border_tag in self.inter_ports:
+                if border_tag is None or border_tag == token.tag:
+                    port.put(token)
+                    if self.interrupt:
+                        super().put(TerminationToken(value=Status.SKIPPED))
+                        return
+        super().put(token)
+
     async def get_job(self, consumer: str) -> Job | None:
         return await super().get_job(consumer)
 

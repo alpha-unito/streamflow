@@ -68,7 +68,7 @@ class DirectGraph:
     def remove(self, vertex: Any) -> MutableSequence[Any]:
         self.graph.pop(vertex, None)
         removed = [vertex]
-        # Delete nodes which are not connected to the leaves nodes
+        # Delete nodes which are not connected to the leave nodes
         dead_end_nodes = set()
         for node, values in self.graph.items():
             if vertex in values:
@@ -78,7 +78,7 @@ class DirectGraph:
         for node in dead_end_nodes:
             removed.extend(self.remove(node))
 
-        # Assign the root node to vertices without parent
+        # Assign the root node to vertices without parents
         orphan_nodes = set()
         for node in self.keys():
             if node != DirectGraph.ROOT and not self.prev(node):
@@ -470,6 +470,14 @@ class ProvenanceToken:
         port_id: int,
         port_name: str,
     ):
+        logger.debug(
+            f"ProvenanceToken id {instance.persistent_id}\n"
+            f"tag: {instance.tag}\n"
+            f"value: {instance.value}\n"
+            f"is_available: {is_available}\n"
+            f"port_id: {port_id}\n"
+            f"port_name: {port_name}\n"
+        )
         self.instance: Token = instance
         self.is_available: bool = is_available
         self.port_id: int = port_id

@@ -20,7 +20,13 @@ from streamflow.recovery.utils import (
     create_graph_mapper,
 )
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.port import ConnectorPort, FilterTokenPort, InterWorkflowPort
+from streamflow.workflow.port import (
+    ConnectorPort,
+    FilterTokenPort,
+    InterWorkflowJobPort,
+    InterWorkflowPort,
+    JobPort,
+)
 from streamflow.workflow.step import ConditionalStep, LoopCombinatorStep, ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
@@ -142,7 +148,9 @@ async def _populate_workflow(
                 logger.debug(f"Removing port {port.name}")
                 new_workflow.ports.pop(port.name)
                 continue
-        if not isinstance(port, ConnectorPort):
+        if isinstance(port, JobPort):
+            new_workflow.create_port(InterWorkflowJobPort, port.name, interrupt=True)
+        elif not isinstance(port, ConnectorPort):
             new_workflow.create_port(InterWorkflowPort, port.name, interrupt=True)
     for port in failed_step.get_output_ports().values():
         cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
@@ -194,13 +202,17 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         # Retrieve tokens
         provenance = ProvenanceGraph(workflow.context)
+        inputs = []
+        # todo: Add a parameter in the API containing the input token of the failed step (in a specific job)?
         if job_port := failed_step.get_input_port("__job__"):
-            inputs = (
-                get_job_token(failed_job.name, job_port.token_list),
-                *failed_job.inputs.values(),
-            )
-        else:
-            inputs = failed_job.inputs.values()
+            inputs.append(get_job_token(failed_job.name, job_port.token_list))
+        if conn_tokens := [
+            failed_step.get_input_port(name).token_list[0]
+            for name in failed_step.input_ports
+            if name.startswith("__connector__")
+        ]:
+            inputs.extend(conn_tokens)
+        inputs.extend(failed_job.inputs.values())
         await provenance.build_graph(inputs=inputs)
         mapper = await create_graph_mapper(self.context, provenance)
 
@@ -272,6 +284,10 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                                 workflow.ports[port_name].put(t)
                                 break
                         else:
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.debug(
+                                    f"Job {job_name} is running. Waiting on the port {port_name}"
+                                )
                             retry_request.waiting_ports.setdefault(
                                 port_name, []
                             ).append((missing_tag, workflow.ports[port_name]))
