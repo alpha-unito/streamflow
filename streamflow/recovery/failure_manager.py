@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, WorkflowException
 from streamflow.core.recovery import FailureManager, RetryRequest, TokenAvailability
-from streamflow.core.workflow import CommandOutput, Job, Status, Step, Token
+from streamflow.core.workflow import CommandOutput, Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
 from streamflow.workflow.token import JobToken
@@ -25,6 +25,7 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int = max_retries
         self.retry_delay: int | None = retry_delay
         self._retry_requests: MutableMapping[str, RetryRequest] = {}
+        self._workflows: MutableSequence[Workflow] = []
 
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)

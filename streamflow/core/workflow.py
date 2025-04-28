@@ -572,11 +572,12 @@ class Token(PersistableEntity):
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
         self.recoverable: bool = recoverable
-        self.value: Any = (
-            value.update(value=value, recoverable=self.recoverable)
-            if self.recoverable and isinstance(value, Token)
-            else value
-        )
+        if self.recoverable and isinstance(value, Token):
+            new_value = value.update(value=value, recoverable=self.recoverable)
+            new_value.persistent_id = value.persistent_id
+        else:
+            new_value = value
+        self.value: Any = new_value
         self.tag: str = tag
 
     @classmethod
@@ -752,6 +753,9 @@ class Workflow(PersistableEntity):
 
     def get_output_ports(self) -> MutableMapping[str, Port]:
         return {name: self.ports[p] for name, p in self.output_ports.items()}
+
+    def get_step_status(self) -> MutableMapping[str, Status]:
+        return {s.name: s.status for s in self.steps.values()}
 
     @classmethod
     async def load(

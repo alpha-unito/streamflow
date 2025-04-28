@@ -695,6 +695,8 @@ class CWLTransferStep(TransferStep):
         # Get destination coordinates
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
+        if len(dst_locations) == 0:
+            raise WorkflowExecutionException(f"Job {job.name} has no locations")
         dst_dir = StreamFlowPath(
             job.input_directory,
             context=self.workflow.context,
@@ -741,7 +743,7 @@ class CWLTransferStep(TransferStep):
             except FileExistsError:
                 filepath = dst_path or (dst_dir / selected_location.relpath)
             # Transform token value
-            new_token_value = {
+            new_token_value: MutableMapping[str, Any] = {
                 "class": token_class,
                 "path": str(filepath),
                 "location": "file://" + str(filepath),

@@ -133,12 +133,20 @@ class ListToken(Token):
     __slots__ = ()
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
+        if recoverable:
+            new_value = []
+            for t in value:
+                new_t = t.update(t.value, recoverable)
+                new_t.persistent_id = t.persistent_id
+                if t.persistent_id is not None:
+                    logger.debug(
+                        f"List token has token persistent with id: {t.persistent_id}"
+                    )
+                new_value.append(new_t)
+        else:
+            new_value = value
         super().__init__(
-            value=(
-                [t.update(t.value, recoverable) for t in value]
-                if recoverable
-                else value
-            ),
+            value=new_value,
             tag=tag,
             recoverable=recoverable,
         )

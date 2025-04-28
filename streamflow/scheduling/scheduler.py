@@ -241,9 +241,9 @@ class DefaultScheduler(Scheduler):
                 filter(
                     lambda x: (
                         self.job_allocations[x].status == Status.RUNNING
-                        or self.job_allocations[x].status == Status.FIREABLE
                         or (
-                            self.job_allocations[x].status == Status.ROLLBACK
+                            self.job_allocations[x].status
+                            in (Status.ROLLBACK, Status.FIREABLE)
                             and get_job_step_name(x) == get_job_step_name(job_name)
                             and compare_tags(get_job_tag(x), get_job_tag(job_name)) < 0
                         )
@@ -509,6 +509,7 @@ class DefaultScheduler(Scheduler):
                             and status != Status.RUNNING
                         )
                     ):
+                        logger.debug(f"Job {job_name} free resources")
                         await self._free_resources(connector, job_allocation, status)
                     if status == Status.ROLLBACK:
                         for loc in job_allocation.locations:

@@ -137,6 +137,11 @@ class BaseStep(Step, ABC):
             )
         await token.save(self.workflow.context, port_id=port.persistent_id)
         if input_token_ids:
+            if any(t is None for t in input_token_ids):
+                raise FailureHandlingException(
+                    f"Step {self.name} on port {port.name} generated the token {token.persistent_id}, "
+                    f"but a input token has not the persistent id: {input_token_ids}"
+                )
             await self.workflow.context.database.add_provenance(
                 inputs=input_token_ids, token=token.persistent_id
             )

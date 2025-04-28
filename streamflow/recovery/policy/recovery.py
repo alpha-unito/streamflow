@@ -148,10 +148,13 @@ async def _populate_workflow(
                 logger.debug(f"Removing port {port.name}")
                 new_workflow.ports.pop(port.name)
                 continue
-        if isinstance(port, JobPort):
-            new_workflow.create_port(InterWorkflowJobPort, port.name, interrupt=True)
-        elif not isinstance(port, ConnectorPort):
-            new_workflow.create_port(InterWorkflowPort, port.name, interrupt=True)
+        if not isinstance(port, (InterWorkflowPort, InterWorkflowJobPort)):
+            if isinstance(port, JobPort):
+                new_workflow.create_port(
+                    InterWorkflowJobPort, port.name, interrupt=True
+                )
+            elif not isinstance(port, ConnectorPort):
+                new_workflow.create_port(InterWorkflowPort, port.name, interrupt=True)
     for port in failed_step.get_output_ports().values():
         cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
             port, border_tag=get_tag(failed_job.inputs.values())
@@ -200,6 +203,11 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         new_workflow = await workflow_builder.load_workflow(
             workflow.context, workflow.persistent_id
         )
+        for port in failed_step.get_output_ports().values():
+            await workflow_builder.load_port(
+                new_workflow.context,
+                port.persistent_id,
+            )
         # Retrieve tokens
         provenance = ProvenanceGraph(workflow.context)
         inputs = []
@@ -216,7 +224,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         await provenance.build_graph(inputs=inputs)
         mapper = await create_graph_mapper(self.context, provenance)
 
-        # graph_figure(provenance.dag_tokens, "wf-tokens")
         # Synchronize across multiple recovery workflows
         await self._sync_workflows(mapper, new_workflow)
         # Populate new workflow
@@ -227,10 +234,13 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         # dag_workflow(new_workflow)
         await _inject_tokens(mapper, new_workflow)
         await _set_step_states(mapper, new_workflow)
-        for step in workflow.steps.values():
-            # Check the step has all the ports
-            step.get_input_ports()
-            step.get_output_ports()
+        try:
+            for step in workflow.steps.values():
+                # Check the step has all the ports
+                step.get_input_ports()
+                step.get_output_ports()
+        except KeyError:
+            raise FailureHandlingException("The recovery workflow is malformed")
         for port in new_workflow.ports.values():
             if (
                 len(in_steps := [(type(s), s.name) for s in port.get_input_steps()])
@@ -246,7 +256,10 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 ):
                     # A port without steps. todo: delete it from the workflow
                     continue
-                elif len(port.token_list) != 2 and port.name not in mapper.sync_ports:
+                elif (
+                    len(port.token_list) < 2
+                    or not isinstance(port.token_list[-1], TerminationToken)
+                ) and port.name not in mapper.sync_ports:
                     raise FailureHandlingException(
                         f"Empty input port: {port.name}. "
                         f"in_tokens: {len(port.token_list)}. in_steps: {in_steps}. out_steps: {out_steps}"
@@ -278,10 +291,18 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     if port_name in retry_request.workflow.ports.keys():
                         num_ports_used += 1
                         missing_tag = get_job_tag(job_name)
-                        port = retry_request.workflow.ports[port_name]
-                        for t in port.token_list:
+                        running_port = retry_request.workflow.ports[port_name]
+                        if isinstance(running_port, JobPort):
+                            new_port = workflow.create_port(
+                                InterWorkflowJobPort, port_name, interrupt=True
+                            )
+                        else:
+                            new_port = workflow.create_port(
+                                InterWorkflowPort, port_name, interrupt=True
+                            )
+                        for t in running_port.token_list:
                             if t.tag == missing_tag:
-                                workflow.ports[port_name].put(t)
+                                new_port.put(t)
                                 break
                         else:
                             if logger.isEnabledFor(logging.DEBUG):
@@ -290,7 +311,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                                 )
                             retry_request.waiting_ports.setdefault(
                                 port_name, []
-                            ).append((missing_tag, workflow.ports[port_name]))
+                            ).append((missing_tag, new_port))
 
                         # if not isinstance(
                         #     port := retry_request.workflow.ports[port_name],
@@ -317,18 +338,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     for s in workflow.steps.values()
                     if s.name.startswith(get_job_step_name(job_name))
                 ]
-                steps_1 = [
-                    (type(s), s.name)
-                    for p_name in out_ports
-                    if p_name in workflow.ports
-                    for s in workflow.ports[p_name].get_output_steps()
-                ]
-                logger.debug(f"job {job_name} is running. Running steps: {steps}")
-                logger.debug(f"job {job_name} is running. Running steps_1: {steps_1}")
-                if len(steps) != len(steps_1):
-                    raise FailureHandlingException(
-                        f"Different steps: {steps} and {steps_1}"
-                    )
+                logger.debug(f"Job {job_name} is running. Execute steps: {steps}")
                 if len(steps) > 0:
                     if any(
                         len(workflow.ports[p].token_list) == 0
@@ -381,5 +391,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
         # Create recover workflow
         new_workflow = await self._recover_workflow(failed_job, failed_step)
+        self.context.failure_manager._workflows.append(new_workflow)
         # Execute new workflow
         await _execute_recover_workflow(new_workflow, failed_step)
