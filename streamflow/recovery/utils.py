@@ -326,9 +326,13 @@ class GraphMapper:
                 isinstance(self.token_instances.get(prev_token_id, None), JobToken)
             ):
                 if prev_token_id == DirectGraph.ROOT:
-                    raise FailureHandlingException(
-                        "Impossible execute a workflow without a ROOT"
-                    )
+                    if all(len(t) == 0 for t in self.dag_tokens.values()):
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug("Recovering token graph is empty")
+                    else:
+                        raise FailureHandlingException(
+                            "Impossible execute a workflow without a ROOT"
+                        )
                 token_leaves.add(prev_token_id)
         # Delete end-road branches
         for leaf_id in token_leaves:

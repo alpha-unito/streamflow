@@ -267,6 +267,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         return new_workflow
 
     async def _sync_workflows(self, mapper: GraphMapper, workflow: Workflow) -> None:
+        rollback_jobs = []
         for job_token in set(
             # todo: visit the jobtoken bottom-up in the graph
             filter(lambda _t: isinstance(_t, JobToken), mapper.token_instances.values())
@@ -386,7 +387,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         )
             else:
                 await self.context.failure_manager.update_request(job_name)
+                rollback_jobs.append(job_name)
                 retry_request.workflow = workflow
+        logger.debug(f"Recovery workflow: {rollback_jobs}")
 
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
         # Create recover workflow
