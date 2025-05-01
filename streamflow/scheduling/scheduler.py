@@ -241,9 +241,9 @@ class DefaultScheduler(Scheduler):
                 filter(
                     lambda x: (
                         self.job_allocations[x].status == Status.RUNNING
+                        or self.job_allocations[x].status == Status.FIREABLE
                         or (
-                            self.job_allocations[x].status
-                            in (Status.ROLLBACK, Status.FIREABLE)
+                            self.job_allocations[x].status == Status.ROLLBACK
                             and get_job_step_name(x) == get_job_step_name(job_name)
                             and compare_tags(get_job_tag(x), get_job_tag(job_name)) < 0
                         )
