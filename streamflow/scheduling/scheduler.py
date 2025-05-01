@@ -298,6 +298,7 @@ class DefaultScheduler(Scheduler):
         if deployment not in self.wait_queues:
             self.wait_queues[deployment] = asyncio.Condition()
         async with self.wait_queues[deployment]:
+            i = 0
             while True:
                 async with job_context.lock:
                     if job_context.scheduled:
@@ -417,6 +418,42 @@ class DefaultScheduler(Scheduler):
                         self.wait_queues[deployment].wait(), timeout=self.retry_interval
                     )
                 except (TimeoutError, asyncio.exceptions.TimeoutError):
+                    i += 1
+                    if i > 10:
+                        fireable_jobs = []
+                        for location in available_locations.values():
+                            fireable_jobs.extend(
+                                list(
+                                    filter(
+                                        lambda x: self.job_allocations[x].status
+                                        == Status.FIREABLE,
+                                        self.location_allocations[location.deployment][
+                                            location.name
+                                        ].jobs,
+                                    )
+                                )[::-1]
+                            )
+                        if fireable_jobs:
+                            fireable_job = fireable_jobs[-1]
+                            if job_allocation := self.job_allocations.get(fireable_job):
+                                logger.debug(
+                                    f"Dealloc the job {fireable_job} from FIREABLE"
+                                )
+                                job_allocation.status = Status.ROLLBACK
+                                await self._free_resources(
+                                    connector, job_allocation, Status.ROLLBACK
+                                )
+                                for loc in job_allocation.locations:
+                                    if (
+                                        fireable_job
+                                        in self.location_allocations[loc.deployment][
+                                            loc.name
+                                        ].jobs
+                                    ):
+                                        self.location_allocations[loc.deployment][
+                                            loc.name
+                                        ].jobs.remove(fireable_job)
+                                job_allocation.locations.clear()
                     if logger.isEnabledFor(logging.DEBUG):
                         target_name = (
                             "/".join([target.deployment.name, target.service])
@@ -511,6 +548,11 @@ class DefaultScheduler(Scheduler):
                     ):
                         logger.debug(f"Job {job_name} free resources")
                         await self._free_resources(connector, job_allocation, status)
+                    else:
+                        logger.debug(
+                            f"Job {job_name} unfree resources. "
+                            f"Prev status: {previous_status.name} new status: {status.name}"
+                        )
                     if status == Status.ROLLBACK:
                         for loc in job_allocation.locations:
                             if (
